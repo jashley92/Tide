@@ -109,13 +109,47 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
 public sealed record DeletedAction(Guid Id, int Number, string Title, string TeamName, ActionStatus Status, DateTimeOffset DeletedAtUtc,
     string? DeletedByName, string? Reason, bool ParentDeleted);
 
-/// <summary>An overdue action the meeting looks at again: how late it is, and whether nobody holds it and its team has no
+/// <summary>An open action the meeting looks at again: how late it is, and whether nobody holds it and its team has no
 /// members (so nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what
-/// it's marked at.</summary>
+/// it's marked at. On the meeting's slide (<see cref="ActionService.MeetingActionsAsync"/>) also how long it has gone
+/// without an update, and whether that's too long (<see cref="NeedsUpdate"/>).</summary>
 public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null)
 {
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
     public string Late => ActionSla.LateText(DaysLate) ?? "not yet due";
+
+    /// <summary>Business days since a person last updated it (<see cref="NeedsUpdate.QuietDays"/>).</summary>
+    public int QuietDays { get; init; }
+
+    /// <summary>Quiet past its status's limit: it needs an update (<see cref="NeedsUpdate.IsStale"/>).</summary>
+    public bool Stale { get; init; }
+
+    /// <summary>What its last update was, in short ("comment by Sam"), when it needs an update.</summary>
+    public string? LastUpdate { get; init; }
+
+    /// <summary>Why the meeting looks at it, each reason it has: "escalated", "3 days late", "quiet 6 business days (Blocked)".</summary>
+    public IReadOnlyList<string> Reasons => [.. new[]
+    {
+        Row.Escalated ? "escalated" : null,
+        ActionSla.LateText(DaysLate),
+        Stale ? $"quiet {Words.Plural(QuietDays, "business day")}{(Row.Status == ActionStatus.Blocked ? " (Blocked)" : "")}" : null,
+    }.OfType<string>()];
+
+    /// <summary><see cref="Reasons"/> in a line: "3 days late · quiet 4 business days".</summary>
+    public string Why => string.Join(" · ", Reasons);
+
+    /// <summary>How pressing it is, for the meeting's order: escalated, then P1 and P2 overdue, then blocked and quiet too
+    /// long, then the other overdue, then the others quiet too long.</summary>
+    public int Pressing =>
+        Row.Escalated ? 0
+        : DaysLate > 0 && Row.Priority <= Priority.P2 ? 1
+        : Stale && Row.Status == ActionStatus.Blocked ? 2
+        : DaysLate > 0 ? 3
+        : 4;
+
+    /// <summary>Within its <see cref="Pressing"/>, the larger first: how long it has been quiet, for one there because
+    /// it's quiet; how late, for the rest.</summary>
+    public int Within => Pressing is 2 or 4 ? QuietDays : DaysLate;
 
     /// <summary>Who has it, as the action page says: whoever holds it; with nobody, why nobody sees it as theirs when its
     /// team has no members, else "nobody yet".</summary>
@@ -123,20 +157,21 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
         : NoOneToOwn ? "no one: the team has no members" : "nobody yet";
 
     /// <summary>The one thing the meeting can do about it, the most pressing first: give a team with nobody in it someone,
-    /// unblock it, find it a holder, or ask for an update; one updated since yesterday and still late gets a new due date.
-    /// Said to the room, so it doesn't follow the action page's Next line (<see cref="ActionGuide.Next"/>), which depends on
-    /// who is looking and offers that page's flows.</summary>
+    /// unblock it, find it a holder, or ask for an update (one that needs an update, or quiet since yesterday's); one updated
+    /// since yesterday and still late gets a new due date. Said to the room, so it doesn't follow the action page's Next line
+    /// (<see cref="ActionGuide.Next"/>), which depends on who is looking and offers that page's flows.</summary>
     public string NextInTheRoom(int quietDays) =>
         Row.AssigneeId is null && NoOneToOwn ? "Reassign to a team with members"
         : Row.Status == ActionStatus.Blocked ? "Ask what it's waiting on"
         : Row.AssigneeId is null && !Row.TeamExternal ? "Find someone to take it"
-        : quietDays >= 2 || DaysLate == 0 ? "Ask for an update"
+        : Stale || quietDays >= 2 || DaysLate == 0 ? "Ask for an update"
         : "Agree a new due date";
 }
 
-/// <summary>The overdue actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>),
-/// and how many are overdue in all that the edition may show (those above its ceiling are neither named nor counted: the
-/// count would tell the room they exist).</summary>
+/// <summary>The actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>), and
+/// how many there are in all that the edition may show (those above its ceiling are neither named nor counted: the count
+/// would tell the room they exist). The team email's are the overdue and escalated ones; the meeting's also those that
+/// need an update.</summary>
 public sealed record OpenActionsReview(IReadOnlyList<OutstandingAction> Rows, int Overdue)
 {
     public static readonly OpenActionsReview None = new([], 0);
@@ -829,6 +864,63 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return await Outstanding(db, asOf, ceiling, ct);
     }
 
+    /// <summary>
+    /// The actions the meeting's "Actions that need review" slide lists, as of <paramref name="asOf"/> (the brief's day):
+    /// every open action that is overdue, escalated, or has gone too long without an update (<see cref="NeedsUpdate"/>,
+    /// by the organization's limits and working days), each once. Most pressing first (<see cref="OutstandingAction.Pressing"/>),
+    /// at most <see cref="OutstandingSize"/>, with the full count; those that need an update say what their last update was.
+    /// One raised from an article above <paramref name="ceiling"/> is neither listed nor counted, as for
+    /// <see cref="OutstandingAsync"/>.
+    /// </summary>
+    public async Task<OpenActionsReview> MeetingActionsAsync(DateOnly asOf, TlpLevel ceiling, CancellationToken ct = default)
+    {
+        // A Visitor, from a seat in that day's live meeting: its slide (MeetingAccess).
+        if (!Briefs.MeetingAccess.SeatedOn(user, meetings, asOf)) RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var (limits, days) = (clock.StaleLimits, clock.Days);
+        var open = await Rows(db, db.Actions.AsNoTracking().WhereOpen()).ToListAsync(ct);
+        var asked = open
+            .Select(r => (Row: r, Quiet: r.LastActivityUtc is { } at ? NeedsUpdate.QuietDays(clock.DayOf(at), asOf, days) : 0))
+            .Select(x => (x.Row, x.Quiet, Stale: NeedsUpdate.IsStale(x.Row.Status, x.Quiet, limits)))
+            .Where(x => x.Stale || x.Row.Escalated || x.Row.DueDate < asOf).ToList();
+        if (asked.Count == 0) return OpenActionsReview.None;
+        var (tlpOf, nobodys) = await HoldingAsync(db, asked.Select(x => x.Row), ct);
+        var shown = asked.Where(x => tlpOf(x.Row) is not { } t || t <= ceiling)
+            .Select(x => new OutstandingAction(x.Row, ActionSla.DaysLate(x.Row.DueDate, asOf), x.Row.AssigneeId is null && nobodys.Contains(x.Row.TeamId),
+                tlpOf(x.Row)) { QuietDays = x.Quiet, Stale = x.Stale })
+            .ToList();
+        var ranked = shown.OrderBy(o => o.Pressing).ThenByDescending(o => o.Within).ThenBy(o => o.Row.Number).Take(OutstandingSize).ToList();
+        if (ranked.Count == 0) return OpenActionsReview.None;
+        var last = await LastUpdatesAsync(db, [.. ranked.Where(o => o.Stale).Select(o => o.Row)], ct);
+        return new OpenActionsReview([.. ranked.Select(o => last.TryGetValue(o.Row.Id, out var said) ? o with { LastUpdate = said } : o)], shown.Count);
+    }
+
+    // What each of these was last updated with, in short ("comment by Sam"): its latest comment or history line by a person,
+    // from the time its row counts from (TIDE's own lines aren't updates). "raised" for one with nothing recorded.
+    private static async Task<Dictionary<Guid, string>> LastUpdatesAsync(IAppDbContext db, IReadOnlyList<ActionRow> rows, CancellationToken ct)
+    {
+        if (rows.Count == 0) return [];
+        var ids = rows.Select(r => r.Id).ToList();
+        var since = rows.Min(r => r.LastActivityUtc ?? r.CreatedAtUtc);
+        var comments = await db.ActionComments.AsNoTracking().Where(c => ids.Contains(c.ActionId) && c.AtUtc >= since)
+            .Select(c => new { c.ActionId, c.AtUtc, By = c.AuthorName, Text = (string?)null }).ToListAsync(ct);
+        var lines = await db.ActionEvents.AsNoTracking().Where(e => ids.Contains(e.ActionId) && e.AtUtc >= since && e.ByName != ReminderService.EscalatedBy)
+            .Select(e => new { e.ActionId, e.AtUtc, By = e.ByName, Text = (string?)e.Text }).ToListAsync(ct);
+        var latest = lines.Concat(comments).GroupBy(u => u.ActionId).ToDictionary(g => g.Key, g => g.MaxBy(u => u.AtUtc)!);
+        return ids.ToDictionary(id => id, id => latest.TryGetValue(id, out var u) ? NeedsUpdate.Describe(new LastUpdate(u.By, u.Text)) : "raised");
+    }
+
+    // The marking each of these rows is held at (its article's TLP; null with none), and the teams nobody in TIDE owns work on.
+    private static async Task<(Func<ActionRow, TlpLevel?> TlpOf, HashSet<Guid> Nobodys)> HoldingAsync(IAppDbContext db, IEnumerable<ActionRow> rows,
+        CancellationToken ct)
+    {
+        var articleIds = rows.Select(r => r.ArticleId).OfType<Guid>().Distinct().ToList();
+        var tlps = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Select(a => new { a.Id, a.Tlp })
+            .ToDictionaryAsync(a => a.Id, a => a.Tlp, ct);
+        var nobodys = (await db.Teams.AsNoTracking().Where(NoOneToOwn).Select(t => t.Id).ToListAsync(ct)).ToHashSet();
+        return (r => r.ArticleId is { } id && tlps.TryGetValue(id, out var t) ? t : null, nobodys);
+    }
+
     /// <summary><see cref="OutstandingAsync"/> on a context the caller holds (the team email reads it when it is cut).</summary>
     internal static async Task<OpenActionsReview> Outstanding(IAppDbContext db, DateOnly asOf, TlpLevel ceiling, CancellationToken ct)
     {
@@ -837,14 +929,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var escalated = await Rows(db, db.Actions.AsNoTracking().WhereEscalated()).ToListAsync(ct);
         var rows = overdue.Concat(escalated).DistinctBy(r => r.Id).ToList();
         if (rows.Count == 0) return OpenActionsReview.None;
-        var articleIds = rows.Select(r => r.ArticleId).OfType<Guid>().Distinct().ToList();
-        var tlps = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Select(a => new { a.Id, a.Tlp })
-            .ToDictionaryAsync(a => a.Id, a => a.Tlp, ct);
-        TlpLevel? TlpOf(ActionRow r) => r.ArticleId is { } id && tlps.TryGetValue(id, out var t) ? t : null;
-        var nobodys = (await db.Teams.AsNoTracking().Where(NoOneToOwn).Select(t => t.Id).ToListAsync(ct)).ToHashSet();
-        var shown = rows.Where(r => TlpOf(r) is not { } t || t <= ceiling).ToList();
+        var (tlpOf, nobodys) = await HoldingAsync(db, rows, ct);
+        var shown = rows.Where(r => tlpOf(r) is not { } t || t <= ceiling).ToList();
         var ranked = shown
-            .Select(r => new OutstandingAction(r, ActionSla.DaysLate(r.DueDate, asOf), r.AssigneeId is null && nobodys.Contains(r.TeamId), TlpOf(r)))
+            .Select(r => new OutstandingAction(r, ActionSla.DaysLate(r.DueDate, asOf), r.AssigneeId is null && nobodys.Contains(r.TeamId), tlpOf(r)))
             .OrderBy(o => o.Row.Escalated ? 0 : o.Row.Priority <= Priority.P2 ? 1 : o.NoOneToOwn ? 2 : 3)
             .ThenByDescending(o => o.DaysLate).ThenBy(o => o.Row.Number)
             .Take(OutstandingSize).ToList();
@@ -970,10 +1058,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc, false, a.StatusChangedAtUtc,
         // How its hunts went: hits anywhere, else a clean run, else not run (HuntResult's order); none without a query.
         a.Hunts.Max(h => (HuntResult?)h.Result),
-        // When something last happened to it: the latest of its history and its comments, or when it was raised.
-        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? a.CreatedAtUtc) > (a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        // When a person last did something to it: the latest of its comments and its history, or when it was raised. TIDE's
+        // own lines (the escalation ladder's, a skipped reminder's) aren't updates.
+        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? a.CreatedAtUtc)
+            > (a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
             ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
-            : a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc) { RecommendationLine = a.RecommendationLine });
+            : a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        { RecommendationLine = a.RecommendationLine });
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
