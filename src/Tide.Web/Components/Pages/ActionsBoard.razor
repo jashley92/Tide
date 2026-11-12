@@ -1154,7 +1154,7 @@ else
     }
 
     // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.
-    private int? UnownedInMyTeams => _view == ActionView.Mine && _counts is { MineOpen: 0, MyTeamsUnowned: > 0 and var n } ? n : null;
+    private int? UnownedInMyTeams => _view == ActionView.Mine && _counts is { Mine: 0, MyTeamsUnowned: > 0 and var n } ? n : null;
 
     // Those actions: My teams with No owner, the other filters as they are.
     private string NoOwnerLink

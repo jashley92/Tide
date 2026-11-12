@@ -42,7 +42,7 @@ public class DialogTabTests
                 : p.startsWith('.') ? e.cls.includes(p.slice(1)) : e.tagName === p.toUpperCase());
         }
         const listeners = [];
-        global.document = { addEventListener: (t, f) => listeners.push(f), activeElement: null, querySelector: sel => page.querySelector(sel) };
+        global.document = { addEventListener: (t, f) => listeners.push(f), activeElement: null, querySelector: sel => page.querySelector(sel), querySelectorAll: sel => page.querySelectorAll(sel) };
         global.window = global;
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
         // A key on the focused element: where focus is after dialog.js has handled it ("browser" when dialog.js left the
@@ -64,11 +64,13 @@ public class DialogTabTests
             apply,
             el('foldedLast', 'div', 'tide-atkm-col tide-atkm-col-hidden', { inert: '' }, [cell('c3'), cell('c4')]),
         ]);
-        // A confirmation open on the page, its first part inert, with focus outside it.
+        // A confirmation open on the page, its first part inert, with focus outside it; a rail open over the page before it
+        // in the markup is modal too, but the confirmation is the one on top.
         const ok = el('ok', 'button', 'btn btn-primary');
         const modal = el('modal', 'div', 'tide-modal', { tabindex: '-1' }, [el('busy', 'div', '', { inert: '' }, [el('x', 'button', 'btn')]), ok]);
         const outside = el('outside', 'button', 'btn');
-        const page = el('page', 'div', '', {}, [outside, modal]);
+        const rail = el('rail', 'aside', 'tide-rail', { 'aria-modal': 'true' }, [el('railButton', 'button', 'btn')]);
+        const page = el('page', 'div', '', {}, [outside, rail, modal]);
         const out = {
             tabFromApply: press(apply, 'Tab'),
             shiftTabFromBox: press(box, 'Tab', true),
@@ -107,7 +109,7 @@ public class DialogTabTests
                 At("tabFromPanel").Should().Be("box", "with the dialog itself focused, Tab goes to its first control");
                 At("shiftTabFromPanel").Should().Be("apply", "and Shift+Tab to its last");
                 At("tabInTheMiddle").Should().Be("browser", "between the ends, the browser's own Tab moves on");
-                At("tabIntoConfirmation").Should().Be("ok", "Tab from behind an open confirmation goes to its first control that can take focus");
+                At("tabIntoConfirmation").Should().Be("ok", "Tab from behind an open confirmation goes to its first control that can take focus, not to a rail under it");
             }
         }
         finally { File.Delete(script); }

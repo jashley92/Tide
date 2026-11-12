@@ -189,6 +189,11 @@ public class TriageRailTests(TideApp app) : IClassFixture<TideApp>
         (_, rail) = Split(await r.Html());
         Section(rail, "rail-same-h").Should().Contain("1 other report").And.Contain($"{name} hit by $6.3 billion hack").And.Contain(">Attach both<");
 
+        // A report picked from the list: it's selected, and focus goes to its row, not to the page's body with the link gone.
+        await r.Click(t => t.PickReport(ids[1]));
+        r.Component.PendingFocus.Should().Be("tideTriage.focusRow");
+        await r.Drawn();
+
         // Attach both: the group's own all-or-none path, both on the article.
         await r.Click(t => t.AttachSameEvent());
         await r.Drawn();
@@ -241,6 +246,7 @@ public class TriageRailTests(TideApp app) : IClassFixture<TideApp>
         // The rail's add takes the page's path: Our stack has the product, and the list is read again.
         var added = "Qwexa" + key;
         await r.Click(t => t.AddToStack(added));
+        r.Component.PendingFocus.Should().Be("tideTriage.focusRow", "the button that had focus went with the add");
         await r.Drawn();
         (await Db(db => db.StackProducts.AnyAsync(p => p.Name == added))).Should().BeTrue();
     }

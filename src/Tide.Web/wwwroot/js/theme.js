@@ -155,7 +155,13 @@ window.tideRail = (function () {
         if (on) watch.observe(document.body, { childList: true, subtree: true });
         else watch.disconnect();
     }
-    function changed() {
+    // A change that adds or takes away an element: text changing in the page (a clock, a count) can't bring a dialog or
+    // take the rail away, so the dialogs aren't searched and measured for it.
+    function elements(nodes) {
+        return Array.prototype.some.call(nodes, function (n) { return n.nodeType === 1; });
+    }
+    function changed(records) {
+        if (records && !records.some(function (m) { return elements(m.addedNodes) || elements(m.removedNodes); })) return;
         var r = rail();
         // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),

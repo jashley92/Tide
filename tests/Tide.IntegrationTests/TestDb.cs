@@ -508,7 +508,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public HuntQueryBuilder Queries() => new(this, User);
 
-    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Articles(), Live, Notices());
+    public ActionService Actions(OrgClock? clock = null) => new(this, User, Sla(), clock ?? Clock, Queries(), Screenshots(), Articles(), Live, Notices());
 
     /// <summary>Hand-offs and splits, telling teams by <see cref="Email"/> with links to tide.example.org.</summary>
     public HandoffService Handoffs() => new(this, User, Clock, Notices());

@@ -88,16 +88,18 @@ else
                 @if (_past) { <span class="tide-present-help" title="This brief is being presented or recorded after its day">past day</span> }
             </div>
             @* Who is here and whose hands are up, for the presenter and everyone following alike: the first few dots and "+N"
-               (a status region, so arrivals and hands are read out), how many are here, the hands as their count and then as
+               (the whole roster for a screen reader, read when reached; arrivals and hands are said briefly, in a status
+               region of their own, so a follower moving slides doesn't have the roster read again), how many are here, the hands as their count and then as
                many whole names as fit, in the order they went up (a button: the list, where the presenter lowers one or
                all). A follower's own Raise hand comes before the hands, which take the room that's left. With no meeting, who else has the brief open. *@
             <div class="tide-present-people">
+                <span class="visually-hidden" role="status">@_presenceSaid</span>
                 @if (_view is { } meeting)
                 {
                     var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
                     var beyond = meeting.People.Skip(TopBarDots).ToList();
                     var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
-                    <span class="tide-presence tide-presence-sm" role="status">
+                    <span class="tide-presence tide-presence-sm">
                         @foreach (var p in meeting.People.Take(TopBarDots))
                         {
                             var away = meeting.Away(p);
@@ -758,6 +760,7 @@ else
                             <div class="tide-slide-presenter">
                                 @if (_noteEditing)
                                 {
+                                    <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would be refused." OnReload="EditOpeningNote" />
                                     <label class="visually-hidden" for="slide-note-text">Opening note</label>
                                     <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
                                               aria-describedby="slide-note-hint" @bind="_noteDraft" @bind:event="oninput" @onkeydown="NoteBoxKey"></textarea>
@@ -874,7 +877,7 @@ else
                 else if (_slide == last)
                 {
                     <section aria-labelledby="rail-end-h">
-                        <h3 id="rail-end-h">Before you end</h3>
+                        <h3 id="rail-end-h" tabindex="-1" @ref="_endHeading">Before you end</h3>
                         @if (TeamEdition && CanRaise)
                         {
                             <div class="tide-present-rail-sub">Not raised yet (@notRaised!.Sum(x => x.Lines.Count))</div>
@@ -932,7 +935,7 @@ else
                             }
                             @if (CanEnd)
                             {
-                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @ref="_endButton" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
+                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
                                 <div class="tide-present-help">Marks the brief and its articles presented and records the meeting time.</div>
                             }
                         }
@@ -1090,7 +1093,7 @@ else
         <ConfirmDialog @ref="_confirm" />
         <OverLimitDialog @ref="_overLimit" />
         @* A meeting note typed and not added: leaving present mode asks first. *@
-        <UnsavedGuard Dirty="NoteDirty" Message="Your meeting note isn't added." Discard="DiscardNote" />
+        <UnsavedGuard Dirty="Unsaved" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
     </div>
 
     <Lightbox FileId="_zoom?.FileId" Caption="@_zoom?.Caption" OnClose="() => _zoom = null" />
@@ -1248,6 +1251,13 @@ else
             _moveRailFocus = false;
             await to.TryFocusAsync(orGone: true);
         }
+        else if (_railDrawn && !RailOpen)
+        {
+            // The rail went with focus in it (closed docked, handed off, taken over): focus doesn't drop to the body.
+            try { await JS.InvokeVoidAsync("tidePresent.refocus"); }
+            catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { /* the tab has gone, or not interactive */ }
+        }
+        _railDrawn = RailOpen;
         if (_focusOpener)
         {
             _focusOpener = false;
@@ -1262,9 +1272,9 @@ else
         }
         if (_focusEnd)
         {
-            // The top bar's End brought the wrap-up slide forward: its End the meeting button is the next step.
+            // The top bar's End brought the wrap-up forward: focus goes to its choices in the rail, read from their heading.
             _focusEnd = false;
-            await _endButton.TryFocusAsync(orGone: true);
+            await _endHeading.TryFocusAsync(orGone: true);
         }
         await CatchUpScrollAsync();
         // Back on the actions that need review (however this page came to it: a key, following, a reload): its rows are
@@ -1569,6 +1579,7 @@ else
         // Only an article's ATT&CK techniques or scorecard tags changed (present mode's tag panel, or the editor): the
         // chips update quietly, as a product tag's do, and nothing else the slides show is read again.
         var tagsOnly = SlideTags.OnlyTagsChanged(_brief, brief, changes);
+        NoteHeard(brief, changes);
         _brief = brief;
         _follow = Followed();
         if (!tagsOnly)
@@ -1720,7 +1731,7 @@ else
     private IReadOnlyDictionary<ActionKind, Guid> _teamsByKind = new Dictionary<ActionKind, Guid>();
     private bool _raising;
     private ConfirmDialog _confirm = default!;
-    private ElementReference _endButton;
+    private ElementReference _endHeading;
     private bool _focusEnd;
 
     private RaiseDraft LineDraft(Guid articleId, string line)
@@ -1778,12 +1789,14 @@ else
     }
 
     // The top bar's End: a past day's meeting needs its time chosen, and articles not ticked off need a decision, which
-    // the wrap-up slide asks for; otherwise it asks first.
-    // On the wrap-up slide itself its choices are on screen, so the top bar's End ends the meeting as the slide's does.
-    private async Task EndFromTop()
+    // the wrap-up's rail asks for; otherwise it asks first.
+    // On the wrap-up slide with the rail open its choices are on screen, so the top bar's End ends the meeting as the
+    // rail's does. With the rail shut (a window too narrow to dock it), End opens it on those choices first: a meeting is
+    // never ended past choices no one could see.
+    internal async Task EndFromTop()
     {
         var needsWrapUp = _past || Undiscussed(Cut(_brief!)).Count > 0;
-        if (needsWrapUp && _slide == LastSlide)
+        if (needsWrapUp && _slide == LastSlide && RailOpen)
         {
             await EndMeeting();
             return;
@@ -1791,7 +1804,9 @@ else
         if (needsWrapUp)
         {
             Go(LastSlide);
-            _focusEnd = _slide == LastSlide;
+            if (_slide != LastSlide) return;
+            if (!RailOpen && Rail) _railToggled = !_railToggled;
+            _focusEnd = true;
             return;
         }
         if (await _confirm.Ask("End the meeting now?", "The brief and its articles are marked presented.", "End the meeting", danger: false)) await EndMeeting();
@@ -2066,7 +2081,35 @@ else
     }
 
     // The meeting as it is now, after this page's own change (which it doesn't hear about: see OnMeetingChanged).
-    private void Refresh() => _view = Meetings.Get(_date);
+    private void Refresh()
+    {
+        var was = _view;
+        _view = Meetings.Get(_date);
+        if (was is not null && _view is not null && PresenceNews(was, _view, _me) is { } news) _presenceSaid = news;
+    }
+
+    // Said once, briefly, as people come and go and hands go up and down (the top bar's status region).
+    private string? _presenceSaid;
+
+    /// <summary>Who joined, left, raised or lowered a hand between two views of the meeting ("Robin Analyst raised a
+    /// hand."), leaving out this page's own; null when nothing of that changed (a follower moving slides, say).</summary>
+    internal static string? PresenceNews(LiveMeetingView was, LiveMeetingView now, string me)
+    {
+        string? Said<T>(IEnumerable<T> from, IEnumerable<T> notIn, Func<T, string> id, Func<T, string> name, string what)
+        {
+            var other = notIn.Select(id).ToHashSet();
+            var names = from.Where(x => id(x) != me && !other.Contains(id(x))).Select(name).ToList();
+            return names.Count > 0 ? $"{string.Join(", ", names)} {what}." : null;
+        }
+        var parts = new[]
+        {
+            Said(now.People, was.People, p => p.UserId, p => p.Name, "joined"),
+            Said(was.People, now.People, p => p.UserId, p => p.Name, "left"),
+            Said(now.Hands, was.Hands, h => h.UserId, h => h.Name, "raised a hand"),
+            Said(was.Hands, now.Hands, h => h.UserId, h => h.Name, "lowered a hand"),
+        }.OfType<string>().ToList();
+        return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
 
     private async Task ReloadRecord()
     {
@@ -2381,6 +2424,9 @@ else
     private ElementReference _railBox, _railToggle;
     private bool _moveRailFocus;
 
+    // Whether the rail was drawn at the last render, to see it go.
+    private bool _railDrawn;
+
     private bool RailOpen => Rail && _railRoom != _railToggled;
 
     /// <summary>Docked beside the slide (the slide's column narrows), rather than over it.</summary>
@@ -2436,10 +2482,39 @@ else
     private string? _noteDraft;
     private readonly Dictionary<Guid, string> _numberDrafts = [];
 
-    internal void EditOpeningNote() => (_noteEditing, _noteDraft, _slideFocus) = (true, _brief?.TeamNote, SlideFocus.NoteBox);
+    // The note as it was opened to edit, and the brief's version then: saving is refused if a colleague saved the brief
+    // meanwhile (BriefService.SetTeamNoteAsync). A change heard to anything but the note moves the version on; one to the
+    // note says who saved it (_noteChangedBy), as the brief page does, and the draft stays to copy from.
+    private string? _noteBase, _noteChangedBy;
+    private Guid? _noteVersion;
+
+    internal void EditOpeningNote() =>
+        (_noteEditing, _noteDraft, _noteBase, _noteVersion, _noteChangedBy, _slideFocus) = (true, _brief?.TeamNote, _brief?.TeamNote, _brief?.EditVersion, null, SlideFocus.NoteBox);
 
     /// <summary>Cancel (or Escape in the box): the note as saved, and focus back on Edit.</summary>
-    internal void CancelOpeningNote() => (_noteEditing, _slideFocus) = (false, SlideFocus.NoteEdit);
+    internal void CancelOpeningNote() => (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteEdit);
+
+    // A brief heard to have changed while the note is open: who saved it, if it was the note; else the edit carries on.
+    private void NoteHeard(Brief brief, IReadOnlyList<Change> changes)
+    {
+        if (!_noteEditing) return;
+        if (brief.TeamNote == _noteBase) _noteVersion = brief.EditVersion;
+        else _noteChangedBy ??= LiveChanges.Who(changes);
+    }
+
+    // Typed and not saved: the meeting note (not yet added), the opening note's edit, or a number.
+    private bool OpeningNoteDirty => _noteEditing && (_noteDraft ?? "") != (_noteBase ?? "");
+    private bool NumbersDirty => _numberDrafts.Values.Any(v => !string.IsNullOrWhiteSpace(v));
+    private bool Unsaved => NoteDirty || OpeningNoteDirty || NumbersDirty;
+    private string UnsavedMessage => NoteDirty ? "Your meeting note isn't added."
+        : OpeningNoteDirty ? "Your edit to the opening note isn't saved." : "A number you typed isn't saved.";
+
+    private void DiscardUnsaved()
+    {
+        DiscardNote();
+        (_noteEditing, _noteChangedBy) = (false, null);
+        _numberDrafts.Clear();
+    }
 
     // Escape in the note's box cancels; the slide's own keys never hear the box's (present.js leaves typing alone).
     private void NoteBoxKey(KeyboardEventArgs e)
@@ -2507,8 +2582,13 @@ else
     private Task SaveOpeningNote(string? text, string done) => Run(async () =>
     {
         if (_brief is null || !InCharge) return;
-        await BriefSvc.SetTeamNoteAsync(_brief.Id, text);
-        (_noteEditing, _slideFocus) = (false, SlideFocus.NoteHeading);
+        try { await BriefSvc.SetTeamNoteAsync(_brief.Id, text, _noteEditing ? _noteVersion : _brief.EditVersion); }
+        catch (StaleEditException)
+        {
+            _noteChangedBy ??= "Someone else";
+            throw;
+        }
+        (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteHeading);
         await ReadBriefAgain();
         Toasts.Show(done);
     });
@@ -2522,10 +2602,14 @@ else
             _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
             return;
         }
-        await MetricsSvc.SaveValueAsync(metricId, _date, value, null);
+        // The number only: a colleague's note added a moment ago isn't wiped by it.
+        await MetricsSvc.SaveNumberAsync(metricId, _date, value);
         _numberDrafts.Remove(metricId);
         _numberErrors.Remove(metricId);
+        // The group may fold away (its last number entered as 0): this page stays where its slide's line now is, with the room.
+        var shown = SlideKey(_slide);
         _metrics = await MetricsSvc.GetDayAsync(_date);
+        Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
         _slideFocus = SlideFocus.NumbersHeading;
         Toasts.Show("Saved. The room sees it now.");
     });

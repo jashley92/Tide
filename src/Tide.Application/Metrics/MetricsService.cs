@@ -212,7 +212,14 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
     // --- entering values -----------------------------------------------------------------------------------------
 
     /// <summary>Sets (or, with a null value, clears) a metric's value for a brief date.</summary>
-    public async Task SaveValueAsync(Guid metricId, DateOnly day, decimal? value, string? note, CancellationToken ct = default)
+    public Task SaveValueAsync(Guid metricId, DateOnly day, decimal? value, string? note, CancellationToken ct = default) =>
+        SaveAsync(metricId, day, value, note, keepNote: false, ct);
+
+    /// <summary>The same, leaving the tile's note as it is saved now (a colleague's added a moment ago included).</summary>
+    public Task SaveNumberAsync(Guid metricId, DateOnly day, decimal? value, CancellationToken ct = default) =>
+        SaveAsync(metricId, day, value, null, keepNote: true, ct);
+
+    private async Task SaveAsync(Guid metricId, DateOnly day, decimal? value, string? note, bool keepNote, CancellationToken ct)
     {
         if (!user.Has(Permission.EnterMetrics)) throw new ForbiddenException("Only analysts can enter the day's metrics.");
         // A holiday's numbers are kept if someone enters them (they're just not expected); a weekend's never are.
@@ -226,7 +233,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         {
             try
             {
-                await SaveValueOnceAsync(metricId, day, value, cleanNote, ct);
+                await SaveValueOnceAsync(metricId, day, value, cleanNote, keepNote, ct);
                 return;
             }
             catch (DbUpdateException ex) when (attempt == 0 && ex is not DbUpdateConcurrencyException && ex.Entries.Any(e => e.State == EntityState.Added))
@@ -236,7 +243,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         }
     }
 
-    private async Task SaveValueOnceAsync(Guid metricId, DateOnly day, decimal? value, string? cleanNote, CancellationToken ct)
+    private async Task SaveValueOnceAsync(Guid metricId, DateOnly day, decimal? value, string? cleanNote, bool keepNote, CancellationToken ct)
     {
         await using var db = await dbs.CreateAsync(ct);
         if (!user.Has(Permission.Administer) && await IsLockedAsync(db, day, ct))
@@ -258,7 +265,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
             row.Source = MetricSource.Manual;
             row.ImportId = null;
             row.Value = rounded;
-            row.Note = cleanNote;
+            if (!keepNote) row.Note = cleanNote;
             row.EnteredById = user.UserId;
             row.EnteredByName = user.DisplayName;
         }

@@ -884,7 +884,12 @@ else
     /// which wait for Save. Nothing happens for someone who can't edit, with nothing unsaved, while another save runs, or
     /// once a colleague's save has been heard (the banner offers to reload).
     /// </summary>
-    internal async Task AutosaveNowAsync()
+    internal Task AutosaveNowAsync() => _autosaving = AutosaveAsync();
+
+    // The autosave under way, for Save to wait on.
+    private Task? _autosaving;
+
+    private async Task AutosaveAsync()
     {
         if (_form is null || !_canWrite || !_dirty || _busy || _uploading || _changedBy is not null) return;
         _busy = true;
@@ -1059,14 +1064,21 @@ else
         KeepOffered && await Briefs.GetAsync(Briefs.CurrentDate) is { Status: not BriefStatus.Sent } brief ? brief.Id : null;
 
     // One of the running order's answers, saved by the service; then the article is read again (the form is clean) and
-    // focus goes to the section, as the buttons went with the warning.
+    // focus goes to the section, as the buttons went with the warning. Typed into while it saved (the fields stay open),
+    // the form keeps what was typed and takes on the answer instead.
     private async Task AnswerOnBrief(Func<Task> answer, Func<string> done)
     {
         _busy = true;
+        var edits = _edits;
         try
         {
             await answer();
-            await Reload();
+            if (_edits == edits) await Reload();
+            else if (await ArticleSvc.GetAsync(Id) is { } saved)
+            {
+                _article = saved;
+                _form!.TakeAnswer(saved);
+            }
             Toasts.Show(done());
             await Jump(ArticlePart.WhyItMatters, null);
         }
@@ -1220,7 +1232,13 @@ else
 
     internal async Task<bool> Save()
     {
-        if (_busy) return false;
+        // An autosave under way ("Save and leave" pressed mid-way): this save waits for it, then goes on from its version.
+        if (_busy && _autosaving is { IsCompleted: false } running) await running;
+        if (_busy)
+        {
+            Toasts.Error("Still saving the last change. Try again in a moment.");
+            return false;
+        }
         _busy = true;
         _autosavePause.Now();
         var edits = _edits;
@@ -1323,6 +1341,9 @@ else
 
     /// <summary>Whether the form has changes not yet saved (for the tests; the bar and UnsavedGuard read it).</summary>
     internal bool Dirty => _dirty;
+
+    /// <summary>Whether a save or an answer is under way (for the tests).</summary>
+    internal bool Busy => _busy;
 
     /// <summary>
     /// Whether to let a navigation go ahead (UnsavedGuard): at once when nothing is unsaved; otherwise as the person

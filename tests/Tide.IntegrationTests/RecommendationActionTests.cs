@@ -110,6 +110,27 @@ public class RecommendationLinkServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AnActionMovedBetweenStandingStatuses_KeepsItsLine_ThoughAnotherHoldsItToo()
+    {
+        var (article, team) = await Article();
+        var actions = _db.Actions();
+        const string line = "Hunt for the indicators in VPN logs";
+        var first = await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line);
+        var second = await actions.QuickAddAsync(article, "Hunt as well", ActionKind.ThreatHunt, team, null);
+        await using (var db = _db.Context())   // two raised at the same moment, both standing on the line
+        {
+            var other = db.Actions.Single(x => x.Number == second);
+            other.RecommendationLine = line;
+            await db.SaveChangesAsync();
+        }
+        var a = (await actions.GetAsync(first))!.Action;
+
+        await actions.SetStatusAsync(a.Id, ActionStatus.InProgress, ActionOutcome.None, null);
+
+        (await actions.GetAsync(first))!.Action.RecommendationLine.Should().Be(line, "only a move back from Cancelled lets the line go");
+    }
+
+    [Fact]
     public async Task TheUpgrade_LinksAnOldActionToTheLineItsTitleIs_AsTheArticleWritesIt_OneActionPerLine()
     {
         var (article, team) = await Article("- **Block** the C2 at the proxy\n- Hunt for the indicators in VPN logs for 30 days.\n- Patch the gateways");

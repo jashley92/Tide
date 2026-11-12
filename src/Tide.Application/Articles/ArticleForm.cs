@@ -32,6 +32,17 @@ public sealed class ArticleForm
     /// preview answers the warning as the running order does until the text or marking is edited. A save never writes it.</summary>
     public string? WhyItMattersKeptHash { get; set; }
 
+    /// <summary>
+    /// Carries a one-click answer saved meanwhile (Set to AMBER, Keep it) onto a form that was edited while it saved:
+    /// its "Why it matters" marking, keep and edit version, so the edits stay and a save afterwards isn't refused as stale.
+    /// </summary>
+    public void TakeAnswer(Article saved)
+    {
+        EditVersion = saved.EditVersion;
+        WhyItMattersTlp = saved.WhyItMattersTlp;
+        WhyItMattersKeptHash = saved.WhyItMattersKeptHash;
+    }
+
     public List<BulletForm> Bullets { get; set; } = [];
     public List<ScreenshotForm> Screenshots { get; set; } = [];
     public HashSet<Guid> TagIds { get; set; } = [];

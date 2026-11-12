@@ -222,6 +222,27 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task SetToAmber_KeepsWhatWasTypedWhileItSaved()
+    {
+        var id = await WhyAtClear("layout-why-typing article");
+        await OnTodaysBrief(id);
+        await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+
+        await r.Press(p => p.SetWhyAmberAsync());          // its round trips under way
+        await r.Click(p => p.MentionAsync("Typed meanwhile."));
+        await r.Until(p => !p.Busy);
+
+        (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Amber);
+        (await r.Html()).Should().Contain("Typed meanwhile.", "what was typed during the save stays in the form");
+        r.Component.Dirty.Should().BeTrue("and is still to be saved");
+        var ok = false;
+        await r.Click(async p => ok = await p.Save());
+        ok.Should().BeTrue("the form carries on from the answer's version");
+        var saved = await Saved(id);
+        (saved.WhyItMattersTlp, saved.WhyItMatters!.Contains("Typed meanwhile.", StringComparison.Ordinal)).Should().Be((TlpLevel.Amber, true));
+    }
+
+    [Fact]
     public async Task KeepIt_RecordsThatWhyItMattersIsMeantForEveryone_AndLeavesItsMarking()
     {
         var id = await WhyAtClear("layout-keep article");

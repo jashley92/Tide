@@ -292,6 +292,21 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task Save_DuringAnAutosave_WaitsForIt_AndSaves()
+    {
+        var id = await NewArticle();
+        await using var r = await Editor(id);
+        await r.Click(p => p.MentionAsync("We run it."));
+
+        await r.Press(p => p.AutosaveNowAsync());   // under way when Save is pressed ("Save and leave", say)
+        var ok = false;
+        await r.Click(async p => ok = await p.Save());
+        ok.Should().BeTrue("Save waits for the autosave, then saves");
+        (await Saved(id)).WhyItMatters.Should().Be("We run it.");
+        r.Component.Dirty.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task TheEditor_HoldsAMarkingChange_ForSave_AndSaysSo()
     {
         var id = await NewArticle(a => a.WhyItMattersTlp = TlpLevel.Clear);

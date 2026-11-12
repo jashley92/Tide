@@ -152,6 +152,31 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task Copy_KeepsThePreviewsWindow_WhenTheDayCountRollsOverSinceItWasShown()
+    {
+        var (number, id) = await Raise("Preview sweep window rollover");
+        Task Published(int daysAgo) => As(async sp =>
+        {
+            await using var db = await sp.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+            var articleId = await db.Actions.Where(a => a.Id == id).Select(a => a.ArticleId!.Value).SingleAsync();
+            await db.Articles.Where(a => a.Id == articleId).ExecuteUpdateAsync(s => s.SetProperty(a => a.PublishedAtUtc, DateTimeOffset.UtcNow.AddDays(-daysAgo)));
+            return true;
+        });
+        // Published 60 days ago: the worked-out window is 67 days.
+        await Published(60);
+        await using var page = await Open(number);
+        var shown = page.Component.Drawer!.Hunt!.Preview;
+        shown.Should().Contain("looking back 67 days");
+
+        // A day goes by before Copy: worked out again, the window would be a day longer.
+        await Published(61);
+        await page.Click(p => p.Drawer!.Hunt!.CopyPreview());
+
+        (await Read(number)).Hunts.Should().ContainSingle().Which.Text.Should().Be(shown, "what was copied is what's kept");
+        Toasts(page).Should().BeEmpty("the query didn't change since it was shown");
+    }
+
+    [Fact]
     public async Task Copy_ThatCantSave_SaysTheQueryIsntOnTheAction_AndTheResultsStayBlocked()
     {
         var (number, id) = await Raise("Preview sweep copy fails");

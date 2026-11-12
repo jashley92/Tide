@@ -20,9 +20,10 @@ public sealed record LibraryUses(IReadOnlyList<LibraryUse> Rows, int Total);
 /// (its article's or its own).</summary>
 public sealed record WorkableAction(Guid Id, int Number, string Title, ActionKind Kind, bool HasIndicators);
 
-/// <summary>A saved query filled in for an action, as the person is shown it, and the action's edit version it was filled
-/// from: <see cref="ActionService.AddSavedHuntAsync"/> refuses it as stale when either has moved.</summary>
-public sealed record SavedHuntPreview(string Text, Guid EditVersion);
+/// <summary>A saved query filled in for an action, as the person is shown it, the action's edit version it was filled
+/// from, and the window in days it was filled over: <see cref="ActionService.AddSavedHuntAsync"/> fills it over the same
+/// window, and refuses it as stale when the text or the edit version has moved.</summary>
+public sealed record SavedHuntPreview(string Text, Guid EditVersion, int Days);
 
 /// <summary>The steps a playbook would add to an action's checklist, as the person is shown them, and the action's edit
 /// version they were read from: <see cref="ActionService.ApplyPlaybookAsync"/> refuses them as stale when either has moved.</summary>

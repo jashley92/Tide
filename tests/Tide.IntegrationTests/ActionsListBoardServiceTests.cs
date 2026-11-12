@@ -490,14 +490,20 @@ public class ActionsListBoardServiceTests : IDisposable
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var (kev, _) = await Articles();
-        await Add(team, x => x.ArticleId = kev);
+        await Add(team, x => (x.ArticleId, x.RecommendationLine) = (kev, "Patch the edge VPN"));
 
-        // Someone who works actions but doesn't read the team edition (so can't open the article): no title, no KEV flag.
+        // Someone who works actions but doesn't read the team edition (so can't open the article): no title, no KEV flag,
+        // no line copied from it, and no finding actions by its title.
         var worker = new OnlyUser("S-1-5-21-WORKER", Permission.WorkActions, Permission.ReadActions);
         var svc = new ActionService(_db, worker, _db.Sla(), _db.Clock, _db.Queries(), _db.Screenshots(), _db.Articles());
         var card = (await svc.BoardAsync(new ActionFilter(ActionView.Open))).Cards.Single();
         (card.ArticleTitle, card.ArticleKev).Should().Be(((string?)null, false));
-        (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Single().ArticleTitle.Should().BeNull();
+        var row = (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Single();
+        (row.ArticleTitle, row.RecommendationLine).Should().Be(((string?)null, (string?)null));
+        (await svc.PageAsync(new ActionFilter(ActionView.Open) { Search = "zero-day" })).Rows.Should().BeEmpty("the article's title isn't theirs to search");
+
+        // Someone who reads articles finds it by the article's title.
+        (await _db.Actions().PageAsync(new ActionFilter(ActionView.Open) { Search = "zero-day" })).Rows.Should().ContainSingle();
     }
 
     /// <summary>A signed-in person holding exactly these permissions.</summary>

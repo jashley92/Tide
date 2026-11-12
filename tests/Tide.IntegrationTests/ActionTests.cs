@@ -48,6 +48,25 @@ public class ActionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AStatusMove_IsDatedByTheAppsClock_AndClosingAtTheSameMoment()
+    {
+        var team = await Team();
+        var at = new DateTimeOffset(2026, 3, 2, 15, 0, 0, TimeSpan.Zero);
+        var time = new TestClock(at);
+        var svc = _db.Actions(new OrgClock(Options.Create(new OrgOptions()), time));
+        var number = await svc.CreateAsync(new ActionForm { Title = "Dated by the clock", Kind = ActionKind.PatchRemediate, TeamId = team });
+        var id = (await svc.GetAsync(number))!.Action.Id;
+
+        await svc.TakeAsync(id);
+        (await svc.GetAsync(number))!.Action.StatusChangedAtUtc.Should().Be(at, "taking it on started it, at the app's time");
+
+        time.Now = at.AddHours(3);
+        await svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.Remediated, null);
+        var closed = (await svc.GetAsync(number))!.Action;
+        (closed.StatusChangedAtUtc, closed.ClosedAtUtc).Should().Be((at.AddHours(3), at.AddHours(3)), "closed, and in its Closed lane, at one time");
+    }
+
+    [Fact]
     public async Task Outstanding_AnActionSomeoneHolds_IsTheirs_EvenOnATeamWithNoMembers()
     {
         var empty = await Team("Fraud Operations");

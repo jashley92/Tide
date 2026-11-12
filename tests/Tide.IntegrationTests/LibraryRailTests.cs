@@ -287,6 +287,30 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         (await Trace(id)).Hunts.Should().Be(before.Hunts + 1);
     }
 
+    [Fact]
+    public async Task AddToTheAction_KeepsThePreviewsWindow_WhenTheDayCountRollsOverSinceThePreview()
+    {
+        var team = await Team("Rail window team");
+        var query = await Query("Rail window query");
+        var (_, id) = await Raise(team, "Rail window sweep");
+        // The article was published 60 days ago, so the window is worked out from it (67 days), not the default.
+        Task Published(int daysAgo) => As(async sp =>
+        {
+            await using var db = await sp.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+            var articleId = await db.Actions.Where(a => a.Id == id).Select(a => a.ArticleId!.Value).SingleAsync();
+            await db.Articles.Where(a => a.Id == articleId).ExecuteUpdateAsync(s => s.SetProperty(a => a.PublishedAtUtc, DateTimeOffset.UtcNow.AddDays(-daysAgo)));
+        });
+        await Published(60);
+        var previewed = await As(sp => sp.GetRequiredService<ActionService>().PreviewSavedHuntAsync(id, query));
+        previewed.Text.Should().Contain("ago(67d)");
+
+        // A day goes by between the preview and Add: the window worked out now would be a day longer.
+        await Published(61);
+        var hunt = await As(sp => sp.GetRequiredService<ActionService>().AddSavedHuntAsync(id, query, previewed));
+
+        hunt.Text.Should().Be(previewed.Text, "what's added is what was shown, over the window it showed");
+    }
+
     [Theory]
     [InlineData("step")]
     [InlineData("title")]

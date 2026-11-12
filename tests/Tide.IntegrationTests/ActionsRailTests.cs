@@ -214,6 +214,31 @@ public class ActionsRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task ASweepsRail_Copy_KeepsThePreviewsWindow_WhenTheDayCountRollsOverSinceItWasShown()
+    {
+        var owner = Owner();
+        var token = $"arwin{Guid.NewGuid():N}"[..13];
+        var (number, id) = await Raise(await Team("AR hunt window", owner), $"{token} sweep");
+        Task Published(int daysAgo) => As(async sp =>
+        {
+            await using var db = await sp.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+            var articleId = await db.Actions.Where(a => a.Id == id).Select(a => a.ArticleId!.Value).SingleAsync();
+            await db.Articles.Where(a => a.Id == articleId).ExecuteUpdateAsync(s => s.SetProperty(a => a.PublishedAtUtc, DateTimeOffset.UtcNow.AddDays(-daysAgo)));
+            return true;
+        });
+        await Published(60);
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner);
+        (await RailOnce(r, "rail-hunt-query")).Should().Contain("looking back 67 days");
+
+        // A day goes by before Copy: worked out again, the window would be a day longer.
+        await Published(61);
+        await r.Click(p => p.Rail!.CopyPreview());
+
+        (await Detail(number)).Action.Hunts.Should().ContainSingle().Which.Text.Should().Contain("looking back 67 days", "what was copied is what's kept");
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AViewer_IsShownNoHuntPreview()
     {
         var token = $"arhv{Guid.NewGuid():N}"[..12];

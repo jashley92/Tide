@@ -14,17 +14,21 @@ window.tidePasteDrop = (function () {
     // A zone takes part only while its wrapper element is in the DOM and visible, so paste goes to the editor on
     // screen and the listeners stay registered harmlessly across pages. Visible is "has a box". A paste goes first to
     // the zone holding the focus (an action's Files box, say); otherwise to the first visible zone that takes a paste
-    // from anywhere on the page (a focus-only zone takes one only while it has the focus).
+    // from anywhere on the page (a focus-only zone takes one only while it has the focus). A zone that takes the whole
+    // page takes a paste only with nothing focused: not one meant for the search box, a field elsewhere or a dialog.
     function visibleZone(target) {
         const focused = document.activeElement;
         for (const z of zones) {
             const el = document.getElementById(z.zoneId);
             if (el && el.getClientRects().length > 0 && ((focused && el.contains(focused)) || (target && el.contains(target)))) return { z, el };
         }
+        const unfocused = !focused || focused === document.body || focused === document.documentElement;
+        const inDialog = target && target.closest && target.closest('[role="dialog"], [role="alertdialog"]');
         for (const z of zones) {
             if (z.focusOnly) continue;
             const el = document.getElementById(z.zoneId);
-            if (el && (z.page || el.getClientRects().length > 0)) return { z, el };
+            if (!el) continue;
+            if (z.page ? unfocused && !inDialog : el.getClientRects().length > 0) return { z, el };
         }
         return null;
     }

@@ -44,6 +44,23 @@ public class TeamNoteTests : IDisposable
     }
 
     [Fact]
+    public async Task ANoteSavedFromAnOlderCopy_IsRefused_AndTheColleaguesNoteKept()
+    {
+        var briefs = _db.Briefs();
+        var monday = await briefs.GetOrStartAsync(Monday);
+        var opened = monday.EditVersion;                                    // the presenter opens the note to edit it
+        await briefs.SetTeamNoteAsync(monday.Id, "- A colleague's note");   // and a colleague saves theirs meanwhile
+
+        var save = () => briefs.SetTeamNoteAsync(monday.Id, "- The presenter's note", opened);
+
+        await save.Should().ThrowAsync<StaleEditException>();
+        (await briefs.GetAsync(Monday))!.TeamNote.Should().Be("- A colleague's note");
+        var current = (await briefs.GetAsync(Monday))!.EditVersion;
+        await briefs.SetTeamNoteAsync(monday.Id, "- The presenter's note", current);
+        (await briefs.GetAsync(Monday))!.TeamNote.Should().Be("- The presenter's note", "from the current copy it saves");
+    }
+
+    [Fact]
     public async Task ACarriedNote_IsFlagged_UntilItsChangedOrKeptAsStillCurrent_AndNotOnceTheMeetingsHeld()
     {
         var briefs = _db.Briefs();

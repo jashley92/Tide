@@ -242,6 +242,61 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TopBarEnd_WithTheRailShut_OpensItOnTheWrapUp_AndNeverEndsUnseen()
+    {
+        var day = await Day(219);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await pat.Click(p => p.OnRailRoom(false));   // a laptop below the docking width: the rail is shut
+
+        // Articles not discussed yet: End brings the wrap-up's choices forward, in the rail, and ends nothing.
+        await Do(pat, p => p.EndFromTop());
+        var rail = RailOf(await pat.Html());
+        rail.Should().Contain("Not discussed (2)").And.Contain("End the meeting</button>");
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().NotBeNull("nothing was ended");
+
+        // Shut again on the wrap-up: End opens it again rather than ending past choices no one can see.
+        await Do(pat, p => p.ToggleRail());
+        (await pat.Html()).Should().NotContain("<aside id=\"present-rail\"");
+        await Do(pat, p => p.EndFromTop());
+        RailOf(await pat.Html()).Should().Contain("End the meeting</button>");
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().NotBeNull("the choices weren't on screen");
+
+        // With them on screen, End ends the meeting as the rail's own End does.
+        await Do(pat, p => p.EndFromTop());
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheNote_EditedFromTheRail_NeverOverwritesAColleaguesNewerOne()
+    {
+        var day = await Day(220);
+        await using var pat = await Open(app, day);
+        await pat.Click(p => p.OnPresentKey("next"));
+        await Do(pat, p => p.EditOpeningNote());
+        Guid briefId;
+        await using (var scope = SignedIn(app, Robin))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            briefId = (await briefs.GetAsync(day))!.Id;
+            await briefs.SetTeamNoteAsync(briefId, "Robin's newer note.");
+        }
+        await Do(pat, p => p.OnChangedElsewhere([new Change(ChangeFeed.Brief(briefId), Robin.UserId, Robin.Name, Guid.NewGuid())]));
+        RailOf(await pat.Html()).Should().Contain("Robin Analyst saved this team&#x27;s opening note while you were editing.");
+
+        await Do(pat, p => p.SaveOpeningNote("The presenter's older edit."));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("Robin's newer note.", "the save is refused");
+
+        // Reload: theirs in the box, and saving from it goes through.
+        await Do(pat, p => p.EditOpeningNote());
+        RailOf(await pat.Html()).Should().Contain("Robin&#x27;s newer note.</textarea>").And.NotContain("while you were editing");
+        await Do(pat, p => p.SaveOpeningNote("Robin's newer note, and one more line."));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("Robin's newer note, and one more line.");
+    }
+
+    [Fact]
     public async Task TheNote_KeepsAnEdit_OnceCurrent_AndTheNumbers_SayNothing_OnceNoneIsMissing()
     {
         var day = await Day(217);

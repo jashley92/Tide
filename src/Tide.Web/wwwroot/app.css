@@ -1196,7 +1196,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-queue-meta { display: block; color: var(--tide-text-muted); font-size: var(--tide-text-xs); overflow-wrap: anywhere; }
 /* Today's Escalated card: the ladder's flagged actions, marked down the side as the badge is. */
 .tide-escalated { border-left: 3px solid var(--tide-threat); }
-.tide-queue-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
 
 /* ---- Actions: SLA and status pills, board, detail ---- */
 .tide-action-num { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); white-space: nowrap; }
@@ -1411,16 +1410,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-menubutton { position: relative; display: inline-flex; }
 .tide-menubutton-caret { font-size: .7rem; margin-left: var(--tide-space-1); }
 .tide-menubutton-pop { width: min(15rem, calc(100vw - 1.5rem)); }
-/* The two columns: the work, and beside it facts, tools, the article and files. Under lg they open into one column
-   (display: contents) in the phone's order: Next, details, tools, lineage, what's happened, facts, article, files. */
-.tide-action-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 0 var(--tide-space-4); align-items: start; }
-.tide-action-main, .tide-action-side { min-width: 0; }
-@media (max-width: 991.98px) {
-    .tide-action-layout { display: flex; flex-direction: column; align-items: stretch; }
-    .tide-action-main, .tide-action-side { display: contents; }
-    .tide-ord-1 { order: 1; } .tide-ord-2 { order: 2; } .tide-ord-3 { order: 3; } .tide-ord-4 { order: 4; }
-    .tide-ord-5 { order: 5; } .tide-ord-6 { order: 6; } .tide-ord-7 { order: 7; } .tide-ord-8 { order: 8; }
-}
+/* The action page's one column of work (what's known about it is in the context rail). */
+.tide-action-main { min-width: 0; }
 /* The Next line: the one thing to do, tinted like the accent, its links after it. */
 .tide-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: 1rem; padding: var(--tide-space-2) var(--tide-space-3);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); font-size: var(--tide-text-sm); }
@@ -1991,10 +1982,6 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-both-switch { display: inline-flex; }
     .tide-both-ed:not(.is-shown) { display: none; }
 }
-
-.tide-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--tide-space-1) var(--tide-space-3); font-size: var(--tide-text-sm); }
-.tide-dl dt { color: var(--tide-text-muted); font-weight: var(--tide-weight-medium); }
-.tide-dl dd { margin: 0; overflow-wrap: anywhere; }
 
 /* A card whose heading folds it (Today's numbers). */
 .tide-collapse-btn { border: 0; background: none; padding: 0; color: inherit; font: inherit; display: inline-flex; align-items: center; gap: var(--tide-space-1); }
@@ -2572,7 +2559,6 @@ html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide
    articles, and the hunt query beside the results on a wide window (under them on a narrow one). ---- */
 .tide-lookup-summary { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
 .tide-lookup-summary a { font-weight: inherit; }
-.tide-lookup-sweeping { margin: 0 0 var(--tide-space-2); }
 .tide-lookup-sweep + .tide-lookup-sweep::before { content: "\00b7"; margin: 0 var(--tide-space-1); color: var(--tide-text-muted); }
 .tide-seen-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-top: var(--tide-space-3); }
 .tide-seen-with-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
@@ -2580,13 +2566,11 @@ a.tide-seen { margin: 0; max-width: 100%; text-decoration: none; }
 a.tide-seen:hover, a.tide-seen:focus-visible { border-color: var(--tide-accent); text-decoration: none; }
 .tide-lookup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 30rem); gap: 0 var(--tide-space-4); align-items: start; }
 @media (max-width: 1100px) { .tide-lookup { grid-template-columns: minmax(0, 1fr); } }
-.tide-lookup-matched { margin: var(--tide-space-1) 0; }
 .tide-lookup-query { min-height: 0; max-height: 28rem; overflow: auto; }
 a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 
-/* ── Library (the Team › Library page): each tab's own heading under the page's, and a library's list beside the entry
-   chosen from it. The rows are chosen as Triage's are (.selected, one tab stop). One column below 1000px. ── */
-.tide-library-head h2 { font-size: 1.15rem; font-weight: var(--tide-weight-semibold); margin: 0; }
+/* ── Library (the Team › Library page): a library's list beside the entry chosen from it. The rows are chosen as
+   Triage's are (.selected, one tab stop). One column below 1000px. ── */
 .tide-library { display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: var(--tide-space-4); align-items: start; }
 .tide-library-side { min-width: 0; }
 .tide-library-list { list-style: none; margin: 0 0 var(--tide-space-3); padding: 0; background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); overflow: hidden; }

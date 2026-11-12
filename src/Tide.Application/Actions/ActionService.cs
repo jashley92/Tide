@@ -326,12 +326,12 @@ public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
 /// <summary>
 /// How many open actions each view tab shows under the same filters (Mine lets go of Held by, as choosing it does), on the
 /// list and the board alike (or for Recently closed, those closed in its 90 days). And for an empty Mine to point at, how
-/// many open actions are the reader's (<see cref="MineOpen"/>) and how many of the reader's teams' nobody has
+/// many open actions are the reader's (<see cref="Mine"/>) and how many of the reader's teams' nobody has
 /// (<see cref="MyTeamsUnowned"/>).
 /// </summary>
-public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned, int MineOpen)
+public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned)
 {
-    public static readonly ActionViewCounts None = new(0, 0, 0, 0, 0, 0, 0);
+    public static readonly ActionViewCounts None = new(0, 0, 0, 0, 0, 0);
 
     /// <summary>Nobody's in All open, Overdue and Recently closed (My teams' is <see cref="MyTeamsUnowned"/>).</summary>
     public int OpenUnowned { get; init; }
@@ -569,10 +569,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return new ActionWorkers(false, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
     }
 
-    // An article's title (and what's read from it) is shown only to someone who may open the article: whoever reads the
-    // team edition, as the article pages require. Someone who only works actions sees the action without it.
+    // An article's title (and what's read from it, the recommended line copied from it among them) is shown only to
+    // someone who may open the article: whoever reads the team edition, as the article pages require. Someone who only
+    // works actions sees the action without it.
     private List<ActionRow> Readable(List<ActionRow> rows) =>
-        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null })];
+        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null, RecommendationLine = null })];
 
     /// <summary>
     /// How many actions each view tab shows under <paramref name="filter"/>'s other filters (and the card
@@ -621,7 +622,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             Overdue = g.Count(x => x.Open && x.Late && x.Held),
             Closed = g.Count(x => x.Closed && x.Held),
             Unowned = g.Count(x => x.Open && x.Team && x.Nobodys),
-            MineOpen = g.Count(x => x.Open && x.Mine),
             OpenUnowned = g.Count(x => x.Open && x.Nobodys),
             OverdueUnowned = g.Count(x => x.Open && x.Late && x.Nobodys),
             ClosedUnowned = g.Count(x => x.Closed && x.Nobodys),
@@ -629,7 +629,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             Cancelled = g.Count(x => x.OnStrip && x.Status == ActionStatus.Cancelled),
             NotApplicable = g.Count(x => x.OnStrip && x.Status == ActionStatus.NotApplicable),
         }).FirstOrDefaultAsync(ct);
-        return c is null ? ActionViewCounts.None : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned, c.MineOpen)
+        return c is null ? ActionViewCounts.None : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned)
         {
             OpenUnowned = c.OpenUnowned, OverdueUnowned = c.OverdueUnowned, ClosedUnowned = c.ClosedUnowned,
             BoardDone = c.Done, BoardCancelled = c.Cancelled, BoardNotApplicable = c.NotApplicable,
@@ -805,12 +805,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             // The words anywhere in the title or the article's (LIKE: the same match on SQLite and SQL Server, wildcards
-            // literal), or a whole number as the action's.
+            // literal), or a whole number as the action's. The article's title only for someone who may read it.
             var words = filter.Search.Trim();
             var like = Search.SearchText.Contains(words);
             var number = Search.SearchText.ActionNumber(words) ?? -1;
+            var titles = user.Has(Permission.ReadTeamEdition);
             q = q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
-                             || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
+                             || (titles && a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
         }
         if (filter.Priorities is { Count: > 0 } priorities)
         {
@@ -902,7 +903,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }).ToListAsync(ct);
         var asked = open.Select(a =>
             {
-                var last = new[] { a.Commented, a.Updated }.Max() ?? a.CreatedAtUtc;
+                var last = LastActivity(a.Commented, a.Updated, a.CreatedAtUtc);
                 var row = new ActionRow(a.Id, a.Number, "", a.Kind, a.Priority, a.TeamId, "", a.AssigneeId, null, a.DueDate, a.Status, ActionOutcome.None,
                     null, a.ArticleId, null, null, 0, a.CreatedAtUtc, EscalatedForDue: a.EscalatedForDue, LastActivityUtc: last);
                 var quiet = NeedsUpdate.QuietDays(clock.DayOf(last), asOf, days);
@@ -1088,11 +1089,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Hunts.Max(h => (HuntResult?)h.Result),
         // When a person last did something to it: the latest of its comments and its history (raising it writes a line),
         // or with neither, when it was saved. TIDE's own lines (the escalation ladder's, a skipped reminder's) aren't updates.
-        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? DateTimeOffset.MinValue)
-            > (a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? DateTimeOffset.MinValue)
-            ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
-            : a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        // Each is read once, and the later picked here.
+        LastActivity(a.Comments.Max(c => (DateTimeOffset?)c.AtUtc),
+            a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc), a.CreatedAtUtc))
         { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl });
+
+    // The later of an action's last comment and its last line by a person, or with neither, when it was raised.
+    private static DateTimeOffset LastActivity(DateTimeOffset? commented, DateTimeOffset? updated, DateTimeOffset created) =>
+        new[] { commented, updated }.Max() ?? created;
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
@@ -1592,7 +1596,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // Open to In progress stays active, so it never adds to the team's count; held to the rule all the same, so a
         // change to what Take does can't slip past the limit.
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (a.TeamId, to), a.Id, null, null, ct);
-        a.Status = to;
+        MoveTo(a, to);
         a.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(Event(user, a.Id, (started ? "Took it on and started it." : "Took it on.") + over));
         await SaveEditAsync(db, ct);
@@ -1646,19 +1650,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
         var over = await OverLimit(db, a, status, overLimitReason, ct);
+        var was = a.Status;
         var line = ApplyStatus(db, a, status, outcome, note);
-        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, was, ct));
         await SaveEditAsync(db, ct);
     }
 
     /// <summary>
     /// An action brought back from Cancelled whose recommended line another standing action now holds lets the line go:
     /// it keeps its title, and the slide lists it among the article's other actions (one standing action per line, as
-    /// <see cref="RecommendationLineAsync"/> keeps it as they're raised). Returns what its history line says of it.
+    /// <see cref="RecommendationLineAsync"/> keeps it as they're raised). Returns what its history line says of it. Only a
+    /// move from Cancelled (<paramref name="was"/>) is looked at: an action standing all along keeps its line.
     /// </summary>
-    private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, CancellationToken ct)
+    private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, ActionStatus was, CancellationToken ct)
     {
-        if (a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
+        if (was != ActionStatus.Cancelled || a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
         var holders = await db.Actions.AsNoTracking()
             .Where(x => x.ArticleId == article && x.Id != a.Id && x.RecommendationLine != null && x.Status != ActionStatus.Cancelled)
             .Select(x => new { x.Number, Line = x.RecommendationLine! }).ToListAsync(ct);
@@ -1692,7 +1698,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (from == to) return;
         var over = await OverLimit(db, a, to, overLimitReason, ct);
         var line = ApplyStatus(db, a, to, outcome, note);
-        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, from, ct));
         await SaveEditAsync(db, ct);
     }
 
@@ -1741,8 +1747,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (moves)
         {
             var over = await OverLimit(db, a, update.Status, update.OverLimitReason, ct);
+            var was = a.Status;
             var line = ApplyStatus(db, a, update.Status, update.Outcome, closing ? note : null, lead);
-            line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+            line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, was, ct));
         }
         else
         {
@@ -1784,6 +1791,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         _ => Enum.GetValues<ActionOutcome>().Where(o => o != ActionOutcome.None).ToList(),
     };
 
+    // Moves it to another status, dated by the app's clock (the entity's own stamp is the wall clock's); the one it has
+    // changes nothing.
+    private void MoveTo(ActionItem a, ActionStatus to)
+    {
+        if (a.Status == to) return;
+        a.Status = to;
+        a.StatusChangedAtUtc = clock.Now.ToUniversalTime();
+    }
+
     // A note on the history line (a hunt's result, closing it in the same step) goes before the status change. Returns the
     // line, for a caller with more to say after it (that it went over its team's limit, and why).
     internal ActionEvent ApplyStatus(IAppDbContext db, ActionItem a, ActionStatus status, ActionOutcome outcome, string? note, string? lead = null)
@@ -1795,14 +1811,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 : $"{Words.AOrAn(KindName(a.Kind))} {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
         var cleanNote = ArticleService.CleanOrNull(note, 2000, multiline: true);
         var was = a.Status;
-        a.Status = status;
+        MoveTo(a, status);
         if (ActionItem.IsClosedStatus(status))
         {
             a.Outcome = outcome;
             a.OutcomeNote = cleanNote;
             if (!ActionItem.IsClosedStatus(was))
             {
-                // The same moment the status setter just recorded: closed, and in its Closed lane, at one time.
+                // The same moment MoveTo just recorded: closed, and in its Closed lane, at one time.
                 a.ClosedAtUtc = a.StatusChangedAtUtc;
                 a.ClosedDate = clock.Today;
             }
@@ -2182,11 +2198,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     /// <remarks>Given the <paramref name="previewed"/> query the person saw (<see cref="PreviewSavedHuntAsync"/>), it's refused
     /// as stale when the action changed since (its edit version moved) or the query would now be filled differently (an
-    /// indicator added), so what's added is what they saw.</remarks>
+    /// indicator added), so what's added is what they saw. It's filled over the window the preview was, so a day count that
+    /// rolled over since doesn't make it differ.</remarks>
     public async Task<HuntQuery> AddSavedHuntAsync(Guid actionId, Guid savedQueryId, SavedHuntPreview? previewed = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var (a, saved, d, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
+        var (a, saved, d, text, _) = await SavedHuntAsync(db, actionId, savedQueryId, previewed?.Days, ct);
         if (previewed is not null && (previewed.EditVersion != a.EditVersion || previewed.Text != text)) throw StalePreview();
         var hunt = new HuntQuery
         {
@@ -2207,16 +2224,17 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public async Task<SavedHuntPreview> PreviewSavedHuntAsync(Guid actionId, Guid savedQueryId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var (a, _, _, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
-        return new SavedHuntPreview(text, a.EditVersion);
+        var (a, _, _, text, days) = await SavedHuntAsync(db, actionId, savedQueryId, null, ct);
+        return new SavedHuntPreview(text, a.EditVersion, days);
     }
 
     // What Add says when the action changed after the person saw what it would add: the edit form's own words.
     private static StaleEditException StalePreview() => new("Someone else changed this action since you opened it. Reload to see their changes.");
 
-    // The action, for someone who may work it, and the saved query filled in for it: what Add saves and its preview shows.
-    private async Task<(ActionItem Action, SavedQuery Saved, IQueryDialect Dialect, string Text)> SavedHuntAsync(IAppDbContext db, Guid actionId,
-        Guid savedQueryId, CancellationToken ct)
+    // The action, for someone who may work it, and the saved query filled in for it (over days, else the worked-out
+    // window): what Add saves and its preview shows, and the window it was filled over.
+    private async Task<(ActionItem Action, SavedQuery Saved, IQueryDialect Dialect, string Text, int Days)> SavedHuntAsync(IAppDbContext db, Guid actionId,
+        Guid savedQueryId, int? days, CancellationToken ct)
     {
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
@@ -2225,10 +2243,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                     ?? throw new KeyNotFoundException("That saved query no longer exists.");
         if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");
         var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
-        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        var inputs = Over(await HuntInputsAsync(db, a, fromStory: false, ct), days);
         // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.
         var filled = HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators);
-        return (a, saved, d, HuntText(Filled(filled), filled.Length));
+        return (a, saved, d, HuntText(Filled(filled), filled.Length), inputs.Days);
     }
 
     /// <summary>

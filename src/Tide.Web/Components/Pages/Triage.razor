@@ -683,7 +683,11 @@ else
             _open.UnionWith(group.Ids);
             BuildLines();
         }
-        if (_lines.FindIndex(l => l.Row?.Item.Id == id) is >= 0 and var at) await Pick(at);
+        if (_lines.FindIndex(l => l.Row?.Item.Id == id) is >= 0 and var at)
+        {
+            await Pick(at);
+            _focus = "tideTriage.focusRow";   // the link picked may go with the selection: its row takes focus
+        }
     }
 
     /// <summary>"Found here: 2 CVEs · 3 indicators · Our stack: GitLab".</summary>
@@ -907,6 +911,7 @@ else
             await Stack.AddByNameAsync(name);
             Toasts.Show($"{name} added to Our stack.");
             await Load();
+            _focus = "tideTriage.focusRow";   // the button went with the add: the row keeps the keyboard's place
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); return false; }
@@ -1030,6 +1035,9 @@ else
     private PromoteForm _pf = new();
     private PrioritySuggestion? _suggested;
     private string? _focus;   // a tideTriage call that moves focus once the next render is on screen
+
+    /// <summary>The focus call waiting for the next render (for the tests).</summary>
+    internal string? PendingFocus => _focus;
 
     private string EmptyText => _status switch
     {

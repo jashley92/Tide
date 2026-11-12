@@ -273,6 +273,15 @@ window.tidePresent = (function () {
         if (el) el.focus({ preventScroll: true });
     }
 
+    // .NET: the rail has stopped being drawn (closed with its own button, handed off, or taken over). Focus that was in
+    // it dropped to the page's body: it goes to Rail, or with no Rail any more (not presenting), the top bar's first button.
+    function refocus() {
+        const at = document.activeElement;
+        if (at && at !== document.body) return;
+        const to = document.getElementById('present-rail-toggle') || document.querySelector('.tide-present-top button:not([disabled])');
+        if (to) to.focus({ preventScroll: true });
+    }
+
     function onClick(e) {
         const from = e.target.closest && e.target.closest('[data-card-opener]');
         if (from) { opener = from; openerKey = from.getAttribute('data-card-opener'); }
@@ -305,8 +314,10 @@ window.tidePresent = (function () {
 
     function onKey(e) {
         // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
-        // and Escape close it (not while typing), and the slide's other keys aren't heard; Tab is dialog.js's.
+        // and Escape close it (not while typing), and the slide's other keys aren't heard; Tab is dialog.js's. A dialog open
+        // over it (a confirmation from Raise or Add) has the keys: its Escape cancels it alone.
         if (ref && document.querySelector('#present-rail[aria-modal="true"]')) {
+            if (document.querySelector('.tide-modal')) return;
             if (!e.defaultPrevented && (e.key === ']' || e.key === 'Escape') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
                 e.preventDefault();
                 ref.invokeMethodAsync('OnPresentKey', 'rail').catch(function () { });
@@ -398,6 +409,7 @@ window.tidePresent = (function () {
         follow: follow,
         // .NET: this page closed the card over the slide: focus back on the button that opened it.
         backToOpener: backToOpener,
+        refocus: refocus,
         // .NET: this page has just become the presenter: where it is on the slide is now the room's.
         share: function () { if (ref) send(); }
     };
