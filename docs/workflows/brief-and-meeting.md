@@ -172,9 +172,36 @@ lands on the same one however many slides their page has loaded:
 | Title | `title` | The date, the presenter, the agenda, the title slide line if the edition carries it |
 | Opening note | `note` | The team's opening note. Team edition only, and only when it isn't blank. |
 | Metrics | `metrics:{group key}` | One slide per metric group: tiles and the group's chart. Team edition only. |
-| Open actions | `open` | Overdue actions to review. Team edition only. |
+| Actions that need review | `open` | The open actions the room should look at, from any brief (below). Team edition only, and only when there are any. |
 | One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Each recommended line shows the action it became; the article's other actions are listed below. |
 | Wrap-up | `wrap` | Every recommended action not yet raised, the actions raised, who attended, and the articles not marked discussed. |
+
+**Actions that need review** (`ActionService.MeetingActionsAsync`) lists every open action the edition may show that is
+overdue, escalated, or has gone too long without an update, each once, at most 8:
+
+- **Too long without an update:** Open or In progress with no update for 2 business days, or Blocked for 5. An
+  administrator sets both in Organization settings (**An open action needs review after**, `Org:StaleOpenDays`; **A
+  blocked action needs review after**, `Org:StaleBlockedDays`; whole numbers from 1 to 30), and a change counts at once.
+  Business days are the organization's: its time zone, weekends off, and its holidays, as due dates count them.
+- **An update** is anything a person did: a comment, a status change, a checklist tick, a new holder or due date, any
+  other edit. TIDE's own lines (the escalation ladder's, a skipped reminder's) and the emails it sends aren't. The action
+  table's "no update for" counts from the same update.
+- **Order, most pressing first:** escalated; then P1 and P2 overdue; then Blocked and quiet too long; then the other
+  overdue, latest first; then the others quiet too long, quietest first.
+- **Each row** names the action (the presenter opens it from there, over the slide or beside it as set), who has it and
+  its status; under Waited, every reason it's there ("escalated", "3 days late", "quiet 6 business days (Blocked)") and
+  its last update ("last: comment by Sam"); and the one thing the room can do (a quiet one is asked for an update, unless
+  reassigning it, finding it a holder or asking what it's waiting on comes first). Closing the action puts focus back on
+  its row.
+- The title slide counts every action that needs review, not only the 8 shown. The rows are read again when the limits
+  change, when the slide is come back to, and after the presenter changes an action from it, for the presenter and
+  everyone following alike.
+- **Under the table** how many are shown of how many in all, and what's counted; "N more under Actions" when there are
+  more than 8 (a link, except for a Visitor).
+- An action raised from an article above the meeting's ceiling is neither named nor counted. Everyone following sees
+  the same slide; the company-wide edition has none.
+
+The team email's "Still open from earlier briefs" keeps to the overdue and escalated actions.
 
 A page without a slide another has (the company-wide edition has no note) shows the title instead. The edition can be
 switched on screen; joining a live meeting switches to the team edition. Articles are ticked off as discussed

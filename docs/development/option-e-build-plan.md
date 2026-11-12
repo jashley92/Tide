@@ -162,6 +162,7 @@ Ordered from least to most risk. Each is checked with two browser sessions, a pr
 | 4.5 | A presenter-only rail: Mark discussed, clear a hand, bring everyone here, lock, notes for this article, what is left before ending. | The presenter's controls are in one place and never on a follower's screen. | Medium: the slide's fit and shared-scroll scripts assume one column. A test asserts a follower's markup contains none of the rail. |
 | 4.6 | The action card opens beside the slide for everyone, and the slide narrows. | The room reads the slide and the action together. | High: five cards share the overlay, followers mirror it, and scroll sharing depends on the geometry. Built behind a setting and switched on after a live rehearsal. |
 | 4.7 | Wrap-up as three lists (not raised, who has what, not discussed); the open-actions slide shows how long each has waited and one thing to do. | Ending the meeting is a short checklist. | Low. |
+| 4.8 | The open actions slide becomes "Actions that need review": overdue, escalated, or with no update by a person for an administrator-set number of business days (`Org:StaleOpenDays`, `Org:StaleBlockedDays`), each once, most pressing first, each saying why. | The room hears about quiet work before it's late. | Low to medium: the slide's rows and order change; the team email's list doesn't. |
 
 ### Phase 5: finish
 
