@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repo = path.resolve(here, '..', '..');
 const web = path.join(repo, 'src', 'Tide.Web');
-const demoDir = path.join(here, '.demo');
+// DEMO_DIR keeps runs side by side apart (each its own database and log); .demo here otherwise.
+const demoDir = process.env.DEMO_DIR ? path.resolve(process.env.DEMO_DIR) : path.join(here, '.demo');
 
 /** The address TIDE answers on: BASE_URL (one already running on the demo database), else localhost:PORT (5112). */
 export function baseUrl() {
@@ -93,8 +94,9 @@ export async function startTide(settings = []) {
   const base = baseUrl();
   if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
   mkdirSync(demoDir, { recursive: true });
-  console.log('Building TIDE...');
-  execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
+  // NO_BUILD=1 starts the last build, for runs side by side that one build served.
+  if (!process.env.NO_BUILD) console.log('Building TIDE...');
+  if (!process.env.NO_BUILD) execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
   const binDir = path.join(web, 'bin', 'Debug');
   const tfm = readdirSync(binDir).find(d => existsSync(path.join(binDir, d, 'Tide.Web.dll')));
   if (!tfm) throw new Error('The build left no Tide.Web.dll under src/Tide.Web/bin/Debug.');
