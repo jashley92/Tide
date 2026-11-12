@@ -92,7 +92,7 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OnPresentKey("next"));
         html = await r.Html();
-        html.Should().Contain("<h2>Cases</h2>").And.Contain("1 of 3").And.Contain("each compared with its last earlier value")
+        html.Should().Contain("tabindex=\"-1\">Cases</h2>").And.Contain("1 of 3").And.Contain("each compared with its last earlier value")
             .And.Contain("tide-mchart-trend").And.Contain("<polyline").And.Contain("tide-mchart-ring", "12 is past the warning threshold")
             .And.Contain("Vulnerabilities: all 0")
             .And.Contain("class=\"tide-mtile-note\" title=\"Two reopened after the customer replied\">Two reopened after the customer replied</div>")
@@ -101,12 +101,12 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OnPresentKey("next"));
         html = await r.Html();
-        html.Should().Contain("<h2>Email triage</h2>").And.Contain("tide-mchart-share").And.Contain(">120</text>").And.Contain("75%").And.Contain("25%")
+        html.Should().Contain("tabindex=\"-1\">Email triage</h2>").And.Contain("tide-mchart-share").And.Contain(">120</text>").And.Contain("75%").And.Contain("25%")
             .And.Contain("no earlier values to compare with").And.NotContain("no earlier value</span>", "said once for the slide, not on every tile")
             .And.NotContain("Vulnerabilities: all 0", "the line is on the first metrics slide only");
 
         await r.Click(p => p.OnPresentKey("next"));
-        (await r.Html()).Should().Contain("<h2>Hunts</h2>").And.Contain("No history yet");
+        (await r.Html()).Should().Contain("tabindex=\"-1\">Hunts</h2>").And.Contain("No history yet");
     }
 
     [Fact]
@@ -124,11 +124,11 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
 
             await using var owner = await Open(app, day, Owner);
             await Do(owner, p => p.JoinIfLive());
-            (await owner.Html()).Should().Contain("<h2>Email triage</h2>").And.Contain("Following Tester");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Email triage</h2>").And.Contain("Following Tester");
 
             await pat.Click(p => p.OnPresentKey("next"));
             await Do(owner, p => p.Follow());
-            (await owner.Html()).Should().Contain("<h2>Hunts</h2>");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Hunts</h2>");
         }
         finally { await Do(pat, p => p.EndMeeting()); }
     }
