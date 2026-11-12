@@ -11,7 +11,6 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject OrgClock Clock
-@inject IUserDirectory Users
 @inject Tide.Application.Metrics.MetricsService MetricsSvc
 @inject ActionService ActionSvc
 @inject CveService CveSvc
@@ -1144,8 +1143,6 @@ else
         try
         {
             if (!fresh) await ReadDay(day, date);
-            if (Day != day) return;
-            if (_canCreate && _people is null) _people = await Users.ListAsync();
             if (Day != day) return;
             Seen();   // the notes there already aren't news
             _qaTeam = _teams.FirstOrDefault()?.Id ?? Guid.Empty;
@@ -2618,21 +2615,15 @@ else
                 <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                         @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                     <option value="">Nobody</option>
-                    @{ var (members, others) = Assignable(r); }
-                    @if (members.Count > 0)
-                    {
-                        <optgroup label="@($"{r.TeamName} members")">
-                            @foreach (var (id, name) in members) { <option value="@id">@name</option> }
-                        </optgroup>
-                    }
-                    @if (others.Count > 0)
-                    {
-                        <optgroup label="@(members.Count > 0 ? "Everyone else" : "People")">
-                            @foreach (var (id, name) in others) { <option value="@id">@name</option> }
-                        </optgroup>
-                    }
-                    @if (r.AssigneeId is { } held && members.Concat(others).All(x => x.Id != held)) { <option value="@held">@r.AssigneeName</option> }
+                    @foreach (var member in MembersOf(r.TeamId).OrderBy(m => m.DisplayName)) { <option value="@member.UserId">@member.DisplayName</option> }
+                    @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
                 </select>
+                @* Only the team's members can be given it (ActionService.AssignAsync): with none, say so, and where to add them. *@
+                @if (MembersOf(r.TeamId).Count == 0)
+                {
+                    <span class="tide-present-help tide-assign-none">No one is on @r.TeamName yet.
+                        @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
+                }
                 @if (r.AssigneeId != _me)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
@@ -2948,20 +2939,9 @@ else
 
     private IReadOnlyList<TeamMember> MembersOf(Guid teamId) => _teams.FirstOrDefault(t => t.Id == teamId)?.Members ?? [];
 
-    // Everyone known, for someone who may assign anyone (an analyst), as the action page offers them; null otherwise.
-    private IReadOnlyList<AppUser>? _people;
-
-    /// <summary>Who an action's Assign offers, as the action page's does: its team's members first, then, for an analyst,
-    /// everyone else.</summary>
-    private (List<(string Id, string Name)> Members, List<(string Id, string Name)> Others) Assignable(EditionAction r)
-    {
-        var members = MembersOf(r.TeamId).Select(m => (Id: m.UserId, Name: m.DisplayName)).OrderBy(x => x.Name).ToList();
-        var others = (_people ?? []).Where(p => members.All(m => m.Id != p.Sid)).Select(p => (Id: p.Sid, Name: p.DisplayName)).OrderBy(x => x.Name).ToList();
-        return (members, others);
-    }
 
     // Who can take or assign it, as ActionService.CanWorkAsync decides (and checks again): analysts any action, others
-    // their own teams'.
+    // their own teams'. Assign offers the action's team's members, the only people AssignAsync gives it to.
     private bool CanWork(EditionAction r) => r.Id != Guid.Empty &&
         (_canCreate || _canWork && MembersOf(r.TeamId).Any(m => m.UserId == _me));
 

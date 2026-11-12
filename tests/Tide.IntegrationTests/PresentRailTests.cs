@@ -7,6 +7,7 @@ using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Metrics;
 using Tide.Application.Org;
+using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
@@ -192,21 +193,40 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Assign_OffersTheTeamsMembers_ThenEveryoneElse_AsTheActionPageDoes()
+    public async Task Assign_OffersOnlyTheTeamsMembers_WhomTheServiceTakes_AndSaysSoWhenItHasNone()
     {
         var day = await Day(215);
+        int withMembers, without;
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
-            await scope.ServiceProvider.GetRequiredService<IUserDirectory>().TouchAsync("dev:rail-asa", "Asa Assignee", null, null, "ActionOwner");
-            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
-            var first = (await briefs.GetAsync(day))!.Items.OrderBy(i => i.SortOrder).First().ArticleId;
-            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync()).First(t => !t.IsExternal).Id;
-            await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Rail assign", ActionKind.IocSweep, team, null, day);
+            var sp = scope.ServiceProvider;
+            await sp.GetRequiredService<IUserDirectory>().TouchAsync("dev:rail-bo", "Bo Outsider", null, null, "ActionOwner");
+            var teams = sp.GetRequiredService<TeamService>();
+            var staffed = await teams.AddAsync("Rail staffed team", null, null);
+            await teams.AddMemberAsync(staffed, "dev:rail-asa", "Asa Assignee");
+            var empty = await teams.AddAsync("Rail empty team", null, null);
+            var first = (await sp.GetRequiredService<BriefService>().GetAsync(day))!.Items.OrderBy(i => i.SortOrder).First().ArticleId;
+            var actions = sp.GetRequiredService<ActionService>();
+            withMembers = await actions.QuickAddAsync(first, "Rail assign staffed", ActionKind.IocSweep, staffed, null, day);
+            without = await actions.QuickAddAsync(first, "Rail assign empty", ActionKind.IocSweep, empty, null, day);
         }
         await using var pat = await Open(app, day);
         await FirstArticle(pat);
         var rail = RailOf(await pat.Html());
-        rail.Should().Contain("aria-label=\"Assign A-").And.Contain(">Asa Assignee</option>", "an analyst may assign anyone, as on the action page");
+        var staffedRow = rail[rail.IndexOf($"aria-label=\"Assign A-{withMembers}\"", StringComparison.Ordinal)..];
+        staffedRow = staffedRow[..staffedRow.IndexOf("</select>", StringComparison.Ordinal)];
+        staffedRow.Should().Contain(">Asa Assignee</option>").And.NotContain("Bo Outsider", "AssignAsync takes only the team's members")
+            .And.NotContain("Everyone else");
+        rail.Should().Contain("No one is on Rail empty team yet").And.Contain("href=\"admin/teams\"", "an administrator can add them");
+
+        // What it offers, the service takes.
+        ActionItem a;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            a = (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(withMembers))!.Action;
+        await Do(pat, p => p.Assign(new EditionAction(a.Number, a.Title, a.Team!.Name, a.DueDate, a.Status, a.Id, a.TeamId), "dev:rail-asa"));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(withMembers))!.Action.AssigneeName.Should().Be("Asa Assignee");
+        rail.Should().Contain($"aria-label=\"Assign A-{without}\"");
     }
 
     [Fact]
