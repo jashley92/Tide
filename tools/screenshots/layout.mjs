@@ -1890,10 +1890,10 @@ const wrapUp = as => async (page, demo) => {
 };
 
 /** The wrap-up's three lists (not raised, who is doing what, not discussed), each whole in its column: side by side from
- *  1400px, and the slide still fits. */
+ *  1400px, and the slide still fits. (Who is doing what is checked with actions in it on the presenter's page, early in
+ *  the run: by the follower's, late, the pages before have changed today's brief and it may have none.) */
 const wrapUpRules = [noSidewaysScroll, slideFits, shownCount('.tide-wrap > .tide-wrap-list', 3), fits('.tide-wrap'), fits('.tide-wrap-list'),
-  visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li'), notSqueezed('.tide-wrap-list[data-wrap="owners"] .tide-present-help'),
-  [1400, oneRow('.tide-wrap')]];
+  notSqueezed('.tide-wrap-list[data-wrap="owners"] .tide-present-help'), [1400, oneRow('.tide-wrap')]];
 
 // --- an action beside the slide (Org:ActionBesideSlide, on for this run) -------------------------------------------
 
@@ -3935,7 +3935,8 @@ const pages = [
   { name: 'slide-open-actions', route: '/present/{today}', setup: slideWith('.tide-slide-open'), widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late')] },
   // The wrap-up, the presenter's (no meeting): three lists, with the rail beside them where it's docked.
-  { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, 1440, 1100, 780], rules: wrapUpRules },
+  { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, 1440, 1100, 780],
+    rules: [...wrapUpRules, visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li')] },
   // The presenter's rail: docked beside the slide from 1500px (the slide's column narrows, and the slide still fits in
   // it), over the slide below that, as a dialog, once `]` opens it; shut there by default. It holds the presenter's
   // controls (the quick add among them), and the slide none of them. Wider letters.
