@@ -13,9 +13,9 @@ using Tide.Web.Components.Shared;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// Where the article editor puts things: a section index across the top, then the form as paired cards (Assessment
-/// beside Tags &amp; ATT&amp;CK, Bottom line beside Why it matters, Bullets across both columns with the screenshots
-/// in it, Recommended actions beside Indicators and CVEs), and what readers get in the context rail ("Context · what
+/// Where the article editor puts things: a section index across the top, then the form as one column of cards in the
+/// order the sent brief reads (Assessment, the draft from the sources, Bottom line, Bullets, Why it matters,
+/// Recommended actions, Screenshots, Indicators and CVEs, then Tags &amp; ATT&amp;CK), and what readers get in the context rail ("Context · what
 /// readers get": Preview, Actions and Details, and the Team or Company-wide edition). Threat actors is the adversary
 /// picker in the Tags card, We run is under the "Why it matters" text, Similar articles is folded under the threat
 /// story in the rail, and someone who can't edit reads the preview in the page, the tags as read-only cards.
@@ -66,30 +66,25 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         return at;
     }
 
-    private static int[] All(string html, string what) =>
-        Regex.Matches(html, Regex.Escape(what)).Select(m => m.Index).ToArray();
-
     [Fact]
-    public async Task TheForm_IsPairedCards_UnderASectionIndex()
+    public async Task TheForm_IsOneColumn_InTheOrderTheBriefReads_UnderASectionIndex()
     {
-        var id = await NewArticle("layout-pairs article");
+        var id = await NewArticle("layout-order article");
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
 
-        var index = At(html, "aria-label=\"Article sections\"");
-        var pairs = All(html, "<div class=\"tide-editor-pair\">");
-        pairs.Should().HaveCount(3, "Assessment and Tags, Bottom line and Why it matters, Recommended and Indicators");
-        int assessment = At(html, "id=\"sec-assessment\""), tags = At(html, "id=\"sec-tags\""), bluf = At(html, "id=\"sec-bluf\""),
-            why = At(html, "id=\"sec-why\""), bullets = At(html, "id=\"sec-bullets\""), shots = At(html, "id=\"sec-shots\""),
-            rec = At(html, "id=\"sec-rec\""), ind = At(html, "id=\"sec-ind\"");
+        string[] order = ["sec-assessment", "sec-draft", "sec-bluf", "sec-bullets", "sec-why", "sec-rec", "sec-shots", "sec-ind", "sec-tags"];
+        SectionHeading().Matches(html).Select(m => m.Groups["id"].Value).Should().Equal(order,
+            "the page's order is the sent brief's, the draft from the sources with the bottom line it writes, the tags last");
+        At(html, "aria-label=\"Article sections\"").Should().BeLessThan(At(html, "id=\"sec-assessment\""), "the index is above the cards");
+        foreach (var sec in order.Except(["sec-draft"]))
+            html.Should().Contain($"aria-labelledby=\"{sec}\"", $"{sec} is a card of its own");
 
-        index.Should().BeLessThan(pairs[0], "the index is above the cards");
-        new[] { pairs[0], assessment, tags, pairs[1], bluf, why, bullets, shots, pairs[2], rec, ind }.Should().BeInAscendingOrder(
-            "each pair's two cards follow its start, and Bullets, with its screenshots, sits between the second pair and the third");
-        html[why..rec].Should().Contain("aria-labelledby=\"sec-rec\"", "Recommended actions is a card of its own, not part of Why it matters");
-
-        html.Should().NotContain("sec-tags-body", "Tags & ATT&CK is open, beside Assessment, not folded at the bottom")
+        html.Should().NotContain("sec-tags-body", "Tags & ATT&CK is open, not folded at the bottom")
             .And.NotContain("tags &#xB7;");
     }
+
+    [GeneratedRegex("<h[23] id=\"(?<id>sec-[a-z]+)\"")]
+    private static partial Regex SectionHeading();
 
     [Fact]
     public async Task ThreatActors_IsThePickerInTheTagsCard_AndWeRun_IsUnderWhyItMatters()
@@ -101,12 +96,12 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         var tags = At(html, "id=\"sec-tags\"");
         var context = At(html, "<h3 class=\"tide-subhead\">Context</h3>");
         var actors = At(html, $"for=\"adv-pick-{id}\">Threat actors</label>");
-        context.Should().BeGreaterThan(tags).And.BeLessThan(At(html, "id=\"sec-bluf\""), "the context is in the Tags card, in the first pair");
+        context.Should().BeGreaterThan(tags, "the context is in the Tags card");
         actors.Should().BeGreaterThan(context).And.BeLessThan(At(html, "for=\"sectors\">Sectors</label>"), "it reads as the same field, where the box was");
 
         var why = At(html, "id=\"f-why\"");
         var weRun = At(html, $"id=\"werun-h-{id}\" class=\"tide-subhead my-0\">We run</h3>");
-        weRun.Should().BeGreaterThan(why).And.BeLessThan(At(html, "id=\"sec-bullets\""), "We run sits inside why it matters, under its text");
+        weRun.Should().BeGreaterThan(why).And.BeLessThan(At(html, "id=\"sec-rec\""), "We run sits inside why it matters, under its text");
         At(html, $"id=\"stack-pick-{id}\"").Should().BeGreaterThan(weRun);
         html.Should().NotContain("<datalist", "We run uses the same search picker as Threat actors");
         html.Split("Why it matters to us</h2>").Length.Should().Be(2, "it's no section of its own");
@@ -213,7 +208,7 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
 
         var html = await r.Html();
-        var card = html[html.LastIndexOf("<section", At(html, "aria-labelledby=\"sec-why\""), StringComparison.Ordinal)..At(html, "id=\"sec-bullets\"")];
+        var card = html[html.LastIndexOf("<section", At(html, "aria-labelledby=\"sec-why\""), StringComparison.Ordinal)..At(html, "id=\"sec-rec\"")];
         card.Should().Contain("tide-section-warn").And.Contain("Will reach the company-wide edition.")
             .And.Contain(">Set to AMBER</button>").And.Contain(">Keep it</button>");
 
@@ -247,7 +242,7 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
 
         var html = await r.Html();
-        html[At(html, "aria-labelledby=\"sec-why\"")..At(html, "id=\"sec-bullets\"")].Should().Contain(">Set to AMBER</button>").And.NotContain(">Keep it</button>");
+        html[At(html, "aria-labelledby=\"sec-why\"")..At(html, "id=\"sec-rec\"")].Should().Contain(">Set to AMBER</button>").And.NotContain(">Keep it</button>");
 
         await r.Click(p => p.SetWhyAmberAsync());
 
