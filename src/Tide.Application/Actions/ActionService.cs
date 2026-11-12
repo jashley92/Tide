@@ -1484,8 +1484,24 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await WorkableAsync(db, id, ct);
         var over = await OverLimit(db, a, status, overLimitReason, ct);
         var line = ApplyStatus(db, a, status, outcome, note);
-        line.Text = ClipEvent(line.Text + over);
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
         await SaveEditAsync(db, ct);
+    }
+
+    /// <summary>
+    /// An action brought back from Cancelled whose recommended line another standing action now holds lets the line go:
+    /// it keeps its title, and the slide lists it among the article's other actions (one standing action per line, as
+    /// <see cref="RecommendationLineAsync"/> keeps it as they're raised). Returns what its history line says of it.
+    /// </summary>
+    private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, CancellationToken ct)
+    {
+        if (a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
+        var holders = await db.Actions.AsNoTracking()
+            .Where(x => x.ArticleId == article && x.Id != a.Id && x.RecommendationLine != null && x.Status != ActionStatus.Cancelled)
+            .Select(x => new { x.Number, Line = x.RecommendationLine! }).ToListAsync(ct);
+        if (holders.FirstOrDefault(h => RecommendedActions.Raised(line, h.Line)) is not { } holder) return "";
+        a.RecommendationLine = null;
+        return $" A-{holder.Number} holds its recommended line now, so it's listed among the article's other actions.";
     }
 
     // A move or change begun from the status the page showed (at): refused when someone has moved it since.
@@ -1513,7 +1529,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (from == to) return;
         var over = await OverLimit(db, a, to, overLimitReason, ct);
         var line = ApplyStatus(db, a, to, outcome, note);
-        line.Text = ClipEvent(line.Text + over);
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
         await SaveEditAsync(db, ct);
     }
 
@@ -1563,7 +1579,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             var over = await OverLimit(db, a, update.Status, update.OverLimitReason, ct);
             var line = ApplyStatus(db, a, update.Status, update.Outcome, closing ? note : null, lead);
-            line.Text = ClipEvent(line.Text + over);
+            line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
         }
         else
         {

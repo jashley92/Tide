@@ -1742,6 +1742,24 @@ const contrastAtLeast = (selector, ratio, pseudo = null) => holds(`contrast at l
 /** A box's hint on the dark slide (its placeholder) reads: AA, in either theme. */
 const slidePlaceholdersReadable = contrastAtLeast('.tide-slide :is(input, textarea)[placeholder]', 4.5, '::placeholder');
 
+/** The first shown match of `a` and of `b` look alike in each of `props` (computed): controls side by side that match. */
+const sameLook = (a, b, props) => holds(`same ${props.join(', ')}: ${a} / ${b}`, ([a, b, props]) => {
+  const first = s => [...document.querySelectorAll(s)].find(e => e.getBoundingClientRect().width > 0);
+  const x = first(a), y = first(b);
+  if (!x || !y) return [`nothing shown matches ${!x ? a : b}`];
+  return props.flatMap(p => {
+    const v = getComputedStyle(x)[p], w = getComputedStyle(y)[p];
+    return v === w ? [] : [`${p}: ${v} on ${a}, ${w} on ${b}`];
+  });
+}, [a, b, props]);
+
+/** Each shown button saying `text` names what it's for in its accessible name, starting `name`. */
+const buttonsNamed = (text, name) => holds(`"${text}" buttons named "${name}…"`, ([text, name]) => {
+  const shown = [...document.querySelectorAll('button')].filter(b => b.textContent.trim() === text && b.getBoundingClientRect().width > 0);
+  if (!shown.length) return [`no "${text}" button shown`];
+  return shown.filter(b => !(b.getAttribute('aria-label') ?? '').startsWith(name)).map(b => `a "${text}" button is named "${b.getAttribute('aria-label') ?? text}"`);
+}, [text, name]);
+
 /** The slide's "+N more" links (the CVEs', the indicators') read on the dark slide: AA. */
 const slideLinksReadable = contrastAtLeast('.tide-slide :is(.tide-slide-cve-more, .tide-slide-ioc-more)', 4.5);
 
@@ -3347,6 +3365,12 @@ const pages = [
       visible('.tide-reco li.is-raised .tide-reco-done'), fits('.tide-reco'),
       [1001, lineUp('.tide-reco li.is-raised .tide-action-assign > input', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, oneRow('.tide-slide-actlist > li')],
+      // An other action's team and due stay readable beside its title (the title gives way); its controls look like the
+      // lines' (the date as dark as the selects; the same size of type); each Take it says which action.
+      notSqueezed('.tide-slide-actlist .tide-present-help'),
+      sameLook('.tide-slide .tide-action-assign > input', '.tide-slide .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
+      sameLook('.tide-reco .tide-action-assign > select', '.tide-slide-actlist .tide-action-assign > select', ['fontSize']),
+      buttonsNamed('Take it', 'Take A-'),
       [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],
     ] },

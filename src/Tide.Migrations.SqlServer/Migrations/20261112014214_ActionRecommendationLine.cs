@@ -17,18 +17,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                 maxLength: 300,
                 nullable: true);
 
-            // Actions raised from a recommended line before the link was stored were matched to it by title: the slide
-            // listed one under its line when its title was the line's words. They get the link once, here (their
-            // title found in the article's recommendations, case aside), so the slide never needs to match titles again.
-            // One whose title only appears inside a longer line gets it too, but matches no whole line, so the slide
-            // keeps it among the article's other actions, as before.
-            migrationBuilder.Sql("""
-                UPDATE a SET RecommendationLine = a.Title
-                FROM Actions a
-                JOIN Articles ar ON ar.Id = a.ArticleId
-                WHERE ar.RecommendedActions IS NOT NULL
-                  AND CHARINDEX(LOWER(a.Title), LOWER(ar.RecommendedActions)) > 0;
-                """);
+            // The links of actions raised before this are filled once, after the migrations, by
+            // DatabaseInitializer.LinkRecommendationsAsync: the article's line as written, one action per line.
         }
 
         /// <inheritdoc />

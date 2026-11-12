@@ -2374,7 +2374,7 @@ else
                 </select>
                 @if (r.AssigneeId != _me)
                 {
-                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }
             </span>
         }</text>;

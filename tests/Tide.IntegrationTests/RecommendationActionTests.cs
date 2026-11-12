@@ -6,6 +6,7 @@ using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Org;
 using Tide.Application.Security;
+using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;
@@ -80,6 +81,66 @@ public class RecommendationLinkServiceTests : IDisposable
             .Should().ThrowAsync<ArgumentException>();
         var n = await actions.CreateAsync(new ActionForm { Title = "Hunt", TeamId = team, ArticleId = article, RecommendationLine = "hunt for the indicators in vpn logs" });
         (await actions.GetAsync(n))!.Action.RecommendationLine.Should().Be("Hunt for the indicators in VPN logs");
+    }
+
+    [Fact]
+    public async Task AReopenedAction_WhoseLineAnotherNowHolds_KeepsItsTitle_AndJoinsTheOtherActions()
+    {
+        var (article, team) = await Article();
+        var actions = _db.Actions();
+        const string line = "Hunt for the indicators in VPN logs";
+        var first = await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line);
+        var a = (await actions.GetAsync(first))!.Action;
+        await actions.SetStatusAsync(a.Id, ActionStatus.Cancelled, ActionOutcome.None, "Raised too early.");
+        var second = await actions.QuickAddAsync(article, "Hunt again", ActionKind.ThreatHunt, team, null, recommendation: line);
+
+        await actions.SetStatusAsync(a.Id, ActionStatus.Open, ActionOutcome.None, null);
+        var reopened = (await actions.GetAsync(first))!;
+        reopened.Action.RecommendationLine.Should().BeNull("A-" + second + " holds the line now");
+        reopened.Action.Title.Should().Be("Hunt");
+        (await actions.GetAsync(second))!.Action.RecommendationLine.Should().Be(line);
+
+        // Reopened while no other action holds its line, it keeps it.
+        await actions.SetStatusAsync((await actions.GetAsync(second))!.Action.Id, ActionStatus.Cancelled, ActionOutcome.None, "Duplicate.");
+        var third = await actions.QuickAddAsync(article, "Patch", ActionKind.PatchRemediate, team, null, recommendation: "Apply the vendor hotfix to both gateways");
+        var patch = (await actions.GetAsync(third))!.Action;
+        await actions.SetStatusAsync(patch.Id, ActionStatus.Cancelled, ActionOutcome.None, "Wrong team.");
+        await actions.SetStatusAsync(patch.Id, ActionStatus.Open, ActionOutcome.None, null);
+        (await actions.GetAsync(third))!.Action.RecommendationLine.Should().Be("Apply the vendor hotfix to both gateways");
+    }
+
+    [Fact]
+    public async Task TheUpgrade_LinksAnOldActionToTheLineItsTitleIs_AsTheArticleWritesIt_OneActionPerLine()
+    {
+        var (article, team) = await Article("- **Block** the C2 at the proxy\n- Hunt for the indicators in VPN logs for 30 days.\n- Patch the gateways");
+        await using (var ctx = _db.Context())
+        {
+            ctx.Actions.AddRange(
+                new ActionItem { Number = 901, Title = "block the C2 at the proxy", TeamId = team, ArticleId = article },
+                new ActionItem { Number = 902, Title = "Hunt for the indicators in VPN logs for 30 days", TeamId = team, ArticleId = article },
+                new ActionItem { Number = 903, Title = "Patch the gateways", TeamId = team, ArticleId = article, Status = ActionStatus.Done, Outcome = ActionOutcome.Other },
+                new ActionItem { Number = 904, Title = "Patch the gateways", TeamId = team, ArticleId = article },
+                new ActionItem { Number = 905, Title = "Patch the gateways", TeamId = team, ArticleId = article },
+                new ActionItem { Number = 906, Title = "Patch the gateways", TeamId = team, ArticleId = article, Status = ActionStatus.Cancelled });
+            ctx.Settings.RemoveRange(ctx.Settings.Where(s => s.Key == Tide.Infrastructure.Persistence.DatabaseInitializer.RecommendationLinksKey));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = _db.Context())
+            (await Tide.Infrastructure.Persistence.DatabaseInitializer.LinkRecommendationsAsync(ctx, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)).Should().Be(2);
+
+        await using (var ctx = _db.Context())
+        {
+            var lines = ctx.Actions.Where(a => a.Number > 900).ToDictionary(a => a.Number, a => a.RecommendationLine);
+            lines[901].Should().Be("Block the C2 at the proxy", "the line as the article has it, emphasis aside");
+            lines[902].Should().BeNull("the line ends in a full stop the title hasn't: not the line's words");
+            lines[904].Should().Be("Patch the gateways", "the oldest open one of the three");
+            lines[903].Should().BeNull("closed: an open one has the line");
+            lines[905].Should().BeNull("one action per line");
+            lines[906].Should().BeNull("cancelled");
+        }
+        await using (var ctx = _db.Context())
+            (await Tide.Infrastructure.Persistence.DatabaseInitializer.LinkRecommendationsAsync(ctx, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)).Should().Be(0, "once");
     }
 
     [Fact]
