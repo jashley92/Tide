@@ -1862,6 +1862,39 @@ const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
   return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
 });
 
+// --- the wrap-up -------------------------------------------------------------------------------------------------------
+
+/** Setup: wider letters, on the wrap-up. 'presenter': this page, with no meeting, pressing End. 'follower': the dev
+ *  analyst starts (or takes up) today's meeting from another browser the size of this page and goes to the wrap-up;
+ *  this page joins as Pat, following. */
+const wrapUp = as => async (page, demo) => {
+  if (as === 'presenter') {
+    await wideFont(page);
+    await page.keyboard.press('End');
+    await page.locator('.tide-wrap').waitFor();
+    await page.waitForTimeout(400);
+    return;
+  }
+  for (const c of meetingGuests.contexts) await c.close().catch(() => {});
+  meetingGuests = { key: 'wrap/follower', contexts: [] };
+  const { context, page: presenter } = await openPage(page.context().browser(), { route: '/present/{today}', viewport: page.viewportSize() }, demo);
+  meetingGuests.contexts.push(context);
+  await startOrTakeUp(presenter);
+  await presenter.keyboard.press('End');
+  await presenter.locator('.tide-wrap').waitFor();
+  await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
+  await settle(page);
+  await wideFont(page);
+  await page.locator('.tide-wrap').waitFor();
+  await page.waitForTimeout(600);
+};
+
+/** The wrap-up's three lists (not raised, who is doing what, not discussed), each whole in its column: side by side from
+ *  1400px, and the slide still fits. */
+const wrapUpRules = [noSidewaysScroll, slideFits, shownCount('.tide-wrap > .tide-wrap-list', 3), fits('.tide-wrap'), fits('.tide-wrap-list'),
+  visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li'), notSqueezed('.tide-wrap-list[data-wrap="owners"] .tide-present-help'),
+  [1400, oneRow('.tide-wrap')]];
+
 // --- an action beside the slide (Org:ActionBesideSlide, on for this run) -------------------------------------------
 
 const BESIDE = '.tide-present-action.is-beside';
@@ -3890,6 +3923,11 @@ const pages = [
   // the note or the numbers themselves.
   { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter-flag'), focusOn('#present-rail .tide-slide-presenter button')] },
   { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
+  // The open actions slide: each action with how long it has waited and the one thing to do, in its columns.
+  { name: 'slide-open-actions', route: '/present/{today}', setup: slideWith('.tide-slide-open'), widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late')] },
+  // The wrap-up, the presenter's (no meeting): three lists, with the rail beside them where it's docked.
+  { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, 1440, 1100, 780], rules: wrapUpRules },
   // The presenter's rail: docked beside the slide from 1500px (the slide's column narrows, and the slide still fits in
   // it), over the slide below that, as a dialog, once `]` opens it; shut there by default. It holds the presenter's
   // controls (the quick add among them), and the slide none of them. Wider letters.
@@ -3963,6 +4001,10 @@ const pages = [
   { name: 'present-hands-escape', route: '/present/{today}', setup: handsListEscaped, widths: [1440], rules: [hidden('#present-hands'), focusOn('.tide-hands-btn')] },
   { name: 'present-hands-outside', route: '/present/{today}', setup: handsListPressedOutside, widths: [1440], rules: [hidden('#present-hands')] },
   { name: 'present-hands-emptied', route: '/present/{today}', setup: handsListAfterEmpty, widths: [1440], rules: [hidden('#present-hands'), attr('.tide-hands-btn', 'aria-expanded', 'false')] },
+  // The wrap-up as someone following sees it: the same three lists, and none of the presenter's rail. Before the pages
+  // that leave an action open in today's meeting.
+  { name: 'slide-wrap-follower', route: '/present/{today}', setup: wrapUp('follower'), widths: [1920, 1440, 1100, 780],
+    rules: [...wrapUpRules, hidden('#present-rail'), hidden('#present-rail-toggle')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },

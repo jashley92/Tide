@@ -273,7 +273,7 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
         var at = html.IndexOf("Recommended, with no action raised yet", StringComparison.Ordinal);
         at.Should().BeGreaterThan(0);
         var wrap = html[at..];
-        wrap[..wrap.IndexOf("</div></div>", StringComparison.Ordinal)].Should().Contain("Hunt for the indicators in VPN logs").And.NotContain("Apply the vendor hotfix");
+        wrap[..wrap.IndexOf("</section>", StringComparison.Ordinal)].Should().Contain("Hunt for the indicators in VPN logs").And.NotContain("Apply the vendor hotfix");
     }
 
     [Fact]

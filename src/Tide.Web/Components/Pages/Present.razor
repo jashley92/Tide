@@ -261,16 +261,18 @@ else
                     <div>
                         <div class="tide-slide-kicker"><span>Open actions</span><span>&middot; team edition only</span></div>
                         <h2>Still open from earlier briefs</h2>
+                        @* Each with how long it has waited (late, and since its last update) and the one thing to do about it. *@
                         <table class="tide-slide-open">
-                            <thead><tr><th scope="col">Action</th><th scope="col">Team</th><th scope="col">Holder</th><th scope="col">Late</th></tr></thead>
+                            <thead><tr><th scope="col">Action</th><th scope="col">Who</th><th scope="col">Waited</th><th scope="col">Next</th></tr></thead>
                             <tbody>
                                 @foreach (var o in _open.Rows)
                                 {
+                                    var quiet = o.Row.QuietDays(_date, Clock.DayOf);
                                     <tr>
                                         <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
-                                        <td>@o.Row.TeamName</td>
-                                        <td>@(o.NoOneToOwn ? "No one: the team has no members" : o.Row.AssigneeName ?? "Unassigned")</td>
-                                        <td class="tide-slide-late">@o.Late</td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @(o.NoOneToOwn ? "no one: the team has no members" : o.Row.AssigneeName ?? "nobody yet")</span></td>
+                                        <td><span class="tide-slide-late">@o.Late</span>@if (ActionRow.QuietText(quiet) is { } waited) { <span class="tide-slide-waited">@waited</span> }</td>
+                                        <td class="tide-slide-next">@o.NextInTheRoom(quiet)</td>
                                     </tr>
                                 }
                             </tbody>
@@ -593,59 +595,65 @@ else
                             @threats threat@(threats == 1 ? "" : "s"),
                             @edition.Articles.Count(a => a.Article.Classification == Classification.Informational) informational
                         </div>
-                        @* On the team edition, only the recommended lines no action has been raised from yet (by the stored link):
-                           the gap the meeting still has to fill (the raised actions are listed below). The company-wide edition
-                           shows them all, as written. *@
-                        @if (TeamEdition)
-                        {
-                            var open = notRaised!;
-                            @if (open.Count > 0)
+                        @* What's left, as three short lists the room reads alike (the presenter's rail acts on them): the
+                           recommended lines no action has been raised from yet (by the stored link), who is doing what, and
+                           the articles not marked discussed. All from the edition, so nothing above its ceiling is named. The
+                           company-wide edition has no actions: it shows the recommendations as written instead. *@
+                        <div class="tide-wrap">
+                            @if (TeamEdition)
                             {
-                                <div class="tide-slide-text text-start mx-auto">
-                                    <div class="tide-slide-section">Recommended, with no action raised yet</div>
+                                var open = notRaised!;
+                                var holders = WrapUp.WhoHasWhat(edition.Articles.SelectMany(x => x.Actions));
+                                <section class="tide-wrap-list" data-wrap="unraised" aria-labelledby="wrap-unraised-h">
+                                    <h3 id="wrap-unraised-h" class="tide-slide-section">Recommended, with no action raised yet (@open.Sum(x => x.Lines.Count))</h3>
                                     @foreach (var x in open)
                                     {
-                                        <div class="mb-2"><strong>@x.Article.Title</strong><ul class="mb-0">@foreach (var l in x.Lines) { <li>@l</li> }</ul></div>
+                                        <div class="tide-wrap-item"><strong>@x.Article.Title</strong><ul>@foreach (var l in x.Lines) { <li>@l</li> }</ul></div>
                                     }
-                                </div>
-                            }
-                        }
-                        else if (edition.Articles.Any(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)))
-                        {
-                            <div class="tide-slide-text text-start mx-auto">
-                                <div class="tide-slide-section">Recommended actions</div>
-                                @foreach (var x in edition.Articles.Where(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)))
-                                {
-                                    <div class="mb-2"><strong>@x.Article.Title</strong><Md Text="@x.Article.RecommendedActions" /></div>
-                                }
-                            </div>
-                        }
-                        @{ var allRaised = edition.Articles.SelectMany(x => x.Actions).ToList(); }
-                        @if (allRaised.Count > 0)
-                        {
-                            <div class="tide-slide-text text-start mx-auto tide-slide-actions">
-                                <div class="tide-slide-section">Actions on these articles (@allRaised.Count)</div>
-                                <ul>
-                                    @foreach (var r in allRaised)
+                                    @if (open.Count == 0) { <p class="tide-present-help">Nothing left to raise.</p> }
+                                </section>
+                                <section class="tide-wrap-list" data-wrap="owners" aria-labelledby="wrap-owners-h">
+                                    <h3 id="wrap-owners-h" class="tide-slide-section">Who is doing what (@holders.Sum(g => g.Actions.Count))</h3>
+                                    @foreach (var g in holders)
                                     {
-                                        <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
+                                        <div class="tide-wrap-item">
+                                            <strong>@g.Who</strong>
+                                            <ul>
+                                                @foreach (var r in g.Actions)
+                                                {
+                                                    <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
+                                                }
+                                            </ul>
+                                        </div>
                                     }
-                                </ul>
-                            </div>
-                        }
-                        @if (!Presented)
-                        {
-                            @* Only the articles this edition shows: the company-wide one mustn't name the team-only ones. *@
-                            @if (undiscussed.Count > 0)
+                                    @if (holders.Count == 0) { <p class="tide-present-help">No actions raised on these articles.</p> }
+                                </section>
+                            }
+                            else if (edition.Articles.Where(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)).ToList() is { Count: > 0 } recommended)
                             {
-                                <div class="tide-slide-text text-start mx-auto tide-slide-actions" role="status">
-                                    <div class="tide-slide-section">Not marked discussed (@undiscussed.Count)</div>
+                                <section class="tide-wrap-list" data-wrap="recommended" aria-labelledby="wrap-reco-h">
+                                    <h3 id="wrap-reco-h" class="tide-slide-section">Recommended actions</h3>
+                                    @foreach (var x in recommended)
+                                    {
+                                        <div class="tide-wrap-item"><strong>@x.Article.Title</strong><Md Text="@x.Article.RecommendedActions" /></div>
+                                    }
+                                </section>
+                            }
+                            @if (!Presented)
+                            {
+                                @* Only the articles this edition shows: the company-wide one mustn't name the team-only ones. *@
+                                <section class="tide-wrap-list" data-wrap="undiscussed" aria-labelledby="wrap-undiscussed-h" role="status">
+                                    <h3 id="wrap-undiscussed-h" class="tide-slide-section">Not marked discussed (@undiscussed.Count)</h3>
                                     @foreach (var item in undiscussed)
                                     {
-                                        <div>@item.Article!.Title@(_carry.Contains(item.ArticleId) ? " (carried to the next brief)" : "")</div>
+                                        <div class="tide-wrap-item">@item.Article!.Title@(_carry.Contains(item.ArticleId) ? " (carried to the next brief)" : "")</div>
                                     }
-                                </div>
+                                    @if (undiscussed.Count == 0) { <p class="tide-present-help">Every article was discussed.</p> }
+                                </section>
                             }
+                        </div>
+                        @if (!Presented)
+                        {
                             @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0))
                             {
                                 <div class="tide-slide-text text-start mx-auto tide-slide-actions">

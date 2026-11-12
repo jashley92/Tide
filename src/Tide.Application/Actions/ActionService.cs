@@ -79,6 +79,14 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
 
+    /// <summary>How long it has waited: whole days from the last thing that happened to it to <paramref name="asOf"/>, as
+    /// <paramref name="dayOf"/> (the organization's clock) dates it. 0 within the day, or with nothing recorded.</summary>
+    public int QuietDays(DateOnly asOf, Func<DateTimeOffset, DateOnly> dayOf) =>
+        LastActivityUtc is { } at ? Math.Max(0, asOf.DayNumber - dayOf(at).DayNumber) : 0;
+
+    /// <summary>"no update for 6 days", or null within the day (<see cref="QuietDays"/>).</summary>
+    public static string? QuietText(int quietDays) => quietDays < 1 ? null : $"no update for {Words.Plural(quietDays, "day")}";
+
     /// <summary>Whether it's escalated now (<see cref="ActionItem.EscalatedFor"/>).</summary>
     public bool Escalated => ActionItem.EscalatedFor(Status, DueDate, EscalatedForDue);
 
@@ -107,6 +115,17 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
 {
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
     public string Late => ActionSla.LateText(DaysLate) ?? "not yet due";
+
+    /// <summary>The one thing the meeting can do about it, the most pressing first: give a team with nobody in it someone,
+    /// unblock it, find it a holder, or ask for an update; one updated since yesterday and still late gets a new due date.
+    /// Said to the room, so it doesn't follow the action page's Next line (<see cref="ActionGuide.Next"/>), which depends on
+    /// who is looking and offers that page's flows.</summary>
+    public string NextInTheRoom(int quietDays) =>
+        NoOneToOwn ? "Reassign to a team with members"
+        : Row.Status == ActionStatus.Blocked ? "Ask what it's waiting on"
+        : Row.AssigneeId is null && !Row.TeamExternal ? "Find someone to take it"
+        : quietDays >= 2 || DaysLate == 0 ? "Ask for an update"
+        : "Agree a new due date";
 }
 
 /// <summary>The overdue actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>),

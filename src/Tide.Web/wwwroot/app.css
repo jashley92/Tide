@@ -1119,6 +1119,19 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
 .tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
 .tide-slide-open .tide-slide-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); white-space: nowrap; }
+/* How long an open action has waited since its last update, under how late it is; and the one thing to do about it. */
+.tide-slide-open .tide-slide-waited { display: block; color: var(--tide-slide-muted); font-size: .85em; }
+.tide-slide-open .tide-slide-next { font-weight: var(--tide-weight-semibold); }
+/* The wrap-up's three lists (not raised, who is doing what, not discussed): side by side where the slide has room for
+   them, one under another where it hasn't. Each item's words wrap within its column. */
+.tide-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15em), 1fr)); gap: .6em 2em; width: min(72em, 92cqw); margin: .6em auto 0; text-align: start; }
+.tide-wrap-list { min-width: 0; }
+.tide-wrap-list > .tide-slide-section { margin-top: 0; }
+.tide-wrap-item { margin-bottom: .5em; overflow-wrap: anywhere; }
+.tide-wrap-item > ul { margin: .2em 0 0; padding-left: 1.2em; font-size: .9em; }
+.tide-wrap-list[data-wrap="owners"] .tide-wrap-item > ul { list-style: none; padding-left: 0; }
+.tide-wrap-list[data-wrap="owners"] li { padding: .15em 0; }
+.tide-wrap-list[data-wrap="owners"] .tide-action-num { color: var(--tide-slide-muted); }
 .tide-tile-name { color: var(--tide-slide-muted); font-size: .85em; }
 .tide-tile-change { font-size: .85em; font-variant-numeric: tabular-nums; }
 .tide-slide .tide-trend-better { color: var(--tide-slide-ok); }
