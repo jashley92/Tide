@@ -99,6 +99,14 @@ public class RailOverlayTests
         reset({});
         tideRail.toggle(); dialog = Object.assign(el('reconnect'), { getClientRects: () => [] }); changed(); out.hiddenDialog = state();
 
+        // Only markup changes that add or take away elements are looked at: text changing in the page (a clock, a count)
+        // isn't, so the dialogs aren't searched and measured on each. A dialog that opens comes with an element.
+        reset({});
+        tideRail.toggle(); dialog = el('palette');
+        const text = { nodeType: 3 }, element = { nodeType: 1 };
+        observers.slice().forEach(f => f([{ addedNodes: [text], removedNodes: [] }])); out.textChanged = state();
+        observers.slice().forEach(f => f([{ addedNodes: [text], removedNodes: [] }, { addedNodes: [element], removedNodes: [] }])); out.elementAdded = state();
+
         console.log(JSON.stringify(out));
         """;
 
@@ -167,5 +175,14 @@ public class RailOverlayTests
         said["dialogUnder"].Focus.Should().Be("tide-rail-toggle", "focus that was in it goes to the Context button, for the dialog to take and give back there");
         said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1, "dialog", "true"), "a dialog in the rail is the rail's own");
         said["hiddenDialog"].Over.Should().BeTrue("a hidden dialog in the markup doesn't close the rail");
+    }
+
+    [Fact]
+    public async Task WhileItsOpen_OnlyElementsAddedOrTakenAway_AreLookedAt_NotTextChanging()
+    {
+        var said = await Run();
+
+        said["textChanged"].Over.Should().BeTrue("text changing isn't looked at");
+        said["elementAdded"].Over.Should().BeFalse("an element added is, and the dialog it brought closes the rail");
     }
 }

@@ -326,12 +326,12 @@ public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
 /// <summary>
 /// How many open actions each view tab shows under the same filters (Mine lets go of Held by, as choosing it does), on the
 /// list and the board alike (or for Recently closed, those closed in its 90 days). And for an empty Mine to point at, how
-/// many open actions are the reader's (<see cref="MineOpen"/>) and how many of the reader's teams' nobody has
+/// many open actions are the reader's (<see cref="Mine"/>) and how many of the reader's teams' nobody has
 /// (<see cref="MyTeamsUnowned"/>).
 /// </summary>
-public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned, int MineOpen)
+public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned)
 {
-    public static readonly ActionViewCounts None = new(0, 0, 0, 0, 0, 0, 0);
+    public static readonly ActionViewCounts None = new(0, 0, 0, 0, 0, 0);
 
     /// <summary>Nobody's in All open, Overdue and Recently closed (My teams' is <see cref="MyTeamsUnowned"/>).</summary>
     public int OpenUnowned { get; init; }
@@ -622,7 +622,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             Overdue = g.Count(x => x.Open && x.Late && x.Held),
             Closed = g.Count(x => x.Closed && x.Held),
             Unowned = g.Count(x => x.Open && x.Team && x.Nobodys),
-            MineOpen = g.Count(x => x.Open && x.Mine),
             OpenUnowned = g.Count(x => x.Open && x.Nobodys),
             OverdueUnowned = g.Count(x => x.Open && x.Late && x.Nobodys),
             ClosedUnowned = g.Count(x => x.Closed && x.Nobodys),
@@ -630,7 +629,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             Cancelled = g.Count(x => x.OnStrip && x.Status == ActionStatus.Cancelled),
             NotApplicable = g.Count(x => x.OnStrip && x.Status == ActionStatus.NotApplicable),
         }).FirstOrDefaultAsync(ct);
-        return c is null ? ActionViewCounts.None : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned, c.MineOpen)
+        return c is null ? ActionViewCounts.None : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned)
         {
             OpenUnowned = c.OpenUnowned, OverdueUnowned = c.OverdueUnowned, ClosedUnowned = c.ClosedUnowned,
             BoardDone = c.Done, BoardCancelled = c.Cancelled, BoardNotApplicable = c.NotApplicable,
@@ -905,7 +904,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }).ToListAsync(ct);
         var asked = open.Select(a =>
             {
-                var last = new[] { a.Commented, a.Updated }.Max() ?? a.CreatedAtUtc;
+                var last = LastActivity(a.Commented, a.Updated, a.CreatedAtUtc);
                 var row = new ActionRow(a.Id, a.Number, "", a.Kind, a.Priority, a.TeamId, "", a.AssigneeId, null, a.DueDate, a.Status, ActionOutcome.None,
                     null, a.ArticleId, null, null, 0, a.CreatedAtUtc, EscalatedForDue: a.EscalatedForDue, LastActivityUtc: last);
                 var quiet = NeedsUpdate.QuietDays(clock.DayOf(last), asOf, days);
@@ -1091,11 +1090,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Hunts.Max(h => (HuntResult?)h.Result),
         // When a person last did something to it: the latest of its comments and its history (raising it writes a line),
         // or with neither, when it was saved. TIDE's own lines (the escalation ladder's, a skipped reminder's) aren't updates.
-        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? DateTimeOffset.MinValue)
-            > (a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? DateTimeOffset.MinValue)
-            ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
-            : a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        // Each is read once, and the later picked here.
+        LastActivity(a.Comments.Max(c => (DateTimeOffset?)c.AtUtc),
+            a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc), a.CreatedAtUtc))
         { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl });
+
+    // The later of an action's last comment and its last line by a person, or with neither, when it was raised.
+    private static DateTimeOffset LastActivity(DateTimeOffset? commented, DateTimeOffset? updated, DateTimeOffset created) =>
+        new[] { commented, updated }.Max() ?? created;
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
