@@ -1,6 +1,7 @@
 @page "/triage"
 @attribute [Authorize(Policy = Policies.WriteArticles)]
 @inject IntakeService Intake
+@inject SourcePollGuard Polls
 @inject CveService Cves
 @inject NavigationManager Nav
 @inject ToastService Toasts
@@ -44,7 +45,9 @@
         else
         {
             <PolledSourcesTable Sources="_polled" Now="Time.GetUtcNow()" PollingOn="IntakeOpts.CurrentValue.Enabled" Window="Intake.PullWindow"
-                                Pulling="_pulling" OnPull="Pull" />
+                                Pulling="_pulling" OnPull="Pull">
+                <Actions><PullAllButton @ref="_pullAll" Disabled="@(_pulling is not null)" OnStep="s => _pulling = s.Id" OnDone="AfterPull" /></Actions>
+            </PolledSourcesTable>
         }
     </div>
 }
@@ -825,15 +828,36 @@ else
         try
         {
             var result = await Intake.PullNowAsync(id);
-            if (result.Error is null) Toasts.Show($"Pulled {name}: {(result.New == 0 ? "no new items" : result.New == 1 ? "1 new item" : $"{result.New} new items")}.");
+            if (result.Error is null) Toasts.Show($"Pulled {name}: {PullTimes.NewItems(result.New)}.");
             else Toasts.Error($"Pulled {name}, but it failed: {result.Error}");
             Changes.Publish(new Change(ChangeFeed.Triage, "system", "", Origin.Id));
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _pulling = null; }
+        await AfterPull();
+    }
+
+    // A pull, or Pull all, ended: the rows and the tab counts are read again.
+    private async Task AfterPull()
+    {
+        _pulling = null;
         await Load();
         StateHasChanged();
     }
+
+    private PullAllButton? _pullAll;
+
+    // A source's poll or someone's Pull all started or ended, anywhere: the Sources tab's rows say which are being pulled,
+    // so they're read again (a reload during someone's run, or a page watching it, isn't left showing "Pulling…").
+    private void PollsChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!_sourcesTab || !_loaded || _disposed) return;
+        _polled = await Intake.PolledSourcesAsync();
+        StateHasChanged();
+    });
+
+    /// <summary>Pull all on the Sources tab: each source due a pull, one at a time, its row showing it as it's pulled.</summary>
+    internal Task PullAll() => _pullAll?.RunAsync() ?? Task.CompletedTask;
+
     private Guid? _sourceId;
     private string? _search;
     private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all"
@@ -1225,6 +1249,7 @@ else
     {
         // First, so a page closed during the loads below has already stopped listening.
         _live = new LiveChanges(Changes, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, Heard);
+        Polls.Changed += PollsChanged;
         _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
@@ -1886,6 +1911,7 @@ else
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        Polls.Changed -= PollsChanged;
         _live?.Dispose();
         _marks?.Dispose();
         _tabMarks?.Dispose();

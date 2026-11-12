@@ -112,10 +112,13 @@ public sealed class OrgClock : IDisposable
     /// The first instant of a local <paramref name="day"/>: the day an instant falls on (<see cref="ToLocal"/>) is
     /// <paramref name="day"/> from here until the next day's start. A midnight a clock change skips starts at the change.
     /// </summary>
-    public DateTimeOffset StartOfDay(DateOnly day)
+    public DateTimeOffset StartOfDay(DateOnly day) => At(Zone, day, TimeOnly.MinValue);
+
+    /// <summary>The first instant <paramref name="day"/> shows <paramref name="time"/> in <paramref name="zone"/>: a time
+    /// the clocks skip that day is when they change, and one they show twice is its first.</summary>
+    public static DateTimeOffset At(TimeZoneInfo zone, DateOnly day, TimeOnly time)
     {
-        var zone = Zone;
-        var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var local = day.ToDateTime(time, DateTimeKind.Unspecified);
         while (zone.IsInvalidTime(local)) local = local.AddMinutes(1);
         var offsets = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local) : [zone.GetUtcOffset(local)];
         return offsets.Select(o => new DateTimeOffset(local, o)).Min();

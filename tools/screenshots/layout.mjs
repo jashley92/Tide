@@ -3467,6 +3467,12 @@ const pages = [
   // Today's page, top to bottom: the running order, the opening note, My actions and Not on a brief yet, the numbers.
   { name: 'today-order', route: '/', widths: [1920, 780],
     rules: [inOrder('#running-order-h', '#team-note-h', '#my-actions-h', '.content .tide-card:has(.tide-collapse-btn[aria-controls$="-body"])')] },
+  // Under the step strip, Triage's word on the feeds not pulled since the morning's cutoff (the demo's stale feeds, on a
+  // working day: nothing is said on a day off), with Pull all: snug under the strip, its words and button on one row where
+  // there's room, wrapping within its box where there isn't, the button whole on one line.
+  { name: 'today-feeds', route: '/', setup: wideFont, widths: [1920, 1440, 780], when: demo => demo.FeedsDue !== false,
+    rules: [noSidewaysScroll, visible('.tide-feeds-nudge'), fits('.tide-feeds-nudge'), closeBelow('.tide-feeds-nudge', '.tide-steps', 16),
+      [1440, oneRow('.tide-feeds-nudge')], oneLine('.tide-feeds-nudge .tide-pull-all > button'), notSqueezed('.tide-feeds-nudge .tide-pull-all > button')] },
   { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 641, 400],
     rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), [1001, inlineIn('.tide-step-flag', '.tide-step-detail')],
       visible('.tide-steps .tide-step-flag'), notClipped('.tide-steps .tide-step-flag')] },
@@ -3705,6 +3711,11 @@ const pages = [
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
       fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
+  // The Sources tab's head: what the tab is, and Pull all beside it where there's room (under it where there isn't),
+  // the button whole on one line, nothing past the card.
+  { name: 'triage-pull-all', route: '/triage?tab=sources', setup: wideFont, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('.tide-pull-head .tide-pull-all > button'), fits('.tide-pull-head'), fits('.content .tide-card-scroll'), [1440, oneRow('.tide-pull-head')],
+      oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
@@ -4178,8 +4189,11 @@ function shard(list, spec) {
 let server;
 try {
   // Enough more new items for Triage to have a second page (the paging keys' rules), a slide with a dozen indicators
-  // and CVEs (the slide's fit), and a meeting's action beside the slide (only the present-beside pages open one).
-  server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true', '--Org:ActionBesideSlide=true']);
+  // and CVEs (the slide's fit), and a meeting's action beside the slide (only the present-beside pages open one). Polling
+  // on, with feeds the scheduled pass leaves alone (never fetched) last pulled the day before, and a cutoff at midnight,
+  // so Today says the feeds aren't pulled whenever the run is on a working day.
+  server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true', '--Org:ActionBesideSlide=true',
+    '--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=00:00']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);
@@ -4198,6 +4212,10 @@ async function check(list, demo) {
   const problems = [];
   try {
     for (const p of list) {
+      if (p.when && !p.when(demo)) {
+        console.log(`  ${p.name}: not checked today (what it needs isn't shown on this day)`);
+        continue;
+      }
       for (const size of p.widths) {
         const [width, height] = Array.isArray(size) ? size : [size, 900];
         const rules = p.rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
