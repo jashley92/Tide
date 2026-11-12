@@ -569,10 +569,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return new ActionWorkers(false, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
     }
 
-    // An article's title (and what's read from it) is shown only to someone who may open the article: whoever reads the
-    // team edition, as the article pages require. Someone who only works actions sees the action without it.
+    // An article's title (and what's read from it, the recommended line copied from it among them) is shown only to
+    // someone who may open the article: whoever reads the team edition, as the article pages require. Someone who only
+    // works actions sees the action without it.
     private List<ActionRow> Readable(List<ActionRow> rows) =>
-        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null })];
+        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null, RecommendationLine = null })];
 
     /// <summary>
     /// How many actions each view tab shows under <paramref name="filter"/>'s other filters (and the card
@@ -805,12 +806,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             // The words anywhere in the title or the article's (LIKE: the same match on SQLite and SQL Server, wildcards
-            // literal), or a whole number as the action's.
+            // literal), or a whole number as the action's. The article's title only for someone who may read it.
             var words = filter.Search.Trim();
             var like = Search.SearchText.Contains(words);
             var number = Search.SearchText.ActionNumber(words) ?? -1;
-            q = q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
-                             || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
+            q = user.Has(Permission.ReadTeamEdition)
+                ? q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
+                               || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)))
+                : q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape));
         }
         if (filter.Priorities is { Count: > 0 } priorities)
         {
@@ -1646,19 +1649,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
         var over = await OverLimit(db, a, status, overLimitReason, ct);
+        var was = a.Status;
         var line = ApplyStatus(db, a, status, outcome, note);
-        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, was, ct));
         await SaveEditAsync(db, ct);
     }
 
     /// <summary>
     /// An action brought back from Cancelled whose recommended line another standing action now holds lets the line go:
     /// it keeps its title, and the slide lists it among the article's other actions (one standing action per line, as
-    /// <see cref="RecommendationLineAsync"/> keeps it as they're raised). Returns what its history line says of it.
+    /// <see cref="RecommendationLineAsync"/> keeps it as they're raised). Returns what its history line says of it. Only a
+    /// move from Cancelled (<paramref name="was"/>) is looked at: an action standing all along keeps its line.
     /// </summary>
-    private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, CancellationToken ct)
+    private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, ActionStatus was, CancellationToken ct)
     {
-        if (a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
+        if (was != ActionStatus.Cancelled || a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
         var holders = await db.Actions.AsNoTracking()
             .Where(x => x.ArticleId == article && x.Id != a.Id && x.RecommendationLine != null && x.Status != ActionStatus.Cancelled)
             .Select(x => new { x.Number, Line = x.RecommendationLine! }).ToListAsync(ct);
@@ -1692,7 +1697,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (from == to) return;
         var over = await OverLimit(db, a, to, overLimitReason, ct);
         var line = ApplyStatus(db, a, to, outcome, note);
-        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+        line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, from, ct));
         await SaveEditAsync(db, ct);
     }
 
@@ -1741,8 +1746,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (moves)
         {
             var over = await OverLimit(db, a, update.Status, update.OverLimitReason, ct);
+            var was = a.Status;
             var line = ApplyStatus(db, a, update.Status, update.Outcome, closing ? note : null, lead);
-            line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, ct));
+            line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, was, ct));
         }
         else
         {

@@ -69,6 +69,9 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.Follow());
         html = await pat.Html();
         var people = People(html);
+        // Said briefly, in a status region of its own; the roster is read when reached, not again at every change.
+        people.Should().Contain("role=\"status\">Robin Analyst raised a hand.</span>")
+            .And.NotContain("tide-presence-sm\" role=\"status\"");
         people.Should().Contain("aria-label=\"2 hands up: Olive Owner, Robin Analyst\"").And.Contain("<span class=\"tide-hands-n\">2</span>")
             .And.Contain("Olive Owner, hand raised").And.Contain("Robin Analyst, hand raised").And.Contain("aria-expanded=\"false\"")
             .And.NotContain("present-hands\" class", "the list is shut until asked for").And.NotContain("Clear all");

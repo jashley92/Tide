@@ -88,16 +88,18 @@ else
                 @if (_past) { <span class="tide-present-help" title="This brief is being presented or recorded after its day">past day</span> }
             </div>
             @* Who is here and whose hands are up, for the presenter and everyone following alike: the first few dots and "+N"
-               (a status region, so arrivals and hands are read out), how many are here, the hands as their count and then as
+               (the whole roster for a screen reader, read when reached; arrivals and hands are said briefly, in a status
+               region of their own, so a follower moving slides doesn't have the roster read again), how many are here, the hands as their count and then as
                many whole names as fit, in the order they went up (a button: the list, where the presenter lowers one or
                all). A follower's own Raise hand comes before the hands, which take the room that's left. With no meeting, who else has the brief open. *@
             <div class="tide-present-people">
+                <span class="visually-hidden" role="status">@_presenceSaid</span>
                 @if (_view is { } meeting)
                 {
                     var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
                     var beyond = meeting.People.Skip(TopBarDots).ToList();
                     var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
-                    <span class="tide-presence tide-presence-sm" role="status">
+                    <span class="tide-presence tide-presence-sm">
                         @foreach (var p in meeting.People.Take(TopBarDots))
                         {
                             var away = meeting.Away(p);
@@ -2079,7 +2081,33 @@ else
     }
 
     // The meeting as it is now, after this page's own change (which it doesn't hear about: see OnMeetingChanged).
-    private void Refresh() => _view = Meetings.Get(_date);
+    private void Refresh()
+    {
+        var was = _view;
+        _view = Meetings.Get(_date);
+        if (was is not null && _view is not null && PresenceNews(was, _view, _me) is { } news) _presenceSaid = news;
+    }
+
+    // Said once, briefly, as people come and go and hands go up and down (the top bar's status region).
+    private string? _presenceSaid;
+
+    /// <summary>Who joined, left, raised or lowered a hand between two views of the meeting ("Robin Analyst raised a
+    /// hand."), leaving out this page's own; null when nothing of that changed (a follower moving slides, say).</summary>
+    internal static string? PresenceNews(LiveMeetingView was, LiveMeetingView now, string me)
+    {
+        List<string> parts = [];
+        void Say<T>(IEnumerable<T> from, IEnumerable<T> notIn, Func<T, string> id, Func<T, string> name, string what)
+        {
+            var other = notIn.Select(id).ToHashSet();
+            var names = from.Where(x => id(x) != me && !other.Contains(id(x))).Select(name).ToList();
+            if (names.Count > 0) parts.Add($"{string.Join(", ", names)} {what}.");
+        }
+        Say(now.People, was.People, p => p.UserId, p => p.Name, "joined");
+        Say(was.People, now.People, p => p.UserId, p => p.Name, "left");
+        Say(now.Hands, was.Hands, h => h.UserId, h => h.Name, "raised a hand");
+        Say(was.Hands, now.Hands, h => h.UserId, h => h.Name, "lowered a hand");
+        return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
 
     private async Task ReloadRecord()
     {
