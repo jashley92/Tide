@@ -220,6 +220,7 @@ narrows for it, so the room reads the two together:
   narrower than the room's by the rail, as it is without an action open. The rail open over the slide covers the action
   too, as a modal.
 - Narrower than 1200px it opens over the slide, as without the setting.
+- Turned on or off while an action is open, it moves there at once for everyone in the meeting.
 - Only the action does: a product's card, the indicators, the CVEs and the tag panel open over the slide as ever.
 - Whoever follows sees it where the presenter has it, as they see the card over the slide. It shows no more than that
   card: their own read of the action (a Visitor's only the one open for the room, without its page link or files), and,

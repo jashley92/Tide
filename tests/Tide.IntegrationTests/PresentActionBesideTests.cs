@@ -75,6 +75,36 @@ public class PresentActionBesideTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TurnedOnOrOff_WhileAnActionIsOpen_ItMovesThereForEveryone_WithoutOpeningItAgain()
+    {
+        await Turn(false);
+        try
+        {
+            var (day, number, _) = await Brief(127);
+            await using var pat = await Open(app, day);
+            await Do(pat, p => p.StartMeeting());
+            await using var owner = await Open(app, day, Owner);
+            await Do(owner, p => p.JoinIfLive());
+            await FirstArticle(pat);
+            await Do(owner, p => p.Follow());
+            await Do(pat, p => p.ShowAction(number));
+            await Do(owner, p => p.Follow());
+            (await owner.Html()).Should().Contain("present-action-title").And.NotContain("is-beside");
+
+            await Turn(true);
+            (await pat.HtmlOnce("has-beside")).Should().Contain(Beside, "the presenter's open card moves beside the slide");
+            (await owner.HtmlOnce("has-beside")).Should().Contain(Beside, "and the room's with it");
+
+            await Turn(false);
+            for (var i = 0; i < 50 && (await owner.Html()).Contains("has-beside", StringComparison.Ordinal); i++) await Task.Delay(100);
+            (await pat.Html()).Should().NotContain("has-beside").And.Contain("present-action-title");
+            (await owner.Html()).Should().NotContain("has-beside").And.Contain("present-action-title");
+            EndMeeting(app, day);
+        }
+        finally { await Turn(false); }
+    }
+
+    [Fact]
     public async Task Off_TheActionOpensOverTheSlide_AsBefore()
     {
         await Turn(false);

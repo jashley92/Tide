@@ -1968,6 +1968,14 @@ const besideFactsRoomy = holds('the action facts beside the slide have room', be
     return w > 0 && w < 7 * em ? [`fact #${i + 1} ("${el.querySelector('dt')?.textContent}") is ${Math.round(w)}px wide`] : [];
   }), BESIDE);
 
+/** The status choices beside the slide fill their rows: the last ends at the group's right edge, no blank cell after it. */
+const besideStatusFilled = holds('the action’s status choices fill their rows', beside => {
+  const seg = document.querySelector(`${beside} .tide-status-seg`);
+  if (!seg) return ['no status choices shown'];
+  const last = [...seg.children].at(-1).getBoundingClientRect(), box = seg.getBoundingClientRect();
+  return box.right - last.right > 3 ? [`the last choice ends ${Math.round(box.right - last.right)}px short of the row's end: a blank cell`] : [];
+}, BESIDE);
+
 /** The action opens over the slide, not beside it: a narrow window. */
 const actionOver = holds('the action is over the slide', () => {
   const card = document.querySelector('.tide-present-action');
@@ -3972,10 +3980,10 @@ const pages = [
   // leave an action open in today's meeting.
   { name: 'present-beside-follower', route: '/present/{today}', setup: actionBeside('follower'), widths: [[1920, 1000], [1600, 900], 1440, 1200],
     rules: [noSidewaysScroll, visible(BESIDE), besides(BESIDE, '#present-root > .tide-slide'), hidden('#present-rail'), fits(BESIDE),
-      inWindow(`${BESIDE} button`), besideFactsRoomy, contrastAtLeast(`${BESIDE} .tide-fact :is(dt, dd)`, 4.5), oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, matchesPresenter] },
-  { name: 'present-beside-presenter', route: '/present/{today}', setup: actionBeside('presenter'), widths: [[1920, 1000], [1600, 900]],
+      inWindow(`${BESIDE} button`), besideFactsRoomy, besideStatusFilled, contrastAtLeast(`${BESIDE} .tide-fact :is(dt, dd)`, 4.5), oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, matchesPresenter] },
+  { name: 'present-beside-presenter', route: '/present/{today}', setup: actionBeside('presenter'), widths: [[1920, 1000], [1600, 900], [1500, 900]],
     rules: [noSidewaysScroll, visible(BESIDE), visible('#present-rail.is-docked'), besides(BESIDE, '#present-root > .tide-slide'),
-      besides('#present-rail', BESIDE), fits(BESIDE), fits('#present-rail'), inWindow(`${BESIDE} button`), besideFactsRoomy,
+      besides('#present-rail', BESIDE), fits(BESIDE), fits('#present-rail'), inWindow(`${BESIDE} button`), besideFactsRoomy, besideStatusFilled,
       oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, widerThan('#present-root > .tide-slide', 559)] },
   { name: 'present-beside-narrow', route: '/present/{today}', setup: actionBeside('presenter'), widths: [1100, 780],
     rules: [noSidewaysScroll, actionOver, slideFits] },

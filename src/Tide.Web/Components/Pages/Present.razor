@@ -1481,6 +1481,7 @@ else
         _writesBriefs = CurrentUser.Has(Permission.WriteArticles);
         Meetings.Changed += OnMeetingChanged;
         Meetings.Scrolled += OnMeetingScrolled;
+        Clock.Changed += OnOrgChanged;
     }
 
     private HashSet<string> Followed()
@@ -2604,6 +2605,14 @@ else
     /// rehearsed): the same for the presenter and everyone following, so the room sees what they see.</summary>
     private bool ActionBeside => Clock.ActionBesideSlide && TeamEdition && _actionDetail is not null;
 
+    // The organization's settings changed: an action open now moves beside the slide, or back over it, on every page in
+    // the meeting at once (each draws it from the setting), rather than when it's next opened.
+    private void OnOrgChanged()
+    {
+        if (_disposed || _actionDetail is null) return;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
         @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
@@ -3120,6 +3129,7 @@ else
         _disposed = true;   // a join or follow still under way doesn't take a seat for a page that's gone
         Meetings.Changed -= OnMeetingChanged;
         Meetings.Scrolled -= OnMeetingScrolled;
+        Clock.Changed -= OnOrgChanged;
         LeaveMeeting();
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();

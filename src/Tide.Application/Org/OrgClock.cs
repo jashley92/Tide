@@ -51,9 +51,14 @@ public sealed class OrgClock : IDisposable
         _listening = options.OnChange(o =>
         {
             try { _now = Read(o); }
-            catch (InvalidOperationException) { /* keep the last good settings */ }
+            catch (InvalidOperationException) { return; /* keep the last good settings */ }
+            Changed?.Invoke();
         });
     }
+
+    /// <summary>The settings changed (one saved in Administration): what shows them now (a meeting's action beside the
+    /// slide or over it) is drawn again. Raised on the thread that saved them.</summary>
+    public event Action? Changed;
 
     public void Dispose() => _listening?.Dispose();
 
