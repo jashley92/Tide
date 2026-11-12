@@ -94,13 +94,13 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OnPresentKey("next"));
         var html = await r.Html();
-        html.Should().Contain("class=\"tide-slide-note\"").And.Contain("<h2>Before we start</h2>").And.Contain("team edition only")
+        html.Should().Contain("class=\"tide-slide-note\"").And.Contain("tabindex=\"-1\">Before we start</h2>").And.Contain("team edition only")
             .And.Contain("Slide 2 of").And.Contain(": Opening note");
         System.Text.RegularExpressions.Regex.IsMatch(html, @"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>\s*</ul>\s*</li>")
             .Should().BeTrue("the sub-bullet is a list inside its bullet");
 
         await r.Click(p => p.OnPresentKey("next"));
-        (await r.Html()).Should().Contain("<h2>Note test numbers</h2>", "the numbers follow the note");
+        (await r.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>", "the numbers follow the note");
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await Open(app, day);
         await r.Click(p => p.OnPresentKey("next"));
         await r.Click(p => p.OnPresentKey("next"));
-        (await r.Html()).Should().Contain("<h2>Note test numbers</h2>");
+        (await r.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>");
 
         await Edition(r, Domain.Enums.Edition.Public);
         (await r.Html()).Should().Contain("Slide 2 of 3").And.Contain("<h2>Note test article 65</h2>", "the first article, where the numbers were, not the wrap-up at slide 3");
@@ -162,12 +162,12 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
             await using var owner = await Open(app, day, Owner);
             await Do(owner, p => p.JoinIfLive());
-            (await owner.Html()).Should().Contain("<h2>Before we start</h2>").And.Contain("Invoice lures are up").And.Contain("Following Tester");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Before we start</h2>").And.Contain("Invoice lures are up").And.Contain("Following Tester");
 
             await pat.Click(p => p.OnPresentKey("next"));
             Meetings.Get(day)!.SlideKey.Should().StartWith(MetricSlides.KeyPrefix, "the numbers come after the note");
             await Do(owner, p => p.Follow());
-            (await owner.Html()).Should().Contain("<h2>Note test numbers</h2>");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>");
         }
         finally { await Do(pat, p => p.EndMeeting()); }
     }
@@ -180,7 +180,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnPresentKey("next"));
 
         await SaveAs(Robin, brief, "- Payroll lure wave\n  - Report it with the button");
-        (await r.HtmlOnce("Payroll lure wave")).Should().Contain("Report it with the button").And.Contain("<h2>Before we start</h2>")
+        (await r.HtmlOnce("Payroll lure wave")).Should().Contain("Report it with the button").And.Contain("tabindex=\"-1\">Before we start</h2>")
             .And.NotContain("Invoice lures");
 
         await SaveAs(Robin, brief, null);

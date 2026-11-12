@@ -40,4 +40,13 @@ public class DemoSlideFillerTests(DemoSlideFillerApp app) : IClassFixture<DemoSl
         var cves = await db.ArticleCves.Where(c => c.ArticleId == last).Select(c => c.CveId).ToListAsync();
         cves.Should().Contain(Enumerable.Range(11, 12).Select(n => $"CVE-2026-00{n}"));
     }
+
+    [Fact]
+    public async Task Filler_carries_an_opening_note_over_not_yet_looked_at()
+    {
+        await using var db = Db();
+        var brief = await db.Briefs.AsNoTracking().OrderByDescending(b => b.BriefDate).FirstAsync();
+        brief.TeamNote.Should().NotBeNullOrWhiteSpace();
+        Tide.Application.Briefs.BriefService.TeamNoteCarriedOver(brief).Should().BeTrue("the presenter's Still current and Edit show on its slide");
+    }
 }

@@ -798,11 +798,17 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-agenda li { display: flex; gap: .8em; align-items: center; padding: .45em 0; border-bottom: 1px solid var(--tide-slide-line); }
 .tide-agenda li.done { opacity: .5; }
 .tide-agenda .n { color: var(--tide-slide-muted); width: 1.6em; text-align: right; font-variant-numeric: tabular-nums; }
+.tide-agenda .tide-kev { margin-left: auto; color: var(--tide-slide-threat); font-size: .75em; }
+.tide-agenda-first { margin: 1.2em auto 0; max-width: 60em; text-align: left; color: var(--tide-slide-muted); }
 .tide-present-bottom { display: flex; align-items: center; gap: 1em; padding: .6em 1.6em; border-top: 1px solid var(--tide-slide-line); font-size: .82em; color: var(--tide-slide-muted); }
-.tide-progress { flex: 1; display: flex; gap: 4px; }
-.tide-progress button { flex: 1; height: 6px; border: 0; border-radius: var(--tide-radius-xs); background: var(--tide-slide-track); padding: 0; }
-.tide-progress button.current { background: var(--tide-slide-accent); }
-.tide-progress button.done { background: var(--tide-slide-done); }
+/* The slides along the footer: a bar each, named under it (cut short as the room allows; the whole name is its title). */
+.tide-progress { flex: 1; display: flex; gap: 4px; min-width: 0; }
+.tide-progress button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: .3em; border: 0; background: none; padding: 0; color: var(--tide-slide-muted); text-align: start; }
+.tide-progress button::before { content: ""; display: block; height: 6px; border-radius: var(--tide-radius-xs); background: var(--tide-slide-track); }
+.tide-progress button.current::before { background: var(--tide-slide-accent); }
+.tide-progress button.done::before { background: var(--tide-slide-done); }
+.tide-progress button.current { color: var(--tide-slide-text); font-weight: var(--tide-weight-semibold); }
+.tide-progress-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85em; line-height: 1.2; }
 .tide-present-notes { position: fixed; right: 1.2em; bottom: 3.6em; width: min(420px, 90vw); background: var(--tide-slide-surface); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-xl); padding: .8em; z-index: 10; box-shadow: 0 10px 30px var(--tide-shadow-strong); }
 .tide-present-notes textarea { width: 100%; min-height: 9em; background: var(--tide-slide-bg); color: var(--tide-slide-text); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); padding: .5em; font-size: .9em; }
 .tide-present-help { color: var(--tide-slide-muted); font-size: .8em; }
@@ -843,7 +849,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 }
 
 .tide-hand { display: inline-flex; align-items: center; gap: .3em; color: var(--tide-slide-warn); font-size: .85em; }
-.tide-progress button.hand { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
+.tide-progress button.hand::before { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
 .tide-presence-dot.is-away { opacity: .6; }
 .tide-presence-slide { position: absolute; right: -.4rem; bottom: -.35rem; min-width: .9rem; padding: 0 .15rem; font-size: .5rem; line-height: .9rem; text-align: center; border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); border: 1px solid var(--tide-slide-line-strong); }
 /* Who is in the meeting and whose hands are up, in the top bar for everyone, after the title. Its least width is
@@ -1093,6 +1099,20 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-note .tide-md li > ul, .tide-slide-note .tide-md li > ol { font-size: .85em; margin: .3em 0 .2em; }
 .tide-slide-note .tide-md ul ul { list-style-type: circle; }
 .tide-slide-note .tide-md p { margin: 0 0 .5em; }
+/* The presenter's own on a slide (a carried opening note, a number not entered): never in a follower's page. A framed
+   strip under what the room reads, in the slide's type, its controls wrapping as the room allows. */
+.tide-slide-presenter { margin-top: 1.2em; padding: .7em .9em; border: 1px dashed var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); background: var(--tide-slide-surface); font-size: .85em; display: grid; gap: .5em; max-width: 46em; }
+.tide-slide-presenter-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; }
+.tide-slide-presenter-flag { color: var(--tide-slide-warn); font-weight: var(--tide-weight-semibold); }
+.tide-slide-presenter-say { color: var(--tide-slide-muted); }
+.tide-slide-presenter-name { min-width: 0; overflow-wrap: anywhere; }
+.tide-slide-presenter .form-control { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); }
+.tide-slide-presenter-number { width: 8em; }
+.tide-slide-presenter-error { color: var(--tide-slide-warn); }
+/* A number not entered yet: the room sees its dash, and says so under it (the presenter enters it from the strip). */
+.tide-mtile-missing { color: var(--tide-slide-muted); font-size: .85em; }
+/* A box's hint on the slide, dark in either theme: the slide's muted text, not the page's (AA on the slide). */
+.tide-slide :is(input, textarea)::placeholder { color: var(--tide-slide-muted); opacity: 1; }
 .tide-slide-open { width: 100%; border-collapse: collapse; font-size: .9em; }
 .tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
 .tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
