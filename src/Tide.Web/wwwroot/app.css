@@ -2242,8 +2242,16 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-slide-cves { margin-top: .2em; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .5em; }
 .tide-slide-cve-sum { font-weight: var(--tide-weight-semibold); color: var(--tide-slide-text); }
 .tide-slide-cve-sum-kev { color: var(--tide-threat); }
-.tide-slide .tide-slide-cve-more { padding: 0; font-size: .9em; }
-@media (forced-colors: active) { .tide-slide-tactic { border-left-color: CanvasText; } .tide-slide-tagchip { border-color: CanvasText; } }
+/* The slide is dark in both themes: its "+N more" links take the slide's accent, not the page's link colour. */
+.tide-slide .tide-slide-cve-more { padding: 0; font-size: .9em; color: var(--tide-slide-accent); }
+.tide-slide .tide-slide-cve-more:hover { color: var(--tide-slide-accent-hover); }
+/* An article's indicators on its slide: defanged chips that wrap (a long hash or address breaks anywhere rather than
+   widen the slide), each opening the larger card. */
+.tide-slide-iocs { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .4em; }
+.tide-slide-iocs > li { min-width: 0; max-width: 100%; }
+.tide-slide-ioc { display: inline-block; max-width: 100%; padding: .1em .6em; border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .9em; line-height: 1.4; text-align: start; overflow-wrap: anywhere; }
+button.tide-slide-ioc:hover { border-color: var(--tide-slide-accent); }
+@media (forced-colors: active) { .tide-slide-tactic { border-left-color: CanvasText; } .tide-slide-tagchip, .tide-slide-ioc { border-color: CanvasText; } }
 /* The tag panel over an article's slide (PresentTagEditor): the action panel's frame, in large type, the article
    editor's tag toggles and technique chips. */
 .tide-present-tagedit .tide-present-action-body { font-size: 1.05em; }

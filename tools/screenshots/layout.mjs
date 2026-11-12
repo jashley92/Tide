@@ -868,6 +868,18 @@ const insideOf = (selector, box) => ({
   }, [selector, box]),
 });
 
+/** Setup: wider letters, on today's `n`th article's slide (0, the first: two indicators; 1: none; 2: a dozen, and a
+ *  dozen CVEs, with Demo:SlideFiller). */
+const articleSlide = n => async page => {
+  await wideFont(page);
+  await toArticleSlide(page);
+  for (let i = 0; i < n; i++) {
+    const at = await page.locator('.tide-slide').getAttribute('aria-label');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(was => document.querySelector('.tide-slide')?.getAttribute('aria-label') !== was, at);
+  }
+};
+
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
 let meetingGuests = { key: '', contexts: [] };
@@ -1554,6 +1566,31 @@ const namesWhole = holds('hands\' names whole or not shown', () => {
     return out || whole ? [] : [`hand #${i + 1} ("${n.textContent}") is cut: ${Math.round(r.left)}–${Math.round(r.right)}px in ${Math.round(box.left)}–${Math.round(box.right)}px`];
   });
 });
+
+/** The text of each shown match of `selector` contrasts with what's behind it (the nearest box with a background) by
+ *  at least `ratio` (WCAG's relative luminance; 4.5 is AA for body text). */
+const contrastAtLeast = (selector, ratio) => holds(`contrast at least ${ratio}:1: ${selector}`, ([selector, ratio]) => {
+  const rgb = c => (c.match(/[\d.]+/g) ?? []).map(Number);
+  const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const behind = el => {
+    for (let e = el; e; e = e.parentElement) {
+      const c = rgb(getComputedStyle(e).backgroundColor);
+      if (c.length >= 3 && (c.length < 4 || c[3] > 0.5)) return c;
+    }
+    return [255, 255, 255];
+  };
+  const shown = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0);
+  if (!shown.length) return [`nothing shown matches ${selector}`];
+  return shown.flatMap((e, i) => {
+    const fg = lum(rgb(getComputedStyle(e).color)), bg = lum(behind(e));
+    const r = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    return r + 0.005 >= ratio ? [] : [`${selector} #${i + 1}: ${getComputedStyle(e).color} on ${behind(e).join(',')} is ${r.toFixed(2)}:1`];
+  });
+}, [selector, ratio]);
+
+/** The slide's "+N more" links (the CVEs', the indicators') read on the dark slide: AA. */
+const slideLinksReadable = contrastAtLeast('.tide-slide :is(.tide-slide-cve-more, .tide-slide-ioc-more)', 4.5);
 
 /** The present top bar's title is cut only when there's no room: who is here then has none to spare (its parts and
  *  their gaps fill it). */
@@ -3138,6 +3175,16 @@ const pages = [
       [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],
     ] },
+  // The article slide shows its indicators, defanged chips the room reads without a click (a chip opens the larger card),
+  // beside its tags and CVEs: none, two, or a dozen (ten shown, then "+2 more") with a dozen CVEs and a long hash and
+  // address. The chips wrap within the slide, and the slide still fits. Wider letters.
+  ...[[0, 'two', 2], [1, 'none', 0], [2, 'dozen', 10]].map(([n, name, chips]) => (
+    { name: `slide-iocs-${name}`, route: '/present/{today}', setup: articleSlide(n), widths: [1920, 1440, 1100, 900, 780],
+      rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'),
+        ...(chips === 0 ? [hidden('.tide-slide-iocsec')] : [fits('.tide-slide-iocs'), shownCount('.tide-slide-iocs .tide-slide-ioc', chips)]),
+        ...(chips === 10 ? [visible('.tide-slide-iocs .tide-slide-ioc-more'), fits('.tide-slide-cves'), slideLinksReadable] : [])] })),
+  // The slide stays dark in the light theme too: its "+N more" links read on it in both.
+  { name: 'slide-iocs-dozen-dark', route: '/present/{today}', setup: articleSlide(2), context: { theme: 'dark' }, widths: [1440], rules: [slideLinksReadable] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
@@ -3204,8 +3251,9 @@ const wanted = pick(pages, 'page');
 
 let server;
 try {
-  // Enough more new items for Triage to have a second page (the paging keys' rules).
-  server = await startTide(['--Demo:TriageFiller=55']);
+  // Enough more new items for Triage to have a second page (the paging keys' rules), and a slide with a dozen
+  // indicators and CVEs (the slide's fit).
+  server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);

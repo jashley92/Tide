@@ -61,6 +61,7 @@ public static class DemoSeeder
         {
             var seeded = await new Run(sp, dbs, clock, dev).AllAsync(ct);
             await TriageFillerAsync(dbs, config.GetValue<int>("Demo:TriageFiller"), ct);
+            if (config.GetValue<bool>("Demo:SlideFiller")) await SlideFillerAsync(dbs, clock.CurrentBriefDate, ct);
             if (!string.IsNullOrWhiteSpace(info))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(info))!);
@@ -98,6 +99,25 @@ public static class DemoSeeder
         db.ArticleCves.Add(new ArticleCve { ArticleId = vpn.Id, CveId = cve });
         Add(source, $"Quillon Bank confirms $3.7 million theft ({cve})", "https://example.com/filler/quillon-theft", now.AddHours(-7), cve);
         Add(wire, "Quillon Bank $3.7 million heist traced to stolen gateway keys", "https://example.net/filler/quillon-heist", now.AddHours(-7).AddMinutes(-20));
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>Demo:SlideFiller=true</c>: a dozen indicators (a long hash and a long address among them) and a dozen CVEs on the
+    /// last article of today's brief, for the layout checks on a slide that holds many.
+    /// </summary>
+    private static async Task SlideFillerAsync(IAppDbContextFactory dbs, DateOnly today, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await db.Briefs.Include(b => b.Items).FirstAsync(b => b.BriefDate == today, ct);
+        var last = brief.Items.OrderBy(i => i.SortOrder).Last().ArticleId;
+        db.ArticleIndicators.AddRange([
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.FileHash, Value = "9f2c4e8a1b7d3f6e0a5c9b2d8e4f1a7c3b6d0e9f2a5c8b1d4e7f0a3c6b9d2e5f8a" },
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.Url, Value = "https://payments-processor-status.example.com/portal/session/renew?ref=partner-notice-2026-11" },
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.EmailAddress, Value = "security-notice@processor-alerts.example.net" },
+            .. Enumerable.Range(1, 9).Select(n => new ArticleIndicator { ArticleId = last, Type = IndicatorType.IpAddress, Value = $"198.51.100.{20 + n}" }),
+        ]);
+        db.ArticleCves.AddRange(Enumerable.Range(11, 12).Select(n => new ArticleCve { ArticleId = last, CveId = $"CVE-2026-00{n}" }));
         await db.SaveChangesAsync(ct);
     }
 
