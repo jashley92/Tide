@@ -10,10 +10,11 @@ namespace Tide.Application.Search;
 /// <summary>An action as the lookups read it: who has it, when it's due, how its hunts went, and the article it's from.</summary>
 internal sealed record ActionRow(Guid Id, int Number, string Title, ActionStatus Status, Priority Priority, string TeamName,
     string? AssigneeName, DateOnly? DueDate, bool AnyHits, bool AnyNoHits, bool AnyHunt, string? Description, string? OutcomeNote, string? TicketRef,
-    Guid? ArticleId, ActionKind Kind)
+    string? TicketUrl, Guid? ArticleId, ActionKind Kind, bool TeamExternal)
 {
     public ActionHit Hit(string? snippet) => new(Id, Number, Title, Status, Priority, TeamName, AssigneeName, DueDate,
-        AnyHits ? HuntResult.Hits : AnyNoHits ? HuntResult.NoHits : AnyHunt ? HuntResult.NotRun : null, snippet, Kind, ArticleId);
+        AnyHits ? HuntResult.Hits : AnyNoHits ? HuntResult.NoHits : AnyHunt ? HuntResult.NotRun : null, snippet, Kind, ArticleId,
+        TeamExternal, TicketRef, TicketUrl);
 }
 
 /// <summary>The indicator a lookup is for: its type, its value as stored, and the types it's stored under.</summary>
@@ -63,7 +64,7 @@ internal static class Lookups
                 db.HuntQueries.Any(h => h.ActionId == a.Id && h.Result == HuntResult.Hits),
                 db.HuntQueries.Any(h => h.ActionId == a.Id && h.Result == HuntResult.NoHits),
                 db.HuntQueries.Any(h => h.ActionId == a.Id),
-                a.Description, a.OutcomeNote, a.TicketRef, a.ArticleId, a.Kind))
+                a.Description, a.OutcomeNote, a.TicketRef, a.TicketUrl, a.ArticleId, a.Kind, a.Team!.IsExternal))
             .ToListAsync(ct);
 
     /// <summary>

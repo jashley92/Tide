@@ -1190,7 +1190,8 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-queue-row { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-1) 0; border-bottom: 1px solid var(--tide-border); font-size: var(--tide-text-sm); }
 .tide-queue-row:last-of-type { border-bottom: 0; }
 .tide-queue-title { flex: 1 1 auto; min-width: 0; }
-.tide-queue-meta { display: block; color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+/* Whose it is wraps, an external team's long ticket reference too. */
+.tide-queue-meta { display: block; color: var(--tide-text-muted); font-size: var(--tide-text-xs); overflow-wrap: anywhere; }
 /* Today's Escalated card: the ladder's flagged actions, marked down the side as the badge is. */
 .tide-escalated { border-left: 3px solid var(--tide-threat); }
 .tide-queue-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
@@ -1279,6 +1280,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-title { font-weight: var(--tide-weight-semibold); line-height: 1.3; color: var(--tide-text); overflow-wrap: anywhere; text-decoration: none; }
 .tide-kcard-title:hover, .tide-kcard-title:focus-visible { text-decoration: underline; }
 .tide-kcard-meta { color: var(--tide-text); }
+/* Who has an action: an external team's ticket reference (up to 100 characters, often one word) wraps rather than
+   widening its card, row or slide; on the slide's one-line columns too. */
+.tide-holder { overflow-wrap: anywhere; white-space: normal; }
 .tide-kcard-foot { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
 .tide-kcard-move { padding: 0 .2rem; font-size: .8rem; }
 .tide-kcard-menu { display: flex; flex-wrap: wrap; gap: .3rem; padding-top: .35rem; border-top: 1px solid var(--tide-border); }

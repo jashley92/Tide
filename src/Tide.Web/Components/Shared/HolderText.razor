@@ -1,0 +1,27 @@
+@* Who has an action, in words (HolderLabel). A person, or an internal team's nobody, is plain words as before. An external
+   team's ticket links to the ticket in a new tab, as the action page's Ticket fact does, when its link is an http or
+   https address and the surface links out (not for a Visitor); a long ticket reference wraps rather than widening its row. *@
+@if (Label.Kind is HolderKind.Person or HolderKind.Nobody)
+{
+    @Text
+}
+else if (Links && Label.Url is { } url)
+{
+    <a class="tide-holder" href="@url" target="_blank" rel="noopener noreferrer" draggable="false">@Text</a>
+}
+else
+{
+    <span class="tide-holder">@Text</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public HolderLabel Label { get; set; } = default!;
+
+    /// <summary>The team is named beside it: "no ticket yet" rather than "With Hosting Provider · no ticket yet".</summary>
+    [Parameter] public bool Short { get; set; }
+
+    /// <summary>Whether a ticket links out: not where the surface allows no links out (a Visitor's).</summary>
+    [Parameter] public bool Links { get; set; } = true;
+
+    private string Text => Short ? Label.Short : Label.Text;
+}

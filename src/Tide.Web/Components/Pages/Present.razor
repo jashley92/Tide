@@ -277,7 +277,7 @@ else
                                                 var n = o.Row.Number;
                                                 <button type="button" class="tide-slide-row-open" aria-label="Open @Ui.ActionLabel(n), @o.Row.Title" data-card-opener="action:@n" @onclick="() => ShowAction(n)"></button>
                                             }</td>
-                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @o.Holder &middot; <span class="text-nowrap">@ActionService.StatusName(o.Row.Status)</span></span></td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; <HolderText Label="o.Holder" Short="true" Links="!_visitor" /> &middot; <span class="text-nowrap">@ActionService.StatusName(o.Row.Status)</span></span></td>
                                         <td><span class="tide-slide-why">@foreach (var (why, i) in o.Reasons.Select((w, i) => (w, i))) { @(i > 0 ? " · " : "")<span class="tide-slide-late">@why</span> }</span>@if (o.LastUpdate is { } lastUpdate)
                                             {
                                                 <span class="tide-slide-waited">last: @lastUpdate</span>
@@ -420,7 +420,7 @@ else
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
-                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; @(done.AssigneeName ?? "nobody")
+                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; <HolderText Label="@done.Holder("nobody")" Links="!_visitor" />
                                                         </span>
                                                     }
                                                 </li>
@@ -572,7 +572,7 @@ else
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
-                                                    <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
+                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Kind: not HolderKind.Nobody } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                 </li>
                                             }
                                         </ul>
@@ -630,7 +630,8 @@ else
                                     @foreach (var g in holders)
                                     {
                                         <div class="tide-wrap-item">
-                                            <strong>@g.Who</strong>
+                                            @* An external team's ticket links out, as on the open actions slide (words only for a Visitor). *@
+                                            <strong>@if (g.Outside is { Kind: HolderKind.Ticket } ticket) { <HolderText Label="ticket" Links="!_visitor" />@($" · {g.TeamName}") } else { @g.Who }</strong>
                                             <ul>
                                                 @foreach (var r in g.Actions)
                                                 {
@@ -2675,6 +2676,13 @@ else
             <span class="tide-action-assign">
                 <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
                        @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                @* An external team has no members, as expected: nobody here is given it, and its ticket names who has it. *@
+                @if (r.TeamExternal)
+                {
+                    <span class="tide-present-help"><HolderText Label="@r.Holder("nobody")" Links="!_visitor" /></span>
+                }
+                else
+                {
                 <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                         @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                     <option value="">Nobody</option>
@@ -2687,7 +2695,8 @@ else
                     <span class="tide-present-help tide-assign-none">No one is on @r.TeamName yet.
                         @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
                 }
-                @if (r.AssigneeId != _me)
+                }
+                @if (r.AssigneeId != _me && !r.TeamExternal)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }

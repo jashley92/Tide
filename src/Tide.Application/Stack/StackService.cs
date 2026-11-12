@@ -146,7 +146,12 @@ public sealed record StackTriageItem(Guid Id, string Title, bool Kev);
 public sealed record StackArticle(Guid Id, string Title, DateOnly On, ArticleStatus Status, bool Tagged);
 
 /// <summary>An action in a product's history: raised from one of its articles, or naming it.</summary>
-public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate);
+public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate,
+    bool TeamExternal = false, string? TicketRef = null, string? TicketUrl = null)
+{
+    /// <summary>Who has it, in words (<see cref="Actions.HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public Actions.HolderLabel Holder(string nobody) => Actions.HolderLabel.Of(AssigneeName, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+}
 
 /// <summary>
 /// A product with its history, newest first. Its articles are held to the team edition's <paramref name="Ceiling"/>:
@@ -441,7 +446,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
 
     // What every product's page reads alike: the team edition's ceiling, the articles, and every action (only the columns
     // shown: every action is read, to find those that name the product without an article).
-    private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate);
+    private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate,
+        bool TeamExternal, string? TicketRef, string? TicketUrl);
 
     private sealed record DetailFacts(TlpLevel Ceiling, List<ArticleFact> Articles, List<ActionFact> Actions);
 
@@ -451,7 +457,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var ceiling = (await editions.GetAsync(ct)).Team;
         var articles = await ArticlesAsync(db, ct);
         var actions = await db.Actions.AsNoTracking()
-            .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate))
+            .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate,
+                a.Team!.IsExternal, a.TicketRef, a.TicketUrl))
             .ToListAsync(ct);
         return new DetailFacts(ceiling, articles, actions);
     }
@@ -466,7 +473,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var actions = facts.Actions
             .Where(a => (a.ArticleId is { } aid && ids.Contains(aid)) || Names(e, Words(a.Title, null)))
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
-            .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
+            .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate,
+                a.TeamExternal, a.TicketRef, a.TicketUrl)).ToList();
         var articles = history.Where(h => h.Tlp <= facts.Ceiling).Select(h => h.Article).ToList();
         return new StackDetail(p, p.Team?.Name, articles, actions, facts.Ceiling, history.Count - articles.Count);
     }
