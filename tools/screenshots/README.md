@@ -49,6 +49,8 @@ Options, as environment variables:
 | `REUSE=1` | Keep the demo database from the last run. The seed runs once per database. |
 | `PORT=5113` | Use a different port. On Windows, avoid the ranges `netsh interface ipv4 show excludedportrange protocol=tcp` lists. |
 | `BASE_URL=http://localhost:5112` | Use a TIDE that is already running on the demo database. It isn't built or started. |
+| `DEMO_DIR=path` | Keep the demo database, its files and `tide.log` there instead of `.demo`, so runs side by side don't share one. |
+| `NO_BUILD=1` | Start the last build instead of building first, for runs side by side that one build served. |
 
 The run exits non-zero if any shot fails. A shot fails when its page errors, or when a callout's selector matches nothing.
 In that case it prints `annotation target(s) not found` with the selectors, and that shot's image is left as it was.
@@ -117,7 +119,13 @@ per line. CI runs it on every pull request (the `layout` job).
 node tools/screenshots/layout.mjs
 ```
 
-`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. Each page in its `pages` list has a `route`, an optional `setup`,
+`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages, in order, on
+its own fresh demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after
+them, so they stay together at the end of the last slice: put a new page that changes the demo there, and any other
+before the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR`
+with `NO_BUILD=1`.
+
+Each page in its `pages` list has a `route`, an optional `setup`,
 the `widths` to check at (900px tall) and its `rules`:
 
 | Rule | Holds when |
