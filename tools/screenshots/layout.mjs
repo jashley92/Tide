@@ -3352,6 +3352,9 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
+/** Where, in the pages, those that change the demo begin (see shard). */
+const CHANGES_THE_DEMO = Symbol('changes the demo');
+
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
@@ -3932,6 +3935,8 @@ const pages = [
   // Keyboard and focus in the presenter's strips: Edit puts focus in the note's box; Escape there cancels, back on Edit,
   // still on the slide; Still current leaves focus on the slide's heading as the strip goes. A number that isn't one is
   // marked on its box with why; Enter saves one, and focus goes to the slide's heading. Late: these change the demo's day.
+  // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
+  CHANGES_THE_DEMO,
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },
@@ -4053,7 +4058,37 @@ const pages = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const wanted = pick(pages, 'page');
+const wanted = pick(shard(pages, process.env.SHARD), 'page');
+
+/**
+ * `SHARD=i/n` (1-based) runs one of n slices of the pages, in their order, so n runs side by side (each on its own fresh
+ * demo) check them all. The pages before CHANGES_THE_DEMO change nothing a later page reads, so they're cut into slices
+ * of about as many widths each; the pages from it on stay together, in order, at the end of the last slice. With no
+ * SHARD, every page, in one run.
+ */
+function shard(list, spec) {
+  const changesAt = list.indexOf(CHANGES_THE_DEMO);
+  if (changesAt < 0) throw new Error('The pages have lost their CHANGES_THE_DEMO marker.');
+  const all = list.filter(p => p !== CHANGES_THE_DEMO);
+  if (!spec) return all;
+  const [i, n] = spec.split('/').map(Number);
+  if (!(Number.isInteger(i) && Number.isInteger(n) && i >= 1 && i <= n)) throw new Error(`SHARD=${spec} isn't i/n with 1 <= i <= n.`);
+  const head = list.slice(0, changesAt), tail = list.slice(changesAt + 1);
+  // A width of a Present page (a meeting to start, people to seat) takes about twice as long as one elsewhere.
+  const weight = ps => ps.reduce((sum, p) => sum + p.widths.length * (p.route.startsWith('/present') ? 2 : 1), 0);
+  // Each slice about as long, the last with the tail in it: when the tail is a slice's worth or more, the first n-1 share
+  // the head between them.
+  const share = Math.min((weight(head) + weight(tail)) / n, weight(head) / Math.max(1, n - 1));
+  // The first n-1 slices take the head in turn until each has its share; the last has what's left of it, then the tail.
+  const slices = [[]];
+  for (const p of head) {
+    if (slices.length < n && weight(slices.at(-1)) >= share) slices.push([]);
+    slices.at(-1).push(p);
+  }
+  while (slices.length < n) slices.push([]);
+  slices[n - 1].push(...tail);
+  return slices[i - 1];
+}
 
 let server;
 try {
