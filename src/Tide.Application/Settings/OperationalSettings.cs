@@ -23,6 +23,11 @@ public static class OperationalSettings
     /// <summary>Whether a meeting's action opens beside the slide rather than over it. Off by default.</summary>
     public const string ActionBesideSlide = "Org:ActionBesideSlide";
 
+    /// <summary>Business days an Open or In progress action, and a Blocked one, may go without an update before the
+    /// meeting's "Needs an update" slide asks about it (<see cref="StaleLimits"/>): 1 to 30, 2 and 5 by default.</summary>
+    public const string StaleOpenDays = "Org:StaleOpenDays";
+    public const string StaleBlockedDays = "Org:StaleBlockedDays";
+
     public const string ReminderTime = "Notifications:ReminderTime";
     public const string DueSoon = "Notifications:DueSoon:Enabled";
     public const string Presenting = "Notifications:Presenting:Enabled";
@@ -115,6 +120,8 @@ public static class OperationalSettings
         [MeetingTime] = Time("The meeting time"),
         [TeamName] = Name,
         [ActionBesideSlide] = Switch,
+        [StaleOpenDays] = Number("Business days an open action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
+        [StaleBlockedDays] = Number("Business days a blocked action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
         [ReminderTime] = Time("The reminder time"),
         [DueSoon] = Switch,
         [Presenting] = Switch,
@@ -210,6 +217,8 @@ public static class OperationalSettings
         s.Use(MeetingTime, v => o.MeetingTime = v);
         s.Use(TeamName, v => o.TeamName = v);
         s.Use(ActionBesideSlide, v => o.ActionBesideSlide = bool.Parse(v));
+        s.Use(StaleOpenDays, v => o.StaleOpenDays = int.Parse(v, Invariant));
+        s.Use(StaleBlockedDays, v => o.StaleBlockedDays = int.Parse(v, Invariant));
     }
 
     internal static void Apply(SavedSettings s, ReminderOptions o)

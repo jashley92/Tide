@@ -5,7 +5,7 @@
 
 @if (OnOpen.HasDelegate)
 {
-    <button type="button" class="tide-action-ref-btn @TitleClass" aria-label="Open @Label, @Title" @onclick="OnOpen">@TitleContent</button>
+    <button type="button" class="tide-action-ref-btn @TitleClass" aria-label="Open @Label, @Title" data-card-opener="@Opener" @onclick="OnOpen">@TitleContent</button>
 }
 else if (Link)
 {
@@ -37,6 +37,10 @@ else
 
     /// <summary>Whether the title links to the action's page (false: someone who can't open it, or a slide).</summary>
     [Parameter] public bool Link { get; set; } = true;
+
+    /// <summary>With <see cref="OnOpen"/>: the button's <c>data-card-opener</c>, so focus goes back to it when what it opened over
+    /// the slide is closed (present.js).</summary>
+    [Parameter] public string? Opener { get; set; }
 
     /// <summary>Opens the action in place (a slide's card) instead of going to its page.</summary>
     [Parameter] public EventCallback OnOpen { get; set; }

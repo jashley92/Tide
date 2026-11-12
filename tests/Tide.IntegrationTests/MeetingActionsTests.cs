@@ -84,7 +84,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await again.Click(p => p.OnPresentKey("last"));
         await again.Click(p => p.OnPresentKey("prev"));
         var raised = await again.Html();
-        raised.Should().Contain($"<button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\">A-{number}</button> &#xB7; Open &#xB7; Tester")
+        raised.Should().Contain($"<button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\" data-card-opener=\"action:{number}\">A-{number}</button> &#xB7; Open &#xB7; Tester")
             .And.NotContain("aria-label=\"Kind for: Patch GitLab to 17.3.2\"");
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
