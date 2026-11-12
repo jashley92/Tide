@@ -125,6 +125,11 @@ them, so they stay together at the end of the last slice: put a new page that ch
 before the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR`
 with `NO_BUILD=1`.
 
+After a load, a click or a key, wait with `idle(page)` (tide.mjs), not a fixed pause: it waits until Blazor's circuit
+is up, the server has no event in hand (the Development-only `/demo/activity`, on with `Demo:Seed`), and nothing in the
+page has changed for a moment. Wait out a timer of the app's own (a search's pause after typing) with that time, saying
+whose it is, and wait for something that comes and goes (a drop hint) by its selector.
+
 Each page in its `pages` list has a `route`, an optional `setup`,
 the `widths` to check at (900px tall) and its `rules`. An optional `when: demo => …` skips the page, saying so, when what
 it checks isn't shown on the day of the run (Today's word on feeds not pulled since the morning isn't, on a weekend or

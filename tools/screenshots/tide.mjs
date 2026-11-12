@@ -58,9 +58,10 @@ export async function openPage(browser, { route, viewport, setup }, demo, { fixe
     await context.addInitScript(theme => {
       try { localStorage.setItem('tide-theme', theme); localStorage.removeItem('tide-nav'); localStorage.removeItem('tide-rail'); } catch { /* none */ }
     }, theme);
+    await watch(context);
     const page = await context.newPage();
     if (fixedTime) await page.clock.setFixedTime(fixedTime);
-    await page.goto(baseUrl() + fill(route, demo), { waitUntil: 'networkidle' });
+    await page.goto(baseUrl() + fill(route, demo), { waitUntil: 'load' });
     await settle(page);
     if (setup) { await setup(page, demo); await settle(page); }
     return { context, page };
@@ -74,15 +75,108 @@ export async function openPage(browser, { route, viewport, setup }, demo, { fixe
 export async function toArticleSlide(page) {
   for (let i = 0; i < 15 && !(await page.locator('[data-slide-key^="article:"]').count()); i++) {
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(250);
+    await idle(page);
   }
 }
 
-/** The page is interactive (Blazor's circuit is up) and fonts are in. */
-export async function settle(page) {
-  await page.waitForLoadState('networkidle');
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(500);
+/** The page is interactive (Blazor's circuit is up), fonts are in, and it's still: idle, under the name the scripts use
+ * after a load. */
+export const settle = page => idle(page);
+
+/** Watches each page of `context` from its start, for idle: openPage does it; a context made by hand needs it. */
+export const watch = context => context.addInitScript(tracker, false);
+
+/**
+ * In the page: notes the time of anything that changes it (a change to the DOM, a message to or from the server, focus
+ * moving, a scroll, a transition or animation starting) and whether Blazor's circuit has drawn its first render. Run
+ * `late` (by idle, on a page watch didn't start on), the page's socket is already open, and only the rest is seen.
+ */
+function tracker(late) {
+  if (window.__tideStill) return;
+  const s = window.__tideStill = { n: 0, at: performance.now(), late, open: 0, rendered: false };
+  const touch = () => { s.n++; s.at = performance.now(); };
+  const Socket = window.WebSocket, send = Socket.prototype.send;
+  Socket.prototype.send = function (data) { touch(); return send.call(this, data); };
+  if (!late) {
+    // Blazor's messages are binary (MessagePack): a render batch names its target, JS.RenderBatch, in plain ASCII near
+    // the start.
+    const text = new TextDecoder('latin1');
+    const head = data => text.decode(new Uint8Array(data, 0, Math.min(64, data.byteLength)));
+    s.Socket = window.WebSocket = class extends Socket {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('open', () => { s.open++; touch(); });
+        this.addEventListener('close', () => { s.open--; touch(); });
+        this.addEventListener('message', e => {
+          touch();
+          if (!s.rendered && e.data instanceof ArrayBuffer && head(e.data).includes('JS.RenderBatch')) s.rendered = true;
+        });
+      }
+    };
+  }
+  new MutationObserver(touch).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  for (const type of ['focusin', 'scroll', 'transitionrun', 'animationstart', 'load']) addEventListener(type, touch, true);
+}
+
+// How long nothing may change, with the server still, before the page counts as still. It covers what the server does
+// outside an inbound activity: a message on its way, a render's after-work, a page's data read after a navigation, and
+// a list's rail, which rests 150ms on a selection before it reads the row (ActionRowRail.Rest and the like). A longer
+// wait of the app's own (a search's or the preview's pause after typing) is waited out where it's met.
+const QUIET_MS = 200;
+const noActivityAt = new Set();
+
+/**
+ * Waits until the page is still: Blazor's circuit is up and has drawn, the server has no event or callback in hand (the
+ * Development-only /demo/activity), and for QUIET_MS nothing has changed in the page, with no finite transition or
+ * animation running, no image or font loading and nothing shown loading (a placeholder, an aria-busy region, the app's
+ * "Loading…"). Checked twice in a row with nothing changed between, so a render on its way when the server went still is
+ * seen. Gives up after `timeout` (a page that never settles is then checked as it is, as a fixed pause would leave it),
+ * saying what it was waiting for.
+ */
+export async function idle(page, timeout = 10_000) {
+  const origin = new URL(page.url()).origin;
+  const end = Date.now() + timeout;
+  let was = null, here, server;
+  while (Date.now() < end) {
+    // A page loading anew (a link that leaves the app's own navigation) has no context to ask for a moment.
+    here = await page.evaluate(stillness).catch(() => ({ busy: 'a page loading' }));
+    if (here === null) { await page.evaluate(tracker, true); continue; }
+    // The server is asked only once the page itself is still.
+    server = !here.busy && here.quiet >= QUIET_MS ? await serverActivity(origin) : null;
+    const still = !!server?.idle;
+    if (still && was && was.n === here.n && was.started === server.started) return;
+    was = still ? { n: here.n, started: server.started } : null;
+    await page.waitForTimeout(still || here.busy ? 20 : Math.max(20, QUIET_MS - here.quiet));
+  }
+  console.log(`    (not still after ${timeout / 1000}s, ${here?.busy || (server && !server.idle ? 'the server busy' : 'changing')}: ${page.url()})`);
+}
+
+/** In the page: how long since anything changed, and what's still under way ('' for nothing). */
+function stillness() {
+  const s = window.__tideStill;
+  if (!s) return null;
+  const shown = el => el.getClientRects().length > 0;
+  const busy = !s.late && window.WebSocket === s.Socket && !(s.open > 0 && s.rendered) ? 'the circuit starting'
+    : document.fonts.status === 'loading' ? 'fonts loading'
+    : Array.prototype.some.call(document.images,i => !i.complete && i.loading !== 'lazy') ? 'an image loading'
+    : document.getAnimations().some(a => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity) ? 'an animation running'
+    : [...document.querySelectorAll('.tide-loading, [aria-busy="true"]')].some(shown) || document.body.innerText.includes('Loading…') ? 'something loading'
+    : '';
+  return { n: s.n, quiet: performance.now() - s.at, busy };
+}
+
+/** The server's circuit work: { idle, started } from /demo/activity, or idle always where it doesn't answer. */
+async function serverActivity(origin) {
+  if (noActivityAt.has(origin)) return { idle: true, started: 0 };
+  try {
+    const res = await fetch(`${origin}/demo/activity`);
+    if (res.ok) {
+      const { started, inHand } = await res.json();
+      return { idle: inHand === 0, started };
+    }
+  } catch { /* not answering */ }
+  noActivityAt.add(origin);
+  return { idle: true, started: 0 };
 }
 
 /**

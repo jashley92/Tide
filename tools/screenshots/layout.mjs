@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './tide.mjs';
+import { idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
@@ -254,7 +254,7 @@ const actionKeys = {
     await page.locator('.tide-action-row.selected').focus();
     for (const [key, at] of [['j', 1], ['ArrowDown', 2], ['k', 1], ['ArrowUp', 0]]) {
       await page.keyboard.press(key);
-      await page.waitForTimeout(500);
+      await idle(page);
       const now = await selectedAction(page);
       if (now.at !== at || now.focused !== at) problems.push(`after ${key} row ${now.at + 1} is selected and row ${now.focused + 1} has focus, not row ${at + 1}`);
       if ((now.row ?? '0') !== String(at)) problems.push(`after ${key} the address says row=${now.row}, not ${at}`);
@@ -263,7 +263,9 @@ const actionKeys = {
     const box = page.getByRole('searchbox', { name: 'Search actions' });
     await box.focus();
     await page.keyboard.press('t');
-    await page.waitForTimeout(800);
+    // A timer, not a condition: the search runs once typing has paused for 300ms (the Actions page's TypingPause).
+    await page.waitForTimeout(300);
+    await idle(page);
     if (await page.locator('.tide-row-take').count() !== takes || await page.locator('.tide-toast').count()) problems.push('T typed in the search box took an action on');
     return problems;
   },
@@ -290,12 +292,12 @@ const statusMenuByKeyboard = {
     if (!await button.count()) return ['no row has a Status menu'];
     await button.focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(500);
+    await idle(page);
     const problems = [];
     const inMenu = await page.evaluate(() => !!document.activeElement?.closest('[role="menu"]'));
     if (!inMenu) problems.push('Enter on the status left focus outside its menu');
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
+    await idle(page);
     if (await page.locator('.tide-menubutton-pop[role="menu"]').count()) problems.push('Esc left the menu open');
     if (!await page.evaluate(() => document.activeElement?.classList.contains('tide-status-menu'))) problems.push('Esc didn\'t put focus back on the status');
     return problems;
@@ -365,7 +367,7 @@ const closeKeepsPlace = how => ({
     await confirm.waitFor({ timeout: 5000 });
     await confirm.focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(1500);
+    await idle(page);
     const at = await page.evaluate(() => {
       const el = document.activeElement;
       return el === document.body || !el ? 'the page body' : el.closest('.tide-kcard')?.dataset.id ?? `<${el.tagName.toLowerCase()} id="${el.id}">`;
@@ -425,7 +427,7 @@ const tabsInView = selector => ({
     const problems = [];
     for (let i = 0; i < count; i++) {
       if (i > 0) await page.keyboard.press('Tab');
-      await page.waitForTimeout(150);
+      await idle(page);
       problems.push(...await inRow(page, selector, 'focused'));
     }
     return problems;
@@ -447,7 +449,7 @@ const clickAtEdgeChooses = selector => ({
     });
     if (!hit) return ['no tab at the row\'s right edge'];
     await page.mouse.click(hit.x, hit.y);
-    await page.waitForTimeout(1500);
+    await idle(page);
     const pressed = await page.$eval(`${selector} [aria-pressed="true"]`, t => t.innerText.replace(/\s+/g, ' ').trim());
     return pressed === hit.name ? [] : [`clicked "${hit.name}" at its visible edge, but "${pressed}" is still the view`];
   },
@@ -530,7 +532,7 @@ const pressQuickly = (key, times) => async page => {
     ws.onMessage(m => setTimeout(() => server.send(m), 50));
     server.onMessage(m => setTimeout(() => ws.send(m), 50));
   });
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'load' });
   await settle(page);
   await page.locator('.tide-triage-row.selected').focus();
   // Where the keys start, for selectedAsAimed.
@@ -621,7 +623,7 @@ const ringOnFocus = selector => ({
       // A key first, so the browser treats the focus that follows as the keyboard's (:focus-visible).
       await page.keyboard.press('Shift');
       await el.focus();
-      await page.waitForTimeout(250);   // Bootstrap fades the ring in
+      await idle(page);
       const ring = await el.evaluate(e => {
         const s = getComputedStyle(e);
         // A shadow counts when it's drawn: a colour that isn't transparent, and a spread.
@@ -746,10 +748,10 @@ const dims = (percent, all = false) => ({
     const names = Object.keys(patches);
     const shot = async () => Promise.all(names.map(async n => (await page.screenshot({ clip: patches[n] })).toString('base64')));
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
+    await idle(page);
     const closed = await shot();
     await page.locator('#tide-rail-toggle').click();
-    await page.waitForTimeout(400);
+    await idle(page);
     const open = await shot();
     // Decoded in a page of its own: the browser reads PNGs, so no library is needed.
     const scratch = await page.context().newPage();
@@ -821,14 +823,14 @@ const navScrollsToActive = {
 };
 
 /** Setup: the sidebar collapsed to icons. */
-const collapseNav = async page => { await page.click('#nav-collapse-toggle'); await page.waitForTimeout(300); };
+const collapseNav = async page => { await page.click('#nav-collapse-toggle'); await idle(page); };
 
 /** Setup: the menu scrolled to its top, then the last page in it (Administration) opened by navigation, not a load. */
 const navigateToAdmin = async page => {
   await page.$eval('ul.tide-nav', ul => { ul.scrollTop = 0; });
   await page.evaluate(() => window.Blazor.navigateTo('admin'));
   await page.waitForURL(/\/admin/);
-  await page.waitForTimeout(500);
+  await idle(page);
 };
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
@@ -880,7 +882,7 @@ const meetingClosedBy = button => async page => {
   await page.locator('#tide-rail section[aria-labelledby="meeting-h"]').getByRole('button', { name: button, exact: true }).focus();
   await page.keyboard.press('Enter');
   await page.locator('#tide-rail #analyst').waitFor({ state: 'detached', timeout: 10000 });
-  await page.waitForTimeout(400);
+  await idle(page);
 };
 
 /** Setup: the opening note's Edit pressed with Enter; then, with `then`, its Cancel or Save (after typing) the same way. */
@@ -889,13 +891,13 @@ const noteEdited = then => async page => {
   await note.getByRole('button', { name: 'Edit', exact: true }).focus();
   await page.keyboard.press('Enter');
   await page.locator('#team-note').waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
   if (!then) return;
   if (then === 'Save note') await page.locator('#team-note').fill(`Payroll lures are up (${Date.now()}).`);
   await note.getByRole('button', { name: then, exact: true }).focus();
   await page.keyboard.press('Enter');
   await page.locator('#team-note').waitFor({ state: 'detached', timeout: 10000 });
-  await page.waitForTimeout(400);
+  await idle(page);
 };
 
 /**
@@ -918,16 +920,17 @@ const colleagueSavesWhileTyping = field => async page => {
   await page.locator(`#${field}`).click();
   await page.keyboard.type('Mine, typed and not saved');
   const cole = await page.context().browser().newContext({ viewport: { width: 1920, height: 900 }, reducedMotion: 'reduce' });
+  await watch(cole);
   try {
     const theirs = await cole.newPage();
-    await theirs.goto(`${origin}/?as=Cole`, { waitUntil: 'networkidle' });
+    await theirs.goto(`${origin}/?as=Cole`, { waitUntil: 'load' });
     await settle(theirs);
     await open(theirs);
     await theirs.locator(`#${field}`).fill('Theirs, saved');
     await theirs.locator(field === 'intro' ? '#tide-rail section[aria-labelledby="meeting-h"]' : 'section[aria-labelledby="team-note-h"]')
       .getByRole('button', { name: field === 'intro' ? 'Save' : 'Save note', exact: true }).click();
     await page.locator('.tide-changed-elsewhere, .tide-toast').first().waitFor({ timeout: 15000 });
-    await page.waitForTimeout(800);
+    await idle(page);
   } finally {
     await cole.close();
   }
@@ -1010,7 +1013,7 @@ const slideWith = selector => async page => {
   const over = async open => {
     if (await page.locator(`#present-rail-toggle[aria-expanded="${open ? 'false' : 'true'}"]`).count() && !(await page.locator('#present-rail.is-docked').count())) {
       await page.keyboard.press(']');
-      await page.waitForTimeout(250);
+      await idle(page);
     }
   };
   for (let i = 0; i < 12; i++) {
@@ -1018,9 +1021,8 @@ const slideWith = selector => async page => {
     if (await page.locator(selector).count()) break;
     await over(false);
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(300);
+    await idle(page);
   }
-  await page.waitForTimeout(400);
 };
 
 /** Setup: on the dozen-indicator slide, `opener` pressed to open its card (`title` its heading), then the card closed by
@@ -1029,11 +1031,11 @@ const cardClosed = (opener, title, how) => async (page, demo) => {
   await articleSlide(2)(page, demo);
   await page.locator(opener).first().click();
   await page.locator(title).waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
   if (how === 'Escape') await page.keyboard.press('Escape');
   else await page.getByRole('button', { name: how }).click();
   await page.locator(title).waitFor({ state: 'detached' });
-  await page.waitForTimeout(500);
+  await idle(page);
 };
 
 /** Setup: on the opening note's slide, the presenter's `then` done in its strip: 'edit' (Edit pressed), 'escape' (Edit,
@@ -1047,7 +1049,7 @@ const noteStrip = then => async (page, demo) => {
     await page.locator('#slide-note-text').focus();
     await page.keyboard.press('Escape');
   }
-  await page.waitForTimeout(800);
+  await idle(page);
 };
 
 /** Setup: on the numbers slide with one missing, `text` typed in its box and Enter pressed. */
@@ -1055,14 +1057,14 @@ const numberEntered = text => async (page, demo) => {
   await slideWith('.tide-slide-presenter input')(page, demo);
   await page.locator('.tide-slide-presenter input').first().fill(text);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(900);
+  await idle(page);
 };
 
 /** Setup: the presenter's rail opened over the article's slide, then a click on the scrim beside it. */
 const railScrimClicked = async (page, demo) => {
   await presenterRail(true)(page, demo);
   await page.mouse.click(20, Math.round(page.viewportSize().height / 2));
-  await page.waitForTimeout(600);
+  await idle(page);
 };
 
 /** Setup: wider letters, on the title slide with the presenter's rail open, then its Enter beside the numbers missing. */
@@ -1073,7 +1075,7 @@ const missingNumberEntered = async page => {
     await page.locator('#present-rail').waitFor();
   }
   await page.locator('#present-rail').getByRole('button', { name: 'Enter', exact: true }).click();
-  await page.waitForTimeout(900);
+  await idle(page);
 };
 
 /** Setup: wider letters, on the first article's slide; with `open`, the presenter's rail opened by its key (`]`). */
@@ -1084,7 +1086,7 @@ const presenterRail = (open = false) => async page => {
     await page.keyboard.press(']');
     await page.locator('#present-rail').waitFor();
   }
-  await page.waitForTimeout(400);
+  await idle(page);
 };
 
 /** This page starts today's meeting, or takes it up again (the dev analyst presented it last), and waits for it. */
@@ -1133,7 +1135,7 @@ const meetingOf = (as, hands, people = 8) => async (page, demo) => {
     await startOrTakeUp(page);
     await toArticleSlide(page);
   } else {
-    await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
+    await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'load' });
     await settle(page);
   }
   await page.waitForFunction(([hands, people]) => document.querySelector('.tide-present-here')?.textContent.startsWith(`${people} here`)
@@ -1152,14 +1154,14 @@ const handsListOpen = async (page, demo) => {
 const handsListEscaped = async (page, demo) => {
   await handsListOpen(page, demo);
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(500);
+  await idle(page);
 };
 
 /** Setup: the list of hands opened, then a press on the slide, outside it. */
 const handsListPressedOutside = async (page, demo) => {
   await handsListOpen(page, demo);
   await page.mouse.click(40, 600);
-  await page.waitForTimeout(500);
+  await idle(page);
 };
 
 /** Setup: the presenter opens the list of hands while one is up; that hand goes down, and then another goes up. The
@@ -1175,7 +1177,7 @@ const handsListAfterEmpty = async (page, demo) => {
   await page.locator('.tide-hands-btn').waitFor({ state: 'detached' });
   await hand(robin);
   await page.locator('.tide-hands-btn').waitFor();
-  await page.waitForTimeout(500);
+  await idle(page);
 };
 
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
@@ -1190,7 +1192,7 @@ async function toastBesideRail(page) {
 const toggleRail = async page => {
   await wideFont(page);
   await page.locator('body').press(']');
-  await page.waitForTimeout(300);
+  await idle(page);
 };
 
 /** Setup: the first two articles (both ready) taken off today's brief, so "Not on a brief yet" lists them; then the first one's Add
@@ -1206,7 +1208,7 @@ async function addFromRail(page) {
   await card.getByRole('button', { name: /^Add / }).first().focus();
   await page.keyboard.press('Enter');
   await page.waitForFunction(([n]) => document.querySelectorAll('section[aria-labelledby="recent-h"] li').length < n, [before], { timeout: 10000 });
-  await page.waitForTimeout(300);
+  await idle(page);
 }
 
 /** Setup: wider letters, then the meeting's Change presenter pressed (opening its form, a docked rail or the overlay). */
@@ -1214,11 +1216,11 @@ async function openMeeting(page) {
   await wideFont(page);
   if (!(await page.locator('#tide-rail').isVisible())) {
     await page.locator('#tide-rail-toggle').click();
-    await page.waitForTimeout(300);
+    await idle(page);
   }
   await page.locator('#tide-rail').getByRole('button', { name: 'Change presenter' }).click();
   await page.locator('#tide-rail #analyst').waitFor({ state: 'attached' });
-  await page.waitForTimeout(500);
+  await idle(page);
 }
 
 /**
@@ -1229,36 +1231,37 @@ async function openMeeting(page) {
 async function colleagueTakesFocusedRow(page) {
   const browser = page.context().browser();
   const olive = await browser.newContext({ viewport: { width: 1920, height: 900 }, reducedMotion: 'reduce' });
+  await watch(olive);
   try {
     const her = await olive.newPage();
-    await her.goto(`${new URL(page.url()).origin}/?as=Olive&roles=ActionOwner`, { waitUntil: 'networkidle' });
-    await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+    await her.goto(`${new URL(page.url()).origin}/?as=Olive&roles=ActionOwner`, { waitUntil: 'load' });
+    await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'load' });
     await settle(page);
     const pick = page.locator('select[aria-label^="Person to add to"]').first();
     const team = (await pick.getAttribute('aria-label')).replace('Person to add to ', '');
     for (const who of ['Dev Analyst', 'Olive']) {
       await pick.selectOption({ label: who });
       await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
-      await page.waitForTimeout(600);
+      await idle(page);
     }
     for (const title of ['Live check one', 'Live check two']) {
-      await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+      await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'load' });
       await settle(page);
       await page.locator('#a-title').fill(title);
       await page.locator('#a-team').selectOption({ label: team });
-      await page.waitForTimeout(300);
+      await idle(page);
       await page.getByRole('button', { name: 'Create action' }).click();
       await page.waitForURL(/actions\/\d+/);
     }
-    await page.goto(new URL('/', page.url()).href, { waitUntil: 'networkidle' });
+    await page.goto(new URL('/', page.url()).href, { waitUntil: 'load' });
     await settle(page);
     const queue = page.locator('#tide-rail section[aria-labelledby="teams-queue-h"]');
     await queue.getByRole('button', { name: /Live check one/ }).focus();
-    await her.reload({ waitUntil: 'networkidle' });
+    await her.reload({ waitUntil: 'load' });
     await settle(her);
     await her.locator('section[aria-labelledby="team-queue-h"]').getByRole('button', { name: /Live check one/ }).click();
     await queue.getByRole('button', { name: /Live check one/ }).waitFor({ state: 'detached', timeout: 15000 });
-    await page.waitForTimeout(500);
+    await idle(page);
   } finally {
     await olive.close();
   }
@@ -1268,7 +1271,7 @@ async function colleagueTakesFocusedRow(page) {
 const pressV = times => async page => {
   for (let i = 0; i < times; i++) {
     await page.keyboard.press('v');
-    await page.waitForTimeout(700);
+    await idle(page);
   }
 };
 
@@ -1281,7 +1284,7 @@ async function holdV(page) {
   await page.keyboard.up('v');
   // Once the pane has gone, a moment more for a late switch back to show.
   await page.locator('.tide-reading').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  await idle(page);
 }
 
 /**
@@ -1313,7 +1316,7 @@ const railOn = kind => async page => {
   await wideFont(page);
   await page.locator(triageLines[kind]).first().locator('.tide-group-label, .tide-triage-meta > span').first().click();
   await page.waitForFunction(kind => document.querySelector('.tide-triage-row.selected')?.matches(kind), triageLines[kind], { timeout: 10000 });
-  await page.waitForTimeout(600);
+  await idle(page);
 };
 
 /** Setup: wider letters, the rail opened over the page with `]` (below 1500px), then `kind`'s line selected from the list
@@ -1323,7 +1326,7 @@ const railOverOn = kind => async page => {
   await page.locator('.tide-triage-row.selected').focus();
   await page.keyboard.press(']');
   await page.locator('#tide-rail').waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
 };
 
 /** Setup: Escape pressed on the selected row, where the rail is docked: Triage's own Escape, which closes the pane. */
@@ -1331,7 +1334,7 @@ async function escapeOnRow(page) {
   await wideFont(page);
   await page.locator('.tide-triage-row.selected').focus();
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(800);
+  await idle(page);
 }
 
 const selectedRow = page => page.evaluate(() => [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
@@ -1345,7 +1348,7 @@ const railKeysStayInTheRail = {
     for (const key of ['j', 'ArrowDown']) {
       await page.locator(railLink).first().focus();
       await page.keyboard.press(key);
-      await page.waitForTimeout(600);
+      await idle(page);
       const now = await selectedRow(page);
       if (now !== before) problems.push(`${key} in the rail moved the selection from row ${before + 1} to row ${now + 1}`);
     }
@@ -1360,11 +1363,11 @@ const escapeClosesTheRailOnly = {
   check: async page => {
     await page.locator(railLink).first().focus();
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(800);
+    await idle(page);
     const problems = [];
     if (await anyShown(page, '#tide-rail')) problems.push('the rail is still open after Escape');
     if (!await anyShown(page, '.tide-reading')) problems.push('Escape in the rail closed the reading pane too');
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'load' });
     await settle(page);
     if (!await anyShown(page, '.tide-reading')) problems.push('the reading pane is kept closed after Escape in the rail');
     return problems;
@@ -1383,11 +1386,11 @@ const addFormTakesFocus = {
     const open = page.getByRole('button', { name: 'Add a product' });
     await open.focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(600);
+    await idle(page);
     if (await focused() !== 'new-name') problems.push(`opening the form left focus on ${await focused()}, not its Product box`);
     await page.getByRole('button', { name: 'Cancel' }).focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(600);
+    await idle(page);
     if (await focused() !== 'Add a product') problems.push(`Cancel left focus on ${await focused()}, not Add a product`);
     return problems;
   },
@@ -1409,13 +1412,13 @@ const popoutCloses = (label, { wrap, opener, panel, inside, bare }) => {
   const pane = page => anyShown(page, '.tide-reading');
   const open = async page => {
     // One a rule before left open (it failed) goes, with the page as it was.
-    if (await anyShown(page, `${wrap} ${panel}`)) { await page.reload({ waitUntil: 'networkidle' }); await settle(page); }
+    if (await anyShown(page, `${wrap} ${panel}`)) { await page.reload({ waitUntil: 'load' }); await settle(page); }
     await page.locator(`${wrap} ${opener}`).first().click();
     await page.locator(`${wrap} ${panel}`).first().waitFor({ timeout: 5000 });
-    await page.waitForTimeout(400);
+    await idle(page);
   };
   const stillOpen = async (page, how) => {
-    await page.waitForTimeout(700);
+    await idle(page);
     return (await anyShown(page, `${wrap} ${panel}`)) ? [`${label} is still open after ${how}`] : [];
   };
   const paneKept = async (page, was, how) => (await pane(page)) === was ? [] : [`${how} ${was ? 'closed' : 'opened'} the reading pane too`];
@@ -1461,7 +1464,7 @@ const popoutCloses = (label, { wrap, opener, panel, inside, bare }) => {
       const box = await part.boundingBox();
       const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.className, [box.x + 3, box.y + 3]);
       await pressAt(page, by, box.x + 3, box.y + 3);
-      await page.waitForTimeout(700);
+      await idle(page);
       return (await anyShown(page, `${wrap} ${panel}`)) ? [] : [`a ${by} press on ${bare} (${hit}) closed ${label}, focus going to ${await focusedOn(page)}`];
     } })) : []),
   ];
@@ -1512,7 +1515,7 @@ const opensInPlace = (label, opener, panel) => ({
     const x0 = await page.evaluate(() => scrollX);
     await button.click();
     await page.locator(panel).first().waitFor({ timeout: 5000 });
-    await page.waitForTimeout(700);
+    await idle(page);
     const seen = await page.evaluate(([sel, opener]) => {
       const el = [...document.querySelectorAll(sel)].find(e => e.getBoundingClientRect().height > 0);
       const r = el.getBoundingClientRect(), b = document.querySelector(opener).getBoundingClientRect();
@@ -1546,7 +1549,7 @@ const opensInPlace = (label, opener, panel) => ({
     await page.keyboard.down('Shift');
     await page.mouse.wheel(0, 120);
     await page.keyboard.up('Shift');
-    await page.waitForTimeout(400);
+    await idle(page);
     const x1 = await page.evaluate(() => scrollX);
     if (x1 !== x0) problems.push(`a sideways wheel then scrolled the page ${Math.round(x1 - x0)}px`);
     return problems;
@@ -1568,11 +1571,11 @@ const deleteCancelledFocusesMore = {
       await page.locator('.tide-library-entry .tide-menubutton-btn').first().click();
       await page.getByRole('menuitem', { name: 'Delete' }).click();
       await page.locator('.tide-modal').waitFor({ timeout: 5000 });
-      await page.waitForTimeout(400);
+      await idle(page);
       if (how === 'Escape') await page.keyboard.press('Escape');
       else await page.locator('.tide-modal').getByRole('button', { name: 'Cancel' }).click();
       await page.locator('.tide-modal').waitFor({ state: 'detached', timeout: 5000 });
-      await page.waitForTimeout(600);
+      await idle(page);
       const now = await focusName(page);
       if (now !== 'More') problems.push(`after ${how} focus is on ${now}, not More`);
     }
@@ -1589,7 +1592,7 @@ const saveViewByEnter = {
     await page.locator('#saved-view-name').waitFor({ timeout: 5000 });
     await page.locator('#saved-view-name').fill('By Enter');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(1200);
+    await idle(page);
     const problems = [];
     if (await anyShown(page, '.tide-modal')) return ['Enter in the Name box left the dialog open'];
     const menu = page.locator('.tide-savedview', { hasText: 'By Enter' }).locator('.tide-savedview-menu');
@@ -1610,12 +1613,12 @@ const paletteGivesFocusBack = {
   check: async page => {
     await page.locator('.tide-filter-menu .tide-filter-add').click();
     await page.locator('.tide-filter-pop').waitFor({ timeout: 5000 });
-    await page.waitForTimeout(400);
+    await idle(page);
     await page.keyboard.press('Control+k');
     await page.locator('[data-palette-input]').waitFor({ timeout: 5000 });
-    await page.waitForTimeout(400);
+    await idle(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(800);
+    await idle(page);
     const now = await focusName(page);
     return /Filter/.test(now) ? [] : [`focus is on ${now}, not + Filter`];
   },
@@ -1649,7 +1652,7 @@ async function markCheckedFromRail(page) {
   await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).focus();
   await page.keyboard.press('Enter');
   await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).waitFor({ state: 'detached', timeout: 10000 });
-  await page.waitForTimeout(500);
+  await idle(page);
 }
 
 /** A list's selected row, as the keys move it: J selects the next row (the row marked, focused and named in the
@@ -1671,7 +1674,7 @@ const listKeys = ({ name, row, loaded, path, min, clickAt }) => ({
       };
     }, [row, loaded]);
     const expect = async (at, why) => {
-      await page.waitForTimeout(600);
+      await idle(page);
       const s = await state();
       if (s.at !== at) problems.push(`${why}: row ${s.at + 1} is selected, not row ${at + 1}`);
       if (s.current !== 'true') problems.push(`${why}: the selected row has no aria-current`);
@@ -1692,7 +1695,7 @@ const listKeys = ({ name, row, loaded, path, min, clickAt }) => ({
     await page.locator(row).nth(clickAt).locator('td').nth(3).click();
     const clicked = await expect(clickAt, 'a click');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(800);
+    await idle(page);
     const heading = await page.locator('h1').first().textContent();
     if (!path.test(new URL(page.url()).pathname) || !heading?.includes(clicked.name))
       problems.push(`Enter on the selected row went to ${page.url()} ("${heading?.trim()}"), not ${clicked.name}'s page`);
@@ -1737,7 +1740,7 @@ const copiesExactly = (button, block) => ({
     const want = await page.$eval(block, el => el.textContent.replace(/\r\n?/g, '\n'));
     await page.evaluate(() => navigator.clipboard.writeText(''));
     await page.click(button);
-    await page.waitForTimeout(400);
+    await idle(page);
     const got = await page.evaluate(() => navigator.clipboard.readText());
     if (got.includes('\r')) return ['the clipboard has CR line breaks'];
     return got === want && want.length > 0 ? [] : [`the clipboard holds ${JSON.stringify(got.slice(0, 60))}, not the ${want.length} characters of ${block}`];
@@ -1826,7 +1829,7 @@ const slideKeysHeld = {
     const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(500);
+    await idle(page);
     const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
     return before === after ? [] : [`the slide moved from ${before} to ${after}`];
   },
@@ -1922,10 +1925,10 @@ const reviewActionClosed = async page => {
   await slideWith('.tide-slide-open')(page);
   await page.locator('.tide-slide-open tbody tr:first-child .tide-slide-row-open').click();
   await page.locator('#present-action-title').waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
   await page.keyboard.press('Escape');
   await page.locator('#present-action-title').waitFor({ state: 'detached' });
-  await page.waitForTimeout(400);
+  await idle(page);
 };
 
 // --- the wrap-up -------------------------------------------------------------------------------------------------------
@@ -1955,7 +1958,7 @@ const wrapUp = as => async (page, demo) => {
     await wideFont(page);
     await page.keyboard.press('End');
     await page.locator('.tide-wrap').waitFor();
-    await page.waitForTimeout(400);
+    await idle(page);
     return;
   }
   for (const c of meetingGuests.contexts) await c.close().catch(() => {});
@@ -1965,11 +1968,11 @@ const wrapUp = as => async (page, demo) => {
   await startOrTakeUp(presenter);
   await presenter.keyboard.press('End');
   await presenter.locator('.tide-wrap').waitFor();
-  await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
+  await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'load' });
   await settle(page);
   await wideFont(page);
   await page.locator('.tide-wrap').waitFor();
-  await page.waitForTimeout(600);
+  await idle(page);
 };
 
 /** The wrap-up's three lists (not raised, who is doing what, not discussed), each whole in its column: side by side from
@@ -2018,11 +2021,11 @@ const actionBeside = as => async (page, demo) => {
     const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
-      await p.waitForTimeout(300);
+      await idle(p);
     }
     if (!(await p.locator(BESIDE).count())) await opener.first().click();
     await p.locator(BESIDE).waitFor();
-    await p.waitForTimeout(600);
+    await idle(p);
   };
   if (as === 'presenter') {
     await wideFont(page);
@@ -2037,11 +2040,11 @@ const actionBeside = as => async (page, demo) => {
     await presenter.locator('#present-rail').waitFor({ state: 'detached' });
   }
   await present(presenter);
-  await page.goto(`${page.url()}?as=Pat&roles=Analyst`, { waitUntil: 'networkidle' });
+  await page.goto(`${page.url()}?as=Pat&roles=Analyst`, { waitUntil: 'load' });
   await settle(page);
   await wideFont(page);
   await page.locator(BESIDE).waitFor();
-  await page.waitForTimeout(800);
+  await idle(page);
   // Scrolled by hand (the wheel), as the presenter would: what's shared with the room.
   const body = presenter.locator('[data-slide-body]');
   if (await body.evaluate(b => b.scrollHeight > b.clientHeight + 8)) {
@@ -2049,9 +2052,9 @@ const actionBeside = as => async (page, demo) => {
     // where it already is isn't passed on again.
     await body.hover();
     await presenter.mouse.wheel(0, -2000);
-    await presenter.waitForTimeout(600);
+    await idle(presenter);
     await presenter.mouse.wheel(0, 240);
-    await presenter.waitForTimeout(800);
+    await idle(presenter);
     // The room follows within moments: waited for here, so the rule compares where each settled.
     const at = await body.evaluate(b => b.scrollTop / (b.scrollHeight - b.clientHeight));
     await page.waitForFunction(at => {
@@ -2154,8 +2157,8 @@ const reachesBottom = (selector, px) => holds(`reaches the bottom: ${selector}`,
   return r.bottom >= window.innerHeight - px ? [] : [`${selector} ends at ${Math.round(r.bottom)}px, ${Math.round(window.innerHeight - r.bottom)}px above the window's bottom`];
 }, [selector, px]);
 
-/** `rule`, checked once the page has had `ms` more to settle: what the live page draws, after the prerendered one. */
-const later = (rule, ms) => ({ name: rule.name, check: async page => { await page.waitForTimeout(ms); return rule.check(page); } });
+/** `rule`, checked once the page is still again: what the live page draws, after the prerendered one. */
+const later = rule => ({ name: rule.name, check: async page => { await idle(page); return rule.check(page); } });
 
 /** Setup: wider letters, then the selected library entry's More menu opened. */
 const openEntryMore = async page => {
@@ -2393,7 +2396,7 @@ async function pressJ(page) {
   await page.keyboard.press('j');
   await page.waitForFunction(was => document.querySelector('.tide-triage-row.selected')?.getAttribute('aria-label') !== was
     && document.querySelector('.tide-reading')?.getAttribute('aria-busy') !== 'true', was, { timeout: 10000 });
-  await page.waitForTimeout(150);
+  await idle(page);
 }
 
 /** Setup: J pressed down to the first single report (not a group) that hasn't been read here, the pane beside it. */
@@ -2437,7 +2440,7 @@ const noLooksLikeInItsGroup = {
     for (let i = 0, n = await members.count(); i < n && !duplicate; i++) {
       await members.nth(i).locator('.tide-triage-meta > span').first().click();
       await page.locator('.tide-triage-member.selected .tide-triage-decide, .tide-reading .tide-triage-decide').first().waitFor();
-      await page.waitForTimeout(150);
+      await idle(page);
       duplicate = await page.locator('.tide-triage-decide button', { hasText: /^Duplicate/ }).first().isVisible().catch(() => false);
     }
     if (!duplicate) problems.push("no report of the open group offers Duplicate once selected");
@@ -2458,10 +2461,10 @@ async function endAndWheel(page) {
     head.append(note);
   });
   await page.keyboard.press('End');
-  await page.waitForTimeout(200);
+  await idle(page);
   for (const s of ['.tide-reading-head', '.tide-page-head']) {
     const box = await page.locator(s).first().boundingBox();
-    if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 1500); await page.waitForTimeout(300); }
+    if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 1500); await idle(page); }
   }
 }
 
@@ -2475,7 +2478,7 @@ const clickFocusesNextRow = label => ({
     const before = await page.locator('.tide-triage-row.selected').getAttribute('aria-label');
     await page.locator('.tide-reading .tide-triage-acts button', { hasText: new RegExp(`^${label}`) }).first().click();
     await page.waitForFunction(was => document.querySelector('.tide-triage-row.selected')?.getAttribute('aria-label') !== was, before, { timeout: 10000 });
-    await page.waitForTimeout(800);
+    await idle(page);
     const focus = await page.evaluate(() => {
       const a = document.activeElement;
       return a.classList.contains('selected') && a.classList.contains('tide-triage-row') ? null : `${a.tagName}${a.className ? '.' + a.className.split(' ').join('.') : ''} "${(a.innerText || '').trim().slice(0, 30)}"`;
@@ -2506,7 +2509,7 @@ async function longKeptText(page) {
   await page.$eval('.tide-reading .tide-reading-title', title => {
     title.textContent = 'Vendor patches an authentication bypass in its managed file transfer server, exploited against manufacturers in three countries';
   });
-  await page.waitForTimeout(200);
+  await idle(page);
 }
 
 /** The first visible match of `selector` scrolls inside itself (its content is taller than its box). */
@@ -2519,7 +2522,7 @@ const scrollsInside = selector => holds(`scrolls inside itself: ${selector}`, se
 /** Setup: the page scrolled well down, past the top of the list. */
 async function scrollDown(page) {
   await page.mouse.wheel(0, 1500);
-  await page.waitForTimeout(300);
+  await idle(page);
 }
 
 // --- Adversaries' context rail -----------------------------------------------------------------------------------------
@@ -2559,7 +2562,7 @@ const overlayClosesBy = how => ({
       const rail = await page.locator('#tide-rail').boundingBox();
       await page.mouse.click(Math.max(2, rail.x / 2), rail.y + rail.height / 2);
     }
-    await page.waitForTimeout(300);
+    await idle(page);
     const problems = [];
     if (await anyShown(page, '#tide-rail')) problems.push(`the rail is still open after ${how}`);
     const at = await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
@@ -2631,7 +2634,7 @@ const boardKeys = {
     for (const key of ['j', 'ArrowDown', 'k', 'ArrowUp', 'ArrowRight', 'ArrowLeft']) {
       const before = await selectedCard(page);
       await page.keyboard.press(key);
-      await page.waitForTimeout(500);
+      await idle(page);
       const now = await selectedCard(page);
       const moved = now.at !== before.at;
       const canMove = key === 'ArrowRight' ? lanes.some(([s, n], i) => n > 0 && i > lanes.findIndex(([l]) => l === before.lane))
@@ -2656,7 +2659,7 @@ const clickSelectsCard = {
     const target = cards.nth(1);
     const number = (await target.locator('.tide-action-num').innerText()).trim();
     await target.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
-    await page.waitForTimeout(600);
+    await idle(page);
     const now = await selectedCard(page);
     const problems = [];
     if (now.number !== number) problems.push(`clicking ${number} left ${now.number} selected`);
@@ -2670,14 +2673,14 @@ const clickSelectsCard = {
  *  taken by the list's rules before this one runs). */
 async function newUnownedCard(page) {
   const title = `Board take check ${Date.now().toString(36)}`;
-  await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+  await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'load' });
   await settle(page);
   await page.locator('#a-title').fill(title);
   await page.locator('#a-team').selectOption({ index: 1 });
-  await page.waitForTimeout(300);
+  await idle(page);
   await page.getByRole('button', { name: 'Create action' }).click();
   await page.waitForURL(/actions\/\d+/);
-  await page.goto(new URL(`/actions?view=open&layout=board&q=${encodeURIComponent(title)}`, page.url()).href, { waitUntil: 'networkidle' });
+  await page.goto(new URL(`/actions?view=open&layout=board&q=${encodeURIComponent(title)}`, page.url()).href, { waitUntil: 'load' });
 }
 
 /** T on the selected card takes it on: the toast says so. */
@@ -2688,7 +2691,7 @@ const boardTakeKey = {
     await page.locator('.tide-kcard.selected').focus();
     await page.keyboard.press('t');
     try { await page.getByText(`You took ${number} on.`).waitFor({ timeout: 5000 }); } catch { return [`T on ${number} didn't take it on`]; }
-    await page.waitForTimeout(800);
+    await idle(page);
     const note = await page.locator('.tide-kcard.selected .tide-kcard-note').allInnerTexts();
     return note.length ? [`the card ${number} the person took says "${note.join(' ').trim()}"`] : [];
   },
@@ -2728,15 +2731,15 @@ const headingsOverColumns = {
 
 /** Setup: the demo's analyst put on the first team (on none, My teams opens All open for them), then the list opened. */
 async function analystOnATeam(page) {
-  await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+  await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'load' });
   await settle(page);
   const pick = page.locator('select[aria-label^="Person to add to"]').first();
   if (await pick.locator('option', { hasText: 'Dev Analyst' }).count()) {
     await pick.selectOption({ label: 'Dev Analyst' });
     await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
-    await page.waitForTimeout(800);
+    await idle(page);
   }
-  await page.goto(new URL('/actions?view=open&layout=list', page.url()).href, { waitUntil: 'networkidle' });
+  await page.goto(new URL('/actions?view=open&layout=list', page.url()).href, { waitUntil: 'load' });
 }
 
 /**
@@ -2750,25 +2753,25 @@ const defaultKeepsLayout = {
     const views = page.locator('[role=group][aria-label="Views"]');
     const layoutTab = name => page.locator('.tide-actions-layout').getByRole('button', { name });
     await views.getByRole('button', { name: /^My teams/ }).click();
-    await page.waitForTimeout(800);
+    await idle(page);
     await layoutTab(/Board/).click();
-    await page.waitForTimeout(800);
+    await idle(page);
     const star = page.locator('button#view-default');
-    if (await star.count()) { await star.click(); await page.waitForTimeout(800); }
+    if (await star.count()) { await star.click(); await idle(page); }
     await views.getByRole('button', { name: /^All open/ }).click();
-    await page.waitForTimeout(800);
+    await idle(page);
     await layoutTab(/List/).click();
-    await page.waitForTimeout(1000);
+    await idle(page);
     const opened = async (p, how) => {
       const view = (await p.locator('[role=group][aria-label="Views"] [aria-pressed="true"]').innerText()).replace(/\s+/g, ' ').trim();
       const layout = (await p.locator('.tide-actions-layout [aria-pressed="true"]').textContent()).trim();
       if (!view.startsWith('My teams') || layout !== 'Board') problems.push(`${how} opened ${view} as the ${layout}, not My teams on the board`);
     };
     await page.locator('#tide-nav-links a[href="actions"]').first().click();
-    await page.waitForTimeout(1500);
+    await idle(page);
     await opened(page, "the sidebar's Actions");
     const fresh = await page.context().newPage();
-    await fresh.goto(new URL('/actions', page.url()).href, { waitUntil: 'networkidle' });
+    await fresh.goto(new URL('/actions', page.url()).href, { waitUntil: 'load' });
     await settle(fresh);
     await opened(fresh, 'a new tab on /actions');
     await fresh.close();
@@ -2784,12 +2787,12 @@ const addressFollowsAfterClose = {
     if (await lane.count() < 2) return ['the Open lane has fewer than two cards to move'];
     const card = lane.first();
     await card.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
-    await page.waitForTimeout(600);
+    await idle(page);
     await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
     const confirm = page.getByRole('button', { name: 'Move to Cancelled' });
     await confirm.waitFor({ timeout: 5000 });
     await confirm.click();
-    await page.waitForTimeout(1500);
+    await idle(page);
     const now = await selectedCard(page);
     return now.card === now.number?.replace(/^A-/, '') ? [] : [`the address says card=${now.card}, but ${now.number} is selected`];
   },
@@ -2853,7 +2856,7 @@ const scrimCoversRail = open => ({
       await page.locator('.tide-kcard-menu').getByRole('menuitem', { name: 'Cancelled' }).click();
     }
     await page.locator('.tide-modal-scrim').waitFor({ timeout: 5000 });
-    await page.waitForTimeout(400);
+    await idle(page);
     const after = [await luma(page, rail), await luma(page, content)];
     const problems = [];
     ['the rail', 'the page'].forEach((what, i) => {
@@ -2892,7 +2895,7 @@ const escapeClosesTheMenuFirst = {
     if (!await button.count()) return ['the rail has no Move to'];
     await button.focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(400);
+    await idle(page);
     const problems = [];
     if (!await page.evaluate(() => !!document.activeElement?.closest('#tide-rail [role="menu"]'))) problems.push('Move to didn\'t open its menu with focus in it');
     const out = await page.evaluate(() => {
@@ -2901,11 +2904,11 @@ const escapeClosesTheMenuFirst = {
     });
     if (out) problems.push(out);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    await idle(page);
     if (await page.locator('#tide-rail [role="menu"]').count()) problems.push('Escape left the menu open');
     if (!await anyShown(page, '#tide-rail')) problems.push('Escape in the menu closed the rail too');
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    await idle(page);
     if (await anyShown(page, '#tide-rail')) problems.push('a second Escape didn\'t close the rail');
     return problems;
   },
@@ -2940,7 +2943,7 @@ const railMoveAsksFirst = {
     if (!await page.evaluate(() => !!document.activeElement?.closest('.tide-modal'))) problems.push('focus is outside the dialog');
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => problems.push('Escape left the dialog open'));
-    await page.waitForTimeout(500);
+    await idle(page);
     if (!await page.locator(`.tide-kcol[data-status="Open"] .tide-kcard:has(.tide-action-num:text-is("${number}"))`).count()) problems.push(`${number} left its lane`);
     return problems;
   },
@@ -3000,8 +3003,8 @@ const pageTakesFiles = {
     if (await fire(page, 'paste', '#comment-new', [['image.png', 'image/png']], 'IOC 203.0.113.45')) problems.push('text pasted into the comment box was taken as a file');
     await page.evaluate(() => document.activeElement?.blur());
     if (!(await fire(page, 'dragover', '.tide-feed-head', [['page-drop.log', 'text/plain']]))) problems.push('a file dragged over the page isn\'t taken');
-    await page.waitForTimeout(100);
-    if (!(await anyShown(page, '.tide-page-drop'))) problems.push('no drop hint shows while a file is dragged over the page');
+    // The hint is drawn at once and goes when no more dragover comes (a real drag keeps sending them), so it's caught as it shows.
+    if (!(await page.locator('.tide-page-drop').first().waitFor({ timeout: 2000 }).then(() => true, () => false))) problems.push('no drop hint shows while a file is dragged over the page');
     await fire(page, 'drop', '.tide-feed-head', [['page-drop.log', 'text/plain']]);
     await waitForPending(page, 'page-drop.log');
     if (await anyShown(page, '.tide-page-drop')) problems.push('the drop hint stays after the drop');
@@ -3100,11 +3103,12 @@ const crowdedHead = async page => {
   });
 };
 
-/** Setup: wider letters, then `edit` made in the editor and the pause for autosave waited out (a little over its 2s). */
+/** Setup: wider letters, then `edit` made in the editor and the pause for autosave waited out. */
 const autosaveAfter = edit => async page => {
   await wideFont(page);
   await edit(page);
-  await page.waitForTimeout(3500);
+  // The save bar says when autosave has run (2s after the last edit): saved at a time, or held off until Save.
+  await page.locator('.tide-sticky-save :is(.tide-saved.tide-autosave, .tide-autosave-note.is-held)').first().waitFor({ timeout: 10000 });
 };
 
 /** Setup: wider letters, then a word added to the article's sectors (it autosaves), and the pause waited out. */
@@ -3122,7 +3126,9 @@ const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "T
 const showPreviewPane = async page => {
   await wideFont(page);
   await page.locator('.tide-ws-switch').getByRole('button', { name: 'Preview' }).click();
-  await page.waitForTimeout(300);
+  // A timer, not a condition: the preview is drawn again 250ms after a change (ReaderPreview.Settle).
+  await page.waitForTimeout(250);
+  await idle(page);
 };
 
 // --- the Library's context rail (option E 3.8) --------------------------------------------------------------------------
@@ -3186,7 +3192,7 @@ const libraryKeys = {
   check: async page => {
     const problems = [];
     const expect = async (at, what) => {
-      await page.waitForTimeout(300);
+      await idle(page);
       const s = await libraryRow(page);
       if (s.at !== at || !s.focused || s.current !== 1 || s.tabStops !== 1) problems.push(`${what}: row ${s.at} selected (focused ${s.focused}, ${s.current} current, ${s.tabStops} tab stops), not row ${at}`);
       return s;
@@ -3205,13 +3211,13 @@ const libraryKeys = {
     await page.keyboard.press('ArrowDown');
     await expect(2, 'the down arrow again');
     if (!s.row) problems.push('the address names no row');
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'load' });
     await settle(page);
     const back = await libraryRow(page);
     if (back.name !== s.name) problems.push(`a reload selects "${back.name}", not "${s.name}"`);
     await page.locator('.tide-library-row.selected').focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
+    await idle(page);
     if (!(await page.evaluate(() => document.activeElement?.classList.contains('tide-library-detail')))) problems.push('Enter on a row doesn\'t go into the entry');
     return problems;
   },
@@ -3230,6 +3236,7 @@ const fileDropStays = {
     const cdp = await page.context().newCDPSession(page);
     const data = { items: [], files: [file], dragOperationsMask: 1 };
     for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: 700, y: 500, data });
+    // Waits for something not to happen (the browser opening the file), so only time will do.
     await page.waitForTimeout(1500);
     const problems = [];
     if (page.url() !== before) problems.push(`the tab went to ${page.url()}`);
@@ -3256,7 +3263,7 @@ const stagedFilesAsk = link => ({
     const leave = page.locator('.tide-modal[role="alertdialog"]');
     if (!(await leave.waitFor({ timeout: 3000 }).then(() => true, () => false))) return ['leaving with a file waiting in Files didn\'t ask'];
     await leave.getByRole('button', { name: 'Stay', exact: true }).click();
-    await page.waitForTimeout(300);
+    await idle(page);
     const problems = [];
     if (page.url() !== at) problems.push(`Stay left the page for ${page.url()}`);
     if (!(await pendingFiles(page)).includes('staged.log')) problems.push('Stay lost the file waiting in Files');
@@ -3273,9 +3280,11 @@ const dialogFromOverlay = how => ({
     else { await page.locator(railLink).first().focus(); await page.keyboard.press('Control+k'); }
     const dialog = page.locator(how === 'link' ? '.tide-modal[role="alertdialog"]' : '.tide-palette');
     if (!(await dialog.waitFor({ timeout: 3000 }).then(() => true, () => false))) return [`no ${how === 'link' ? 'leave dialog' : 'palette'} opened`];
-    await page.waitForTimeout(300);
+    // Open once focus is in it. Not idle: the leave dialog's question holds the navigation, so the server's work stays in
+    // hand until it's answered.
+    await page.waitForFunction(sel => !!document.activeElement?.closest(sel), how === 'link' ? '.tide-modal[role="alertdialog"]' : '.tide-palette', { timeout: 3000 }).catch(() => {});
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    await idle(page);
     const at = await page.evaluate(() => document.activeElement === document.body ? '<body>' : document.activeElement?.id || document.activeElement?.tagName);
     return at === 'tide-rail-toggle' ? [] : [`focus is on ${at}, not the Context button`];
   },
@@ -3294,7 +3303,7 @@ const writtenQueryAddsOnFirstClick = {
     await button.evaluate(b => b.scrollIntoView({ block: 'center' }));
     const add = await button.boundingBox();
     await page.mouse.click(add.x + add.width / 2, add.y + add.height / 2);
-    await page.waitForTimeout(1500);
+    await idle(page);
     const after = await page.locator('.tide-hunt pre.tide-query').count();
     return after > before ? [] : ['the first click on Add the query added nothing'];
   },
@@ -3311,11 +3320,11 @@ const oneAdderAtATime = {
     await page.locator('#hunt-saved-picker').waitFor({ timeout: 3000 }).catch(() => { });
     if (await anyShown(page, 'textarea[aria-label="Your query"]')) problems.push('Write one by hand stays open beside Add a saved query');
     await page.locator('#hunt-add-iocs').click();
-    await page.waitForTimeout(300);
+    await idle(page);
     if (await anyShown(page, '#hunt-saved-picker')) problems.push('Add a saved query stays open beside Add indicators');
     await page.locator('#hunt-indicators :is(textarea, input)').first().focus();
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
+    await idle(page);
     if (await anyShown(page, '#hunt-indicators')) problems.push('Escape leaves Add indicators open');
     const at = await page.evaluate(() => document.activeElement?.id);
     if (at !== 'hunt-add-iocs') problems.push(`after Escape focus is on ${at || 'the page'}, not Add indicators`);
@@ -3362,7 +3371,7 @@ const libraryOverlay = async page => {
   await everyIndicatorSweep(page);
   await page.locator('#tide-rail-toggle').click();
   await page.locator('#tide-rail').waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
 };
 
 /** No word in a visible match of `selector` is split across lines: each word's text sits on one line box (a line
@@ -3539,7 +3548,7 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), visible('#tide-rail .tide-reader'), hidden('section[aria-labelledby="sec-assessment"]'),
       hidden('#tide-rail .tide-rail-head'), visible('.tide-sticky-save'), onFirstScreen('.tide-sticky-save'), onTop('.tide-sticky-save'), fits('.tide-rail-body'), fits('#tide-rail .tide-reader-head')] },
   // There, `]` leaves the preview in the page: no dialog over the switch.
-  { name: 'editor-phone-preview-key', route: '/articles/{vpnArticle}', setup: async page => { await showPreviewPane(page); await page.locator('body').press(']'); await page.waitForTimeout(300); },
+  { name: 'editor-phone-preview-key', route: '/articles/{vpnArticle}', setup: async page => { await showPreviewPane(page); await page.locator('body').press(']'); await idle(page); },
     widths: [780, 400], rules: [attr('#tide-rail', 'role', null), onTop('.tide-ws-switch'), hidden('#tide-rail .tide-rail-head'), visible('#tide-rail .tide-reader')] },
   // The head's badges wrap under the people here rather than run off a phone's edge, for an analyst and a reviewer.
   ...['', '?roles=Viewer'].map(roles => ({ name: `editor-head-crowded${roles ? '-viewer' : ''}`, route: `/articles/{vpnArticle}${roles}`, setup: crowdedHead,
@@ -3673,7 +3682,7 @@ const pages = [
       sameLine('.tide-drawer-tabs', '[role=group][aria-label="Query language"]'), sameLine('.tide-drawer-tabs', '#hunt-window'),
       visible('.tide-hunt-story'), startsAbove('.tide-hunt [data-copy-target]', 900),
       // A-1's query is KQL: the control says the language of the query on the action, on the live page too.
-      later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'), 2500)] },
+      later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'))] },
   // The action page's context rail. From 1500px it's docked open beside the page, which has about 873px for the sweep's
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).

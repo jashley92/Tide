@@ -205,4 +205,98 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
             .Replace("{product}", info.StackProduct));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public async Task TheCircuitWorkInHand_IsAnsweredForTheScreenshotTool()
+    {
+        using var response = await app.CreateClient().GetAsync("/demo/activity");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("started").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        json.RootElement.GetProperty("inHand").GetInt32().Should().Be(0, "no circuit is open");
+    }
+}
+
+/// <summary>Without Demo:Seed, the screenshot tool's /demo/activity isn't there, Development or not.</summary>
+public class DemoActivityAbsentTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task TheCircuitWorkInHand_IsntAnsweredWithoutTheDemo()
+    {
+        using var response = await app.CreateClient().GetAsync("/demo/activity");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+}
+
+/// <summary>The circuit work the screenshot tool waits on: in hand from when it starts until it's done, and only while its
+/// circuit's browser is connected.</summary>
+public class DemoActivityCountTests
+{
+    [Fact]
+    public async Task Work_IsInHand_UntilItsDone_AndEachStartCounts()
+    {
+        var activity = new DemoActivity();
+        var release = new TaskCompletionSource();
+
+        var work = activity.Track("c1", () => release.Task);
+        activity.Counts().Should().Be((1L, 1));
+
+        release.SetResult();
+        await work;
+        activity.Counts().Should().Be((1L, 0));
+    }
+
+    [Fact]
+    public async Task Work_ThatFails_IsNoLongerInHand()
+    {
+        var activity = new DemoActivity();
+        var act = () => activity.Track("c1", () => throw new InvalidOperationException("boom"));
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        activity.Counts().Should().Be((1L, 0));
+    }
+
+    [Fact]
+    public async Task A_DisconnectedCircuitsWork_IsntWaitedFor_UntilItsBack()
+    {
+        var activity = new DemoActivity();
+        var release = new TaskCompletionSource();
+        var work = activity.Track("c1", () => release.Task);
+        var other = activity.Track("c2", () => release.Task);
+
+        activity.Connection("c1", up: false);
+        activity.Counts().InHand.Should().Be(1, "only the connected circuit's work counts");
+        activity.Connection("c1", up: true);
+        activity.Counts().InHand.Should().Be(2);
+
+        activity.Connection("unknown", up: false);
+        activity.Counts().InHand.Should().Be(2, "a circuit never seen changes nothing");
+
+        release.SetResult();
+        await Task.WhenAll(work, other);
+    }
+
+    [Fact]
+    public void A_ClosedCircuit_IsForgotten()
+    {
+        var activity = new DemoActivity();
+        _ = activity.Track("c1", () => new TaskCompletionSource().Task);
+        activity.Connection("c2", up: true);
+
+        activity.Closed("c1");
+        activity.Counts().Should().Be((1L, 0));
+
+        var now = JsonSerializer.Serialize(activity.Now());
+        now.Should().Be("""{"started":1,"inHand":0}""");
+    }
+}
+
+public class DemoActivityDoneTests
+{
+    [Fact]
+    public async Task Done_RunsItsStep_AndCompletes()
+    {
+        var ran = false;
+        await DemoActivity.Done(() => ran = true);
+        ran.Should().BeTrue();
+    }
 }
