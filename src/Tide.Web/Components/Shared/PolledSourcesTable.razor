@@ -1,6 +1,6 @@
 @* Triage's Sources tab: each polled source, when it was last pulled (on schedule or by hand), when it's next due, how the
    last pull went, and Pull now. A source pulled within the pull-now window shows when it can be pulled again, on a
-   disabled button, rather than failing when pressed. *@
+   disabled button, rather than failing when pressed. The page puts Pull all above the table. *@
 @inject OrgClock Clock
 
 @if (Sources.Count == 0)
@@ -9,10 +9,17 @@
 }
 else
 {
-    <p class="small tide-muted px-3 pt-3 mb-1">
-        The sources TIDE polls, paused ones left out. Pull one now to take in its latest items; each can be pulled once in
-        @PullTimes.Wait(Window) of its last pull, scheduled or by hand.@(PollingOn ? "" : " Scheduled polling is off, so sources are only pulled by hand.")
-    </p>
+    <div class="tide-pull-head">
+        <p class="small tide-muted mb-0">
+            The sources TIDE polls, paused ones left out. Pull one now to take in its latest items; each can be pulled once in
+            @PullTimes.Wait(Window) of its last pull, scheduled or by hand. Pull all takes every one outside that, one at a
+            time.@(PollingOn ? "" : " Scheduled polling is off, so sources are only pulled by hand.")
+        </p>
+        @Actions
+    </div>
+    @* Where the card is too narrow for the columns, each source is a block of its own (app.css); at worst it scrolls within
+       the card, never the page. *@
+    <div class="tide-card-scroll tide-pull-fit">
     <table class="tide-table tide-pull-table">
         <thead><tr><th scope="col">Source</th><th scope="col">Last pulled</th><th scope="col">Next due</th><th scope="col">Last result</th><th scope="col"><span class="visually-hidden">Pull now</span></th></tr></thead>
         <tbody>
@@ -34,7 +41,7 @@ else
                         {
                             <div class="tide-pull-error" title="@error"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span> @Ui.Clip(error, 90)</div>
                         }
-                        else if (s.LastNewItems is { } n) { <span>@(n == 0 ? "OK, no new items" : n == 1 ? "1 new item" : $"{n} new items")</span> }
+                        else if (s.LastNewItems is { } n) { <span>@(n == 0 ? "OK, no new items" : PullTimes.NewItems(n))</span> }
                         else if (s.LastPolledAtUtc is null) { <span class="tide-muted">Not pulled yet</span> }
                         else { <span>OK</span> }
                     </td>
@@ -59,6 +66,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @code {
@@ -77,4 +85,7 @@ else
     [Parameter] public Guid? Pulling { get; set; }
 
     [Parameter] public EventCallback<Guid> OnPull { get; set; }
+
+    /// <summary>Beside the words above the table: Pull all.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
 }

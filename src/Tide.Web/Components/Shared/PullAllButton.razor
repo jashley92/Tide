@@ -1,0 +1,84 @@
+@* Pull all: every polled source outside the pull-now window, one at a time (IntakeService.PullAllAsync), saying which
+   it's on ("Pulling 3 of 9: Sample news…") and then what it did. Disabled while it runs, while someone else's run is
+   under way (the service refuses a second run too, and this redraws when that run ends), and on a server standing by.
+   The run belongs to this page: leaving it, or the browser's connection dropping, stops the run once the source being
+   pulled is done, so none is left half-pulled, and those not reached stay as they were. *@
+@implements IDisposable
+@inject IntakeService Intake
+@inject SourcePollGuard Polls
+@inject ToastService Toasts
+@inject ChangeFeed Changes
+@inject CircuitConnection Connection
+
+<span class="tide-pull-all">
+    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(IsRunning || Disabled || Intake.PullAllRunning || Intake.StandingBy is not null)" @onclick="RunAsync"
+            title="Pull every source not pulled in the last @PullTimes.Wait(Intake.PullWindow), one at a time">
+        @if (IsRunning) { <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> }
+        else { <span class="bi bi-arrow-repeat" aria-hidden="true"></span> }
+        Pull all</button>
+    <span class="tide-pull-all-status" role="status">@Status</span>
+</span>
+
+@code {
+    /// <summary>Another pull on the page is under way: the button waits.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Each source as the run reaches it.</summary>
+    [Parameter] public EventCallback<PullAllStep> OnStep { get; set; }
+
+    /// <summary>The run ended (or was refused): the page reads its sources again.</summary>
+    [Parameter] public EventCallback OnDone { get; set; }
+
+    private readonly CancellationTokenSource _leaving = new();
+    private PullAllStep? _step;
+    private string? _summary;
+
+    /// <summary>Whether this button's run is under way.</summary>
+    internal bool IsRunning { get; private set; }
+
+    private string? Status => IsRunning ? _step?.Text ?? "Pulling…"
+        : _summary ?? (Intake.PullAllRunning ? "Pulling every source…" : Intake.StandingBy);
+
+    // Someone's run, or a source's poll, started or ended: the button and its words are drawn again.
+    protected override void OnInitialized() => Polls.Changed += Redraw;
+
+    private void Redraw() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Pulls every source due a pull, then says what it did, here and in a toast, and tells every open page (this
+    /// one's Triage count and step too) as a poll does.</summary>
+    internal async Task RunAsync()
+    {
+        if (IsRunning) return;
+        (IsRunning, _step, _summary) = (true, null, null);
+        try
+        {
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(_leaving.Token, Connection.Lost);
+            var result = await Intake.PullAllAsync(step =>
+            {
+                _step = step;
+                _ = InvokeAsync(async () =>
+                {
+                    StateHasChanged();
+                    await OnStep.InvokeAsync(step);
+                });
+            }, stop.Token);
+            Changes.Publish(ChangeFeed.Triage);
+            if (_leaving.IsCancellationRequested) return;
+            _summary = result.Summary(Intake.PullWindow);
+            if (result.AllFailed) Toasts.Error(_summary);
+            else if (result.SomeFailed) Toasts.Warn(_summary);
+            else Toasts.Show(_summary);
+        }
+        catch (OperationCanceledException) when (_leaving.IsCancellationRequested) { /* the page was left: nobody to tell */ }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { (IsRunning, _step) = (false, null); }
+        if (!_leaving.IsCancellationRequested) await OnDone.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        Polls.Changed -= Redraw;
+        _leaving.Cancel();
+        _leaving.Dispose();
+    }
+}

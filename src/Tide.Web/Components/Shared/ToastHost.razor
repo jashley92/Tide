@@ -26,8 +26,8 @@
     private RenderFragment Toast(ToastService.Toast t) => __builder =>
     {
         var newest = t.Id == _newestUndo;
-        <div class="tide-toast @(t.IsError ? "tide-toast-error" : "")" @key="t.Id">
-            <span class="bi @(t.IsError ? "bi-exclamation-octagon" : "bi-check2-circle")" aria-hidden="true"></span>
+        <div class="tide-toast @(t.IsError ? "tide-toast-error" : t.IsWarning ? "tide-toast-warn" : "")" @key="t.Id">
+            <span class="bi @(t.IsError ? "bi-exclamation-octagon" : t.IsWarning ? "bi-exclamation-triangle" : "bi-check2-circle")" aria-hidden="true"></span>
             <span>
                 @t.Message
                 @if (newest)

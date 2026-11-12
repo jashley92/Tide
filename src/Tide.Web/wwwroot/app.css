@@ -675,6 +675,8 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-toast > .bi { color: var(--tide-ok); margin-top: .1rem; }
 .tide-toast-error { border-left-color: var(--tide-threat); }
 .tide-toast-error > .bi { color: var(--tide-threat); }
+.tide-toast-warn { border-left-color: var(--tide-warn); }
+.tide-toast-warn > .bi { color: var(--tide-warn); }
 @keyframes tide-toast-in { from { transform: translateY(.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .tide-toast { animation: none; } }
 .tide-toast button { background: none; border: 0; color: inherit; opacity: .75; margin-left: auto; padding: 0; }
@@ -1831,7 +1833,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-maxw-2xl { max-width: var(--tide-width-2xl); }
 .tide-card-narrow { max-width: var(--tide-width-narrow); }
 .tide-card-form { max-width: var(--tide-width-form); }
-.tide-card-scroll { overflow-x: auto; }
+.tide-card-scroll { overflow-x: auto; position: relative; }   /* relative: keeps visually-hidden text inside the scroll box */
 .tide-col-sm { width: 8rem; }
 .tide-col-md { width: 9.5rem; }
 .tide-col-lg { width: 12rem; }
@@ -1905,6 +1907,15 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-step-label { justify-content: center; font-size: var(--tide-text-sm); }
     .tide-step-now { display: none; }
 }
+
+/* Under the strip, Triage's word on the feeds not pulled since the morning's cutoff, with Pull all: one row where there's
+   room; narrower, the button wraps under the words. */
+.tide-feeds-nudge { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-4);
+    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); background: var(--tide-warn-soft);
+    font-size: var(--tide-text-sm); }
+.tide-feeds-nudge-text { flex: 1 1 20rem; min-width: 0; overflow-wrap: break-word; }
+.tide-feeds-nudge-text a { font-weight: var(--tide-weight-semibold); }
+.tide-feeds-nudge .tide-feeds-failing { color: var(--tide-warn); }
 
 .tide-today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: var(--tide-space-4); align-items: start; }
 @media (max-width: 1100px) { .tide-today-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -2252,8 +2263,32 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
     white-space: normal; max-width: 16rem; margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); text-align: right; }
 .tide-inbox-view { display: contents; }   /* Triage's inbox, which the Sources tab replaces: no box of its own */
 /* Triage's Sources tab: each polled source, when it was last pulled, and Pull now. */
+/* The Sources tab's head: what it is, and Pull all with what it's doing; under the words where it's narrow. */
+.tide-pull-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--tide-space-2) var(--tide-space-4); padding: var(--tide-space-3) var(--tide-space-3) var(--tide-space-1); }
+.tide-pull-head > p { flex: 1 1 24rem; min-width: 0; }
+.tide-pull-all { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); min-width: 0; }
+.tide-pull-all > .btn { white-space: nowrap; }
+.tide-pull-all-status { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word; min-width: 0; }
+.tide-pull-all-status:empty { display: none; }
 .tide-pull-table td { vertical-align: middle; }
 .tide-pull-table .tide-pull-error { color: var(--tide-warn); max-width: 26rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Too narrow a card for its five columns (beside an open sidebar on a small window): each source is a block of its own,
+   its name with Pull now beside it, then each fact on a line, the error whole. */
+.tide-pull-fit { container: pulls / inline-size; }
+@container pulls (max-width: 44rem) {
+    .tide-pull-table, .tide-pull-table tbody { display: block; }
+    .tide-pull-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .tide-pull-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tide-space-1) var(--tide-space-3); align-items: center;
+        padding: var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+    .tide-pull-table tr:last-child { border-bottom: 0; }
+    .tide-pull-table td { display: block; padding: 0; border: 0; min-width: 0; }
+    .tide-pull-table td:nth-child(1) { grid-column: 1; grid-row: 1; }
+    .tide-pull-table td:nth-child(5) { grid-column: 2; grid-row: 1; }
+    .tide-pull-table td:nth-child(2), .tide-pull-table td:nth-child(3), .tide-pull-table td:nth-child(4) { grid-column: 1 / -1; font-size: var(--tide-text-sm); }
+    .tide-pull-table td:nth-child(2)::before { content: "Last pulled: "; color: var(--tide-text-muted); }
+    .tide-pull-table td:nth-child(3)::before { content: "Next due: "; color: var(--tide-text-muted); }
+    .tide-pull-table .tide-pull-error { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+}
 .tide-pull-table .tide-pull-wait { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-pull-table abbr[title] { text-decoration: none; cursor: help; }
 

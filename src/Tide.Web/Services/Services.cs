@@ -11,8 +11,10 @@ public sealed class ToastService(TimeProvider? time = null)
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
-    /// <summary>A message; <see cref="Undo"/>, when there is one, takes back what it reports (a button on the toast).</summary>
-    public sealed record Toast(Guid Id, string Message, bool IsError, Func<Task>? Undo = null);
+    /// <summary>A message; <see cref="Undo"/>, when there is one, takes back what it reports (a button on the toast).
+    /// <see cref="IsWarning"/>: it worked in part (some of what was asked failed), shown as a confirmation is, marked as a
+    /// warning.</summary>
+    public sealed record Toast(Guid Id, string Message, bool IsError, Func<Task>? Undo = null, bool IsWarning = false);
 
     // Confirmations dismiss themselves from a timer thread while the circuit may be rendering the list, so it's only
     // changed under the lock and readers get a copy.
@@ -80,6 +82,9 @@ public sealed class ToastService(TimeProvider? time = null)
 
     public void Error(string message) => Add(message, true);
 
+    /// <summary>What worked in part: some of what was asked failed, and the message says which.</summary>
+    public void Warn(string message) => Add(message, false, warning: true);
+
     public void Dismiss(Guid id)
     {
         lock (_lock)
@@ -90,9 +95,9 @@ public sealed class ToastService(TimeProvider? time = null)
         Changed?.Invoke();
     }
 
-    private void Add(string message, bool isError, Func<Task>? undo = null, bool clearsErrors = true)
+    private void Add(string message, bool isError, Func<Task>? undo = null, bool clearsErrors = true, bool warning = false)
     {
-        var toast = new Toast(Guid.NewGuid(), message, isError, undo);
+        var toast = new Toast(Guid.NewGuid(), message, isError, undo, warning);
         lock (_lock)
         {
             // A confirmation means the last attempt worked, so errors left from earlier attempts no longer apply.
