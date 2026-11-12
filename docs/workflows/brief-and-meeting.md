@@ -196,7 +196,7 @@ controls are in **the presenter's rail** beside the slide (docked from 1500px wi
 | Numbers | A box for each number not entered yet. |
 | An article | Its actions (Take it, holder, due date), its recommended lines to raise (kind, team, Raise), the quick add, a meeting note on it, and Mark discussed. |
 | Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
-| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock to my slide, hand off). |
+| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock everyone to my slide, hand off). |
 
 The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
 follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
