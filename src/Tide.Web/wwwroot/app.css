@@ -1814,6 +1814,26 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-modal-body { color: var(--tide-text-muted); margin: 0 0 1rem; font-size: .92rem; }
 .tide-modal-content { margin: 0 0 var(--tide-space-4); font-size: var(--tide-text-base); }
 .tide-modal-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+/* What's new (WhatsNewDialog): a release's highlights for the person's roles, the head and the buttons fixed and the
+   highlights scrolling between them. Help lists each release's the same way, with its full notes folded under it. */
+.tide-whatsnew { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.tide-whatsnew-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-3);
+    padding: var(--tide-space-4) var(--tide-space-5) var(--tide-space-2); }
+.tide-whatsnew-head .tide-modal-title { margin: 0; }
+.tide-whatsnew-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--tide-space-5) var(--tide-space-3); }
+.tide-whatsnew > .tide-modal-actions { flex-wrap: wrap; padding: var(--tide-space-3) var(--tide-space-5); border-top: 1px solid var(--tide-border); }
+.tide-whatsnew-intro, .tide-help-intro { color: var(--tide-text-muted); margin: 0 0 var(--tide-space-2); }
+.tide-whatsnew-release { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-4) 0 var(--tide-space-1); }
+.tide-whatsnew-group-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
+.tide-whatsnew .tide-md ul, .tide-help .tide-md ul { padding-left: 1.25rem; margin-bottom: var(--tide-space-2); }
+.tide-whatsnew .tide-md li, .tide-help .tide-md li { margin-bottom: var(--tide-space-1); }
+.tide-help { max-width: var(--tide-width-form); display: flex; flex-direction: column; gap: var(--tide-space-4); }
+.tide-help-release { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); scroll-margin-top: 4rem; }
+.tide-help-release:first-of-type { border-top: 0; padding-top: 0; }
+.tide-help-release-title { display: flex; align-items: center; gap: var(--tide-space-2); font-size: var(--tide-text-md);
+    font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
+.tide-help-notes > summary { color: var(--tide-accent); cursor: pointer; }
+.tide-help-notes[open] > summary { margin-bottom: var(--tide-space-2); }
 /* Something waiting on the person (a rotation request to approve): an accent panel inside a card. */
 .tide-waiting { border-left: 3px solid var(--tide-accent); background: var(--tide-accent-soft); border-radius: var(--tide-radius-lg); padding: var(--tide-space-3) var(--tide-space-4); }
 /* A screenshot opened from a comment or hunt (ScreenshotDialog): titled, the image on a quiet panel, then

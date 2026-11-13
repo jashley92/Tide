@@ -39,6 +39,8 @@ public class TideApp : WebApplicationFactory<Program>
         builder.UseSetting("Email:PickupDirectory", Path.Combine(_dir, "mail"));
         // The organization's boundary (the sending address's domain): the tests' own addresses are in example.org.
         builder.UseSetting("Email:From", "tide@example.org");
+        // Never offered unasked in tests: what's new, tips and the tour are tried by asking for them.
+        builder.UseSetting("Onboarding:Enabled", "false");
         if (Role is { } role)
         {
             builder.UseSetting("DevAuth:Roles:0", role);

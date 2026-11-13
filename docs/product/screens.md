@@ -56,7 +56,12 @@ Every route, its component and the permission it needs are in the [route table](
   outside, or Tab out of them. Escape gives focus back to the button that opened it.
 - **The account menu** (the initials in the top right) says who you are and your roles, and holds your own settings:
   light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
-  and About.
+  **Help and what's new**, and About.
+- **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
+  their role: analysts, presenters, administrators, or viewers and action owners. It shows once, never in present
+  mode and never to a Reader or a Visitor. **See all changes** opens **Help** (`/help`, also linked from the `?`
+  overlay), which lists each release's highlights for your role; an administrator also gets
+  every release's full notes.
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables

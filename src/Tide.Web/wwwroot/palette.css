@@ -61,6 +61,7 @@
 .tide-shortcuts-head .tide-modal-title { margin: 0; }
 .tide-shortcuts-switch { margin: var(--tide-space-3) 0 var(--tide-space-1); }
 .tide-shortcuts-hint { color: var(--tide-text-muted); font-size: var(--tide-text-sm); margin: 0 0 var(--tide-space-2); }
+.tide-shortcuts-help { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 0; }
 .tide-shortcuts-body { overflow-y: auto; }
 .tide-shortcuts-table { width: 100%; border-collapse: collapse; font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-2); }
 .tide-shortcuts-table caption { caption-side: top; padding: var(--tide-space-3) 0 var(--tide-space-1); color: var(--tide-text-muted);
