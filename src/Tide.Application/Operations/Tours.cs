@@ -7,9 +7,10 @@ namespace Tide.Application.Operations;
 /// <summary>
 /// One step of the first-sign-in tour: a page (<paramref name="Route"/>, as a link from the app's root has it: "" for
 /// Today), the permission that page or control needs, the control it points at (a CSS selector; none for the page as a
-/// whole), and what to say.
+/// whole), and what to say. <paramref name="Opens"/>: a tab or section to open first when the control is inside it and
+/// shut (opening it saves nothing).
 /// </summary>
-public sealed record TourStep(string Key, string Route, Permission Needs, string? Target, string Title, string Text);
+public sealed record TourStep(string Key, string Route, Permission Needs, string? Target, string Title, string Text, string? Opens = null);
 
 /// <summary>The tour each role takes: the main pages and controls they'll use, and only those.</summary>
 public static class Tours

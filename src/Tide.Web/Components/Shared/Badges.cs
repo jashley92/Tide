@@ -352,6 +352,11 @@ public static class Ui
 
     public static string ActionUrl(int number) => $"actions/{number}";
 
+    /// <summary>The address that looks a value up on Search: the value encoded, and quoted when it has a space so it stays
+    /// one term.</summary>
+    public static string LookupUrl(string value) =>
+        "search?q=" + Uri.EscapeDataString(value.Any(char.IsWhiteSpace) && !value.Contains('"') ? $"\"{value}\"" : value);
+
     /// <summary>An action's address with a query (<c>do=recordupdate</c>), or its plain address for none.</summary>
     public static string ActionUrl(int number, string? query) => string.IsNullOrEmpty(query) ? ActionUrl(number) : $"{ActionUrl(number)}?{query}";
 

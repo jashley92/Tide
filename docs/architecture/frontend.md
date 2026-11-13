@@ -281,7 +281,8 @@ uses, before anything else.
   seen as closing does, and starts the tour; the page's tip, which Got it would bring, waits. Readers and Visitors get
   neither, and present mode never shows it.
 
-**Guides.** A guide is a few steps through one page's controls, drawn with the tour's step dialog
+**Guides.** A guide is a walk through one page's controls (Today, Triage, the article editor, Actions and an action's
+page in full, in the page's order; the reference pages in three to five steps), drawn with the tour's step dialog
 (`GuideStepDialog`: the scrim, focus kept in it, Escape ends it, and focus back on the control that had it as the first
 step opened, when that's still on the page, else on the heading) and placed by
 `tideTips`. `Guides` (`Tide.Application/Operations/Guides.cs`) lists each guide's page, the permission that page needs,
@@ -291,10 +292,21 @@ step for a control they can't.
 - **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; a
   page with a guide has **Show me around** in its header (`GuideLink`), which starts it in place and gets focus back as
   it ends. Both ask `TourRequests.AskGuide`; nothing starts a guide by itself, and a guide stores nothing.
+- **Only pointing.** A guide never presses a control for you: it may select a shut tab its control is in (a step's
+  `Opens`, such as the article's rail Actions tab), which saves nothing. Walking a guide to Done, or leaving it with
+  Escape, writes nothing and makes no outgoing call (`GuideWalkTests`).
+- **Where it starts.** From Help, `GuideStarts` opens its page: the newest article for the editor's, the open action due
+  first for an action's. Search's looks something up itself, the normal way (`search?q=`): the first CVE, else the first
+  indicator, on the newest article the person can read within the team edition's TLP ceiling, through the article
+  service's own checks; none, and it opens Search empty. A lookup reads TIDE's own data only (no NVD, EPSS, feed or
+  enrichment call) and writes nothing.
 - **Finding the control.** A step names its control by a CSS selector, with fallbacks (`a || b`: the first shown).
   `tideTips` looks for it again as the page draws (a guide started from Help opens a page still loading) and scrolls it
-  into view once found; with none shown, the step sits in the bottom corner. It keeps off the context rail, docked or
-  over the page, as a tip does.
+  into view once found. It keeps off the context rail, docked or over the page, as a tip does.
+- **Never in a corner.** Once the page has settled, `tideTips.present` says which steps have their control (shown, in
+  the shut rail with the rail's button as a fallback, or in a tab the step opens); the others are left out, so "Step 2
+  of 7" counts what's shown and every step points at something. A step whose control is still being drawn waits in the
+  middle, with no arrow.
 - **Learn to present** is the one guide that isn't a page's. For whoever can present (`PresentBriefs`), Help links to
   present mode in rehearsal (`/present/{day}?rehearse=1`, today's brief). See [rehearsal](#rehearsal).
 
@@ -632,10 +644,12 @@ anything: nothing there can be saved.
 - **Never a follower's.** Someone who can't present (a Viewer, an action owner, a Visitor) asking for it is told
   "Rehearsal is for whoever presents the brief.", and nothing is read or joined. A live page, the presenter's included,
   never draws the guide, so nothing of it reaches the room's screen.
-- **The guide's steps** are on their slides (`Guide` step routes: `title`, `article`, `open`, `wrap`): the title slide
-  and moving between slides; the presenter's rail and `]`; raising an action from a recommended line (pointed at, not
-  done); an action's card; Actions that need review; the wrap-up's three lists; and ending the meeting. A slide the
-  brief hasn't leaves the one on screen. At a width that shuts the rail, its steps point at **Rail**.
+- **The guide's steps** are on their slides (`Guide` step routes: `title`, `metrics`, `open`, `article`, and
+  `article:indicators`, `article:raised` or `article:card` for the first article that has one, then `wrap`): the title
+  slide and moving between slides; who's here; the presenter's rail and `]`; the numbers; Actions that need review; an
+  article's slide, its indicators and the action a line became; raising (pointed at, not done), quick add, your note and
+  Mark discussed; an action's card; the wrap-up's three lists, attendance and ending the meeting. A step about a slide
+  the brief hasn't is left out (`Present.GuideSlide`). At a width that shuts the rail, its steps point at **Rail**.
 
 ## Design tokens
 

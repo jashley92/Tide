@@ -10,6 +10,7 @@
    heading. Leaving the page another way ends it too. The first tour stays due until it ends, so a reload mid-tour starts
    it again; a second tab of the same person's doesn't start another first tour (TourClaims). A guide stores nothing. *@
 @implements IAsyncDisposable
+@using Microsoft.AspNetCore.WebUtilities
 @using Tide.Application.Operations
 @inject PageTipService Tips
 @inject TourService Tour
@@ -144,18 +145,40 @@ else if (Tip is { } tip)
     private void StartTour(bool first, bool fromHelp) => Start(Tour.Steps, null, first, navigate: !fromHelp);
 
     // A guide on its page: the one open, from its Show me around; from Help, its page is opened first (for an article's
-    // or an action's, a real one: GuideStarts). Learn to present isn't the layout's: Help links to present mode's
-    // rehearsal, which shows it.
+    // or an action's, a real one: GuideStarts). Search's looks something up itself, as a person would, unless a search is
+    // already open. Once the page has settled, a step whose control isn't on it is left out (tips.js present), so the
+    // count is of the steps shown and none points at nothing. Learn to present isn't the layout's: Help links to present
+    // mode's rehearsal, which shows it.
     private async Task StartGuideAsync(Guide guide, bool fromHelp)
     {
         if (Step is not null || guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
-        var page = fromHelp ? await Starts.PageAsync(guide) : OpenPage;
-        if (page is null)
+        var here = Nav.ToBaseRelativePath(Nav.Uri);
+        var searched = QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("q", out var q) ? q.ToString() : null;
+        (string Page, string LookedUp)? start = fromHelp || GuideStarts.LooksUp(guide) && searched is null
+            ? await Starts.StartAsync(guide) : (here, searched ?? "");
+        if (start is not { } opened)
         {
             Toasts.Show($"There's nothing to show {guide.Title.ToLowerInvariant()} on yet.");
             return;
         }
-        Start(guide.Steps.Select(s => s with { Route = page }).ToList(), guide, first: false, navigate: fromHelp);
+        var (page, lookup) = opened;
+        if (page != here)
+        {
+            _page = PageOf(Nav.BaseUri + page);
+            Nav.NavigateTo(page);
+        }
+        var shown = await PresentAsync(guide.Steps);
+        var steps = guide.Steps.Where((s, i) => i >= shown.Length || shown[i])
+            .Select(s => s with { Route = page, Text = s.Text.Replace("{lookup}", lookup, StringComparison.Ordinal) }).ToList();
+        Start(steps, guide, first: false, navigate: false);
+    }
+
+    // Which steps have their control on the page; with no browser to look in (a page drawn on the server alone), every
+    // step.
+    private async Task<bool[]> PresentAsync(IReadOnlyList<TourStep> steps)
+    {
+        try { return await JS.InvokeAsync<bool[]?>("tideTips.present", steps.Select(s => new { target = s.Target, opens = s.Opens }).ToList()) ?? []; }
+        catch (InvalidOperationException) { return []; }
     }
 
     // The steps from the first. The first-sign-in tour, which starts by itself, not while another tab of the person's
@@ -200,8 +223,8 @@ else if (Tip is { } tip)
     {
         _step = step;
         StateHasChanged();
-        if (!navigate || Step is not { } s || OpenPage == s.Route.ToLowerInvariant()) return;
-        _page = s.Route.ToLowerInvariant();
+        if (!navigate || Step is not { } s || OpenPage == PageOf(Nav.BaseUri + s.Route)) return;
+        _page = PageOf(Nav.BaseUri + s.Route);
         Nav.NavigateTo(s.Route.Length == 0 ? Nav.BaseUri : s.Route);
     }
 
