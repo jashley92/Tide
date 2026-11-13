@@ -58,9 +58,10 @@ Every route, its component and the permission it needs are in the [route table](
   light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
   **Help and what's new**, and About.
 - **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
-  their role: analysts, presenters and administrators, or viewers and action owners. It shows once, never in present
+  their role: analysts, presenters, administrators, or viewers and action owners. It shows once, never in present
   mode and never to a Reader or a Visitor. **See all changes** opens **Help** (`/help`, also linked from the `?`
-  overlay), which lists every release: its highlights for your role and its full notes.
+  overlay), which lists each release's highlights for your role; an administrator also gets
+  every release's full notes.
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables

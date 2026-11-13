@@ -38,17 +38,27 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
             await r.Click(c => c.CheckAsync());
             var html = await r.Html();
             html.Should().Contain("What&#x27;s new in TIDE 1.13.0").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
-            html.Should().Contain("For analysts").And.Contain("For presenters and admins").And.NotContain("For viewers and action owners");
+            html.Should().Contain("For analysts").And.Contain("For presenters").And.NotContain("For administrators")
+                .And.NotContain("For viewers and action owners");
             html.Should().Contain("href=\"help?release=1.13.0#v1-13-0\"").And.Contain("See all changes");
             r.Component.IsOpen.Should().BeTrue();
-            await r.Click(c => { c.Close(); return Task.CompletedTask; });
+            (await Seen(who)).Should().BeEmpty("it's marked seen as it's closed, so a reload while it's up shows it again");
+            await r.Click(c => c.CloseAsync());
             (await r.Html()).Should().NotContain("tide-whatsnew");
         }
-        (await Seen(who)).Should().Be("1.13.0", "it's marked seen as it opens");
+        (await Seen(who)).Should().Be("1.13.0", "it's marked seen as it closes");
 
         await using var again = await RenderAsync<WhatsNewDialog>(app, "/triage", @as: who);
         await again.Click(c => c.CheckAsync());
         again.Component.IsOpen.Should().BeFalse("it's shown once per person");
+    }
+
+    [Fact]
+    public async Task AnAdministrator_AlsoReadsTheAdministratorsHighlights()
+    {
+        await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person("Admin"));
+        await r.Click(c => c.CheckAsync());
+        (await r.Html()).Should().Contain("For analysts").And.Contain("For presenters").And.Contain("For administrators");
     }
 
     [Fact]
@@ -134,17 +144,21 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Help_ListsEveryRelease_WithTheReadersHighlights_AndOpensTheOneLinkedTo()
+    public async Task Help_ShowsEachReaderTheirHighlights_AndOnlyAnAdministratorTheFullOperatorNotes()
     {
         await using (var r = await RenderAsync<HelpPage>(app, "/help?release=1.13.0", @as: Person("Viewer")))
         {
             var html = await r.Html();
-            html.Should().Contain("id=\"v1-13-0\"").And.Contain("id=\"v1-0-0\"", "every release's notes are listed");
-            html.Should().Contain("For viewers and action owners").And.NotContain("For analysts");
-            html.Should().Contain("<details class=\"tide-help-notes\" open").And.Contain("All changes in 1.13.0");
+            html.Should().Contain("id=\"v1-13-0\"").And.Contain("For viewers and action owners").And.NotContain("For analysts");
+            html.Should().NotContain("All changes in", "the full notes are the operators': upgrade steps, migrations, settings");
+            html.Should().NotContain("Upgrade-Tide.ps1").And.NotContain("id=\"v1-0-0\"", "a release with nothing for them isn't listed");
         }
-        await using var analyst = await RenderAsync<HelpPage>(app, "/help", @as: Person("Analyst"));
-        var page = await analyst.Html();
-        page.Should().Contain("For analysts").And.NotContain("<details class=\"tide-help-notes\" open", "no release's notes start open unasked");
+        await using (var analyst = await RenderAsync<HelpPage>(app, "/help", @as: Person("Analyst")))
+            (await analyst.Html()).Should().Contain("For analysts").And.NotContain("All changes in").And.NotContain("For administrators");
+
+        await using var admin = await RenderAsync<HelpPage>(app, "/help?release=1.13.0", @as: Person("Admin"));
+        var page = await admin.Html();
+        page.Should().Contain("For administrators").And.Contain("id=\"v1-0-0\"", "every release's notes are listed for an administrator");
+        page.Should().Contain("<details class=\"tide-help-notes\" open").And.Contain("All changes in 1.13.0").And.Contain("Upgrade-Tide.ps1");
     }
 }

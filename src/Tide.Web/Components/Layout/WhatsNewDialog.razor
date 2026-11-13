@@ -1,7 +1,7 @@
 @* "What's new": once per person, the first time they open TIDE after a release with highlights, the highlights for
-   their role groups (WhatsNewService), with "See all changes" to the full notes in Help. MainLayout draws it, so never
+   their role groups (WhatsNewService), with "See all changes" to them in Help. MainLayout draws it, so never
    in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
-   and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it opens, so a reload doesn't show it
+   and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it closes, so a reload while it's up shows it
    again. *@
 @using Tide.Application.Operations
 @using Tide.Web.Components.Pages
@@ -14,12 +14,12 @@
 
 @if (_due.Count > 0)
 {
-    <div class="tide-modal-scrim" @onclick="Close">
+    <div class="tide-modal-scrim" @onclick="CloseAsync">
         <div class="tide-modal tide-modal-wide tide-whatsnew" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title"
              @onclick:stopPropagation="true" @onkeydown="OnKey">
             <div class="tide-whatsnew-head">
                 <h2 class="tide-modal-title" id="@(_id)-title">What's new in TIDE @_due[0].Version</h2>
-                <button type="button" class="btn-close" aria-label="Close" @onclick="Close"></button>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
             </div>
             <div class="tide-whatsnew-body">
                 @foreach (var release in _due)
@@ -42,8 +42,8 @@
                 }
             </div>
             <div class="tide-modal-actions">
-                <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="Close">See all changes</a>
-                <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="Close">Got it</button>
+                <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="CloseAsync">Got it</button>
             </div>
         </div>
     </div>
@@ -86,26 +86,29 @@
         }
     }
 
-    /// <summary>Opens the highlights the person hasn't seen, if there are any, and marks them seen.</summary>
+    /// <summary>Opens the highlights the person hasn't seen, if there are any. They're marked seen as it closes.</summary>
     public async Task CheckAsync()
     {
         if (IsOpen || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
         var due = await WhatsNew.DueAsync();
         if (due.Count == 0) return;
         _due = due;
-        await WhatsNew.MarkSeenAsync();
         StateHasChanged();
     }
 
-    /// <summary>Closes it.</summary>
-    public void Close()
+    /// <summary>Closes it (Got it, Escape, the close button, a click outside, See all changes) and marks what it showed
+    /// seen: a reload while it's up shows it again.</summary>
+    public async Task CloseAsync()
     {
+        if (!IsOpen) return;
         _due = [];
         StateHasChanged();
+        try { await WhatsNew.MarkSeenAsync(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "Couldn't save that the signed-in person saw what's new; it shows again next time.");
+        }
     }
 
-    private void OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") Close();
-    }
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
 }

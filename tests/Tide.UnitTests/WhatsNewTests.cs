@@ -21,9 +21,13 @@ public class WhatsNewTests
 
         - Triage changed.
 
-        ## Presenters and admins
+        ## Presenters
 
         - Present changed.
+
+        ## Administrators
+
+        - Settings changed.
 
         ## Viewers and action owners
 
@@ -31,11 +35,12 @@ public class WhatsNewTests
         """;
 
     [Theory]
-    [InlineData(new[] { AppRole.Analyst }, new[] { RoleGroup.Analysts, RoleGroup.PresentersAndAdmins })]
-    [InlineData(new[] { AppRole.Admin }, new[] { RoleGroup.Analysts, RoleGroup.PresentersAndAdmins })]
+    [InlineData(new[] { AppRole.Analyst }, new[] { RoleGroup.Analysts, RoleGroup.Presenters })]
+    [InlineData(new[] { AppRole.Admin }, new[] { RoleGroup.Analysts, RoleGroup.Presenters, RoleGroup.Administrators })]
+    [InlineData(new[] { AppRole.Analyst, AppRole.Admin }, new[] { RoleGroup.Analysts, RoleGroup.Presenters, RoleGroup.Administrators })]
     [InlineData(new[] { AppRole.Viewer }, new[] { RoleGroup.ViewersAndActionOwners })]
     [InlineData(new[] { AppRole.ActionOwner }, new[] { RoleGroup.ViewersAndActionOwners })]
-    [InlineData(new[] { AppRole.Viewer, AppRole.Analyst }, new[] { RoleGroup.Analysts, RoleGroup.PresentersAndAdmins })]
+    [InlineData(new[] { AppRole.Viewer, AppRole.Analyst }, new[] { RoleGroup.Analysts, RoleGroup.Presenters })]
     [InlineData(new[] { AppRole.Reader }, new RoleGroup[0])]
     [InlineData(new[] { AppRole.Visitor }, new RoleGroup[0])]
     [InlineData(new AppRole[0], new RoleGroup[0])]
@@ -51,7 +56,7 @@ public class WhatsNewTests
     {
         var h = ReleaseHighlights.Parse(V("2.0.0"), Highlights)!;
         h.Intro.Should().Be("Pages are new.");
-        h.Sections.Should().HaveCount(3);
+        h.Sections.Should().HaveCount(4);
         h.Sections[RoleGroup.Analysts].Should().Be("- Triage changed.");
         h.For([RoleGroup.ViewersAndActionOwners]).Should().ContainSingle().Which.Markdown.Should().Be("- Actions changed.");
     }
@@ -159,6 +164,8 @@ public class WhatsNewTests
         v.Highlights.Should().NotBeNull();
         v.Highlights!.Sections.Keys.Should().BeEquivalentTo(RoleGroups.Headings.Select(h => h.Group));
         v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("`]`").And.Contain("Pull all").And.Contain("reading pane");
+        v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Organization settings");
+        v.Highlights.Sections[RoleGroup.Presenters].Should().NotContain("Organization settings", "only administrators read about their settings");
         ReleaseNotesCatalog.Embedded.Releases.Should().Contain(r => r.Version == V("1.0.0") && r.Notes != null,
             "the full notes of every release are built in");
     }
