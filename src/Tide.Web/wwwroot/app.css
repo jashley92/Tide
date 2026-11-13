@@ -2804,10 +2804,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-board > .tide-kanban { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 .tide-board .tide-kcol { display: flex; flex-direction: column; min-height: 0; }
 .tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; }
-/* Two by two in a narrow window, where the head above takes much of the height: each lane keeps room to read a card
+/* A narrow window (700px and less), where the head above takes much of the height: each lane keeps room to read a card
    (two rows of at least 12.5rem, about 9rem of cards under its head), and the board grows past the first screen, the
    page scrolling, rather than squeezing them. */
-@media (max-width: 1199.98px) {
+@media (max-width: 700px) {
     .tide-board > .tide-kanban { min-height: calc(2 * 12.5rem + .75rem); }
     .content > .tide-board { min-height: auto; }
 }
