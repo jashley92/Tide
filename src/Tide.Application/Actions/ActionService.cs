@@ -1500,11 +1500,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var markdown = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.RecommendedActions).FirstOrDefaultAsync(ct);
         var line = RecommendedActions.Lines(markdown).FirstOrDefault(l => RecommendedActions.Raised(l, recommendation))
                    ?? throw new ArgumentException("That recommendation is no longer on the article: it was edited or removed. Raise it as the article reads now.");
-        var raised = await db.Actions.AsNoTracking()
-            .Where(a => a.ArticleId == articleId && a.RecommendationLine != null && a.Status != ActionStatus.Cancelled)
-            .Select(a => new { a.Number, Line = a.RecommendationLine! }).ToListAsync(ct);
-        if (raised.FirstOrDefault(r => RecommendedActions.Raised(line, r.Line)) is { } already)
-            throw new InvalidOperationException($"That recommendation was raised already, as A-{already.Number}.");
+        if (await LineHolderAsync(db, articleId, line, null, ct) is { } already)
+            throw new InvalidOperationException($"That recommendation was raised already, as A-{already}.");
         return line;
     }
 
@@ -1685,12 +1682,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     private static async Task<string> KeepLineOrLetGoAsync(IAppDbContext db, ActionItem a, ActionStatus was, CancellationToken ct)
     {
         if (was != ActionStatus.Cancelled || a.Status == ActionStatus.Cancelled || a.RecommendationLine is not { } line || a.ArticleId is not { } article) return "";
-        var holders = await db.Actions.AsNoTracking()
-            .Where(x => x.ArticleId == article && x.Id != a.Id && x.RecommendationLine != null && x.Status != ActionStatus.Cancelled)
-            .Select(x => new { x.Number, Line = x.RecommendationLine! }).ToListAsync(ct);
-        if (holders.FirstOrDefault(h => RecommendedActions.Raised(line, h.Line)) is not { } holder) return "";
+        if (await LineHolderAsync(db, article, line, a.Id, ct) is not { } holder) return "";
         a.RecommendationLine = null;
-        return $" A-{holder.Number} holds its recommended line now, so it's listed among the article's other actions.";
+        return $" A-{holder} holds its recommended line now, so it's listed among the article's other actions.";
+    }
+
+    // The number of the standing action (not deleted or cancelled) raised from the article's recommended line, other than
+    // except, or null when none holds it.
+    private static async Task<int?> LineHolderAsync(IAppDbContext db, Guid articleId, string line, Guid? except, CancellationToken ct)
+    {
+        var holders = await db.Actions.AsNoTracking()
+            .Where(x => x.ArticleId == articleId && x.Id != except && x.RecommendationLine != null && x.Status != ActionStatus.Cancelled)
+            .Select(x => new { x.Number, Line = x.RecommendationLine! }).ToListAsync(ct);
+        return holders.FirstOrDefault(h => RecommendedActions.Raised(line, h.Line))?.Number;
     }
 
     // A move or change begun from the status the page showed (at): refused when someone has moved it since.
