@@ -87,6 +87,9 @@ window.tideTips = (function () {
     // The rail opening or closing (theme.js marks it on <html>) moves the card off it.
     var railWatch = new MutationObserver(soon);
 
+    // The sticky top bar growing or shrinking: the card is placed again, clear of it.
+    var barWatch = new ResizeObserver(soon);
+
     // A step's control not found yet, or gone: the page changing may draw it. Read without a layout (find, in the next
     // frame, checks it's shown).
     var pageWatch = new MutationObserver(function () {
@@ -135,6 +138,9 @@ window.tideTips = (function () {
             addEventListener('resize', soon, { passive: true });
             addEventListener('scroll', soon, { capture: true, passive: true });
             railWatch.observe(root, { attributes: true, attributeFilter: ['data-rail', 'data-rail-over'] });
+            // The top bar settling (its tools wrapping to a second line as the page draws) moves the card clear of it.
+            var bar = document.querySelector('.top-row, .tide-present-top');
+            if (bar) barWatch.observe(bar);
             // Whether it's shown, for the page to announce it.
             return !card.hidden;
         },
@@ -146,6 +152,7 @@ window.tideTips = (function () {
             frame = 0;
             inside = dialog = false;
             railWatch.disconnect();
+            barWatch.disconnect();
             pageWatch.disconnect();
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });
