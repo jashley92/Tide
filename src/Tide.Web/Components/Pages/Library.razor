@@ -85,8 +85,8 @@ else
         // A colleague's change to a library: its tab's count, whichever tab is open (the open tab re-reads its own list).
         _live = new LiveChanges(Feed, Origin, c => LibraryTabs.All.Any(t => t.Topic == c.Topic), InvokeAsync, async heard =>
         {
-            foreach (var t in _tabs.Where(t => heard.Any(c => c.Topic == t.Topic))) await Count(t.Key);
-            await Searched();
+            // The counts heard of and the search, together, as below.
+            await Task.WhenAll([.. _tabs.Where(t => heard.Any(c => c.Topic == t.Topic)).Select(t => Count(t.Key)), Searched()]);
             StateHasChanged();
         });
         // Each count is its own read (a service opens its own database context), so they run together.
@@ -121,11 +121,7 @@ else
     }
 
     // A step on the open tab changed its entries: its count, and what matches the words.
-    private async Task Changed(string key)
-    {
-        await Count(key);
-        if (_found is not null) await Searched();
-    }
+    private Task Changed(string key) => Task.WhenAll(Count(key), _found is not null ? Searched() : Task.CompletedTask);
 
     // How many entries a tab holds, of those in use: what an action is offered, and the rules that mark the board.
     private async Task Count(string key)
@@ -142,6 +138,5 @@ else
             };
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-
     }
 }

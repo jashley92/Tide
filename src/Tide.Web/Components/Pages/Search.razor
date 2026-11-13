@@ -348,8 +348,11 @@ else if (_results is { Terms.Count: > 0 } r)
     {
         var open = Sweeps.Where(a => a.IsOpen && a.AssigneeName is null).Select(a => a.Id).ToList();
         if (open.Count == 0 || !CurrentUser.Has(Permission.WorkActions)) { _takeable = new HashSet<Guid>(); return; }
-        var workers = await ActionSvc.WorkersAsync();
-        var takeable = (await ActionSvc.ListByIdAsync(open)).Where(workers.CanTake).Select(r => r.Id).ToHashSet();
+        // The two at once: each read is on a context of its own.
+        var workers = ActionSvc.WorkersAsync();
+        var rows = ActionSvc.ListByIdAsync(open);
+        await Task.WhenAll(workers, rows);
+        var takeable = (await rows).Where((await workers).CanTake).Select(r => r.Id).ToHashSet();
         if (q == Q) _takeable = takeable;
     }
 

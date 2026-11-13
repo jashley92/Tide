@@ -314,9 +314,7 @@ else
     {
         if (!_focusAdd) return;
         _focusAdd = false;
-        try { await (_adding ? _nameBox : _addButton).FocusAsync(); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
-        catch (JSException) { /* the element went before focus reached it */ }
+        await (_adding ? _nameBox : _addButton).TryFocusAsync(orGone: true);
     }
     // Each filter narrows the list anew: the first row left is selected.
     internal void SetWords(string? words) => (_words, _selected) = (words ?? "", 0);

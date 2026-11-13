@@ -69,8 +69,6 @@
     {
         if (!_focus || !_adding) return;
         _focus = false;
-        try { await _input.FocusAsync(); }
-        catch (JSException) { }
-        catch (JSDisconnectedException) { }
+        await _input.TryFocusAsync(orGone: true);
     }
 }

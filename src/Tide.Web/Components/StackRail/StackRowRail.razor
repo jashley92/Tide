@@ -141,10 +141,12 @@
         {
             if (rest) await Task.Delay(Rest);
             if (ticket != _ticket) return;
-            var detail = await Stack.GetAsync(row.Product.Id);
-            var triage = CanWrite && !row.Product.IsRetired ? await Stack.InTriageAsync(row.Product.Id) : [];
+            // The two at once: each read is on a context of its own.
+            var detail = Stack.GetAsync(row.Product.Id);
+            var triage = CanWrite && !row.Product.IsRetired ? Stack.InTriageAsync(row.Product.Id) : Task.FromResult<IReadOnlyList<StackTriageItem>>([]);
+            await Task.WhenAll(detail, triage);
             if (ticket != _ticket) return;
-            (_detail, _triage) = (detail, triage);
+            (_detail, _triage) = (await detail, await triage);
         }
         catch (Exception ex)
         {
@@ -175,9 +177,7 @@
     {
         if (!_focusChecked) return;
         _focusChecked = false;
-        try { await _checkedFact.FocusAsync(); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
-        catch (JSException) { /* the rail went before focus reached it */ }
+        await _checkedFact.TryFocusAsync(orGone: true);
     }
 
     // "Nov 9", or "Nov 9 today"; a dash when it's never been checked.
