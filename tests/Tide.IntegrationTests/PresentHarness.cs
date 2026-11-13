@@ -22,6 +22,11 @@ public static class PresentHarness
         return r;
     }
 
+    /// <summary>Opens present mode for <paramref name="day"/> in rehearsal (Help's Learn to present), signed in as
+    /// <paramref name="who"/>.</summary>
+    public static Task<Rendered<Present>> Rehearse(TideApp app, DateOnly day, SignIn who) =>
+        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse=1", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
+
     /// <summary>Does what a button would and then renders, as a click does (the page doesn't hear its own meeting
     /// changes, which is what used to render it after them).</summary>
     public static Task Do(Rendered<Present> r, Func<Present, Task> what) =>

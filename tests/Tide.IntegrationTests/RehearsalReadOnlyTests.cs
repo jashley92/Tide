@@ -11,7 +11,9 @@ using Tide.Application.Org;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -53,16 +55,16 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
     {
         var (day, number) = await Brief(0);
         var before = await Saved(number);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse=1", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
-        await PresentHarness.Do(r, p => p.ShowAction(number));
+        await using var r = await Rehearse(app, day, SignIn.Analyst);
+        await Do(r, p => p.ShowAction(number));
         var html = await r.Html();
         html.Should().Contain("tide-present-action", "the card opens, to read");
         html.Should().NotContain("tide-status-badge").And.NotContain("tide-status-opt").And.NotContain("data-status=", "no status to change");
         html.Should().NotContain("Take it").And.NotContain("Add checklist item");
         Regex.Matches(html, "<input type=\"checkbox\"[^>]*>").Where(m => !m.Value.Contains("disabled", StringComparison.Ordinal))
             .Should().BeEmpty("no checklist item can be ticked");
-        await PresentHarness.Do(r, p => p.OnActionChanged());
-        await PresentHarness.Do(r, p => p.CloseAction());
+        await Do(r, p => p.OnActionChanged());
+        await Do(r, p => p.CloseAction());
         (await Saved(number)).Should().Be(before, "a rehearsal saves nothing and records nothing");
     }
 
@@ -70,8 +72,8 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
     public async Task OutsideARehearsal_TheSameCard_StillOffersItsStatus()
     {
         var (day, number) = await Brief(2);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
-        await PresentHarness.Do(r, p => p.ShowAction(number));
+        await using var r = await Open(app, day);
+        await Do(r, p => p.ShowAction(number));
         (await r.Html()).Should().Contain("tide-status-opt", "the presenter, with no meeting, works the action from its card");
     }
 
@@ -83,17 +85,6 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
         typeof(PlaybookService), typeof(Tide.Application.Preferences.UserPreferenceService),
         typeof(Tide.Web.Services.LiveMeetings), typeof(Tide.Web.Services.Presence),
     ];
-
-    // Every component present mode can draw that injects one, and how a rehearsal keeps it from saving.
-    private static readonly Dictionary<string, string> Honoured = new(StringComparer.Ordinal)
-    {
-        ["Present"] = "InCharge is false and Run runs nothing in a rehearsal; it never takes a seat",
-        ["PresentAction"] = "ReadOnly in a rehearsal: no status, checklist or Take it",
-        ["ActionStatusControl"] = "drawn by PresentAction only when it isn't read-only",
-        ["ActionChecklist"] = "PresentAction passes CanWork false when read-only",
-        ["PresentTagEditor"] = "not offered in a rehearsal (CanEditTags)",
-        ["PresenceNote"] = "not drawn in a rehearsal",
-    };
 
     [Fact]
     public void EveryComponentPresentModeDraws_ThatCanSave_HonoursARehearsal()
@@ -119,12 +110,15 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
         var writing = reached.Where(n => components[n].GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
             .Any(p => p.GetCustomAttribute<InjectAttribute>() is not null && Writers.Contains(p.PropertyType))).ToList();
         writing.Should().Contain(["Present", "PresentAction", "ActionStatusControl", "ActionChecklist"], "the sweep finds what saves");
-        writing.Should().OnlyContain(n => Honoured.ContainsKey(n),
-            "each component present mode draws that can save must be kept from saving in a rehearsal, and listed here with how");
-        var readOnly = components["PresentAction"].GetProperty("ReadOnly");
-        readOnly.Should().NotBeNull("the card is told it is read-only");
-        readOnly!.GetCustomAttribute<ParameterAttribute>().Should().NotBeNull();
+        // Present itself refuses in a rehearsal (InCharge, Run); everything it draws that can save takes the read-only
+        // cascade it sets then, and saves nothing under it.
+        writing.Where(n => n != "Present").Should().OnlyContain(n => TakesReadOnly(components[n]),
+            "each component present mode draws that can save must take ReadOnlyCascade, and honour it");
     }
+
+    private static bool TakesReadOnly(Type component) =>
+        component.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Any(p => p.PropertyType == typeof(bool) && p.GetCustomAttribute<CascadingParameterAttribute>()?.Name == ReadOnlyCascade.Name);
 
     private static string Root()
     {

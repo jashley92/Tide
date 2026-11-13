@@ -518,7 +518,7 @@ const selectedAsAimed = () => ({
 const belowTopBar = selector => ({
   name: `below the top bar: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => {
-    const bar = document.querySelector('.top-row')?.getBoundingClientRect().bottom ?? 0;
+    const bar = document.querySelector('.top-row, .tide-present-top')?.getBoundingClientRect().bottom ?? 0;
     const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
     return shown.filter(r => r.top < bar - 1).map(r => `${selector} starts at ${Math.round(r.top)}px, under the top bar (to ${Math.round(bar)}px)`);
@@ -918,11 +918,12 @@ const tipGotIt = people => async page => {
 };
 
 /** Setup: as whatsNewAs, then What's new's Take the tour. */
-const tourFromWhatsNew = people => async page => {
+const tourFromWhatsNew = (people, ...keys) => async page => {
   await whatsNewAs(people)(page);
   await page.locator('#whatsnew-take-tour').click();
   await page.locator('.tide-tour').waitFor();
   await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
 };
 
 /** A guide's step is up: then `keys` (Enter: Next), and wider letters. */
@@ -4353,7 +4354,7 @@ const pages = [
   { name: 'tour-from-whatsnew', route: '/help', setup: tourFromWhatsNew({ 1920: 'Abe', 1440: 'Ada', 780: 'Ari&roles=Viewer' }), widths: [1920, 1440, 780],
     rules: [...tourRules, stillAt('/')] },
   // Escape from it: What's new's Take the tour is gone, so focus is on the page's heading.
-  { name: 'tour-from-whatsnew-escape', route: '/help', setup: async page => { await tourFromWhatsNew({ 1440: 'Abi' })(page); await page.keyboard.press('Escape'); await idle(page); },
+  { name: 'tour-from-whatsnew-escape', route: '/help', setup: tourFromWhatsNew({ 1440: 'Abi' }, 'Escape'),
     widths: [1440], rules: [hidden('.tide-tour'), focusOn('main h1')] },
   // The tour's last step is on Help, ringing its Guides (or Take the tour, for someone with none).
   { name: 'tour-last-step', route: '/help', setup: tourToLast({ 1920: 'Lia', 1440: 'Lou', 780: 'Lyn' }), widths: [1920, 1440, 780],

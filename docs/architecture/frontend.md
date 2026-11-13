@@ -279,7 +279,8 @@ uses, before anything else.
   neither, and present mode never shows it.
 
 **Guides.** A guide is a few steps through one page's controls, drawn with the tour's step dialog
-(`GuideStepDialog`: the scrim, focus kept in it, Escape ends it, focus back to what started it) and placed by
+(`GuideStepDialog`: the scrim, focus kept in it, Escape ends it, and focus back on the control that had it as the first
+step opened, when that's still on the page, else on the heading) and placed by
 `tideTips`. `Guides` (`Tide.Application/Operations/Guides.cs`) lists each guide's page, the permission that page needs,
 and its steps, each with the permission its control needs: a person sees only the guides for pages they can use, and no
 step for a control they can't.
@@ -612,10 +613,12 @@ Present mode can be opened with no meeting by anyone who can present, but that p
   `Run` runs nothing in a rehearsal, so every step that saves is a no-op wherever it's sent from; the page never takes a
   seat, starts, joins or ends a meeting, and publishes no change. Moving between slides and opening a card are this
   screen's alone, as there's no meeting to show them to.
-- **Cards read only.** An action opened over or beside a slide (from its number, or Actions that need review) is
-  `PresentAction` with `ReadOnly`: no status control and no checklist to tick, so nothing on it calls a service that
-  saves. Products', indicators' and CVEs' cards save nothing anyway. A test walks every component present mode can
-  draw and fails if one that injects a saving service isn't accounted for.
+- **Read only all the way down.** In a rehearsal present mode cascades `ReadOnlyCascade` to everything it draws. Each
+  component that saves takes it and saves nothing under it: an action's card over or beside a slide (from its number,
+  or Actions that need review) shows no status control and no checklist to tick, and the status control, the
+  checklist, the tag editor and presence refuse where they save. Products', indicators' and CVEs' cards save nothing
+  anyway. A test walks every component present mode can draw and fails on one that injects a saving service without
+  taking the cascade.
 - **Only today's brief, never during the meeting.** A rehearsal is only of today's brief: another day's says "Only
   today's brief can be rehearsed.", so none runs beside some other day's live meeting. With today's meeting live, the
   page says "The meeting is live, so it can't be rehearsed now." and draws no slides, rail or guide; a meeting that

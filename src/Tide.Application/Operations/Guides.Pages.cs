@@ -17,7 +17,7 @@ public static partial class Guides
     // needs: someone who can't use it doesn't get the step.
     private static readonly Guide[] PageGuides =
     [
-        new("today", "Today", "", "", Team,
+        new("today", "Today", "", Team,
         [
             Step("head", Team, ".tide-page-head h1", "Today",
                 "Today is the day's brief and where it stands. The links above the title open the day before or after."),
@@ -30,7 +30,7 @@ public static partial class Guides
             Step("rail", Team, InRail("#tide-rail"), "Beside the brief",
                 "In the rail: what the brief needs from you, the meeting and what's coming up. ] shows or hides it."),
         ]),
-        new("triage", "Triage", "", "triage", Write,
+        new("triage", "Triage", "triage", Write,
         [
             Step("tabs", Write, ".tide-tabbar[aria-label=\"Inbox\"]", "The inbox",
                 "New items wait under New; the other tabs keep what's been decided. Sources lists the feeds, with Pull now."),
@@ -43,7 +43,7 @@ public static partial class Guides
             Step("read", Write, "aside.tide-reading", "Reading it here",
                 "V reads the item in the reading pane, and closes it again. Nothing is fetched until you ask."),
         ]),
-        new("article", "The article editor", "", "articles/{id}", Write,
+        new("article", "The article editor", "articles/{id}", Write,
         [
             Step("title", Write, ".tide-page-head-main input[aria-label=\"Title\"]", "Title",
                 "The title, then each section in the order the brief reads. Changes save themselves after a short pause."),
@@ -56,7 +56,7 @@ public static partial class Guides
             Step("preview", Write, InRail("#tide-rail .tide-reader || .tide-ws-switch"), "What readers get",
                 "The rail shows the article as each edition carries it. 1 and 2 switch between the team and company-wide editions."),
         ]),
-        new("actions", "Actions", "", "actions", Read,
+        new("actions", "Actions", "actions", Read,
         [
             Step("views", Read, ".tide-actions-views", "Views",
                 "Mine, My teams, All open, Overdue and Recently closed, each with how many it lists."),
@@ -69,7 +69,7 @@ public static partial class Guides
             Step("take", Work, InRail(".tide-row-take || #tide-rail .tide-rail-take || #tide-rail"), "Taking one on",
                 "Take it, on the row or in the rail, or T, makes the selected action yours. It's offered on your teams' actions."),
         ]),
-        new("action", "An action's page", "", "actions/{n}", Read,
+        new("action", "An action's page", "actions/{n}", Read,
         [
             Step("badges", Read, ".tide-action-badges", "Status and due date",
                 "Where it stands and when it's due. If you work it, the status opens a list to change it."),
@@ -82,7 +82,7 @@ public static partial class Guides
             Step("rail", Read, InRail("#tide-rail"), "Facts and files",
                 "Its team, holder, kind and due date, its article and its files are in the rail."),
         ]),
-        new("metrics", "Metric history", "", "metrics", Team,
+        new("metrics", "Metric history", "metrics", Team,
         [
             Step("range", Team, "#from", "Days",
                 "Choose the days to show, or one of the ranges beside them."),
@@ -95,7 +95,7 @@ public static partial class Guides
             Step("export", Team, ".tide-page-head a[download]", "Export",
                 "Export CSV downloads the values for the days shown."),
         ]),
-        new("trends", "Trends", "", "trends", Team,
+        new("trends", "Trends", "trends", Team,
         [
             Step("period", Team, "#main-content [role=group][aria-label=\"Period\"]", "Periods",
                 "Weekly, monthly or quarterly. The arrows beside it step back and forward a period."),
@@ -106,7 +106,7 @@ public static partial class Guides
             Step("table", Team, ".tide-trend-table", "The table",
                 "Select a count to list what it's made of, with Export CSV. A line's chart button adds it to the chart."),
         ]),
-        new("stories", "Threat stories", "", "stories", Team,
+        new("stories", "Threat stories", "stories", Team,
         [
             Step("new", Write, ".tide-card-form", "A new story",
                 "Add story starts one, with a name and a short summary."),
@@ -115,7 +115,7 @@ public static partial class Guides
             Step("table", Team, "#main-content .tide-dt-scroll", "The stories",
                 "Active stories come first. A story's name opens it, with its articles."),
         ]),
-        new("adversaries", "Adversaries", "", "adversaries", Team,
+        new("adversaries", "Adversaries", "adversaries", Team,
         [
             Step("add", Write, "#new-name", "A new profile",
                 "Add a profile by its name and other names, or import MITRE ATT&CK's groups and campaigns below."),
@@ -126,7 +126,7 @@ public static partial class Guides
             Step("rail", Team, InRail("#tide-rail"), "One profile",
                 "J and K select a profile, and the rail shows its articles, actions and techniques. Enter opens it."),
         ]),
-        new("coverage", "Coverage", "", "coverage", Write,
+        new("coverage", "Coverage", "coverage", Write,
         [
             Step("tiles", Write, ".tide-stat-row", "The numbers",
                 "Techniques from recent briefs, how many have an enabled rule tagged with them, and the gaps. Those with a rule are listed, folded, at the end."),
@@ -135,7 +135,7 @@ public static partial class Guides
             Step("raise", Write, "#gap-team || section[aria-labelledby=\"gaps-h\"] tbody button", "Raising work",
                 "Choose the team, then raise an action for a gap from its row."),
         ]),
-        new("library", "Library", "", "library", Read,
+        new("library", "Library", "library", Read,
         [
             Step("tabs", Read, "nav.tide-tabbar[aria-label=\"Library\"]", "Four libraries",
                 "Saved queries, outreach templates, playbooks and board rules, each with how many are in use."),
@@ -148,7 +148,7 @@ public static partial class Guides
             Step("try", Work, InRail(".tide-lib-try || #tide-rail"), "Trying it",
                 "The rail can show an entry filled in for one of your open actions. Nothing is saved until you add it."),
         ]),
-        new("stack", "Our stack", "", "stack", Team,
+        new("stack", "Our stack", "stack", Team,
         [
             Step("add", Write, ".tide-page-head > button.btn-primary", "Adding a product",
                 "Add a product with the other names triage should know it by."),
@@ -161,7 +161,7 @@ public static partial class Guides
             Step("rail", Team, InRail("#tide-rail"), "One product",
                 "J and K select a product, and the rail shows its articles and open actions. Enter opens it."),
         ]),
-        new("search", "Search", "", "search", Team,
+        new("search", "Search", "search", Team,
         [
             Step("box", Team, "#search-q", "Searching",
                 "Articles, actions and stories. Every word must match; a phrase in quotes matches as written."),
@@ -172,7 +172,7 @@ public static partial class Guides
             Step("export", Team, InRail("#lookup-export-h || #tide-rail"), "Exporting",
                 "For a lookup on an article, the rail's Export gives its indicators as STIX 2.1 or CSV, up to the TLP you choose."),
         ]),
-        new("workload", "Workload", "", "workload", Read,
+        new("workload", "Workload", "workload", Read,
         [
             Step("teams", Read, ".tide-load", "Each team",
                 "A card per team, with its open, overdue, due-soon, blocked and P1 actions."),
@@ -183,7 +183,7 @@ public static partial class Guides
             Step("longer", Team, ".tide-page-head a[href=\"reports/teams\"]", "Longer windows",
                 "Team commitments looks back over longer windows."),
         ]),
-        new("rotation", "Brief rotation", "", "rotation", Team,
+        new("rotation", "Brief rotation", "rotation", Team,
         [
             Step("who", Team, ".tide-page-head .tide-sub", "Who presents",
                 "Who presents the next brief, and whom they're covering if the day changed hands."),

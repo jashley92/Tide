@@ -30,6 +30,8 @@
 <PageTitle>Presenting @Ui.ShortDay(_date) · TIDE</PageTitle>
 @* The slides have no heading of their own for FocusOnNavigate to land on, so the page says what it is to a screen reader. *@
 <h1 class="visually-hidden">Presenting the brief for @Ui.ShortDay(_date)</h1>
+@* In rehearsal everything below is drawn read-only: each component that saves takes the cascade and saves nothing. *@
+<CascadingValue Name="@ReadOnlyCascade.Name" Value="RehearsalAsked">
 
 @if (RehearsalAsked)
 {
@@ -1087,7 +1089,7 @@ else
         @if (TeamEdition && _actionDetail is { } shownAction)
         {
             <PresentAction Detail="shownAction" Version="_actionVersion" Kicker="@Kicker(_ownAction)" CanClose="!Held" Autofocus="_focusAction"
-                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" Beside="ActionBeside" Inert="RailOver" ReadOnly="RehearsalAsked" />
+                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" Beside="ActionBeside" Inert="RailOver" />
         }
 
         @if (CanEditTags && _tagEdit is { } editing)
@@ -1116,13 +1118,14 @@ else
            root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
         @if (Rehearsing && GuideStep is { } guideStep)
         {
-            <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName" ReturnTo="#help-guide-present"
+            <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName"
                              OnNext="GuideNext" OnBack="GuideBack" OnEnd="GuideEnd" />
         }
     </div>
 
     <Lightbox FileId="_zoom?.FileId" Caption="@_zoom?.Caption" OnClose="() => _zoom = null" />
 }
+</CascadingValue>
 
 @code {
     [Parameter] public string? Day { get; set; }
@@ -1180,7 +1183,7 @@ else
         _date = date;
         // A rehearsal asked for by someone who can't present, or of a day other than today's brief: refused before anything is
         // read or joined.
-        if (RehearsalAsked && (!CanRehearse || _date != Clock.CurrentBriefDate)) { _loaded = true; return; }
+        if (RehearsalAsked && (!CanRehearse || !OfToday)) { _loaded = true; return; }
         if (_visitor && !TakeVisitorSeat())
         {
             // Nothing of the team's is theirs without a seat: loading until the page is live, then "no meeting on now".
@@ -2481,11 +2484,14 @@ else
 
     private bool CanRehearse => !_visitor && CurrentUser.Has(Permission.PresentBriefs);
 
+    // Whether the page is of today's brief, the only one a rehearsal is of.
+    private bool OfToday => _date == Clock.CurrentBriefDate;
+
     /// <summary>Why a rehearsal asked for isn't run: the person can't present, it isn't today's brief (only today's is
     /// rehearsed, so no rehearsal runs beside another day's live meeting), or today's meeting is live.</summary>
     private string? RehearsalRefused => !RehearsalAsked ? null
         : !CanRehearse ? "Rehearsal is for whoever presents the brief."
-        : _valid && _date != Clock.CurrentBriefDate ? "Only today's brief can be rehearsed."
+        : _valid && !OfToday ? "Only today's brief can be rehearsed."
         : _valid && _view is not null ? "The meeting is live, so it can't be rehearsed now." : null;
 
     /// <summary>A rehearsal is running: asked for, by someone who can present, with the day's meeting not live.</summary>

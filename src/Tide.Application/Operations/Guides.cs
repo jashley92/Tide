@@ -8,16 +8,16 @@ namespace Tide.Application.Operations;
 /// or the page's own Show me around. It needs what its page needs (<paramref name="Needs"/>), and each step what its
 /// control needs. Its steps are the tour's (<see cref="TourStep"/>), all on that page. "Learn to present" is the one
 /// guide that isn't a page's: it runs in present mode's rehearsal, and each of its steps' <c>Route</c> names the slide
-/// it's on ("title", "article", "open" or "wrap").
+/// it's on ("title", "article", "open" or "wrap"), and it alone has a <paramref name="Summary"/> for Help.
 /// </summary>
-public sealed record Guide(string Key, string Title, string Summary, string Page, Permission Needs, IReadOnlyList<TourStep> Steps)
+public sealed record Guide(string Key, string Title, string Page, Permission Needs, IReadOnlyList<TourStep> Steps, string? Summary = null)
 {
     /// <summary>Whether it's "Learn to present", which runs in present mode's rehearsal.</summary>
     public bool Rehearsal => Key == Guides.Present;
 
     /// <summary>What Help says it shows: Learn to present's summary; a page's guide, the titles of the steps the person
     /// gets, so it never promises one they don't.</summary>
-    public string Description => Summary.Length > 0 ? Summary : string.Join(" · ", Steps.Select(s => s.Title)) + ".";
+    public string Description => Summary ?? string.Join(" · ", Steps.Select(s => s.Title)) + ".";
 }
 
 /// <summary>Help's guides: one per page, for whoever can use that page, and "Learn to present" for whoever can present.</summary>
@@ -27,7 +27,6 @@ public static partial class Guides
     public const string Present = "present";
 
     private static readonly Guide LearnToPresent = new(Present, "Learn to present",
-        "Present mode in rehearsal, on today's brief: the slides, your rail, and ending the meeting. No meeting starts, and nothing is shared or saved.",
         "present", Permission.PresentBriefs,
         [
             new("title", "title", Permission.PresentBriefs, ".tide-present-bottom .tide-progress",
@@ -51,7 +50,8 @@ public static partial class Guides
             new("end", "wrap", Permission.PresentBriefs, "#present-end || #rail-end-h || #present-rail-toggle",
                 "Ending the meeting",
                 "Under Before you end, raise what's left, tick an article not discussed to carry it to the next brief, and check who attended. End the meeting then marks the brief presented."),
-        ]);
+        ],
+        Summary: "Present mode in rehearsal, on today's brief: the slides, your rail, and ending the meeting. No meeting starts, and nothing is shared or saved.");
 
     // Each page's guide (Guides.Pages.cs), then Learn to present.
     private static IEnumerable<Guide> All => PageGuides.Append(LearnToPresent);
