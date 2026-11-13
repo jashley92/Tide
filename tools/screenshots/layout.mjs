@@ -839,11 +839,15 @@ const wideFont = async page => { await page.addStyleTag({ content: `* { letter-s
 
 /** Setup: Today, signed in as `people[width]` (a name, and `&roles=…` when not the dev sign-in's) with what's new, tips
  *  and the tour asked for (`?onboarding=on`; off on the demo otherwise), so what's new opens over it; wider letters. */
-const whatsNewAs = people => async page => {
+const whatsNewAs = (people, ...keys) => async page => {
   await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=on`, page.url()).href, { waitUntil: 'load' });
   await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
   await wideFont(page);
 };
+
+/** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
+const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
 
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
@@ -3480,6 +3484,10 @@ const CHANGES_THE_DEMO = Symbol('changes the demo');
 const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
   fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary')];
 
+/** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
+const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
+  hidden('.tide-whatsnew')];
+
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
@@ -4106,6 +4114,14 @@ const pages = [
     rules: whatsNewRules },
   { name: 'whatsnew-dark', route: '/help', context: { theme: 'dark' }, setup: whatsNewAs({ 1920: 'Dana', 1440: 'Lee', 780: 'Kim&roles=Viewer' }),
     widths: [1920, 1440, 780], rules: whatsNewRules },
+  // Today's tip, once What's new is closed: a card in the window, beside the Context button it rings, with nothing
+  // modal left over; and ] still shows and hides the rail with the tip up.
+  { name: 'tip', route: '/help', setup: tipAs({ 1920: 'Tia', 1440: 'Tom', 780: 'Tess&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: tipRules },
+  { name: 'tip-dark', route: '/help', context: { theme: 'dark' }, setup: tipAs({ 1920: 'Uma', 1440: 'Ugo', 780: 'Una&roles=Viewer' }),
+    widths: [1920, 1440, 780], rules: tipRules },
+  { name: 'tip-keys', route: '/help', setup: tipAs({ 1920: 'Vic' }, ']'), widths: [1920],
+    rules: [visible('.tide-tip'), attr('html', 'data-rail', 'closed')] },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },

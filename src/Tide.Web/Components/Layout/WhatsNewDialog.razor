@@ -1,16 +1,13 @@
 @* "What's new": once per person, the first time they open TIDE after a release with highlights, the highlights for
-   their role groups (WhatsNewService), with "See all changes" to the full notes in Help. MainLayout draws it, so never
-   in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
+   their role groups (WhatsNewService), with "See all changes" to the full notes in Help. OnboardingHost, in MainLayout,
+   draws and asks it, so never in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
    and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it opens, so a reload doesn't show it
    again. *@
 @using Tide.Application.Operations
 @using Tide.Web.Components.Pages
 @inject WhatsNewService WhatsNew
-@inject OnboardingGate Gate
-@inject AuthenticationStateProvider Auth
 @inject NavigationManager Nav
 @inject IJSRuntime JS
-@inject ILogger<WhatsNewDialog> Log
 
 @if (_due.Count > 0)
 {
@@ -62,28 +59,12 @@
     {
         try
         {
-            if (firstRender && await OfferedAsync()) await CheckSafelyAsync();
             if (IsOpen == _shown) return;
             _shown = IsOpen;
             if (IsOpen) await JS.InvokeVoidAsync("tideDialog.open", _gotIt);
             else await JS.InvokeVoidAsync("tideDialog.close");
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
-    }
-
-    // Unasked: CheckAsync keeps it off a page the room shares.
-    private async Task<bool> OfferedAsync() =>
-        Gate.Automatic((await Auth.GetAuthenticationStateAsync()).User);
-
-    // Drawn outside the page's error boundary: a failed read or save shows nothing, and is tried on the next visit.
-    private async Task CheckSafelyAsync()
-    {
-        try { await CheckAsync(); }
-        catch (Exception ex) when (ex is not (OperationCanceledException or JSDisconnectedException))
-        {
-            Log.LogWarning(ex, "Couldn't read or save what's new for the signed-in person; nothing was shown.");
-            _due = [];
-        }
     }
 
     /// <summary>Opens the highlights the person hasn't seen, if there are any, and marks them seen.</summary>
@@ -97,11 +78,16 @@
         StateHasChanged();
     }
 
+    /// <summary>What to do once it's closed (OnboardingHost: the page's tip).</summary>
+    [Parameter] public EventCallback Closed { get; set; }
+
     /// <summary>Closes it.</summary>
     public void Close()
     {
+        if (!IsOpen) return;
         _due = [];
         StateHasChanged();
+        _ = Closed.InvokeAsync();
     }
 
     private void OnKey(KeyboardEventArgs e)

@@ -61,6 +61,9 @@ Every route, its component and the permission it needs are in the [route table](
   their role: analysts, presenters and administrators, or viewers and action owners. It shows once, never in present
   mode and never to a Reader or a Visitor. **See all changes** opens **Help** (`/help`, also linked from the `?`
   overlay), which lists every release: its highlights for your role and its full notes.
+- **Tips.** Each page that changed (Today, Triage, the article editor, Actions, an action, Search, the Library and Our
+  stack) shows a small tip on your first visit to it, pointing at what changed: Today's at **Context** and `]`. It
+  doesn't block the page or its keys. **Got it** puts it away for good; Help's **Show tips again** brings them back.
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables

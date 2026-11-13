@@ -3,11 +3,14 @@
 @using System.Collections.Concurrent
 @using Tide.Application.Operations
 @inject WhatsNewService WhatsNew
+@inject PageTipService Tips
+@inject ToastService Toasts
 @inject IMarkdownService Markdown
 @inject NavigationManager Nav
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, with the full
-   notes as each release's GitHub page has them. ?release=1.13.0 opens that release's full notes ("See all changes"). *@
+   notes as each release's GitHub page has them, and Show tips again. ?release=1.13.0 opens that release's full notes
+   ("See all changes"). *@
 
 <PageTitle>Help · TIDE</PageTitle>
 
@@ -19,6 +22,11 @@
 </div>
 
 <div class="tide-help">
+    <section class="tide-card" aria-labelledby="help-tips">
+        <h2 id="help-tips">Tips</h2>
+        <p>A page that changed shows a tip on your first visit to it, until you press <strong>Got it</strong>.</p>
+        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ShowTipsAgainAsync">Show tips again</button>
+    </section>
     <section class="tide-card" aria-labelledby="help-whatsnew">
         <h2 id="help-whatsnew">What's new</h2>
         @if (WhatsNew.Releases.Count == 0)
@@ -67,6 +75,13 @@
 
     private MarkupString NotesHtml(ReleaseVersion version, string notes) =>
         Rendered.GetOrAdd((Nav.BaseUri, version), key => new MarkupString(Markdown.ToHtml(notes, LinkRoot.FromBaseUri(key.BaseUri))));
+
+    /// <summary>Show tips again: each changed page's tip shows on the person's next visit to it.</summary>
+    public async Task ShowTipsAgainAsync()
+    {
+        await Tips.ResetAsync();
+        Toasts.Show("Each page's tip will show on your next visit to it.");
+    }
 
     /// <summary>"v1-13-0": a release's place on the page.</summary>
     public static string Anchor(ReleaseVersion v) => "v" + v.ToString().Replace('.', '-');

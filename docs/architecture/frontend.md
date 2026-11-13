@@ -227,6 +227,22 @@ person, the first time they open TIDE on a release with highlights for them.
 - **The dialog.** A `.tide-modal`: focus moves to Got it as it opens and back as it closes (`tideDialog`), Tab stays in
   it, and Escape closes it. **See all changes** opens Help at that release with its full notes open.
 
+**Page tips.** `OnboardingHost`, which `MainLayout` draws (and which draws `WhatsNewDialog`), offers one thing at a time:
+What's new first; once that's closed, or on a page without it, the page's tip. A tip says what changed on a page, on the
+person's first visit to it after the release it belongs to.
+
+- **Which pages.** `PageTips` (`Tide.Application/Operations/PageTips.cs`) holds one tip per changed page (Today, Triage,
+  the article editor, Actions, an action, Search, the Library, Our stack), each with the release it's about, the
+  permission its page needs and the control it points at. `PageTips.For` maps an address to its page's tip; present
+  mode has none.
+- **Once.** "Got it" keeps the tip's release in the person's `tip.<page>` preference (`UserPreferenceService`, which
+  needs the page's permission), so it isn't shown again; a later release's tip for the page would be. Help's **Show tips
+  again** clears them, for the pages the person can use. A tip is shown only to someone who can use its page.
+- **Not modal.** The card (`.tide-tip`) has no scrim and leaves the page live: it never takes focus or a key, so `]` and
+  every shortcut still work. `tips.js` (`tideTips`) sets it beside the control it's about and rings that control
+  (`.tide-tip-target`), or leaves it in the bottom corner when the control isn't shown or there's no room. A polite live
+  region announces it. A new page drops the tip and checks that page's.
+
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
 current address. The page list is in [screens: administration](../product/screens.md#administration).

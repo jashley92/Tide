@@ -92,6 +92,8 @@ public static class UserPreferences
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
+            // Each page's tip: the release whose tip the person dismissed there, for whoever can use the page.
+            .Concat(Operations.PageTips.All.Select(t => Definition.Matching(t.Preference, "", Operations.ReleaseVersion.IsVersionOrNone, t.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>

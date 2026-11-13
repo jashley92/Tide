@@ -90,9 +90,9 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public void OnlyTheMainLayoutDrawsIt_NotPresentModes()
     {
-        var layouts = Path.Combine(EditorRailLayoutTests.WebRoot(),"Components", "Layout");
-        File.ReadAllText(Path.Combine(layouts, "MainLayout.razor")).Should().Contain("<WhatsNewDialog />");
-        File.ReadAllText(Path.Combine(layouts, "BlankLayout.razor")).Should().NotContain("WhatsNew");
+        var layouts = Path.Combine(EditorRailLayoutTests.WebRoot(), "Components", "Layout");
+        File.ReadAllText(Path.Combine(layouts, "MainLayout.razor")).Should().Contain("<OnboardingHost />");
+        File.ReadAllText(Path.Combine(layouts, "BlankLayout.razor")).Should().NotContain("WhatsNew").And.NotContain("Onboarding");
     }
 
     [Theory]

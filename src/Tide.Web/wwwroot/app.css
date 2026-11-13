@@ -1832,6 +1832,19 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
 .tide-help-notes > summary { color: var(--tide-accent); cursor: pointer; }
 .tide-help-notes[open] > summary { margin-bottom: var(--tide-space-2); }
+/* A page's tip (OnboardingHost): a small card in the bottom corner, or beside the control it's about when tips.js finds
+   room (is-placed, with top and left set); that control is ringed. Not modal: no scrim, nothing under it is inert.
+   Under a dialog (3500), over the page and its rail. */
+.tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3000;
+    width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
+    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
+    padding: var(--tide-space-3) var(--tide-space-4); }
+.tide-tip.is-placed { right: auto; bottom: auto; }
+.tide-tip-head { display: flex; align-items: center; gap: var(--tide-space-2); color: var(--tide-accent); }
+.tide-tip-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: 0; color: var(--tide-text); }
+.tide-tip-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
+.tide-tip-actions { display: flex; justify-content: flex-end; }
+.tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
 /* Something waiting on the person (a rotation request to approve): an accent panel inside a card. */
 .tide-waiting { border-left: 3px solid var(--tide-accent); background: var(--tide-accent-soft); border-radius: var(--tide-radius-lg); padding: var(--tide-space-3) var(--tide-space-4); }
 /* A screenshot opened from a comment or hunt (ScreenshotDialog): titled, the image on a quiet panel, then
