@@ -6,8 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using Tide.Web.Components.Shared;
 
-#pragma warning disable BL0006 // the test's own renderer (RecordingRenderer), disposed as a closed circuit's is
-
 namespace Tide.IntegrationTests;
 
 /// <summary>

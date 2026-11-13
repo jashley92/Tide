@@ -1,7 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.RegularExpressions;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
@@ -24,7 +23,7 @@ namespace Tide.IntegrationTests;
 /// everyone's view, the article's actions and a note, the day's loose ends, what's left before ending), and never in a
 /// follower's page, whatever the follower may do elsewhere. Its own app, since metrics are global.
 /// </summary>
-public partial class PresentRailTests(TideApp app) : IClassFixture<TideApp>
+public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:rail-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:rail-robin", "Robin Analyst", "Analyst");
@@ -309,7 +308,7 @@ public partial class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.StartMeeting());
         await pat.Click(p => p.OnPresentKey("last"));
         var rail = RailOf(await pat.Html());
-        EndMeetingButton().Count(rail).Should().Be(1);
+        rail.Should().Contain("End the meeting</button>", Exactly.Once());
         EndMeeting(app, day);
     }
 
@@ -402,7 +401,4 @@ public partial class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day)!.PresenterName.Should().Be("Robin Analyst");
         EndMeeting(app, day);
     }
-
-    [GeneratedRegex("End the meeting</button>")]
-    private static partial Regex EndMeetingButton();
 }

@@ -6,23 +6,16 @@ namespace Tide.UnitTests;
 
 /// <summary>
 /// The formatting toolbar's text transforms (wwwroot/js/markdown-toolbar.js), run in Node, on long and odd inputs: a
-/// selection of tens of thousands of spaces, a list line with a stray carriage return, a long run of spaces inside an
+/// selection of a hundred thousand spaces, a list line with a stray carriage return, a long run of spaces inside an
 /// item. Each gives the same result it always has, and quickly: none of the script's patterns can backtrack over a long
-/// run of spaces (each case here took about a second, or several, when they could).
+/// run of spaces (each case here took seconds when they could).
 /// </summary>
 public class MarkdownToolbarTransformTests
 {
-    private static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Tide.sln"))) return dir.FullName;
-        throw new InvalidOperationException("Couldn't find the repo root (Tide.sln).");
-    }
-
     // Each case: the transform's result (JSON, or null) and how long it took.
     private const string Cases = """
         const t = require(process.argv[2]);
-        const sp = ' '.repeat(40000);
+        const sp = ' '.repeat(100000);   // N, below
         const cases = {
             boldAroundSpaces: () => t.bold({ text: 'a' + sp + 'b', start: 0, end: sp.length + 2 }),
             boldOnlySpaces: () => t.bold({ text: 'x' + sp + 'y', start: 1, end: sp.length + 1 }),
@@ -33,7 +26,7 @@ public class MarkdownToolbarTransformTests
             bulletsOnACarriageReturn: () => t.bullets({ text: '-' + sp + '\rx', start: 0, end: 1 }),
             onListCarriageReturn: () => t.onList({ text: '-  a\r', start: 2, end: 2 }),
             numbersOnASpacedItem: () => t.numbers({ text: '1.' + sp + 'x', start: 0, end: 1 }),
-            enterInsideSpaces: () => t.enter({ text: '- a' + sp + 'b', start: 20003, end: 20003 }),
+            enterInsideSpaces: () => t.enter({ text: '- a' + sp + 'b', start: 50003, end: 50003 }),
             enterAfterAMarkerAndSpaces: () => t.enter({ text: '3)   ', start: 5, end: 5 }),
         };
         const out = {};
@@ -51,7 +44,7 @@ public class MarkdownToolbarTransformTests
         await File.WriteAllTextAsync(script, Cases);
         try
         {
-            var psi = new ProcessStartInfo("node", [script, Path.Combine(Root(), "src", "Tide.Web", "wwwroot", "js", "markdown-toolbar.js")])
+            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "markdown-toolbar.js")])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };
@@ -70,7 +63,8 @@ public class MarkdownToolbarTransformTests
         finally { File.Delete(script); }
     }
 
-    private static readonly string Spaces = new(' ', 40000);
+    private const int N = 100_000;   // the script's sp.length
+    private static readonly string Spaces = new(' ', N);
 
     [Fact]
     public async Task LongAndOddInputs_GiveTheSameResults_Quickly()
@@ -88,19 +82,19 @@ public class MarkdownToolbarTransformTests
 
         // A selection with spaces inside is wrapped whole; spaces either side stay outside the marks.
         Text("boldAroundSpaces").Should().Be("**a" + Spaces + "b**");
-        Sel("boldAroundSpaces").Should().Be((2, 40004));
+        Sel("boldAroundSpaces").Should().Be((2, N + 4));
         said.GetProperty("boldOnlySpaces").GetProperty("result").ValueKind.Should().Be(JsonValueKind.Null, "a selection of only spaces is left alone");
         Text("boldSpacesEachSide").Should().Be("  **word**  ");
         Sel("boldSpacesEachSide").Should().Be((4, 8));
 
         Text("linkAroundSpaces").Should().Be("[a" + Spaces + "b](https://)");
-        Sel("linkAroundSpaces").Should().Be((40005, 40013), "the address to type is selected");
+        Sel("linkAroundSpaces").Should().Be((N + 5, N + 13), "the address to type is selected");
         Text("linkAddressWithSpaceAfter").Should().Be("[text](https://example.com) \t");
         Sel("linkAddressWithSpaceAfter").Should().Be((1, 5));
 
         // Over lines, each line's text is wrapped after its marker, and trailing spaces of any kind are dropped.
         Text("italicOverLines").Should().Be("*a" + Spaces + "b*\n- *c*");
-        Sel("italicOverLines").Should().Be((0, 40010));
+        Sel("italicOverLines").Should().Be((0, N + 10));
 
         // A carriage return in the item's text: not a list line, so Bullets makes it one.
         Text("bulletsOnACarriageReturn").Should().Be("- -" + Spaces + "\rx");

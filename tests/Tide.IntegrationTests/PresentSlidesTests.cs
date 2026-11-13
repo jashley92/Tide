@@ -22,7 +22,7 @@ namespace Tide.IntegrationTests;
 /// last brief, and a number not yet entered, are dealt with on their slides by the presenter, and by no one else. Its
 /// own app, since metrics are global.
 /// </summary>
-public partial class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
+public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:slides-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:slides-robin", "Robin Analyst", "Analyst");
@@ -178,11 +178,8 @@ public partial class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
             (await scope.ServiceProvider.GetRequiredService<MetricsService>().GetDayAsync(day)).Missing.Should().NotContain(m => m.Id == missing);
         html = await pat.Html();
         html.Should().NotContain(PresenterTools).And.NotContain("number missing");
-        Twelve().IsMatch(html).Should().BeTrue("the slide shows it");
+        html.Should().Contain(">12<", "the slide shows it");
 
         EndMeeting(app, day);
     }
-
-    [GeneratedRegex(">12<")]
-    private static partial Regex Twelve();
 }

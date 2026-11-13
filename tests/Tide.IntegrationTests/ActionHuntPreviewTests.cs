@@ -276,7 +276,7 @@ public partial class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp
         {
             page.Component.Next!.Kind.Should().Be(NextKind.Unowned);
             WebUtility.HtmlDecode(await page.Html()).Should().Contain("data-next=\"Unowned\"").And.Contain("Nobody has it yet.").And.Contain("Take it</button>");
-            NextLine().Matches(await page.Html()).Should().HaveCount(1, "one Next line");
+            (await page.Html()).Should().Contain("class=\"tide-next\"", Exactly.Once(), "one Next line");
         }
 
         await As(async sp => { await sp.GetRequiredService<ActionService>().TakeAsync(id); return true; });
@@ -436,9 +436,6 @@ public partial class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp
 
     [GeneratedRegex("<input[^>]*aria-label=\"New indicator\"[^>]*>")]
     private static partial Regex NewIndicatorBox();
-
-    [GeneratedRegex("class=\"tide-next\"")]
-    private static partial Regex NextLine();
 
     [GeneratedRegex("role=\"tab\" id=\"tool-panel-tab-([a-z]+)\"")]
     private static partial Regex ToolTab();

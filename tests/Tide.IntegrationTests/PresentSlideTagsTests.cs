@@ -115,7 +115,7 @@ public partial class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
             .Should().Equal(["Initial Access", "Execution", "Impact"], "tactics in the matrix's order");
         section.Should().Contain($"style=\"--tac:{Ui.TacticColor(MitreTactic.InitialAccess)}\"").And.Contain(Ui.TacticGlyph(MitreTactic.Impact));
         section.Should().Contain("<span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1190</span> Exploit Public-Facing Application</span><span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1566.001</span> Spearphishing Attachment</span>");
-        T1566001().Count(html).Should().Be(1, "a technique appears once on the slide");
+        html.Should().Contain("T1566.001", Exactly.Once(), "a technique appears once on the slide");
         section.Should().NotContain("tide-chip-technique", "the old flat chip list is gone");
     }
 
@@ -178,9 +178,6 @@ public partial class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         row.Left.Should().Equal(many.Skip(SlideTags.MaxTechniques));
         new SlideTactic(MitreTactic.Impact, many.Take(1).ToList()).Left.Should().BeEmpty();
     }
-
-    [GeneratedRegex("T1566\\.001")]
-    private static partial Regex T1566001();
 
     [GeneratedRegex("class=\"tide-slide-tag-name\">([^<]+)<")]
     private static partial Regex TagName();

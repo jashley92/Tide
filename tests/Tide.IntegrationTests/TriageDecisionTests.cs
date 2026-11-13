@@ -115,7 +115,7 @@ public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 
         Why(bar).Should().Contain("Covered by “Godwit router flaw (presented)”")
             .And.Contain("which cannot take another report now, so the suggested step is to promote it");
-        PrimaryPromoteClass().IsMatch(bar).Should().BeTrue();
+        bar.Should().Contain("class=\"btn btn-primary btn-sm tide-triage-promote\"");
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var row = Selected(html);
         row.Should().Contain("<section class=\"tide-triage-decide\"", "the row holds the decision, reason and all");
         Why(row).Should().Contain("so the suggested step is to attach it");
-        PrimaryAttachClass().IsMatch(row).Should().BeTrue();
+        row.Should().Contain("class=\"btn btn-primary btn-sm tide-triage-attach\"");
         row.Should().Contain("Shortlist <span class=\"tide-kbd\">S</span>").And.Contain("Dismiss <span class=\"tide-kbd\">X</span>");
     }
 
@@ -163,7 +163,7 @@ public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
 
         Selected(html).Should().Contain("class=\"tide-triage-decide\"", "the buttons are in the row");
-        DecideBar().Matches(html).Should().HaveCount(1, "and only there: the hidden pane holds no second copy");
+        html.Should().Contain("class=\"tide-triage-decide\"", Exactly.Once(), "and only there: the hidden pane holds no second copy");
 
         await r.Click(t => t.OnReadingRoom(true));
         Pane(await r.Html()).Should().Contain("class=\"tide-triage-decide\"", "with room again, the bar is back under the pane");
@@ -195,20 +195,11 @@ public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
     private static Tide.Application.Intake.Coverage Covered(bool attachable, DateOnly? brief) =>
         new("CVE-2026-0001", Guid.NewGuid(), "Flaw", brief) { Attachable = attachable };
 
-    [GeneratedRegex("class=\"tide-triage-decide\"")]
-    private static partial Regex DecideBar();
-
     [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to")]
     private static partial Regex PrimaryAttach();
 
-    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"")]
-    private static partial Regex PrimaryAttachClass();
-
     [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
     private static partial Regex PrimaryPromote();
-
-    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-promote\"")]
-    private static partial Regex PrimaryPromoteClass();
 
     [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
     private static partial Regex SecondaryPromote();

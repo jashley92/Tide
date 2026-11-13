@@ -447,7 +447,7 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
 
         // The rows are drawn as every list's: one selected, aria-current, the list's one tab stop.
         var html = await r.Html();
-        AriaCurrent().Count(html).Should().Be(1);
+        html.Should().Contain("aria-current=\"true\"", Exactly.Once());
         SelectedRowTabStop().Count(html).Should().Be(1);
     }
 
@@ -602,9 +602,6 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         }, who))
             (await retired.Html()).Should().NotContain("Try it on an open action").And.NotContain(note);
     }
-
-    [GeneratedRegex("aria-current=\"true\"")]
-    private static partial Regex AriaCurrent();
 
     [GeneratedRegex("class=\"tide-library-row selected\"[^>]*tabindex=\"0\"")]
     private static partial Regex SelectedRowTabStop();

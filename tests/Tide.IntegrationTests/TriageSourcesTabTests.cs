@@ -163,11 +163,11 @@ public partial class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
     // The New tab's count, as the tab bar shows it.
     private static int NewCount(string html)
     {
-        var m = NewCount().Match(html);
+        var m = NewTabCount().Match(html);
         m.Success.Should().BeTrue();
         return int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [GeneratedRegex("<span>New</span>\\s*<span class=\"tide-tabbar-count[^\"]*\">(\\d+)</span>")]
-    private static partial Regex NewCount();
+    private static partial Regex NewTabCount();
 }
