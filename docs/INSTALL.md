@@ -78,6 +78,8 @@ brief's live meeting.
 | Join and follow a live meeting | Yes | Yes | Yes | Yes | Yes | No |
 | Raise a hand in a meeting | Yes | Yes | Yes | Yes | Yes | No |
 | Add meeting notes | Yes | Yes | Yes | Yes | No | No |
+| In a live meeting, add someone who was there, and take off whom you added | Yes | Yes | Yes | Yes | No | No |
+| With no meeting live, correct who attended (add, or take off anyone added) | Yes | Yes | No | No | No | No |
 | Present, start and end a meeting | Yes | Yes | No | No | No | No |
 | Build a brief (its articles, order, team note) | Yes | Yes | No | No | No | No |
 | Reopen a brief | Yes | Yes | No | No | No | No |

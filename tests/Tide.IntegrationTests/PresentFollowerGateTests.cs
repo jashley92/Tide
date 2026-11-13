@@ -147,7 +147,7 @@ public class PresentFollowerGateTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task AnAnalystFollowing_EntersNoMissingNumber_NorChangesAttendance()
+    public async Task AnAnalystFollowing_EntersNoMissingNumber_AndChangesOnlyTheAttendanceTheyAdded()
     {
         var (day, brief, _, _) = await Brief(143);
         Guid metric;
@@ -163,14 +163,21 @@ public class PresentFollowerGateTests(TideApp app) : IClassFixture<TideApp>
         await Do(andy, p => p.JoinIfLive());
 
         await Do(andy, p => p.EnterMissingNumber(metric, "7"));
-        await Do(andy, p => p.AddAttendeeName = "Forged Person");
+        await Do(pat, p => p.AddAttendeeName = "Sam from the SOC");
+        await Do(pat, p => p.AddAttendee());
+        // As anyone following may: added as theirs, and only that is theirs to take off.
+        await Do(andy, p => p.AddAttendeeName = "Kim from IT");
         await Do(andy, p => p.AddAttendee());
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             (await scope.ServiceProvider.GetRequiredService<MetricsService>().GetDayAsync(day)).Groups
                 .SelectMany(g => g.Tiles).Single(t => t.Metric.Id == metric).Value.Should().BeNull("no number entered");
-            (await scope.ServiceProvider.GetRequiredService<MeetingService>().GetAsync(brief)).Attendees.Should().NotContain(x => x.Name == "Forged Person");
+            var attendees = (await scope.ServiceProvider.GetRequiredService<MeetingService>().GetAsync(brief)).Attendees;
+            attendees.Single(x => x.Name == "Kim from IT").AddedById.Should().Be(Andy.UserId);
+            await Do(andy, p => p.RemoveAttendee(attendees.Single(x => x.Name == "Sam from the SOC")));
         }
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<MeetingService>().GetAsync(brief)).Attendees.Should().Contain(x => x.Name == "Sam from the SOC", "the presenter's");
         EndMeeting(app, day);
     }
 }

@@ -98,20 +98,24 @@ public class BriefItem : Entity
 }
 
 /// <summary>
-/// Someone at a brief's meeting: recorded when they join it in TIDE, or added by the presenter for someone in the room
+/// Someone at a brief's meeting: recorded when they join it in TIDE, or added by someone in the meeting for someone there
 /// without a laptop (no <see cref="UserId"/>, no times). One per person per brief; joining again keeps the first join.
 /// </summary>
 public class MeetingAttendee : Entity
 {
     public Guid BriefId { get; set; }
 
-    /// <summary>The user, or empty for someone the presenter added by name.</summary>
+    /// <summary>The user, or empty for someone added by name.</summary>
     public string UserId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
 
     /// <summary>When they first joined, and when they last left (null while they're there, or when added by name).</summary>
     public DateTimeOffset? JoinedAtUtc { get; set; }
     public DateTimeOffset? LeftAtUtc { get; set; }
+
+    /// <summary>Who added them by name (the presenter, or someone following the meeting), or null for someone who joined,
+    /// or added before this was kept. Whoever added a name may take it off; the presenter, any added by name.</summary>
+    public string? AddedById { get; set; }
 }
 
 /// <summary>One person's note at a brief's meeting, against the article on screen when they wrote it.</summary>

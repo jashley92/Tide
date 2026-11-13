@@ -159,6 +159,25 @@ public sealed class LiveMeetingsTests : IDisposable
     }
 
     [Fact]
+    public void ACircuitThatWentBeforeTheStart_TakesNoSeat_UntilItsBack_ThenTheMeetingIsToldSo()
+    {
+        _meetings.SetConnected("c-xavier", false);   // a page open before the start, its browser gone
+        _meetings.SetConnected("c-gone", false);
+        _meetings.RemoveCircuit("c-gone");           // given up on: forgotten, not kept as away
+        Start();
+        _meetings.Join(Day, "xavier", "Xavier", false, "c-xavier", Guid.NewGuid(), 0).Should().BeNull("its browser isn't there");
+        View.People.Select(p => p.Name).Should().Equal("Pat");
+
+        var heard = new List<MeetingChange>();
+        _meetings.Changed += heard.Add;
+        _meetings.SetConnected("c-xavier", true);
+        heard.Should().ContainSingle("back, its page hears the meeting is on and joins it").Which.Day.Should().Be(Day);
+        _meetings.Join(Day, "xavier", "Xavier", false, "c-xavier", Guid.NewGuid(), 0).Should().NotBeNull();
+        View.People.Select(p => p.Name).Should().Equal("Pat", "Xavier");
+        _meetings.AwayCount.Should().Be(0);
+    }
+
+    [Fact]
     public void ADroppedConnection_IsAway_AndAPresenterWhoseDropsStartsTheGrace_UntilTheyreBack()
     {
         var pat = Start();

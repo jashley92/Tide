@@ -2032,6 +2032,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AddedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("BriefId")
                         .HasColumnType("TEXT");
 

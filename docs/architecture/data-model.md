@@ -877,14 +877,15 @@ An article's place on a brief. An article can be carried onto a later brief. Wri
 
 ### `MeetingAttendees` (A)
 
-Someone at a brief's meeting. The row is made when they join in TIDE, or when the presenter adds someone in the room
-by name (no `UserId`, no times). Written by `MeetingService`.
+Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting (or, with none live, whoever presents) adds someone
+who was there by name (no `UserId`, no times). Written by `MeetingService`.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `Id`, `BriefId` | uniqueidentifier | no | `BriefId` FK → `Briefs`, **cascade**. |
 | `UserId`, `Name` | nvarchar(256) | no | `UserId` is empty for someone added by name. `(BriefId, UserId, Name)` is **unique**. |
 | `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. |
+| `AddedById` | nvarchar(256) | yes | Who added them by name: they, or the presenter, can take the row off. Null for someone who joined, or added before it was kept. |
 
 ### `MeetingNotes` (A)
 

@@ -111,7 +111,7 @@ code-defined permissions (`RoleDefinitions.SystemRoles` in `src/Tide.Application
 | Action owner | `ActionOwner` | Another team's member: reads the team edition and works the actions given to their team. Hands them off, and keeps the external teams (those that work outside TIDE) and the team's libraries: saved queries, outreach templates and playbooks. | `ReadPublished`, `ReadTeamEdition`, `WorkActions`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
 | Reader | `Reader` | Anyone else in the company: reads the published, company-wide archive. | `ReadPublished` |
 | Administrator | `Admin` | Administers TIDE: sources, taxonomy, role mappings and settings. Holds every permission. | All of them, including any added later |
-| Viewer | `Viewer` | Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand and adds notes. | `ReadPublished`, `ReadTeamEdition`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
+| Viewer | `Viewer` | Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand, adds notes and adds who was there. | `ReadPublished`, `ReadTeamEdition`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
 | Visitor | `Visitor` | A colleague from elsewhere: reads the published archive, and sees a live meeting only while they're in it. | `ReadPublished`, `JoinMeetings` |
 
 Two things are worth knowing before mapping groups:

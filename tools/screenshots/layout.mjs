@@ -2187,6 +2187,16 @@ const wrapUp = as => async (page, demo) => {
   await idle(page);
 };
 
+/** Setup: the follower's wrap-up (wrapUp('follower')), then Pat adds someone who was there from the box under Attended,
+ *  and the name shows, with the × Pat may take it off by. */
+const wrapUpAdded = async (page, demo) => {
+  await wrapUp('follower')(page, demo);
+  await page.locator('#wrap-add-name').fill('Sam from the SOC');
+  await page.locator('.tide-wrap-add').getByRole('button', { name: 'Add' }).click();
+  await page.locator('.tide-attendance button[aria-label="Remove Sam from the SOC"]').waitFor();
+  await idle(page);
+};
+
 /** The wrap-up's three lists (not raised, who is doing what, not discussed), each whole in its column: side by side from
  *  1400px, and the slide still fits. (Who is doing what is checked with actions in it on the presenter's page, early in
  *  the run: by the follower's, late, the pages before have changed today's brief and it may have none.) */
@@ -4692,6 +4702,12 @@ const pages = [
   // that leave an action open in today's meeting.
   { name: 'slide-wrap-follower', route: '/present/{today}', setup: wrapUp('follower'), widths: [1920, 1440, 1100, 780],
     rules: [...wrapUpRules, hidden('#present-rail'), hidden('#present-rail-toggle')] },
+  // Someone following adds a name who was there on the wrap-up: the box and Add on one row under Attended, in the slide,
+  // and the name added with its ×. It adds to today's meeting.
+  { name: 'slide-wrap-follower-add', route: '/present/{today}', setup: wrapUpAdded, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, slideFits, visible('#wrap-add-name'), oneRow('.tide-wrap-add'), fits('.tide-wrap-add'), fits('.tide-attendance'),
+      inWindow('.tide-wrap-add button'), visible('.tide-attendance button[aria-label="Remove Sam from the SOC"]'),
+      pillClear('.tide-attendance li'), contrastAtLeast('.tide-wrap-add input[placeholder]', 4.5, '::placeholder'), hidden('#present-rail')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },

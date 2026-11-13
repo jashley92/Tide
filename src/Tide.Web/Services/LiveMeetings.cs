@@ -78,6 +78,10 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     private readonly Lock _gate = new();
     private readonly Dictionary<DateOnly, Meeting> _meetings = [];
 
+    // Circuits whose browser has gone for now, seated or not (SetConnected): a page open before the meeting started whose
+    // tab closed or browser died keeps its circuit for minutes, and mustn't be seated by the start in the meantime.
+    private readonly HashSet<string> _away = new(StringComparer.Ordinal);
+
     public LiveMeetings(TimeProvider time)
     {
         _time = time;
@@ -112,7 +116,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         lock (_gate)
             return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
-                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card)).ToList();
+                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card, m.PresenterId == userId)).ToList();
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
@@ -142,7 +146,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         Seat seat;
         lock (_gate)
         {
-            if (!_meetings.TryGetValue(day, out var m)) return null;
+            // A page whose browser has gone isn't there to sit: it joins if it comes back (SetConnected).
+            if (!_meetings.TryGetValue(day, out var m) || _away.Contains(circuitId)) return null;
             seat = Sit(m, userId, name, canPresent, circuitId, origin, slide);
         }
         Notify(day, origin);
@@ -275,7 +280,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         if (circuitId.Length == 0) return;
         List<Seat> gone;
-        lock (_gate) gone = _meetings.Values.SelectMany(m => m.Seats.Values).Where(s => s.CircuitId == circuitId).ToList();
+        lock (_gate)
+        {
+            _away.Remove(circuitId);   // given up on: it won't be back
+            gone = _meetings.Values.SelectMany(m => m.Seats.Values).Where(s => s.CircuitId == circuitId).ToList();
+        }
         foreach (var s in gone) s.Dispose();
     }
 
@@ -283,7 +292,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// A circuit's connection dropped (a closed lid, lost Wi-Fi) or came back. While it's down its seats are away: not
     /// shown, not presenting, so a presenter's drop starts the grace period at once rather than when the circuit is given
     /// up on, minutes later. Told to every page, the circuit's own included: back, it may have missed what changed while
-    /// it was away (someone took over from it), so it reads the meeting again.
+    /// it was away (someone took over from it), so it reads the meeting again. A circuit that went with no seat (a page
+    /// open before the meeting started) is kept as away too, so the start doesn't seat it; back, each meeting it has no
+    /// seat in is said to it, for its page to join.
     /// </summary>
     public void SetConnected(string circuitId, bool connected)
     {
@@ -292,6 +303,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate)
         {
             var now = _time.GetUtcNow();
+            if (!connected) _away.Add(circuitId);
+            else if (_away.Remove(circuitId))
+                changed.AddRange(_meetings.Values.Where(m => m.Seats.Values.All(s => s.CircuitId != circuitId)).Select(m => m.Day));
             foreach (var m in _meetings.Values)
             {
                 var seats = m.Seats.Values.Where(s => s.CircuitId == circuitId && s.Down == connected).ToList();
@@ -457,6 +471,12 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     }
 
     private void Notify(DateOnly day, Guid origin) => Together.Notify(Changed, new MeetingChange(day, origin));
+
+    /// <summary>How many circuits are away (for tests: one given up on isn't kept).</summary>
+    internal int AwayCount
+    {
+        get { lock (_gate) return _away.Count; }
+    }
 
     public void Dispose() => _sweeper.Dispose();
 

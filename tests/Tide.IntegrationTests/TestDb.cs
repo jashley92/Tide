@@ -642,3 +642,14 @@ public static class ConfigBundleTestExtensions
         return await service.ImportAsync(bundle, preview.Fingerprint(), acknowledged: true, ct);
     }
 }
+
+/// <summary>A live meeting of <paramref name="brief"/>, as the services see it (<see cref="TestDb.Live"/>):
+/// <paramref name="presenter"/> presenting it, and <paramref name="others"/> seated in it too (everyone, when none are
+/// named).</summary>
+public sealed class InMeeting(Guid brief, string presenter = "", params string[] others) : IMeetingsInProgress
+{
+    public bool IsLive(Guid briefId) => briefId == brief;
+
+    public IReadOnlyList<SeatedMeeting> SeatedIn(string userId) =>
+        userId == presenter || others.Length == 0 || others.Contains(userId) ? [new SeatedMeeting(default, brief, null, null, userId == presenter)] : [];
+}

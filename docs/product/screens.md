@@ -657,8 +657,11 @@ everyone on the team edition in (or paste the copied link). People who join foll
 off on their own and come back, and see whatever card or action the presenter opens. Who is here and whose hand is
 up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same slide") and the raised
 hands in order. People raise and lower their own hand there, and take notes (each person's own, against the article on
-screen as they began it). Attendance is recorded as people join, and the presenter can add people who were in the
-room. The brief's page keeps who attended and the notes, by article.
+screen as they began it). Attendance is recorded as people join. Anyone in the meeting on the team edition can add
+people who were there, from the box under *Attended* on the wrap-up (the presenter, from their rail), and take off
+whoever they added; the presenter can take off anyone added. With no meeting live, before or after it, whoever can
+present corrects the list from the rail. The brief's page keeps who attended and the notes, by article.
+
 
 **The presenter's rail** holds what only the presenter does, and is never on a follower's screen. From 1500px wide
 it's docked beside the slide, which narrows to fit; below that **Rail** or `]` opens it over the slide. For the slide

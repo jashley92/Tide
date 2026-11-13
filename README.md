@@ -127,7 +127,7 @@ automatic rollback ([docs/UPGRADE.md](docs/UPGRADE.md)). Every setting is in
 | `ActionOwner` | Works their teams' actions and reads the team edition |
 | `Reader` | Reads the published company-wide editions |
 | `Admin` | Administers TIDE |
-| `Viewer` | Reads everything the team does, every action included, and changes nothing; joins meetings, raises a hand and adds notes |
+| `Viewer` | Reads everything the team does, every action included, and changes nothing; joins meetings, raises a hand, adds notes and adds who was there |
 | `Visitor` | A colleague from elsewhere: reads the published archive, and sees a live meeting only while they're in it |
 
 Each role is granted by AD groups and is a bundle of code-defined permissions, enforced on the page and again in the

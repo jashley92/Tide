@@ -21,8 +21,8 @@ public interface IMeetingsInProgress
 }
 
 /// <summary>A live meeting someone is seated in: its day and brief, and the action (its number) or the card the
-/// presenter has open over the slide for the room, if any.</summary>
-public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, MeetingCard? Card);
+/// presenter has open over the slide for the room, if any; and whether the one seated is presenting it.</summary>
+public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, MeetingCard? Card, bool Presenting = false);
 
 /// <summary>What a card opened over a slide in present mode shows.</summary>
 public enum MeetingCardKind
@@ -73,6 +73,11 @@ public static class MeetingAccess
     /// <summary>The live meetings a meeting-only user is seated in now; none for anyone else.</summary>
     public static IReadOnlyList<SeatedMeeting> Seats(ICurrentUser user, IMeetingsInProgress? meetings) =>
         meetings is null || !MeetingOnly(user) || !user.IsAuthenticated ? [] : meetings.SeatedIn(user.UserId);
+
+    /// <summary><paramref name="user"/>'s seat in the live meeting of brief <paramref name="briefId"/>, whatever their
+    /// role, or null. Callers decide what a seat lets them do.</summary>
+    public static SeatedMeeting? SeatIn(ICurrentUser user, IMeetingsInProgress? meetings, Guid briefId) =>
+        meetings is null || !user.IsAuthenticated ? null : meetings.SeatedIn(user.UserId).FirstOrDefault(s => s.BriefId == briefId);
 
     /// <summary>Whether a meeting-only user is seated in the live meeting of brief <paramref name="briefId"/>.</summary>
     public static bool SeatedFor(ICurrentUser user, IMeetingsInProgress? meetings, Guid briefId) =>

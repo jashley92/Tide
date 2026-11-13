@@ -358,19 +358,28 @@ What people in the meeting can do:
 | Who | Can |
 |---|---|
 | Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the top bar with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
+| With `JoinMeetings` and the team edition (Analyst, Action owner, Viewer, Admin; never a Visitor) | Add someone who was there by name, from the box under *Attended* on the wrap-up slide (the presenter, from their rail), and take off a name they added (`MeetingService.AddAttendeeAsync`, `RemoveAttendeeAsync`). Not in a rehearsal, which has no seat in a meeting, nor on the company-wide edition, which shows no attendance. |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
 | The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it when they're on that team, else the team's (they can hand it on), and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take them (when on their team) or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
-| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
+| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), take off anyone added by name (`MeetingService.RemoveAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 
 **Connections.** A circuit whose connection drops is "away": not shown and not presenting, so a presenter's drop starts
 the grace period at once (`SetConnected`). A tab that closes without saying so is cleared with its circuit
-(`RemoveCircuit`). A meeting with nobody in it for 15 minutes is dropped (`LiveMeetings.Abandoned`, swept every 10
-seconds).
+(`RemoveCircuit`). A page open before the meeting started whose browser has gone since (a closed tab, a killed
+browser) keeps its circuit for minutes, but is away too: the start doesn't seat it, record it as attending or show it as
+here. If its connection comes back, it joins then, as anyone does. A meeting with nobody in it for 15 minutes is
+dropped (`LiveMeetings.Abandoned`, swept every 10 seconds).
 
 **Attendance.** `MeetingService.JoinedAsync` records a `MeetingAttendee` the first time someone joins (who and when);
 joining again keeps the first join and clears the leaving time. Someone the presenter added by name before they joined
 in TIDE becomes them, not a second entry. As the meeting ends, `LeftAsync` writes each person's last leaving time.
+While the meeting is live, names are added and taken off only from a seat in it on the team edition
+(`MeetingService.CanAddAttendees`, from `IMeetingsInProgress.SeatedIn`): each added row keeps who added it
+(`AddedById`), and only they, or whoever presents the meeting, can take it off (`CanRemoveAttendee`). With no meeting
+of the brief live, before or after it, anyone with `PresentBriefs` corrects the record from the rail: adding, or taking
+off anyone added. A rehearsal changes none of it. No one takes off someone who joined. Each add and removal is in the
+audit log under whoever made it.
 
 **Notes and attendance publish `ChangeFeed.Meeting(briefId)`**, not the brief's own topic, so a note doesn't show as an
 edit to the brief.
