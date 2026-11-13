@@ -178,6 +178,60 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         finally { EndMeeting(app, day); }
     }
 
+    [Fact]
+    public async Task ARehearser_IsNeverSeated_CountedOrRecorded_WhenTheMeetingStartsMeanwhile()
+    {
+        var day = await Day(341);
+        var avery = Person("Analyst");
+        var meetings = app.Services.GetRequiredService<LiveMeetings>();
+        await using var r = await Rehearse(app, day, avery);
+        await r.Click(p => p.GoLive());   // the page is live in a browser
+        await using var presenter = await Open(app, day);
+        await Do(presenter, p => p.StartMeeting());
+        try
+        {
+            // The rehearsal hears the meeting start, as a live page does, and is live again (a reconnect, say).
+            await Do(r, p => p.Follow());
+            await r.Click(p => p.GoLive());
+            await Do(r, p => p.Follow());
+            meetings.Get(day)!.People.Should().NotContain(x => x.UserId == avery.UserId, "a rehearsal never takes a seat, so followers never see it");
+            app.Services.GetRequiredService<Presence>().Others($"brief:{day:yyyy-MM-dd}", "dev:nobody")
+                .Should().NotContain(x => x.UserId == avery.UserId, "nor counts as here");
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.MeetingAttendees.CountAsync(a => a.UserId == avery.UserId)).Should().Be(0, "nor is recorded as attending");
+            (await db.AuditLog.CountAsync(a => a.UserId == avery.UserId)).Should().Be(0, "and saves nothing at all");
+        }
+        finally { EndMeeting(app, day); }
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("true")]
+    [InlineData("yes")]
+    [InlineData("")]
+    [InlineData("no")]
+    public async Task AnyRehearseInTheAddress_IsARehearsal_SoItFailsSafe(string value)
+    {
+        var day = await Day(342);
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse={value}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Person("Analyst"));
+        (await r.Html()).Should().Contain(Rehearsing).And.NotContain("Start the meeting");
+    }
+
+    [Fact]
+    public async Task LeavingARehearsal_NeverAsksToDiscard_ForNothingCanBeSaved()
+    {
+        var day = await Day(343);
+        await using (var r = await Rehearse(app, day, Person("Analyst")))
+        {
+            await r.Click(p => { p.TypeNote("Typed in a rehearsal"); return Task.CompletedTask; });
+            r.Component.AsksBeforeLeaving.Should().BeFalse();
+        }
+        await using var live = await Open(app, day);
+        await live.Click(p => { p.TypeNote("Typed for real"); return Task.CompletedTask; });
+        live.Component.AsksBeforeLeaving.Should().BeTrue("a real note typed and not added is worth asking about");
+    }
+
     [Theory]
     [InlineData("Viewer")]
     [InlineData("ActionOwner")]
@@ -195,7 +249,6 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         try
         {
             await using var follower = await Rehearse(app, day, Person(role));
-            await follower.Click(p => p.GoLive());
             var html = await follower.Html();
             html.Should().NotContain("tide-tour").And.NotContain(Rehearsing).And.NotContain("present-rail");
             (await presenter.Html()).Should().NotContain("tide-tour", "the presenter's own page, shared with the room, has no guide");

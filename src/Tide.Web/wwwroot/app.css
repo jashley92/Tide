@@ -1866,9 +1866,30 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-tip-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: 0; color: var(--tide-text); }
 .tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
-.tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px;
-    /* Scrolled into view clear of the sticky top bar, with room under it for the step beside it. */
-    scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
+/* The control a tip or step is about: scrolled into view clear of the sticky top bar, with room under it for the card. */
+.tide-tip-target { scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
+/* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
+   click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
+   motion. */
+.tide-tip-ring { position: fixed; z-index: 3395; pointer-events: none; border: 2px solid var(--tide-focus-ring);
+    border-radius: var(--tide-radius-lg); box-shadow: 0 0 0 3px var(--tide-accent-soft);
+    animation: tide-ring-pulse 1.1s ease-out 2; }
+@keyframes tide-ring-pulse {
+    0% { box-shadow: 0 0 0 0 var(--tide-focus-ring); }
+    70% { box-shadow: 0 0 0 10px transparent; }
+    100% { box-shadow: 0 0 0 3px var(--tide-accent-soft); }
+}
+@media (prefers-reduced-motion: reduce) { .tide-tip-ring { animation: none; } }
+/* The card's arrow (tips.js): a square turned on its corner, centred on the card's edge facing its control
+   (data-side: where the card is, from the control), in the card's own surface and border so it reads as part of it.
+   Over a tip, or over a step (is-step). */
+.tide-tip-arrow { position: fixed; z-index: 3001; width: 14px; height: 14px; background: var(--tide-surface);
+    border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
+.tide-tip-arrow.is-step { z-index: 3401; }
+.tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }
+.tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
+.tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
+.tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
 /* A tour step (OnboardingHost): a dialog without a scrim, so the control it's about shows; in the bottom corner, or
    beside that control when tips.js finds room (is-placed), as a tip is. */
 .tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;

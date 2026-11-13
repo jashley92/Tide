@@ -174,7 +174,7 @@ public static partial class Guides
         ]),
         new("workload", "Workload", "workload", Read,
         [
-            Step("teams", Read, ".tide-load", "Each team",
+            Step("teams", Read, ".tide-load > .tide-card", "Each team",
                 "A card per team, with its open, overdue, due-soon, blocked and P1 actions."),
             Step("nums", Read, ".tide-load-nums", "Into the list",
                 "Open and Overdue open that team's actions in the Actions list."),

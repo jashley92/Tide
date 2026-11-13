@@ -56,10 +56,11 @@ public class PageTipsTests
     }
 
     [Fact]
-    public void SearchsTip_SitsInItsCorner_OffThePagesOwnSearchBox()
+    public void SearchsTip_PointsAtThePagesOwnSearchBox_NotTheTopBars()
     {
-        // Pointed at the top bar's search box it sat over the page's own box and its description.
-        PageTips.For("search")!.Target.Should().BeEmpty();
+        // Pointed at the top bar's box it sat over the page's own box and its description; in a corner it was away
+        // from what it's about. It points at the page's box, and sits under it.
+        PageTips.For("search")!.Target.Should().Be("#main-content form[role=\"search\"]");
     }
 
     [Fact]
