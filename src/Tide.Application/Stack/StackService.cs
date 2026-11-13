@@ -319,12 +319,9 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
 
         // Each product's articles: those naming it, then those tagged with it.
         var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.Tlp, a.CreatedAtUtc }).ToListAsync(ct);
-        var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
         var names = new StackNames(products.Select(Entry));
-        foreach (var a in articles)
-            foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
-        foreach (var t in await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct))
-            if (mine.TryGetValue(t.ProductId, out var ids)) ids.Add(t.ArticleId);
+        var mine = ArticlesByProduct(products, names, articles.Select(a => (a.Id, a.Title, a.Bluf)),
+            (await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct)).Select(t => (t.ArticleId, t.ProductId)));
         // Each product's open actions, by the product page's rule (DetailAsync): raised from one of its articles, or naming
         // it in their title, an action with no article included; read once and matched in one pass, as the articles are.
         var byArticle = mine.SelectMany(m => m.Value.Select(a => (Article: a, Product: m.Key))).ToLookup(x => x.Article, x => x.Product);
@@ -557,15 +554,26 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var products = await InUseAsync(db, ct);
         if (products.Count == 0) return [];
         var ids = articleIds.Distinct().ToList();
-        // Each product's articles among them: those naming it (matched in one pass, as Our stack's list does), then those tagged with it.
-        var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
-        var names = new StackNames(products.Select(Entry));
-        foreach (var a in await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id)).Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart) }).ToListAsync(ct))
-            foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
-        foreach (var t in await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct))
-            if (mine.TryGetValue(t.ProductId, out var tagged)) tagged.Add(t.ArticleId);
+        // Each product's articles among them, as Our stack's list finds them.
+        var articles = await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id)).Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart) }).ToListAsync(ct);
+        var tags = await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct);
+        var mine = ArticlesByProduct(products, new StackNames(products.Select(Entry)), articles.Select(a => (a.Id, a.Title, a.Bluf)),
+            tags.Select(t => (t.ArticleId, t.ProductId)));
         return products.Select(p => new StackRun(p, mine[p.Id].Count)).Where(r => r.Articles > 0)
             .OrderByDescending(r => r.Articles).ThenByName(r => r.Product.Name).ToList();
+    }
+
+    // Each product's articles among those given: those naming it (in the title or the start of the bottom line, every
+    // article matched against every name in one pass), then those tagged with it.
+    private static Dictionary<Guid, HashSet<Guid>> ArticlesByProduct(IEnumerable<StackProduct> products, StackNames names,
+        IEnumerable<(Guid Id, string Title, string Bluf)> articles, IEnumerable<(Guid ArticleId, Guid ProductId)> tags)
+    {
+        var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
+        foreach (var a in articles)
+            foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
+        foreach (var (article, product) in tags)
+            if (mine.TryGetValue(product, out var ids)) ids.Add(article);
+        return mine;
     }
 
     /// <summary>An article's products, and those it names but isn't tagged with.</summary>
