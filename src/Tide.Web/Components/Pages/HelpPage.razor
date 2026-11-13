@@ -5,11 +5,13 @@
 @inject WhatsNewService WhatsNew
 @inject PageTipService Tips
 @inject ToastService Toasts
+@inject TourService Tour
+@inject TourRequests TourAsked
 @inject IMarkdownService Markdown
 @inject NavigationManager Nav
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, with the full
-   notes as each release's GitHub page has them, and Show tips again. ?release=1.13.0 opens that release's full notes
+   notes as each release's GitHub page has them, Show tips again and Take the tour. ?release=1.13.0 opens that release's full notes
    ("See all changes"). *@
 
 <PageTitle>Help · TIDE</PageTitle>
@@ -27,6 +29,14 @@
         <p>A page that changed shows a tip on your first visit to it, until you press <strong>Got it</strong>.</p>
         <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ShowTipsAgainAsync">Show tips again</button>
     </section>
+    @if (Tour.Steps.Count > 0)
+    {
+        <section class="tide-card" aria-labelledby="help-tour">
+            <h2 id="help-tour">The tour</h2>
+            <p>A few steps through the pages and controls you'll use most, as on your first sign-in. Skip it at any step.</p>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="TourAsked.Ask">Take the tour</button>
+        </section>
+    }
     <section class="tide-card" aria-labelledby="help-whatsnew">
         <h2 id="help-whatsnew">What's new</h2>
         @if (WhatsNew.Releases.Count == 0)

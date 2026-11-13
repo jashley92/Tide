@@ -64,6 +64,10 @@ Every route, its component and the permission it needs are in the [route table](
 - **Tips.** Each page that changed (Today, Triage, the article editor, Actions, an action, Search, the Library and Our
   stack) shows a small tip on your first visit to it, pointing at what changed: Today's at **Context** and `]`. It
   doesn't block the page or its keys. **Got it** puts it away for good; Help's **Show tips again** brings them back.
+- **The tour.** On your first-ever sign-in, a short tour steps through the pages and controls your role uses: Today,
+  the context rail and `]`, then Triage, Articles, Actions, Search, presenting or the meeting, and Administration, as
+  they apply to you. **Skip tour** or Escape ends it at any step; Help's **Take the tour** starts it again. Someone who
+  already used TIDE gets *What's new* instead.
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables

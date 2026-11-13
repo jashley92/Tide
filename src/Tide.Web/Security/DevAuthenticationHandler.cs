@@ -67,17 +67,18 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
     /// <summary>
     /// Dev-only: <c>?onboarding=on</c> on a page load has this browser offered what's new, tips and the tour on the demo,
     /// where they're otherwise off (<see cref="Services.OnboardingGate"/>), kept in a cookie like <c>?as=</c>;
-    /// <c>?onboarding=off</c> goes back.
+    /// <c>?onboarding=returning</c> as someone who used TIDE before (no first-sign-in tour); <c>?onboarding=off</c> goes back.
     /// </summary>
-    private bool OnboardingAsked()
+    private string? OnboardingAsked()
     {
         const string cookieName = "dev_onboarding";
+        static string? Known(string? how) => how is "on" or "returning" ? how : null;
         var asked = Context.Request.Query["onboarding"].ToString();
-        if (asked.Length == 0) return Context.Request.Cookies[cookieName] == "on";
-        var on = asked == "on";
-        if (on) Context.Response.Cookies.Append(cookieName, "on", DevCookie());
+        if (asked.Length == 0) return Known(Context.Request.Cookies[cookieName]);
+        var how = Known(asked);
+        if (how is not null) Context.Response.Cookies.Append(cookieName, how, DevCookie());
         else Context.Response.Cookies.Delete(cookieName, DevCookie());
-        return on;
+        return how;
     }
 
     // How each dev-only choice (?as=, ?roles=, ?onboarding=) is kept for the browser. Secure=true is safe even though dev
@@ -135,7 +136,7 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         };
         var roles = RolesAsked() ?? _dev.Roles;
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
-        if (OnboardingAsked()) claims.Add(new Claim(Services.OnboardingGate.DemoClaim, "on"));
+        if (OnboardingAsked() is { } onboarding) claims.Add(new Claim(Services.OnboardingGate.DemoClaim, onboarding));
 
         foreach (var perm in RoleDefinitions.PermissionsForRoleNames(roles))
             claims.Add(new Claim(AppClaimTypes.Permission, perm.ToString()));

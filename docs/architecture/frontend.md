@@ -243,6 +243,24 @@ person's first visit to it after the release it belongs to.
   (`.tide-tip-target`), or leaves it in the bottom corner when the control isn't shown or there's no room. A polite live
   region announces it. A new page drops the tip and checks that page's.
 
+**The tour.** On a person's first-ever sign-in, `OnboardingHost` steps them through the pages and controls their role
+uses, before anything else.
+
+- **Who gets it.** When the user mirror (`UserDirectory.TouchAsync`) records someone for the first time, it also sets
+  their `tour.state` preference to `due`. Everyone recorded before the tour existed has none, so they get What's new
+  instead. Starting the tour sets it to `done`, and marks What's new and the what-changed tips up to the release
+  running as seen (`TourService.FirstStartedAsync`): someone shown round doesn't need them.
+- **The steps.** `Tours` (`Tide.Application/Operations/Tours.cs`) lists each step's page, the permission it needs, the
+  control it points at and what it says, and which steps each role group's tour has. A step the person can't use is
+  left out; a Reader or a Visitor has no tour. No step is in present mode.
+- **A dialog.** Each step is a `.tide-modal` (`role="dialog"`, `aria-modal`): focus goes to Next and Tab stays in it
+  (`tideDialog`), the step and its text are announced, and Escape, the close button or **Skip tour** ends it at any
+  step, focus going back to where it was. It has no scrim, so the control it points at shows: `tideTips` places it
+  beside that control and rings it, as for a tip. Next opens the next step's page.
+- **Again.** Help's **Take the tour** asks `TourRequests` (one per circuit), which the layout's host listens to.
+- **On the demo.** `?onboarding=on` offers everything, the tour included for a new name; `?onboarding=returning` signs
+  in as someone who used TIDE before, so What's new and the tips show rather than the tour.
+
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
 current address. The page list is in [screens: administration](../product/screens.md#administration).

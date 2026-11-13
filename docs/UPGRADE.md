@@ -209,14 +209,15 @@ the right, so you leave the page less. Every route, key and name that worked bef
   go without an update before *Actions that need review* lists it (Organization settings).
 - `Intake:PulledBy`: `08:00`. From then on each working day, while polling is on, Today tells analysts how many feeds
   haven't been pulled since (Sources).
-- `Onboarding:Enabled`: `true`. Set to `false`, TIDE no longer shows *What's new* or a page's tip by itself; Help still lists every
-  release's notes.
+- `Onboarding:Enabled`: `true`. Set to `false`, TIDE no longer shows *What's new*, a page's tip or the first-sign-in
+  tour by itself; Help still lists every release's notes.
 
 **For everyone**
 - **What's new.** The first time each person opens TIDE after this upgrade, a dialog lists what changed for their
   role, once. **See all changes**, and **Help and what's new** in the account menu, open Help with every release's
   notes. Never in present mode, and never for a Reader or a Visitor. Then each page that changed shows a tip on the
-  first visit to it, until **Got it**; Help's **Show tips again** brings them back.
+  first visit to it, until **Got it**; Help's **Show tips again** brings them back. Someone signing in for the first
+  time gets a short tour for their role instead, which Help's **Take the tour** starts again.
 - **Every page.** A **context rail** on the right of Today, Triage, the article editor, Actions, an action, Search,
   Our stack, the Library and Adversaries shows what TIDE knows about what's selected. It's open beside the page on a
   window 1500px or wider; below that, **Context** in the top bar opens it over the page. `]` shows or hides it. A

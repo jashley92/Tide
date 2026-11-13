@@ -17,7 +17,13 @@ public sealed class OnboardingGate(IConfiguration config, IWebHostEnvironment en
 
     /// <summary>Whether <paramref name="user"/> is offered them unasked.</summary>
     public bool Automatic(ClaimsPrincipal user) =>
-        config.GetValue("Onboarding:Enabled", !Demo) || (env.IsDevelopment() && user.HasClaim(DemoClaim, "on"));
+        config.GetValue("Onboarding:Enabled", !Demo) || Asked(user, "on") || Returning(user);
+
+    /// <summary>Whether a browser on the demo asked to be treated as someone who used TIDE before
+    /// (<c>?onboarding=returning</c>): What's new and tips, never the first-sign-in tour, whoever it signs in as.</summary>
+    public bool Returning(ClaimsPrincipal user) => Asked(user, "returning");
+
+    private bool Asked(ClaimsPrincipal user, string how) => env.IsDevelopment() && user.HasClaim(DemoClaim, how);
 
     /// <summary>
     /// Whether a page at <paramref name="relativePath"/> (as <c>NavigationManager.ToBaseRelativePath</c> gives it) may

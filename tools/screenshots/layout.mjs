@@ -838,16 +838,23 @@ const navigateToAdmin = async page => {
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
 /** Setup: Today, signed in as `people[width]` (a name, and `&roles=…` when not the dev sign-in's) with what's new, tips
- *  and the tour asked for (`?onboarding=on`; off on the demo otherwise), so what's new opens over it; wider letters. */
-const whatsNewAs = (people, ...keys) => async page => {
-  await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=on`, page.url()).href, { waitUntil: 'load' });
+ *  and the tour asked for (`?onboarding=…`; off on the demo otherwise), then `keys`; wider letters. `how` is `on` (a new
+ *  name takes the first-sign-in tour) or `returning` (someone who used TIDE before: what's new opens). */
+const onboardingAs = (how, people, ...keys) => async page => {
+  await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=${how}`, page.url()).href, { waitUntil: 'load' });
   await idle(page);
   for (const key of keys) { await page.keyboard.press(key); await idle(page); }
   await wideFont(page);
 };
 
+/** Setup: What's new over Today, as someone who used TIDE before. */
+const whatsNewAs = (people, ...keys) => onboardingAs('returning', people, ...keys);
+
 /** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
 const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
+
+/** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
+const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
 
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
@@ -3484,6 +3491,10 @@ const CHANGES_THE_DEMO = Symbol('changes the demo');
 const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
   fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary')];
 
+/** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
+const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
+  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip')];
+
 /** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
 const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
   hidden('.tide-whatsnew')];
@@ -4122,6 +4133,14 @@ const pages = [
     widths: [1920, 1440, 780], rules: tipRules },
   { name: 'tip-keys', route: '/help', setup: tipAs({ 1920: 'Vic' }, ']'), widths: [1920],
     rules: [visible('.tide-tip'), attr('html', 'data-rail', 'closed')] },
+  // The first-sign-in tour: a step's dialog in the window, its parts within it, focus on Next, Tab kept in it; the
+  // second step (Next, by Enter) beside the Context button it rings.
+  { name: 'tour', route: '/help', setup: tourAs({ 1920: 'Wes', 1440: 'Wyn', 780: 'Wim&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: [...tourRules, ...tabWraps('.tide-tour', 6)] },
+  { name: 'tour-dark', route: '/help', context: { theme: 'dark' }, setup: tourAs({ 1920: 'Xan', 1440: 'Xia', 780: 'Xu&roles=Viewer' }),
+    widths: [1920, 1440, 780], rules: tourRules },
+  { name: 'tour-step-two', route: '/help', setup: tourAs({ 1920: 'Yan', 1440: 'Yul', 780: 'Yve&roles=Viewer' }, 'Enter'),
+    widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail-toggle.tide-tip-target')] },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },

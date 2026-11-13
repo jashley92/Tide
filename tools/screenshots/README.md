@@ -194,12 +194,18 @@ what the window shows. The run exits non-zero if any screen fails, and names it.
 
 To add a screen, add an entry to `screens`: a `name`, a `route` and an optional `setup`, as for a shot.
 
-## What's new on the demo
+## What's new, tips and the tour on the demo
 
-The demo never opens *What's new* or a page's tip by itself, so no page is checked or captured under it. A browser asks for it with
-`?onboarding=on` on a page load (kept in a cookie for that browser, like `?as=`; `?onboarding=off` goes back), and it
-then opens once for each person, as after an upgrade. The `whatsnew` layout pages sign in as a different person at
-each width for that reason.
+The demo never opens *What's new*, a page's tip or the tour by itself, so no page is checked or captured under one. A
+browser asks for them on a page load, kept in a cookie for that browser like `?as=` (`?onboarding=off` goes back):
+
+- `?onboarding=on`: everything, as for anyone. A name the demo hasn't seen signs in for the first time, so it takes
+  the tour.
+- `?onboarding=returning`: as someone who used TIDE before the upgrade, whatever the name: *What's new* opens, then
+  each changed page's tip, and never the tour.
+
+Each shows once a person, so the `whatsnew`, `tip` and `tour` layout pages sign in as a different person at each
+width.
 
 ## Two people in a meeting
 

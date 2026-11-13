@@ -30,10 +30,22 @@ window.tideTips = (function () {
     // At most once a frame, however many scrolls or resizes come in it.
     function soon() { if (!frame) frame = requestAnimationFrame(place); }
 
+    // A tour step is a modal dialog: focus that lands outside it (a new page focuses its heading as it opens) goes back
+    // to its main button.
+    var modal = false;
+    function keep(e) {
+        if (!modal || !card || !card.isConnected || card.contains(e.target)) return;
+        var main = card.querySelector('.btn-primary');
+        if (main) setTimeout(function () { if (card && card.isConnected && !card.contains(document.activeElement)) main.focus(); }, 0);
+    }
+    document.addEventListener('focusin', keep);
+
     return {
-        show: function (el, selector) {
+        // `asDialog`: a tour step, which keeps focus; a tip never takes it.
+        show: function (el, selector, asDialog) {
             this.hide();
             card = el;
+            modal = !!asDialog;
             target = selector ? document.querySelector(selector) : null;
             if (shown(target)) target.classList.add('tide-tip-target');
             // The card's size doesn't change while it's up: measured once, where it starts.
@@ -47,6 +59,7 @@ window.tideTips = (function () {
             if (target) target.classList.remove('tide-tip-target');
             if (frame) cancelAnimationFrame(frame);
             card = target = size = null;
+            modal = false;
             frame = 0;
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });

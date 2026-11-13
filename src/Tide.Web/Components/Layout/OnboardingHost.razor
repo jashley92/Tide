@@ -1,11 +1,15 @@
-@* What MainLayout offers a person by itself, one thing at a time: What's new after an upgrade (WhatsNewDialog), then a
-   page's tip on the first visit to a page that changed (PageTips). Unasked only where OnboardingGate allows, and never
-   on present mode's shared screen (BlankLayout draws none of this, and neither the dialog nor PageTips takes a /present address).
+@* What MainLayout offers a person by itself, one thing at a time: on a first-ever sign-in, the tour for their role
+   (Tours); after an upgrade, What's new (WhatsNewDialog); then a page's tip on the first visit to a page that changed
+   (PageTips). Unasked only where OnboardingGate allows, and never on present mode's shared screen (BlankLayout draws
+   none of this, and none of it starts at a /present address). Help's Take the tour starts the tour again (TourRequests).
    A tip isn't modal: it never takes focus or keys, so ] and every shortcut still work; it's announced politely, sits
-   beside the control it's about (tips.js), and "Got it" puts it away for good. *@
+   beside the control it's about (tips.js), and "Got it" puts it away for good. A tour step is a dialog: focus moves to
+   Next and Tab stays in it (dialog.js), each step is announced, and Escape or Skip tour ends it at any step. *@
 @implements IAsyncDisposable
 @using Tide.Application.Operations
 @inject PageTipService Tips
+@inject TourService Tour
+@inject TourRequests TourAsked
 @inject OnboardingGate Gate
 @inject AuthenticationStateProvider Auth
 @inject NavigationManager Nav
@@ -15,7 +19,29 @@
 <WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" />
 
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
-@if (Tip is { } tip)
+@if (Step is { } step)
+{
+    <div class="tide-modal tide-tour" @ref="_card" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="tide-tour-title" aria-describedby="tide-tour-text" @onkeydown="OnTourKey">
+        <div class="tide-tour-head">
+            <h2 class="tide-modal-title" id="tide-tour-title">
+                <span class="tide-tour-count">Step @(_step + 1) of @_tour.Count</span>
+                <span>@step.Title</span>
+            </h2>
+            <button type="button" class="btn-close" aria-label="Skip tour" @onclick="EndTourAsync"></button>
+        </div>
+        <p class="tide-tour-text" id="tide-tour-text">@step.Text</p>
+        <div class="tide-modal-actions">
+            <button type="button" class="btn btn-link btn-sm me-auto" @onclick="EndTourAsync">Skip tour</button>
+            @if (_step > 0)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PreviousStepAsync">Back</button>
+            }
+            <button type="button" class="btn btn-primary btn-sm" @ref="_next" @onclick="NextStepAsync">@(_step == _tour.Count - 1 ? "Done" : "Next")</button>
+        </div>
+    </div>
+}
+else if (Tip is { } tip)
 {
     <aside class="tide-tip" @ref="_card" aria-labelledby="tide-tip-title">
         <div class="tide-tip-head">
@@ -30,10 +56,12 @@
 }
 
 @code {
-    private ElementReference _card;
-    private bool _automatic;
-    private PageTip? _placed;
+    private ElementReference _card, _next;
+    private bool _automatic, _returning;
+    private object? _placed;
     private string _page = "";
+    private IReadOnlyList<TourStep> _tour = [];
+    private int _step;
 
     /// <summary>The What's new dialog.</summary>
     public WhatsNewDialog? WhatsNew { get; private set; }
@@ -41,8 +69,12 @@
     /// <summary>The tip shown, if any.</summary>
     public PageTip? Tip { get; private set; }
 
-    // What the live region says: the tip as it appears, nothing once it's gone.
-    private string Announce => Tip is { } t ? $"Tip: {t.Title}. {t.Text}" : "";
+    /// <summary>The tour's step shown, if the tour is on.</summary>
+    public TourStep? Step => _step < _tour.Count ? _tour[_step] : null;
+
+    // What the live region says: the tour's step or the tip as it appears, nothing once it's gone.
+    private string Announce => Step is { } s ? $"Step {_step + 1} of {_tour.Count}: {s.Title}. {s.Text}"
+        : Tip is { } t ? $"Tip: {t.Title}. {t.Text}" : "";
 
     // The page, without its query: a filter or a search rewriting the address is the same page.
     private string Page => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant();
@@ -51,25 +83,47 @@
     {
         _page = Page;
         Nav.LocationChanged += OnLocationChanged;
+        TourAsked.Asked += OnTourAsked;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
         {
-            if (firstRender && (_automatic = Gate.Automatic((await Auth.GetAuthenticationStateAsync()).User))) await SafelyAsync(CheckAsync);
-            if (Tip == _placed) return;
-            _placed = Tip;
-            if (Tip is { } tip) await JS.InvokeVoidAsync("tideTips.show", _card, tip.Target);
-            else await JS.InvokeVoidAsync("tideTips.hide");
+            if (firstRender)
+            {
+                var user = (await Auth.GetAuthenticationStateAsync()).User;
+                _returning = Gate.Returning(user);
+                if (_automatic = Gate.Automatic(user)) await SafelyAsync(CheckAsync);
+            }
+            object? showing = (object?)Step ?? Tip;
+            if (showing == _placed) return;
+            var wasStep = _placed is TourStep;
+            _placed = showing;
+            if (showing is null) await JS.InvokeVoidAsync("tideTips.hide");
+            else await JS.InvokeVoidAsync("tideTips.show", _card, Step?.Target ?? Tip?.Target, Step is not null);
+            // The tour's dialog takes focus as it opens (and gives it back as it ends); each step puts it on Next.
+            switch (Step is not null, wasStep)
+            {
+                case (true, false): await JS.InvokeVoidAsync("tideDialog.open", _next); break;
+                case (true, true): await _next.FocusAsync(); break;
+                case (false, true): await JS.InvokeVoidAsync("tideDialog.close"); break;
+            }
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
     }
 
-    /// <summary>What's new if it's due (never in present mode: WhatsNewDialog.CheckAsync), else the page's tip.</summary>
+    /// <summary>The tour on a first-ever sign-in; else What's new if it's due; else the page's tip. Nothing in present
+    /// mode. On the demo, a browser that asked to be someone returning (?onboarding=returning) never gets the tour.</summary>
     public async Task CheckAsync()
     {
-        if (WhatsNew is null) return;
+        if (WhatsNew is null || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
+        if (!_returning && await Tour.IsDueAsync())
+        {
+            await Tour.FirstStartedAsync();
+            await StartTourAsync();
+            return;
+        }
         await WhatsNew.CheckAsync();
         if (!WhatsNew.IsOpen) await CheckTipAsync();
     }
@@ -77,7 +131,7 @@
     /// <summary>The page's tip, if one is due and nothing else is showing (present mode has none: PageTips.For).</summary>
     public async Task CheckTipAsync()
     {
-        if (WhatsNew?.IsOpen == true) return;
+        if (WhatsNew?.IsOpen == true || Step is not null) return;
         Tip = await Tips.DueAsync(Nav.ToBaseRelativePath(Nav.Uri));
         StateHasChanged();
     }
@@ -93,7 +147,43 @@
 
     private Task CheckTipSafelyAsync() => SafelyAsync(CheckTipAsync);
 
-    // A new page: its own tip, or none. The same page with another query keeps what it has.
+    /// <summary>The tour from its first step, on the page that step is about.</summary>
+    public Task StartTourAsync()
+    {
+        WhatsNew?.Close();
+        Tip = null;
+        _tour = Tour.Steps;
+        return GoToStepAsync(0);
+    }
+
+    /// <summary>Next, or Done on the last step.</summary>
+    public Task NextStepAsync() => GoToStepAsync(_step + 1);
+
+    /// <summary>Back.</summary>
+    public Task PreviousStepAsync() => GoToStepAsync(Math.Max(0, _step - 1));
+
+    /// <summary>Skip tour (or Escape, or Done): the tour ends where it is.</summary>
+    public Task EndTourAsync() => GoToStepAsync(_tour.Count);
+
+    private Task GoToStepAsync(int step)
+    {
+        _step = step;
+        StateHasChanged();
+        // The step's page, unless it's the one open. A step that's past the end has none: the tour has ended.
+        if (Step is { } s && Page != s.Route.ToLowerInvariant())
+        {
+            _page = s.Route.ToLowerInvariant();
+            Nav.NavigateTo(s.Route.Length == 0 ? Nav.BaseUri : s.Route);
+        }
+        if (Step is null) _tour = [];
+        return Task.CompletedTask;
+    }
+
+    private Task OnTourKey(KeyboardEventArgs e) => e.Key == "Escape" ? EndTourAsync() : Task.CompletedTask;
+
+    private void OnTourAsked() => _ = InvokeAsync(() => SafelyAsync(StartTourAsync));
+
+    // A new page: its own tip, or none. The same page with another query keeps what it has; so does the tour.
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(async () =>
     {
         if (Page == _page) return;
@@ -109,13 +199,14 @@
         try { await what(); }
         catch (Exception ex) when (ex is not (OperationCanceledException or JSDisconnectedException))
         {
-            Log.LogWarning(ex, "Couldn't read or save what's new or a page's tip for the signed-in person; nothing was shown.");
+            Log.LogWarning(ex, "Couldn't read or save the tour, what's new or a page's tip for the signed-in person; nothing was shown.");
         }
     }
 
     public async ValueTask DisposeAsync()
     {
         Nav.LocationChanged -= OnLocationChanged;
+        TourAsked.Asked -= OnTourAsked;
         if (_placed is not null) await JS.StopAsync("tideTips.hide");
     }
 }
