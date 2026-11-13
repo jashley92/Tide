@@ -1845,9 +1845,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* A page's Show me around, in its header: a quiet link-styled button that starts the page's guide. */
 .tide-guide-link { padding: 0 var(--tide-space-1); white-space: nowrap; }
 /* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */
-.tide-rehearsal { display: inline-flex; align-items: center; gap: var(--tide-space-1); padding: 0 var(--tide-space-2);
-    border-radius: var(--tide-radius-pill); background: var(--tide-warn-soft); color: var(--tide-text); font-size: var(--tide-text-xs);
-    font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-rehearsal { display: inline-flex; align-items: center; gap: .45em; padding: .2em .75em; border: 1px solid var(--tide-slide-warn);
+    border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .8em;
+    line-height: 1.3; overflow-wrap: anywhere; }
+.tide-rehearsal .bi { color: var(--tide-slide-warn); }
 .tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
 /* A page's tip (OnboardingHost): a small card in the bottom corner, or beside the control it's about when tips.js finds
    room (is-placed, with top and left set); that control is ringed. Not modal: no scrim, nothing under it is inert.

@@ -15,5 +15,17 @@
     /// <summary>Its id, for focus to come back to as the guide ends.</summary>
     public const string Id = "tide-guide-start";
 
-    private Guide? Guide => Guides.ForPage(Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0], CurrentUser.Has);
+    // Worked out once per page (a filter rewriting the query is the same page), not on every render of its header.
+    private string? _page;
+    private Guide? _guide;
+
+    private Guide? Guide
+    {
+        get
+        {
+            var page = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
+            if (page != _page) (_page, _guide) = (page, Guides.ForPage(page, CurrentUser.Has));
+            return _guide;
+        }
+    }
 }

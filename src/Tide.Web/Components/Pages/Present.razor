@@ -1116,7 +1116,7 @@ else
            root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
         @if (Rehearsing && GuideStep is { } guideStep)
         {
-            <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="Learn to present" EndLabel="End guide" ReturnTo="h1"
+            <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName" ReturnTo="h1"
                              OnNext="GuideNext" OnBack="GuideBack" OnEnd="GuideEnd" />
         }
     </div>
@@ -2095,7 +2095,6 @@ else
     private bool TakeVisitorSeat()
     {
         if (_seat is not null) return true;
-        if (RehearsalAsked) return false;   // a rehearsal takes no seat
         if (!_interactive || _disposed || Meetings.Get(_date) is not { } live) return false;
         _seat = Meetings.Join(_date, _me, _meName, canPresent: false, Circuit.CircuitId, Origin.Id, live.Slide);
         _seatTaken = _seat is not null;
@@ -2470,7 +2469,7 @@ else
     [SupplyParameterFromQuery(Name = "rehearse")] public string? Rehearse { get; set; }
 
     /// <summary>Present mode for <paramref name="day"/>'s brief in rehearsal, as Help's Learn to present opens it.</summary>
-    public static string RehearsalHref(DateOnly day) => $"present/{Ui.IsoDay(day)}?rehearse=1";
+    public static string RehearsalHref(DateOnly day) => Ui.PresentUrl(day) + "?rehearse=1";
 
     /// <summary>
     /// Whether the address asks for a rehearsal. Such a page never starts, joins or ends a meeting, joins nobody's
@@ -2484,26 +2483,28 @@ else
     /// <summary>Why a rehearsal asked for isn't run: the person can't present, or the day's meeting is live.</summary>
     private string? RehearsalRefused => !RehearsalAsked ? null
         : !CanRehearse ? "Rehearsal is for whoever presents the brief."
-        : _valid && Meetings.Get(_date) is not null ? "The meeting is live, so it can't be rehearsed now." : null;
+        : _valid && _view is not null ? "The meeting is live, so it can't be rehearsed now." : null;
 
     /// <summary>A rehearsal is running: asked for, by someone who can present, with the day's meeting not live.</summary>
     private bool Rehearsing => RehearsalAsked && RehearsalRefused is null;
 
     private IReadOnlyList<TourStep> _guide = [];
+    private string? _guideName;
     private int _guideAt;
     private bool _guideStarted;
 
     private TourStep? GuideStep => _guideAt < _guide.Count ? _guide[_guideAt] : null;
 
     private string GuideSaid => Rehearsing && GuideStep is { } s
-        ? $"{(_guideAt == 0 ? "Rehearsal: nothing here is shared or saved. " : "")}Step {_guideAt + 1} of {_guide.Count}: {s.Title}. {s.Text}" : "";
+        ? (_guideAt == 0 ? "Rehearsal: nothing here is shared or saved. " : "") + GuideStepDialog.Said(s, _guideAt, _guide.Count) : "";
 
     // Learn to present, once the rehearsal's brief is read: from its first step, on the title slide.
     private void StartGuide()
     {
         if (_guideStarted || !Rehearsing || _brief is null) return;
         _guideStarted = true;
-        _guide = Guides.Find(Guides.Present, CurrentUser.Has)?.Steps ?? [];
+        var learn = Guides.Find(Guides.Present, CurrentUser.Has);
+        (_guide, _guideName) = (learn?.Steps ?? [], learn?.Title);
         GuideTo(0);
     }
 

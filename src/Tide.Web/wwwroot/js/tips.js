@@ -77,8 +77,11 @@ window.tideTips = (function () {
     // The rail opening or closing (theme.js marks it on <html>) moves the card off it.
     var railWatch = new MutationObserver(soon);
 
-    // A step's control not shown yet: the page changing may draw it.
-    var pageWatch = new MutationObserver(function () { if (!shown(target)) soon(); });
+    // A step's control not found yet, or gone: the page changing may draw it. Read without a layout (find, in the next
+    // frame, checks it's shown).
+    var pageWatch = new MutationObserver(function () {
+        if (!target || !target.isConnected || !target.classList.contains('tide-tip-target')) soon();
+    });
 
     function toPage(selector) {
         var to = (selector && document.querySelector(selector)) || document.querySelector('main h1');
@@ -103,13 +106,14 @@ window.tideTips = (function () {
             card = el;
             needsTarget = !!(options && options.needsTarget);
             dialog = !!(options && options.dialog);
-            target = selector ? pick(selector) : null;
-            if (shown(target)) target.classList.add('tide-tip-target');
             if (dialog && selector) {
-                // A step looks for its control again as the page changes; a tip shows beside what's there as it opens.
+                // A step looks for its control (find, from place) now and again as the page changes; a tip shows beside
+                // what's there as it opens.
                 looking = selector;
-                if (shown(target)) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                 pageWatch.observe(document.body, { childList: true, subtree: true });
+            } else {
+                target = selector ? pick(selector) : null;
+                if (shown(target)) target.classList.add('tide-tip-target');
             }
             // The card's size doesn't change while it's up: measured once, where it starts.
             var box = card.getBoundingClientRect();

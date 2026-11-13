@@ -45,8 +45,11 @@
     /// <summary>The guide's name, before its step count; none for the tour.</summary>
     [Parameter] public string? Name { get; set; }
 
-    /// <summary>What ends it: "Skip tour", or "End guide".</summary>
-    [Parameter] public string EndLabel { get; set; } = "Skip tour";
+    // What ends it: Skip tour for the tour, End guide for a guide.
+    private string EndLabel => Name is null ? "Skip tour" : "End guide";
+
+    /// <summary>What a live region says as a step shows: "Step 2 of 5: Title. Text".</summary>
+    public static string Said(TourStep step, int index, int count) => $"Step {index + 1} of {count}: {step.Title}. {step.Text}";
 
     /// <summary>Where focus goes as it ends (a CSS selector), when that's on the page; else the page's heading.</summary>
     [Parameter] public string? ReturnTo { get; set; }

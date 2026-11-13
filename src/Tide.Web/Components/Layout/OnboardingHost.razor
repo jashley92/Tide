@@ -27,7 +27,7 @@
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)
 {
-    <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title" EndLabel="@(_guide is null ? "Skip tour" : "End guide")"
+    <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title"
                      ReturnTo="@ReturnTo" OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
 }
 else if (Tip is { } tip)
@@ -64,7 +64,7 @@ else if (Tip is { } tip)
 
     // What the live region says: the step, or a tip once it's shown (one that needs its control isn't, without it);
     // nothing once it's gone.
-    private string Announce => Step is { } s ? $"Step {_step + 1} of {_tour.Count}: {s.Title}. {s.Text}"
+    private string Announce => Step is { } s ? GuideStepDialog.Said(s, _step, _tour.Count)
         : Tip is { } t && t == _placed && _tipShown ? $"Tip: {t.Title}. {t.Text}" : "";
 
     // The page open, without its query: a filter or a search rewriting the address is the same page.

@@ -54,19 +54,25 @@ public static partial class Guides
 
     /// <summary>The guides for someone who <paramref name="can"/> what they can: those for pages they can use, without any
     /// step whose control they can't, in Help's order.</summary>
-    public static IReadOnlyList<Guide> For(Func<Permission, bool> can) =>
-        All.Where(g => can(g.Needs))
-            .Select(g => g with { Steps = g.Steps.Where(s => can(s.Needs)).ToList() })
-            .Where(g => g.Steps.Count > 0)
-            .ToList();
+    public static IReadOnlyList<Guide> For(Func<Permission, bool> can) => All.Select(g => Theirs(g, can)).OfType<Guide>().ToList();
 
     /// <summary>The guide <paramref name="key"/>, if it's one of theirs.</summary>
-    public static Guide? Find(string key, Func<Permission, bool> can) => For(can).FirstOrDefault(g => g.Key == key);
+    public static Guide? Find(string key, Func<Permission, bool> can) =>
+        All.FirstOrDefault(g => g.Key == key) is { } guide ? Theirs(guide, can) : null;
 
     /// <summary>The guide for the page open at <paramref name="page"/> (as a link from the app's root has it, without its
     /// query), if there's one of theirs. Never Learn to present: that one starts from Help.</summary>
     public static Guide? ForPage(string page, Func<Permission, bool> can) =>
-        For(can).FirstOrDefault(g => !g.Rehearsal && Matches(g.Page, page));
+        All.FirstOrDefault(g => !g.Rehearsal && Matches(g.Page, page)) is { } guide ? Theirs(guide, can) : null;
+
+    // The guide as someone who can what they can sees it: none for a page they can't use, and without any step whose
+    // control they can't; none if that leaves no step.
+    private static Guide? Theirs(Guide guide, Func<Permission, bool> can)
+    {
+        if (!can(guide.Needs)) return null;
+        var steps = guide.Steps.Where(s => can(s.Needs)).ToList();
+        return steps.Count > 0 ? guide with { Steps = steps } : null;
+    }
 
     /// <summary>Whether <paramref name="open"/> is the page <paramref name="page"/> names: the same path, ignoring case,
     /// where "{n}" stands for a number and "{id}" for a GUID.</summary>

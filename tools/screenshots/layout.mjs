@@ -3603,15 +3603,14 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
   visible('.tide-whatsnew-more'), visible('#whatsnew-take-tour'), fits('.tide-whatsnew > .tide-modal-actions'),
   inWindow('.tide-whatsnew .tide-modal-actions .btn'), inWindow('.tide-whatsnew-more')];
 
-/** A step of Learn to present, in rehearsal: the tour's dialog rules, the rehearsal said in the top bar, no Start the
- *  meeting, and the top bar within the window. */
-const rehearsalRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
-  focusOn('.tide-tour .btn-primary'), visible('.tide-tour-scrim'), inClient('.tide-tour'), visible('.tide-rehearsal'), inWindow('.tide-rehearsal'),
-  hidden('.tide-present-tools .btn-primary'), fits('.tide-present-top'), visible('.tide-tip-target')];
-
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
   focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour')];
+
+/** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, no Start the
+ *  meeting, the top bar within the window, and the step's control ringed. */
+const rehearsalRules = [...tourRules, visible('.tide-rehearsal'), inWindow('.tide-rehearsal'), hidden('.tide-present-tools .btn-primary'),
+  fits('.tide-present-top'), visible('.tide-tip-target')];
 
 /** The page is still `path` (from the app's root: "/" for Today). */
 const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseURI).pathname.replace(/\/$/, '') + path === location.pathname
