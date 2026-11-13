@@ -4533,6 +4533,11 @@ const pages = [
   // scrolling between the title and the buttons, focus on Got it, in both themes.
   { name: 'whatsnew', route: '/help', setup: whatsNewAs({ 1920: 'Robin', 1440: 'Sam', 780: 'Jordan&roles=Viewer' }), widths: [1920, 1440, 780],
     rules: whatsNewRules },
+  // An administrator's What's new, the longest (every section), fits without scrolling on a laptop and a desktop screen.
+  { name: 'whatsnew-admin-fits', route: '/help', setup: whatsNewAs({ 1920: 'Ada&roles=Admin', 1440: 'Abe&roles=Admin' }), widths: [[1920, 1080], [1440, 900]],
+    rules: [...whatsNewRules, visible('.tide-whatsnew h3, .tide-whatsnew-body'), holds('fits without scrolling', () =>
+      [...document.querySelectorAll('.tide-whatsnew-body')].filter(b => b.scrollHeight > b.clientHeight + 1)
+        .map(b => `its highlights scroll: ${b.scrollHeight}px in ${b.clientHeight}px`))] },
   { name: 'whatsnew-dark', route: '/help', context: { theme: 'dark' }, setup: whatsNewAs({ 1920: 'Dana', 1440: 'Lee', 780: 'Kim&roles=Viewer' }),
     widths: [1920, 1440, 780], rules: whatsNewRules },
   // Today's tip, once What's new is closed: a card in the window, beside the Context button it rings, with nothing

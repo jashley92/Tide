@@ -163,9 +163,12 @@ public class WhatsNewTests
         v.Notes.Should().Contain("context rail");
         v.Highlights.Should().NotBeNull();
         v.Highlights!.Sections.Keys.Should().BeEquivalentTo(RoleGroups.Headings.Select(h => h.Group));
-        v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("`]`").And.Contain("Pull all").And.Contain("reading pane");
-        v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Organization settings");
-        v.Highlights.Sections[RoleGroup.Presenters].Should().NotContain("Organization settings", "only administrators read about their settings");
+        v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("`]`").And.Contain("Guides").And.Contain("reading pane");
+        // Everyone reads about the context rail and guides: the analysts' section (which analysts and administrators
+        // read) and the viewers' and action owners' both open with them.
+        v.Highlights.Sections[RoleGroup.ViewersAndActionOwners].Should().Contain("context rail").And.Contain("Guides").And.NotContain("Triage");
+        v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Organization");
+        v.Highlights.Sections[RoleGroup.Presenters].Should().NotContain("Organization", "only administrators read about their settings");
         ReleaseNotesCatalog.Embedded.Releases.Should().Contain(r => r.Version == V("1.0.0") && r.Notes != null,
             "the full notes of every release are built in");
     }
