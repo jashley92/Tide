@@ -82,7 +82,7 @@
     <div class="col-md-4">
         <label class="tide-field-label" for="a-assignee">Assignee</label>
         <select id="a-assignee" class="form-select form-select-sm" disabled="@External" aria-describedby="@(External ? "a-assignee-help" : null)"
-                @bind="Form.AssigneeId" @bind:after="AssigneeChanged">
+                @bind="Form.AssigneeId">
             <option value="">@(External ? "None: an external team" : "Unassigned (the team's)")</option>
             @* Whoever holds it now, when they aren't on the team (given it before holders had to be), is still shown, so
                saving without touching this keeps them. Only the team's members are offered (ActionService.HolderAsync). *@
@@ -244,7 +244,4 @@
             Form.AssigneeName = null;
         }
     }
-
-    private void AssigneeChanged() =>
-        Form.AssigneeName = string.IsNullOrEmpty(Form.AssigneeId) ? null : Members.FirstOrDefault(c => c.Id == Form.AssigneeId).Name ?? Form.AssigneeName;
 }

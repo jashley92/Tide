@@ -13,10 +13,12 @@ public enum StepState { Todo, Current, Done, Attention }
 
 /// <summary>One step of the brief: what it is, a few words on where it stands ("2 of 5 need work"), and its state.
 /// Triage also says how many of the feed's new items name a CVE on the known exploited list (<see cref="Kev"/>), which
-/// the strip shows as a flag beside the words.</summary>
+/// the strip shows as a flag beside the words. The Send step says whether one of the two editions has gone and the
+/// other is still to go (<see cref="PartlySent"/>), whatever its words are (a failed send of the other, say).</summary>
 public sealed record BriefStep(BriefStepKind Kind, string Label, string Detail, StepState State)
 {
     public int Kev { get; init; }
+    public bool PartlySent { get; init; }
 }
 
 /// <summary>How far the day's brief has got: the step strip at the top of Today (Triage · Write · Order · Present ·
@@ -90,13 +92,13 @@ public static class BriefSteps
                 ? Finished(brief, done, sharePointRequired)
                 : new(BriefStepKind.Send, "Send", "2 editions", StepState.Todo);
         var real = sends.Where(s => !s.IsTest).ToList();
-        var went = Went(sends).Count;
-        if (went >= 2 || (went == 0 && brief.Status == BriefStatus.Sent))
+        var went = Went(sends);
+        if (went.Count >= 2 || (went.Count == 0 && brief.Status == BriefStatus.Sent))
             return Finished(brief, done, sharePointRequired);
-        var partly = PartlySent(sends, nothingToSend);
-        if (went == 1 && !partly)
+        var partly = OtherToGo(went, nothingToSend) is not null;
+        if (went.Count == 1 && !partly)
             return Finished(brief, "Sent · nothing in the other edition", sharePointRequired);
-        return (real.MaxBy(s => s.SentAtUtc) is { } latest ? Distribution.SendOutcome.Seen(latest.Status, latest.SentAtUtc) : (SendStatus?)null) switch
+        BriefStep step = (real.MaxBy(s => s.SentAtUtc) is { } latest ? Distribution.SendOutcome.Seen(latest.Status, latest.SentAtUtc) : (SendStatus?)null) switch
         {
             SendStatus.Failed => new(BriefStepKind.Send, "Send", "Last send failed", StepState.Attention),
             SendStatus.Unknown => new(BriefStepKind.Send, "Send", "May have gone: check", StepState.Attention),
@@ -105,19 +107,25 @@ public static class BriefSteps
             _ when sends.Any(s => s.IsTest && s.Status == SendStatus.Sent) => new(BriefStepKind.Send, "Send", "Test sent · 2 editions", StepState.Todo),
             _ => new(BriefStepKind.Send, "Send", "2 editions", StepState.Todo),
         };
+        return step with { PartlySent = partly };
     }
 
     /// <summary>What a brief says while one of its two editions has gone and the other is still to go.</summary>
     public const string PartlySentLabel = "1 of 2 sent";
 
     /// <summary>
-    /// Whether one of the day's two editions has really gone (not a test copy) and the other is still to go: it hasn't
-    /// gone, and it has something in it to send (it isn't in <paramref name="nothingToSend"/>). The brief is Sent from
-    /// the first real send, but Today's header, its strip and the top bar's chip say "1 of 2 sent" until the other goes;
-    /// "Sent" only once both have. False while the send log isn't known.
+    /// The edition still to go while the other of the day's two has really gone (not a test copy): it hasn't gone, and it
+    /// has something in it to send (it isn't in <paramref name="nothingToSend"/>). Null otherwise, and while the send log
+    /// isn't known. The brief is Sent from the first real send, but Today's header, its strip and the top bar's chip say
+    /// "1 of 2 sent" until the other goes; "Sent" only once both have.
     /// </summary>
-    public static bool PartlySent(IReadOnlyList<BriefSend>? sends, IReadOnlyCollection<Edition>? nothingToSend = null) =>
-        sends is not null && Went(sends) is [var went] && nothingToSend?.Any(e => e != went) != true;
+    public static Edition? PartlySent(IReadOnlyList<BriefSend>? sends, IReadOnlyCollection<Edition>? nothingToSend = null) =>
+        sends is null ? null : OtherToGo(Went(sends), nothingToSend);
+
+    // The edition still to go when exactly one has gone and the other has something in it.
+    private static Edition? OtherToGo(List<Edition> went, IReadOnlyCollection<Edition>? nothingToSend) =>
+        went is [var one] && (one == Edition.Team ? Edition.Public : Edition.Team) is var other && nothingToSend?.Contains(other) != true
+            ? other : null;
 
     // The editions a real send went out for.
     private static List<Edition> Went(IReadOnlyList<BriefSend> sends) =>

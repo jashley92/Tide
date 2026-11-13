@@ -15,16 +15,15 @@ namespace Tide.Web.Services;
 /// What the top bar's brief chip says: the brief Today shows (<see cref="Day"/>), when it meets, and the step it's on
 /// (<see cref="BriefSteps.On"/> over the same steps as Today's strip). <see cref="Step"/> is null while the brief
 /// hasn't been started. <see cref="Met"/> is the strip's own fact that the meeting is over (its Present step is done):
-/// from then the chip says "presented" where the time was, as Today says when the brief met. <see cref="PartlySent"/>
-/// is one of the two editions gone and the other still to go (<see cref="BriefSteps.PartlySent"/>): the chip says
+/// from then the chip says "presented" where the time was, as Today says when the brief met. With one of the two
+/// editions gone and the other still to go (the Send step's <see cref="BriefStep.PartlySent"/>), the chip says
 /// "1 of 2 sent", as Today's header and strip do.
 /// </summary>
-public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, int Number, int Of, BriefStep? Step, bool Met = false,
-    bool PartlySent = false)
+public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, int Number, int Of, BriefStep? Step, bool Met = false)
 {
     // Send done, or one edition of two gone: the chip says what the strip's last step says ("Sent", "Distributed", "Not
     // sent", "1 of 2 sent").
-    private bool Finished => Step is { State: StepState.Done } || (PartlySent && Step is not null);
+    private bool Finished => Step is { State: StepState.Done } or { PartlySent: true };
 
     /// <summary>What's seen in a wide window: "Brief 10:30 AM · step 3 of 5 · Order", "Brief 10:30 AM · not started",
     /// "Brief presented · step 5 of 5 · Send", "Brief · Sent", "Brief · 1 of 2 sent".</summary>
@@ -54,7 +53,7 @@ public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, in
 
     // What a finished chip says: the strip's last step, or "1 of 2 sent" while the other edition is still to go (even
     // when the strip has a failed send of it to point out).
-    private string Said => PartlySent ? BriefSteps.PartlySentLabel : Step!.Detail;
+    private string Said => Step!.PartlySent ? BriefSteps.PartlySentLabel : Step.Detail;
 
     /// <summary>When the brief meets, as the chip says it: "10:30 AM", with the day in front ("Mon 10:30 AM") when
     /// that isn't today (a weekend or a holiday, when Today shows the next brief).</summary>
@@ -158,12 +157,11 @@ public sealed class BriefChipSource : IDisposable
         if (brief is null) return new BriefChipView(day, null, meets, 0, 0, null);
         var (publicMax, teamMax) = await _ceilings.GetAsync();
         // Today's strip, without the feed's count and the day's numbers: neither moves the current step (BriefSteps.On).
-        var (sends, nothing) = (await _sends.SendsAsync(day), BriefSteps.NothingToSend(brief, teamMax, publicMax));
-        var steps = BriefSteps.For(brief, newInFeed: null, missingNumbers: 0, meets, sends, nothing, _sends.SharePointRequired);
+        var steps = BriefSteps.For(brief, newInFeed: null, missingNumbers: 0, meets, await _sends.SendsAsync(day),
+            BriefSteps.NothingToSend(brief, teamMax, publicMax), _sends.SharePointRequired);
         var (number, step) = BriefSteps.On(steps);
         var met = steps.Any(s => s is { Kind: BriefStepKind.Present, State: StepState.Done });
-        return new BriefChipView(day, brief.Id, meets, number, steps.Count, step, met,
-            brief.Status == BriefStatus.Sent && BriefSteps.PartlySent(sends, nothing));
+        return new BriefChipView(day, brief.Id, meets, number, steps.Count, step, met);
     }
 
     /// <summary>For tests: runs after the brief is read and before what's followed is set, where a colleague's change

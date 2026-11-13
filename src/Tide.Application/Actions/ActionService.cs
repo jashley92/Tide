@@ -1452,10 +1452,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         bool member;
         await using (var db = await dbs.CreateAsync(ct))
         {
-            if (await db.Teams.AsNoTracking().AnyAsync(t => t.Id == teamId && t.IsExternal, ct))
+            var team = await db.Teams.AsNoTracking().Where(t => t.Id == teamId)
+                .Select(t => new { t.IsExternal, Member = t.Members.Any(m => m.UserId == user.UserId) }).FirstOrDefaultAsync(ct);
+            if (team?.IsExternal == true)
                 throw new ArgumentException("An external team's work is split off an action as a part. Raise it for one of your teams, then split it.");
+            member = team?.Member == true;
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
-            member = await db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == user.UserId, ct);
         }
         return await CreateAsync(new ActionForm
         {
@@ -1531,7 +1533,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (form.TeamId != a.TeamId)
         {
             var to = await HandoffService.ReceivingTeamAsync(db, form.TeamId, ct);
-            if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) (form.AssigneeId, form.AssigneeName) = (null, null);
+            if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) form.AssigneeId = null;
             handover = await HandoffService.HandOverAsync(db, user, a, to,
                 string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, form.TurnRemindersOn, ct);
         }
@@ -2526,13 +2528,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var id = string.IsNullOrWhiteSpace(assigneeId) ? null : assigneeId.Trim();
         if (id is null) return (null, null);
         if (id == a.AssigneeId && teamId == a.TeamId) return (id, a.AssigneeName);
-        return (id, await MemberNameAsync(db, teamId, id, ct));
+        return (id, await db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == id).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
+                    ?? throw new ArgumentException("That person isn't on the action's team."));
     }
-
-    // The name a team has for its member, or refused when they aren't one.
-    private static async Task<string> MemberNameAsync(IAppDbContext db, Guid teamId, string userId, CancellationToken ct) =>
-        await db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == userId).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
-        ?? throw new ArgumentException("That person isn't on the action's team.");
 
     /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a
     /// member of the team with WorkActions.</summary>

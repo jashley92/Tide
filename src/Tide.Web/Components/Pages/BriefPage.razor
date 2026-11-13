@@ -74,7 +74,7 @@ else
         @if (_brief is not null)
         {
             @* One primary button, the brief's next step as the strip has it (BriefSteps.Next); the rest are secondary. *@
-            var next = BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), PartlySent);
+            var next = BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null);
             var canPresent = CurrentUser.Has(Permission.PresentBriefs);
             <div class="d-flex gap-2 flex-wrap">
                 @if (_brief.Items.Count > 0)
@@ -160,11 +160,11 @@ else
                     <strong>This brief was distributed without email</strong>
                     <span>(marked by @_brief.DistributedByName, @Ui.When(Clock, distributed)).</span>
                 }
-                else if (PartlySent)
+                else if (EditionToGo is { } toGo)
                 {
                     @* One edition went, the other is still to go: the brief's articles are fixed, but it isn't sent yet. *@
                     <strong>Only the @Tide.Application.Distribution.BriefRenderer.EditionName(_asSent[0].Edition).ToLowerInvariant() has been sent.</strong>
-                    <span>The @Tide.Application.Distribution.BriefRenderer.EditionName(_asSent[0].Edition == Edition.Team ? Edition.Public : Edition.Team).ToLowerInvariant() is still to go.</span>
+                    <span>The @Tide.Application.Distribution.BriefRenderer.EditionName(toGo).ToLowerInvariant() is still to go.</span>
                 }
                 else
                 {
@@ -326,10 +326,10 @@ else
     // The brief's status as the archive and the step strip say it: "Distributed", "Not sent", "SharePoint to post".
     private string StatusLabel => BriefSteps.StatusLabel(_brief!.Status, _brief.DistributedAtUtc is not null && _asSent.Count == 0,
         _brief.SharePointPostedAtUtc is not null, Sends.SharePointRequired && _brief.SharePointRequired, _brief.NotSentAtUtc is not null && _asSent.Count == 0,
-        PartlySent);
+        EditionToGo is not null);
 
-    // One of the day's two editions has gone and the other is still to go: "1 of 2 sent", as the strip and the chip say.
-    private bool PartlySent => _brief?.Status == BriefStatus.Sent && BriefSteps.PartlySent(_sends, _nothingToSend);
+    // The edition still to go while the other has gone: "1 of 2 sent", as the strip and the chip say.
+    private Edition? EditionToGo => BriefSteps.PartlySent(_sends, _nothingToSend);
     private IReadOnlyList<Edition> _nothingToSend = [];   // an edition every article is above the ceiling of can't go
 
     private bool IsToday => _date == Clock.CurrentBriefDate;
