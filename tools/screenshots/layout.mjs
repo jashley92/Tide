@@ -935,8 +935,11 @@ const stepThen = async (page, keys) => {
 };
 
 /** Setup: a guide started from Help's Guides (`key`), which opens its page; then `keys`. */
-const guideFromHelp = (key, ...keys) => async page => {
-  await page.goto(new URL('./help', page.url()).href, { waitUntil: 'load' });
+const guideFromHelp = (key, ...keys) => guideFromHelpAs(null, key, ...keys);
+
+/** Setup: as guideFromHelp, signed in as `who` (a demo name, "&roles=Viewer" for a Viewer) when given. */
+const guideFromHelpAs = (who, key, ...keys) => async page => {
+  await page.goto(new URL(who ? `./help?as=${who}` : './help', page.url()).href, { waitUntil: 'load' });
   await idle(page);
   await page.locator(`#help-guide-${key}`).click();
   await stepThen(page, keys);
@@ -3681,6 +3684,29 @@ const guideRules = [...tourRules, visible('.tide-tip-target')];
 /** As guideRules, on a page with a context rail: the step keeps off the rail where it's docked. */
 const railGuideRules = [...guideRules, [1500, allBesides('.tide-tour', '#tide-rail')]];
 
+/**
+ * The guide walked from the step up to Done: each step holds `stepRules` (a [minWidth, rule] pair from that width up),
+ * so none sits in a corner or points at nothing, whatever the page has to show; then Done ends it. Last in a page's
+ * rules: it moves the guide on.
+ */
+/** The rules that hold at `width`: each rule, and each [minWidth, rule] from its width up. */
+const rulesAt = (rules, width) => rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
+
+const walksGuide = stepRules => ({
+  name: 'each step of the guide, to Done',
+  check: async page => {
+    const out = [], rules = rulesAt(stepRules, page.viewportSize().width);
+    for (let n = 1; n <= 20; n++) {
+      if (!await page.locator('.tide-tour').isVisible()) return out;
+      const title = (await page.locator('#tide-tour-title').textContent()).replace(/\s+/g, ' ').trim();
+      for (const rule of rules) out.push(...(await rule.check(page)).map(f => `${title}: ${f}`));
+      await page.keyboard.press('Enter');
+      await idle(page);
+    }
+    return [...out, 'Done never ended it'];
+  },
+});
+
 /** Show me around in a page's header: shown, within the window, and the header still fits. */
 const guideLinkRules = [noSidewaysScroll, visible('#tide-guide-start'), inWindow('#tide-guide-start'), fits('.tide-page-head')];
 
@@ -4323,12 +4349,11 @@ const pages = [
   { name: 'rehearsal-title', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780],
     rules: [...rehearsalRules, visible('.tide-progress.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
   { name: 'rehearsal-title-dark', route: '/help', context: { theme: 'dark' }, setup: rehearsal(), widths: [1920, 1440, 780], rules: rehearsalRules },
-  { name: 'rehearsal-rail', route: '/help', setup: rehearsal('Enter'), widths: [1920, 1440, 780],
+  { name: 'rehearsal-rail', route: '/help', setup: rehearsal('Enter', 'Enter'), widths: [1920, 1440, 780],
     rules: [...rehearsalRules, visible('#present-rail.tide-tip-target, #present-rail-toggle.tide-tip-target'), [1500, visible('#present-rail.is-docked')]] },
-  { name: 'rehearsal-raise', route: '/help', setup: rehearsal('Enter', 'Enter'), widths: [1920, 1440, 780],
-    rules: [...rehearsalRules, [1500, visible('#present-rail .tide-tip-target:disabled')], [1500, allBesides('.tide-tour', '#present-rail')]] },
-  { name: 'rehearsal-end', route: '/help', setup: rehearsal('Enter', 'Enter', 'Enter', 'Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
-    rules: [...rehearsalRules, visible('.tide-wrap'), [1500, visible('#present-end.tide-tip-target:disabled')]] },
+  // Every step of it, to Done, whatever slides the brief has: a step about one it hasn't is left out.
+  { name: 'rehearsal-walk', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780], rules: [walksGuide(rehearsalRules)] },
+  { name: 'rehearsal-walk-dark', route: '/help', context: { theme: 'dark' }, setup: rehearsal(), widths: [1440, 780], rules: [walksGuide(rehearsalRules)] },
   { name: 'rehearsal-escape', route: '/help', setup: rehearsal('Escape'), widths: [1440],
     rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('h1'), visible('.tide-rehearsal')] },
   // Each page's Show me around, in its header, at three widths.
@@ -4339,11 +4364,6 @@ const pages = [
   // A page's guide, its steps beside what they point at: on the page's own controls; on the context rail docked (1920) or
   // on its Context button where it's shut (1440, 780); and a lookup's export in the rail.
   { name: 'guide-metrics', route: '/metrics', setup: guideOn(), widths: [1920, 1440, 780], rules: [...guideRules, belowTopBar('.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
-  { name: 'guide-triage-decide', route: '/triage', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780], rules: guideRules },
-  { name: 'guide-actions-rail', route: '/actions', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
-    rules: [...railGuideRules, [1500, visible('#tide-rail.tide-tip-target')]] },
-  { name: 'guide-today-rail', route: '/', setup: guideOn('Enter', 'Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
-    rules: [...railGuideRules, visible('#tide-rail.tide-tip-target, #tide-rail-toggle.tide-tip-target')] },
   { name: 'guide-search-export', route: '/search?q=203.0.113.45', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
     rules: [...railGuideRules, [1500, visible('#lookup-export-h.tide-tip-target')]] },
   { name: 'guide-rotation', route: '/rotation', setup: guideOn('Enter'), widths: [1920, 1440, 780], rules: [...guideRules, belowTopBar('.tide-tip-target')] },
@@ -4360,6 +4380,17 @@ const pages = [
   { name: 'guide-from-help-scrolled', route: '/help', setup: guideFromHelp('metrics'), widths: [1920, 1440, 780],
     rules: [...guideRules, stillAt('/metrics'), belowTopBar('.tide-tip-target'), inWindow('.tide-tip-target')] },
   { name: 'guide-from-help-editor', route: '/help', setup: guideFromHelp('article'), widths: [1920], rules: guideRules },
+  // Every guide walked to Done from Help, as an analyst and as a Viewer, on the demo as it is: each step beside its
+  // control, ringed, and none in a corner; a step whose control the page hasn't is left out. The article editor's in
+  // both themes.
+  ...['today', 'triage', 'article', 'actions', 'action', 'metrics', 'trends', 'stories', 'adversaries', 'coverage', 'library',
+    'stack', 'search', 'workload', 'rotation'].flatMap(key => [
+    { name: `guide-walk-${key}`, route: '/help', setup: guideFromHelp(key), widths: [1440, 780], rules: [walksGuide(railGuideRules)] },
+    ...(['triage', 'article', 'coverage'].includes(key) ? [] : [{ name: `guide-walk-${key}-viewer`, route: '/help',
+      setup: guideFromHelpAs(`Walker-${key}&roles=Viewer`, key), widths: [1440, 780], rules: [walksGuide(railGuideRules)] }]),
+  ]),
+  { name: 'guide-walk-article-dark', route: '/help', context: { theme: 'dark' }, setup: guideFromHelp('article'), widths: [1440, 780],
+    rules: [walksGuide(railGuideRules)] },
   // Escape ends it, and focus is back on Show me around.
   { name: 'guide-escape', route: '/library', setup: guideOn('Escape'), widths: [1440],
     rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('#tide-guide-start')] },
@@ -4616,7 +4647,7 @@ async function check(list, demo) {
       }
       for (const size of p.widths) {
         const [width, height] = Array.isArray(size) ? size : [size, 900];
-        const rules = p.rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
+        const rules = rulesAt(p.rules, width);
         let context;
         try {
           let page;

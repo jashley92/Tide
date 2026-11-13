@@ -68,7 +68,7 @@
         _placed = Step;
         try
         {
-            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first });
+            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first, opens = Step.Opens });
             // The dialog takes focus as it opens; each step after puts it on Next.
             if (first) await JS.InvokeVoidAsync("tideDialog.open", _next);
             else await _next.FocusAsync();

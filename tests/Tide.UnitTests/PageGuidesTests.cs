@@ -5,7 +5,8 @@ using Tide.Domain.Enums;
 
 namespace Tide.UnitTests;
 
-/// <summary>Each page's guide: for whoever can use its page, three to five steps, none on a control they can't use.</summary>
+/// <summary>Each page's guide: for whoever can use its page, a full walk through a page work is done on, three to five
+/// steps on the others, none on a control they can't use.</summary>
 public class PageGuidesTests
 {
     private static Func<Permission, bool> Can(params AppRole[] roles) => RoleDefinitions.PermissionsFor(roles).Contains;
@@ -30,12 +31,16 @@ public class PageGuidesTests
         Keys(role).Should().BeEquivalentTo(Everyones, "Triage, the article editor and Coverage need WriteArticles");
     }
 
+    // The pages work is done on get a full walkthrough; the reference pages a short one.
+    private static readonly string[] Walkthroughs = ["today", "triage", "article", "actions", "action"];
+
     [Fact]
-    public void EachGuide_IsThreeToFiveSteps_ForAnAnalyst()
+    public void EachWorkPagesGuide_WalksThePage_AndEachOtherIsThreeToFiveSteps_ForAnAnalyst()
     {
         foreach (var g in Guides.For(Can(AppRole.Analyst)).Where(g => !g.Rehearsal))
         {
-            g.Steps.Count.Should().BeInRange(3, 5, g.Key);
+            if (Walkthroughs.Contains(g.Key)) g.Steps.Count.Should().BeInRange(9, 11, g.Key);
+            else g.Steps.Count.Should().BeInRange(3, 5, g.Key);
             g.Steps.Should().OnlyContain(s => s.Target != null, g.Key);
             g.Steps.Select(s => s.Key).Should().OnlyHaveUniqueItems(g.Key);
         }
@@ -111,4 +116,38 @@ public class PageGuidesTests
     [Fact]
     public void SearchsGuide_ShowsTheExports() =>
         Guides.Find("search", Can(AppRole.Viewer))!.Steps.Should().Contain(s => s.Text.Contains("STIX 2.1", StringComparison.Ordinal));
+
+    [Fact]
+    public void TheEditorsGuide_WalksTheWholeForm_InTheEditorsOrder()
+    {
+        var steps = Guides.Find("article", Can(AppRole.Analyst))!.Steps;
+        steps.Select(s => s.Key).Should().Equal("draft", "bluf", "bullets", "why", "werun", "indicators", "tags", "attack", "adversary", "raise", "save");
+        steps.Single(s => s.Key == "why").Text.Should().Contain("Set to AMBER").And.Contain("Keep it");
+        steps.Single(s => s.Key == "bullets").Text.Should().Contain("grows");
+        steps.Single(s => s.Key == "raise").Opens.Should().Be("#reader-panel-tab-actions", "its control is under the rail's Actions tab");
+    }
+
+    [Theory]
+    [InlineData("today", new[] { "head", "steps", "feeds", "order", "fix", "note", "mine", "recent", "chip", "check", "rail" })]
+    [InlineData("triage", new[] { "tabs", "filter", "groups", "list", "read", "decide", "group", "covered", "cves", "sources" })]
+    [InlineData("actions", new[] { "views", "noowner", "search", "layout", "rows", "lanes", "closed", "rail", "take", "move", "reopen" })]
+    [InlineData("action", new[] { "next", "badges", "do", "more", "checklist", "hunt", "feed", "comment", "facts", "article" })]
+    public void AWorkPagesGuide_WalksItInThePagesOrder(string key, string[] keys) =>
+        Guides.Find(key, Can(AppRole.Admin))!.Steps.Select(s => s.Key).Should().Equal(keys);
+
+    [Fact]
+    public void AViewersWorkPageGuides_HaveOnlyStepsForWhatTheyCanUse()
+    {
+        Guides.Find("today", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().Equal("head", "rail");
+        Guides.Find("actions", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["take", "move", "reopen"]);
+        Guides.Find("action", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["do", "more", "comment"]);
+    }
+
+    [Fact]
+    public void TriagesGuide_SaysNothingIsFetchedOrPulledUnasked()
+    {
+        var steps = Guides.Find("triage", Can(AppRole.Analyst))!.Steps;
+        steps.Single(s => s.Key == "read").Text.Should().Contain("nothing is fetched by itself");
+        steps.Single(s => s.Key == "sources").Text.Should().Contain("nothing is pulled unless you ask");
+    }
 }

@@ -72,7 +72,7 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         var day = await Day(301);
         await using var r = await Rehearse(app, day, Person("Analyst"));
         var html = await r.Html();
-        html.Should().Contain(Rehearsing).And.Contain("tide-tour").And.Contain("Step 1 of 7").And.Contain("Learn to present");
+        html.Should().Contain(Rehearsing).And.Contain("tide-tour").And.Contain("Step 1 of ").And.Contain("Learn to present");
         html.Should().NotContain("Start the meeting").And.NotContain("Copy link").And.NotContain("tide-notes-btn");
         html.Should().Contain("aria-modal=\"true\"").And.Contain("End guide");
     }

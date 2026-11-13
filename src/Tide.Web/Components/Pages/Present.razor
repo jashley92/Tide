@@ -2510,13 +2510,15 @@ else
     private string GuideSaid => Rehearsing && GuideStep is { } s
         ? (_guideAt == 0 ? "Rehearsal: nothing here is shared or saved. " : "") + GuideStepDialog.Said(s, _guideAt, _guide.Count) : "";
 
-    // Learn to present, once the rehearsal's brief is read: from its first step, on the title slide.
+    // Learn to present, once the rehearsal's brief is read: from its first step, on the title slide. A step about a slide
+    // this brief hasn't (no numbers, nothing needing review, no article with indicators) is left out, so the count is of
+    // the steps shown and none points at nothing.
     private void StartGuide()
     {
         if (_guideStarted || !Rehearsing || _brief is null) return;
         _guideStarted = true;
         var learn = Guides.Find(Guides.Present, CurrentUser.Has);
-        (_guide, _guideName) = (learn?.Steps ?? [], learn?.Title);
+        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null).ToList(), learn?.Title);
         GuideTo(0);
     }
 
@@ -2533,20 +2535,38 @@ else
     /// <summary>End guide, Escape or Done: the steps go, and the rehearsal stays to look round.</summary>
     internal void GuideEnd() => (_guide, _guideAt) = ([], 0);
 
-    // The step, on its slide: a slide this brief hasn't (no articles, nothing needing review) leaves the one on screen.
+    // The step, on its slide.
     private void GuideTo(int at)
     {
         _guideAt = at;
-        int? slide = GuideStep?.Route switch
+        if (GuideStep is { } s && GuideSlide(s.Route) is { } n) Go(n);
+    }
+
+    // The slide a Learn to present step is on (its Route): the title, the first numbers slide, the actions that need
+    // review, the first article; for a step about part of an article's slide, the first article with it (indicators, a
+    // line raised as an action, an action to open); the wrap-up. Null when this brief has no such slide.
+    private int? GuideSlide(string route)
+    {
+        if (_brief is not { } b) return null;
+        var articles = Cut(b).Articles;
+        int? First(Func<EditionArticle, bool> has) =>
+            articles.Select((a, i) => (a, i)).Where(x => has(x.a)).Select(x => (int?)(LeadSlides + 1 + x.i)).FirstOrDefault();
+        return route switch
         {
             "title" => 0,
-            "article" when _brief is { } b && Cut(b).Articles.Count > 0 => LeadSlides + 1,
+            "metrics" when MetricsSlides > 0 => 1 + NoteSlides,
             "open" when OpenSlides > 0 => SlideNamed("open"),
+            "article" => First(_ => true),
+            "article:indicators" when TeamEdition => First(a => a.Indicators.Count > 0),
+            "article:raised" when TeamEdition => First(a => Raised(a).Lines.Any(l => l.Action is not null)),
+            "article:card" when TeamEdition => First(a => a.Actions.Count > 0),
             "wrap" => LastSlide,
             _ => null,
         };
-        if (slide is { } n) Go(n);
     }
+
+    private static (IReadOnlyList<(string Line, EditionAction? Action)> Lines, IReadOnlyList<EditionAction> Others) Raised(EditionArticle a) =>
+        RecommendedActions.Match(a.Article.RecommendedActions, a.Actions, r => r.Recommendation);
 
     // Whether the window has room to dock it (1500px and wider, as present.js reports), and whether ] or Rail has turned it
     // from what that room gives (open when docked, shut over the slide).

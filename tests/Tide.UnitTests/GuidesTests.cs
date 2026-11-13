@@ -21,8 +21,9 @@ public class GuidesTests
         var present = For(role).Single(g => g.Key == Guides.Present);
         present.Title.Should().Be("Learn to present");
         present.Rehearsal.Should().BeTrue();
-        present.Steps.Count.Should().Be(7);
-        present.Steps.Select(s => s.Route).Should().Equal("title", "title", "article", "article", "open", "wrap", "wrap");
+        present.Steps.Select(s => s.Key).Should().Equal("title", "people", "rail", "numbers", "open", "article", "indicators", "raised", "raise",
+            "quick", "note", "discussed", "card", "wrap", "attendance", "end");
+        present.Steps.Select(s => s.Route).Distinct().Should().Equal("title", "metrics", "open", "article", "article:indicators", "article:raised", "article:card", "wrap");
     }
 
     [Theory]
@@ -50,7 +51,7 @@ public class GuidesTests
         {
             can(g.Needs).Should().BeTrue(g.Key);
             g.Steps.Should().NotBeEmpty().And.OnlyContain(s => can(s.Needs), g.Key);
-            g.Steps.Count.Should().BeInRange(1, 7, g.Key);
+            g.Steps.Count.Should().BeInRange(1, 16, g.Key);
             g.Steps.Should().OnlyContain(s => s.Title.Length > 0 && s.Text.Length > 0 && s.Text.Length <= 260, g.Key);
         }
     }

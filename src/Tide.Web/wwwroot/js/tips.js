@@ -1,13 +1,15 @@
 // A page's tip, or a step of the tour or a guide (GuideStepDialog): set next to the control it's about, with a small
 // arrow on the side facing it, and the control ringed (a pulsing ring that settles; steady under reduced motion). Below
-// the control, else above it, else beside it; in the bottom corner only when its control isn't on the page. Never over
+// the control, else above it, else beside it; never in a corner: a step whose control isn't on the page is left out of
+// its guide (present), and one shown before its control is drawn waits in the middle, with no arrow. Never over
 // the sticky top bar, nor over the context rail or the presenter's rail, docked or open over the page: it moves left of
 // it, and points at a control in it from there. A tip that needs its control (needsTarget) isn't shown without it. A tip
 // isn't modal: this never takes a key from it, and moves focus only to give it back to the page's heading when Got it
 // took it away. A step is a dialog (options.dialog): focus that lands outside it (a new page focuses its heading as it
 // opens) goes back to its main button. A step's control may be drawn after the step (a page still loading, a guide
 // started from Help): it's looked for again as the page changes, and scrolled into view once found. A selector can name
-// fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail button). CSP-safe (an external file).
+// fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail button). A step whose control is in a
+// shut tab names the tab (opens): it's selected first, which only shows the tab. CSP-safe (an external file).
 window.tideTips = (function () {
     var card = null, ring = null, arrow = null, target = null, looking = null, opener = null, size = null, frame = 0;
     var needsTarget = false, dialog = false, inside = false;
@@ -22,8 +24,8 @@ window.tideTips = (function () {
     // The first of the selector's choices that's shown, else the first that's there at all.
     function pick(selector) {
         var found = null;
-        selector.split('||').some(function (one) {
-            var all = document.querySelectorAll(one.trim());
+        choices(selector).some(function (one) {
+            var all = document.querySelectorAll(one);
             for (var i = 0; i < all.length; i++) if (shown(all[i])) { found = all[i]; return true; }
             if (!found && all.length) found = all[0];
             return false;
@@ -47,6 +49,29 @@ window.tideTips = (function () {
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
+    // The rails (the context rail, present mode's presenter's rail), and their buttons: a step's fallback to these is
+    // still the rail, not its control.
+    var RAIL_PANES = ['#tide-rail', '#present-rail'];
+    var RAILS = RAIL_PANES.concat(['#tide-rail-toggle', '#present-rail-toggle']);
+
+    // A selector's choices, "a || b" (pick, there).
+    function choices(selector) { return selector.split('||').map(function (c) { return c.trim(); }); }
+
+    // Whether a step has its control: one of its choices (other than the rail, for a step about something in it) shown,
+    // or in the shut rail where the step falls back to the rail's button, or in a shut tab it opens. For a step about the
+    // rail itself, the rail or its button.
+    function there(selector, opens) {
+        var own = choices(selector);
+        var mine = own.filter(function (c) { return RAILS.indexOf(c) < 0; });
+        if (!mine.length) return own.some(function (c) { return !!document.querySelector(c); });
+        var railed = mine.length < own.length;
+        return mine.some(function (c) {
+            return Array.prototype.some.call(document.querySelectorAll(c), function (el) {
+                return shown(el) || railed && !!el.closest(RAIL_PANES.join(', '));
+            });
+        }) || !!opens && !!document.querySelector(opens);
+    }
+
     // Where the window is free of the sticky top bar (the app's, or present mode's): a card never goes above it.
     function clear() {
         var bar = document.querySelector('.top-row, .tide-present-top');
@@ -55,7 +80,7 @@ window.tideTips = (function () {
 
     // The rail it keeps off: the context rail, or present mode's presenter's rail.
     function railBox() {
-        var rail = document.getElementById('tide-rail') || document.getElementById('present-rail');
+        var rail = RAIL_PANES.map(function (id) { return document.querySelector(id); }).filter(Boolean)[0];
         return shown(rail) ? rail.getBoundingClientRect() : null;
     }
 
@@ -79,9 +104,10 @@ window.tideTips = (function () {
         return null;
     }
 
-    // The card next to its control, its arrow facing it, and the ring round the control; in the bottom corner, with no
-    // arrow or ring, when its control isn't shown. Then left of the rail if it would be over it: a control in the rail is
-    // pointed at from there. Everything is read before anything is written, so a move costs one layout.
+    // The card next to its control, its arrow facing it, and the ring round the control; in the middle, with no arrow or
+    // ring, while its control isn't shown (or nowhere beside it fits). Then left of the rail if it would be over it: a
+    // control in the rail is pointed at from there. Everything is read before anything is written, so a move costs one
+    // layout.
     function place() {
         frame = 0;
         if (!card) return;
@@ -90,7 +116,7 @@ window.tideTips = (function () {
         if (needsTarget && !hasTarget) { card.hidden = true; ringAt(null); arrowAt(null); return; }
         var r = hasTarget ? target.getBoundingClientRect() : null, w = width(), rail = railBox(), high = clear();
         var at = r && beside(r, w, high)
-            || { side: 'none', top: Math.max(high, innerHeight - size.height - EDGE), left: w - size.width - EDGE };
+            || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
         if (rail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top) {
             at.left = Math.max(EDGE, rail.left - GAP - size.width);
             // A control in the rail: the card is now left of it.
@@ -106,7 +132,7 @@ window.tideTips = (function () {
         card.classList.add('is-placed');
         // Marked again if a redraw took the mark off (a NavLink rewriting its class as the page changes).
         if (r) target.classList.add('tide-tip-target');
-        ringAt(r);
+        ringAt(at.side === 'none' ? null : r);
         arrowAt(r && at, r, high);
     }
 
@@ -208,6 +234,11 @@ window.tideTips = (function () {
             dialog = !!(options && options.dialog);
             // A tour's or guide's first step: what had focus (its Show me around, Help's Start) gets it back at the end.
             if (dialog && options.first) opener = document.activeElement !== document.body ? document.activeElement : null;
+            // A control in a shut tab: the tab is selected first (showing it saves nothing).
+            if (dialog && options.opens && selector && !shown(pick(selector))) {
+                var tab = document.querySelector(options.opens);
+                if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
+            }
             if (dialog && selector) {
                 // A step looks for its control (find, from place) now and again as the page changes; a tip shows beside
                 // what's there as it opens.
@@ -250,6 +281,31 @@ window.tideTips = (function () {
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });
             if (lost) toPage();
+        },
+        // Which of a guide's steps ({ target, opens }) have their control on the page once it has settled: nothing
+        // loading and no change for a moment (four seconds at most). A step without its control is left out, never
+        // shown in a corner.
+        present: function (steps) {
+            return new Promise(function (resolve) {
+                var quiet = 0, most = 0, done = false;
+                // Settled: nothing still loading (LoadingBlock), and no change for a moment.
+                function settled() {
+                    if (document.querySelector('.tide-loading')) { quiet = setTimeout(settled, 300); return; }
+                    answer();
+                }
+                function answer() {
+                    if (done) return;
+                    done = true;
+                    watch.disconnect();
+                    clearTimeout(quiet);
+                    clearTimeout(most);
+                    resolve(steps.map(function (s) { return !s.target || there(s.target, s.opens); }));
+                }
+                var watch = new MutationObserver(function () { clearTimeout(quiet); quiet = setTimeout(settled, 300); });
+                watch.observe(root, { childList: true, subtree: true });
+                quiet = setTimeout(settled, 300);
+                most = setTimeout(answer, 4000);
+            });
         },
         // A tour or guide has ended: focus back on what started it when that's still on the page, else the page's
         // heading. A tip the new page shows stays up.

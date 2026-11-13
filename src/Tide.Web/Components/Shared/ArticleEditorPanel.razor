@@ -416,7 +416,7 @@ else
                 @if (_canWrite)
                 {
                     <div>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
+                        <button type="button" id="f-techniques" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
                             <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
                         </button>
                     </div>

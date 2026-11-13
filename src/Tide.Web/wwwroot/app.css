@@ -1850,9 +1850,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     line-height: 1.3; overflow-wrap: anywhere; }
 .tide-rehearsal .bi { color: var(--tide-slide-warn); }
 .tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
-/* A page's tip (OnboardingHost): a small card in the bottom corner, or beside the control it's about when tips.js finds
-   room (is-placed, with top and left set); that control is ringed. Not modal: no scrim, nothing under it is inert.
-   Under a dialog (3500), over the page and its rail. */
+/* A page's tip (OnboardingHost): a small card beside the control it's about, once tips.js places it (is-placed, with
+   top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
+   it is inert. Under a dialog (3500), over the page and its rail. */
 .tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3000;
     width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
@@ -1886,8 +1886,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
 .tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
-/* A tour step (OnboardingHost): a dialog without a scrim, so the control it's about shows; in the bottom corner, or
-   beside that control when tips.js finds room (is-placed), as a tip is. */
+/* A tour step (OnboardingHost): a dialog over a light scrim, so the control it's about shows; beside that control once
+   tips.js places it (is-placed), as a tip is. */
 .tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;
     width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
 /* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.
