@@ -42,9 +42,14 @@ public class PageGuidePagesTests(TideApp app) : IClassFixture<TideApp>
             var html = await r.Html();
             html.Should().Contain("id=\"help-guide-metrics\"").And.Contain("id=\"help-guide-search\"").And.Contain("id=\"help-guide-actions\"");
             html.Should().NotContain("help-guide-triage").And.NotContain("help-guide-coverage").And.NotContain("help-guide-article");
+            html.Should().NotContain("running order", "a Viewer's Today guide is described by its own two steps");
         }
         await using (var r = await RenderAsync<HelpPage>(app, "/help", @as: Person("Analyst")))
-            (await r.Html()).Should().Contain("id=\"help-guide-triage\"").And.Contain("id=\"help-guide-coverage\"").And.Contain("id=\"help-guide-article\"");
+        {
+            var html = await (r.Html());
+            html.Should().Contain("id=\"help-guide-triage\"").And.Contain("id=\"help-guide-coverage\"").And.Contain("id=\"help-guide-article\"");
+            html.Should().Contain("aria-label=\"Start the guide: The article editor\"").And.NotContain("Start the The").And.NotContain("Start the An");
+        }
     }
 
     [Theory]

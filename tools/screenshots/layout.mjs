@@ -4288,7 +4288,7 @@ const pages = [
     .map(([key, route]) => ({ name: `guide-link-${key}`, route, setup: wideFont, widths: [1920, 1440, 780], rules: guideLinkRules })),
   // A page's guide, its steps beside what they point at: on the page's own controls; on the context rail docked (1920) or
   // on its Context button where it's shut (1440, 780); and a lookup's export in the rail.
-  { name: 'guide-metrics', route: '/metrics', setup: guideOn(), widths: [1920, 1440, 780], rules: [...guideRules, ...tabWraps('.tide-tour', 4)] },
+  { name: 'guide-metrics', route: '/metrics', setup: guideOn(), widths: [1920, 1440, 780], rules: [...guideRules, belowTopBar('.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
   { name: 'guide-triage-decide', route: '/triage', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780], rules: guideRules },
   { name: 'guide-actions-rail', route: '/actions', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
     rules: [...railGuideRules, [1500, visible('#tide-rail.tide-tip-target')]] },
@@ -4296,10 +4296,16 @@ const pages = [
     rules: [...railGuideRules, visible('#tide-rail.tide-tip-target, #tide-rail-toggle.tide-tip-target')] },
   { name: 'guide-search-export', route: '/search?q=203.0.113.45', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
     rules: [...railGuideRules, [1500, visible('#lookup-export-h.tide-tip-target')]] },
-  { name: 'guide-rotation', route: '/rotation', setup: guideOn('Enter'), widths: [1920, 1440, 780], rules: guideRules },
+  { name: 'guide-rotation', route: '/rotation', setup: guideOn('Enter'), widths: [1920, 1440, 780], rules: [...guideRules, belowTopBar('.tide-tip-target')] },
+  // Workload's first step rings its tall grid of teams: from the grid's top, below the top bar, with the step clear of the
+  // bar and the search box in it.
+  { name: 'guide-workload', route: '/workload', setup: guideOn(), widths: [1920, 1440, 780],
+    rules: [...guideRules, belowTopBar('.tide-tip-target'), noOverlap('.tide-tour, .tide-top-find')] },
   { name: 'guide-dark', route: '/stack', context: { theme: 'dark' }, setup: guideOn(), widths: [1440], rules: guideRules },
   // Started from Help's Guides: its page opens, the step on its control; the article editor's on a real article.
   { name: 'guide-from-help', route: '/help', setup: guideFromHelp('trends'), widths: [1440], rules: [...guideRules, stillAt('/trends')] },
+  // Escape from it: Help's Start isn't on this page, so focus is on the page's heading.
+  { name: 'guide-from-help-escape', route: '/help', setup: guideFromHelp('trends', 'Escape'), widths: [1440], rules: [hidden('.tide-tour'), focusOn('main h1')] },
   // Started from low on Help: the new page opens scrolled, and its step's control is brought into view below the top bar.
   { name: 'guide-from-help-scrolled', route: '/help', setup: guideFromHelp('metrics'), widths: [1920, 1440, 780],
     rules: [...guideRules, stillAt('/metrics'), belowTopBar('.tide-tip-target'), inWindow('.tide-tip-target')] },

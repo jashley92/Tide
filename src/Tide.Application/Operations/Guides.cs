@@ -14,6 +14,10 @@ public sealed record Guide(string Key, string Title, string Summary, string Page
 {
     /// <summary>Whether it's "Learn to present", which runs in present mode's rehearsal.</summary>
     public bool Rehearsal => Key == Guides.Present;
+
+    /// <summary>What Help says it shows: Learn to present's summary; a page's guide, the titles of the steps the person
+    /// gets, so it never promises one they don't.</summary>
+    public string Description => Summary.Length > 0 ? Summary : string.Join(" · ", Steps.Select(s => s.Title)) + ".";
 }
 
 /// <summary>Help's guides: one per page, for whoever can use that page, and "Learn to present" for whoever can present.</summary>

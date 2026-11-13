@@ -70,6 +70,45 @@ public class PageGuidesTests
     public void APage_HasItsGuide(string page, string key) => Guides.ForPage(page, Can(AppRole.Analyst))!.Key.Should().Be(key);
 
     [Fact]
+    public void EachStep_RingsItsOwnControl_NeverAnotherStepsByFallingBack()
+    {
+        // A step's fallbacks may be its own control drawn another way, or the context rail (or its button where it's
+        // shut), never what another step is about: that step's text would be ringing the wrong control.
+        string[] rail = ["#tide-rail", "#tide-rail-toggle", "#present-rail", "#present-rail-toggle"];
+        foreach (var g in Guides.For(Can(AppRole.Admin)))
+        {
+            var primaries = g.Steps.Select(s => Choices(s.Target)[0]).ToList();
+            foreach (var s in g.Steps)
+            {
+                var own = Choices(s.Target)[0];
+                Choices(s.Target).Skip(1).Where(c => !rail.Contains(c))
+                    .Should().NotIntersectWith(primaries.Where(p => p != own), $"{g.Key}/{s.Key} falls back to another step's control");
+            }
+        }
+    }
+
+    private static string[] Choices(string? target) =>
+        (target ?? "").Split("||", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    [Fact]
+    public void OurStacksGuide_NamesTriageOnlyToThoseWhoSeeIt()
+    {
+        Guides.Find("stack", Can(AppRole.Viewer))!.Steps.Should().OnlyContain(s => !s.Text.Contains("triage", StringComparison.OrdinalIgnoreCase),
+            "a Viewer's Right now has no triage counts");
+        Guides.Find("stack", Can(AppRole.Analyst))!.Steps.Should().Contain(s => s.Text.Contains("triage", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(AppRole.Viewer)]
+    [InlineData(AppRole.ActionOwner)]
+    public void AGuidesDescription_IsMadeOfTheStepsThePersonGets(AppRole role)
+    {
+        var today = Guides.Find("today", Can(role))!;
+        today.Description.Should().Contain("Beside the brief").And.NotContain("running order").And.NotContain("My actions");
+        Guides.Find("today", Can(AppRole.Analyst))!.Description.Should().Contain("running order");
+    }
+
+    [Fact]
     public void SearchsGuide_ShowsTheExports() =>
         Guides.Find("search", Can(AppRole.Viewer))!.Steps.Should().Contain(s => s.Text.Contains("STIX 2.1", StringComparison.Ordinal));
 }
