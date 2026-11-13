@@ -2673,7 +2673,7 @@ else
         _guideStarted = true;
         var learn = Guides.Find(Guides.Present, CurrentUser.Has);
         (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null).ToList(),
-            ForTheDay ? Guides.Find(Guides.Day, CurrentUser.Has)?.Title : learn?.Title);
+            ForTheDay ? Guides.Find(Guides.Day, CurrentUser.Has)?.Title + " · Presenting" : learn?.Title);
         GuideTo(0);
     }
 

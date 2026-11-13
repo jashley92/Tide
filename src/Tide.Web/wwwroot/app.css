@@ -1862,6 +1862,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-whatsnew > .tide-modal-actions { flex-wrap: wrap; padding: var(--tide-space-3) var(--tide-space-5); border-top: 1px solid var(--tide-border); }
 /* What's new's pointer to the tour and Help's guides: before the buttons, or a line of its own above them when narrow. */
 .tide-whatsnew-more { flex: 1 1 16rem; align-self: center; margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+/* A button that reads as a link inside a sentence (What's new's see the whole day): the text's own size and line. */
+.tide-inline-link { padding: 0; border: 0; font-size: inherit; line-height: inherit; vertical-align: baseline; }
 .tide-whatsnew-intro, .tide-help-intro { color: var(--tide-text-muted); margin: 0 0 var(--tide-space-2); }
 .tide-whatsnew-release { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-4) 0 var(--tide-space-1); }
 .tide-whatsnew-group-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
@@ -1885,6 +1887,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* Its ×, which puts the link away on this page (GuideLink). */
 .tide-guide-link-wrap { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; }
 .tide-guide-link-hide { padding: 0 var(--tide-space-1); color: var(--tide-text-muted); line-height: 1; }
+/* A long guide's parts under its step's title, the one it's in strong, the whole count after them (GuideStepDialog). */
+.tide-tour-parts { margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-2); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-tour-parts strong { color: var(--tide-text); }
 /* The ? overlay's Show me around this page (ShortcutsOverlay). */
 .tide-shortcuts-guide { margin: 0 0 var(--tide-space-3); }
 /* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */

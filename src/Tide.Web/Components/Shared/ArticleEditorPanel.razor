@@ -104,7 +104,7 @@ else
                 <div class="tide-assess-row">
                     <div class="tide-assess-class">
                         <span class="tide-field-label">Classification</span>
-                        <div class="btn-group" role="group" aria-label="Classification">
+                        <div class="btn-group" role="group" aria-label="Classification" data-guide="classification">
                             <input type="radio" class="btn-check" name="cls" id="cls-threat" checked="@(_form.Classification == Classification.Threat)"
                                    disabled="@(!_canWrite)" @onchange="() => SetClass(Classification.Threat)" />
                             <label class="btn btn-outline-secondary btn-sm" for="cls-threat"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Threat</label>

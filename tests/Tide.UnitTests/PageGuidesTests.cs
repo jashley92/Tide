@@ -123,7 +123,7 @@ public class PageGuidesTests
     {
         var steps = Guides.Find("article", Can(AppRole.Analyst))!.Steps;
         steps.Select(s => s.Key).Should().Equal("title", "review", "pills", "class", "prio", "tlp", "source", "addlink", "linkform", "draft",
-            "fetch", "drafting", "bluf", "bullets", "shots", "why", "whycheck", "werun", "rec", "indicators", "find", "tags", "browse", "attack",
+            "fetch", "drafting", "bluf", "bullets", "why", "whycheck", "werun", "rec", "shots", "indicators", "find", "tags", "browse", "attack",
             "atkfilter", "atktactic", "atkcell", "atkapply", "adversary", "preview", "edition", "raise", "details", "saved", "save", "ready", "brief");
         steps.Single(s => s.Key == "tlp").Target.Should().Be("#f-tlp", "the article's TLP, never the priority beside it");
         steps.Single(s => s.Key == "save").Target.Should().Be("[data-guide=\"save\"]");
@@ -147,7 +147,7 @@ public class PageGuidesTests
     [Theory]
     [InlineData("today", new[] { "head", "chip", "next", "steps", "feeds", "order", "fix", "move", "add", "note", "mine", "recent", "numbers",
         "brief", "check", "queue", "reviews", "meeting", "coming" })]
-    [InlineData("triage", new[] { "tabs", "hand", "filter", "pills", "sort", "missed", "groups", "list", "group", "covered", "read", "decide",
+    [InlineData("triage", new[] { "hand", "tabs", "filter", "pills", "sort", "missed", "groups", "list", "group", "covered", "read", "decide",
         "promote", "cves", "railcovered", "same", "named", "sources" })]
     [InlineData("actions", new[] { "new", "views", "saveview", "layout", "search", "pills", "filter", "rows", "lanes", "move", "closed", "rail",
         "take", "moveto", "reopen", "open" })]
@@ -181,6 +181,26 @@ public class PageGuidesTests
             "the editor's, but for saving, review, ready and the brief, which follow it as steps of their own in the order they're done");
         day.Steps.Select(s => s.Key).Should().OnlyHaveUniqueItems();
         Guides.ForPage("", Can(AppRole.Analyst))!.Key.Should().Be("today", "Today's Show me around is Today's own guide");
+    }
+
+    [Fact]
+    public void AnAnalystsDay_CountsByItsParts_InTheOrderTheyreWorked()
+    {
+        var day = Guides.Find(Guides.Day, Can(AppRole.Analyst))!.Steps;
+        day.Should().OnlyContain(s => s.Part != null);
+        var parts = day.Select(s => s.Part!).Where((p, i) => i == 0 || day[i - 1].Part != p).ToList();
+        parts.Should().Equal("Today", "Triage", "Writing", "Today", "Presenting", "Send", "Actions", "Search");
+    }
+
+    [Fact]
+    public void AStepOutOfThePagesOrder_SaysSo()
+    {
+        var today = Guides.Find("today", Can(AppRole.Analyst))!.Steps;
+        today.Single(s => s.Key == "chip").Leaps.Should().BeTrue("the brief chip is in the top bar, before the page");
+        today.Single(s => s.Key == "check").Leaps.Should().BeTrue("in the rail");
+        today.Single(s => s.Key == "order").Leaps.Should().BeFalse();
+        Guides.Find("article", Can(AppRole.Analyst))!.Steps.Single(s => s.Key == "class").Target
+            .Should().Be("[data-guide=\"classification\"]", "the whole Threat/Informational switch, not its first radio");
     }
 
     [Fact]

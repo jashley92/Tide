@@ -8,7 +8,8 @@
 // took it away. A step is a dialog (options.dialog): focus that lands outside it (a new page focuses its heading as it
 // opens) goes back to its main button. A step's control may be drawn after the step (a page still loading, a guide
 // started from Help): it's looked for again as the page changes, and scrolled into view once found. A selector can name
-// fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail button). A step whose control is in a
+// fallbacks, "a || b": the first that's shown; a rail's button there marks a step about what's in that rail, which is
+// opened for it (railFor) rather than its button ringed. A step whose control is in a
 // shut tab, section, menu or picker names what opens it (opens): it's opened first, which only shows it, and one the
 // guide opened is closed again (closes) when a step leaves it or the guide ends. Nothing in it is chosen, so closing
 // leaves the page as it was. CSP-safe (an external file).
@@ -34,7 +35,8 @@ window.tideTips = (function () {
     // The first of the selector's choices that's shown, else the first that's there at all.
     function pick(selector) {
         var found = null;
-        choices(selector).some(function (one) {
+        // A step about something in a rail that's open, or opening for it (railWanted), never rings the rail's button.
+        choices(selector).filter(function (one) { return !(railWanted && RAIL_BUTTONS[one]); }).some(function (one) {
             var all = document.querySelectorAll(one);
             for (var i = 0; i < all.length; i++) if (shown(all[i])) { found = all[i]; return true; }
             if (!found && all.length) found = all[0];
@@ -49,7 +51,7 @@ window.tideTips = (function () {
         var now = pick(looking);
         if (now === target) return;
         if (target) { target.classList.remove('tide-tip-target'); sizeWatch.unobserve(target); }
-        target = now;
+        target = now && grown(now);
         if (!shown(target)) return;
         // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top. (Read
         // before the mark is written, so this costs no extra layout.)
@@ -58,6 +60,18 @@ window.tideTips = (function () {
         target.classList.add('tide-tip-target');
         sizeWatch.observe(target);
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
+    }
+
+    // A control too small to ring well (a radio hidden in a button group, an icon) is ringed by the group or label it's
+    // shown in: the first of those, then its parents, at least MIN square and shown.
+    var MIN = 16;
+    function sized(el) { var r = el.getBoundingClientRect(); return r.width >= MIN && r.height >= MIN; }
+    function grown(el) {
+        if (!shown(el) || sized(el)) return el;
+        var label = el.id ? document.querySelector('label[for="' + el.id + '"]') : null;
+        var around = [label, el.closest('[role="group"], .btn-group, fieldset, label'), el.parentElement, el.parentElement && el.parentElement.parentElement];
+        for (var i = 0; i < around.length; i++) if (around[i] && shown(around[i]) && sized(around[i])) return around[i];
+        return el;
     }
 
     // The rails (the context rail, present mode's presenter's rail), and their buttons: a step's fallback to these is
@@ -83,20 +97,27 @@ window.tideTips = (function () {
         }) || !!opens && !!document.querySelector(opens) && !isOpen(document.querySelector(opens));
     }
 
-    // A step about something in a rail (it falls back to the rail's button) whose control isn't shown: the rail is
-    // shut, so it's opened, over the page or docked as the window has room for, and shut again when a step leaves it or
-    // the guide ends. The context rail opens without being remembered (tideRail.show); the presenter's by its button.
-    var railOpened = null;
+    // A step about something in a rail (its selector names the rail's button): the rail is kept open for it, over the
+    // page or docked as the window has room for (keepRail), and shut again when a step leaves it or the guide ends if
+    // the guide opened it. The context rail opens without being remembered (tideRail.show); the presenter's by its button.
+    var railOpened = null, railWanted = null;
     var RAIL_BUTTONS = { '#tide-rail-toggle': 'context', '#present-rail-toggle': 'present' };
 
     function railFor(selector) {
         var own = selector ? choices(selector) : [];
         var wants = null;
         own.forEach(function (c) { if (RAIL_BUTTONS[c]) wants = RAIL_BUTTONS[c]; });
-        if (wants && shown(document.querySelector(own[0]))) wants = null;
+        railWanted = wants;
         if (railOpened && railOpened !== wants) { shutRail(railOpened); railOpened = null; }
-        if (!wants || railOpened) return;
-        if (wants === 'context') {
+        keepRail();
+    }
+
+    // The rail a step is about, open in the form the window has room for: opened if it's shut as the step starts, and
+    // again if it shuts during it (the window crossing the width where it docks, ] or its Close), so the step always
+    // rings what's in it. One the guide opened is shut as the guide leaves it.
+    function keepRail() {
+        if (!railWanted) return;
+        if (railWanted === 'context') {
             if (!window.tideRail || shown(document.getElementById('tide-rail'))) return;
             window.tideRail.show();
         } else {
@@ -104,7 +125,7 @@ window.tideTips = (function () {
             if (!button || button.getAttribute('aria-expanded') === 'true') return;
             button.click();
         }
-        railOpened = wants;
+        railOpened = railWanted;
     }
 
     function shutRail(which) {
@@ -181,6 +202,7 @@ window.tideTips = (function () {
     function place() {
         frame = 0;
         if (!card) return;
+        if (dialog) keepRail();
         find();
         var hasTarget = shown(target);
         if (needsTarget && !hasTarget) { card.hidden = true; ringAt(null); arrowAt(null); return; }

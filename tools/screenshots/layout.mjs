@@ -3766,12 +3766,25 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 /** Where, in the pages, those that change the demo begin (see shard). */
 const CHANGES_THE_DEMO = Symbol('changes the demo');
 
+/** The footer's buttons, each row of them on one baseline (a link styled as a button sits a few px off otherwise). */
+const footerOnOneLine = selector => holds(`its buttons share a baseline: ${selector}`, selector => {
+  const buttons = [...document.querySelectorAll(selector)].filter(b => b.getClientRects().length);
+  const out = [];
+  for (const b of buttons) for (const c of buttons) {
+    const rb = b.getBoundingClientRect(), rc = c.getBoundingClientRect();
+    if (b !== c && Math.abs(rb.top - rc.top) < rb.height / 2 && Math.abs(rb.bottom - rc.bottom) > 1)
+      out.push(`"${b.textContent.trim()}" and "${c.textContent.trim()}" are ${Math.round(Math.abs(rb.bottom - rc.bottom))}px apart`);
+  }
+  return out.slice(0, 1);
+}, selector);
+
 /** What's new's dialog: shown whole in the window, its parts within it, focus on Got it; its footer line and Take the
  *  tour beside Got it, each whole in the window. */
 const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
   fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary'),
   visible('.tide-whatsnew-more'), visible('#whatsnew-take-tour'), fits('.tide-whatsnew > .tide-modal-actions'),
-  inWindow('.tide-whatsnew .tide-modal-actions .btn'), inWindow('.tide-whatsnew-more')];
+  inWindow('.tide-whatsnew .tide-modal-actions .btn'), inWindow('.tide-whatsnew-more'), visible('#whatsnew-all'),
+  footerOnOneLine('.tide-whatsnew .tide-modal-actions > .btn')];
 
 /**
  * A step rings the control its step names first (data-step-target, "a || b"): when that control is on the page, the
@@ -3784,11 +3797,19 @@ const ringsItsControl = holds('rings the control its step names', () => {
   const first = named.split('||')[0].trim();
   const own = [...document.querySelectorAll(first)].find(e => e.getClientRects().length > 0 && !e.closest('[inert], [hidden]'));
   const ring = document.querySelector('.tide-tip-target');
-  if (!own) return [];
-  if (ring !== own) return [`it rings ${ring ? ring.tagName.toLowerCase() + (ring.id ? '#' + ring.id : '.' + [...ring.classList].join('.')) : 'nothing'}, not ${first}`];
+  const out = [];
+  // Big enough to see, 16px each way at least (a hidden radio or an icon is ringed by its group or label instead).
+  const box = ring?.getBoundingClientRect();
+  if (box && (box.width < 16 || box.height < 16)) out.push(`its ring is on a ${Math.round(box.width)}×${Math.round(box.height)}px target`);
+  // Never the Context or Rail button unless that's what the step names.
+  if (ring?.matches('#tide-rail-toggle, #present-rail-toggle') && !/rail-toggle/.test(first)) out.push('it rings the rail\'s button, not what\'s in the rail');
+  if (!own) return out;
+  // Its control, or the group it's shown in when it's too small to ring.
+  if (ring !== own && !ring?.contains(own) && !(ring?.matches('label') && ring.htmlFor === own.id)) return [...out, `it rings ${ring ? ring.tagName.toLowerCase() + (ring.id ? '#' + ring.id : '.' + [...ring.classList].join('.')) : 'nothing'}, not ${first}`];
   const guide = /data-guide="([^"]+)"/.exec(first)?.[1];
-  return guide && ring.getAttribute('data-guide') !== guide ? [`its control isn't data-guide="${guide}"`] : [];
+  return guide && ring === own && ring.getAttribute('data-guide') !== guide ? [...out, `its control isn't data-guide="${guide}"`] : out;
 });
+
 
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
@@ -3826,6 +3847,7 @@ const walksGuide = stepRules => ({
     const fields = () => page.evaluate(() => [...document.querySelectorAll('#main-content input, #main-content textarea, #main-content select')]
       .map(e => e.type === 'checkbox' || e.type === 'radio' ? String(e.checked) : e.value).join('\u0001'));
     const [startedAt, before] = [page.url(), await fields()];
+    let last = null;
     try {
       for (let n = 1; n <= 150; n++) {
         if (!await page.locator('.tide-tour').isVisible()) {
@@ -3836,6 +3858,21 @@ const walksGuide = stepRules => ({
         }
         const title = (await page.locator('#tide-tour-title').textContent()).replace(/\s+/g, ' ').trim();
         for (const rule of rules) out.push(...(await rule.check(page)).map(f => `${title}: ${f}`));
+        // In the page's order: on the same page, each step's control comes after the last one's in the document, but for
+        // a step marked as leaping (in the top bar, a rail, or what it opens), and the step after it.
+        const here = await page.evaluate(() => {
+          const card = [...document.querySelectorAll('.tide-tour')].find(c => c.getClientRects().length);
+          return { path: location.pathname, first: card?.dataset.stepTarget?.split('||')[0].trim(), leaps: card?.dataset.stepLeaps === 'true' };
+        });
+        if (last && !last.leaps && !here.leaps && last.path === here.path && !here.path.includes('/present/') && last.first && here.first) {
+          const outOfOrder = await page.evaluate(([a, b]) => {
+            const shownOne = sel => [...document.querySelectorAll(sel)].find(e => e.getClientRects().length);
+            const x = shownOne(a), y = shownOne(b);
+            return !!x && !!y && x !== y && !x.contains(y) && !!(y.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING);
+          }, [last.first, here.first]);
+          if (outOfOrder) out.push(`${title}: its control comes before the last step's (${last.first}) in the page`);
+        }
+        last = here;
         await page.keyboard.press('Enter');
         await idle(page);
       }
@@ -4550,6 +4587,14 @@ const pages = [
   { name: 'guide-walk-day', route: '/help', setup: guideFromHelp('day'), widths: [1440, 780], rules: [walksGuide(railGuideRules)] },
   { name: 'guide-walk-following-viewer', route: '/help', setup: guideFromHelpAs('Walker-following&roles=Viewer', 'following'), widths: [1440, 780],
     rules: [walksGuide(railGuideRules)] },
+  // A rail step keeps its rail open, in the form the window has room for, ringing what's in it: the window crossing
+  // 1500 either way, or the person closing the rail, mid-step.
+  ...[['narrows', 1920, async page => { await page.setViewportSize({ width: 1440, height: 900 }); }],
+    ['widens', 1440, async page => { await page.setViewportSize({ width: 1920, height: 900 }); }],
+    ['closed', 1440, async page => { await page.evaluate(() => window.tideRail.toggle()); }]].map(([how, width, act]) => ({
+      name: `guide-rail-${how}`, route: '/help', widths: [width],
+      setup: async page => { await guideToStep('article', 'What readers get')(page); await act(page); await idle(page); },
+      rules: [visible('#tide-rail'), visible('.tide-reader-doc.tide-tip-target'), ringsItsControl, pointsAtTarget('.tide-tour')] })),
   // A step inside what the guide opened: the ATT&CK picker, Triage's promote form, Actions' Filter menu, an action's More.
   { name: 'guide-popout-attack', route: '/help', setup: guideToStep('article', 'Finding a technique'), widths: [1440, 780],
     rules: inPopoutRules('.tide-atkm-panel') },
