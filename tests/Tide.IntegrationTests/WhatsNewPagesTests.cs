@@ -161,4 +161,52 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         page.Should().Contain("For administrators").And.Contain("id=\"v1-0-0\"", "every release's notes are listed for an administrator");
         page.Should().Contain("<details class=\"tide-help-notes\" open").And.Contain("All changes in 1.13.0").And.Contain("Upgrade-Tide.ps1");
     }
+
+    // The host moves to the tour's first page, which a page rendered outside a circuit can't (it throws).
+    private static async Task Do(Rendered<OnboardingHost> r, Func<OnboardingHost, Task> what)
+    {
+        try { await r.Click(what); }
+        catch (Microsoft.AspNetCore.Components.NavigationException) { }
+    }
+
+    [Fact]
+    public async Task WhatsNew_OffersTheTour_BesideGotIt_WhichStaysTheMainButton()
+    {
+        await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person("Viewer"));
+        await r.Click(c => c.CheckAsync());
+        var html = await r.Html();
+        html.Should().Contain("Want a walkthrough? Take the tour, or pick a guide in Help.");
+        html.Should().Contain("id=\"whatsnew-take-tour\"").And.Contain(">Take the tour</button>");
+        html.IndexOf("Take the tour</button>", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf(">Got it</button>", StringComparison.Ordinal),
+            "Got it stays last, the main button");
+        html.Should().Contain("class=\"btn btn-primary btn-sm\"").And.Contain("class=\"btn btn-outline-secondary btn-sm\" id=\"whatsnew-take-tour\"");
+    }
+
+    [Fact]
+    public async Task TakeTheTour_InWhatsNew_ClosesIt_MarksItSeen_AndStartsTheTour()
+    {
+        var who = Person("Viewer");
+        await using var r = await RenderAsync<OnboardingHost>(app, "/actions", @as: who);
+        await Do(r, c => c.CheckAsync());
+        (await r.Html()).Should().Contain("tide-whatsnew").And.NotContain("tide-tour");
+        await Do(r, c => c.WhatsNew!.TakeTourAsync());
+        var html = await r.Html();
+        html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain("Step 1 of");
+        html.Should().NotContain("class=\"tide-tip\"", "a page's tip waits while the tour runs");
+        (await Seen(who)).Should().Be("1.13.0");
+    }
+
+    [Fact]
+    public async Task TakeTheTour_IsNeverOffered_ToAReaderOrAVisitor_OrInPresentMode()
+    {
+        foreach (var role in new[] { "Visitor", "Reader" })
+        {
+            await using var r = await RenderAsync<OnboardingHost>(app, "/published", @as: Person(role));
+            await Do(r, c => c.CheckAsync());
+            (await r.Html()).Should().NotContain("Take the tour", role);
+        }
+        await using var present = await RenderAsync<OnboardingHost>(app, "/present/2026-11-12", @as: Person("Analyst"));
+        await Do(present, c => c.CheckAsync());
+        (await present.Html()).Should().NotContain("Take the tour");
+    }
 }

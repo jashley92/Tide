@@ -906,6 +906,37 @@ const tipGotIt = people => async page => {
   await idle(page);
 };
 
+/** Setup: as whatsNewAs, then What's new's Take the tour. */
+const tourFromWhatsNew = people => async page => {
+  await whatsNewAs(people)(page);
+  await page.locator('#whatsnew-take-tour').click();
+  await page.locator('.tide-tour').waitFor();
+  await idle(page);
+};
+
+/** Setup: Learn to present, started from Help's Guides (present mode in rehearsal, on today's brief), then `keys` (Enter:
+ *  Next); wider letters. */
+const rehearsal = (...keys) => async page => {
+  await page.goto(new URL('./help', page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  await page.locator('#help-guide-present').click();
+  await page.locator('.tide-tour').waitFor();
+  await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
+  await wideFont(page);
+};
+
+/** Setup: today's meeting started (or taken up) in another browser, then this page asks for a rehearsal of it. */
+const rehearsalWhileLive = async (page, demo) => {
+  for (const c of meetingGuests.contexts) await c.close().catch(() => {});
+  meetingGuests = { key: 'rehearsal/live', contexts: [] };
+  const { context, page: presenter } = await openPage(page.context().browser(), { route: '/present/{today}', viewport: page.viewportSize() }, demo);
+  meetingGuests.contexts.push(context);
+  await startOrTakeUp(presenter);
+  await page.goto(new URL(`./present/${demo.Today}?rehearse=1`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+};
+
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
 const longQueueTicket = async page => {
@@ -3565,9 +3596,18 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 /** Where, in the pages, those that change the demo begin (see shard). */
 const CHANGES_THE_DEMO = Symbol('changes the demo');
 
-/** What's new's dialog: shown whole in the window, its parts within it, focus on Got it. */
+/** What's new's dialog: shown whole in the window, its parts within it, focus on Got it; its footer line and Take the
+ *  tour beside Got it, each whole in the window. */
 const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
-  fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary')];
+  fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary'),
+  visible('.tide-whatsnew-more'), visible('#whatsnew-take-tour'), fits('.tide-whatsnew > .tide-modal-actions'),
+  inWindow('.tide-whatsnew .tide-modal-actions .btn'), inWindow('.tide-whatsnew-more')];
+
+/** A step of Learn to present, in rehearsal: the tour's dialog rules, the rehearsal said in the top bar, no Start the
+ *  meeting, and the top bar within the window. */
+const rehearsalRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
+  focusOn('.tide-tour .btn-primary'), visible('.tide-tour-scrim'), inClient('.tide-tour'), visible('.tide-rehearsal'), inWindow('.tide-rehearsal'),
+  hidden('.tide-present-tools .btn-primary'), fits('.tide-present-top'), visible('.tide-tip-target')];
 
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
@@ -4203,6 +4243,23 @@ const pages = [
   // changes" (that release's notes open).
   { name: 'help', route: '/help?release=1.13.0', setup: wideFont, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-help .tide-card'), visible('.tide-help-notes[open] .tide-md')] },
+  // Help's Guides: each guide's name, what it shows and Start, within its row.
+  { name: 'help-guides', route: '/help', setup: wideFont, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('#help-guides'), fits('.tide-help-guides > li'), visible('#help-guide-present'), inWindow('#help-guide-present')] },
+  // Learn to present, in rehearsal (it changes nothing): the title slide's step beside the slides' bar; the rail's step
+  // on the rail docked, or on Rail where it's shut; raising, pointed at on the rail's Raise (disabled) and kept off the
+  // rail; ending, on End the meeting (disabled); Escape ends the guide and focus is on the page's heading.
+  { name: 'rehearsal-title', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780],
+    rules: [...rehearsalRules, visible('.tide-progress.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
+  { name: 'rehearsal-title-dark', route: '/help', context: { theme: 'dark' }, setup: rehearsal(), widths: [1920, 1440, 780], rules: rehearsalRules },
+  { name: 'rehearsal-rail', route: '/help', setup: rehearsal('Enter'), widths: [1920, 1440, 780],
+    rules: [...rehearsalRules, visible('#present-rail.tide-tip-target, #present-rail-toggle.tide-tip-target'), [1500, visible('#present-rail.is-docked')]] },
+  { name: 'rehearsal-raise', route: '/help', setup: rehearsal('Enter', 'Enter'), widths: [1920, 1440, 780],
+    rules: [...rehearsalRules, [1500, visible('#present-rail .tide-tip-target:disabled')], [1500, allBesides('.tide-tour', '#present-rail')]] },
+  { name: 'rehearsal-end', route: '/help', setup: rehearsal('Enter', 'Enter', 'Enter', 'Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
+    rules: [...rehearsalRules, visible('.tide-wrap'), [1500, visible('#present-end.tide-tip-target:disabled')]] },
+  { name: 'rehearsal-escape', route: '/help', setup: rehearsal('Escape'), widths: [1440],
+    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('h1'), visible('.tide-rehearsal')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;
@@ -4228,6 +4285,9 @@ const pages = [
     widths: [1920, 1440, 780], rules: tourRules },
   { name: 'tour-step-two', route: '/help', setup: tourAs({ 1920: 'Yan', 1440: 'Yul', 780: 'Yve&roles=Viewer' }, 'Enter'),
     widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail-toggle.tide-tip-target')] },
+  // What's new's Take the tour: What's new goes, and the tour's first step is up on Today, focus on Next.
+  { name: 'tour-from-whatsnew', route: '/help', setup: tourFromWhatsNew({ 1920: 'Abe', 1440: 'Ada', 780: 'Ari&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: [...tourRules, stillAt('/')] },
   // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
   { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
     rules: [visible('.tide-tour'), stillAt('/'), visible('.tide-tour-count:text("Step 1 of")'), focusOn('.tide-tour .btn-primary')] },
@@ -4366,6 +4426,10 @@ const pages = [
   // Last of all: it leaves the first team at its limit, which would ask on every later page that adds to it.
   { name: 'present-rail-over-limit-cancel', route: '/present/{today}', setup: overLimitCancelled, widths: [1440],
     rules: [hidden('.tide-modal'), focusOn('#present-rail .tide-quick-add .btn-primary')] },
+  // A rehearsal asked for while today's meeting is live: refused, with no slides, rail or guide, and the page not in the
+  // meeting. Last: it leaves the meeting live.
+  { name: 'rehearsal-while-live', route: '/help', setup: rehearsalWhileLive, widths: [1440],
+    rules: [visible('h2:text("The meeting is live")'), hidden('.tide-tour'), hidden('#present-rail'), hidden('.tide-slide-body .tide-agenda'), hidden('.tide-rehearsal')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

@@ -1,0 +1,86 @@
+@* One step of the tour or of a guide: a dialog over a light scrim, so the page under it can't be clicked (a click on the
+   scrim does nothing and leaves focus in the step). tips.js sets it beside the control it points at and rings that
+   control, finding it once it's drawn and scrolling it into view; focus goes to Next as it opens and stays in it
+   (dialog.js, and tips.js when a new page focuses its heading). Escape, the close button or the end button ends it; as
+   it goes, focus goes to ReturnTo when that's there, else the page's heading. OnboardingHost draws it for the tour and
+   a page's guide; present mode draws it only in rehearsal, for Learn to present. *@
+@implements IAsyncDisposable
+@using Tide.Application.Operations
+@inject IJSRuntime JS
+
+<div class="tide-tour-scrim" aria-hidden="true" @onmousedown:preventDefault="true"></div>
+<div class="tide-modal tide-tour" @ref="_card" tabindex="-1" role="dialog" aria-modal="true"
+     aria-labelledby="tide-tour-title" aria-describedby="tide-tour-text" @onkeydown="OnKey">
+    <div class="tide-tour-head">
+        <h2 class="tide-modal-title" id="tide-tour-title">
+            <span class="tide-tour-count">@(Name is null ? "" : Name + " · ")Step @(Index + 1) of @Count</span>
+            <span>@Step.Title</span>
+        </h2>
+        <button type="button" class="btn-close" aria-label="@EndLabel" @onclick="OnEnd"></button>
+    </div>
+    <p class="tide-tour-text" id="tide-tour-text">@Step.Text</p>
+    <div class="tide-modal-actions">
+        <button type="button" class="btn btn-link btn-sm me-auto" @onclick="OnEnd">@EndLabel</button>
+        @if (Index > 0)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OnBack">Back</button>
+        }
+        <button type="button" class="btn btn-primary btn-sm" @ref="_next" @onclick="OnNext">@(Index == Count - 1 ? "Done" : "Next")</button>
+    </div>
+</div>
+
+@code {
+    private ElementReference _card, _next;
+    private TourStep? _placed;
+
+    /// <summary>The step shown.</summary>
+    [Parameter, EditorRequired] public TourStep Step { get; set; } = default!;
+
+    /// <summary>Its place, from 0, among <see cref="Count"/>.</summary>
+    [Parameter] public int Index { get; set; }
+
+    /// <summary>How many steps there are.</summary>
+    [Parameter] public int Count { get; set; }
+
+    /// <summary>The guide's name, before its step count; none for the tour.</summary>
+    [Parameter] public string? Name { get; set; }
+
+    /// <summary>What ends it: "Skip tour", or "End guide".</summary>
+    [Parameter] public string EndLabel { get; set; } = "Skip tour";
+
+    /// <summary>Where focus goes as it ends (a CSS selector), when that's on the page; else the page's heading.</summary>
+    [Parameter] public string? ReturnTo { get; set; }
+
+    /// <summary>Next, or Done on the last step.</summary>
+    [Parameter] public EventCallback OnNext { get; set; }
+
+    /// <summary>Back.</summary>
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    /// <summary>Escape, the close button or the end button.</summary>
+    [Parameter] public EventCallback OnEnd { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ReferenceEquals(Step, _placed)) return;
+        var first = _placed is null;
+        _placed = Step;
+        try
+        {
+            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true });
+            // The dialog takes focus as it opens; each step after puts it on Next.
+            if (first) await JS.InvokeVoidAsync("tideDialog.open", _next);
+            else await _next.FocusAsync();
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? OnEnd.InvokeAsync() : Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_placed is null) return;   // never shown in a browser
+        await JS.StopAsync("tideTips.hide");
+        await JS.StopAsync("tideTips.focusPage", ReturnTo);
+    }
+}

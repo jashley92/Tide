@@ -1,0 +1,19 @@
+@* "Show me around", in a page's header: starts the page's guide (Guides.ForPage), when there's one the person can use.
+   Nothing otherwise, and never in present mode (Learn to present starts from Help). The guide ends with focus back here. *@
+@using Tide.Application.Operations
+@inject NavigationManager Nav
+@inject ICurrentUser CurrentUser
+@inject TourRequests Asked
+
+@if (Guide is { } guide)
+{
+    <button type="button" id="@Id" class="btn btn-link btn-sm tide-guide-link" title="A few steps through this page's controls"
+            @onclick="() => Asked.AskGuide(guide.Key)"><span class="bi bi-signpost-2" aria-hidden="true"></span> Show me around</button>
+}
+
+@code {
+    /// <summary>Its id, for focus to come back to as the guide ends.</summary>
+    public const string Id = "tide-guide-start";
+
+    private Guide? Guide => Guides.ForPage(Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0], CurrentUser.Has);
+}

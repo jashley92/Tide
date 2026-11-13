@@ -272,6 +272,26 @@ uses, before anything else.
   from Help, the first step shows on Help until Next, and ending it there puts focus back on Take the tour.
 - **On the demo.** `?onboarding=on` offers everything, the tour included for a new name; `?onboarding=returning` signs
   in as someone who used TIDE before, so What's new and the tips show rather than the tour.
+- **From What's new.** Its footer says "Want a walkthrough? Take the tour, or pick a guide in Help." and **Take the
+  tour** sits beside **Got it**, which stays the main button and takes focus. Take the tour closes What's new, marks it
+  seen as closing does, and starts the tour; the page's tip, which Got it would bring, waits. Readers and Visitors get
+  neither, and present mode never shows it.
+
+**Guides.** A guide is a few steps through one page's controls, drawn with the tour's step dialog
+(`GuideStepDialog`: the scrim, focus kept in it, Escape ends it, focus back to what started it) and placed by
+`tideTips`. `Guides` (`Tide.Application/Operations/Guides.cs`) lists each guide's page, the permission that page needs,
+and its steps, each with the permission its control needs: a person sees only the guides for pages they can use, and no
+step for a control they can't.
+
+- **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; a
+  page with a guide has **Show me around** in its header (`GuideLink`), which starts it in place and gets focus back as
+  it ends. Both ask `TourRequests.AskGuide`; nothing starts a guide by itself, and a guide stores nothing.
+- **Finding the control.** A step names its control by a CSS selector, with fallbacks (`a || b`: the first shown).
+  `tideTips` looks for it again as the page draws (a guide started from Help opens a page still loading) and scrolls it
+  into view once found; with none shown, the step sits in the bottom corner. It keeps off the context rail, docked or
+  over the page, as a tip does.
+- **Learn to present** is the one guide that isn't a page's. For whoever can present (`PresentBriefs`), Help links to
+  present mode in rehearsal (`/present/{day}?rehearse=1`, today's brief). See [rehearsal](#rehearsal).
 
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
@@ -578,6 +598,29 @@ same way, so the room's screen matches the presenter's.
 - **What it shows** is the same component and the same read as the card over the slide. An action raised from an
   article above the meeting's ceiling is named and nothing more (`ActionService.MeetingViewAsync` returns
   `ActionDetail.Withheld`), beside or over.
+
+### Rehearsal
+
+Present mode can be opened with no meeting by anyone who can present, but that page is the real one: its rail saves
+(Raise, Mark discussed, End the meeting), it joins the brief's presence, and Start the meeting is a click away. Help's
+**Learn to present** opens it in rehearsal instead (`?rehearse=1`), and nothing else links there.
+
+- **Nothing shared or saved.** The top bar says "Rehearsal: nothing here is shared or saved". There's no Start the
+  meeting, End the meeting, Copy link or Notes, no presence, and the tag editor isn't offered. The presenter's rail is
+  drawn, its controls disabled (a `fieldset`), so the guide can point at them. Behind that, `InCharge` is false and
+  `Run` runs nothing in a rehearsal, so every step that saves is a no-op wherever it's sent from; the page never takes a
+  seat, starts, joins or ends a meeting, and publishes no change. Moving between slides and opening a card are this
+  screen's alone, as there's no meeting to show them to.
+- **Never during the meeting.** With the day's meeting live, the page says "The meeting is live, so it can't be
+  rehearsed now." and draws no slides, rail or guide; a meeting that starts meanwhile ends the rehearsal the same way.
+  Help says so too, instead of offering Start.
+- **Never a follower's.** Someone who can't present (a Viewer, an action owner, a Visitor) asking for it is told
+  "Rehearsal is for whoever presents the brief.", and nothing is read or joined. A live page, the presenter's included,
+  never draws the guide, so nothing of it reaches the room's screen.
+- **The guide's steps** are on their slides (`Guide` step routes: `title`, `article`, `open`, `wrap`): the title slide
+  and moving between slides; the presenter's rail and `]`; raising an action from a recommended line (pointed at, not
+  done); an action's card; Actions that need review; the wrap-up's three lists; and ending the meeting. A slide the
+  brief hasn't leaves the one on screen. At a width that shuts the rail, its steps point at **Rail**.
 
 ## Design tokens
 

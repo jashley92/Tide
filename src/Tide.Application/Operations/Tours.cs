@@ -35,7 +35,7 @@ public static class Tours
         new("admin", "admin", Permission.Administer, null, "Administration",
             "Sources, teams, roles and the organization's settings are in Administration."),
         new("help", "", Permission.ReadTeamEdition, ".tide-profile-btn", "Help",
-            "Help and what's new is in the account menu: every release's notes, Show tips again, and this tour, whenever you want it again."),
+            "Help and what's new is in the account menu: every release's notes, Show tips again, and this tour, whenever you want it again. There's a guide for each page in Help."),
     ];
 
     // Which steps each group's tour has; a person with several groups takes each step once, in the order above.

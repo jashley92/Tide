@@ -1822,6 +1822,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-whatsnew-head .tide-modal-title { margin: 0; }
 .tide-whatsnew-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--tide-space-5) var(--tide-space-3); }
 .tide-whatsnew > .tide-modal-actions { flex-wrap: wrap; padding: var(--tide-space-3) var(--tide-space-5); border-top: 1px solid var(--tide-border); }
+/* What's new's pointer to the tour and Help's guides: before the buttons, or a line of its own above them when narrow. */
+.tide-whatsnew-more { flex: 1 1 16rem; align-self: center; margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); overflow-wrap: anywhere; }
 .tide-whatsnew-intro, .tide-help-intro { color: var(--tide-text-muted); margin: 0 0 var(--tide-space-2); }
 .tide-whatsnew-release { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-4) 0 var(--tide-space-1); }
 .tide-whatsnew-group-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
@@ -1834,6 +1836,19 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
 .tide-help-notes > summary { color: var(--tide-accent); cursor: pointer; }
 .tide-help-notes[open] > summary { margin-bottom: var(--tide-space-2); }
+/* Help's guides: each one's name and what it shows, with Start at the end of its row (under it when narrow). */
+.tide-help-guides { list-style: none; margin: 0; padding: 0; }
+.tide-help-guides > li { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-3); flex-wrap: wrap;
+    padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
+.tide-help-guides > li:first-child { border-top: 0; }
+.tide-help-guide-text { display: flex; flex-direction: column; flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
+/* A page's Show me around, in its header: a quiet link-styled button that starts the page's guide. */
+.tide-guide-link { padding: 0 var(--tide-space-1); white-space: nowrap; }
+/* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */
+.tide-rehearsal { display: inline-flex; align-items: center; gap: var(--tide-space-1); padding: 0 var(--tide-space-2);
+    border-radius: var(--tide-radius-pill); background: var(--tide-warn-soft); color: var(--tide-text); font-size: var(--tide-text-xs);
+    font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
 /* A page's tip (OnboardingHost): a small card in the bottom corner, or beside the control it's about when tips.js finds
    room (is-placed, with top and left set); that control is ringed. Not modal: no scrim, nothing under it is inert.
    Under a dialog (3500), over the page and its rail. */

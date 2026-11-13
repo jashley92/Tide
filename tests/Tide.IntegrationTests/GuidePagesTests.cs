@@ -1,0 +1,219 @@
+using AwesomeAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
+using Tide.Application.Operations;
+using Tide.Domain.Enums;
+using Tide.Infrastructure.Persistence;
+using Tide.Web.Components.Layout;
+using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
+using Tide.Web.Services;
+using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
+
+namespace Tide.IntegrationTests;
+
+/// <summary>
+/// Help's guides: listed for the pages a person can use, started only when asked, and "Learn to present", which opens
+/// present mode in rehearsal: no meeting, nobody following, nothing shared or saved, never while the day's meeting is
+/// live, and never for a follower or a Visitor.
+/// </summary>
+public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
+{
+    private static SignIn Person(params string[] roles) => new($"dev:guide-{Guid.NewGuid():N}", "Guide tester", roles);
+
+    private const string Rehearsing = "Rehearsal: nothing here is shared or saved";
+
+    private static Task<Rendered<Present>> Rehearse(TideApp app, DateOnly day, SignIn who) =>
+        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse=1", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
+
+    // A brief whose articles each recommend two lines, so the rail has something to raise.
+    private async Task<DateOnly> Day(int daysBack)
+    {
+        var day = await TwoArticleBrief(app, daysBack, "Guide");
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).SingleAsync(b => b.BriefDate == day);
+        foreach (var item in brief.Items) item.Article!.RecommendedActions = "- Patch the gateways\n- Ask the vendor for the fixed build";
+        await db.SaveChangesAsync();
+        return day;
+    }
+
+    [Fact]
+    public async Task Help_ListsLearnToPresent_ForWhoeverCanPresent_AndNobodyElse()
+    {
+        await using (var r = await RenderAsync<HelpPage>(app, "/help", @as: Person("Analyst")))
+        {
+            var html = await r.Html();
+            html.Should().Contain("id=\"help-guides\"").And.Contain("Learn to present").And.Contain("id=\"help-guide-present\"");
+        }
+        await using (var r = await RenderAsync<HelpPage>(app, "/help", @as: Person("Admin")))
+            (await r.Html()).Should().Contain("Learn to present");
+        foreach (var role in new[] { "Viewer", "ActionOwner" })
+        {
+            await using var r = await RenderAsync<HelpPage>(app, "/help", @as: Person(role));
+            (await r.Html()).Should().NotContain("Learn to present", role).And.NotContain("rehearse", role);
+        }
+    }
+
+    [Fact]
+    public async Task AGuide_NeverStartsByItself_OnlyWhenAsked()
+    {
+        var who = Person("Analyst");
+        await using var r = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        (await r.Html()).Should().NotContain("tide-tour");
+        var asked = r.Scope.ServiceProvider.GetRequiredService<TourRequests>();
+        asked.AskGuide("no-such-guide");
+        (await r.Html()).Should().NotContain("tide-tour", "a guide that isn't theirs, or isn't there, starts nothing");
+    }
+
+    [Fact]
+    public async Task Rehearsal_ShowsTheGuide_AndSaysNothingIsSharedOrSaved()
+    {
+        var day = await Day(301);
+        await using var r = await Rehearse(app, day, Person("Analyst"));
+        var html = await r.Html();
+        html.Should().Contain(Rehearsing).And.Contain("tide-tour").And.Contain("Step 1 of 7").And.Contain("Learn to present");
+        html.Should().NotContain("Start the meeting").And.NotContain("Copy link").And.NotContain("tide-notes-btn");
+        html.Should().Contain("aria-modal=\"true\"").And.Contain("End guide");
+    }
+
+    [Fact]
+    public async Task Rehearsal_WritesNothing_AndBroadcastsNothing()
+    {
+        var day = await Day(302);
+        var feed = app.Services.GetRequiredService<ChangeFeed>();
+        var heard = new List<Change>();
+        void Heard(Change c) { lock (heard) heard.Add(c); }
+        feed.Changed += Heard;
+        try
+        {
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var actionsBefore = await db.Actions.CountAsync();
+
+            await using (var r = await Rehearse(app, day, Person("Analyst")))
+            {
+                await r.Click(p => p.OnRailRoom(true));
+                var brief = await db.Briefs.AsNoTracking().Include(b => b.Items).SingleAsync(b => b.BriefDate == day);
+                var articleId = brief.Items.OrderBy(i => i.SortOrder).First().ArticleId;
+                await Do(r, p => p.StartMeeting());
+                await Do(r, p => p.Raise(articleId, "Patch the gateways"));
+                await Do(r, p => { p.TypeQuickAddTitle(articleId, "Rehearsed action"); return p.QuickAdd(articleId); });
+                await Do(r, p => p.OnPresentKey("next"));
+                await Do(r, p => p.OnPresentKey("discussed"));
+                await Do(r, p => { p.TypeNote("A rehearsed note"); return p.AddNote(); });
+                await Do(r, p => p.OnPresentKey("last"));
+                await Do(r, p => p.EndMeeting());
+                await Do(r, p => p.EndFromTop());
+                (await r.Html()).Should().Contain(Rehearsing, "it's still a rehearsal");
+            }
+
+            app.Services.GetRequiredService<LiveMeetings>().Get(day).Should().BeNull("no meeting was started");
+            app.Services.GetRequiredService<Presence>().Others($"brief:{day:yyyy-MM-dd}", "dev:nobody").Should().BeEmpty("a rehearsal joins no one");
+            db.ChangeTracker.Clear();
+            var after = await db.Briefs.Include(b => b.Items).SingleAsync(b => b.BriefDate == day);
+            after.Status.Should().NotBe(BriefStatus.Presented);
+            after.PresentedAtUtc.Should().BeNull();
+            after.Items.Should().OnlyContain(i => !i.Discussed);
+            (await db.Actions.CountAsync()).Should().Be(actionsBefore, "nothing was raised");
+            (await db.MeetingNotes.CountAsync(n => n.BriefId == after.Id)).Should().Be(0);
+            (await db.MeetingAttendees.CountAsync(a => a.BriefId == after.Id)).Should().Be(0);
+        }
+        finally { feed.Changed -= Heard; }
+        lock (heard) heard.Should().BeEmpty("a rehearsal tells nobody anything");
+    }
+
+    [Fact]
+    public async Task Rehearsal_IsRefused_WhileThatDaysMeetingIsLive()
+    {
+        var day = await Day(303);
+        await using var presenter = await Open(app, day);
+        await Do(presenter, p => p.StartMeeting());
+        try
+        {
+            var people = app.Services.GetRequiredService<LiveMeetings>().Get(day)!.People.Count;
+            await using var r = await Rehearse(app, day, Person("Analyst"));
+            var html = await r.Html();
+            html.Should().Contain("The meeting is live").And.NotContain("tide-tour").And.NotContain("present-rail").And.NotContain(Rehearsing);
+            app.Services.GetRequiredService<LiveMeetings>().Get(day)!.People.Count.Should().Be(people, "the refused page doesn't join the meeting");
+        }
+        finally { EndMeeting(app, day); }
+    }
+
+    [Fact]
+    public async Task Rehearsal_EndsAndIsRefused_WhenTheMeetingStartsMeanwhile()
+    {
+        var day = await Day(304);
+        await using var r = await Rehearse(app, day, Person("Analyst"));
+        (await r.Html()).Should().Contain(Rehearsing);
+        await using var presenter = await Open(app, day);
+        await Do(presenter, p => p.StartMeeting());
+        try
+        {
+            await Do(r, p => p.Follow());
+            var html = await r.Html();
+            html.Should().Contain("The meeting is live").And.NotContain("tide-tour").And.NotContain("present-rail");
+        }
+        finally { EndMeeting(app, day); }
+    }
+
+    [Theory]
+    [InlineData("Viewer")]
+    [InlineData("ActionOwner")]
+    [InlineData("Visitor")]
+    public async Task AFollowerOrAVisitor_NeverGetsTheRehearsalOrItsGuide(string role)
+    {
+        var day = await Day(role.Length + 310);
+        await using (var r = await Rehearse(app, day, Person(role)))
+        {
+            var html = await r.Html();
+            html.Should().NotContain("tide-tour").And.NotContain(Rehearsing).And.NotContain("present-rail");
+        }
+        await using var presenter = await Open(app, day);
+        await Do(presenter, p => p.StartMeeting());
+        try
+        {
+            await using var follower = await Rehearse(app, day, Person(role));
+            await follower.Click(p => p.GoLive());
+            var html = await follower.Html();
+            html.Should().NotContain("tide-tour").And.NotContain(Rehearsing).And.NotContain("present-rail");
+            (await presenter.Html()).Should().NotContain("tide-tour", "the presenter's own page, shared with the room, has no guide");
+        }
+        finally { EndMeeting(app, day); }
+    }
+
+    [Fact]
+    public async Task ThePresentersOwnLivePage_NeverShowsTheGuide()
+    {
+        var day = await Day(320);
+        await using var r = await Open(app, day);
+        (await r.Html()).Should().NotContain("tide-tour").And.NotContain(Rehearsing);
+    }
+
+    [Fact]
+    public async Task ShowMeAround_IsOnlyOnAPageWithAGuideForThePerson()
+    {
+        await using (var r = await RenderAsync<GuideLink>(app, "/help", @as: Person("Analyst")))
+            (await r.Html()).Should().NotContain("Show me around", "Help has no guide of its own");
+        await using (var r = await RenderAsync<GuideLink>(app, "/present/2026-11-12", @as: Person("Analyst")))
+            (await r.Html()).Should().NotContain("Show me around", "nor does present mode");
+    }
+
+    // The host moves to a guide's page, which a page rendered outside a circuit can't (it throws).
+    private static async Task Ask(Rendered<OnboardingHost> r, Action<TourRequests> what)
+    {
+        try { await r.Click(_ => { what(r.Scope.ServiceProvider.GetRequiredService<TourRequests>()); return Task.CompletedTask; }); }
+        catch (NavigationException) { }
+    }
+
+    [Fact]
+    public async Task LearnToPresent_AskedOfTheLayout_GoesToTheRehearsal_NotAStepOverThePage()
+    {
+        await using var r = await RenderAsync<OnboardingHost>(app, "/help", @as: Person("Analyst"));
+        await Ask(r, t => t.AskGuide(Guides.Present, fromHelp: true));
+        (await r.Html()).Should().NotContain("tide-tour", "its steps are present mode's, in rehearsal, never the layout's");
+    }
+}

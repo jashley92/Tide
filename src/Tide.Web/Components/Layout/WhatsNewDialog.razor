@@ -2,10 +2,12 @@
    their role groups (WhatsNewService), with "See all changes" to them in Help. OnboardingHost, in MainLayout, draws
    and asks it, so never in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
    and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it closes, so a reload while it's up shows it
-   again. *@
+   again. Beside Got it, which stays the main button and takes focus, Take the tour closes it and starts the tour for the
+   person's role. *@
 @using Tide.Application.Operations
 @using Tide.Web.Components.Pages
 @inject WhatsNewService WhatsNew
+@inject TourService Tour
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ILogger<WhatsNewDialog> Log
@@ -40,7 +42,15 @@
                 }
             </div>
             <div class="tide-modal-actions">
+                @if (OffersTour)
+                {
+                    <p class="tide-whatsnew-more">Want a walkthrough? Take the tour, or pick a guide in Help.</p>
+                }
                 <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                @if (OffersTour)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="whatsnew-take-tour" @onclick="TakeTourAsync">Take the tour</button>
+                }
                 <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="CloseAsync">Got it</button>
             </div>
         </div>
@@ -83,7 +93,9 @@
 
     /// <summary>Closes it (Got it, Escape, the close button, a click outside, See all changes) and marks what it showed
     /// seen: a reload while it's up shows it again.</summary>
-    public async Task CloseAsync()
+    public Task CloseAsync() => CloseAsync(thenTip: true);
+
+    private async Task CloseAsync(bool thenTip)
     {
         if (!IsOpen) return;
         _due = [];
@@ -93,7 +105,22 @@
         {
             Log.LogWarning(ex, "Couldn't save that the signed-in person saw what's new; it shows again next time.");
         }
-        await Closed.InvokeAsync();
+        if (thenTip) await Closed.InvokeAsync();
+    }
+
+    /// <summary>What's new's Take the tour (OnboardingHost: the tour for the person's role).</summary>
+    [Parameter] public EventCallback TakeTour { get; set; }
+
+    // Offered to whoever has a tour (a Reader or a Visitor gets neither it nor What's new).
+    private bool OffersTour => Tour.Steps.Count > 0;
+
+    /// <summary>Take the tour: What's new closes, marked seen as closing does, and the tour starts. The page's tip, which
+    /// Got it would bring, waits.</summary>
+    public async Task TakeTourAsync()
+    {
+        if (!IsOpen) return;
+        await CloseAsync(thenTip: false);
+        await TakeTour.InvokeAsync();
     }
 
     private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;

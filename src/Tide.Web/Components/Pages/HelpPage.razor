@@ -10,9 +10,11 @@
 @inject IMarkdownService Markdown
 @inject NavigationManager Nav
 @inject ICurrentUser CurrentUser
+@inject LiveMeetings Meetings
+@inject OrgClock Clock
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, Show tips
-   again and Take the tour. An administrator also gets every release's full notes, as its GitHub page has them:
+   again, Take the tour, and the guides (Guides) the person can use. An administrator also gets every release's full notes, as its GitHub page has them:
    they're the operators' (upgrade steps, migrations, settings). ?release=1.13.0 opens that release's full notes
    ("See all changes"). *@
 
@@ -37,6 +39,38 @@
             <h2 id="help-tour">The tour</h2>
             <p>A few steps through the pages and controls you'll use most, as on your first sign-in. Skip it at any step.</p>
             <button type="button" id="help-take-tour" class="btn btn-outline-secondary btn-sm" @onclick="() => TourAsked.Ask(fromHelp: true)">Take the tour</button>
+        </section>
+    }
+    @if (MyGuides.Count > 0)
+    {
+        <section class="tide-card" id="help-guides" aria-labelledby="help-guides-title">
+            <h2 id="help-guides-title">Guides</h2>
+            <p>A few steps through one page's controls, on that page. End one at any step. A page with a guide has <strong>Show me around</strong> in its header too.</p>
+            <ul class="tide-help-guides">
+                @foreach (var guide in MyGuides)
+                {
+                    <li>
+                        <div class="tide-help-guide-text">
+                            <strong>@guide.Title</strong>
+                            <span class="tide-muted">@guide.Summary</span>
+                        </div>
+                        @if (!guide.Rehearsal)
+                        {
+                            <button type="button" id="help-guide-@guide.Key" class="btn btn-outline-secondary btn-sm" aria-label="Start the @guide.Title guide"
+                                    @onclick="() => TourAsked.AskGuide(guide.Key, fromHelp: true)">Start</button>
+                        }
+                        else if (Meetings.Get(Clock.CurrentBriefDate) is not null)
+                        {
+                            <span class="tide-muted small" id="help-guide-present">The meeting is live: rehearse once it's over.</span>
+                        }
+                        else
+                        {
+                            <a id="help-guide-present" class="btn btn-outline-secondary btn-sm" href="@Present.RehearsalHref(Clock.CurrentBriefDate)"
+                               aria-label="Start Learn to present, a rehearsal on today's brief">Start</a>
+                        }
+                    </li>
+                }
+            </ul>
         </section>
     }
     <section class="tide-card" aria-labelledby="help-whatsnew">
@@ -77,6 +111,10 @@
 </div>
 
 @code {
+    // The guides for the pages the person can use, and Learn to present for whoever can present.
+    private IReadOnlyList<Guide> MyGuides => _guides ??= Guides.For(CurrentUser.Has);
+    private IReadOnlyList<Guide>? _guides;
+
     // The full notes, and the releases with nothing for the person's roles, are an administrator's.
     private bool Operator => CurrentUser.Has(Permission.Administer);
 
