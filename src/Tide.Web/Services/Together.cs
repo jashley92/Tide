@@ -147,19 +147,19 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
         Closed(circuit.Id);
         return Task.CompletedTask;
     }
-
-    // A dropped connection (a closed lid, lost Wi-Fi) is away from a live meeting at once; the circuit itself is kept for
+    // A dropped connection (a closed lid, lost Wi-Fi, a closed browser) is away from a live meeting and its places at once;
+    // the circuit itself is kept for minutes in case it comes back, which is when it's back.
     // minutes in case it comes back, which is when it's back in the meeting.
     public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        Down(circuit.Id);
+        Down(circuit?.Id ?? "");
         return Task.CompletedTask;
     }
 
     public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         Connected(TransportHubFilter.Current);
-        Up(circuit.Id);
+        Up(circuit?.Id ?? "");
         return Task.CompletedTask;
     }
 

@@ -258,8 +258,8 @@ const selectedAction = page => page.evaluate(() => {
 });
 
 /**
- * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names its action), K and
- * the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
+ * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names its action),
+ * K and the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
  */
 const actionKeys = {
   name: 'J and K move the selected action; T in a field is typing',

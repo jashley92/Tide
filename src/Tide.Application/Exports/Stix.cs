@@ -15,8 +15,9 @@ namespace Tide.Application.Exports;
 /// (CVEs) and attack patterns (ATT&amp;CK techniques) the reports point at.
 /// <para>
 /// Every object carries the TLP 2.0 marking of the articles it came from (the highest, when an indicator is on several),
-/// by the marking-definition ids the OASIS TLP 2.0 extension publishes, and the bundle carries those definitions. Ids other than a report's are UUIDv5s of what the
-/// object is, so the same indicator, CVE or technique has the same id in every export and a platform merges re-imports.
+/// by the marking-definition ids the OASIS TLP 2.0 extension publishes, and the bundle carries those definitions. Ids
+/// other than a report's are UUIDv5s of what the object is, so the same indicator, CVE or technique has the same id in
+/// every export and a platform merges re-imports.
 /// </para>
 /// </summary>
 public static class Stix
