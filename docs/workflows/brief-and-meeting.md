@@ -366,8 +366,10 @@ What people in the meeting can do:
 
 **Connections.** A circuit whose connection drops is "away": not shown and not presenting, so a presenter's drop starts
 the grace period at once (`SetConnected`). A tab that closes without saying so is cleared with its circuit
-(`RemoveCircuit`). A meeting with nobody in it for 15 minutes is dropped (`LiveMeetings.Abandoned`, swept every 10
-seconds).
+(`RemoveCircuit`). A page open before the meeting started whose browser has gone since (a closed tab, a killed
+browser) keeps its circuit for minutes, but is away too: the start doesn't seat it, record it as attending or show it as
+here. If its connection comes back, it joins then, as anyone does. A meeting with nobody in it for 15 minutes is
+dropped (`LiveMeetings.Abandoned`, swept every 10 seconds).
 
 **Attendance.** `MeetingService.JoinedAsync` records a `MeetingAttendee` the first time someone joins (who and when);
 joining again keeps the first join and clears the leaving time. Someone the presenter added by name before they joined
