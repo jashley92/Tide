@@ -232,7 +232,7 @@ public static partial class Guides
                 opens: ".tide-action-do .tide-menubutton-btn"),
             Step("next", Read, ".tide-next", "Next",
                 "The next thing it needs, in a line, with links to do it."),
-            Step("checklist", Read, "#tool-panel .tide-checklist || #tool-panel .tide-add-section", "Checklist",
+            Step("checklist", Read, "#tool-panel .tide-checklist || #tool-panel .tide-add-section || #tool-panel", "Checklist",
                 "Its checklist. Where you work it, tick items off as they're done, or apply a playbook.", opens: "#tool-panel-tab-checklist"),
             Step("hunt", Read, "#tool-panel .tide-hunt || .tide-hunt-preview", "Hunt queries",
                 "For a sweep or a hunt: the query in each platform's language, XQL, KQL or Falcon, with Copy.", opens: "#tool-panel-tab-hunt"),
