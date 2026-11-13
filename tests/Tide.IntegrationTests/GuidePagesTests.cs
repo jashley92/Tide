@@ -29,10 +29,10 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
     private static Task<Rendered<Present>> Rehearse(TideApp app, DateOnly day, SignIn who) =>
         RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse=1", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
 
-    // A brief whose articles each recommend two lines, so the rail has something to raise.
-    private async Task<DateOnly> Day(int daysBack)
+    // Today's brief (a rehearsal is only ever of today's), with two more articles named for the test (`n`).
+    private async Task<DateOnly> Day(int n)
     {
-        var day = await TwoArticleBrief(app, daysBack, "Guide");
+        var day = await TwoArticleBrief(app, 0, $"Guide {n}");
         await using var scope = SignedIn(app, SignIn.Analyst);
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).SingleAsync(b => b.BriefDate == day);
@@ -93,6 +93,7 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
             await using var scope = SignedIn(app, SignIn.Analyst);
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var actionsBefore = await db.Actions.CountAsync();
+            var (notesBefore, attendeesBefore) = (await db.MeetingNotes.CountAsync(), await db.MeetingAttendees.CountAsync());
 
             await using (var r = await Rehearse(app, day, Person("Analyst")))
             {
@@ -119,11 +120,31 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
             after.PresentedAtUtc.Should().BeNull();
             after.Items.Should().OnlyContain(i => !i.Discussed);
             (await db.Actions.CountAsync()).Should().Be(actionsBefore, "nothing was raised");
-            (await db.MeetingNotes.CountAsync(n => n.BriefId == after.Id)).Should().Be(0);
-            (await db.MeetingAttendees.CountAsync(a => a.BriefId == after.Id)).Should().Be(0);
+            (await db.MeetingNotes.CountAsync()).Should().Be(notesBefore);
+            (await db.MeetingAttendees.CountAsync()).Should().Be(attendeesBefore);
         }
         finally { feed.Changed -= Heard; }
         lock (heard) heard.Should().BeEmpty("a rehearsal tells nobody anything");
+    }
+
+    [Fact]
+    public async Task Rehearsal_IsOnlyOfTodaysBrief_SoAnotherDayIsRefused_WhateverIsLive()
+    {
+        var past = await TwoArticleBrief(app, 3, "Guide past");
+        await using (var r = await Rehearse(app, past, Person("Analyst")))
+        {
+            var html = await r.Html();
+            html.Should().Contain("Only today&#x27;s brief can be rehearsed").And.NotContain("tide-tour").And.NotContain("present-rail").And.NotContain(Rehearsing);
+        }
+        var today = await Day(330);
+        await using var presenter = await Open(app, today);
+        await Do(presenter, p => p.StartMeeting());
+        try
+        {
+            await using var r = await Rehearse(app, past, Person("Analyst"));
+            (await r.Html()).Should().NotContain("tide-tour").And.NotContain(Rehearsing);
+        }
+        finally { EndMeeting(app, today); }
     }
 
     [Fact]

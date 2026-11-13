@@ -93,5 +93,7 @@ public class GuidesTests
     {
         var steps = Tours.For([RoleGroup.Analysts], Can(AppRole.Analyst));
         steps[^1].Text.Should().EndWith("There's a guide for each page in Help.");
+        steps[^1].Route.Should().Be("help", "it ends on Help, where the guides are");
+        steps[^1].Target.Should().StartWith("#help-guides", "it rings Help's Guides, not the avatar alone");
     }
 }

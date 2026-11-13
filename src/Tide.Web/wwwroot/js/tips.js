@@ -35,7 +35,14 @@ window.tideTips = (function () {
         target = now;
         if (!shown(target)) return;
         target.classList.add('tide-tip-target');
-        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top.
+        target.scrollIntoView({ block: target.getBoundingClientRect().height > innerHeight * 0.6 ? 'start' : 'nearest', inline: 'nearest' });
+    }
+
+    // Where the window is free of the sticky top bar (the app's, or present mode's): a card never goes above it.
+    function clear() {
+        var bar = document.querySelector('.top-row, .tide-present-top');
+        return (shown(bar) ? Math.max(0, bar.getBoundingClientRect().bottom) : 0) + EDGE;
     }
 
     // The rail it keeps off: the context rail, or present mode's presenter's rail.
@@ -48,8 +55,8 @@ window.tideTips = (function () {
     // border in view.
     function width() { return Math.min(root.clientWidth, document.body.clientWidth); }
 
-    // Below the control, else above it; across, centred on it but inside the page. In the bottom corner when it has no
-    // control or neither fits. Then left of the rail, if it would be over it. Everything is read before anything is
+    // Below the control, else above it, never over the sticky top bar; across, centred on it but inside the page. In the
+    // bottom corner when it has no control or neither fits. Then left of the rail, if it would be over it. Everything is read before anything is
     // written, so a move costs one layout.
     function place() {
         frame = 0;
@@ -57,12 +64,13 @@ window.tideTips = (function () {
         find();
         var hasTarget = shown(target);
         if (needsTarget && !hasTarget) { card.hidden = true; return; }
-        var r = hasTarget ? target.getBoundingClientRect() : null, w = width(), rail = railBox();
-        var top = !r ? null : r.bottom + GAP + size.height <= innerHeight - EDGE ? r.bottom + GAP
-            : r.top - GAP - size.height >= EDGE ? r.top - GAP - size.height : null;
+        var r = hasTarget ? target.getBoundingClientRect() : null, w = width(), rail = railBox(), high = clear();
+        var below = r ? Math.max(high, r.bottom + GAP) : 0;
+        var top = !r ? null : below + size.height <= innerHeight - EDGE ? below
+            : r.top - GAP - size.height >= high ? r.top - GAP - size.height : null;
         var left = top === null ? w - size.width - EDGE
             : Math.min(Math.max(EDGE, r.left + r.width / 2 - size.width / 2), w - size.width - EDGE);
-        if (top === null) top = innerHeight - size.height - EDGE;
+        if (top === null) top = Math.max(high, innerHeight - size.height - EDGE);
         if (rail && left + size.width > rail.left && left < rail.right && top < rail.bottom && top + size.height > rail.top)
             left = Math.max(EDGE, rail.left - GAP - size.width);
         card.hidden = false;
@@ -94,7 +102,7 @@ window.tideTips = (function () {
     });
 
     function toPage(selector) {
-        var to = (selector && document.querySelector(selector)) || document.querySelector('main h1');
+        var to = (selector && document.querySelector(selector)) || document.querySelector('main h1') || document.querySelector('h1');
         if (!to) return;
         if (to.tagName === 'H1' && !to.hasAttribute('tabindex')) to.setAttribute('tabindex', '-1');
         to.focus();

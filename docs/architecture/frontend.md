@@ -612,9 +612,14 @@ Present mode can be opened with no meeting by anyone who can present, but that p
   `Run` runs nothing in a rehearsal, so every step that saves is a no-op wherever it's sent from; the page never takes a
   seat, starts, joins or ends a meeting, and publishes no change. Moving between slides and opening a card are this
   screen's alone, as there's no meeting to show them to.
-- **Never during the meeting.** With the day's meeting live, the page says "The meeting is live, so it can't be
-  rehearsed now." and draws no slides, rail or guide; a meeting that starts meanwhile ends the rehearsal the same way.
-  Help says so too, instead of offering Start.
+- **Cards read only.** An action opened over or beside a slide (from its number, or Actions that need review) is
+  `PresentAction` with `ReadOnly`: no status control and no checklist to tick, so nothing on it calls a service that
+  saves. Products', indicators' and CVEs' cards save nothing anyway. A test walks every component present mode can
+  draw and fails if one that injects a saving service isn't accounted for.
+- **Only today's brief, never during the meeting.** A rehearsal is only of today's brief: another day's says "Only
+  today's brief can be rehearsed.", so none runs beside some other day's live meeting. With today's meeting live, the
+  page says "The meeting is live, so it can't be rehearsed now." and draws no slides, rail or guide; a meeting that
+  starts meanwhile ends the rehearsal the same way. Help says so too, instead of offering Start.
 - **Never a follower's.** Someone who can't present (a Viewer, an action owner, a Visitor) asking for it is told
   "Rehearsal is for whoever presents the brief.", and nothing is read or joined. A live page, the presenter's included,
   never draws the guide, so nothing of it reaches the room's screen.
