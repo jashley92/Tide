@@ -91,6 +91,51 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     }
 
     [Fact]
+    public async Task Seeds_today_as_the_day_the_Today_page_shows_with_its_brief_not_yet_presented()
+    {
+        var info = Info();
+        var today = app.Services.GetRequiredService<Tide.Application.Org.OrgClock>().CurrentBriefDate;
+        Day(info.Today).Should().Be(today, "Today and /present/{today} show the brief day it names");
+        await using var db = Db();
+        (await db.Briefs.SingleAsync(b => b.BriefDate == today)).Status.Should().NotBe(BriefStatus.Presented).And.NotBe(BriefStatus.Sent);
+    }
+
+    [Fact]
+    public async Task A_database_seeded_for_an_earlier_day_isnt_started_on_as_if_it_were_today()
+    {
+        var info = Info();
+        await using var db = Db();
+        var marker = await db.Settings.SingleAsync(s => s.Key == "Demo:Seeded");
+        marker.Value.Should().Be(info.Today, "the database says which day it was seeded for");
+        var kept = marker.Value;
+        marker.Value = "2020-01-02";
+        await db.SaveChangesAsync();
+        try
+        {
+            var start = () => DemoSeeder.SeedAsync(app.Services, app.Services.GetRequiredService<IConfiguration>(), NullLogger.Instance);
+            (await start.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*2020-01-02*" + info.Today + "*fresh*");
+        }
+        finally
+        {
+            marker.Value = kept;
+            await db.SaveChangesAsync();
+        }
+        FluentActions.Invoking(() => DemoSeeder.NotStale("1", Day(info.Today))).Should().NotThrow("a database seeded before it said its day");
+    }
+
+    [Fact]
+    public async Task Each_seeded_action_was_created_when_its_history_starts()
+    {
+        var info = Info();
+        await using var db = Db();
+        var actions = await db.Actions.AsNoTracking().Include(a => a.Events).Where(a => a.Number > 2).ToListAsync();
+        actions.Should().NotBeEmpty().And.OnlyContain(a => a.Events.All(e => e.AtUtc >= a.CreatedAtUtc), "nothing happened to it before it was made");
+        var detail = actions.Single(a => a.Number == info.DetailAction);
+        detail.CreatedAtUtc.Should().Be(detail.Events.Single(e => e.Text == "Raised from the brief.").AtUtc);
+        app.Services.GetRequiredService<Tide.Application.Org.OrgClock>().DayOf(detail.CreatedAtUtc).Should().Be(Day(info.Sent), "raised at the sent brief's meeting");
+    }
+
+    [Fact]
     public async Task The_latest_briefs_dont_repeat_a_story()
     {
         Info();

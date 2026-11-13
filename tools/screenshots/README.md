@@ -46,7 +46,7 @@ Options, as environment variables:
 | Variable | Effect |
 | --- | --- |
 | `ONLY=name1,name2` | Capture only these shots. |
-| `REUSE=1` | Keep the demo database from the last run. The seed runs once per database. |
+| `REUSE=1` | Keep the demo database from the last run. The seed runs once per database, for the day it ran: TIDE won't start on one seeded for an earlier day, as its "today" has gone. |
 | `PORT=5113` | Use a different port. On Windows, avoid the ranges `netsh interface ipv4 show excludedportrange protocol=tcp` lists. |
 | `BASE_URL=http://localhost:5112` | Use a TIDE that is already running on the demo database. It isn't built or started. |
 | `DEMO_DIR=path` | Keep the demo database, its files and `tide.log` there instead of `.demo`, so runs side by side don't share one. |

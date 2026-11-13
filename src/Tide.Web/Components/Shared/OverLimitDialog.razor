@@ -49,4 +49,7 @@
 
     /// <summary>The dialog's Go ahead (a test presses it once the reason is typed).</summary>
     internal Task Confirm() => _dialog.Confirm();
+
+    /// <summary>The dialog's Cancel (a test presses it).</summary>
+    internal void Cancel() => _dialog.Cancel();
 }

@@ -726,7 +726,7 @@ else
                    role="@(RailDocked ? null : "dialog")" aria-modal="@(RailOver ? "true" : null)" aria-label="Presenter's controls">
                 <div class="tide-present-rail-head">
                     <span>Presenter &middot; @(_slide == 0 ? "before you start" : _slide == last ? "before you end" : "this slide")</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @ref="_railClose" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
                 </div>
                 @if (_slide == 0)
                 {
@@ -859,7 +859,7 @@ else
                                 {
                                     <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
                                 }
-                                <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(ra.Article.Id)))" @onclick="() => QuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(ra.Article.Id)))" @ref="_quickAddButton" @onclick="() => QuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
                             </div>
                         }
                     </section>
@@ -1269,6 +1269,11 @@ else
             // The tag panel closed: focus goes back to the button that opened it.
             _focusEditTags = false;
             await _editTagsButton.TryFocusAsync(orGone: true);
+        }
+        if (_focusQuickAdd && !_busy)
+        {
+            _focusQuickAdd = false;
+            await _quickAddButton.TryFocusAsync(orGone: true);
         }
         if (_focusEnd)
         {
@@ -1711,7 +1716,11 @@ else
         if (!InCharge) return;
         var number = 0;
         if (!await _overLimit.RunAsync(async reason =>
-                number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
+                number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason)))
+        {
+            _focusQuickAdd = true;   // the over-limit question cancelled: back to Add, which was disabled while it asked
+            return;
+        }
         _qaTitles.Remove(articleId);
         _qaDue = null;
         await LoadActions();
@@ -1732,7 +1741,11 @@ else
     private bool _raising;
     private ConfirmDialog _confirm = default!;
     private ElementReference _endHeading;
-    private bool _focusEnd;
+    private bool _focusEnd, _focusQuickAdd;
+
+    /// <summary>For tests: focus goes back to the rail's Add once the page is drawn (the over-limit question cancelled).</summary>
+    internal bool FocusingQuickAdd => _focusQuickAdd;
+    private ElementReference _quickAddButton;
 
     private RaiseDraft LineDraft(Guid articleId, string line)
     {
@@ -2421,7 +2434,7 @@ else
     // Whether the window has room to dock it (1500px and wider, as present.js reports), and whether ] or Rail has turned it
     // from what that room gives (open when docked, shut over the slide).
     private bool _railRoom, _railToggled;
-    private ElementReference _railBox, _railToggle;
+    private ElementReference _railBox, _railToggle, _railClose;
     private bool _moveRailFocus;
 
     // Whether the rail was drawn at the last render, to see it go.
@@ -2555,8 +2568,10 @@ else
         var to = _slideFocus switch
         {
             SlideFocus.NoteBox => _noteBox, SlideFocus.NoteEdit => _noteEditButton,
-            // Over the slide the rail is modal and the slide inert: focus stays in the rail, on the note's Edit or the rail itself.
-            SlideFocus.NoteHeading => RailOver ? _noteEditButton : _noteHeading, SlideFocus.NumbersHeading => RailOver ? _railBox : _numbersHeading,
+            // Over the slide the rail is modal and the slide inert: focus stays in the rail, on the note's Edit, or once no
+            // number is left to enter, on its close button. A number still missing takes it first, wherever the rail is.
+            SlideFocus.NoteHeading => RailOver ? _noteEditButton : _noteHeading,
+            SlideFocus.NumbersHeading => FirstNumberBox() is { Id: not null } next ? next : RailOver ? _railClose : _numbersHeading,
             SlideFocus.NumberBox => FirstNumberBox(), _ => default,
         };
         if (_slideFocus == SlideFocus.None || _busy) return;
