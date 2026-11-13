@@ -563,6 +563,10 @@ erDiagram
         string Holder
         datetimeoffset ExpiresAtUtc
     }
+    JobProcesses {
+        string Holder PK
+        datetimeoffset LastSeenAtUtc
+    }
     JobRuns {
         uuid Id PK
         string Job
@@ -1429,7 +1433,7 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 
 ## Background jobs
 
-The background jobs' own bookkeeping. Neither table is audited, holds anything a person typed, or links to another
+The background jobs' own bookkeeping. None of these tables is audited, holds anything a person typed, or links to another
 table. See [backend.md](backend.md#background-jobs).
 
 ### `JobLeases` (not audited)
@@ -1446,6 +1450,22 @@ by setting its expiry to now.
 | `Holder` | nvarchar(200) | no | The holding process: machine, process id and a value of its own, `WEB01/4312/9f0c…`. |
 | `AcquiredAtUtc` | datetimeoffset | no | When this holder took it; a renewal leaves it. |
 | `ExpiresAtUtc` | datetimeoffset | no | When it lapses unless renewed: 3 minutes after the last renewal. |
+
+A holder whose process is gone from the asking process's own machine (its process id isn't running there) is taken
+over at once, by one `ExecuteUpdateAsync` matched on that exact holder; a running process id is waited out.
+
+### `JobProcesses` (not audited)
+
+One row per TIDE process on the database: its heartbeat, written by `BackgroundJobLease` each time it checks the lease
+(every 30 seconds). A process that sees another's row raises the second-process alarm (TIDE runs as one process: see
+[ADR 0001](../decisions/0001-blazor-server-on-prem.md)). Rows not written for 3 minutes are deleted at the next
+heartbeat, and a process deletes its own when it shuts down cleanly.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Holder` | nvarchar(200) | no | Key. The process, as on the lease: `WEB01/4312/9f0c…`. |
+| `StartedAtUtc` | datetimeoffset | no | Its first heartbeat. |
+| `LastSeenAtUtc` | datetimeoffset | no | Its latest heartbeat. Indexed: the lapsed ones are deleted by it. |
 
 ### `JobRuns` (not audited)
 

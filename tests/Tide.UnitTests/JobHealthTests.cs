@@ -126,6 +126,25 @@ public class JobHealthTests
     }
 
     [Fact]
+    public void ASecondProcess_IsDegraded_WhetherThisOneHoldsTheLeaseOrStandsBy()
+    {
+        var (jobs, clock) = Monitor();
+        var held = Held with { Self = "WEB01/42/abc", Others = ["WEB02/7/def"] };
+        var report = Evaluate(jobs, clock, held);
+        report.Level.Should().Be(JobHealthLevel.Degraded);
+        report.Alarm.Should().Contain("WEB01, process 42").And.Contain("WEB02, process 7");
+
+        var standby = new LeaseStatus(LeaseState.StandingBy, "WEB02/7/def", clock.Now.AddMinutes(2), null, clock.Now, null) { Self = "WEB01/42/abc", Others = ["WEB02/7/def"] };
+        Evaluate(jobs, clock, standby).Should().Match<JobHealthReport>(r => r.Level == JobHealthLevel.Degraded && r.StandingBy && r.Alarm != null);
+
+        // An Unhealthy job stays Unhealthy.
+        jobs.Scheduled(JobMonitor.Reminders, true);
+        clock.Now = clock.Now.AddDays(1);
+        Evaluate(jobs, clock, held).Level.Should().Be(JobHealthLevel.Unhealthy);
+        Evaluate(jobs, clock).Alarm.Should().BeNull();
+    }
+
+    [Fact]
     public void AHolderIsNamedForAPerson()
     {
         BackgroundJobLease.Describe("WEB01/4312/9f0c").Should().Be("WEB01, process 4312");

@@ -1967,6 +1967,25 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("JobLeases");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.JobProcess", b =>
+                {
+                    b.Property<string>("Holder")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastSeenAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("StartedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Holder");
+
+                    b.HasIndex("LastSeenAtUtc");
+
+                    b.ToTable("JobProcesses");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.JobRun", b =>
                 {
                     b.Property<Guid>("Id")

@@ -173,6 +173,7 @@ public sealed class JobsHealthCheck(JobMonitor jobs, IJobLease lease, TimeProvid
     {
         var report = JobHealth.Evaluate(jobs.States, lease.Status, time.GetUtcNow());
         var why = report.StandingBy ? "Standing by: another process runs the background jobs." : string.Join(" ", report.Findings.Select(f => f.Text));
+        if (report.Alarm is { } alarm) why = (alarm + " " + why).TrimEnd();
         return Task.FromResult(report.Level switch
         {
             JobHealthLevel.Healthy => HealthCheckResult.Healthy(why),
