@@ -1972,6 +1972,25 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("JobLeases");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.JobProcess", b =>
+                {
+                    b.Property<string>("Holder")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("LastSeenAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Holder");
+
+                    b.HasIndex("LastSeenAtUtc");
+
+                    b.ToTable("JobProcesses");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.JobRun", b =>
                 {
                     b.Property<Guid>("Id")

@@ -25,6 +25,9 @@ public sealed record JobFinding(JobState State, JobProblem Problem, JobHealthLev
 public sealed record JobHealthReport(JobHealthLevel Level, IReadOnlyList<JobFinding> Findings, bool StandingBy)
 {
     public JobFinding? For(JobDefinition job) => Findings.FirstOrDefault(f => f.State.Job == job);
+
+    /// <summary>Another TIDE process is running on the database (<see cref="LeaseStatus.Alarm"/>): at least Degraded.</summary>
+    public string? Alarm { get; init; }
 }
 
 /// <summary>
@@ -49,14 +52,17 @@ public static class JobHealth
 
     public static JobHealthReport Evaluate(IReadOnlyList<JobState> states, LeaseStatus lease, DateTimeOffset now)
     {
-        if (lease.State == LeaseState.StandingBy) return new JobHealthReport(JobHealthLevel.Healthy, [], StandingBy: true);
+        // A second process is Degraded at least, on the holder and the standby alike.
+        var alarm = lease.Alarm;
+        var floor = alarm is null ? JobHealthLevel.Healthy : JobHealthLevel.Degraded;
+        if (lease.State == LeaseState.StandingBy) return new JobHealthReport(floor, [], StandingBy: true) { Alarm = alarm };
         var findings = new List<JobFinding>();
         foreach (var s in states.Where(s => s.Enabled))
         {
             if (Check(s, lease, now) is { } finding) findings.Add(finding);
         }
-        var level = findings.Count == 0 ? JobHealthLevel.Healthy : findings.Max(f => f.Level);
-        return new JobHealthReport(level, findings, StandingBy: false);
+        var level = findings.Select(f => f.Level).Append(floor).Max();
+        return new JobHealthReport(level, findings, StandingBy: false) { Alarm = alarm };
     }
 
     /// <summary>How long after its last good run (or its start) the job is overdue.</summary>

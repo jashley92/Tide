@@ -27,6 +27,24 @@ public class JobLease
 }
 
 /// <summary>
+/// One TIDE process on the database, as its last heartbeat said: each process writes its own row each time it checks the
+/// job lease (every 30 seconds), so every process, the lease's holder included, sees whether another is running. TIDE is
+/// one process (ADR 0001) and some of its locks are the process's own, so a second one is an alarm. A row not renewed
+/// within <c>BackgroundJobLease.Expiry</c> has lapsed (its process stopped) and is deleted.
+/// </summary>
+public class JobProcess
+{
+    /// <summary>The process's id on the lease ("WEB01/4312/9f0c…").</summary>
+    public string Holder { get; set; } = string.Empty;
+
+    /// <summary>Its first heartbeat.</summary>
+    public DateTimeOffset StartedAtUtc { get; set; }
+
+    /// <summary>Its latest heartbeat.</summary>
+    public DateTimeOffset LastSeenAtUtc { get; set; }
+}
+
+/// <summary>
 /// One run of a background job, kept for Diagnostics across restarts (pruned after 30 days). Its text is the job's own
 /// summary ("3 new items") or its error, scrubbed of credentials and cut short: nothing a person typed.
 /// </summary>
