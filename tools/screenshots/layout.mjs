@@ -1221,12 +1221,16 @@ const presenterRail = (open = false) => async page => {
   await idle(page);
 };
 
-/** Setup: wider letters; this page starts today's meeting (or takes it up again), on the first article's slide, with the
- *  rail open (by its key where it isn't docked). With `full`, the article shown has two actions and two lines still to
- *  raise, its quick add and a line's chip opened: the rail as full as an article's gets. */
-const railInMeeting = (full = false) => async (page, demo) => {
+/** Setup: wider letters; with `live`, this page starts today's meeting (or takes it up again); on the first article's
+ *  slide, with the rail open (by its key where it isn't docked). With `full`, the article shown has two actions and two
+ *  lines still to raise, its quick add and a line's chip opened (nothing saved): the rail as full as an article's gets. */
+const railInMeeting = (full = false, live = true) => async (page, demo) => {
   await wideFont(page);
-  await startOrTakeUp(page);
+  if (live) {
+    await startOrTakeUp(page);
+    await page.keyboard.press('Escape');   // an action a page before left open for the room
+    await idle(page);
+  }
   await page.keyboard.press('Home');   // the meeting may be on a later slide: from the title
   await idle(page);
   await toArticleSlide(page);
@@ -1248,7 +1252,14 @@ const railInMeeting = (full = false) => async (page, demo) => {
     await page.locator('#present-rail').waitFor();
   }
   if (full) {
-    await page.locator('#present-rail').getByRole('button', { name: 'Another action' }).click();
+    const key = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    const another = page.locator('#present-rail').getByRole('button', { name: 'Another action' });
+    if (!(await another.count())) {
+      const lines = await page.locator('#present-rail .tide-present-rail-raise').count();
+      const actions = await page.locator('#present-rail .tide-present-rail-action').count();
+      throw new Error(`no article's rail with two actions and two lines to raise: on ${key}, ${actions} actions, ${lines} lines, no Another action`);
+    }
+    await another.click();
     await page.locator('#present-rail .tide-present-rail-raise .tide-present-rail-chip').first().click();
   }
   await idle(page);
@@ -4609,6 +4620,13 @@ const pages = [
   // Escape ends it, and focus is back on Show me around.
   { name: 'guide-escape', route: '/library', setup: guideOn('Escape'), widths: [1440],
     rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('.tide-shortcuts-btn')] },
+  // An article's rail as full as it gets (two actions, two lines to raise, a chip and the quick add open, the note):
+  // compact enough that every control fits without scrolling at 1920×1080, each row whole. No meeting, and nothing
+  // saved: before the pages that change the demo, whose raises leave no article this full.
+  { name: 'present-rail-compact', route: '/present/{today}', setup: railInMeeting(true, false), widths: [[1920, 1080]],
+    rules: [noSidewaysScroll, railControlsUnscrolled, fits('#present-rail'), fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
+      oneRow('#present-rail .tide-quick-add-row'), oneRow('#present-rail .tide-present-rail-bar'), oneRow('#present-rail .tide-present-rail-note'),
+      railSelectsWhole, railPlaceholdersReadable, visible('#present-rail .tide-present-rail-chip-edit select')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;
@@ -4797,12 +4815,6 @@ const pages = [
   // today's meeting.
   { name: 'present-rail-bar', route: '/present/{today}', setup: railInMeeting(), widths: [[1920, 1080], [1600, 900], [1440, 900], [1100, 900]],
     rules: [noSidewaysScroll, fits('#present-rail .tide-present-rail-bar'), inWindow('#present-rail .tide-present-rail-bar .btn'), barPinnedOnEverySlide] },
-  // An article's rail as full as it gets (two actions, two lines to raise, a chip and the quick add open, the note):
-  // compact enough that every control fits without scrolling at 1920×1080, each row whole.
-  { name: 'present-rail-compact', route: '/present/{today}', setup: railInMeeting(true), widths: [[1920, 1080]],
-    rules: [noSidewaysScroll, railControlsUnscrolled, fits('#present-rail'), fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
-      oneRow('#present-rail .tide-quick-add-row'), oneRow('#present-rail .tide-present-rail-bar'), oneRow('#present-rail .tide-present-rail-note'),
-      railSelectsWhole, railPlaceholdersReadable, visible('#present-rail .tide-present-rail-chip-edit select')] },
   // The rail's Add over a team's limit, the question that asks why cancelled: focus is back on Add, not on the page.
   // Last of all: it leaves the first team at its limit, which would ask on every later page that adds to it.
   { name: 'present-rail-over-limit-cancel', route: '/present/{today}', setup: overLimitCancelled, widths: [1440],
