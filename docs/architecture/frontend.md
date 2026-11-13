@@ -313,9 +313,15 @@ step for a control they can't.
 - **Finding the control.** A step names its control by a CSS selector, with fallbacks (`a || b`: the first shown).
   `tideTips` looks for it again as the page draws (a guide started from Help opens a page still loading) and scrolls it
   into view once found. It keeps off the context rail, docked or over the page, as a tip does.
-- **The rail, opened for its steps.** A step about something in a rail (it falls back to the rail's button) opens that
-  rail when it's shut, over the page or docked as the window allows (never remembered), rings the section in it, and
-  shuts it again when a step leaves it or the guide ends; the card narrows to fit beside it.
+- **The rail, opened for its steps.** A step about something in a rail (its selector names the rail's button) keeps
+  that rail open, over the page or docked as the window allows (never remembered), whether it was shut as the step
+  started or shut during it (the window crossing 1500, `]`, its Close); it rings the section in it, never the button,
+  and shuts it again when a step leaves it or the guide ends; the card narrows to fit beside it.
+- **In the page's order, big enough to see.** A page's steps follow its markup; one out of that order on purpose (the
+  top bar, a rail, what a step opens: `TourStep.Leaps`) says so, and the layout walk fails any other. A control under
+  16px either way (a radio hidden in a button group) is ringed by its group or label.
+- **An analyst's day counts by its parts**: "An analyst's day · Writing · 4 of 31", the parts and the whole count in a
+  line under the title, and **Skip the details** beside Next on each page guide's first step.
 - **Never in a corner.** Once the page has settled, `tideTips.present` says which steps have their control (shown, in
   the shut rail with the rail's button as a fallback, or in a tab the step opens); the others are left out, so "Step 2
   of 7" counts what's shown and every step points at something. A step whose control is still being drawn waits in the
