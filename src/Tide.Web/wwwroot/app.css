@@ -1862,7 +1862,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-tip-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: 0; color: var(--tide-text); }
 .tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
-.tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
+.tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px;
+    /* Scrolled into view clear of the sticky top bar, with room under it for the step beside it. */
+    scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
 /* A tour step (OnboardingHost): a dialog without a scrim, so the control it's about shows; in the bottom corner, or
    beside that control when tips.js finds room (is-placed), as a tip is. */
 .tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;

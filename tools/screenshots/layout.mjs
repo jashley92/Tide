@@ -4300,6 +4300,9 @@ const pages = [
   { name: 'guide-dark', route: '/stack', context: { theme: 'dark' }, setup: guideOn(), widths: [1440], rules: guideRules },
   // Started from Help's Guides: its page opens, the step on its control; the article editor's on a real article.
   { name: 'guide-from-help', route: '/help', setup: guideFromHelp('trends'), widths: [1440], rules: [...guideRules, stillAt('/trends')] },
+  // Started from low on Help: the new page opens scrolled, and its step's control is brought into view below the top bar.
+  { name: 'guide-from-help-scrolled', route: '/help', setup: guideFromHelp('metrics'), widths: [1920, 1440, 780],
+    rules: [...guideRules, stillAt('/metrics'), belowTopBar('.tide-tip-target'), inWindow('.tide-tip-target')] },
   { name: 'guide-from-help-editor', route: '/help', setup: guideFromHelp('article'), widths: [1920], rules: guideRules },
   // Escape ends it, and focus is back on Show me around.
   { name: 'guide-escape', route: '/library', setup: guideOn('Escape'), widths: [1440],
