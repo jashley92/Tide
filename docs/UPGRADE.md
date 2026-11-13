@@ -201,6 +201,11 @@ the right, so you leave the page less. Every route, key and name that worked bef
   unchanged.
 - **Raising and working actions in the meeting is the presenter's, from the presenter's rail.** Someone following,
   an analyst included, raises or works an action on the action pages.
+- **STIX exports give indicators, vulnerabilities and attack patterns new ids.** Each id now includes the object's TLP
+  marking (a UUIDv5 of `type|value|tlp`), so the same indicator exported at CLEAR and at AMBER is two objects, never
+  two conflicting versions of one. A platform that imported earlier exports sees these objects once more under new ids
+  on the first import after upgrading; retire the old ones there if it doesn't. From then on, the same object at the
+  same TLP keeps its id across exports and re-imports merge as before. Report ids don't change.
 
 **New settings** (all unchanged until set)
 - `Org:ActionBesideSlide`: `false`. *In a meeting, an action opens beside the slide* (Organization settings). Turn it

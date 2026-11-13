@@ -110,6 +110,54 @@ public class ExportTests
         ext.GetProperty("tlp_2_0").GetString().Should().Be("amber");
     }
 
+    // An export of one article at tlp, pointing at one IP, one CVE and one technique.
+    private static ExportSet OneArticle(TlpLevel tlp, string stem, Guid id) => new(stem,
+    [
+        new Article
+        {
+            Id = id, Title = "One", Tlp = tlp, Classification = Classification.Threat, CreatedAtUtc = Day1,
+            Indicators = [new() { Type = IndicatorType.IpAddress, Value = "198.51.100.7" }],
+            Cves = [new() { CveId = "CVE-2026-0002" }],
+            Techniques = [new() { TechniqueId = "T1566" }],
+        },
+    ], new Dictionary<Guid, IReadOnlyList<DateOnly>>());
+
+    private static Dictionary<string, string> SharedIds(ExportSet set)
+    {
+        using var doc = JsonDocument.Parse(Stix.Write(set, "CTI"));
+        return doc.RootElement.GetProperty("objects").EnumerateArray()
+            .Where(o => o.GetProperty("type").GetString() is "indicator" or "vulnerability" or "attack-pattern")
+            .ToDictionary(o => o.GetProperty("type").GetString()!, o => o.GetProperty("id").GetString()!);
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_AreTheirTypeValueAndTlp()
+    {
+        // uuid5 of "type|value|tlp": the value is the pattern for an indicator, the CVE id, the technique id.
+        var ids = SharedIds(OneArticle(TlpLevel.AmberStrict, "a", Guid.NewGuid()));
+        ids["indicator"].Should().Be($"indicator--{Stix.Uuid5("indicator|[ipv4-addr:value = '198.51.100.7']|amber-strict")}");
+        ids["vulnerability"].Should().Be($"vulnerability--{Stix.Uuid5("vulnerability|CVE-2026-0002|amber-strict")}");
+        ids["attack-pattern"].Should().Be($"attack-pattern--{Stix.Uuid5("attack-pattern|T1566|amber-strict")}");
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_DifferByTlp_SoTwoMarkingsAreNeverOneObject()
+    {
+        // One export has the IP at CLEAR, another at AMBER: a platform importing both must see two objects, not two
+        // conflicting versions of one.
+        var clear = SharedIds(OneArticle(TlpLevel.Clear, "a", Guid.NewGuid()));
+        var amber = SharedIds(OneArticle(TlpLevel.Amber, "a", Guid.NewGuid()));
+        foreach (var type in clear.Keys) clear[type].Should().NotBe(amber[type], $"the {type} is marked differently");
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_StayTheSame_AcrossExportsAtTheSameTlp()
+    {
+        // A different export (another file, another article) at the same TLP: re-imports still merge.
+        SharedIds(OneArticle(TlpLevel.Green, "brief-1", Guid.NewGuid()))
+            .Should().Equal(SharedIds(OneArticle(TlpLevel.Green, "story-2", Guid.NewGuid())));
+    }
+
     [Theory]
     [InlineData(IndicatorType.IpAddress, "203.0.113.45", "[ipv4-addr:value = '203.0.113.45']")]
     [InlineData(IndicatorType.IpAddress, "2001:db8::7", "[ipv6-addr:value = '2001:db8::7']")]

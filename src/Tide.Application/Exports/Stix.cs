@@ -16,8 +16,9 @@ namespace Tide.Application.Exports;
 /// <para>
 /// Every object carries the TLP 2.0 marking of the articles it came from (the highest, when an indicator is on several),
 /// by the marking-definition ids the OASIS TLP 2.0 extension publishes, and the bundle carries those definitions. Ids
-/// other than a report's are UUIDv5s of what the object is, so the same indicator, CVE or technique has the same id in
-/// every export and a platform merges re-imports.
+/// other than a report's are UUIDv5s of what the object is and its marking ("type|value|tlp"), so the same indicator,
+/// CVE or technique at the same TLP has the same id in every export and a platform merges re-imports, while the same
+/// one at another TLP is another object rather than a conflicting version of it.
 /// </para>
 /// </summary>
 public static class Stix
@@ -110,15 +111,15 @@ public static class Stix
         var indicators = new Dictionary<string, Shared>(StringComparer.Ordinal);
         var vulnerabilities = new Dictionary<string, Shared>(StringComparer.Ordinal);
         var techniques = new Dictionary<string, Shared>(StringComparer.Ordinal);
-        var reports = new List<(Article Article, List<string> Refs)>();
+        var reports = new List<(Article Article, List<Shared> Refs)>();
 
         foreach (var a in set.Articles)
         {
-            var refs = new List<string>();
+            var refs = new List<Shared>();
             foreach (var i in ExportSet.Indicators(a))
-                if (Pattern(i) is { } pattern) refs.Add(Note(indicators, Id("indicator", pattern), a, i.Value, pattern, i.Note));
-            foreach (var c in ExportSet.Cves(a)) refs.Add(Note(vulnerabilities, Id("vulnerability", c), a, c));
-            foreach (var t in ExportSet.Techniques(a)) refs.Add(Note(techniques, Id("attack-pattern", t), a, t));
+                if (Pattern(i) is { } pattern) refs.Add(Note(indicators, "indicator", pattern, a, i.Value, pattern, i.Note));
+            foreach (var c in ExportSet.Cves(a)) refs.Add(Note(vulnerabilities, "vulnerability", c, a, c));
+            foreach (var t in ExportSet.Techniques(a)) refs.Add(Note(techniques, "attack-pattern", t, a, t));
             if (refs.Count > 0) reports.Add((a, refs.Distinct().ToList()));
         }
 
@@ -152,7 +153,7 @@ public static class Stix
                 w.WriteString("published", Time(a.PublishedAtUtc ?? a.CreatedAtUtc));
                 Strings(w, "report_types", ["threat-report"]);
                 Strings(w, "labels", a.Priority is { } p ? [a.Classification.ToString().ToLowerInvariant(), p.ToString().ToLowerInvariant()] : [a.Classification.ToString().ToLowerInvariant()]);
-                Strings(w, "object_refs", refs);
+                Strings(w, "object_refs", refs.Select(r => r.Id));
                 if (!string.IsNullOrWhiteSpace(a.SourceUrl))
                     ExternalReference(w, string.IsNullOrWhiteSpace(a.SourceName) ? "source" : a.SourceName, url: a.SourceUrl);
                 Strings(w, "object_marking_refs", [Marking(a.Tlp)]);
@@ -243,10 +244,10 @@ public static class Stix
     }
 
     // An indicator, CVE or technique that one or more articles point at: its marking is the highest of theirs, and its
-    // first and last times span them.
-    private sealed class Shared(string id, string value, string? pattern)
+    // first and last times span them. Its id is known once every article has been noted, since the marking is in it.
+    private sealed class Shared(string type, string key, string value, string? pattern)
     {
-        public string Id { get; } = id;
+        public string Id => Stix.Id(type, key + "|" + Domain.Enums.Tlp.Key(Tlp));
         public string Value { get; } = value;
         public string? Pattern { get; } = pattern;
         public TlpLevel Tlp { get; set; }
@@ -255,16 +256,17 @@ public static class Stix
         public List<string> Notes { get; } = [];
     }
 
-    // Records that article a points at the object (creating it the first time) and returns its id.
-    private static string Note(Dictionary<string, Shared> map, string id, Article a, string value, string? pattern = null, string? note = null)
+    // Records that article a points at the object of this type and key (the pattern, the CVE id, the technique id),
+    // creating it the first time, and returns it.
+    private static Shared Note(Dictionary<string, Shared> map, string type, string key, Article a, string value, string? pattern = null, string? note = null)
     {
-        if (!map.TryGetValue(id, out var s)) map[id] = s = new Shared(id, value, pattern);
+        if (!map.TryGetValue(key, out var s)) map[key] = s = new Shared(type, key, value, pattern);
         if (a.Tlp > s.Tlp) s.Tlp = a.Tlp;
         if (a.CreatedAtUtc < s.First) s.First = a.CreatedAtUtc;
         var changed = a.ModifiedAtUtc ?? a.CreatedAtUtc;
         if (changed > s.Last) s.Last = changed;
         var n = note?.Trim();
         if (!string.IsNullOrEmpty(n) && !s.Notes.Contains(n)) s.Notes.Add(n);
-        return id;
+        return s;
     }
 }

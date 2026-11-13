@@ -147,10 +147,13 @@ no `format` is STIX, and another than stix or csv is refused):
 1. `ExportService.GatherAsync` loads the articles with their indicators, CVEs and techniques and leaves out every article
    whose TLP is above the ceiling, whole, as the editions do.
 2. **STIX** (`Stix.Write`): a bundle with an `identity` for the team, a `report` per article (`report--{article id}`),
-   and the `indicator`, `vulnerability` and `attack-pattern` objects the reports point at. Those ids are UUIDv5s of what
-   the object is (`Stix.Uuid5`), so the same indicator has the same id in every export and a platform merges
-   re-imports. Each object carries the OASIS TLP 2.0 marking-definition id of its article; an object on several
-   articles takes the highest. An indicator kind STIX has no clean observable for (a host name, a process, a hash of no
+   and the `indicator`, `vulnerability` and `attack-pattern` objects the reports point at. Each object carries the
+   OASIS TLP 2.0 marking-definition id of its article; an object on several articles takes the highest. Those objects'
+   ids are UUIDv5s (`Stix.Uuid5`, in the STIX namespace) of `type|value|tlp`: the value is the indicator's STIX
+   pattern, the CVE id or the technique id, and the TLP is the object's marking in this export (`clear`, `green`,
+   `amber`, `amber-strict`, `red`). The same indicator at the same TLP has the same id in every export, so a platform
+   merges re-imports; at a different TLP it has a different id, so a platform never holds two versions of one object
+   that disagree about how it may be shared. An indicator kind STIX has no clean observable for (a host name, a process, a hash of no
    known length, "other") goes in the CSV only.
 3. **CSV** (`IndicatorCsv.Write`): a row per indicator per article: `type, value, defanged, note, tlp, article,
    article_url, source_url, written_utc, briefed, cves, techniques`, cells that a spreadsheet would read as a formula
