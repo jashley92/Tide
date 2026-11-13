@@ -70,8 +70,7 @@ window.tideTips = (function () {
 
     // Whether a step has its control: one of its choices (other than the rail, for a step about something in it) shown,
     // or in the shut rail where the step falls back to the rail's button, or in what it opens (a tab, section, menu or
-    // picker). For a step about the
-    // rail itself, the rail or its button.
+    // picker) while that's shut and can't be looked in. For a step about the rail itself, the rail or its button.
     function there(selector, opens) {
         var own = choices(selector);
         var mine = own.filter(function (c) { return RAILS.indexOf(c) < 0; });
@@ -81,7 +80,37 @@ window.tideTips = (function () {
             return Array.prototype.some.call(document.querySelectorAll(c), function (el) {
                 return shown(el) || railed && !!el.closest(RAIL_PANES.join(', '));
             });
-        }) || !!opens && !!document.querySelector(opens);
+        }) || !!opens && !!document.querySelector(opens) && !isOpen(document.querySelector(opens));
+    }
+
+    // A step about something in a rail (it falls back to the rail's button) whose control isn't shown: the rail is
+    // shut, so it's opened, over the page or docked as the window has room for, and shut again when a step leaves it or
+    // the guide ends. The context rail opens without being remembered (tideRail.show); the presenter's by its button.
+    var railOpened = null;
+    var RAIL_BUTTONS = { '#tide-rail-toggle': 'context', '#present-rail-toggle': 'present' };
+
+    function railFor(selector) {
+        var own = selector ? choices(selector) : [];
+        var wants = null;
+        own.forEach(function (c) { if (RAIL_BUTTONS[c]) wants = RAIL_BUTTONS[c]; });
+        if (wants && shown(document.querySelector(own[0]))) wants = null;
+        if (railOpened && railOpened !== wants) { shutRail(railOpened); railOpened = null; }
+        if (!wants || railOpened) return;
+        if (wants === 'context') {
+            if (!window.tideRail || shown(document.getElementById('tide-rail'))) return;
+            window.tideRail.show();
+        } else {
+            var button = document.getElementById('present-rail-toggle');
+            if (!button || button.getAttribute('aria-expanded') === 'true') return;
+            button.click();
+        }
+        railOpened = wants;
+    }
+
+    function shutRail(which) {
+        if (which === 'context') { if (window.tideRail) window.tideRail.hide(); return; }
+        var close = document.getElementById('present-rail-close');
+        if (close && close.isConnected) close.click();
     }
 
     // Whether what `el` opens is open: a tab selected, a button's section or menu expanded, a <details> open.
@@ -98,7 +127,8 @@ window.tideTips = (function () {
         if (popout && popout.opens !== opens) {
             var close = popout.closes && document.querySelector(popout.closes);
             var by = document.querySelector(popout.opens);
-            if (shown(close)) close.click();
+            // Its close may be under a rail opened over the page since (inert, not shown): a click still closes it.
+            if (close && close.isConnected) close.click();
             else if (by && isOpen(by)) by.click();
             popout = null;
         }
@@ -165,7 +195,18 @@ window.tideTips = (function () {
         }
         var at = r && beside(r, w, high)
             || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
-        if (rail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top) {
+        // A control in the top bar, above the rail, keeps its card under it: moved off the rail it couldn't point at it.
+        var overTheRail = r && rail && r.bottom <= rail.top + 1;
+        var onTheRail = rail && !overTheRail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top;
+        // Narrowed for a rail that has since gone, or room that has grown: back to its own width, measured again.
+        if (!onTheRail && card.style.maxWidth) { card.style.maxWidth = ''; return; }
+        if (onTheRail) {
+            // Too little room left of the rail (a narrow window with the rail open over it): the card narrows to fit.
+            var room = rail.left - GAP - EDGE;
+            if (room < size.width && room >= 240 && card.style.maxWidth !== room + 'px') {
+                card.style.maxWidth = room + 'px';
+                return;   // measured again at its new width (cardWatch), then placed
+            }
             at.left = Math.max(EDGE, rail.left - GAP - size.width);
             // A control in the rail: the card is now left of it.
             if (r && r.left >= rail.left - 1 && r.top >= rail.top - 1) {
@@ -279,13 +320,18 @@ window.tideTips = (function () {
         show: function (el, selector, options) {
             this.hide();
             card = el;
+            card.style.maxWidth = '';
             needsTarget = !!(options && options.needsTarget);
             dialog = !!(options && options.dialog);
             // A tour's or guide's first step: what had focus (its Show me around, Help's Start) gets it back at the end.
             if (dialog && options.first) opener = document.activeElement !== document.body ? document.activeElement : null;
             // A control in a shut tab, section, menu or picker: it's opened first (showing it saves nothing), and what the
             // last step opened is closed if this one isn't in it.
-            if (dialog) openFor(options.opens || null, options.closes || null);
+            if (dialog) {
+                // What the last step opened is closed before a rail opens over the page (making it inert).
+                openFor(options.opens || null, options.closes || null);
+                railFor(selector);
+            }
             if (dialog && selector) {
                 // A step looks for its control (find, from place) now and again as the page changes; a tip shows beside
                 // what's there as it opens.
@@ -361,6 +407,7 @@ window.tideTips = (function () {
         // heading. A tip the new page shows stays up.
         end: function () {
             openFor(null);
+            railFor(null);
             var to = opener;
             opener = null;
             if (shown(to)) to.focus();

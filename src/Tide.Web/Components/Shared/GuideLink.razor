@@ -1,14 +1,22 @@
-@* "Show me around", in a page's header: starts the page's guide (Guides.ForPage), when there's one the person can use.
-   Nothing otherwise, and never in present mode (Learn to present starts from Help). The guide ends with focus back here. *@
+@* "Show me around", in a page's header: starts the page's guide (Guides.ForPage), when there's one the person can use,
+   for a while (GuideLinkService: after their first sign-in, or after a release changed the page, until they run the
+   guide or put the link away with its ×). The keyboard shortcuts' "Show me around this page" is always there. Nothing
+   in present mode (Learn to present starts from Help). The guide ends with focus back here. *@
 @using Tide.Application.Operations
 @inject NavigationManager Nav
 @inject ICurrentUser CurrentUser
 @inject TourRequests Asked
+@inject GuideLinkService Links
+@inject ILogger<GuideLink> Log
 
-@if (Guide is { } guide)
+@if (_guide is { } guide && _shows)
 {
-    <button type="button" id="@Id" class="btn btn-link btn-sm tide-guide-link" title="A few steps through this page's controls"
-            @onclick="() => Asked.AskGuide(guide.Key)"><span class="bi bi-signpost-2" aria-hidden="true"></span> Show me around</button>
+    <span class="tide-guide-link-wrap">
+        <button type="button" id="@Id" class="btn btn-link btn-sm tide-guide-link" title="A walk through this page's controls"
+                @onclick="() => Asked.AskGuide(guide.Key)"><span class="bi bi-signpost-2" aria-hidden="true"></span> Show me around</button>
+        <button type="button" id="tide-guide-hide" class="btn btn-link btn-sm tide-guide-link-hide" aria-label="Don't show Show me around on this page"
+                title="Don't show this here again (the ? menu still has it)" @onclick="HideAsync"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+    </span>
 }
 
 @code {
@@ -18,14 +26,31 @@
     // Worked out once per page (a filter rewriting the query is the same page), not on every render of its header.
     private string? _page;
     private Guide? _guide;
+    private bool _shows;
 
-    private Guide? Guide
+    protected override async Task OnParametersSetAsync()
     {
-        get
+        var page = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
+        if (page == _page) return;
+        (_page, _guide, _shows) = (page, Guides.ForPage(page, CurrentUser.Has), false);
+        if (_guide is not { } guide) return;
+        try { _shows = await Links.ShowsAsync(guide, page); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var page = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
-            if (page != _page) (_page, _guide) = (page, Guides.ForPage(page, CurrentUser.Has));
-            return _guide;
+            Log.LogWarning(ex, "Couldn't read whether the page's guide link shows; it isn't shown.");
+        }
+    }
+
+    // ×: the link goes, and doesn't show on this page again (Help's switch brings it back).
+    internal async Task HideAsync()
+    {
+        if (_guide is not { } guide) return;
+        _shows = false;
+        StateHasChanged();
+        try { await Links.DoneAsync(guide); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "Couldn't keep the page's guide link put away.");
         }
     }
 }

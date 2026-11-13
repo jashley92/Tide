@@ -289,9 +289,15 @@ step opened, when that's still on the page, else on the heading) and placed by
 and its steps, each with the permission its control needs: a person sees only the guides for pages they can use, and no
 step for a control they can't.
 
-- **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; a
-  page with a guide has **Show me around** in its header (`GuideLink`), which starts it in place and gets focus back as
-  it ends. Both ask `TourRequests.AskGuide`; nothing starts a guide by itself, and a guide stores nothing.
+- **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; the
+  top bar's **?** menu has **Show me around this page** on every page with a guide; and for a while a page has **Show me
+  around** under its title (`GuideLink`), which starts it in place and gets focus back as it ends. All ask
+  `TourRequests.AskGuide`; nothing starts a guide by itself.
+- **The link under the title is for a while** (`GuideLinkService`, in the person's preferences): within
+  `Org:GuideLinkDays` (Organization settings, default 5) of their first sign-in, which the user mirror records, or of
+  the day they saw What's new for a release whose highlights changed the page (it has a tip in that release), until they've run
+  the page's guide (to the end or part way) or closed the link with its ×. Help's **Show page guide links** turns them
+  all on, whatever the window, or off.
 - **Only pointing.** A guide never presses a control for you. A step whose control is in a shut tab, section, menu or
   picker opens it first (its `Opens`: the rail's Actions tab, Draft from the sources, Browse all tags, the ATT&CK picker,
   Triage's promote form, Actions' Filter and a card's Move, an action's status and More) and points inside it; what the
@@ -307,13 +313,20 @@ step for a control they can't.
 - **Finding the control.** A step names its control by a CSS selector, with fallbacks (`a || b`: the first shown).
   `tideTips` looks for it again as the page draws (a guide started from Help opens a page still loading) and scrolls it
   into view once found. It keeps off the context rail, docked or over the page, as a tip does.
+- **The rail, opened for its steps.** A step about something in a rail (it falls back to the rail's button) opens that
+  rail when it's shut, over the page or docked as the window allows (never remembered), rings the section in it, and
+  shuts it again when a step leaves it or the guide ends; the card narrows to fit beside it.
 - **Never in a corner.** Once the page has settled, `tideTips.present` says which steps have their control (shown, in
   the shut rail with the rail's button as a fallback, or in a tab the step opens); the others are left out, so "Step 2
   of 7" counts what's shown and every step points at something. A step whose control is still being drawn waits in the
   middle, with no arrow.
-- **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked: Today, Triage,
-  the editor on the newest article, Today's running order, edition check and Mark ready, Present, Send, Actions and an
-  action, and Search on a sample lookup. **Following the brief** is the shorter one for whoever can't write (Today, the
+- **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked, with each page's
+  own guide inline (Triage's, the editor's, Actions'; **Skip the details** on a section's first step goes past it):
+  Today's strip, triage, writing the newest draft, Save, Ask for review, Mark ready, Add to today's brief, the running
+  order, a row's Set to AMBER, the edition check, Mark ready in the page head, Present, which opens present mode in
+  rehearsal (`?rehearse=1&guide=day`) where Learn to present's steps run as the day's and come back to Today at Send
+  (`Present.BackToTheDayFrom`; refused while the meeting is live, with a note), then Actions, an action, and Search on a
+  sample lookup. A page's steps are checked as the guide opens it, so the count is of the steps shown. **Following the brief** is the shorter one for whoever can't write (Today, the
   meeting, their actions, Search). A cross-page guide (`Guide.Travels`) opens each step's page as it's reached
   (`GuideStarts.RoutesAsync`); a step whose control a page may not draw falls back to one that's always there, such as
   the page's heading. Help, What's
@@ -636,8 +649,9 @@ address, whatever its value, is a rehearsal, so a mistyped one fails safe. A reh
 or recorded as attending a meeting, even one that starts while it's open, and leaving it never asks to discard
 anything: nothing there can be saved.
 
-- **Nothing shared or saved.** The top bar says "Rehearsal: nothing here is shared or saved". There's no Start the
-  meeting, End the meeting, Copy link or Notes, no presence, and the tag editor isn't offered. The presenter's rail is
+- **Nothing shared or saved.** The top bar says "Rehearsal: nothing here is shared or saved". Start the meeting and
+  Copy link are shown disabled (for the guide to point at); there's no End the meeting or Notes, no presence, and the
+  tag editor isn't offered. The presenter's rail is
   drawn, its controls disabled (a `fieldset`), so the guide can point at them. Behind that, `InCharge` is false and
   `Run` runs nothing in a rehearsal, so every step that saves is a no-op wherever it's sent from; the page never takes a
   seat, starts, joins or ends a meeting, and publishes no change. Moving between slides and opening a card are this
@@ -657,7 +671,8 @@ anything: nothing there can be saved.
   never draws the guide, so nothing of it reaches the room's screen.
 - **The guide's steps** are on their slides (`Guide` step routes: `title`, `metrics`, `open`, `article`, and
   `article:indicators`, `article:raised` or `article:card` for the first article that has one, then `wrap`): the title
-  slide and moving between slides; who's here; the presenter's rail and `]`; the numbers; Actions that need review; an
+  slide and moving between slides; going live (Start the meeting and Copy link, shown disabled in a rehearsal, and
+  refused there however pressed); who's here; the presenter's rail and `]`; the numbers; Actions that need review; an
   article's slide, its indicators and the action a line became; raising (pointed at, not done), quick add, your note and
   Mark discussed; an action's card; the wrap-up's three lists, attendance and ending the meeting. A step about a slide
   the brief hasn't is left out (`Present.GuideSlide`). At a width that shuts the rail, its steps point at **Rail**.

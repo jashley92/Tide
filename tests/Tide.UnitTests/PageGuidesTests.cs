@@ -124,8 +124,11 @@ public class PageGuidesTests
         var steps = Guides.Find("article", Can(AppRole.Analyst))!.Steps;
         steps.Select(s => s.Key).Should().Equal("title", "review", "pills", "class", "prio", "tlp", "source", "addlink", "linkform", "draft",
             "fetch", "drafting", "bluf", "bullets", "shots", "why", "whycheck", "werun", "rec", "indicators", "find", "tags", "browse", "attack",
-            "atkfilter", "atktactic", "atkcell", "atkapply", "adversary", "preview", "raise", "saved", "save", "brief");
-        steps.Single(s => s.Key == "whycheck").Text.Should().Contain("Set to AMBER").And.Contain("Keep it");
+            "atkfilter", "atktactic", "atkcell", "atkapply", "adversary", "preview", "edition", "raise", "details", "saved", "save", "ready", "brief");
+        steps.Single(s => s.Key == "tlp").Target.Should().Be("#f-tlp", "the article's TLP, never the priority beside it");
+        steps.Single(s => s.Key == "save").Target.Should().Be("[data-guide=\"save\"]");
+        steps.Single(s => s.Key == "ready").Target.Should().Be("[data-guide=\"mark-ready\"]", "Save and mark ready is its own step");
+        steps.Single(s => s.Key == "whycheck").Text.Should().Contain("Set to AMBER", "it rings that button, so names only it");
         steps.Single(s => s.Key == "bullets").Text.Should().Contain("grows");
         steps.Single(s => s.Key == "raise").Opens.Should().Be("#reader-panel-tab-actions", "its control is under the rail's Actions tab");
     }
@@ -162,14 +165,34 @@ public class PageGuidesTests
     }
 
     [Fact]
-    public void AnAnalystsDay_WalksTheWorkflowAcrossPages_InTheOrderItsWorked()
+    public void AnAnalystsDay_WalksTheWorkflowAcrossPages_WithEachPagesGuideInline()
     {
         var day = Guides.WholeDay(Can(AppRole.Analyst))!;
         day.Key.Should().Be(Guides.Day);
         day.Travels.Should().BeTrue();
-        day.Steps.Select(s => s.Route).Should().Equal("", "", "triage", "triage", "triage", "articles/{id}", "articles/{id}", "articles/{id}",
-            "", "", "", "", "", "actions", "actions/{n}", "search");
+        // Today's own steps frame the pages' guides: Triage's, the editor's, presenting, Actions'.
+        string Frame(TourStep s) => s.Section is { } section ? "[" + section + "]" : s.Key;
+        day.Steps.Select(Frame).Distinct().Should().Equal("strip", "due", "[triage]", "[article]", "save", "review", "ready", "brief", "order",
+            "fix", "check", "briefready", "[present]", "send", "[actions]", "work", "search");
+        foreach (var page in new[] { "triage", "actions" })
+            day.Steps.Where(s => s.Section == page).Select(s => s.Key)
+                .Should().Equal(Guides.Find(page, Can(AppRole.Analyst))!.Steps.Select(s => page + "." + s.Key), $"{page}'s whole guide, inline");
+        day.Steps.Where(s => s.Section == "article").Should().HaveCount(Guides.Find("article", Can(AppRole.Analyst))!.Steps.Count - 5,
+            "the editor's, but for saving, review, ready and the brief, which follow it as steps of their own in the order they're done");
+        day.Steps.Select(s => s.Key).Should().OnlyHaveUniqueItems();
         Guides.ForPage("", Can(AppRole.Analyst))!.Key.Should().Be("today", "Today's Show me around is Today's own guide");
+    }
+
+    [Fact]
+    public void NoStepsTitle_IsNumbered_AndEachSavingStepRingsItsOwnButton()
+    {
+        foreach (var g in Guides.For(Can(AppRole.Admin)))
+            g.Steps.Should().OnlyContain(s => !System.Text.RegularExpressions.Regex.IsMatch(s.Title, @"^\d+\."), g.Key);
+        var day = Guides.Find(Guides.Day, Can(AppRole.Admin))!.Steps;
+        day.Single(s => s.Key == "briefready").Target.Should().StartWith("[data-guide=\"brief-mark-ready\"]", "Mark ready in the page head");
+        day.Single(s => s.Key == Guides.Presenting).Target.Should().Be("[data-guide=\"brief-present\"]", "Present in the page head");
+        day.Single(s => s.Key == "send").Target.Should().StartWith("[data-guide=\"brief-send\"]");
+        day.Single(s => s.Key == "fix").Target.Should().Contain("tide-need-fix", "the row's Set to AMBER, a step before the rail's edition check");
     }
 
     [Theory]

@@ -148,7 +148,8 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     {
         await using var sp = new ServiceCollection().AddSingleton<Microsoft.JSInterop.IJSRuntime>(new Browser(rail))
             .AddSingleton<NavigationManager, AtArticles>()
-            .AddSingleton<Tide.Application.Abstractions.ICurrentUser>(new FakeUser(Tide.Domain.Enums.AppRole.Analyst)).BuildServiceProvider();
+            .AddSingleton<Tide.Application.Abstractions.ICurrentUser>(new FakeUser(Tide.Domain.Enums.AppRole.Analyst))
+            .AddSingleton<Tide.Web.Services.TourRequests>().BuildServiceProvider();
         using var renderer = new RecordingRenderer(sp);
         var overlay = await renderer.Mount<ShortcutsOverlay>();
         await renderer.Dispatcher.InvokeAsync(overlay.Open);
@@ -161,5 +162,28 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     private sealed class AtArticles : NavigationManager
     {
         public AtArticles() => Initialize("http://localhost/", "http://localhost/articles");
+    }
+
+    // The ? menu's Show me around this page: always there on a page with a guide the person can use, whatever its link
+    // under the subtitle does (GuideLinkService); none on a page without one.
+    [Theory]
+    [InlineData("metrics", true)]
+    [InlineData("actions", true)]
+    [InlineData("articles", false)]
+    public async Task TheShortcutsOverlay_AlwaysHasShowMeAround_OnAPageWithAGuide(string page, bool has)
+    {
+        await using var sp = new ServiceCollection().AddSingleton<Microsoft.JSInterop.IJSRuntime>(new Browser(false))
+            .AddSingleton<NavigationManager>(new At(page))
+            .AddSingleton<Tide.Application.Abstractions.ICurrentUser>(new FakeUser(Tide.Domain.Enums.AppRole.Viewer))
+            .AddSingleton<Tide.Web.Services.TourRequests>().BuildServiceProvider();
+        using var renderer = new RecordingRenderer(sp);
+        var overlay = await renderer.Mount<ShortcutsOverlay>();
+        await renderer.Dispatcher.InvokeAsync(overlay.Open);
+        renderer.Shows("Show me around this page").Should().Be(has);
+    }
+
+    private sealed class At : NavigationManager
+    {
+        public At(string page) => Initialize("http://localhost/", "http://localhost/" + page);
     }
 }

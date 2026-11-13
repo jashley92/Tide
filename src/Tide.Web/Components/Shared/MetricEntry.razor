@@ -29,7 +29,7 @@
         @if (Collapsible)
         {
             <h2>
-                <button type="button" class="tide-collapse-btn" aria-expanded="@(Open ? "true" : "false")" aria-controls="@(_id + "-body")" @onclick="() => _open = !Open">
+                <button type="button" class="tide-collapse-btn" data-guide="numbers" aria-expanded="@(Open ? "true" : "false")" aria-controls="@(_id + "-body")" @onclick="() => _open = !Open">
                     <span class="bi @(Open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> @Heading
                 </button>
                 @if (!Open)

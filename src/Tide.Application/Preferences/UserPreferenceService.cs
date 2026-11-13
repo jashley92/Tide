@@ -101,6 +101,14 @@ public static class UserPreferences
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             // Each page's tip: the release whose tip the person dismissed there, for whoever can use the page.
             .Concat(Operations.PageTips.All.Select(t => Definition.Matching(t.Preference, "", Operations.ReleaseVersion.IsVersionOrNone, t.Needs)))
+            // A page's Show me around link: Help's switch, the first sign-in and the release it's counted from, and each
+            // page guide's run or put away (GuideLinkService).
+            .Concat([
+                new(Operations.GuideLinkService.Links, ["", Operations.GuideLinkService.On, Operations.GuideLinkService.Off], Permission.ReadTeamEdition),
+                Definition.Matching(Operations.GuideLinkService.Since, "", Operations.GuideLinkService.IsDayOrNone, Permission.ReadTeamEdition),
+                Definition.Matching(Operations.GuideLinkService.Release, "", Operations.GuideLinkService.IsReleaseOrNone, Permission.ReadTeamEdition),
+            ])
+            .Concat(Operations.Guides.OnPages.Select(g => new Definition(Operations.GuideLinkService.Done(g), ["", Operations.GuideLinkService.DoneValue], g.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>
