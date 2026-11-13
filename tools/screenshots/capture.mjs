@@ -10,7 +10,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { openPage, pick, readDemo, repo, startTide } from './tide.mjs';
+import { idle, openPage, pick, readDemo, repo, startTide, toArticleSlide } from './tide.mjs';
 
 const outDir = path.join(repo, 'docs', 'screenshots');
 const startedAt = new Date();
@@ -25,12 +25,40 @@ const startedAt = new Date();
 // clip      a CSS selector: capture just that element (with `pad` pixels around it, default 16)
 // annotate  [[selector, n], ...] or [[selector, n, corner]]: a numbered circle on the element's corner
 //           (corner: tl (default), tr, bl, br, l, r). A selector that matches nothing fails the run.
+// when      demo => boolean: skip the shot, saying so and leaving its image as it was, when what it shows isn't there
+//           on the day of the run
+// after     async page => {...}: puts back what setup changed, for the shots after it (run on a fresh page)
 
 const desktop = { width: 1440, height: 1000 };
+// A window wide enough for the context rail and the presenter's rail to be docked open (1500px and wider).
+const wide = { width: 1920, height: 1080 };
 
 /** Scrolls the first match to `top` pixels below the top of the window. */
 const scrollTo = (selector, top = 70) => async page => {
   await page.locator(selector).first().evaluate((el, top) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - top), top);
+};
+
+/** In present mode: steps on through the slides until `selector` is shown (Actions that need review, say). */
+const toSlide = selector => async page => {
+  for (let i = 0; i < 15 && !(await page.locator(selector).count()); i++) {
+    await page.keyboard.press('ArrowRight');
+    await idle(page);
+  }
+};
+
+/** Today says the feeds aren't pulled from 8:00 (Intake:PulledBy, below) on a working day, New York time. */
+const feedsNoted = demo => demo.FeedsDue
+  && Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/New_York' }).format(new Date())) >= 8;
+
+/** Ticks or unticks "In a meeting, an action opens beside the slide" in Organization settings, and saves it. */
+const actionBesideSlide = on => async page => {
+  await page.goto(new URL('/admin/organization', page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  const box = page.getByLabel('In a meeting, an action opens beside the slide');
+  if ((await box.isChecked()) === on) return;
+  await box.setChecked(on);
+  await page.locator('.tide-card').filter({ has: box }).getByRole('button', { name: 'Save', exact: true }).click();
+  await idle(page);
 };
 
 export const shots = [
@@ -40,7 +68,7 @@ export const shots = [
   { name: 'triage-inbox', route: '/triage', viewport: desktop },
   { name: 'article-editor', route: '/articles/{vpnArticle}', viewport: { width: 1440, height: 1300 } },
   { name: 'present-metrics-slide', route: '/present/{today}', viewport: desktop,
-    setup: async page => { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(400); } },
+    setup: async page => { await page.keyboard.press('ArrowRight'); await idle(page); } },
   { name: 'email-team', route: '/briefs/{sent}/email/team', viewport: desktop, fullPage: true },
   { name: 'email-company-wide', route: '/briefs/{sent}/email/public', viewport: desktop, fullPage: true },
   { name: 'sharepoint-copy', route: '/briefs/{sent}/sharepoint', viewport: desktop },
@@ -49,34 +77,30 @@ export const shots = [
   { name: 'workload', route: '/workload', viewport: desktop },
   { name: 'search-lookup', route: '/search?q=update-check.example.net', viewport: { width: 1400, height: 1200 } },
   { name: 'export-indicators', route: '/', viewport: { width: 1400, height: 900 },
-    setup: async page => { await page.getByRole('button', { name: 'Export indicators' }).click(); await page.waitForTimeout(300); } },
+    setup: async page => { await page.getByRole('button', { name: 'Export indicators' }).click(); await idle(page); } },
   { name: 'trends', route: '/trends', viewport: { width: 1500, height: 1100 },
     setup: async page => {
       await page.locator('tr:has(> td:text-is("Ransomware")) td.tide-trend-now button').first().click();
-      await page.waitForTimeout(500);
+      await idle(page);
       await scrollTo('.tide-card:has(td:text-is("Ransomware"))', 70)(page);
     } },
   { name: 'metrics-history', route: '/metrics', viewport: desktop },
   { name: 'rotation-calendar', route: '/rotation', viewport: desktop },
 
   // ---- shots for the documentation, with numbered callouts ----
-  { name: 'doc-today-steps', route: '/', viewport: desktop, clip: '.tide-page-head, .tide-steps', pad: 20,
+  { name: 'doc-today-steps', route: '/', viewport: desktop, clip: '.tide-page-head, .tide-steps', pad: 6,
     annotate: [
       ['.tide-steps > li:nth-child(1)', 1], ['.tide-steps > li:nth-child(2)', 2], ['.tide-steps > li:nth-child(3)', 3],
       ['.tide-steps > li:nth-child(4)', 4], ['.tide-steps > li:nth-child(5)', 5], ['.tide-page-head button:has-text("Mark ready")', 6, 'l'],
     ] },
+  // On a window this wide the reading pane opens by itself, with the text already read: nothing is fetched.
   { name: 'doc-triage-reading', route: '/triage', viewport: desktop,
-    setup: async page => {
-      await page.locator('.tide-triage-row').first().click({ position: { x: 900, y: 12 } });
-      await page.keyboard.press('v');
-      await page.locator('.tide-reading').first().waitFor();
-      await page.waitForTimeout(500);
-    },
+    setup: async page => { await page.locator('.tide-reading').first().waitFor(); },
     annotate: [
       ['.tide-tabbar-page', 1, 'l'], ['.tide-filterbar', 2, 'l'], ['.tide-triage-row', 3, 'l'],
-      ['.tide-triage-row .tide-cve', 4, 'tr'], ['.tide-triage-row button:has-text("Promote")', 5, 'l'], ['.tide-reading', 6, 'tr'],
+      ['.tide-triage-row .tide-cve', 4, 'tr'], ['.tide-triage-decide button:has-text("Promote")', 5, 'l'], ['.tide-reading', 6, 'tr'],
     ] },
-  { name: 'doc-article-editor', route: '/articles/{vpnArticle}', viewport: { width: 1440, height: 1300 },
+  { name: 'doc-article-editor', route: '/articles/{vpnArticle}', viewport: { width: 1920, height: 1300 },
     annotate: [
       ['.tide-section-pills', 1, 'l'], ['.tide-section:has(h2:has-text("Assessment"))', 2, 'l'],
       ['.tide-bullet-row:nth-of-type(3) select', 3, 'tr'], ['.tide-reader .tide-seg', 4, 'l'],
@@ -88,10 +112,10 @@ export const shots = [
       ['.tide-both-ed:nth-of-type(1) .tide-ed-numbers-head', 3, 'l'], ['.tide-both-ed:nth-of-type(1) li .tide-tlp-amber', 4, 'r'],
       ['.tide-both-ed:nth-of-type(2) :text("restricted parts were left out")', 5, 'l'],
     ] },
-  { name: 'doc-action-detail', route: '/actions/{detailAction}', viewport: desktop,
+  { name: 'doc-action-detail', route: '/actions/{detailAction}', viewport: wide,
     annotate: [
       ['.tide-action-head', 1, 'l'], ['.tide-facts-side', 2, 'l'], ['.tide-drawer', 3, 'l'],
-      ['.tide-feed', 4, 'l'], ['.tide-card:has(h2:text-is("From the article"))', 5, 'l'], ['.tide-files-side', 6, 'l'],
+      ['.tide-feed', 4, 'l'], ['.tide-rail-article', 5, 'l'], ['.tide-files-side', 6, 'l'],
     ] },
   { name: 'doc-admin-settings', route: '/admin/organization', viewport: desktop,
     annotate: [
@@ -104,6 +128,38 @@ export const shots = [
       ['.tide-card:has(h2:has-text("Callers")) button:has-text("Revoke")', 3, 'l'], ['h3:has-text("Issue a token")', 4, 'l'],
       ['button:has-text("Issue the token")', 5, 'r'],
     ] },
+  // ---- the context rail, Triage's groups and Sources, the board, and present mode ----
+  { name: 'context-rail-docked', route: '/', viewport: wide },
+  { name: 'context-rail-overlay', route: '/', viewport: desktop,
+    setup: async page => { await page.keyboard.press(']'); await page.locator('#tide-rail').waitFor(); } },
+  { name: 'doc-triage-same-event', route: '/triage', viewport: wide,
+    setup: async page => {
+      const group = page.locator('.tide-triage-group').first();
+      await group.locator('.tide-group-label').click();
+      await idle(page);
+      await group.locator('.tide-triage-head button[aria-expanded="false"]').first().click();
+    },
+    annotate: [['.tide-triage-group', 1, 'l'], ['.tide-triage-decide', 2], ['section.tide-card:has(#rail-same-h)', 3, 'l']] },
+  { name: 'today-feeds', route: '/', viewport: desktop, clip: '.tide-steps, .tide-feeds-nudge', pad: 20, when: feedsNoted },
+  { name: 'triage-pull-all', route: '/triage?tab=sources', viewport: desktop, clip: '.tide-card:has(.tide-pull-head)', pad: 20 },
+  { name: 'doc-actions-board', route: '/actions?view=open&layout=board', viewport: desktop,
+    annotate: [['.tide-actions-views', 1, 'l'], ['.tide-filterbar', 2, 'l'], ['.tide-kcard.selected', 3], ['.tide-kstrip', 4, 'l']] },
+  { name: 'present-needs-review', route: '/present/{today}', viewport: desktop, setup: toSlide('.tide-slide-open') },
+  { name: 'doc-present-rail', route: '/present/{today}', viewport: wide, setup: toArticleSlide,
+    annotate: [['#rail-actions-h', 1, 'l'], ['.tide-present-rail-raise', 2, 'l'], ['.tide-quick-add', 3, 'l'], ['#rail-note-mine-h', 4, 'l']] },
+  { name: 'present-wrap-up', route: '/present/{today}', viewport: wide,
+    setup: async page => { await page.keyboard.press('End'); await page.locator('.tide-wrap').waitFor(); } },
+  // Last: it turns on the Organization setting for an action beside the slide (off by default), and off again after.
+  { name: 'present-action-beside', route: '/present/{today}', viewport: wide,
+    setup: async (page, demo) => {
+      await actionBesideSlide(true)(page);
+      await page.goto(new URL(`/present/${demo.Today}`, page.url()).href, { waitUntil: 'load' });
+      await idle(page);
+      await toArticleSlide(page);
+      await page.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open)').first().click();
+      await page.locator('.tide-present-action.is-beside').waitFor();
+    },
+    after: actionBesideSlide(false) },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
@@ -112,7 +168,9 @@ const wanted = pick(shots, 'shot');
 
 let server;
 try {
-  server = await startTide();
+  // Three feeds last pulled the day before (never fetched: their addresses are on this machine), with polling on and
+  // a cutoff at 8:00, so Today says the feeds aren't pulled on a working day, and Sources has something to Pull all.
+  server = await startTide(['--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=08:00']);
   const demo = readDemo();
   const problems = await capture(wanted, demo);
   if (problems.length) {
@@ -132,6 +190,10 @@ async function capture(list, demo) {
   const problems = [];
   try {
     for (const shot of list) {
+      if (shot.when && !shot.when(demo)) {
+        console.log(`  ${shot.name}.png skipped: what it shows isn't there today; the image is left as it was`);
+        continue;
+      }
       let context;
       try {
         // The browser's clock stands still at the moment the run started, so anything the page times reads the same.
@@ -149,6 +211,19 @@ async function capture(list, demo) {
         problems.push(`${shot.name}: ${e.message.split('\n')[0]}`);
       } finally {
         await context?.close();
+        // Even when the shot failed: its setup may have got as far as changing something.
+        if (shot.after) {
+          let back;
+          try {
+            let page;
+            ({ context: back, page } = await openPage(browser, { route: '/', viewport: desktop }, demo));
+            await shot.after(page, demo);
+          } catch (e) {
+            problems.push(`${shot.name}, putting back what it changed: ${e.message.split('\n')[0]}`);
+          } finally {
+            await back?.close();
+          }
+        }
       }
     }
   } finally {

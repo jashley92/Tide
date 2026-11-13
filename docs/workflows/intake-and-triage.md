@@ -138,6 +138,11 @@ and `AddressPolicy`, which refuses loopback and link-local addresses, and privat
 | **Pull all** (`IntakeService.PullAllAsync`) | Analysts (`WriteArticles`) | Every polled source outside the pull-now window, by name, **one at a time** (never side by side), each through Pull now's own checks and guard. Sources inside the window, and those being pulled, are skipped. One run at a time, whoever starts it: a second is refused (`SourcePollGuard.TryStartAll`). | Triage › Sources tab, and Today's Triage step |
 | **Poll now** (`IntakeService.PollNowAsync`) | Administrators | No window. Works on a paused source and with intake off. | Administration › Sources |
 
+![The Sources tab, with Pull all at its head](../screenshots/triage-pull-all.png)
+
+*Triage's Sources tab: each polled source's last pull, when it's next due and how it went, with Pull now; Pull all at
+its head.*
+
 Both are refused for an `Api` source ("there's no feed to poll") and while the same source is being polled. Pull now
 is also refused for a paused or retired source. A pull is bookkeeping, like a poll, and leaves no audit row.
 
@@ -168,6 +173,10 @@ linking to Triage's Sources tab, with no Pull all. It's shown only to those who 
 sources (`WriteArticles`), and only while polling is on and some source is polled. On a weekend or holiday nothing is
 said, and **before the cutoff nothing is said either**: the morning's scheduled polls haven't had their chance yet, and
 measuring against the previous working day's cutoff would only nag about feeds the next poll takes anyway.
+
+![Today's word on feeds not pulled since the morning](../screenshots/today-feeds.png)
+
+*Today, under the step strip: three feeds not pulled since 8:00 AM, one failing, with Pull all.*
 
 The Sources tab (`IntakeService.PolledSourcesAsync`) lists the polled sources: last pull ("12 min ago"), when the next is
 due, how the last went (items added, or the error), and when Pull now opens again. Its tab count is the number of
@@ -523,6 +532,13 @@ no group.**
 - A group is offered only with two or more items from two or more feeds.
 
 Triage shows a group as one line that opens to its reports' own rows. There's no "dismiss all" for a group.
+
+![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
+
+1. The group, as one line ("Looks like one event: 2 reports · 2 feeds"), opened to its reports' rows.
+2. The decision bar for the group: here an article already covers it, so *Attach all 2 to "…"* comes first, then
+   *Promote as one*, and *Not the same: split*.
+3. *Same event* in the context rail: each report with its source, *Attach both* and *Not the same*.
 
 **Not the same** (`IntakeService.SplitAsync`) splits a group for everyone: a `TriageSplit` row per report under one
 `Batch`. Two reports sharing a batch never pair again; each can still group with others. The newest report notes who

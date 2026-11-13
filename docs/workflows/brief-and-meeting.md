@@ -62,6 +62,10 @@ zone). Someone without the team edition (a Reader, a Visitor) is sent to `/publi
   Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
 - under the strip, from `Intake:PulledBy` on a working day, how many polled feeds haven't been pulled since, with
   **Pull all** (see [intake-and-triage.md](intake-and-triage.md#feeds-not-pulled-since-the-morning));
+
+  ![Today's word on feeds not pulled since the morning, under the step strip](../screenshots/today-feeds.png)
+
+  *Under the step strip: the feeds not pulled since 8:00, one of them failing, with Pull all.*
 - the running order, then the team's opening note (read-only until **Edit**), then **My actions**, **Not on a brief
   yet** (for whoever writes the brief: Ready articles never on a brief, then their own drafts, each with *Add*; on a
   day with no brief, *Add* starts it) or **Recently presented** for everyone else, and today's numbers.
@@ -219,6 +223,10 @@ overdue, escalated, or has gone too long without an update, each once, at most 8
 
 The team email's "Still open from earlier briefs" keeps to the overdue and escalated actions.
 
+![The Actions that need review slide](../screenshots/present-needs-review.png)
+
+*Actions that need review: each row's reasons under Waited, its last update, and the one thing the room can do.*
+
 The footer names each slide under its bar (Title, Opening note, each group of numbers, Actions that need review,
 "1 · Edge VPN", Wrap-up), shortened to fit; the whole title is in its tooltip and what a screen reader hears. Who is
 here and whose hands are up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same
@@ -248,6 +256,13 @@ focus back on **Rail**. It holds, for the slide on screen:
 | Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
 | Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock everyone to my slide, hand off: choose who, then **Hand off**). |
 
+![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
+
+1. The article's actions, each with its due date, holder and *Take it*.
+2. A recommended line no action has been raised from yet: its kind and team, and *Raise*.
+3. The quick add, for an action the article doesn't recommend.
+4. Your note on the article (Ctrl+Enter adds it). *Mark discussed* (D) is under it.
+
 The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
 follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
 presenter's, from the rail. Someone following, an analyst included, raises or works an action on the action pages.**
@@ -273,6 +288,10 @@ narrows for it, so the room reads the two together:
 - Whoever follows sees it where the presenter has it, as they see the card over the slide. It shows no more than that
   card: their own read of the action (a Visitor's only the one open for the room, without its page link or files), and,
   for an action raised from an article above the meeting's ceiling, only its number and title.
+
+![An action open beside the slide, between the slide and the presenter's rail](../screenshots/present-action-beside.png)
+
+*With the setting on, at 1920px: the slide, the action and the presenter's rail side by side.*
 
 ## The live meeting
 
@@ -349,6 +368,10 @@ meeting. Present mode takes their seat (`LiveMeetings.Join`) before it reads any
 the meeting ends or they leave, their reads are refused. See [architecture/security.md](../architecture/security.md).
 
 ## Ending the meeting
+
+![The wrap-up's three lists, with Before you end in the presenter's rail](../screenshots/present-wrap-up.png)
+
+*The wrap-up: not raised, who is doing what, and not discussed; in the presenter's rail, Before you end.*
 
 **End the meeting** (`Present.EndMeeting`, after an "End the meeting now?" confirmation in a `ConfirmDialog`) calls `BriefService.MarkPresentedAsync(briefId, heldAtUtc, carry)`. The brief page's Send step also has an End
 the meeting for a meeting held outside present mode (`DistributePanel.EndMeeting`, with the time it was held).
