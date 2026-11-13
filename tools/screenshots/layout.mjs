@@ -145,6 +145,18 @@ const lanesFillTheHeight = {
   }),
 };
 
+/** On a narrow window the board's lanes stay tall enough to read a card in (8rem of each), the page scrolling instead. */
+const lanesTallEnough = {
+  name: 'each lane shows at least 8rem of its cards',
+  check: page => page.evaluate(() => {
+    const lanes = [...document.querySelectorAll('.tide-board .tide-kcol-cards')].filter(l => l.getClientRects().length);
+    if (!lanes.length) return ['no lanes shown'];
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return lanes.flatMap(l => l.clientHeight >= 8 * rem - 1 ? []
+      : [`the ${l.closest('.tide-kcol')?.dataset.status} lane shows ${l.clientHeight}px of its cards`]);
+  }),
+};
+
 /** The closed strip has a chip for each way of closing, each a drop target (a .tide-kchip with its status) and shown. */
 const chipsAreDropTargets = {
   name: 'a drop target for each way of closing',
@@ -3674,6 +3686,8 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
       onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // A narrow window: the lanes keep room to read a card, and the page scrolls.
+  { name: 'actions-board-narrow', route: '/actions?view=open&layout=board', widths: [700, 641, [400, 800]], rules: [noSidewaysScroll, lanesTallEnough] },
   // Who has an action can be an external team's ticket reference: the longest wraps within its card and its row rather
   // than widening them, on the board and the list.
   { name: 'actions-board-long-ticket', route: '/actions?view=open&layout=board', setup: longTicket, widths: [[1440, 900], [780, 900]],
