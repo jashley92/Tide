@@ -167,6 +167,14 @@ anything.
   in the page under it (the palette, from Ctrl+K) closes the rail so the dialog can be used. The backdrop dims the top
   bar and the sidebar too, and Tab and Shift+Tab wrap inside the rail through `dialog.js`'s trap. The list keys
   (`rows.js`) leave alone a key meant for the rail, so `J`, `K`, the arrows and Escape never reach the list under it.
+![The context rail docked beside Today at 1920px](../screenshots/context-rail-docked.png)
+
+*Docked, at 1920px: the rail beside Today's brief, and the Context button (`]`) in the top bar.*
+
+![The context rail open over Today at 1440px](../screenshots/context-rail-overlay.png)
+
+*An overlay, at 1440px: the rail over the page, with the backdrop dimming the rest.*
+
 - **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
   rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
   script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
@@ -465,6 +473,10 @@ view (Bring everyone here, Lock to me, Hand off).
   shut, and **Rail** in the top bar or `]` opens it over the slide as a modal dialog (`role="dialog"`,
   `aria-modal`, the page under it inert, a scrim); Escape, Rail, `]` or a click on the scrim shuts it, and focus goes
   back to Rail. `]` or Rail also shuts a docked rail, giving the slide the width.
+
+![An article's slide with the presenter's rail docked](../screenshots/doc-present-rail.png)
+
+*The presenter's rail docked beside an article's slide at 1920px; the slide narrows to fit what's left.*
 
 **Followers mirror the presenter.** `LiveMeetings` holds the presenter's slide by key (`note`, `metrics:{group}`,
 `open`, `article:{id}`, `wrap`), so a follower whose deck differs lands on the same thing; the scroll is shared as a

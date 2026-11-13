@@ -70,6 +70,14 @@ Every route, its component and the permission it needs are in the [route table](
   page. On a phone the search box takes a row of its own, the pills scroll sideways, and the menu rises from the
   bottom of the screen.
 
+![Today at 1920px, with the context rail docked open beside the brief](../screenshots/context-rail-docked.png)
+
+*The context rail docked: in a window 1500px or wider it sits beside the page ("Beside the brief" on Today).*
+
+![Today at 1440px, with the context rail open over the page](../screenshots/context-rail-overlay.png)
+
+*The context rail as an overlay: below 1500px, Context or `]` opens it over the page and dims the rest.*
+
 What sits behind this is in [frontend](../architecture/frontend.md#layout-and-navigation).
 
 ## Today
@@ -126,6 +134,10 @@ a tab beside the running order. A past day's brief opens at `/briefs/{day}`, wit
 redirects to Today. A Reader or Visitor who opens `/` goes to Published briefs instead.
 
 ![Today](../screenshots/brief-todays-numbers.png)
+
+![Today's word on feeds not pulled since the morning](../screenshots/today-feeds.png)
+
+*From 8:00 on a working day, under the step strip: the feeds not pulled since then, with Pull all.*
 
 ## Triage
 
@@ -185,6 +197,10 @@ window or being pulled, and says how it's going ("Pulling 3 of 9: Sample news…
 items · 2 skipped (pulled in the last 15 min) · 1 failed: Sample news"). One runs at a time, whoever starts it; leaving
 the page stops it after the source it's on.
 
+![The Sources tab, with Pull all at its head](../screenshots/triage-pull-all.png)
+
+*The Sources tab, with Pull now on each source and Pull all at its head.*
+
 ### Reading the article here
 
 - **Open by itself.** On a window 1400px or wider the pane opens by itself, until you close it (TIDE remembers that
@@ -239,6 +255,11 @@ the page stops it after the source it's on.
   ("Binance", "$6.3 billion"), are suggested as one line. It opens to the reports themselves, each with its source and
   excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click, and
   a group has no "dismiss all". *Not the same* splits a suggested group for everyone, with Undo.
+
+![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
+
+*(1) The group, opened to its two reports; (2) its decision bar, with Attach all first because an article already
+covers it; (3) Same event in the context rail.*
 
 ### Two analysts at once
 
@@ -409,6 +430,11 @@ that fits its kind.
   keyboard. Under the lanes a strip counts what closed as Done, Cancelled and Not applicable in the last 7 days. A card
   dropped on one of those closes that way, and a click on one opens those actions on the list's Recently closed tab,
   with the board's filters.
+![The Actions board](../screenshots/doc-actions-board.png)
+
+*(1) The view tabs with their counts; (2) the filter bar; (3) the selected card; (4) the closed strip: what closed
+each way in the last 7 days, a drop target for each.*
+
 - **The list.** All open and My teams are grouped by when actions are due, each group saying how many have no owner.
   A row shows the title, the article it came from (with KEV), the kind, the team and who has it, a **Progress** column
   (the checklist, the hunt state, or "No update for 3 days"), the due date and the status. **Take it** is on the rows
@@ -607,6 +633,10 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
 - a wrap-up of three lists: the recommended lines not raised yet, who has what (the brief's actions by team and
   holder), and the articles not discussed.
 
+![The Actions that need review slide](../screenshots/present-needs-review.png)
+
+*Actions that need review: why each is there, its last update, and one thing to do.*
+
 The footer names each slide ("1 · Edge VPN"). Screenshots zoom, articles are ticked off as discussed, and the editions
 can be switched on screen. A slide too tall for the screen shrinks a little, then scrolls inside itself.
 
@@ -629,10 +659,23 @@ attendance and *End the meeting*. In a meeting it also has the hands (lower one,
 bring everyone here, lock everyone to your slide, and hand presenting to another analyst. If the presenter drops out,
 another analyst can take over. Ending the meeting asks first.
 
+![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
+
+*The presenter's rail on an article's slide: (1) its actions with Take it, (2) a recommended line to raise, (3) the
+quick add, (4) your note.*
+
+![The wrap-up, with Before you end in the presenter's rail](../screenshots/present-wrap-up.png)
+
+*The wrap-up's three lists for the room, and Before you end in the presenter's rail.*
+
 **An action beside the slide.** An action opened in the meeting opens over the slide. An administrator can tick *In a
 meeting, an action opens beside the slide* in Organization settings (off by default; rehearse in the meeting room
 first): then, on a window 1200px or wider, the action opens as a column beside the slide, which narrows for it, the
 same for the presenter and everyone following.
+
+![An action open beside the slide](../screenshots/present-action-beside.png)
+
+*An action beside the slide, with the presenter's rail docked: slide, action and rail side by side.*
 
 ![Opening metrics slide](../screenshots/present-metrics-slide.png)
 

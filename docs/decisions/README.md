@@ -27,3 +27,10 @@ contributor; supersede one rather than editing it once it's accepted.
 | [0020](0020-external-teams-are-emailed-without-tide.md) | External teams are tracked in TIDE and emailed as people without it; Tracking and per-team active limits |
 | [0021](0021-escalation-is-an-administered-ladder.md) | Escalation is an administered ladder of steps from a fixed menu, run by the reminder sweep once per due date |
 | [0022](0022-releases-are-signed-with-a-pinned-key.md) | Releases are signed with a pinned key, checked by the installed upgrade script, and a bundle's hash can be checked offline |
+| [0023](0023-the-context-rail-docks-from-1500px.md) | The context rail docks from 1500px and is an overlay below |
+| [0024](0024-presenter-controls-are-in-a-presenter-only-rail.md) | The presenter's controls are in a rail only the presenter's page draws |
+| [0025](0025-an-action-beside-the-slide-is-off-by-default.md) | An action beside the slide is a setting, off by default |
+| [0026](0026-actions-need-review-after-admin-set-quiet-limits.md) | Actions need review when overdue, escalated, or quiet past limits an administrator sets |
+| [0027](0027-external-teams-actions-show-their-ticket.md) | An external team's unheld action is named by its ticket wherever a holder would be |
+| [0028](0028-pull-all-pulls-one-source-at-a-time.md) | Pull all pulls one source at a time, and stops with its page |
+| [0029](0029-the-layout-check-runs-in-slices-and-waits-for-stillness.md) | The layout check runs in slices side by side, and waits for the page to be still |

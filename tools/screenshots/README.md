@@ -39,6 +39,10 @@ What happens:
    - the previous working day's brief, presented and sent in both editions through the app's own send
 
    The seeder writes `.demo/demo.json`, which names the days and records that routes refer to.
+
+   `capture.mjs` also turns on `Demo:StaleFeeds`, with polling on and `Intake:PulledBy=08:00` (see "Layout checks"
+   below), so Today says the feeds aren't pulled on a working day after 8:00 New York time, and the Sources tab has
+   feeds to Pull all. Those feeds are never fetched.
 3. Each shot in the manifest is captured, and TIDE is stopped.
 
 Options, as environment variables:
@@ -59,7 +63,8 @@ In that case it prints `annotation target(s) not found` with the selectors, and 
 
 Every shot uses the same settings:
 
-- a fixed viewport and a device scale of 1
+- a fixed viewport and a device scale of 1: 1440×1000 for most, 1920×1080 where the context rail or the presenter's
+  rail is meant to be docked open
 - the light theme, an expanded sidebar, and the context rail as it starts (docked open in a wide window)
 - reduced motion, with animations off and the caret hidden
 - en-US, America/New_York
@@ -89,6 +94,8 @@ Add an entry to the `shots` array in `capture.mjs`:
 | `setup` | Optional. `async (page, demo) => {}` runs after the page settles: clicks, keys, scrolling. `scrollTo(selector, top)` scrolls a match to `top` px from the top of the window. |
 | `clip` | Optional. A selector: the image is cut to the box around its matches, plus `pad` pixels (default 16). |
 | `annotate` | Optional. Numbered callouts, described below. |
+| `when` | Optional. `demo => boolean`. When it's false the shot is skipped, saying so, and its image is left as it was: for what isn't shown on every day (Today's word on feeds not pulled, on a weekend). |
+| `after` | Optional. `async (page, demo) => {}` puts back what `setup` changed, on a fresh page, even when the shot failed. `present-action-beside` turns on *In a meeting, an action opens beside the slide* and turns it off again here. |
 
 If the shot needs data the seed doesn't have, add it in `DemoSeeder`. If a route needs a new id, add it to
 `DemoSeeder.Seeded`.
