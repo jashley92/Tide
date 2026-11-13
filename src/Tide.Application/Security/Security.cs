@@ -24,7 +24,8 @@ public static class RoleDefinitions
         [AppRole.Reader] = [Permission.ReadPublished],
         // Administrators hold every permission, including ones added to the enum later.
         [AppRole.Admin] = Enum.GetValues<Permission>(),
-        // Reads what the team reads, every action too, and changes nothing but their own meeting notes. Neither
+        // Reads what the team reads, every action too, and changes nothing but the meeting: their own notes, and who was
+        // there (MeetingService.CanAddAttendees). Neither
         // WorkActions nor WriteArticles: every write the team edition allows asks for one of them (commenting on an
         // action, say: ActionService.CanComment).
         [AppRole.Viewer] =
@@ -42,7 +43,7 @@ public static class RoleDefinitions
         AppRole.ActionOwner => "Another team's member: reads the team edition and works the actions given to their team.",
         AppRole.Reader => "Anyone else in the company: reads the published, company-wide archive.",
         AppRole.Admin => "Administers TIDE: sources, taxonomy, role mappings and settings. Holds every permission.",
-        AppRole.Viewer => "Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand and adds notes.",
+        AppRole.Viewer => "Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand, adds notes and adds who was there.",
         AppRole.Visitor => "A colleague from elsewhere: reads the published archive, and sees a live meeting only while they're in it.",
         _ => role.ToString(),
     };

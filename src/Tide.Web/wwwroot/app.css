@@ -890,6 +890,10 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-attendance { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .4em 1.2em; }
 .tide-attendance li { display: inline-flex; align-items: center; gap: .35em; }
 .tide-attendance .tide-presence-dot { margin-left: 0; }
+/* The wrap-up's box for someone following to add a name who was there: the box and Add on one row under the list. */
+.tide-wrap-add { display: flex; gap: .4em; align-items: center; max-width: 30em; margin-top: .4em; }
+.tide-wrap-add > .form-control { flex: 1 1 12em; min-width: 0; }   /* its colours are the rail's boxes' */
+.tide-wrap-add > .btn { flex: none; }
 .tide-note-list { list-style: none; padding: 0; margin: 0 0 .6em; max-height: 40vh; overflow-y: auto; }
 .tide-note-list li { padding: .65em 0; border-bottom: 1px solid var(--tide-slide-line); }
 .tide-note-list li:first-child { padding-top: .2em; }
@@ -1525,7 +1529,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present-rail section { display: grid; gap: .45em; padding-top: .8em; border-top: 1px solid var(--tide-slide-line); }
 .tide-present-rail h3 { margin: 0; font-size: 1.05em; font-weight: var(--tide-weight-semibold); }
 .tide-present-rail .tide-present-help { margin: 0; }
-.tide-present-rail .form-control, .tide-present-rail .form-select { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .95em; color-scheme: dark; }
+.tide-present-rail .form-control, .tide-present-rail .form-select, .tide-wrap-add > .form-control { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .95em; color-scheme: dark; }
 .tide-present-rail-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .6em; }
 .tide-present-rail-grow { flex: 1 1 8em; min-width: 0; overflow-wrap: anywhere; }
 .tide-present-rail-ok { color: var(--tide-slide-ok); }

@@ -1082,8 +1082,9 @@ public class ActionOwnerAgainstTheServicesTests : IAsyncLifetime
             "Actions.AddSavedHunt", "Actions.AddIndicators", "SavedQueries.Save", "SavedQueries.SaveFromHunt", "SavedQueries.SetRetired", "SavedQueries.Delete",
             // So are the outreach templates, and an Outreach action's emails are its team's.
             "OutreachTemplates.Save", "OutreachTemplates.SetRetired", "OutreachTemplates.Delete", "Outreach.Write", "Outreach.MarkSent",
-            // At the meeting they join it and take notes like anyone on the team edition (their own notes only).
-            "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote",
+            // At the meeting they join it and take notes like anyone on the team edition (their own notes only), and take
+            // off a name they added there (MeetingServiceTests: only theirs, and only from a seat in the live meeting).
+            "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote", "Meetings.RemoveAttendee",
         };
         var leaks = await ServiceWorld.NotForbidden(_w.AllMutations().Where(m => !ownActions.Contains(m.Item1)));
         leaks.Should().BeEmpty();

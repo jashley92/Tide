@@ -2037,6 +2037,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AddedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
 

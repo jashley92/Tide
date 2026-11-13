@@ -32,6 +32,135 @@ public class MeetingServiceTests : IDisposable
         _db.User.Roles = roles.ToHashSet();
     }
 
+    private const string Presenter = "S-1-5-21-TEST-1";
+    private const string Val = "S-1-5-21-VAL";
+    private const string Owner = "S-1-5-21-OWNER";
+    private const string Andy = "S-1-5-21-ANDY";
+    private const string Vic = "S-1-5-21-VISITOR";
+
+    private async Task<List<Tide.Domain.Entities.MeetingAttendee>> Attendees(Guid brief)
+    {
+        await using var ctx = _db.Context();
+        return (await ctx.MeetingAttendees.Where(a => a.BriefId == brief).ToListAsync()).OrderBy(a => a.Name, StringComparer.Ordinal).ToList();
+    }
+
+    private async Task<List<string>> AuditedBy(string action)
+    {
+        await using var ctx = _db.Context();
+        return await ctx.AuditLog.Where(e => e.EntityType == "MeetingAttendee" && e.Action == action).Select(e => e.UserName).ToListAsync();
+    }
+
+    [Fact]
+    public async Task AFollower_AddsSomeoneWhoWasThere_AndTheRowSaysWhoAddedThem()
+    {
+        var (brief, _) = await Brief();
+        _db.Live = new InMeeting(brief, Presenter);
+        var svc = _db.Meetings();
+
+        As(Val, "Val Viewer", AppRole.Viewer);
+        svc.CanAddAttendees(brief).Should().BeTrue("a Viewer following the meeting");
+        await svc.AddAttendeeAsync(brief, "Sam from the SOC");
+        As(Owner, "Olive Owner", AppRole.ActionOwner);
+        await svc.AddAttendeeAsync(brief, "Dana from Legal");
+        As(Andy, "Andy Analyst", AppRole.Analyst);
+        await svc.AddAttendeeAsync(brief, "Kim from IT");
+        await svc.AddAttendeeAsync(brief, "  sam FROM the soc ");   // listed already
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "   ")).Should().ThrowAsync<ArgumentException>();
+
+        (await Attendees(brief)).Select(a => (a.Name, a.AddedById))
+            .Should().Equal(("Dana from Legal", Owner), ("Kim from IT", Andy), ("Sam from the SOC", Val));
+        (await AuditedBy("Added")).Should().BeEquivalentTo(["Val Viewer", "Olive Owner", "Andy Analyst"], "the audit says who added each");
+    }
+
+    [Fact]
+    public async Task AVisitor_InTheMeeting_CantAddAnyone()
+    {
+        var (brief, _) = await Brief();
+        _db.Live = new InMeeting(brief, Presenter);
+        As(Vic, "Vic Visitor", AppRole.Visitor);
+        var svc = _db.Meetings();
+        svc.CanAddAttendees(brief).Should().BeFalse();
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Sam")).Should().ThrowAsync<ForbiddenException>();
+        (await Attendees(brief)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task InARehearsal_NoOneAddsOrRemoves_ForNoMeetingIsLive()
+    {
+        // A rehearsal never starts or joins the meeting: whoever rehearses has no seat in one.
+        var (brief, _) = await Brief();
+        var svc = _db.Meetings();
+        svc.CanAddAttendees(brief).Should().BeFalse();
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Sam")).Should().ThrowAsync<ForbiddenException>();
+
+        _db.Live = new InMeeting(brief, Presenter);
+        await _db.Meetings().AddAttendeeAsync(brief, "Sam");
+        var sam = (await Attendees(brief)).Single();
+        _db.Live = null;
+        _db.Meetings().CanRemoveAttendee(sam).Should().BeFalse();
+        await FluentActions.Invoking(() => _db.Meetings().RemoveAttendeeAsync(sam.Id)).Should().ThrowAsync<ForbiddenException>();
+        (await Attendees(brief)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task SomeoneNotInThisBriefsLiveMeeting_CantAdd()
+    {
+        var (brief, _) = await Brief();
+        As(Val, "Val Viewer", AppRole.Viewer);
+        _db.Live = new InMeeting(Guid.NewGuid(), Presenter);   // another day's meeting is live
+        await FluentActions.Invoking(() => _db.Meetings().AddAttendeeAsync(brief, "Sam")).Should().ThrowAsync<ForbiddenException>();
+
+        _db.Live = new InMeeting(brief, Presenter, Owner);     // this brief's, without Val in it
+        _db.Meetings().CanAddAttendees(brief).Should().BeFalse();
+        await FluentActions.Invoking(() => _db.Meetings().AddAttendeeAsync(brief, "Sam")).Should().ThrowAsync<ForbiddenException>();
+        (await Attendees(brief)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AFollower_RemovesOnlyWhomTheyAdded_ThePresenterAnyoneAdded_AndNoOneSomeoneWhoJoined()
+    {
+        var (brief, _) = await Brief();
+        _db.Live = new InMeeting(brief, Presenter);
+        var svc = _db.Meetings();
+        await svc.JoinedAsync(brief);                       // the presenter, joined
+        await svc.AddAttendeeAsync(brief, "Pat from HR");   // added by the presenter
+        As(Owner, "Olive Owner", AppRole.ActionOwner);
+        await svc.JoinedAsync(brief);
+        await svc.AddAttendeeAsync(brief, "Dana from Legal");
+        As(Val, "Val Viewer", AppRole.Viewer);
+        await svc.AddAttendeeAsync(brief, "Sam from the SOC");
+        await svc.AddAttendeeAsync(brief, "Kim from IT");
+        var rows = (await Attendees(brief)).ToDictionary(a => a.Name);
+
+        // Val: their own, and nothing of anyone else's.
+        svc.CanRemoveAttendee(rows["Sam from the SOC"]).Should().BeTrue();
+        svc.CanRemoveAttendee(rows["Dana from Legal"]).Should().BeFalse();
+        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeFalse();
+        await svc.RemoveAttendeeAsync(rows["Sam from the SOC"].Id);
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Dana from Legal"].Id)).Should().ThrowAsync<ForbiddenException>("another follower's");
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Pat from HR"].Id)).Should().ThrowAsync<ForbiddenException>("the presenter's");
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>("joined");
+
+        // The presenter: anyone added by name, but not someone who joined.
+        As(Presenter, "Test Analyst", AppRole.Analyst);
+        svc.CanRemoveAttendee(rows["Kim from IT"]).Should().BeTrue();
+        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeFalse();
+        await svc.RemoveAttendeeAsync(rows["Dana from Legal"].Id);
+        await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);
+        await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);   // gone already: nothing to do
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>("joined");
+
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Olive Owner", "Pat from HR", "Test Analyst");
+        (await AuditedBy("Deleted")).Should().BeEquivalentTo(["Val Viewer", "Test Analyst", "Test Analyst"], "the audit says who removed each");
+    }
+
+    [Fact]
+    public async Task AReader_IsRefusedRemovingAnyone_EvenOneNotThere()
+    {
+        As("S-1-5-21-READER", "Reader", AppRole.Reader);
+        await FluentActions.Invoking(() => _db.Meetings().RemoveAttendeeAsync(Guid.NewGuid())).Should().ThrowAsync<ForbiddenException>();
+    }
+
     [Fact]
     public async Task Joined_RecordsMeOnce_KeepsTheFirstJoin_AndClearsWhenILeft()
     {
@@ -58,6 +187,7 @@ public class MeetingServiceTests : IDisposable
     public async Task AddAttendee_AddsSomeoneByName_OnceOnly_AndRemoveTakesThemOff()
     {
         var (brief, _) = await Brief();
+        _db.Live = new InMeeting(brief, Presenter);
         var svc = _db.Meetings();
         await svc.JoinedAsync(brief);
 
@@ -103,7 +233,7 @@ public class MeetingServiceTests : IDisposable
         await svc.AddNoteAsync(brief, article, "We'll take the sweep");
         await FluentActions.Invoking(() => svc.EditNoteAsync(mine, "defaced")).Should().ThrowAsync<ForbiddenException>();
         await FluentActions.Invoking(() => svc.DeleteNoteAsync(mine)).Should().ThrowAsync<ForbiddenException>();
-        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Someone")).Should().ThrowAsync<ForbiddenException>("the presenter's");
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Someone")).Should().ThrowAsync<ForbiddenException>("not in a live meeting");
 
         As("S-1-5-21-TEST-1", "Test Analyst", AppRole.Analyst);
         await svc.DeleteNoteAsync(mine);
@@ -114,6 +244,7 @@ public class MeetingServiceTests : IDisposable
     public async Task SomeoneAddedByName_WhoThenJoins_IsListedOnce()
     {
         var (brief, _) = await Brief();
+        _db.Live = new InMeeting(brief, Presenter);
         var svc = _db.Meetings();
         await svc.AddAttendeeAsync(brief, "test analyst");
         await svc.JoinedAsync(brief);
@@ -157,9 +288,11 @@ public class MeetingServiceTests : IDisposable
     [Fact]
     public async Task AMeetingOnABriefThatsGone_IsRefused()
     {
+        var gone = Guid.NewGuid();
+        _db.Live = new InMeeting(gone, Presenter);
         var svc = _db.Meetings();
         await FluentActions.Invoking(() => svc.JoinedAsync(Guid.NewGuid())).Should().ThrowAsync<KeyNotFoundException>();
-        await FluentActions.Invoking(() => svc.AddAttendeeAsync(Guid.NewGuid(), "Sam")).Should().ThrowAsync<KeyNotFoundException>();
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(gone, "Sam")).Should().ThrowAsync<KeyNotFoundException>();
         await FluentActions.Invoking(() => svc.AddNoteAsync(Guid.NewGuid(), null, "x")).Should().ThrowAsync<KeyNotFoundException>();
         await FluentActions.Invoking(() => svc.EditNoteAsync(Guid.NewGuid(), "x")).Should().ThrowAsync<KeyNotFoundException>();
         await svc.LeftAsync(Guid.NewGuid(), new Dictionary<string, DateTimeOffset>());

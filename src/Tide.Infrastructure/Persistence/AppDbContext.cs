@@ -396,6 +396,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.HasOne<Brief>().WithMany().HasForeignKey(x => x.BriefId).OnDelete(DeleteBehavior.Cascade);
             Person(e, x => x.UserId, x => x.Name);
+            e.Property(x => x.AddedById).HasMaxLength(256);
             e.HasIndex(x => new { x.BriefId, x.UserId, x.Name }).IsUnique();
         });
 

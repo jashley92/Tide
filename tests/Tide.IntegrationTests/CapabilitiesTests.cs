@@ -33,7 +33,13 @@ public class CapabilitiesTests : IDisposable
         ["Read the company-wide archive (published briefs)"] = (db, _) => db.Distribution().PublishedAsync(),
         ["Read the team edition: briefs, the brief archive, Today"] = (db, _) => db.Briefs().ListAsync(),
         ["Add meeting notes"] = (db, s) => db.Meetings().AddNoteAsync(s.Brief, null, "A note"),
-        ["Present, start and end a meeting"] = (db, s) => db.Meetings().AddAttendeeAsync(s.Brief, "Someone in the room"),
+        ["In a live meeting, add someone who was there, and take off whom you added"] = async (db, s) =>
+        {
+            db.Live = new InMeeting(s.Brief);
+            try { await db.Meetings().AddAttendeeAsync(s.Brief, "Someone in the room"); }
+            finally { db.Live = null; }
+        },
+        ["Present, start and end a meeting"] = (db, s) => db.Meetings().LeftAsync(s.Brief, new Dictionary<string, DateTimeOffset> { ["S-1-5-21-OTHER"] = DateTimeOffset.UtcNow }),
         ["Build a brief (its articles, order, team note)"] = (db, s) => db.Briefs().SetTeamNoteAsync(s.Brief, "Morning"),
         ["Reopen a brief"] = (db, s) => db.Briefs().ReopenAsync(s.Brief),
         ["Send a brief, finish one not sent, mark it posted"] = (db, _) => db.Distribution().FinishNotSentAsync(Day, "No meeting"),
@@ -212,6 +218,8 @@ public class CapabilitiesTests : IDisposable
         Cell("Raise a hand in a meeting", AppRole.Visitor).Should().Be("");
         Cell("Add meeting notes", AppRole.Visitor).Should().BeNull();
         Cell("Add meeting notes", AppRole.Viewer).Should().Be("");
+        Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Viewer).Should().Be("");
+        Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Visitor).Should().BeNull();
         Cell("Join and follow a live meeting", AppRole.Reader).Should().BeNull();
         Capabilities.All.Should().OnlyContain(c => c.For(AppRole.Admin) == "", "an administrator holds every permission");
     }

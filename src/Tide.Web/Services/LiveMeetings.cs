@@ -112,7 +112,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         lock (_gate)
             return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
-                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card)).ToList();
+                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card, m.PresenterId == userId)).ToList();
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
