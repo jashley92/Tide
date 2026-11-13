@@ -61,7 +61,7 @@ public static class JobHealth
         {
             if (Check(s, lease, now) is { } finding) findings.Add(finding);
         }
-        var level = findings.Count == 0 ? floor : (JobHealthLevel)Math.Max((int)floor, (int)findings.Max(f => f.Level));
+        var level = findings.Select(f => f.Level).Append(floor).Max();
         return new JobHealthReport(level, findings, StandingBy: false) { Alarm = alarm };
     }
 

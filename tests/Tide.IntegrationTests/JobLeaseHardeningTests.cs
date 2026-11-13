@@ -15,11 +15,8 @@ public class DeadHolderTakeoverTests
     private static readonly DateTimeOffset Start = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
     private static readonly string Here = Environment.MachineName;
 
-    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder)
-    {
-        var provider = new ServiceCollection().AddSingleton(dbs).BuildServiceProvider();
-        return (new BackgroundJobLease(provider.GetRequiredService<IServiceScopeFactory>(), clock, NullLogger<BackgroundJobLease>.Instance, holder), provider);
-    }
+    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder) =>
+        JobLeaseTests.Lease(dbs, clock, holder);
 
     /// <summary>The id of a process that has run and exited, and that no running process has taken since.</summary>
     internal static int DeadPid()
@@ -117,11 +114,8 @@ public class SecondProcessTests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
 
-    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder)
-    {
-        var provider = new ServiceCollection().AddSingleton(dbs).BuildServiceProvider();
-        return (new BackgroundJobLease(provider.GetRequiredService<IServiceScopeFactory>(), clock, NullLogger<BackgroundJobLease>.Instance, holder), provider);
-    }
+    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder) =>
+        JobLeaseTests.Lease(dbs, clock, holder);
 
     private static async Task<List<string>> Heartbeats(TestDb db)
     {
@@ -208,6 +202,7 @@ public sealed class AlarmLease : IJobLease
 {
     public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(true);
     public LeaseStatus Status { get; } = new(LeaseState.Held, "WEB01/100/aaaa", null, null, null, null) { Self = "WEB01/100/aaaa", Others = ["WEB02/200/bbbb"] };
+    public event Action? AlarmChanged { add { } remove { } }
 }
 
 /// <summary>The app on a process that sees another on its database.</summary>

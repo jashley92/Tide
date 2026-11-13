@@ -906,6 +906,10 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-present-notes textarea.tide-autogrow { max-height: 30vh; }   /* the panel floats over the slide */
 .tide-live-banner { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; padding: .5rem .9rem; border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); color: var(--tide-text); }
 .tide-live-banner .tide-presence-dot { margin-left: 0; }
+/* Another TIDE process on the database (SecondProcessBanner), for administrators: as the live banner, in the threat colour. */
+.tide-alarm-banner { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .6rem; margin-bottom: 1rem; padding: .5rem .9rem; border: 1px solid var(--tide-threat); border-radius: var(--tide-radius-lg); background: var(--tide-threat-soft); color: var(--tide-text); }
+.tide-alarm-icon { color: var(--tide-threat); line-height: 1.5; }
+.tide-alarm-text { flex: 1 1 20rem; min-width: 0; }
 .tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .tide-live-dot { animation: none; } }
 .tide-live-count { display: inline-block; min-width: 1.3em; margin-left: .2em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-accent-text); font-size: .8em; }

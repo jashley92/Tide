@@ -58,7 +58,7 @@ public interface IJobLease
     LeaseStatus Status { get; }
 
     /// <summary>Raised when <see cref="LeaseStatus.Alarm"/> starts, stops or names other processes, for a page to redraw.</summary>
-    event Action? AlarmChanged { add { } remove { } }
+    event Action? AlarmChanged;
 }
 
 /// <summary>A job run by hand (an administrator's Run now, an analyst's Pull now) on a process that's standing by: the
@@ -88,7 +88,7 @@ public static class JobLeaseExtensions
 /// seconds of each other, well inside the margin.
 /// Singleton (it's asked from the hosted services, so it makes a scope for each database call).
 /// </summary>
-public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider time, ILogger<BackgroundJobLease> log, string? holder = null) : IJobLease
+public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider time, ILogger<BackgroundJobLease> log, string? holder = null) : IJobLease, IDisposable
 {
     /// <summary>The lease the background jobs share.</summary>
     public const string BackgroundJobs = "background-jobs";
@@ -186,28 +186,23 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         await using var db = await dbs.CreateAsync(ct);
         var me = Holder;
         var until = now + Expiry;
-        // One statement: whoever's renewal or takeover lands first wins, and the other's matches no row.
-        var taken = await db.JobLeases
-            .Where(l => l.Name == BackgroundJobs && (l.Holder == me || l.ExpiresAtUtc <= now))
+        // One statement: set this holder and a new expiry where the row is this holder's, has lapsed, or (on the second
+        // try) is still the dead holder just read. Whoever's renewal or takeover lands first wins; the other's matches no row.
+        Task<int> ClaimAsync(string? dead) => db.JobLeases
+            .Where(l => l.Name == BackgroundJobs && (l.Holder == me || l.ExpiresAtUtc <= now || (dead != null && l.Holder == dead)))
             .ExecuteUpdateAsync(u => u
                 .SetProperty(l => l.AcquiredAtUtc, l => l.Holder == me ? l.AcquiredAtUtc : now)
                 .SetProperty(l => l.Holder, me)
-                .SetProperty(l => l.ExpiresAtUtc, until), ct) == 1;
+                .SetProperty(l => l.ExpiresAtUtc, until), ct);
         // A renewal is the one statement: it was this holder's, so it's held since it was taken.
-        if (taken) return new LeaseStatus(LeaseState.Held, me, until, before.State == LeaseState.Held ? before.HeldSinceUtc : now, now, null);
+        if (await ClaimAsync(null) == 1) return new LeaseStatus(LeaseState.Held, me, until, before.State == LeaseState.Held ? before.HeldSinceUtc : now, now, null);
         var row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
-        // Its holder's process is gone from this machine (it was killed, or crashed): taken over now rather than when it
-        // lapses, by one statement that matches only the holder just read, so a renewal or another takeover in between wins.
+        // Its holder's process is gone from this machine (it was killed, or crashed): taken over now rather than when it lapses.
         if (row is not null && IsGoneFromThisMachine(row.Holder))
         {
-            var dead = row.Holder;
-            if (await db.JobLeases.Where(l => l.Name == BackgroundJobs && l.Holder == dead)
-                    .ExecuteUpdateAsync(u => u
-                        .SetProperty(l => l.AcquiredAtUtc, now)
-                        .SetProperty(l => l.Holder, me)
-                        .SetProperty(l => l.ExpiresAtUtc, until), ct) == 1)
+            if (await ClaimAsync(row.Holder) == 1)
             {
-                log.LogInformation("Took over the background jobs' lease from {Dead}, whose process is no longer running.", Describe(dead));
+                log.LogInformation("Took over the background jobs' lease from {Dead}, whose process is no longer running.", Describe(row.Holder));
                 return new LeaseStatus(LeaseState.Held, me, until, now, now, null);
             }
             row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
@@ -296,4 +291,10 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         return parts.Length >= 2 && int.TryParse(parts[1], out var pid) ? $"{parts[0]}, process {pid}" : holder;
     }
 
+    /// <summary>Nothing to do. The gate isn't disposed: a host disposes its singletons before or while its hosted services
+    /// stop (a test host does), and the release at shutdown still waits on it. It holds no wait handle, so nothing leaks.</summary>
+    public void Dispose()
+    {
+        // Deliberately empty: see the summary.
+    }
 }

@@ -8,9 +8,9 @@
 
 @if (Shown is { } alarm)
 {
-    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert" data-second-process>
-        <span class="bi bi-exclamation-octagon" aria-hidden="true"></span>
-        <span class="flex-grow-1"><strong>Second process running.</strong> @alarm</span>
+    <div class="tide-alarm-banner" role="alert" data-second-process>
+        <span class="bi bi-exclamation-octagon tide-alarm-icon" aria-hidden="true"></span>
+        <span class="tide-alarm-text"><strong>Second process running.</strong> @alarm</span>
         <a class="btn btn-sm btn-outline-secondary text-nowrap" href="admin/system">Diagnostics</a>
     </div>
 }
