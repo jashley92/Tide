@@ -33,6 +33,9 @@ public static class UserPreferences
 
     public const string ReadingAuto = "auto", ReadingOpen = "open", ReadingClosed = "closed";
 
+    /// <summary>The release whose "What's new" the person last saw ("1.13.0"); none ("") until they've seen one.</summary>
+    public const string WhatsNewSeen = "whatsnew.seen";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -61,9 +64,21 @@ public static class UserPreferences
 
     public const string On = "on", Off = "off", Daily = "daily", Weekly = "weekly";
 
+    /// <summary>A preference: one of a fixed list of <paramref name="Values"/> (the first its default), or, made with
+    /// <see cref="Matching"/>, any value a rule allows (a release's version).</summary>
     public sealed record Definition(string Name, IReadOnlyList<string> Values, Permission Needs)
     {
-        public string Default => Values[0];
+        private string? _default;
+        private Func<string, bool>? _allows;
+
+        public string Default => _default ?? Values[0];
+
+        /// <summary>Whether the preference may hold <paramref name="value"/>.</summary>
+        public bool Allows(string value) => _allows?.Invoke(value) ?? Values.Contains(value);
+
+        /// <summary>A preference that holds any value <paramref name="allows"/> allows, <paramref name="default"/> until set.</summary>
+        public static Definition Matching(string name, string @default, Func<string, bool> allows, Permission needs) =>
+            new(name, [], needs) { _default = @default, _allows = allows };
     }
 
     // The notification kinds' values and permissions are theirs (NotificationKinds).
@@ -73,6 +88,8 @@ public static class UserPreferences
                 new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
                 new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
                 new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
+                // Everyone who reads release highlights reads the team edition (RoleGroups.For).
+                Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
@@ -97,7 +114,7 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
         await using var db = await dbs.CreateAsync(ct);
         var stored = await db.UserPreferences.AsNoTracking()
             .Where(p => p.UserId == user.UserId && p.Name == d.Name).Select(p => p.Value).FirstOrDefaultAsync(ct);
-        return stored is not null && d.Values.Contains(stored) ? stored : d.Default;
+        return stored is not null && d.Allows(stored) ? stored : d.Default;
     }
 
     /// <summary>The person's values for each of <paramref name="names"/> (as <see cref="GetAsync(string, CancellationToken)"/>
@@ -111,7 +128,7 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
             .Where(p => p.UserId == user.UserId && wanted.Contains(p.Name)).Select(p => new { p.Name, p.Value }).ToListAsync(ct);
         var stored = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var r in rows) stored.TryAdd(r.Name, r.Value);
-        return defs.ToDictionary(d => d.Name, d => stored.TryGetValue(d.Name, out var v) && d.Values.Contains(v) ? v : d.Default, StringComparer.Ordinal);
+        return defs.ToDictionary(d => d.Name, d => stored.TryGetValue(d.Name, out var v) && d.Allows(v) ? v : d.Default, StringComparer.Ordinal);
     }
 
     /// <summary>Keeps <paramref name="value"/> as the person's <paramref name="name"/>. Throws
@@ -119,7 +136,8 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
     public async Task SetAsync(string name, string value, CancellationToken ct = default)
     {
         var d = Require(name);
-        if (!d.Values.Contains(value)) throw new ArgumentException($"\"{value}\" isn't one of {string.Join(", ", d.Values)}.", nameof(value));
+        if (!d.Allows(value))
+            throw new ArgumentException(d.Values.Count > 0 ? $"\"{value}\" isn't one of {string.Join(", ", d.Values)}." : $"\"{value}\" isn't a value {d.Name} can hold.", nameof(value));
         for (var attempt = 0; ; attempt++)
         {
             await using var db = await dbs.CreateAsync(ct);

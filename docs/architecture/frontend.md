@@ -201,8 +201,31 @@ no top bar, so none there.
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
-days as a calendar file (`/rotation/my.ics`), and About. These settings are per browser except My notifications, which
-is stored per user.
+days as a calendar file (`/rotation/my.ics`), Help and what's new (`/help`), and About. These settings are per browser
+except My notifications, which is stored per user.
+
+**What's new.** `WhatsNewDialog`, drawn by `MainLayout` for anyone signed in, shows a release's highlights once per
+person, the first time they open TIDE on a release with highlights for them.
+
+- **Where the content lives.** Each release with user-facing changes has a highlights file, `docs/whats-new/vX.Y.Z.md`:
+  a short introduction, then a `## Analysts`, `## Presenters and admins` and `## Viewers and action owners` section of
+  short bullets. A patch or an operator-only release has none, and shows nothing. The full notes are the release's
+  `### vX.Y.Z` section of `docs/UPGRADE.md`, read as `tools/ci/extract-release-notes.sh` reads it. Both are built into
+  `Tide.Application` as resources, and `ReleaseNotesCatalog` (`Operations/WhatsNew.cs`) reads them at start-up.
+- **Who reads what.** `RoleGroups.For` maps roles to groups: Analysts and Administrators read the analysts' and the
+  presenters' and admins' sections; Viewers and Action owners read theirs; Readers and Visitors read none, so nothing is
+  ever shown to them.
+- **When.** The release running is `AppVersionInfo.Current` (a development build counts as the newest release with
+  notes). `ReleaseNotesCatalog.Due` lists the releases after the one the person last saw, up to the one running, that
+  have highlights for their groups; someone who has seen none is shown only the newest. The release last seen is the
+  person's `whatsnew.seen` preference (`UserPreferenceService`, which checks the permission and a second tab's save),
+  set as the dialog opens, so a reload doesn't show it again.
+- **Where never.** `BlankLayout` doesn't draw it, so present mode never shows it, to the presenter or a follower, and
+  `OnboardingGate.AllowedAt` refuses a `/present` address besides. `OnboardingGate` keeps it from opening by itself
+  when `Onboarding:Enabled` is `false`, and on the screenshot tools' demo (`Demo:Seed`), where a browser asks for it
+  with the dev sign-in's `?onboarding=on`. The tests turn it off.
+- **The dialog.** A `.tide-modal`: focus moves to Got it as it opens and back as it closes (`tideDialog`), Tab stays in
+  it, and Escape closes it. **See all changes** opens Help at that release with its full notes open.
 
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
@@ -250,6 +273,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/hunts/saved`, `/outreach/templates`, `/playbooks`, `/board-rules`, `/admin/playbooks` | `LibraryMoved` | `ReadActions` | The addresses the Library's tabs had as pages: each redirects to its tab, keeping its query string. |
 | `/teams/external` | `ExternalTeams` | `ReadActions` | The teams that work outside TIDE: their contact, reminder cadence and escalation contact. Kept by `WorkActions`; an administrator also sets their limits. |
 | `/notifications` | `MyNotifications` | `ReadActions` | The person's own email choices (from the account menu). |
+| `/help` | `HelpPage` | `ReadTeamEdition` | Help (the account menu, the `?` overlay): every release, newest first, with its highlights for the person's role groups and its full notes folded under them. `?release=1.13.0` opens that release's notes, as *What's new*'s **See all changes** links to it. |
 | `/published`, `/published/{Day}` | `Published` | `ReadPublished` | The Reader archive of sent company-wide editions. `?q=`. |
 | `/briefs/{Day}/sharepoint` | `SharePointPage` | `ReadTeamEdition` | The company-wide edition as clean HTML to copy, and its images as a zip. |
 

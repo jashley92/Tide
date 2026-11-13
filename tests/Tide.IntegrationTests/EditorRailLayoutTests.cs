@@ -409,7 +409,7 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
     [GeneratedRegex("<button type=\"button\"[^>]*>(?<label>[^<]*)(?:<span class=\"visually-hidden\">,</span>)?(?:<span class=\"tide-pill-state[^\"]*\">(?<state>[^<]*)</span>)?\\s*</button>")]
     private static partial Regex IndexItem();
 
-    private static string WebRoot()
+    internal static string WebRoot()
     {
         var dir = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;

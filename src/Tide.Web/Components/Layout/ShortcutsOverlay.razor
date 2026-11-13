@@ -53,6 +53,10 @@
                     </table>
                 }
             </div>
+            @if (ShowButton && CurrentUser.Has(Permission.ReadTeamEdition))
+            {
+                <p class="tide-shortcuts-help"><a href="help" @onclick="Close">Help and what's new</a></p>
+            }
         </div>
     </div>
 }

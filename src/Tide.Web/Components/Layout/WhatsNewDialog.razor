@@ -1,0 +1,111 @@
+@* "What's new": once per person, the first time they open TIDE after a release with highlights, the highlights for
+   their role groups (WhatsNewService), with "See all changes" to the full notes in Help. MainLayout draws it, so never
+   in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
+   and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it opens, so a reload doesn't show it
+   again. *@
+@using Tide.Application.Operations
+@using Tide.Web.Components.Pages
+@inject WhatsNewService WhatsNew
+@inject OnboardingGate Gate
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<WhatsNewDialog> Log
+
+@if (_due.Count > 0)
+{
+    <div class="tide-modal-scrim" @onclick="Close">
+        <div class="tide-modal tide-modal-wide tide-whatsnew" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title"
+             @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <div class="tide-whatsnew-head">
+                <h2 class="tide-modal-title" id="@(_id)-title">What's new in TIDE @_due[0].Version</h2>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="Close"></button>
+            </div>
+            <div class="tide-whatsnew-body">
+                @foreach (var release in _due)
+                {
+                    @if (_due.Count > 1)
+                    {
+                        <h3 class="tide-whatsnew-release">@release.Version</h3>
+                    }
+                    @if (release.Intro.Length > 0)
+                    {
+                        <p class="tide-whatsnew-intro">@release.Intro</p>
+                    }
+                    @foreach (var (group, markdown) in release.For(WhatsNew.Groups))
+                    {
+                        <section class="tide-whatsnew-group" aria-label="@RoleGroups.Title(group)">
+                            <h4 class="tide-whatsnew-group-title">@RoleGroups.Title(group)</h4>
+                            <Md Text="@markdown" />
+                        </section>
+                    }
+                }
+            </div>
+            <div class="tide-modal-actions">
+                <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="Close">See all changes</a>
+                <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="Close">Got it</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly string _id = "whatsnew-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<ReleaseHighlights> _due = [];
+    private bool _shown;
+    private ElementReference _gotIt;
+
+    /// <summary>Whether the dialog is open.</summary>
+    public bool IsOpen => _due.Count > 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender && await OfferedAsync()) await CheckSafelyAsync();
+            if (IsOpen == _shown) return;
+            _shown = IsOpen;
+            if (IsOpen) await JS.InvokeVoidAsync("tideDialog.open", _gotIt);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    // Unasked: CheckAsync keeps it off a page the room shares.
+    private async Task<bool> OfferedAsync() =>
+        Gate.Automatic((await Auth.GetAuthenticationStateAsync()).User);
+
+    // Drawn outside the page's error boundary: a failed read or save shows nothing, and is tried on the next visit.
+    private async Task CheckSafelyAsync()
+    {
+        try { await CheckAsync(); }
+        catch (Exception ex) when (ex is not (OperationCanceledException or JSDisconnectedException))
+        {
+            Log.LogWarning(ex, "Couldn't read or save what's new for the signed-in person; nothing was shown.");
+            _due = [];
+        }
+    }
+
+    /// <summary>Opens the highlights the person hasn't seen, if there are any, and marks them seen.</summary>
+    public async Task CheckAsync()
+    {
+        if (IsOpen || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
+        var due = await WhatsNew.DueAsync();
+        if (due.Count == 0) return;
+        _due = due;
+        await WhatsNew.MarkSeenAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>Closes it.</summary>
+    public void Close()
+    {
+        _due = [];
+        StateHasChanged();
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Close();
+    }
+}

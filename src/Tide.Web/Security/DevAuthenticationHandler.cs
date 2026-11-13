@@ -55,11 +55,7 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         if (asked.Length > 0)
         {
             var named = ParseRoles(asked);
-            var cookie = new CookieOptions
-            {
-                HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true,
-                Path = Context.Request.PathBase.HasValue ? Context.Request.PathBase.Value : "/",
-            };
+            var cookie = DevCookie();
             if (named.Length == 0) Context.Response.Cookies.Delete(cookieName, cookie);
             else Context.Response.Cookies.Append(cookieName, string.Join(',', named), cookie);
             return named.Length == 0 ? null : named;
@@ -67,6 +63,30 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         var kept = ParseRoles(Context.Request.Cookies[cookieName]);
         return kept.Length == 0 ? null : kept;
     }
+
+    /// <summary>
+    /// Dev-only: <c>?onboarding=on</c> on a page load has this browser offered what's new, tips and the tour on the demo,
+    /// where they're otherwise off (<see cref="Services.OnboardingGate"/>), kept in a cookie like <c>?as=</c>;
+    /// <c>?onboarding=off</c> goes back.
+    /// </summary>
+    private bool OnboardingAsked()
+    {
+        const string cookieName = "dev_onboarding";
+        var asked = Context.Request.Query["onboarding"].ToString();
+        if (asked.Length == 0) return Context.Request.Cookies[cookieName] == "on";
+        var on = asked == "on";
+        if (on) Context.Response.Cookies.Append(cookieName, "on", DevCookie());
+        else Context.Response.Cookies.Delete(cookieName, DevCookie());
+        return on;
+    }
+
+    // How each dev-only choice (?as=, ?roles=, ?onboarding=) is kept for the browser. Secure=true is safe even though dev
+    // runs over http://localhost: browsers treat localhost as a secure context and still send the cookie.
+    private CookieOptions DevCookie() => new()
+    {
+        HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true,
+        Path = Context.Request.PathBase.HasValue ? Context.Request.PathBase.Value : "/",
+    };
 
     /// <summary>The role names in a comma list that are TIDE's, by their own names; anything else is dropped.</summary>
     internal static string[] ParseRoles(string? list) =>
@@ -95,11 +115,7 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
             // a secure context and still send the cookie. This handler is dev-only (Production forbids it),
             // so it never sees a non-localhost HTTP origin.
             Context.Response.Cookies.Append(cookieName, asName.Trim(),
-                new CookieOptions
-                {
-                    HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true,
-                    Path = Context.Request.PathBase.HasValue ? Context.Request.PathBase.Value : "/",
-                });
+                DevCookie());
         else
             asName = Context.Request.Cookies[cookieName] ?? "";
 
@@ -119,6 +135,7 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         };
         var roles = RolesAsked() ?? _dev.Roles;
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+        if (OnboardingAsked()) claims.Add(new Claim(Services.OnboardingGate.DemoClaim, "on"));
 
         foreach (var perm in RoleDefinitions.PermissionsForRoleNames(roles))
             claims.Add(new Claim(AppClaimTypes.Permission, perm.ToString()));

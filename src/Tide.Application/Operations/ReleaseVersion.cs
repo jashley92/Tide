@@ -46,6 +46,10 @@ public sealed record ReleaseVersion(int Major, int Minor, int Patch, string? Sta
         return new ReleaseVersion(major, minor, patch, stage, stageNumber);
     }
 
+    /// <summary>Whether <paramref name="value"/> is a version as <see cref="ToString"/> writes it ("1.13.0"), or empty:
+    /// what a preference that remembers a release holds.</summary>
+    public static bool IsVersionOrNone(string value) => value.Length == 0 || Parse(value)?.ToString() == value;
+
     private static bool TryNumber(string s, out int value) =>
         int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out value) && s.Length is > 0 and <= 6;
 

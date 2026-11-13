@@ -43,6 +43,13 @@
 
 <ToastHost />
 
+@* What's new, once per person after a release with highlights for them; never in present mode (BlankLayout). *@
+<AuthorizeView>
+    <Authorized>
+        <WhatsNewDialog />
+    </Authorized>
+</AuthorizeView>
+
 <div id="blazor-error-ui">
     Something went wrong. Reload the page to continue.
     <a href="" class="reload">Reload</a>

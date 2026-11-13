@@ -837,6 +837,14 @@ const navigateToAdmin = async page => {
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
+/** Setup: Today, signed in as `people[width]` (a name, and `&roles=…` when not the dev sign-in's) with what's new, tips
+ *  and the tour asked for (`?onboarding=on`; off on the demo otherwise), so what's new opens over it; wider letters. */
+const whatsNewAs = people => async page => {
+  await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=on`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  await wideFont(page);
+};
+
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
 const longQueueTicket = async page => {
@@ -3468,6 +3476,10 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 /** Where, in the pages, those that change the demo begin (see shard). */
 const CHANGES_THE_DEMO = Symbol('changes the demo');
 
+/** What's new's dialog: shown whole in the window, its parts within it, focus on Got it. */
+const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
+  fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary')];
+
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
@@ -4081,8 +4093,19 @@ const pages = [
   { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),
       oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
+  // Help: each release's highlights for the reader's roles, the full notes folded under them, linked to as "See all
+  // changes" (that release's notes open).
+  { name: 'help', route: '/help?release=1.13.0', setup: wideFont, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, fits('.tide-help .tide-card'), visible('.tide-help-notes[open] .tide-md')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
+  // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;
+  // it's marked seen as it opens, so a different person at each width): a dialog in the window, its highlights
+  // scrolling between the title and the buttons, focus on Got it, in both themes.
+  { name: 'whatsnew', route: '/help', setup: whatsNewAs({ 1920: 'Robin', 1440: 'Sam', 780: 'Jordan&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: whatsNewRules },
+  { name: 'whatsnew-dark', route: '/help', context: { theme: 'dark' }, setup: whatsNewAs({ 1920: 'Dana', 1440: 'Lee', 780: 'Kim&roles=Viewer' }),
+    widths: [1920, 1440, 780], rules: whatsNewRules },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },

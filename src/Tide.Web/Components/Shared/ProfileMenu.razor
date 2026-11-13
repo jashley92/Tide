@@ -1,6 +1,6 @@
 @* The account menu in the top right: the initials avatar opens a panel with who you are and your role,
    your own settings (theme, letter shortcuts) as segmented toggles, My notifications, your brief days as a calendar
-   file, and About.
+   file, Help (what's new in each release), and About.
    Settings are per browser, applied by theme.js. It closes when done with (Popout): Esc anywhere on the page, with focus
    back on the avatar, and the page under it not hearing that Esc too; a click outside it, or Tab out of it. *@
 @implements IAsyncDisposable
@@ -74,6 +74,13 @@
                 </a>
             }
 
+            @if (CurrentUser.Has(Permission.ReadTeamEdition))
+            {
+                <a class="tide-profile-item" role="menuitem" href="help" @onclick="Close">
+                    <span class="bi bi-life-preserver" aria-hidden="true"></span>
+                    <span>Help and what's new</span>
+                </a>
+            }
             <button type="button" class="tide-profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@(_about ? "true" : "false")">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>
                 <span>About</span>

@@ -1,0 +1,76 @@
+@page "/help"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using System.Collections.Concurrent
+@using Tide.Application.Operations
+@inject WhatsNewService WhatsNew
+@inject IMarkdownService Markdown
+@inject NavigationManager Nav
+
+@* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, with the full
+   notes as each release's GitHub page has them. ?release=1.13.0 opens that release's full notes ("See all changes"). *@
+
+<PageTitle>Help · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Help</h1>
+        <div class="tide-sub">What's new in each release. Press <kbd>?</kbd> on any page for its keyboard shortcuts.</div>
+    </div>
+</div>
+
+<div class="tide-help">
+    <section class="tide-card" aria-labelledby="help-whatsnew">
+        <h2 id="help-whatsnew">What's new</h2>
+        @if (WhatsNew.Releases.Count == 0)
+        {
+            <p class="mb-0 tide-muted">No release notes are built into this version.</p>
+        }
+        @foreach (var release in WhatsNew.Releases)
+        {
+            var mine = release.Highlights?.For(WhatsNew.Groups) ?? [];
+            <article class="tide-help-release" id="@Anchor(release.Version)" aria-labelledby="@Anchor(release.Version)-title">
+                <h3 class="tide-help-release-title" id="@Anchor(release.Version)-title">
+                    @release.Version
+                    @if (release.Version == WhatsNew.Running)
+                    {
+                        <Badge Tone="BadgeTone.Info">This version</Badge>
+                    }
+                </h3>
+                @if (mine.Count > 0 && release.Highlights!.Intro.Length > 0)
+                {
+                    <p class="tide-help-intro">@release.Highlights.Intro</p>
+                }
+                @foreach (var (group, markdown) in mine)
+                {
+                    <h4 class="tide-whatsnew-group-title">@RoleGroups.Title(group)</h4>
+                    <Md Text="@markdown" />
+                }
+                @if (release.Notes is { } notes)
+                {
+                    <details class="tide-help-notes" open="@(Release == release.Version.ToString())">
+                        <summary>All changes in @release.Version</summary>
+                        <div class="tide-md">@NotesHtml(release.Version, notes)</div>
+                    </details>
+                }
+            </article>
+        }
+    </section>
+</div>
+
+@code {
+    /// <summary>The release whose full notes start open ("1.13.0"), as "See all changes" links to it.</summary>
+    [SupplyParameterFromQuery(Name = "release")] public string? Release { get; set; }
+
+    // The full notes never change while the app runs: each release's is rendered once (per sub-path its links follow),
+    // not on every visit and again when the page goes live.
+    private static readonly ConcurrentDictionary<(string BaseUri, ReleaseVersion Version), MarkupString> Rendered = new();
+
+    private MarkupString NotesHtml(ReleaseVersion version, string notes) =>
+        Rendered.GetOrAdd((Nav.BaseUri, version), key => new MarkupString(Markdown.ToHtml(notes, LinkRoot.FromBaseUri(key.BaseUri))));
+
+    /// <summary>"v1-13-0": a release's place on the page.</summary>
+    public static string Anchor(ReleaseVersion v) => "v" + v.ToString().Replace('.', '-');
+
+    /// <summary>Help, at a release's notes, with its full notes open.</summary>
+    public static string WhatsNewHref(ReleaseVersion v) => $"help?release={Uri.EscapeDataString(v.ToString())}#{Anchor(v)}";
+}

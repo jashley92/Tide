@@ -135,6 +135,8 @@ builder.Services.AddSingleton<PrerenderStore>();
 builder.Services.AddScoped<PrerenderHandoff>();
 // What the top bar's brief chip says, kept per circuit so a navigation reads nothing for it.
 builder.Services.AddScoped<BriefChipSource>();
+// Whether what's new, tips and the tour are offered unasked (off on the screenshot tools' demo).
+builder.Services.AddSingleton<OnboardingGate>();
 // The Library's one search, over the tabs the person may open.
 builder.Services.AddScoped<LibrarySearch>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
