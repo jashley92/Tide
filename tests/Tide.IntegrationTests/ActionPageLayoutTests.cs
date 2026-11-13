@@ -21,7 +21,7 @@ namespace Tide.IntegrationTests;
 /// "What's happened" feed with its comment box, the tool drawer and the tool it opens on (or the address's ?tool=), a
 /// read-only viewer's page, and a parent's and a part's.
 /// </summary>
-public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
+public partial class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:layout-owner", "Olu Owner", "ActionOwner");
     private static readonly SignIn Viewer = new("dev:layout-viewer", "Viewer", "Viewer");
@@ -106,7 +106,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         badges.IndexOf("overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
         head.Should().Contain("<span>Layout header team</span> · <span>Unassigned</span>");
 
-        Regex.Matches(head, "btn btn-primary").Should().HaveCount(1, "one primary button");
+        PrimaryButton().Matches(head).Should().HaveCount(1, "one primary button");
         head.Should().Contain("data-primary=\"TakeIt\"").And.Contain("Take it</button>");
         page.Component.Primary.Should().Be(ActionFlow.TakeIt, "open and nobody has it");
     }
@@ -570,4 +570,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         (await page.Html()).Should().Contain($"id=\"comment-{oldest.Id}\" tabindex=\"-1\"").And.Contain("Layout the oldest comment");
         page.Component.FeedAll.Should().BeTrue();
     }
+
+    [GeneratedRegex("btn btn-primary")]
+    private static partial Regex PrimaryButton();
 }

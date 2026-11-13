@@ -23,7 +23,7 @@ namespace Tide.IntegrationTests;
 /// writes nothing (no row added, changed or audited, no preference, the article's edit version as it was) and nothing
 /// goes out of the app.
 /// </summary>
-public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpApp>
+public partial class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpApp>
 {
     private static SignIn Person(string role) => new($"dev:guidewalk-{Guid.NewGuid():N}", "Walk tester", role);
 
@@ -55,7 +55,7 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         });
         (await r.Until(h => h.Step is not null, seconds: 5)).Should().BeTrue(key);
         // How many steps it says it has: "Step 1 of N".
-        var said = Regex.Match(await r.Html(), @"[Ss]tep 1 of (\d+)");
+        var said = StepOneOf().Match(await r.Html());
         said.Success.Should().BeTrue(key);
         return int.Parse(said.Groups[1].Value, CultureInfo.InvariantCulture);
     }
@@ -209,4 +209,7 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         (await Written()).Should().Be(before, "a rehearsal's guide only points");
         app.Calls.Should().Be(calls);
     }
+
+    [GeneratedRegex(@"[Ss]tep 1 of (\d+)")]
+    private static partial Regex StepOneOf();
 }

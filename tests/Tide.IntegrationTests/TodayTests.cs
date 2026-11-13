@@ -2,6 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -12,7 +13,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>Today, the start page: today's brief as the analyst, action owner and reader each get it, and the other days
 /// at /briefs/{day}. The sample data has today's brief with three articles, one of them TLP:AMBER.</summary>
-public class TodayTests(TideApp app) : IClassFixture<TideApp>
+public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
 {
     private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 
@@ -93,10 +94,10 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
             .And.NotContain("href=\"articles/", "an article that goes out whole is named by the running order, not again here");
         company.Should().Contain("2 of 3 articles").And.NotContain("go out whole")
             .And.NotContain("Never in this edition", "the standing rule is the note under the check");
-        System.Text.RegularExpressions.Regex.Count(company, "href=\"articles/")
+        ArticleHref().Count(company)
             .Should().BePositive("the AMBER article is left out").And.BeLessThan(3, "only what is cut or warned about is listed");
-        System.Text.RegularExpressions.Regex.Count(company, "is-included")
-            .Should().BeLessThanOrEqualTo(System.Text.RegularExpressions.Regex.Count(company, "tide-ed-warn"), "an article that goes out whole is listed only with a warning");
+        Included().Count(company)
+            .Should().BeLessThanOrEqualTo(EditorWarning().Count(company), "an article that goes out whole is listed only with a warning");
         check.Should().Contain("never carries the numbers, indicators or actions");
     }
 
@@ -238,6 +239,15 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         BriefPage.ReadyWarning(0, 3, false).Should().Be("3 numbers not entered.");
         BriefPage.ReadyWarning(2, 3, true).Should().BeNull("a blocking gap is refused with its own reason");
     }
+
+    [GeneratedRegex("tide-ed-warn")]
+    private static partial Regex EditorWarning();
+
+    [GeneratedRegex("is-included")]
+    private static partial Regex Included();
+
+    [GeneratedRegex("href=\"articles/")]
+    private static partial Regex ArticleHref();
 }
 
 public class ActionOwnerTodayTests(ActionOwnerApp app) : IClassFixture<ActionOwnerApp>

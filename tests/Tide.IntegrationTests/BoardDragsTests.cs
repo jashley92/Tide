@@ -102,7 +102,7 @@ public class BoardDragsTests
 /// Move menu, the keyboard's way, still offers all three. A card says its article, KEV flag, checklist progress, how its
 /// hunt went (a sweep or hunt) and how long it has been in its lane.
 /// </summary>
-public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
+public partial class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Robin = new("dev:board-robin", "Robin", "Analyst");
 
@@ -135,7 +135,7 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         strip.Should().BePositive("the closed statuses are a strip under the lanes");
         foreach (var s in new[] { ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked, ActionStatus.Tracking })
             html.IndexOf($"<section class=\"tide-kcol\" data-status=\"{s}\"", StringComparison.Ordinal).Should().BeInRange(0, strip, $"{s} is a lane, above the strip");
-        Regex.Count(html[..strip], "class=\"tide-kcol-drop\"").Should().Be(4, "every lane has a place to drop under its cards");
+        DropZone().Count(html[..strip]).Should().Be(4, "every lane has a place to drop under its cards");
         html.Should().NotContain("data-status=\"Done\" aria-labelledby", "no lane for a closed status");
 
         var closed = html[strip..];
@@ -303,4 +303,7 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain($">{says}<").And.Contain("1 of 7", "the checklist's progress stays");
     }
+
+    [GeneratedRegex("class=\"tide-kcol-drop\"")]
+    private static partial Regex DropZone();
 }

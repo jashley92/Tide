@@ -1,6 +1,7 @@
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Domain.Enums;
@@ -16,7 +17,7 @@ namespace Tide.IntegrationTests;
 /// Attach a screenshot) under them; the rail's "Also raised from it" rows lead with the number and end with the status;
 /// and the Files heading holds Add files, with the whole page taking a drop, for whoever may add files and no one else.
 /// </summary>
-public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
+public partial class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Viewer = new("dev:design-viewer", "Design Viewer", "Viewer");
     private static readonly SignIn Owner = new("dev:design-owner", "Design Owner", "ActionOwner");
@@ -93,7 +94,7 @@ public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
 
         await using var page = await Open(number);
         var (_, rail) = Split(await page.Html());
-        System.Text.RegularExpressions.Regex.Matches(rail, "No due date").Should().HaveCount(1, "the value says it; no badge says it again");
+        NoDueDate().Matches(rail).Should().HaveCount(1, "the value says it; no badge says it again");
     }
 
     [Fact]
@@ -166,4 +167,7 @@ public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
             inPage[inPage.LastIndexOf("<button", attach, StringComparison.Ordinal)..attach].Should().Contain("data-pick=\"files-input\"", "it opens the Files picker");
         }
     }
+
+    [GeneratedRegex("No due date")]
+    private static partial Regex NoDueDate();
 }

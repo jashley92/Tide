@@ -51,7 +51,7 @@ public class AdversaryServiceTests : IDisposable
         (await _db.Adversaries().LinkAsync(spider, [named])).Should().Be(1);
         (await _db.Adversaries().GetAsync(spider))!.Untagged.Should().BeEmpty();
 
-        var layer = JsonDocument.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!).RootElement;
+        var layer = JsonElement.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!);
         layer.GetProperty("domain").GetString().Should().Be("enterprise-attack");
         layer.GetProperty("techniques").EnumerateArray().Select(t => (t.GetProperty("techniqueID").GetString(), t.GetProperty("score").GetInt32()))
             .Should().Contain(("T1621", 2));

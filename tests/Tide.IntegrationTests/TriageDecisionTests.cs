@@ -14,7 +14,7 @@ namespace Tide.IntegrationTests;
 /// coverage says: attach it when an article that can still take a report covers it, otherwise promote it. With the pane
 /// closed (or hidden on a narrow window) the buttons stay in the selected row, as they always have.
 /// </summary>
-public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
+public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 {
     private async Task Article(string title, string cve, ArticleStatus status = ArticleStatus.Draft)
     {
@@ -61,7 +61,7 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 
     private static string Selected(string html)
     {
-        var at = Regex.Match(html, "<li class=\"tide-triage-row[^\"]*selected").Index;
+        var at = SelectedRow().Match(html).Index;
         at.Should().BePositive("a line is selected");
         return html[at..html.IndexOf("</li>", at, StringComparison.Ordinal)];
     }
@@ -84,8 +84,8 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var why = Why(bar);
         why.Should().Contain("Already covered by “Plover VPN flaw exploited in the wild”")
             .And.Contain("so the suggested step is to attach it");
-        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main button");
-        Regex.IsMatch(bar, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
+        PrimaryAttach().IsMatch(bar).Should().BeTrue("Attach is the main button");
+        SecondaryPromote().IsMatch(bar)
             .Should().BeTrue("Promote is beside it");
         bar.IndexOf("tide-triage-why", StringComparison.Ordinal).Should().BeLessThan(bar.IndexOf("tide-triage-attach", StringComparison.Ordinal), "the reason comes first");
 
@@ -102,7 +102,7 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 
         Why(bar).Should().Contain("Nothing TIDE has covers it yet, so the suggested step is to promote it");
         bar.Should().NotContain("tide-triage-attach\"");
-        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
+        PrimaryPromote().IsMatch(bar).Should().BeTrue();
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 
         Why(bar).Should().Contain("Covered by “Godwit router flaw (presented)”")
             .And.Contain("which cannot take another report now, so the suggested step is to promote it");
-        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-promote\"").Should().BeTrue();
+        PrimaryPromoteClass().IsMatch(bar).Should().BeTrue();
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var row = Selected(html);
         row.Should().Contain("<section class=\"tide-triage-decide\"", "the row holds the decision, reason and all");
         Why(row).Should().Contain("so the suggested step is to attach it");
-        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-attach\"").Should().BeTrue();
+        PrimaryAttachClass().IsMatch(row).Should().BeTrue();
         row.Should().Contain("Shortlist <span class=\"tide-kbd\">S</span>").And.Contain("Dismiss <span class=\"tide-kbd\">X</span>");
     }
 
@@ -163,7 +163,7 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
 
         Selected(html).Should().Contain("class=\"tide-triage-decide\"", "the buttons are in the row");
-        Regex.Matches(html, "class=\"tide-triage-decide\"").Should().HaveCount(1, "and only there: the hidden pane holds no second copy");
+        DecideBar().Matches(html).Should().HaveCount(1, "and only there: the hidden pane holds no second copy");
 
         await r.Click(t => t.OnReadingRoom(true));
         Pane(await r.Html()).Should().Contain("class=\"tide-triage-decide\"", "with room again, the bar is back under the pane");
@@ -194,4 +194,25 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
 
     private static Tide.Application.Intake.Coverage Covered(bool attachable, DateOnly? brief) =>
         new("CVE-2026-0001", Guid.NewGuid(), "Flaw", brief) { Attachable = attachable };
+
+    [GeneratedRegex("class=\"tide-triage-decide\"")]
+    private static partial Regex DecideBar();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to")]
+    private static partial Regex PrimaryAttach();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"")]
+    private static partial Regex PrimaryAttachClass();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
+    private static partial Regex PrimaryPromote();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-promote\"")]
+    private static partial Regex PrimaryPromoteClass();
+
+    [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
+    private static partial Regex SecondaryPromote();
+
+    [GeneratedRegex("<li class=\"tide-triage-row[^\"]*selected")]
+    private static partial Regex SelectedRow();
 }

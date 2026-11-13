@@ -20,7 +20,7 @@ namespace Tide.IntegrationTests;
 /// opens the larger card over the slide (by type, with their notes), and the presenter's opens for everyone following, as
 /// a product's card does. The slide links to the source.
 /// </summary>
-public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
+public partial class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:iocs-owner", "Olive Owner", "ActionOwner");
 
@@ -109,7 +109,7 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
         await FirstArticle(pat);
         var iocs = Iocs(await pat.Html());
         iocs.Should().Contain("Indicators (12)").And.Contain("2 more</button>");
-        Regex.Count(iocs, "class=\"tide-slide-ioc\"").Should().Be(10);
+        SlideIndicator().Count(iocs).Should().Be(10);
         await Do(pat, p => p.ShowIndicators(s.WithIocs));
         (await pat.Html()).Should().Contain("present-iocs-title").And.Contain("more10-73[.]example[.]org", "the card has them all");
         await Do(pat, p => p.OnPresentKey("close"));
@@ -161,4 +161,7 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
 
         EndMeeting(app, s.Day);
     }
+
+    [GeneratedRegex("class=\"tide-slide-ioc\"")]
+    private static partial Regex SlideIndicator();
 }

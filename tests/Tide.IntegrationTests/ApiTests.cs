@@ -123,7 +123,7 @@ public class ApiServiceTests : IDisposable
         url.Should().Be("https://xsoar.example.org/hooks/tide");
         headers["X-Tide-Event"].Should().Be(WebhookService.ActionRaised);
         headers["X-Tide-Signature"].Should().Be(WebhookService.Sign(added.Secret, headers["X-Tide-Timestamp"], body));
-        var json = JsonDocument.Parse(body).RootElement;
+        var json = JsonElement.Parse(body);
         json.GetProperty("data").GetProperty("label").GetString().Should().Be($"A-{number}");
         json.GetProperty("data").GetProperty("url").GetString().Should().Be($"https://tide.example.org/actions/{number}");
 
@@ -184,7 +184,7 @@ public class ApiServiceTests : IDisposable
         // The job has no user: it reads the ceiling without one. The team edition's default is AMBER+STRICT.
         _db.User.Roles = new HashSet<AppRole>();
         await _db.Webhooks(new ShiftedClock(WebhookService.SettleDelay)).DeliverDueAsync();
-        var posts = _db.Posts.Posted.Select(p => (Event: p.Headers["X-Tide-Event"], Data: JsonDocument.Parse(p.Body).RootElement.GetProperty("data"))).ToList();
+        var posts = _db.Posts.Posted.Select(p => (Event: p.Headers["X-Tide-Event"], Data: JsonElement.Parse(p.Body).GetProperty("data"))).ToList();
         posts.Should().NotContain(p => p.Data.GetProperty("title").GetString()!.Contains("203.0.113.7"), "its article is above the team edition's ceiling");
         posts.Where(p => p.Event == WebhookService.ActionRaised).Select(p => p.Data.GetProperty("number").GetInt32()).Should().BeEquivalentTo(new[] { partner, plain });
         posts.Where(p => p.Event == WebhookService.ActionOverdue).Should().ContainSingle()
@@ -197,7 +197,7 @@ public class ApiServiceTests : IDisposable
         var redAction = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep for the RED indicators", TeamId = team, ArticleId = red });
         _db.Posts.Posted.Clear();
         await _db.Webhooks(new ShiftedClock(WebhookService.SettleDelay)).DeliverDueAsync();
-        var data = JsonDocument.Parse(_db.Posts.Posted.Single().Body).RootElement.GetProperty("data");
+        var data = JsonElement.Parse(_db.Posts.Posted.Single().Body).GetProperty("data");
         data.GetProperty("number").GetInt32().Should().Be(redAction);
         data.GetProperty("marking").GetString().Should().Be("TLP:RED");
     }
@@ -264,7 +264,7 @@ public class ApiHttpTests(TideApp app) : IClassFixture<TideApp>
     public async Task ThePageAndTheDescription_AreServed()
     {
         var openapi = await Client(await Token(ApiScopes.StackRead)).GetStringAsync("/api/v1/openapi.json");
-        JsonDocument.Parse(openapi).RootElement.GetProperty("paths").EnumerateObject().Select(p => p.Name).Should().Contain("/actions/{number}");
+        JsonElement.Parse(openapi).GetProperty("paths").EnumerateObject().Select(p => p.Name).Should().Contain("/actions/{number}");
 
         await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Admin.ApiAdmin>(app, "/admin/api");
         var html = await page.Html();
@@ -440,9 +440,9 @@ public class WebhookDeliveryTests : IDisposable
         runs.Should().Equal(100, 100, 50, 0);
         var ids = _db.Posts.Posted.Select(p => p.Headers["X-Tide-Event-Id"]).ToList();
         ids.Should().OnlyHaveUniqueItems().And.HaveCount(250);
-        _db.Posts.Posted.Select(p => JsonDocument.Parse(p.Body).RootElement.GetProperty("data").GetProperty("number").GetInt32())
+        _db.Posts.Posted.Select(p => JsonElement.Parse(p.Body).GetProperty("data").GetProperty("number").GetInt32())
             .Should().Equal(numbers, "oldest first");
-        JsonDocument.Parse(_db.Posts.Posted[0].Body).RootElement.GetProperty("id").GetString().Should().Be(ids[0]);
+        JsonElement.Parse(_db.Posts.Posted[0].Body).GetProperty("id").GetString().Should().Be(ids[0]);
     }
 
     [Theory]

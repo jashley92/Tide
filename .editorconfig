@@ -13,3 +13,8 @@ dotnet_diagnostic.CA1822.severity = none
 # CA1816: GC.SuppressFinalize in Dispose — irrelevant for the throwaway IDisposable test helpers
 # (no finalizers, deterministic teardown).
 dotnet_diagnostic.CA1816.severity = none
+
+# SYSLIB1045: a fixed pattern is a [GeneratedRegex] partial method, compiled at build time. A suggestion by default (so
+# the build never showed it); a warning here, so CI, which fails on any warning, keeps it that way.
+[*.cs]
+dotnet_diagnostic.SYSLIB1045.severity = warning

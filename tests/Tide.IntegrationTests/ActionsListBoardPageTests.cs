@@ -185,12 +185,12 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
         var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
-        Regex.Matches(head, "<th[^>]*>(?:<[^>]+>)*\\s*([A-Za-z ]+?)\\s*<").Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team and owner", "Progress", "Due", "Status"]);
+        HeaderCell().Matches(head).Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team and owner", "Progress", "Due", "Status"]);
 
         var checklist = Row(html, $"{token} checklist");
-        var progress = Regex.Matches(checklist, "<td[^>]*>([\\s\\S]*?)</td>")[3].Groups[1].Value;
+        var progress = Cell().Matches(checklist)[3].Groups[1].Value;
         progress.Should().Contain("Checklist 1 of 2").And.Contain("No update for 3 days");
-        var sweeping = Regex.Matches(Row(html, $"{token} sweep"), "<td[^>]*>([\\s\\S]*?)</td>")[3].Groups[1].Value;
+        var sweeping = Cell().Matches(Row(html, $"{token} sweep"))[3].Groups[1].Value;
         sweeping.Should().Contain("Hunt not run", "a sweep says how its hunt went, as the board's card does").And.NotContain("Checklist");
     }
 
@@ -338,7 +338,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await r.Click(c => { typeof(ComponentBase).GetMethod("StateHasChanged", Private)!.Invoke(c, null); return Task.CompletedTask; });
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().NotMatchRegex("class=\"tide-dt-count\" role=\"status\">[^<]*matching", "nothing narrows the list");
-        r.Component.Counts!.Open.Should().Be(int.Parse(Regex.Match(html, "class=\"tide-dt-count\" role=\"status\">(\\d+) action").Groups[1].Value,
+        r.Component.Counts!.Open.Should().Be(int.Parse(OpenCount().Match(html).Groups[1].Value,
             System.Globalization.CultureInfo.InvariantCulture), "the All open tab counts what the list shows");
     }
 
@@ -552,4 +552,13 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using var none = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: busy);
         (await none.HtmlOnce("Nothing assigned to you")).Should().NotContain("mine-unowned", "nothing of theirs is unowned");
     }
+
+    [GeneratedRegex("<td[^>]*>([\\s\\S]*?)</td>")]
+    private static partial Regex Cell();
+
+    [GeneratedRegex("<th[^>]*>(?:<[^>]+>)*\\s*([A-Za-z ]+?)\\s*<")]
+    private static partial Regex HeaderCell();
+
+    [GeneratedRegex("class=\"tide-dt-count\" role=\"status\">(\\d+) action")]
+    private static partial Regex OpenCount();
 }

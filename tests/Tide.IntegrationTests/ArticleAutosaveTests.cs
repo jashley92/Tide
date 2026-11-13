@@ -233,7 +233,7 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         }
 
         var history = await As(sp => sp.GetRequiredService<HistoryService>().ArticleAsync(id));
-        var session = history.Entries.Should().ContainSingle(e => e.What.StartsWith("Autosaved")).Subject;
+        var session = history.Entries.Should().ContainSingle(e => e.What.StartsWith("Autosaved", StringComparison.Ordinal)).Subject;
         session.What.Should().Be("Autosaved 3 times");
         session.Changes.Should().ContainSingle(c => c.Field == "Bottom line").Which.Should()
             .Be(new HistoryChange("Bottom line", "Exploited in the wild.", "Third autosave."), "from before the first to after the last");
@@ -242,8 +242,8 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         form.Bluf = "Saved by hand.";
         await As(sp => sp.GetRequiredService<ArticleService>().SaveAsync(form));
         history = await As(sp => sp.GetRequiredService<HistoryService>().ArticleAsync(id));
-        history.Entries.First().What.Should().Be("Changed");
-        history.Entries.Count(e => e.What.StartsWith("Autosaved")).Should().Be(1);
+        history.Entries[0].What.Should().Be("Changed");
+        history.Entries.Count(e => e.What.StartsWith("Autosaved", StringComparison.Ordinal)).Should().Be(1);
     }
 
     [Fact]
@@ -261,7 +261,7 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         await Autosave(form);
 
         var history = await As(sp => sp.GetRequiredService<HistoryService>().ArticleAsync(id));
-        history.Entries.Where(e => e.What.StartsWith("Autosaved")).Select(e => e.UserName).Should().Equal("Tester", "Sam Colleague", "Tester");
+        history.Entries.Where(e => e.What.StartsWith("Autosaved", StringComparison.Ordinal)).Select(e => e.UserName).Should().Equal("Tester", "Sam Colleague", "Tester");
     }
 
     // ---- The editor ----

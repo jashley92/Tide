@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Text.RegularExpressions;
 using Tide.Application.Abstractions;
 using Tide.Application.Intake;
 using Tide.Application.Org;
@@ -272,7 +273,7 @@ public class PullAllPollingOffTests(PullApp app) : IClassFixture<PullApp>
 }
 
 /// <summary>Today's word on the feeds, counted: an app of its own, so no other test's feeds are among them.</summary>
-public class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
+public partial class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
 {
     private static readonly SignIn Analyst = new("dev:feeds-analyst", "Feeds Analyst", "Analyst");
     private static readonly SignIn Owner = new("dev:feeds-owner", "Feeds Owner", "ActionOwner");
@@ -312,7 +313,7 @@ public class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
     }
 
     private static int NewInFeed(string html) =>
-        int.Parse(System.Text.RegularExpressions.Regex.Match(html, @"(\d+) new in the feed").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        int.Parse(NewInTheFeed().Match(html).Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
     [Fact]
     public async Task Today_SaysWhichFeedsArentPulledSinceTheCutoff_ToAnAnalyst_AndPullAllPullsThem()
@@ -361,6 +362,9 @@ public class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
                 .And.NotContain("Pull all</button>", "pulling again now would only be refused");
         }
     }
+
+    [GeneratedRegex(@"(\d+) new in the feed")]
+    private static partial Regex NewInTheFeed();
 }
 
 /// <summary>Pull all when the browser's connection drops, and its toast when some sources fail: an app of their own.</summary>

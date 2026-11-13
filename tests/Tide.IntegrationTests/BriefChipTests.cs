@@ -85,7 +85,7 @@ internal static partial class BriefChipPage
 /// The brief chip in the top bar: when today's brief meets and which of the five steps it's on, read off the same steps
 /// as Today's strip, as a link to Today. The sample data has today's brief as a draft with three articles.
 /// </summary>
-public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
+public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
 {
     private string Meets => BriefChipPage.Meets(app);
 
@@ -117,7 +117,7 @@ public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
 
         // The step Today's own strip marks as current is the one the chip names.
         var today = await app.CreateClient().GetStringAsync("/");
-        var current = Regex.Match(today, "<li class=\"tide-step is-current\" aria-current=\"step\">.*?</li>", RegexOptions.Singleline).Value;
+        var current = CurrentStep().Match(today).Value;
         current.Should().Contain(needsWork ? ">Write<" : ">Order<");
         BriefChipPage.In(today).Should().Contain(" aria-current=\"page\"", "on Today the chip is the current page's link, as the sidebar's is");
         BriefChipPage.In(await app.CreateClient().GetStringAsync("/?tab=distribute")).Should().Contain(" aria-current=\"page\"");
@@ -237,7 +237,7 @@ public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         finally { meetings.End(seat); }
 
         var today = await app.CreateClient().GetStringAsync("/");
-        var current = Regex.Match(today, "<li class=\"tide-step is-current\" aria-current=\"step\">.*?<span class=\"tide-step-label\">(.*?)</span>", RegexOptions.Singleline).Groups[1].Value;
+        var current = CurrentStepLabel().Match(today).Groups[1].Value;
         var step = current.Contains(">Write<", StringComparison.Ordinal) ? "step 2 of 5 · Write" : "step 3 of 5 · Order";
         current.Should().MatchRegex(">(Write|Order)<", "a draft is on Write or Order");
         BriefChipPage.In(today).Should().Contain(BriefChipPage.Full($"Brief {Meets} · {step}"));
@@ -262,6 +262,12 @@ public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("class=\"top-row\"").And.Contain("<h1>A page</h1>");
         html.Should().NotContain("tide-brief-chip", $"a {role} doesn't read the team edition and write the brief");
     }
+
+    [GeneratedRegex("<li class=\"tide-step is-current\" aria-current=\"step\">.*?<span class=\"tide-step-label\">(.*?)</span>", RegexOptions.Singleline)]
+    private static partial Regex CurrentStepLabel();
+
+    [GeneratedRegex("<li class=\"tide-step is-current\" aria-current=\"step\">.*?</li>", RegexOptions.Singleline)]
+    private static partial Regex CurrentStep();
 }
 
 public class BriefChipReaderTests(ReaderApp app) : IClassFixture<ReaderApp>

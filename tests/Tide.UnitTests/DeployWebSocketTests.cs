@@ -251,9 +251,9 @@ public partial class DeployScriptPowerShellTests
             ConvertTo-Json -Compress -InputObject @{ fix = Get-TideWebSocketFixText }
             """);
         var source = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "Services", "ConnectionTransport.cs"));
-        var declaration = Regex.Match(source, @"public const string Fix =(?<parts>(?:\s*\+?\s*""[^""]*"")+)\s*;");
+        var declaration = FixDeclaration().Match(source);
         declaration.Success.Should().BeTrue("ConnectionTransport.Fix is a constant of string literals");
-        var fix = string.Concat(Regex.Matches(declaration.Groups["parts"].Value, @"""([^""]*)""").Select(m => m.Groups[1].Value));
+        var fix = string.Concat(QuotedPart().Matches(declaration.Groups["parts"].Value).Select(m => m.Groups[1].Value));
         fix.Should().Be(r.GetProperty("fix").GetString(), "Administration > Diagnostics says what Get-TideWebSocketFixText says");
         fix.Should().Contain("Install-WindowsFeature Web-WebSockets").And.Contain("Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebSockets -All");
     }
@@ -447,4 +447,10 @@ public partial class DeployScriptPowerShellTests
         var upgrade = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "deploy", "Upgrade-Tide.ps1"));
         upgrade.Should().Contain("if ($ws.Ok -and $ws.Warnings.Count -gt 0) { Write-Warn2", "the upgrade warns and carries on");
     }
+
+    [GeneratedRegex(@"public const string Fix =(?<parts>(?:\s*\+?\s*""[^""]*"")+)\s*;")]
+    private static partial Regex FixDeclaration();
+
+    [GeneratedRegex(@"""([^""]*)""")]
+    private static partial Regex QuotedPart();
 }

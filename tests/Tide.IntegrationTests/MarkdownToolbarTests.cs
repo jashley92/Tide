@@ -47,8 +47,8 @@ public partial class MarkdownToolbarTests(TideApp app) : IClassFixture<TideApp>
         bar.Should().Contain("title=\"Bold (Ctrl&#x2B;B)\"").And.Contain("title=\"Italic (Ctrl&#x2B;I)\"")
             .And.Contain("title=\"Indent list item (Tab)\"").And.Contain("title=\"Outdent list item (Shift&#x2B;Tab)\"");
         bar.Should().Contain("class=\"bi bi-type-bold\"").And.Contain("class=\"bi bi-list-ul\"");
-        Regex.Matches(bar, "tabindex=\"0\"").Should().HaveCount(1, "the toolbar is one Tab stop; the arrow keys move inside it");
-        Regex.Matches(bar, "<button type=\"button\"").Should().HaveCount(Names.Length);
+        TabStop().Matches(bar).Should().HaveCount(1, "the toolbar is one Tab stop; the arrow keys move inside it");
+        Button().Matches(bar).Should().HaveCount(Names.Length);
     }
 
     [Fact]
@@ -148,4 +148,10 @@ public partial class MarkdownToolbarTests(TideApp app) : IClassFixture<TideApp>
 
     [GeneratedRegex("<MarkdownToolbar For=\"([^\"]+)\"[^>]*/>")]
     private static partial Regex ToolbarTag();
+
+    [GeneratedRegex("<button type=\"button\"")]
+    private static partial Regex Button();
+
+    [GeneratedRegex("tabindex=\"0\"")]
+    private static partial Regex TabStop();
 }

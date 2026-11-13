@@ -99,7 +99,7 @@ public class AutogrowTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+                var said = System.Text.Json.JsonElement.Parse(stdout);
                 int[] Ints(string name) => [.. said.GetProperty(name).EnumerateArray().Select(e => e.GetInt32())];
                 string Text(string name) => said.GetProperty(name).ToString();
                 Ints("firstDraw").Should().Equal([1, 1, 0], "the shown boxes are fitted when drawn, the hidden one isn't");

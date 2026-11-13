@@ -515,7 +515,9 @@ await app.RunAsync();
 static IResult EmailPage(HttpContext http, string html)
 {
     var headers = http.Response.Headers;
+#pragma warning disable S7039 // above: the analyzer reports it in the build despite NOSONAR
     headers.ContentSecurityPolicy = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-same-origin allow-popups"; // NOSONAR S7039, above
+#pragma warning restore S7039
     headers.XFrameOptions = "SAMEORIGIN";
     headers.CacheControl = "no-store";
     return Results.Content(html, "text/html; charset=utf-8");

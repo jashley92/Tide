@@ -16,7 +16,7 @@ namespace Tide.IntegrationTests;
 /// flags sit at the end of a row's line in one order, the keys are one line with the rest behind "?", and the reading
 /// pane opens by itself on a wide window until the person closes it, which is remembered.
 /// </summary>
-public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
+public partial class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
 {
     // An article (a draft unless said) naming the CVE, as earlier coverage of it.
     private async Task<Guid> Article(string title, string cve, ArticleStatus status = ArticleStatus.Draft)
@@ -60,7 +60,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
     // The selected line's markup.
     private static string Selected(string html)
     {
-        var at = Regex.Match(html, "<li class=\"tide-triage-row[^\"]*selected").Index;
+        var at = SelectedRow().Match(html).Index;
         at.Should().BePositive("a line is selected");
         return html[at..html.IndexOf("</li>", at, StringComparison.Ordinal)];
     }
@@ -85,8 +85,8 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
 
         var bar = Bar(await r.HtmlOnce("Lantern VPN bug now used by two gangs"));
         bar.Should().Contain("Attach to <span class=\"tide-triage-attach-title text-truncate\">“Lantern VPN flaw exploited in the wild”</span>");
-        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
-        Regex.IsMatch(bar, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
+        PrimaryAttach().IsMatch(bar).Should().BeTrue("Attach is the main (primary) button");
+        SecondaryPromote().IsMatch(bar)
             .Should().BeTrue("Promote is still there, with its key");
         bar.Should().NotContain("Add as a source of “Lantern VPN flaw", "the main button says it once");
 
@@ -110,7 +110,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         Selected(html).Should().Contain("covered", "the row's flag says so");
         var bar = Bar(html);
         bar.Should().NotContain("Attach to “");
-        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
+        PrimaryPromote().IsMatch(bar).Should().BeTrue();
     }
 
     [Fact]
@@ -146,11 +146,10 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.HtmlOnce("Looks like one event");
         Selected(html).Should().Contain("tide-triage-group");
         var line = Bar(html);
-        Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title text-truncate\">“Quorvexz theft, first report”</span>").Should().BeTrue();
+        PrimaryAttachAllThree().IsMatch(line).Should().BeTrue();
         // Promote as one keeps its whole name for screen readers and on hover; on a wide window's bar the words after
         // "Promote as one" give way, so the main button keeps its own.
-        Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*aria-label=\"Promote as one article \\(3 sources\\)\"[^>]*>(<span[^>]*></span>)? "
-                + "Promote as one<span class=\"tide-triage-long\"> article \\(3 sources\\)</span> <span class=\"tide-kbd\">P</span>")
+        SecondaryPromoteAsOne().IsMatch(line)
             .Should().BeTrue("promoting the group is still there, and P");
 
         await r.Click(t => t.AttachCovered(0));
@@ -284,4 +283,23 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
             (await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().GetAsync(UserPreferences.TriageReading)).Should().Be(UserPreferences.ReadingOpen);
         }
     }
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to")]
+    private static partial Regex PrimaryAttach();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title text-truncate\">“Quorvexz theft, first report”</span>")]
+    private static partial Regex PrimaryAttachAllThree();
+
+    [GeneratedRegex("class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
+    private static partial Regex PrimaryPromote();
+
+    [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
+    private static partial Regex SecondaryPromote();
+
+    [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*aria-label=\"Promote as one article \\(3 sources\\)\"[^>]*>(<span[^>]*></span>)? "
+                + "Promote as one<span class=\"tide-triage-long\"> article \\(3 sources\\)</span> <span class=\"tide-kbd\">P</span>")]
+    private static partial Regex SecondaryPromoteAsOne();
+
+    [GeneratedRegex("<li class=\"tide-triage-row[^\"]*selected")]
+    private static partial Regex SelectedRow();
 }

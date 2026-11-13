@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
@@ -9,7 +10,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>Who is in a live meeting and whose hand is up show in the present page's top bar, for the presenter and for
 /// everyone following alike; the footer keeps the slides, the time and the presenter's other controls.</summary>
-public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
+public partial class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:topbar-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:topbar-robin", "Robin Analyst", "Analyst");
@@ -151,7 +152,7 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         {
             await Do(pat, p => p.Follow());
             var people = People(await pat.Html());
-            System.Text.RegularExpressions.Regex.Count(people, "class=\"tide-presence-dot ").Should().Be(6, "five people and \"+3\"");
+            PresenceDot().Count(people).Should().Be(6, "five people and \"+3\"");
             people.Should().Contain(">&#x2B;3</span>").And.Contain("8 here").And.Contain("Person 7.");
         }
         finally
@@ -172,4 +173,7 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         People(html).Should().Contain("tide-presence-dot").And.Contain("Tester is viewing");
         FooterHasNoneOfIt(html);
     }
+
+    [GeneratedRegex("class=\"tide-presence-dot ")]
+    private static partial Regex PresenceDot();
 }
