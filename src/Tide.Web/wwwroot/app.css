@@ -1849,9 +1849,11 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* Its ×, which puts the link away on this page (GuideLink). */
 .tide-guide-link-wrap { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; }
 .tide-guide-link-hide { padding: 0 var(--tide-space-1); color: var(--tide-text-muted); line-height: 1; }
-/* A long guide's parts under its step's title, the one it's in strong, the whole count after them (GuideStepDialog). */
-.tide-tour-parts { margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-2); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
-.tide-tour-parts strong { color: var(--tide-text); }
+/* A long guide's parts, on a line of their own between its count and its step's title, the one it's in strong, the whole
+   count after them (GuideStepDialog). */
+.tide-tour-parts { display: block; margin: 0; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular);
+    line-height: 1.4; color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-tour-parts strong { color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
 /* The ? overlay's Show me around this page (ShortcutsOverlay). */
 .tide-shortcuts-guide { margin: 0 0 var(--tide-space-3); }
 /* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */

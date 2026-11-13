@@ -94,7 +94,9 @@ else if (Tip is { } tip)
                 var end = i;
                 while (end < _tour.Count && _tour[end].Part == _tour[i].Part) end++;
                 if (_step >= i && _step < end) (at, from, to) = (names.Count, i, end);
-                names.Add(_tour[i].Part ?? "");
+                // A part come back to (Today, after writing) says so, so it doesn't read as the same one twice.
+                var part = _tour[i].Part ?? "";
+                names.Add(names.Contains(part) ? "Back to " + part : part);
             }
             return (names, at, _step - from, to - from);
         }

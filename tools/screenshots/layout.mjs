@@ -3708,10 +3708,25 @@ const ringsItsControl = holds('rings the control its step names', () => {
 });
 
 
+/** Nothing in a step's card drawn over anything else in it: its count, parts line, title, text and each button. */
+const nothingOverlapsInTheCard = holds('nothing in the step overlaps', () => {
+  const card = [...document.querySelectorAll('.tide-tour')].find(c => c.getClientRects().length);
+  if (!card) return [];
+  const parts = [...card.querySelectorAll('.tide-tour-count, .tide-tour-parts, .tide-tour-title, .tide-tour-text, .btn-close, .tide-modal-actions .btn')]
+    .filter(e => e.getClientRects().length);
+  const out = [];
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const a = parts[i].getBoundingClientRect(), b = parts[j].getBoundingClientRect();
+    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (w > 1 && h > 1) out.push(`"${parts[i].textContent.trim().slice(0, 24)}" and "${parts[j].textContent.trim().slice(0, 24)}" overlap`);
+  }
+  return out.slice(0, 2);
+});
+
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
   focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour'), belowTopBar('.tide-tour'),
-  pointsAtTarget('.tide-tour'), ringsItsControl];
+  pointsAtTarget('.tide-tour'), ringsItsControl, nothingOverlapsInTheCard];
 
 /** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, Start the meeting
  *  only disabled, the top bar within the window, and the step's control ringed. */
@@ -4480,6 +4495,11 @@ const pages = [
   ]),
   { name: 'guide-walk-article-dark', route: '/help', context: { theme: 'dark' }, setup: guideFromHelp('article'), widths: [1440, 780],
     rules: [walksGuide(railGuideRules)] },
+  // An analyst's day's first step: the count in its part, the parts on their own line, then the title, at three widths
+  // in both themes.
+  { name: 'guide-day-header', route: '/help', setup: guideFromHelp('day'), widths: [1920, 1440, 780], rules: [...railGuideRules, visible('.tide-tour-parts')] },
+  { name: 'guide-day-header-dark', route: '/help', context: { theme: 'dark' }, setup: guideFromHelp('day'), widths: [1920, 1440, 780],
+    rules: [...railGuideRules, visible('.tide-tour-parts')] },
   // The guides across pages, walked to Done from Help: an analyst's whole day, and a Viewer's.
   { name: 'guide-walk-day', route: '/help', setup: guideFromHelp('day'), widths: [1440, 780], rules: [walksGuide(railGuideRules)] },
   { name: 'guide-walk-following-viewer', route: '/help', setup: guideFromHelpAs('Walker-following&roles=Viewer', 'following'), widths: [1440, 780],
