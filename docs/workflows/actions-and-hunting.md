@@ -1016,6 +1016,14 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   way, and a link to the actions it counts: Recently closed on the list at that status and reach, with the board's
   filters (`ActionsBoard.ClosedLink`; from Mine held by you, from My teams `on=myteams`). The list shows what it always
   shows that person, so the link never widens who sees an action.
+
+  ![The Actions board, with the closed strip under the lanes](../screenshots/doc-actions-board.png)
+
+  1. The view tabs, each with its count.
+  2. The filter bar, shared with the list.
+  3. The selected card (`?card=`): its priority, kind, article, holder and team, due date, and time in its column.
+  4. The closed strip: what closed as Done, Cancelled and Not applicable in the last 7 days, each a drop target and a
+     link to those actions.
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
 - **Today's Escalated card** (`TeamQueue.Escalated`, read with the queue on its context; `EscalatedAsync` alone): the
