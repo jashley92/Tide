@@ -192,13 +192,17 @@ else
                         @if (unseen > 0) { <span class="tide-notes-new" aria-hidden="true">@unseen</span> }
                     </button>
                 }
-                @if (_view is null && _canPresent && TeamEdition && !Presented && !RehearsalAsked)
+                @if (_view is null && _canPresent && TeamEdition && !Presented)
                 {
-                    <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="StartMeeting"><span class="bi bi-broadcast" aria-hidden="true"></span> Start the meeting</button>
+                    @* In a rehearsal it's shown, for the guide to point at, and does nothing: disabled, and Run refuses it even
+                       if a script takes that away. *@
+                    <button id="present-start" class="btn btn-sm btn-primary" disabled="@(_busy || RehearsalAsked)" aria-disabled="@(RehearsalAsked ? "true" : null)"
+                            title="@(RehearsalAsked ? "Starts the real meeting; not in a rehearsal" : null)" @onclick="StartMeeting"><span class="bi bi-broadcast" aria-hidden="true"></span> Start the meeting</button>
                 }
-                @if (_view is not null)
+                @if (_view is not null || Rehearsing)
                 {
-                    <button class="btn btn-sm btn-outline-secondary" title="Copy the join link" @onclick="CopyLink"><span class="bi bi-link-45deg" aria-hidden="true"></span> Copy link</button>
+                    <button id="present-copy-link" class="btn btn-sm btn-outline-secondary" disabled="@RehearsalAsked" aria-disabled="@(RehearsalAsked ? "true" : null)"
+                            title="@(RehearsalAsked ? "Copies the link to follow the meeting; not in a rehearsal" : "Copy the join link")" @onclick="CopyLink"><span class="bi bi-link-45deg" aria-hidden="true"></span> Copy link</button>
                 }
                 @if (CanEnd && (_view is not null || !Presented) && !RehearsalAsked)
                 {
@@ -756,7 +760,7 @@ else
                    role="@(RailDocked ? null : "dialog")" aria-modal="@(RailOver ? "true" : null)" aria-label="Presenter's controls">
                 <div class="tide-present-rail-head">
                     <span>Presenter &middot; @(_slide == 0 ? "before you start" : _slide == last ? "before you end" : "this slide")</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @ref="_railClose" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
+                    <button type="button" id="present-rail-close" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @ref="_railClose" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
                 </div>
                 @* In rehearsal every control here is disabled (and each step checks again where it's handled). *@
                 <fieldset class="tide-rehearsal-controls" disabled="@RehearsalAsked">
@@ -1136,6 +1140,7 @@ else
         @if (Rehearsing && GuideStep is { } guideStep)
         {
             <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName"
+                             Skips="@(ForTheDay && _guideAt == 0)" OnSkip="BackToTheDay"
                              OnNext="GuideNext" OnBack="GuideBack" OnEnd="GuideEnd" />
         }
     </div>
@@ -1292,6 +1297,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // An analyst's day asked for a rehearsal while the meeting is live: present mode refuses it, and the day goes on
+        // at Send, saying why.
+        if (ForTheDay && !_backToTheDay && _brief is not null && _view is not null)
+        {
+            _backToTheDay = true;
+            Nav.NavigateTo(Nav.BaseUri + BackToTheDayFrom(live: true));
+        }
         await (_handsPopout ??= new Popout(JS, HandsListDismissed)).FollowAsync(HandsListOpen, _handsHolder, _handsButton);
         await FocusOnSlideAsync();
         if (_moveRailFocus)
@@ -2491,6 +2503,41 @@ else
     /// <summary>"1" when Help's Learn to present opened the page: a rehearsal (<see cref="RehearsalHref"/>).</summary>
     [SupplyParameterFromQuery(Name = "rehearse")] public string? Rehearse { get; set; }
 
+    /// <summary>What, with <see cref="RehearsalHref"/>, marks a rehearsal as An analyst's day's presenting.</summary>
+    public const string DayGuide = "guide=" + Guides.Day;
+
+    /// <summary>Present mode for <paramref name="day"/>'s brief in rehearsal as An analyst's day's presenting.</summary>
+    public static string DayRehearsalHref(DateOnly day) => RehearsalHref(day) + "&" + DayGuide;
+
+    /// <summary>Where An analyst's day goes on back on Today (<see cref="BackToTheDayFrom"/>), read from
+    /// <paramref name="uri"/>: the step, and whether the rehearsal was refused for a live meeting; null for any other
+    /// address.</summary>
+    public static (string From, bool Live)? ResumesTheDay(string uri)
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(uri).Query);
+        return query.TryGetValue("guide", out var guide) && guide == Guides.Day && query.TryGetValue("from", out var from)
+            ? (from.ToString(), query.ContainsKey("live")) : null;
+    }
+
+    /// <summary><see cref="Guides.Day"/> when An analyst's day opened the rehearsal (<see cref="DayGuide"/>).</summary>
+    [SupplyParameterFromQuery(Name = "guide")] public string? GuideOf { get; set; }
+
+    // The rehearsal is An analyst's day's presenting: its guide is the day's, and ends back on Today at Send.
+    private bool ForTheDay => RehearsalAsked && GuideOf == Guides.Day;
+    private bool _backToTheDay;
+
+    /// <summary>Today, with An analyst's day going on at Send (OnboardingHost); <paramref name="live"/> when present mode
+    /// refused the rehearsal because the meeting is live.</summary>
+    public static string BackToTheDayFrom(bool live) => $"?guide={Guides.Day}&from=send" + (live ? "&live=1" : "");
+
+    // Skip the details, or Done: back to Today for Send.
+    internal void BackToTheDay()
+    {
+        _backToTheDay = true;
+        GuideEnd();
+        Nav.NavigateTo(Nav.BaseUri + BackToTheDayFrom(live: false));
+    }
+
     /// <summary>Present mode for <paramref name="day"/>'s brief in rehearsal, as Help's Learn to present opens it.</summary>
     public static string RehearsalHref(DateOnly day) => Ui.PresentUrl(day) + "?rehearse=1";
 
@@ -2535,7 +2582,8 @@ else
         if (_guideStarted || !Rehearsing || _brief is null) return;
         _guideStarted = true;
         var learn = Guides.Find(Guides.Present, CurrentUser.Has);
-        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null).ToList(), learn?.Title);
+        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null).ToList(),
+            ForTheDay ? Guides.Find(Guides.Day, CurrentUser.Has)?.Title : learn?.Title);
         GuideTo(0);
     }
 
@@ -2543,6 +2591,7 @@ else
     internal void GuideNext()
     {
         if (_guideAt + 1 < _guide.Count) GuideTo(_guideAt + 1);
+        else if (ForTheDay) BackToTheDay();
         else GuideEnd();
     }
 
@@ -2871,6 +2920,7 @@ else
 
     private async Task CopyLink()
     {
+        if (RehearsalAsked) return;
         var link = Nav.ToAbsoluteUri(Ui.PresentUrl(_date)).ToString();
         var copied = false;
         try { copied = await JS.InvokeAsync<bool>("tideCopy", link); }

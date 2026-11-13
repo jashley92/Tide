@@ -12,6 +12,7 @@
 @inject ICurrentUser CurrentUser
 @inject LiveMeetings Meetings
 @inject OrgClock Clock
+@inject GuideLinkService GuideLinks
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, Show tips
    again, Take the tour, and the guides (Guides) the person can use. An administrator also gets every release's full notes, as its GitHub page has them:
@@ -32,6 +33,13 @@
         <h2 id="help-tips">Tips</h2>
         <p>A page that changed shows a tip on your first visit to it, until you press <strong>Got it</strong>.</p>
         <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ShowTipsAgainAsync">Show tips again</button>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="help-guide-links" checked="@_guideLinks" @onchange="SwitchGuideLinksAsync"
+                   aria-describedby="help-guide-links-help" />
+            <label class="form-check-label" for="help-guide-links">Show page guide links</label>
+        </div>
+        <p class="form-text mb-0" id="help-guide-links-help">Show me around, under a page's title, for a while after you start and after a
+            release changes the page. On shows it on every page with a guide until you close it there; the <kbd>?</kbd> menu always has it.</p>
     </section>
     @if (Tour.Steps.Count > 0)
     {
@@ -45,7 +53,7 @@
     {
         <section class="tide-card" id="help-guides" aria-labelledby="help-guides-title">
             <h2 id="help-guides-title">Guides</h2>
-            <p>A few steps through one page's controls, on that page. End one at any step. A page with a guide has <strong>Show me around</strong> in its header too.</p>
+            <p>A walk through one page's controls, on that page, or through the whole day across pages. End one at any step. A page with a guide has <strong>Show me around</strong> in its header too.</p>
             <ul class="tide-help-guides">
                 @foreach (var guide in MyGuides)
                 {
@@ -132,6 +140,24 @@
 
     private MarkupString NotesHtml(ReleaseVersion version, string notes) =>
         Rendered.GetOrAdd((Nav.BaseUri, version), key => new MarkupString(Markdown.ToHtml(notes, LinkRoot.FromBaseUri(key.BaseUri))));
+
+    // Help's "Show page guide links" (GuideLinkService).
+    private bool _guideLinks = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        try { _guideLinks = await GuideLinks.SwitchedOnAsync(); }
+        catch (ForbiddenException) { _guideLinks = false; }
+    }
+
+    /// <summary>Show page guide links, on or off.</summary>
+    public async Task SwitchGuideLinksAsync(ChangeEventArgs e)
+    {
+        _guideLinks = e.Value is true;
+        await GuideLinks.SwitchAsync(_guideLinks);
+        Toasts.Show(_guideLinks ? "Each page with a guide shows Show me around again." : "Show me around is in the ? menu only.");
+    }
 
     /// <summary>Show tips again: each changed page's tip shows on the person's next visit to it.</summary>
     public async Task ShowTipsAgainAsync()

@@ -1848,6 +1848,11 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-help-guide-text { display: flex; flex-direction: column; flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
 /* A page's Show me around, in its header: a quiet link-styled button that starts the page's guide. */
 .tide-guide-link { padding: 0 var(--tide-space-1); white-space: nowrap; }
+/* Its ×, which puts the link away on this page (GuideLink). */
+.tide-guide-link-wrap { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; }
+.tide-guide-link-hide { padding: 0 var(--tide-space-1); color: var(--tide-text-muted); line-height: 1; }
+/* The ? overlay's Show me around this page (ShortcutsOverlay). */
+.tide-shortcuts-guide { margin: 0 0 var(--tide-space-3); }
 /* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */
 .tide-rehearsal { display: inline-flex; align-items: center; gap: .45em; padding: .2em .75em; border: 1px solid var(--tide-slide-warn);
     border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .8em;

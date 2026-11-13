@@ -118,8 +118,12 @@ window.tidePopout = (function () {
     }
 
     // The last one opened takes the Escape.
+    // A key or press in something that points at an open popout without being part of it (a guide's step,
+    // data-keeps-popouts) leaves it open: the guide closes what it opened itself.
+    function kept(e) { return !!(e.target && e.target.closest && e.target.closest('[data-keeps-popouts]')); }
+
     function onKey(e) {
-        if (e.key !== 'Escape' || e.isComposing || watched.length === 0) return;
+        if (e.key !== 'Escape' || e.isComposing || watched.length === 0 || kept(e)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         const w = watched[watched.length - 1];
@@ -132,6 +136,7 @@ window.tidePopout = (function () {
     }
 
     function onOutside(e) {
+        if (kept(e)) return;
         watched.filter(function (w) { return !w.el.contains(e.target); }).forEach(dismiss);
     }
 

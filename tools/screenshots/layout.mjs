@@ -948,9 +948,11 @@ const guideFromHelpAs = (who, key, ...keys) => async page => {
 /** Setup: Learn to present from Help (present mode in rehearsal, on today's brief), then `keys`. */
 const rehearsal = (...keys) => guideFromHelp('present', ...keys);
 
-/** Setup: the page's guide started from its Show me around, then `keys`. */
+/** Setup: the page's guide started from the ? menu's Show me around this page (always there; the link under a page's
+ *  subtitle only shows for a while), then `keys`. */
 const guideOn = (...keys) => async page => {
-  await page.locator('#tide-guide-start').click();
+  await page.locator('.tide-shortcuts-btn').click();
+  await page.locator('#tide-guide-menu').click();
   await stepThen(page, keys);
 };
 
@@ -3678,14 +3680,31 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
   visible('.tide-whatsnew-more'), visible('#whatsnew-take-tour'), fits('.tide-whatsnew > .tide-modal-actions'),
   inWindow('.tide-whatsnew .tide-modal-actions .btn'), inWindow('.tide-whatsnew-more')];
 
+/**
+ * A step rings the control its step names first (data-step-target, "a || b"): when that control is on the page, the
+ * ring is on it, not on a fallback or a field beside it; one named by data-guide carries that name.
+ */
+const ringsItsControl = holds('rings the control its step names', () => {
+  const card = [...document.querySelectorAll('.tide-tour')].find(c => c.getClientRects().length);
+  const named = card?.dataset.stepTarget;
+  if (!named) return [];
+  const first = named.split('||')[0].trim();
+  const own = [...document.querySelectorAll(first)].find(e => e.getClientRects().length > 0 && !e.closest('[inert], [hidden]'));
+  const ring = document.querySelector('.tide-tip-target');
+  if (!own) return [];
+  if (ring !== own) return [`it rings ${ring ? ring.tagName.toLowerCase() + (ring.id ? '#' + ring.id : '.' + [...ring.classList].join('.')) : 'nothing'}, not ${first}`];
+  const guide = /data-guide="([^"]+)"/.exec(first)?.[1];
+  return guide && ring.getAttribute('data-guide') !== guide ? [`its control isn't data-guide="${guide}"`] : [];
+});
+
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
   focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour'), belowTopBar('.tide-tour'),
-  pointsAtTarget('.tide-tour')];
+  pointsAtTarget('.tide-tour'), ringsItsControl];
 
-/** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, no Start the
- *  meeting, the top bar within the window, and the step's control ringed. */
-const rehearsalRules = [...tourRules, visible('.tide-rehearsal'), inWindow('.tide-rehearsal'), hidden('.tide-present-tools .btn-primary'),
+/** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, Start the meeting
+ *  only disabled, the top bar within the window, and the step's control ringed. */
+const rehearsalRules = [...tourRules, visible('.tide-rehearsal'), inWindow('.tide-rehearsal'), hidden('.tide-present-tools .btn-primary:not(:disabled)'),
   fits('.tide-present-top'), visible('.tide-tip-target')];
 
 /** A page guide's step: a tour step's rules, with the control it's about ringed. */
@@ -3703,22 +3722,51 @@ const railGuideRules = [...guideRules, [1500, allBesides('.tide-tour', '#tide-ra
 const rulesAt = (rules, width) => rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
 
 const walksGuide = stepRules => ({
-  name: 'each step of the guide, to Done',
+  name: 'each step of the guide, to Done, changing nothing',
   check: async page => {
     const out = [], rules = rulesAt(stepRules, page.viewportSize().width);
-    for (let n = 1; n <= 20; n++) {
-      if (!await page.locator('.tide-tour').isVisible()) return out;
-      const title = (await page.locator('#tide-tour-title').textContent()).replace(/\s+/g, ' ').trim();
-      for (const rule of rules) out.push(...(await rule.check(page)).map(f => `${title}: ${f}`));
-      await page.keyboard.press('Enter');
-      await idle(page);
-    }
-    return [...out, 'Done never ended it'];
+    // Only pointing: nothing goes to another host, and a page's fields are as they were (and nothing unsaved) once it's
+    // done, sections and pickers it opened closed again.
+    const outside = new Set();
+    const heard = r => { const u = new URL(r.url()); if (/^https?:$/.test(u.protocol) && u.hostname !== new URL(page.url()).hostname) outside.add(u.host); };
+    page.on('request', heard);
+    const fields = () => page.evaluate(() => [...document.querySelectorAll('#main-content input, #main-content textarea, #main-content select')]
+      .map(e => e.type === 'checkbox' || e.type === 'radio' ? String(e.checked) : e.value).join('\u0001'));
+    const [startedAt, before] = [page.url(), await fields()];
+    try {
+      for (let n = 1; n <= 150; n++) {
+        if (!await page.locator('.tide-tour').isVisible()) {
+          if (page.url() === startedAt && await fields() !== before) out.push('a field on the page changed');
+          if (await page.locator('.tide-sticky-save .tide-dirty').isVisible()) out.push('the article has unsaved changes');
+          if (await page.locator('.tide-atkm-panel, form.tide-promote-form, form.tide-add-link').count()) out.push('a picker or form it opened is still open');
+          return [...out, ...[...outside].map(h => `a request went to ${h}`)];
+        }
+        const title = (await page.locator('#tide-tour-title').textContent()).replace(/\s+/g, ' ').trim();
+        for (const rule of rules) out.push(...(await rule.check(page)).map(f => `${title}: ${f}`));
+        await page.keyboard.press('Enter');
+        await idle(page);
+      }
+      return [...out, 'Done never ended it'];
+    } finally { page.off('request', heard); }
   },
 });
 
+/** Setup: a guide from Help (`key`, as `who` when given), moved on (Next) to the step titled `title`, then wider letters. */
+const guideToStep = (key, title, who = null) => async page => {
+  await guideFromHelpAs(who, key)(page);
+  for (let n = 0; n < 60 && !(await page.locator('#tide-tour-title').textContent()).includes(title); n++) {
+    await page.keyboard.press('Enter');
+    await idle(page);
+  }
+};
+
+/** A step inside what it opened (a picker, a menu, a form): its control is in `popout`, and the step points at it. */
+const inPopoutRules = popout => [...guideRules, visible(popout), holds(`its control is inside ${popout}`, popout =>
+  document.querySelector('.tide-tip-target')?.closest(popout) ? [] : ['its control isn\'t inside it'], popout)];
+
 /** Show me around in a page's header: shown, within the window, and the header still fits. */
-const guideLinkRules = [noSidewaysScroll, visible('#tide-guide-start'), inWindow('#tide-guide-start'), fits('.tide-page-head')];
+const guideLinkRules = [noSidewaysScroll, visible('#tide-guide-start'), inWindow('#tide-guide-start'), visible('#tide-guide-hide'),
+  inWindow('#tide-guide-hide'), fits('.tide-page-head')];
 
 /** The page is still `path` (from the app's root: "/" for Today). */
 const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseURI).pathname.replace(/\/$/, '') + path === location.pathname
@@ -4359,7 +4407,7 @@ const pages = [
   { name: 'rehearsal-title', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780],
     rules: [...rehearsalRules, visible('.tide-progress.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
   { name: 'rehearsal-title-dark', route: '/help', context: { theme: 'dark' }, setup: rehearsal(), widths: [1920, 1440, 780], rules: rehearsalRules },
-  { name: 'rehearsal-rail', route: '/help', setup: rehearsal('Enter', 'Enter'), widths: [1920, 1440, 780],
+  { name: 'rehearsal-rail', route: '/help', setup: rehearsal('Enter', 'Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
     rules: [...rehearsalRules, visible('#present-rail.tide-tip-target, #present-rail-toggle.tide-tip-target'), [1500, visible('#present-rail.is-docked')]] },
   // Every step of it, to Done, whatever slides the brief has: a step about one it hasn't is left out.
   { name: 'rehearsal-walk', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780], rules: [walksGuide(rehearsalRules)] },
@@ -4370,7 +4418,11 @@ const pages = [
   ...[['today', '/'], ['triage', '/triage'], ['article', '/articles/{vpnArticle}'], ['actions', '/actions'], ['action', '/actions/{detailAction}'],
     ['metrics', '/metrics'], ['trends', '/trends'], ['stories', '/stories'], ['adversaries', '/adversaries'], ['coverage', '/coverage'],
     ['library', '/library'], ['stack', '/stack'], ['search', '/search'], ['workload', '/workload'], ['rotation', '/rotation']]
-    .map(([key, route]) => ({ name: `guide-link-${key}`, route, setup: wideFont, widths: [1920, 1440, 780], rules: guideLinkRules })),
+    // Someone signed in for the first time today (?as=), for whom the link shows.
+    .map(([key, route]) => ({ name: `guide-link-${key}`, route: `${route}?as=Linker-${key}`, setup: wideFont, widths: [1920, 1440, 780], rules: guideLinkRules })),
+  // The ? menu's Show me around this page, always there, whole in the window at 780.
+  { name: 'guide-menu', route: '/metrics', setup: async page => { await page.locator('.tide-shortcuts-btn').click(); await idle(page); await wideFont(page); },
+    widths: [1440, 780], rules: [noSidewaysScroll, visible('#tide-guide-menu'), inWindow('#tide-guide-menu'), fits('.tide-shortcuts')] },
   // A page's guide, its steps beside what they point at: on the page's own controls; on the context rail docked (1920) or
   // on its Context button where it's shut (1440, 780); and a lookup's export in the rail.
   { name: 'guide-metrics', route: '/metrics', setup: guideOn(), widths: [1920, 1440, 780], rules: [...guideRules, belowTopBar('.tide-tip-target'), ...tabWraps('.tide-tour', 4)] },
@@ -4401,9 +4453,24 @@ const pages = [
   ]),
   { name: 'guide-walk-article-dark', route: '/help', context: { theme: 'dark' }, setup: guideFromHelp('article'), widths: [1440, 780],
     rules: [walksGuide(railGuideRules)] },
+  // The guides across pages, walked to Done from Help: an analyst's whole day, and a Viewer's.
+  { name: 'guide-walk-day', route: '/help', setup: guideFromHelp('day'), widths: [1440, 780], rules: [walksGuide(railGuideRules)] },
+  { name: 'guide-walk-following-viewer', route: '/help', setup: guideFromHelpAs('Walker-following&roles=Viewer', 'following'), widths: [1440, 780],
+    rules: [walksGuide(railGuideRules)] },
+  // A step inside what the guide opened: the ATT&CK picker, Triage's promote form, Actions' Filter menu, an action's More.
+  { name: 'guide-popout-attack', route: '/help', setup: guideToStep('article', 'Finding a technique'), widths: [1440, 780],
+    rules: inPopoutRules('.tide-atkm-panel') },
+  { name: 'guide-popout-attack-cell', route: '/help', setup: guideToStep('article', 'Techniques'), widths: [1440, 780],
+    rules: inPopoutRules('.tide-atkm-panel') },
+  { name: 'guide-popout-promote', route: '/help', setup: guideToStep('triage', 'Promoting'), widths: [1440, 780],
+    rules: inPopoutRules('form.tide-promote-form') },
+  { name: 'guide-popout-filter', route: '/help', setup: guideToStep('actions', 'More filters'), widths: [1440, 780],
+    rules: inPopoutRules('.tide-filter-pop') },
+  { name: 'guide-popout-more', route: '/help', setup: guideToStep('action', 'More'), widths: [1440, 780],
+    rules: inPopoutRules('.tide-action-do [role=menu]') },
   // Escape ends it, and focus is back on Show me around.
   { name: 'guide-escape', route: '/library', setup: guideOn('Escape'), widths: [1440],
-    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('#tide-guide-start')] },
+    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('.tide-shortcuts-btn')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;

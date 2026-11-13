@@ -175,7 +175,8 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person("Viewer"));
         await r.Click(c => c.CheckAsync());
         var html = await r.Html();
-        html.Should().Contain("Want a walkthrough? Take the tour, or pick a guide in Help.");
+        html.Should().Contain("Want a walkthrough? Take the tour, see the whole day, or pick a guide in Help.");
+        html.Should().Contain("id=\"whatsnew-see-day\"");
         html.Should().Contain("id=\"whatsnew-take-tour\"").And.Contain(">Take the tour</button>");
         html.IndexOf("Take the tour</button>", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf(">Got it</button>", StringComparison.Ordinal),
             "Got it stays last, the main button");
@@ -208,5 +209,32 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var present = await RenderAsync<OnboardingHost>(app, "/present/2026-11-12", @as: Person("Analyst"));
         await Do(present, c => c.CheckAsync());
         (await present.Html()).Should().NotContain("Take the tour");
+    }
+
+    [Theory]
+    [InlineData("Analyst", "analyst")]
+    [InlineData("Viewer", "Following the brief")]
+    public async Task SeeTheWholeDay_InWhatsNew_ClosesIt_AndStartsTheWholeDaysGuide(string role, string guide)
+    {
+        var who = Person(role);
+        await using var r = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        await Do(r, c => c.CheckAsync());
+        await Do(r, c => c.WhatsNew!.SeeTheDayAsync());
+        var html = await r.Html();
+        html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("Step 1 of");
+        (await Seen(who)).Should().Be("1.13.0");
+    }
+
+    [Fact]
+    public async Task TheToursLastStep_OffersTheWholeDay_AndAGuidesNever()
+    {
+        await using var r = await RenderAsync<OnboardingHost>(app, "/help", @as: Person("Viewer"));
+        await Do(r, _ => { r.Scope.ServiceProvider.GetRequiredService<TourRequests>().Ask(fromHelp: true); return Task.CompletedTask; });
+        await r.Until(h => h.Step is not null, seconds: 5);
+        while ((await r.Html()).Contains(">Next</button>", StringComparison.Ordinal))
+        {
+            try { await Do(r, c => c.NextStepAsync()); } catch (Microsoft.AspNetCore.Components.NavigationException) { }
+        }
+        (await r.Html()).Should().Contain("id=\"tide-tour-also\"").And.Contain(">See the whole day</button>");
     }
 }

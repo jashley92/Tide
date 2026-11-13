@@ -58,7 +58,7 @@
                         @foreach (var who in _reviewers) { <option value="@who.Id">@who.Name@(who.Presenting ? " (presenting this week)" : "")</option> }
                     </select>
                     <input class="form-control form-control-sm tide-maxw-sm" maxlength="@ArticleReview.MaxNote" placeholder="What to look at (optional)" aria-label="Note for the reviewer" @bind="_note" />
-                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_reviewerId))" @onclick="Ask">Ask for review</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-guide="ask-review" disabled="@(_busy || string.IsNullOrEmpty(_reviewerId))" @onclick="Ask">Ask for review</button>
                 }
             </div>
         }

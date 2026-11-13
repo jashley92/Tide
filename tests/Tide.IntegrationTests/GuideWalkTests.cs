@@ -1,13 +1,17 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Operations;
+using Tide.Application.Security;
+using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Layout;
+using Tide.Web.Components.Pages;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
 using static Tide.IntegrationTests.PresentHarness;
@@ -32,7 +36,8 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         var counts = new[]
         {
             await db.Articles.CountAsync(), await db.Actions.CountAsync(), await db.AuditLog.CountAsync(),
-            await db.UserPreferences.CountAsync(), await db.Briefs.CountAsync(), await db.FeedItems.CountAsync(),
+            // Bar the one a guide keeps for itself: that it has run, so its page's Show me around link goes (GuideLinkService).
+            await db.UserPreferences.CountAsync(p => !p.Name.StartsWith("guide.")), await db.Briefs.CountAsync(), await db.FeedItems.CountAsync(),
             await db.FeedItemTexts.CountAsync(), await db.ArticleIndicators.CountAsync(), await db.ArticleTags.CountAsync(),
         };
         var versions = await db.Articles.AsNoTracking().OrderBy(a => a.Id).Select(a => a.EditVersion).ToListAsync();
@@ -70,16 +75,20 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "Walk sweep", TeamId = team });
     }
 
+    // Every guide on a page, and Following the brief, as an analyst and as a Viewer (An analyst's day and Learn to
+    // present have walks of their own).
+    public static TheoryData<string, string> EveryGuide()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var role in new[] { AppRole.Analyst, AppRole.Viewer })
+            foreach (var g in Guides.For(RoleDefinitions.PermissionsFor([role]).Contains).Where(g => !g.Rehearsal && g.Key != Guides.Day))
+                data.Add(g.Key, role.ToString());
+        data.Add(Guides.Following, nameof(AppRole.ActionOwner));
+        return data;
+    }
+
     [Theory]
-    [InlineData("today", "Analyst")]
-    [InlineData("today", "Viewer")]
-    [InlineData("triage", "Analyst")]
-    [InlineData("article", "Analyst")]
-    [InlineData("actions", "Analyst")]
-    [InlineData("actions", "Viewer")]
-    [InlineData("action", "Analyst")]
-    [InlineData("action", "Viewer")]
-    [InlineData("search", "Viewer")]
+    [MemberData(nameof(EveryGuide))]
     public async Task WalkingAGuide_ToTheEnd_WritesNothing_AndNothingGoesOut(string key, string role)
     {
         await TwoArticleBrief(app, 0, $"Walk {key}");
@@ -94,12 +103,69 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         while (host.Component.Step is not null)
         {
             walked++;
-            await host.Click(h => h.NextStepAsync());
+            // A guide across pages opens each step's page, which a page drawn outside a circuit can't: it says where it went.
+            try { await host.Click(h => h.NextStepAsync()); } catch (NavigationException) { }
         }
 
         walked.Should().Be(count, "every step is shown, Next to Done");
         (await Written()).Should().Be(before, $"the {key} guide only points");
         app.Calls.Should().Be(calls, "nothing goes out of the app");
+    }
+
+    // Next until the step is `stop`'s (or Done), each page it opens saying where it went; how many steps were shown.
+    private static async Task<int> Walk(Rendered<OnboardingHost> host, Func<TourStep, bool>? stop = null)
+    {
+        var walked = 0;
+        while (host.Component.Step is { } step)
+        {
+            walked++;
+            if (stop?.Invoke(step) == true) return walked;
+            try { await host.Click(h => h.NextStepAsync()); } catch (NavigationException) { }
+        }
+        return walked;
+    }
+
+    [Fact]
+    public async Task AnAnalystsDay_WalkedWholeAcrossItsPagesAndBackFromPresenting_WritesNothing_AndNothingGoesOut()
+    {
+        await TwoArticleBrief(app, 0, "Walk the day");
+        await AnAction();
+        var who = Person("Analyst");
+        var (before, calls) = (await Written(), app.Calls);
+        int count, upToPresenting;
+        await using (var host = await RenderAsync<OnboardingHost>(app, "/", @as: who))
+        {
+            count = await Start(host, Guides.Day);
+            upToPresenting = await Walk(host, s => s.Section == Guides.Presenting);
+            // Next from Presenting opens present mode in rehearsal, marked as the day's.
+            var went = "";
+            try { await host.Click(h => h.NextStepAsync()); } catch (NavigationException e) { went = e.Location; }
+            went.Should().Contain("rehearse=1").And.Contain(Present.DayGuide);
+            host.Component.Step.Should().BeNull("the day goes on in present mode");
+        }
+        // Present mode's Done comes back to Today, where the day goes on at Send.
+        await using (var back = await RenderAsync<OnboardingHost>(app, "/" + Present.BackToTheDayFrom(live: false), @as: who))
+        {
+            // As its first draw in a browser does; it puts the address back to Today's own, which a page drawn outside a
+            // circuit can't.
+            try { await back.Click(h => h.ResumeTheDayAsync()); } catch (NavigationException) { }
+            (await back.Until(h => h.Step is not null, seconds: 5)).Should().BeTrue();
+            back.Component.Step!.Key.Should().Be("send");
+            (upToPresenting + await Walk(back)).Should().Be(count, "every step, either side of presenting");
+        }
+        (await Written()).Should().Be(before, "the day's guide only points, its pages' guides inline included");
+        app.Calls.Should().Be(calls, "nothing goes out of the app");
+    }
+
+    [Fact]
+    public async Task AnAnalystsDay_SkipsADetailedSection_ToTheStepAfterIt()
+    {
+        var who = Person("Analyst");
+        await using var host = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        await Start(host, Guides.Day);
+        await Walk(host, s => s.Section == "triage");
+        try { await host.Click(h => h.SkipAsync()); } catch (NavigationException) { }
+        host.Component.Step!.Section.Should().Be("article", "Skip the details on Triage's first step goes on to the editor's");
     }
 
     [Fact]

@@ -164,8 +164,9 @@ window.tideRail = (function () {
         if (records && !records.some(function (m) { return elements(m.addedNodes) || elements(m.removedNodes); })) return;
         var r = rail();
         // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
+        // A guide's step pointing into the rail (data-guide-card) isn't one: it's drawn over the rail it opened.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-            function (d) { return !r.contains(d) && d.getClientRects().length > 0; });
+            function (d) { return !r.contains(d) && !d.hasAttribute('data-guide-card') && d.getClientRects().length > 0; });
         // A dialog opening over the page closes the overlay. Focus that was in it (or dropped to the body as it went) moves
         // to the Context button first, so the dialog, when it closes, gives focus back there and not to the body.
         var lost = dialogUnder && over() && (r.contains(document.activeElement) || document.activeElement === document.body);
@@ -213,6 +214,12 @@ window.tideRail = (function () {
         root.removeAttribute('data-rail');
         sync();
     }
+    // Shuts a rail show() opened, again without remembering it: the overlay closes; a docked rail goes back to closed.
+    function hide() {
+        if (!rail()) return;
+        if (over()) { setOver(false); return; }
+        if (docks() && root.getAttribute('data-rail') !== 'closed') { root.setAttribute('data-rail', 'closed'); sync(); }
+    }
     // A page with a rail has started: an overlay left open on the page before doesn't open over this one.
     function start() {
         root.removeAttribute('data-rail-over');
@@ -229,7 +236,7 @@ window.tideRail = (function () {
     sync();
     // Whether the page has a rail, so "]" does something (the "?" list names the key only then).
     function has() { return !!rail(); }
-    return { toggle: toggle, show: show, start: start, over: over, has: has };
+    return { toggle: toggle, show: show, hide: hide, start: start, over: over, has: has };
 })();
 
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.

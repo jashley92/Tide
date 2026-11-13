@@ -12,25 +12,30 @@
 @implements IAsyncDisposable
 @using Microsoft.AspNetCore.WebUtilities
 @using Tide.Application.Operations
+@using Tide.Web.Components.Pages
 @inject PageTipService Tips
 @inject TourService Tour
 @inject TourRequests TourAsked
 @inject TourClaims Claims
 @inject GuideStarts Starts
+@inject GuideLinkService GuideLinks
 @inject ToastService Toasts
 @inject OnboardingGate Gate
 @inject AuthenticationStateProvider Auth
 @inject ICurrentUser CurrentUser
 @inject NavigationManager Nav
+@inject OrgClock Clock
 @inject IJSRuntime JS
 @inject ILogger<OnboardingHost> Log
 
-<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" />
+<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
 
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)
 {
     <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title"
+                     AlsoLabel="@(_guide is null && _step == _tour.Count - 1 && WholeDay is not null ? GuideStepDialog.SeeTheWholeDay : null)" OnAlso="SeeTheWholeDayAsync"
+                     Skips="@(SkipsTo is not null)" OnSkip="SkipAsync"
                      OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
 }
 else if (Tip is { } tip)
@@ -55,6 +60,10 @@ else if (Tip is { } tip)
     private IReadOnlyList<TourStep> _tour = [];
     private int _step;
     private Guide? _guide;
+    // A guide across pages: while a page it opened is checked for its steps' controls, no step shows (_hold); the steps
+    // checked so far.
+    private bool _hold;
+    private readonly HashSet<TourStep> _checked = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>The What's new dialog.</summary>
     public WhatsNewDialog? WhatsNew { get; private set; }
@@ -63,7 +72,22 @@ else if (Tip is { } tip)
     public PageTip? Tip { get; private set; }
 
     /// <summary>The step shown, if the tour or a guide is on.</summary>
-    public TourStep? Step => _step < _tour.Count ? _tour[_step] : null;
+    public TourStep? Step => _hold ? null : Current;
+
+    // The step the tour or guide is at, shown or not yet.
+    private TourStep? Current => _step < _tour.Count ? _tour[_step] : null;
+
+    // On the first step of a page's guide inline in An analyst's day: the step after it, where Skip the details goes.
+    private int? SkipsTo
+    {
+        get
+        {
+            if (Current?.Section is not { } section || _step > 0 && _tour[_step - 1].Section == section) return null;
+            var next = _step + 1;
+            while (next < _tour.Count && _tour[next].Section == section) next++;
+            return next;
+        }
+    }
 
     // What the live region says: the step, or a tip once it's shown (one that needs its control isn't, without it);
     // nothing once it's gone.
@@ -91,6 +115,7 @@ else if (Tip is { } tip)
             {
                 var user = (await Auth.GetAuthenticationStateAsync()).User;
                 _returning = Gate.Returning(user);
+                await SafelyAsync(ResumeTheDayAsync);
                 if (_automatic = Gate.Automatic(user)) await SafelyAsync(CheckAsync);
             }
             // A step places itself (GuideStepDialog); this places a tip, or puts the last one away.
@@ -115,7 +140,7 @@ else if (Tip is { } tip)
         if (WhatsNew is null || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
         if (!_returning && await Tour.IsDueAsync())
         {
-            StartTour(first: true, fromHelp: false);
+            await StartTour(first: true, fromHelp: false);
             return;
         }
         await WhatsNew.CheckAsync();
@@ -125,7 +150,7 @@ else if (Tip is { } tip)
     /// <summary>The page's tip, if one is due and nothing else is showing (present mode has none: PageTips.For).</summary>
     public async Task CheckTipAsync()
     {
-        if (WhatsNew?.IsOpen == true || Step is not null) return;
+        if (WhatsNew?.IsOpen == true || Current is not null) return;
         Tip = await Tips.DueAsync(Nav.ToBaseRelativePath(Nav.Uri));
         StateHasChanged();
     }
@@ -142,7 +167,7 @@ else if (Tip is { } tip)
     private Task CheckTipSafelyAsync() => SafelyAsync(CheckTipAsync);
 
     // The tour from its first step: on Today, or, asked from Help, on Help until Next.
-    private void StartTour(bool first, bool fromHelp) => Start(Tour.Steps, null, first, navigate: !fromHelp);
+    private Task StartTour(bool first, bool fromHelp) => StartAsync(Tour.Steps, null, first, navigate: !fromHelp);
 
     // A guide on its page: the one open, from its Show me around; from Help, its page is opened first (for an article's
     // or an action's, a real one: GuideStarts). Search's looks something up itself, as a person would, unless a search is
@@ -151,10 +176,16 @@ else if (Tip is { } tip)
     // mode's rehearsal, which shows it.
     private async Task StartGuideAsync(Guide guide, bool fromHelp)
     {
-        if (Step is not null || guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
+        if (Current is not null || guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
+        if (guide.Travels)
+        {
+            // Across pages: each step on its own page (a real article, action and lookup), opened as it's reached.
+            await StartAsync(await Starts.RoutesAsync(guide.Steps), guide, first: false, navigate: true);
+            return;
+        }
         var here = Nav.ToBaseRelativePath(Nav.Uri);
         var searched = QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("q", out var q) ? q.ToString() : null;
-        (string Page, string LookedUp)? start = fromHelp || GuideStarts.LooksUp(guide) && searched is null
+        (string Page, string About)? start = fromHelp || GuideStarts.LooksUp(guide) && searched is null
             ? await Starts.StartAsync(guide) : (here, searched ?? "");
         if (start is not { } opened)
         {
@@ -164,45 +195,92 @@ else if (Tip is { } tip)
         var (page, lookup) = opened;
         if (page != here)
         {
+            // Another page: its steps are looked for once this one has gone (the same page with a search keeps its heading).
+            if (PageOf(Nav.BaseUri + page) != OpenPage) await LeavingAsync();
             _page = PageOf(Nav.BaseUri + page);
             Nav.NavigateTo(page);
         }
-        var shown = await PresentAsync(guide.Steps);
-        var steps = guide.Steps.Where((s, i) => i >= shown.Length || shown[i])
-            .Select(s => s with { Route = page, Text = s.Text.Replace("{lookup}", lookup, StringComparison.Ordinal) }).ToList();
-        Start(steps, guide, first: false, navigate: false);
+        var steps = (await KeptAsync(guide.Steps)).Select(s => GuideStarts.Fill(s with { Route = page }, lookup)).ToList();
+        await StartAsync(steps, guide, first: false, navigate: false);
     }
 
-    // Which steps have their control on the page; with no browser to look in (a page drawn on the server alone), every
-    // step.
-    private async Task<bool[]> PresentAsync(IReadOnlyList<TourStep> steps)
+    // The whole-day guide for this person (An analyst's day, else Following the brief), if they have one.
+    private Guide? WholeDay => Guides.WholeDay(CurrentUser.Has);
+
+    /// <summary>See the whole day, from the tour's last step or What's new: the tour ends, settled as Done settles it, and
+    /// the whole-day guide starts from its first page.</summary>
+    public async Task SeeTheWholeDayAsync()
     {
-        try { return await JS.InvokeAsync<bool[]?>("tideTips.present", steps.Select(s => new { target = s.Target, opens = s.Opens }).ToList()) ?? []; }
-        catch (InvalidOperationException) { return []; }
+        if (WholeDay is not { } day) return;
+        await EndTourAsync();
+        await SafelyAsync(() => StartGuideAsync(day, fromHelp: true));
+    }
+
+    // The page is about to change for a guide: its steps are looked for on the new one, once this one has gone.
+    private async Task LeavingAsync()
+    {
+        try { await JS.InvokeVoidAsync("tideTips.leaving"); }
+        catch (InvalidOperationException) { /* no browser to look in */ }
+    }
+
+    // The steps whose control is on the page (tips.js present); with no browser to look in (a page drawn on the server
+    // alone), every step.
+    private async Task<List<TourStep>> KeptAsync(IReadOnlyList<TourStep> steps)
+    {
+        bool[] shown;
+        try { shown = await JS.InvokeAsync<bool[]?>("tideTips.present", steps.Select(s => new { target = s.Target, opens = s.Opens }).ToList()) ?? []; }
+        catch (InvalidOperationException) { shown = []; }
+        return steps.Where((s, i) => i >= shown.Length || shown[i]).ToList();
     }
 
     // The steps from the first. The first-sign-in tour, which starts by itself, not while another tab of the person's
     // shows it; one asked for (Help, What's new, Show me around) starts here whatever another tab, or one closed a moment
     // ago and not yet gone, is showing.
-    private void Start(IReadOnlyList<TourStep> steps, Guide? guide, bool first, bool navigate)
+    private Task StartAsync(IReadOnlyList<TourStep> steps, Guide? guide, bool first, bool navigate, int at = 0)
     {
-        if (steps.Count == 0 || Step is not null || first && !Claims.TryClaim(CurrentUser.UserId, this)) return;
+        if (steps.Count == 0 || Current is not null || first && !Claims.TryClaim(CurrentUser.UserId, this)) return Task.CompletedTask;
         (_firstTour, _guide) = (first, guide);
         Tip = null;
         _tour = steps;
-        GoToStep(0, navigate);
+        _checked.Clear();
+        return GoToStepAsync(at, navigate);
     }
 
-    /// <summary>Next, or Done on the last step.</summary>
-    public Task NextStepAsync() => _step + 1 < _tour.Count ? Moved(_step + 1) : EndTourAsync();
+    /// <summary>Next, or Done on the last step. In An analyst's day, Next from Presenting opens present mode in rehearsal,
+    /// which walks the meeting and comes back to Today for Send.</summary>
+    public Task NextStepAsync()
+    {
+        if (_guide?.Key == Guides.Day && Current?.Section == Guides.Presenting) return RehearseAsync();
+        return GoOnToAsync(_step + 1);
+    }
+
+    // On to step `next`, or Done past the last.
+    private Task GoOnToAsync(int next) => next < _tour.Count ? GoToStepAsync(next, navigate: true) : EndTourAsync();
 
     /// <summary>Back.</summary>
-    public Task PreviousStepAsync() => Moved(Math.Max(0, _step - 1));
+    public Task PreviousStepAsync() => GoToStepAsync(Math.Max(0, _step - 1), navigate: true);
 
-    private Task Moved(int step)
+    /// <summary>Skip the details: on past the page's guide this step starts.</summary>
+    public Task SkipAsync() => SkipsTo is { } next ? GoOnToAsync(next) : Task.CompletedTask;
+
+    // The day's presenting: present mode in rehearsal on today's brief, its own guide marked as the day's.
+    private async Task RehearseAsync()
     {
-        GoToStep(step, navigate: true);
-        return Task.CompletedTask;
+        await EndTourAsync();
+        Nav.NavigateTo(Present.DayRehearsalHref(Clock.CurrentBriefDate));
+    }
+
+    // Back from presenting in An analyst's day (Present.BackToTheDayFrom): the day goes on at its step, the address
+    // put back to Today's own so a reload doesn't start it again. Present mode refused the rehearsal when the meeting is
+    // live, and says so here.
+    internal async Task ResumeTheDayAsync()
+    {
+        if (Present.ResumesTheDay(Nav.Uri) is not var (from, live) || Guides.Find(Guides.Day, CurrentUser.Has) is not { } day) return;
+        if (live) Toasts.Show("The meeting is live, so it can't be rehearsed now: Learn to present, in Help, rehearses it later.");
+        var steps = await Starts.RoutesAsync(day.Steps);
+        var at = steps.ToList().FindIndex(s => s.Key == from);
+        await StartAsync(steps, day, first: false, navigate: true, Math.Max(0, at));
+        Nav.NavigateTo(Nav.BaseUri, replace: true);
     }
 
     /// <summary>Skip tour (End guide), Escape or Done: it ends where it is. The first tour is then settled: not due again,
@@ -215,30 +293,68 @@ else if (Tip is { } tip)
         Claims.Release(CurrentUser.UserId, this);
         StateHasChanged();
         if (_firstTour) await SafelyAsync(() => Tour.FinishedAsync());
+        // A page's guide that has run, to the end or part way, takes its Show me around link away (GuideLinkService).
+        if (_guide is { } ran) await SafelyAsync(() => GuideLinks.DoneAsync(ran));
         (_firstTour, _guide) = (false, null);
     }
 
-    // The step, on its page unless that's the one open.
-    private void GoToStep(int step, bool navigate)
+    // The step, on its page unless that's the one open. A guide across pages checks a page's steps as it opens it: one
+    // whose control the page hasn't drawn is left out (so the count is of the steps shown), and a page with none of
+    // its steps is passed.
+    private async Task GoToStepAsync(int step, bool navigate)
     {
         _step = step;
+        if (Current is not { } s)
+        {
+            StateHasChanged();
+            return;
+        }
+        var opens = navigate && OpenPage != PageOf(Nav.BaseUri + s.Route);
+        if (_guide?.Travels != true || _checked.Contains(s))
+        {
+            StateHasChanged();
+            if (opens) Open(s.Route);
+            return;
+        }
+        _hold = true;
         StateHasChanged();
-        if (!navigate || Step is not { } s || OpenPage == PageOf(Nav.BaseUri + s.Route)) return;
-        _page = PageOf(Nav.BaseUri + s.Route);
-        Nav.NavigateTo(s.Route.Length == 0 ? Nav.BaseUri : s.Route);
+        List<TourStep> kept;
+        try
+        {
+            if (opens)
+            {
+                await LeavingAsync();
+                Open(s.Route);
+            }
+            var end = _step;
+            while (end < _tour.Count && _tour[end].Route == s.Route) end++;
+            var here = _tour.Skip(_step).Take(end - _step).ToList();
+            kept = await KeptAsync(here);
+            here.ForEach(x => _checked.Add(x));
+            _tour = [.. _tour.Take(_step), .. kept, .. _tour.Skip(end)];
+        }
+        finally { _hold = false; }
+        if (kept.Count == 0) await GoToStepAsync(_step, navigate: true);
+        else StateHasChanged();
+    }
+
+    private void Open(string route)
+    {
+        _page = PageOf(Nav.BaseUri + route);
+        Nav.NavigateTo(route.Length == 0 ? Nav.BaseUri : route);
     }
 
     private void OnTourAsked(bool fromHelp) => _ = InvokeAsync(async () =>
     {
         if (WhatsNew?.IsOpen == true) await WhatsNew.CloseAsync();
-        StartTour(first: false, fromHelp);
+        await StartTour(first: false, fromHelp);
     });
 
     private void OnGuideAsked(string key, bool fromHelp) => _ = InvokeAsync(() =>
         Guides.Find(key, CurrentUser.Has) is { } guide ? SafelyAsync(() => StartGuideAsync(guide, fromHelp)) : Task.CompletedTask);
 
     // What's new's Take the tour: it has closed, marked seen; the tour runs, and a page's tip waits until it's over.
-    private void TakeTourFromWhatsNew() => StartTour(first: false, fromHelp: false);
+    private Task TakeTourFromWhatsNew() => StartTour(first: false, fromHelp: false);
 
     /// <summary>
     /// A page opened (<paramref name="page"/>, as <c>PageOf</c> gives it). One the tour or guide didn't open (a link, the
@@ -249,7 +365,7 @@ else if (Tip is { } tip)
     {
         if (page == _page) return;
         _page = page;
-        if (Step is not null) await EndTourAsync();
+        if (Current is not null) await EndTourAsync();
         Tip = null;
         if (_automatic) await CheckTipSafelyAsync();
         else StateHasChanged();

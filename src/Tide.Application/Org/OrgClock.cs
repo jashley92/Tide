@@ -25,6 +25,13 @@ public sealed class OrgOptions
 
     /// <summary>Business days a Blocked action may go without an update before that slide asks about it (1 to 30).</summary>
     public int StaleBlockedDays { get; set; } = Actions.StaleLimits.DefaultBlockedDays;
+
+    /// <summary>Days a page's "Show me around" link shows after a person's first sign-in, or after a release changed the
+    /// page (1 to 90; <see cref="Operations.GuideLinkService"/>).</summary>
+    public int GuideLinkDays { get; set; } = DefaultGuideLinkDays;
+
+    /// <summary>The least, default and most days for <see cref="GuideLinkDays"/>.</summary>
+    public const int MinGuideLinkDays = 1, DefaultGuideLinkDays = 5, MaxGuideLinkDays = 90;
 }
 
 /// <summary>
@@ -35,7 +42,8 @@ public sealed class OrgOptions
 /// </summary>
 public sealed class OrgClock : IDisposable
 {
-    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide, Actions.StaleLimits Stale);
+    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide, Actions.StaleLimits Stale,
+        int GuideLinkDays);
 
     private readonly TimeProvider _time;
     private readonly IDisposable? _listening;
@@ -80,6 +88,9 @@ public sealed class OrgClock : IDisposable
     /// (<see cref="OrgOptions.StaleOpenDays"/>, <see cref="OrgOptions.StaleBlockedDays"/>).</summary>
     public Actions.StaleLimits StaleLimits => _now.Stale;
 
+    /// <summary>Days a page's "Show me around" link shows (<see cref="OrgOptions.GuideLinkDays"/>).</summary>
+    public int GuideLinkDays => _now.GuideLinkDays;
+
     /// <summary>The working days, with the holidays as last loaded or saved.</summary>
     public WorkingDays Days => _days;
 
@@ -90,7 +101,8 @@ public sealed class OrgClock : IDisposable
         FindZone(o.TimeZone),
         TimeOnly.TryParse(o.MeetingTime, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : new TimeOnly(10, 30),
         string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide,
-        new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)));
+        new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)),
+        Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays));
 
     // A server value out of range is held to it (a saved one can't be: the page checks it).
     private static int StaleDays(int days) => Math.Clamp(days, Actions.StaleLimits.MinDays, Actions.StaleLimits.MaxDays);
