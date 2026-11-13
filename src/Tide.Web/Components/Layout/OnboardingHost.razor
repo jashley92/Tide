@@ -154,7 +154,7 @@ else if (Tip is { } tip)
     // rehearsal, which shows it.
     private async Task StartGuideAsync(Guide guide, bool fromHelp)
     {
-        if (guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
+        if (Step is not null || guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
         var page = fromHelp ? await Starts.PageAsync(guide) : OpenPage;
         if (page is null)
         {

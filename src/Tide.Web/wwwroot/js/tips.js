@@ -83,6 +83,16 @@ window.tideTips = (function () {
         if (!target || !target.isConnected || !target.classList.contains('tide-tip-target')) soon();
     });
 
+    // The card growing or shrinking (a longer step, wider letters) is measured again and placed again, so it stays in
+    // view.
+    var cardWatch = new ResizeObserver(function () {
+        if (!card || card.hidden) return;
+        var box = card.getBoundingClientRect();
+        if (size && box.width === size.width && box.height === size.height) return;
+        size = { width: box.width, height: box.height };
+        soon();
+    });
+
     function toPage(selector) {
         var to = (selector && document.querySelector(selector)) || document.querySelector('main h1');
         if (!to) return;
@@ -115,13 +125,14 @@ window.tideTips = (function () {
                 target = selector ? pick(selector) : null;
                 if (shown(target)) target.classList.add('tide-tip-target');
             }
-            // The card's size doesn't change while it's up: measured once, where it starts.
+            // Measured where it starts, and again if its size changes (cardWatch).
             var box = card.getBoundingClientRect();
             size = { width: box.width, height: box.height };
             place();
             addEventListener('resize', soon, { passive: true });
             addEventListener('scroll', soon, { capture: true, passive: true });
             railWatch.observe(root, { attributes: true, attributeFilter: ['data-rail', 'data-rail-over'] });
+            cardWatch.observe(card);
             // Whether it's shown, for the page to announce it.
             return !card.hidden;
         },
@@ -134,6 +145,7 @@ window.tideTips = (function () {
             inside = dialog = false;
             railWatch.disconnect();
             pageWatch.disconnect();
+            cardWatch.disconnect();
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });
             if (lost) toPage(null);

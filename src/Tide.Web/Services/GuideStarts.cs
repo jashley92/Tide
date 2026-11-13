@@ -1,12 +1,13 @@
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Operations;
+using Tide.Web.Components.Shared;
 
 namespace Tide.Web.Services;
 
 /// <summary>
 /// Where a guide started from Help opens: its page, or for a page of one article or one action, a real one the person
-/// can open (the newest article; the first open action), read through the services' own permission checks.
+/// can open (the newest article; the open action due first), read through the services' own permission checks.
 /// </summary>
 public sealed class GuideStarts(ArticleService articles, ActionService actions)
 {
@@ -18,8 +19,7 @@ public sealed class GuideStarts(ArticleService articles, ActionService actions)
             return await articles.ListAsync(take: 1, ct: ct) is [var article, ..]
                 ? guide.Page.Replace("{id}", article.Id.ToString(), StringComparison.Ordinal) : null;
         if (guide.Page.Contains("{n}", StringComparison.Ordinal))
-            return await actions.ListAsync(new ActionFilter(), ct) is [var action, ..]
-                ? guide.Page.Replace("{n}", action.Number.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal) : null;
+            return (await actions.PageAsync(new ActionFilter(), size: 1, ct: ct)).Rows is [var action, ..] ? Ui.ActionUrl(action.Number) : null;
         return guide.Page;
     }
 }

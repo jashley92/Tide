@@ -914,35 +914,29 @@ const tourFromWhatsNew = people => async page => {
   await idle(page);
 };
 
-/** Setup: Learn to present, started from Help's Guides (present mode in rehearsal, on today's brief), then `keys` (Enter:
- *  Next); wider letters. */
-const rehearsal = (...keys) => async page => {
-  await page.goto(new URL('./help', page.url()).href, { waitUntil: 'load' });
-  await idle(page);
-  await page.locator('#help-guide-present').click();
+/** A guide's step is up: then `keys` (Enter: Next), and wider letters. */
+const stepThen = async (page, keys) => {
   await page.locator('.tide-tour').waitFor();
   await idle(page);
   for (const key of keys) { await page.keyboard.press(key); await idle(page); }
   await wideFont(page);
 };
 
-/** Setup: the page's guide started from its Show me around, then `keys` (Enter: Next); wider letters. */
-const guideOn = (...keys) => async page => {
-  await page.locator('#tide-guide-start').click();
-  await page.locator('.tide-tour').waitFor();
-  await idle(page);
-  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
-  await wideFont(page);
-};
-
-/** Setup: a guide started from Help's Guides (`key`), which opens its page. */
-const guideFromHelp = key => async page => {
+/** Setup: a guide started from Help's Guides (`key`), which opens its page; then `keys`. */
+const guideFromHelp = (key, ...keys) => async page => {
   await page.goto(new URL('./help', page.url()).href, { waitUntil: 'load' });
   await idle(page);
   await page.locator(`#help-guide-${key}`).click();
-  await page.locator('.tide-tour').waitFor();
-  await idle(page);
-  await wideFont(page);
+  await stepThen(page, keys);
+};
+
+/** Setup: Learn to present from Help (present mode in rehearsal, on today's brief), then `keys`. */
+const rehearsal = (...keys) => guideFromHelp('present', ...keys);
+
+/** Setup: the page's guide started from its Show me around, then `keys`. */
+const guideOn = (...keys) => async page => {
+  await page.locator('#tide-guide-start').click();
+  await stepThen(page, keys);
 };
 
 /** Setup: today's meeting started (or taken up) in another browser, then this page asks for a rehearsal of it. */
@@ -4272,7 +4266,7 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-help .tide-card'), visible('.tide-help-notes[open] .tide-md')] },
   // Help's Guides: each guide's name, what it shows and Start, within its row.
   { name: 'help-guides', route: '/help', setup: wideFont, widths: [1920, 1440, 780],
-    rules: [noSidewaysScroll, visible('#help-guides'), fits('.tide-help-guides > li'), visible('#help-guide-present'), inWindow('#help-guide-present')] },
+    rules: [noSidewaysScroll, visible('#help-guides'), fits('.tide-help-guides > li'), fits('.tide-help-guide-text'), visible('#help-guide-present')] },
   // Learn to present, in rehearsal (it changes nothing): the title slide's step beside the slides' bar; the rail's step
   // on the rail docked, or on Rail where it's shut; raising, pointed at on the rail's Raise (disabled) and kept off the
   // rail; ending, on End the meeting (disabled); Escape ends the guide and focus is on the page's heading.

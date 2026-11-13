@@ -11,6 +11,9 @@ public static partial class Guides
     // A step whose control may be in the context rail: the rail, or its button where the rail is shut.
     private static string InRail(string target) => $"{target} || #tide-rail-toggle";
 
+    // Trends' period choice, which its other steps fall back to before the report has loaded.
+    private const string Period = "#main-content [role=group][aria-label=\"Period\"]";
+
     private static TourStep Step(string key, Permission needs, string target, string title, string text) => new(key, "", needs, target, title, text);
 
     // One guide per page, in Help's order. Each step points at a real control on its page, and needs what that control
@@ -97,13 +100,13 @@ public static partial class Guides
         ]),
         new("trends", "Trends", "What the briefs covered over weeks, months or quarters, and what each count is made of.", "trends", Team,
         [
-            Step("period", Team, "#main-content [role=group][aria-label=\"Period\"]", "Periods",
+            Step("period", Team, Period, "Periods",
                 "Weekly, monthly or quarterly. The arrows beside it step back and forward a period."),
-            Step("tiles", Team, ".tide-trend-tiles || #main-content [role=group][aria-label=\"Period\"]", "Headlines",
+            Step("tiles", Team, ".tide-trend-tiles || " + Period, "Headlines",
                 "The period's headline numbers, each against the one before. Each opens what it counts."),
-            Step("views", Team, "#main-content nav.tide-tabbar[aria-label=\"Report\"] || #main-content [role=group][aria-label=\"Period\"]", "Views",
+            Step("views", Team, "#main-content nav.tide-tabbar[aria-label=\"Report\"] || " + Period, "Views",
                 "Scorecard tags, ATT&CK or Actions: three views of the same periods."),
-            Step("table", Team, ".tide-trend-table || #main-content [role=group][aria-label=\"Period\"]", "The table",
+            Step("table", Team, ".tide-trend-table || " + Period, "The table",
                 "Select a count to list what it's made of, with Export CSV. A line's chart button adds it to the chart."),
         ]),
         new("stories", "Threat stories", "Stories that follow one threat across many articles.", "stories", Team,
@@ -167,9 +170,9 @@ public static partial class Guides
                 "Articles, actions and stories. Every word must match; a phrase in quotes matches as written."),
             Step("lookup", Team, ".tide-lookup-card || #search-q", "Looking one up",
                 "Paste an IP, domain, URL, hash, email address or CVE: the answer comes first, with every article and action that names it."),
-            Step("hunt", Team, "#lookup-query-h || #tide-rail || #tide-rail-toggle || #search-q", "A hunt query",
+            Step("hunt", Team, InRail("#lookup-query-h || #tide-rail") + " || #search-q", "A hunt query",
                 "For an indicator, the rail builds a hunt query in the language you choose, to copy. Nothing is saved."),
-            Step("export", Team, "#lookup-export-h || #tide-rail || #tide-rail-toggle || #search-q", "Exporting",
+            Step("export", Team, InRail("#lookup-export-h || #tide-rail") + " || #search-q", "Exporting",
                 "For a lookup on an article, the rail's Export gives its indicators as STIX 2.1 or CSV, up to the TLP you choose."),
         ]),
         new("workload", "Workload", "Each team's open work, and who holds it.", "workload", Read,
