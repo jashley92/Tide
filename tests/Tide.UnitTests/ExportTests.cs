@@ -81,13 +81,33 @@ public class ExportTests
     {
         using var doc = JsonDocument.Parse(Stix.Write(Fixture(), "CTI"));
         var objects = doc.RootElement.GetProperty("objects").EnumerateArray().ToList();
-        objects.All(o => o.GetProperty("type").GetString() == "identity" || o.TryGetProperty("object_marking_refs", out _)).Should().BeTrue("every object but the identity is marked");
+        objects.All(o => o.GetProperty("type").GetString() is "identity" or "marking-definition" || o.TryGetProperty("object_marking_refs", out _)).Should().BeTrue("every object but the identity and the markings is marked");
         var ip = objects.Single(o => o.GetProperty("type").GetString() == "indicator" && o.GetProperty("name").GetString() == "203.0.113.45");
         ip.GetProperty("object_marking_refs")[0].GetString().Should().Be(Stix.Marking(TlpLevel.Amber));
         ip.GetProperty("description").GetString().Should().Be("C2\nStill up");
         objects.Where(o => o.GetProperty("type").GetString() == "report")
             .Should().OnlyContain(r => r.GetProperty("object_refs").EnumerateArray().Any(x => x.GetString() == ip.GetProperty("id").GetString()));
         objects.Any(o => o.TryGetProperty("name", out var n) && n.GetString() == "WS-0142").Should().BeFalse("a host name has no STIX observable");
+    }
+
+    [Fact]
+    public void Stix_CarriesEachTlpMarkingItRefersTo_AsTheTlp20ExtensionDefinesIt()
+    {
+        // The TLP 2.0 marking definitions aren't among STIX 2.1's own: a bundle that refers to them carries them.
+        using var doc = JsonDocument.Parse(Stix.Write(Fixture(), "CTI"));
+        var objects = doc.RootElement.GetProperty("objects").EnumerateArray().ToList();
+        var used = objects.Where(o => o.TryGetProperty("object_marking_refs", out _))
+            .SelectMany(o => o.GetProperty("object_marking_refs").EnumerateArray().Select(r => r.GetString())).Distinct().Order().ToList();
+        var defined = objects.Where(o => o.GetProperty("type").GetString() == "marking-definition").ToList();
+
+        defined.Select(d => d.GetProperty("id").GetString()).Order().Should().Equal(used, "each marking used, once, and no other");
+        var amber = defined.Single(d => d.GetProperty("id").GetString() == Stix.Marking(TlpLevel.Amber));
+        amber.GetProperty("name").GetString().Should().Be("TLP:AMBER");
+        amber.GetProperty("spec_version").GetString().Should().Be("2.1");
+        amber.GetProperty("created").GetString().Should().Be("2022-10-01T00:00:00.000Z");
+        var ext = amber.GetProperty("extensions").GetProperty("extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d");
+        ext.GetProperty("extension_type").GetString().Should().Be("property-extension");
+        ext.GetProperty("tlp_2_0").GetString().Should().Be("amber");
     }
 
     [Theory]

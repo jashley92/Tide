@@ -12,6 +12,32 @@
       "identity_class": "organization"
     },
     {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487",
+      "created": "2022-10-01T00:00:00.000Z",
+      "name": "TLP:CLEAR",
+      "extensions": {
+        "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d": {
+          "extension_type": "property-extension",
+          "tlp_2_0": "clear"
+        }
+      }
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421",
+      "created": "2022-10-01T00:00:00.000Z",
+      "name": "TLP:AMBER",
+      "extensions": {
+        "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d": {
+          "extension_type": "property-extension",
+          "tlp_2_0": "amber"
+        }
+      }
+    },
+    {
       "type": "report",
       "spec_version": "2.1",
       "id": "report--11111111-1111-4111-8111-111111111111",

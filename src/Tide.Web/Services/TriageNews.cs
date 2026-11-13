@@ -2,6 +2,7 @@ using System.Globalization;
 using Tide.Application.Intake;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Web.Components.Shared;
 
 namespace Tide.Web.Services;
 
@@ -63,6 +64,17 @@ public static class TriageNews
         if (feeds > 0) parts.Add(parts.Count == 0 ? $"{feeds} new {(feeds == 1 ? "item" : "items")} from the feeds" : $"{feeds} new from the feeds");
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
+
+    /// <summary>
+    /// When the article covering an item was briefed, as Search says it: "briefed Mon Nov 9" once a brief with it was
+    /// presented or sent, else "on today's brief, not presented yet" (or "on the brief for Fri Nov 13, …"); null when
+    /// it's on no brief.
+    /// </summary>
+    public static string? BriefedSaid(Coverage c, DateOnly today) =>
+        c.BriefDate is { } briefed ? $"briefed {Ui.ShortDay(briefed)}"
+        : c.OnBrief == today ? "on today's brief, not presented yet"
+        : c.OnBrief is { } planned ? $"on the brief for {Ui.ShortDay(planned)}, not presented yet"
+        : null;
 
     private static string Who(FeedItem item, string colleagues) =>
         item.Status != FeedItemStatus.New && !string.IsNullOrWhiteSpace(item.StatusByName) ? item.StatusByName : colleagues;

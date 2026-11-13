@@ -925,8 +925,21 @@ else
             if (_rows[i].Id == r.Id) _selected = i;
     }
 
-    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere).
-    private string RowAddress(int selected) => Nav.GetUriWithQueryParameter(RowSelection.Param, selected > 0 ? selected : null);
+    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere): the action's
+    // number (?card=, as the board names its card), so a link finds the same action once the rows have moved. The first
+    // row is left out.
+    internal string RowAddress(int selected) => Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        [RowSelection.Param] = null,
+        ["card"] = selected > 0 && selected < _rows.Count ? _rows[selected].Number : null,
+    });
+
+    private int IndexOfNumber(int number)
+    {
+        for (var i = 0; i < _rows.Count; i++)
+            if (_rows[i].Number == number) return i;
+        return -1;
+    }
 
     private void OpenRow(int at)
     {
@@ -1261,6 +1274,9 @@ else
         // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
         var asked = _page;
         (_rows, _total, _page, _groups, _groupsUnowned) = (page.Rows, page.Total, page.Page, page.Groups, page.GroupsUnowned);
+        // The action the address named (?card=12, as on the board), once, where it's on this page; else ?row='s place.
+        if (_cardAsked is { } inAddress && IndexOfNumber(inAddress) is >= 0 and var at) _selected = at;
+        _cardAsked = null;
         _selected = RowSelection.Clamp(_selected, _rows.Count);
         if (_page != asked && _applied is { } applied)
         {

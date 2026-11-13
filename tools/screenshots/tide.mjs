@@ -156,7 +156,9 @@ function stillness() {
   const s = window.__tideStill;
   if (!s) return null;
   const shown = el => el.getClientRects().length > 0;
-  const busy = !s.late && window.WebSocket === s.Socket && !(s.open > 0 && s.rendered) ? 'the circuit starting'
+  // A page without Blazor's script (an email's preview, a file) has no circuit to wait for.
+  const circuit = !!document.querySelector('script[src*="blazor.web.js"]');
+  const busy = circuit && !s.late && window.WebSocket === s.Socket && !(s.open > 0 && s.rendered) ? 'the circuit starting'
     : document.fonts.status === 'loading' ? 'fonts loading'
     : Array.prototype.some.call(document.images,i => !i.complete && i.loading !== 'lazy') ? 'an image loading'
     : document.getAnimations().some(a => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity) ? 'an animation running'

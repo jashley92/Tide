@@ -89,7 +89,7 @@ public class PageTipPagesTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(c => c.CheckAsync());
         var html = await r.Html();
         html.Should().Contain("tide-whatsnew").And.NotContain("class=\"tide-tip\"", "one thing at a time");
-        await r.Click(c => { c.WhatsNew!.Close(); return Task.CompletedTask; });
+        await r.Click(c => c.WhatsNew!.CloseAsync());
         (await r.HtmlOnce("class=\"tide-tip\"")).Should().Contain("class=\"tide-tip\"").And.Contain("context rail");
     }
 }

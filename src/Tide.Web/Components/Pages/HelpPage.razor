@@ -7,10 +7,11 @@
 @inject ToastService Toasts
 @inject IMarkdownService Markdown
 @inject NavigationManager Nav
+@inject ICurrentUser CurrentUser
 
-@* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, with the full
-   notes as each release's GitHub page has them, and Show tips again. ?release=1.13.0 opens that release's full notes
-   ("See all changes"). *@
+@* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, and Show
+   tips again. An administrator also gets every release's full notes, as its GitHub page has them: they're the
+   operators' (upgrade steps, migrations, settings). ?release=1.13.0 opens that release's full notes ("See all changes"). *@
 
 <PageTitle>Help · TIDE</PageTitle>
 
@@ -29,13 +30,12 @@
     </section>
     <section class="tide-card" aria-labelledby="help-whatsnew">
         <h2 id="help-whatsnew">What's new</h2>
-        @if (WhatsNew.Releases.Count == 0)
+        @if (!Listed.Any())
         {
             <p class="mb-0 tide-muted">No release notes are built into this version.</p>
         }
-        @foreach (var release in WhatsNew.Releases)
+        @foreach (var (release, mine) in Listed)
         {
-            var mine = release.Highlights?.For(WhatsNew.Groups) ?? [];
             <article class="tide-help-release" id="@Anchor(release.Version)" aria-labelledby="@Anchor(release.Version)-title">
                 <h3 class="tide-help-release-title" id="@Anchor(release.Version)-title">
                     @release.Version
@@ -53,7 +53,7 @@
                     <h4 class="tide-whatsnew-group-title">@RoleGroups.Title(group)</h4>
                     <Md Text="@markdown" />
                 }
-                @if (release.Notes is { } notes)
+                @if (Operator && release.Notes is { } notes)
                 {
                     <details class="tide-help-notes" open="@(Release == release.Version.ToString())">
                         <summary>All changes in @release.Version</summary>
@@ -66,6 +66,14 @@
 </div>
 
 @code {
+    // The full notes, and the releases with nothing for the person's roles, are an administrator's.
+    private bool Operator => CurrentUser.Has(Permission.Administer);
+
+    // Each release to list, with the person's highlights in it: every release for an administrator, else those with
+    // highlights for them.
+    private IEnumerable<(ReleaseEntry Release, IReadOnlyList<(RoleGroup Group, string Markdown)> Mine)> Listed =>
+        WhatsNew.Releases.Select(r => (r, r.Highlights?.For(WhatsNew.Groups) ?? [])).Where(x => Operator || x.Item2.Count > 0);
+
     /// <summary>The release whose full notes start open ("1.13.0"), as "See all changes" links to it.</summary>
     [SupplyParameterFromQuery(Name = "release")] public string? Release { get; set; }
 
