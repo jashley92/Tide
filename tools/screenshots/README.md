@@ -29,6 +29,7 @@ What happens:
    - six months of briefed articles with scorecard tags, so Trends has history
    - a year of opening metrics
    - actions in every state, one with a hunt query and one with a checklist and a comment
+   - the dev sign-in on every team, since only a team's members take its actions on
    - three adversaries, extra sources, and triage items with their text kept for the reading pane
    - three API tokens
    - five products on Our stack: one tagged on the edge VPN article, one a triage item names, one not checked for over a

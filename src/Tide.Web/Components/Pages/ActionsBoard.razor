@@ -174,7 +174,7 @@ else
     @if (RailRow is { } row)
     {
         var canWork = _asBoard ? _board?.CanMove(row) == true : _workers.CanWork(row.TeamId);
-        <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="row.TakeableBy(canWork)" Busy="@(_taking || _mover?.Busy == true)"
+        <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="@(_asBoard ? _board?.CanTake(row) == true : _workers.CanTake(row))" Busy="@(_taking || _mover?.Busy == true)"
                        OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" OnReopen="() => Reopen(row)" />
     }
     else
@@ -1064,7 +1064,7 @@ else
         if (SelectedCard is not { } card || _board is null) return;
         if (action == "take")
         {
-            if (card.TakeableBy(_board.CanMove(card))) await Take(card);
+            if (_board.CanTake(card)) await Take(card);
             return;
         }
         var step = action switch { "left" => -1, "right" => 1, _ => 0 };

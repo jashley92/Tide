@@ -25,7 +25,9 @@ public class LiveTodayTests(TideApp app) : IClassFixture<TideApp>
 
         await using (var scope = SignedIn(app, Robin))
         {
-            var team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Live awareness", null, null);
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            var team = await teams.AddAsync("Live awareness", null, null);
+            await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
             await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm
             {
                 Title = "Sweep for the live awareness test", Kind = ActionKind.IocSweep, TeamId = team,

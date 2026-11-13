@@ -436,6 +436,7 @@ public sealed class TrailAuditTests : IDisposable
     {
         _db.User.Roles = new HashSet<AppRole> { AppRole.Admin, AppRole.Analyst };
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        await _db.Teams().AddMemberAsync(team, "S-1-5-21-OWNER", "Jordan Rivera");
         var svc = _db.Actions();
         var number = await svc.CreateAsync(new ActionForm { Title = "Sweep", TeamId = team });
         var action = (await svc.GetAsync(number))!.Action;

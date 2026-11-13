@@ -2035,6 +2035,7 @@ public class DataIntegrityChallengeTests : IAsyncLifetime
         saves.Count(e => e is null).Should().Be(1);
         saves.Where(e => e is not null).Should().OnlyContain(e => e is StaleEditException);
 
+        await db.Teams().AddMemberAsync(_w.TeamB, db.User.UserId, db.User.DisplayName);   // only a member takes it on
         var takes = await Task.WhenAll(Try(() => db.Actions().TakeAsync(_w.OtherTeamAction)), Try(() => db.Actions().TakeAsync(_w.OtherTeamAction)));
         takes.Where(e => e is not null).Should().OnlyContain(e => e is StaleEditException);
 

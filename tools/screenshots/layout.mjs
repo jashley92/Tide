@@ -1283,6 +1283,7 @@ async function colleagueTakesFocusedRow(page) {
     const pick = page.locator('select[aria-label^="Person to add to"]').first();
     const team = (await pick.getAttribute('aria-label')).replace('Person to add to ', '');
     for (const who of ['Dev Analyst', 'Olive']) {
+      if (!await pick.locator('option', { hasText: who }).count()) continue;   // on the team already (the demo's analyst)
       await pick.selectOption({ label: who });
       await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
       await idle(page);
