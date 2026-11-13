@@ -25,7 +25,7 @@ public sealed class GuideLinkService(UserPreferenceService prefs, ICurrentUser u
     public const string Release = "guides.release";
 
     /// <summary>A page guide's own: "done" once its guide has run, or its link was put away.</summary>
-    public static string Done(Guide guide) => "guide." + guide.Key;
+    public static string DoneKey(Guide guide) => "guide." + guide.Key;
 
     /// <summary>The links shown regardless of the window, hidden, or as the window says; a page guide's "done".</summary>
     public const string On = "on", Off = "off", DoneValue = "done";
@@ -48,8 +48,8 @@ public sealed class GuideLinkService(UserPreferenceService prefs, ICurrentUser u
     public async Task<bool> ShowsAsync(Guide guide, string page, CancellationToken ct = default)
     {
         if (!user.Has(guide.Needs)) return false;
-        var mine = await prefs.GetAsync([Links, Since, Release, Done(guide)], ct);
-        if (mine[Links] == Off || mine[Done(guide)] == DoneValue) return false;
+        var mine = await prefs.GetAsync([Links, Since, Release, DoneKey(guide)], ct);
+        if (mine[Links] == Off || mine[DoneKey(guide)] == DoneValue) return false;
         if (mine[Links] == On) return true;
         var today = clock.Today;
         bool Within(string day) => TryDay(day, out var from) && today.DayNumber - from.DayNumber < clock.GuideLinkDays;
@@ -61,7 +61,7 @@ public sealed class GuideLinkService(UserPreferenceService prefs, ICurrentUser u
 
     /// <summary>The guide has run (to the end or part way), or its link was put away: it doesn't show again.</summary>
     public Task DoneAsync(Guide guide, CancellationToken ct = default) =>
-        guide.Travels || guide.Rehearsal || !user.Has(guide.Needs) ? Task.CompletedTask : prefs.SetAsync(Done(guide), DoneValue, ct);
+        guide.Travels || guide.Rehearsal || !user.Has(guide.Needs) ? Task.CompletedTask : prefs.SetAsync(DoneKey(guide), DoneValue, ct);
 
     /// <summary>Whether Help's "Show page guide links" is on: the links aren't switched off.</summary>
     public async Task<bool> SwitchedOnAsync(CancellationToken ct = default) => await prefs.GetAsync(Links, ct) != Off;
@@ -72,7 +72,7 @@ public sealed class GuideLinkService(UserPreferenceService prefs, ICurrentUser u
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal) { [Links] = on ? On : Off };
         if (on)
-            foreach (var g in Guides.OnPages.Where(g => user.Has(g.Needs))) values[Done(g)] = "";
+            foreach (var g in Guides.OnPages.Where(g => user.Has(g.Needs))) values[DoneKey(g)] = "";
         await prefs.SetAsync(values, ct);
     }
 }

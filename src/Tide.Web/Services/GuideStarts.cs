@@ -44,8 +44,8 @@ public sealed class GuideStarts(ArticleService articles, ActionService actions, 
     {
         if (page.Contains("{id}", StringComparison.Ordinal))
         {
-            var article = (await articles.ListAsync(status: ArticleStatus.Draft, take: 1, ct: ct)).FirstOrDefault()
-                          ?? (await articles.ListAsync(take: 1, ct: ct)).FirstOrDefault();
+            var article = (await articles.ListAsync(status: ArticleStatus.Draft, take: 1, ct: ct)) is [var draft, ..] ? draft
+                          : (await articles.ListAsync(take: 1, ct: ct)) is [var newest, ..] ? newest : null;
             return article is null ? null : (page.Replace("{id}", article.Id.ToString(), StringComparison.Ordinal), article.Title);
         }
         if (page.Contains("{n}", StringComparison.Ordinal))
