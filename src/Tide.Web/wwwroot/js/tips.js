@@ -198,13 +198,16 @@ window.tideTips = (function () {
         // A control in the top bar, above the rail, keeps its card under it: moved off the rail it couldn't point at it.
         var overTheRail = r && rail && r.bottom <= rail.top + 1;
         var onTheRail = rail && !overTheRail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top;
-        // Narrowed for a rail that has since gone, or room that has grown: back to its own width, measured again.
-        if (!onTheRail && card.style.maxWidth) { card.style.maxWidth = ''; return; }
+        // Narrowed for a rail that has since gone or moved: back to its own width, measured again. (Narrowed, it may fit
+        // beside the rail with no overlap: that's what narrowing was for, not a reason to widen.)
+        var narrowedFor = rail ? String(Math.round(rail.left)) : '';
+        if (card.style.maxWidth && card.dataset.narrowedFor !== narrowedFor) { card.style.maxWidth = ''; delete card.dataset.narrowedFor; return; }
         if (onTheRail) {
             // Too little room left of the rail (a narrow window with the rail open over it): the card narrows to fit.
             var room = rail.left - GAP - EDGE;
             if (room < size.width && room >= 240 && card.style.maxWidth !== room + 'px') {
                 card.style.maxWidth = room + 'px';
+                card.dataset.narrowedFor = narrowedFor;
                 return;   // measured again at its new width (cardWatch), then placed
             }
             at.left = Math.max(EDGE, rail.left - GAP - size.width);
@@ -321,6 +324,7 @@ window.tideTips = (function () {
             this.hide();
             card = el;
             card.style.maxWidth = '';
+            delete card.dataset.narrowedFor;
             needsTarget = !!(options && options.needsTarget);
             dialog = !!(options && options.dialog);
             // A tour's or guide's first step: what had focus (its Show me around, Help's Start) gets it back at the end.
