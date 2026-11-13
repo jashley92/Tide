@@ -15,14 +15,11 @@ else
 {
     <span class="@TitleClass">@TitleContent</span>
 }
-@if (!ShowNumber)
-{
-}
-else if (AfterNumber is null)
+@if (ShowNumber && AfterNumber is null)
 {
     <span class="tide-action-num tide-action-num-after">@Label</span>
 }
-else
+else if (ShowNumber)
 {
     <span class="text-nowrap"><span class="tide-action-num tide-action-num-after">@Label</span> @AfterNumber</span>
 }
