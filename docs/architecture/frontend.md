@@ -466,8 +466,11 @@ view (Bring everyone here, Lock to me, Hand off).
   markup, an analyst who could present included; a test asserts this on every slide.
 - **Checked where it's handled.** Each of the presenter's steps checks `InCharge` again when it runs, and the services
   check permissions behind that, so a follower's key or a forged event changes nothing.
-- **The slide has no controls.** Nothing the presenter alone uses is on the slide; the rail sits outside the fitted
-  slide body (`.tide-slide-body`) at its own size.
+- **The slide has no controls of the presenter's.** Nothing the presenter alone uses is on the slide; the rail sits
+  outside the fitted slide body (`.tide-slide-body`) at its own size. The one button on an article's slide, **Edit
+  tags** (or **Add tags**), is anyone's who may write articles, presenting or following, in the team edition: its
+  editor opens over the slide on their own screen only. Viewers, Visitors and action owners don't get it, nor does the
+  company-wide edition.
 - **Docked or over the slide.** `present.js` tells the page whether the window is 1500px or wider. There the rail is
   open, docked as the page's last grid column, and the slide's column narrows and fits what's left. Below that it's
   shut, and **Rail** in the top bar or `]` opens it over the slide as a modal dialog (`role="dialog"`,

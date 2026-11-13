@@ -45,3 +45,35 @@ public class BugPass10PresenceTests
         presence.Others(Brief, "S-ME").Should().BeEmpty();
     }
 }
+
+/// <summary>Bug pass 10: a presenter's page that comes back after someone took over.</summary>
+public sealed class BugPass10MeetingTests : IDisposable
+{
+    private static readonly DateOnly Day = new(2026, 9, 1);
+    private readonly TestClock _time = new(new(2026, 9, 1, 9, 0, 0, TimeSpan.Zero));
+    private readonly LiveMeetings _meetings;
+
+    public BugPass10MeetingTests() => _meetings = new LiveMeetings(_time);
+
+    public void Dispose() => _meetings.Dispose();
+
+    [Fact]
+    public void APageThatReconnects_HearsTheMeetingAsItIsNow_EvenThoughItsOwnSeatChanged()
+    {
+        // Its own changes a page doesn't hear (it has them already); but coming back, it has missed the take-over made
+        // while it was away, and kept the presenter's rail. The change is told to every page, its own included.
+        var patsPage = Guid.NewGuid();
+        _meetings.Start(Day, Guid.NewGuid(), "pat", "Pat", "c-pat", patsPage, 0);
+        var robin = _meetings.Join(Day, "robin", "Robin", true, "c-robin", Guid.NewGuid(), 0)!;
+        _meetings.SetConnected("c-pat", false);
+        _time.Now += LiveMeetings.Grace;
+        _meetings.TakeOver(robin).Should().BeTrue();
+        var heard = new List<MeetingChange>();
+        _meetings.Changed += heard.Add;
+
+        _meetings.SetConnected("c-pat", true);
+
+        heard.Should().ContainSingle().Which.Origin.Should().NotBe(patsPage);
+        _meetings.Get(Day)!.PresenterId.Should().Be("robin");
+    }
+}

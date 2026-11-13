@@ -15,7 +15,7 @@ namespace Tide.Application.Exports;
 /// (CVEs) and attack patterns (ATT&amp;CK techniques) the reports point at.
 /// <para>
 /// Every object carries the TLP 2.0 marking of the articles it came from (the highest, when an indicator is on several),
-/// by the marking-definition ids the OASIS TLP 2.0 extension publishes. Ids other than a report's are UUIDv5s of what the
+/// by the marking-definition ids the OASIS TLP 2.0 extension publishes, and the bundle carries those definitions. Ids other than a report's are UUIDv5s of what the
 /// object is, so the same indicator, CVE or technique has the same id in every export and a platform merges re-imports.
 /// </para>
 /// </summary>
@@ -36,6 +36,38 @@ public static class Stix
         TlpLevel.AmberStrict => "marking-definition--939a9414-2ddd-4d32-a0cd-375ea402b003",
         _ => "marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1",
     };
+
+    // The OASIS TLP 2.0 extension's definition, and the date its marking definitions were made.
+    private const string TlpExtension = "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d";
+    private const string TlpCreated = "2022-10-01T00:00:00.000Z";
+
+    // The extension's own value for each level ("amber+strict"), and the marking's name ("TLP:AMBER+STRICT").
+    private static string TlpValue(TlpLevel tlp) => tlp switch
+    {
+        TlpLevel.Clear => "clear",
+        TlpLevel.Green => "green",
+        TlpLevel.Amber => "amber",
+        TlpLevel.AmberStrict => "amber+strict",
+        _ => "red",
+    };
+
+    // A TLP 2.0 marking definition, as the OASIS extension publishes it.
+    private static void MarkingDefinition(Utf8JsonWriter w, TlpLevel tlp)
+    {
+        w.WriteStartObject();
+        w.WriteString("type", "marking-definition");
+        w.WriteString("spec_version", "2.1");
+        w.WriteString("id", Marking(tlp));
+        w.WriteString("created", TlpCreated);
+        w.WriteString("name", "TLP:" + TlpValue(tlp).ToUpperInvariant());
+        w.WriteStartObject("extensions");
+        w.WriteStartObject(TlpExtension);
+        w.WriteString("extension_type", "property-extension");
+        w.WriteString("tlp_2_0", TlpValue(tlp));
+        w.WriteEndObject();
+        w.WriteEndObject();
+        w.WriteEndObject();
+    }
 
     /// <summary>An indicator type as a short key ("ip-address", "file-hash"), used in CSV too.</summary>
     public static string TypeKey(IndicatorType type) => type switch
@@ -113,6 +145,10 @@ public static class Stix
             w.WriteString("name", producer);
             w.WriteString("identity_class", "organization");
             w.WriteEndObject();
+
+            // The TLP 2.0 marking definitions aren't among STIX 2.1's own, so each one the bundle refers to is in it.
+            var used = reports.Select(r => r.Article.Tlp).Concat(indicators.Values.Concat(vulnerabilities.Values).Concat(techniques.Values).Select(s => s.Tlp));
+            foreach (var tlp in used.Distinct().Order()) MarkingDefinition(w, tlp);
 
             foreach (var (a, refs) in reports)
             {
