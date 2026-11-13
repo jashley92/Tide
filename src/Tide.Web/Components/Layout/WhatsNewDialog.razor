@@ -30,7 +30,7 @@
                     }
                     @if (release.Intro.Length > 0)
                     {
-                        <p class="tide-whatsnew-intro">@release.Intro</p>
+                        <p class="tide-whatsnew-intro"><Md Text="@release.Intro" Inline="true" /></p>
                     }
                     @foreach (var (group, markdown) in release.For(WhatsNew.Groups))
                     {
