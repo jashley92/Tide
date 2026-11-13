@@ -85,21 +85,60 @@ public class MeetingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task InARehearsal_NoOneAddsOrRemoves_ForNoMeetingIsLive()
+    public async Task OnceTheMeetingHasEnded_AFollowerChangesNothing_NotEvenWhomTheyAdded()
     {
-        // A rehearsal never starts or joins the meeting: whoever rehearses has no seat in one.
         var (brief, _) = await Brief();
-        var svc = _db.Meetings();
-        svc.CanAddAttendees(brief).Should().BeFalse();
-        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Sam")).Should().ThrowAsync<ForbiddenException>();
-
         _db.Live = new InMeeting(brief, Presenter);
+        As(Val, "Val Viewer", AppRole.Viewer);
         await _db.Meetings().AddAttendeeAsync(brief, "Sam");
         var sam = (await Attendees(brief)).Single();
-        _db.Live = null;
-        _db.Meetings().CanRemoveAttendee(sam).Should().BeFalse();
-        await FluentActions.Invoking(() => _db.Meetings().RemoveAttendeeAsync(sam.Id)).Should().ThrowAsync<ForbiddenException>();
+
+        _db.Live = null;   // ended
+        var svc = _db.Meetings();
+        svc.CanAddAttendees(brief).Should().BeFalse();
+        svc.CanRemoveAttendee(sam).Should().BeFalse();
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Kim")).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(sam.Id)).Should().ThrowAsync<ForbiddenException>();
         (await Attendees(brief)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task WhoeverPresents_CorrectsTheRecord_WithNoMeetingLive_BeforeOrAfter()
+    {
+        var (brief, _) = await Brief();
+        var svc = _db.Meetings();
+        As(Andy, "Andy Analyst", AppRole.Analyst);
+        svc.CanAddAttendees(brief).Should().BeTrue("no meeting is live: the record is theirs to correct");
+        await svc.AddAttendeeAsync(brief, "Sam from the SOC");
+
+        _db.Live = new InMeeting(Guid.NewGuid(), Presenter);   // another day's meeting is live, not this one
+        svc = _db.Meetings();
+        await svc.AddAttendeeAsync(brief, "Kim from IT");
+        await using (var ctx = _db.Context())   // added before who added was kept
+        {
+            ctx.MeetingAttendees.Add(new Tide.Domain.Entities.MeetingAttendee { BriefId = brief, Name = "Old Entry" });
+            await ctx.SaveChangesAsync();
+        }
+        As(Owner, "Olive Owner", AppRole.ActionOwner);
+        await svc.JoinedAsync(brief);
+        var rows = (await Attendees(brief)).ToDictionary(a => a.Name);
+        rows["Kim from IT"].AddedById.Should().Be(Andy);
+
+        As(Presenter, "Test Analyst", AppRole.Analyst);
+        svc.CanRemoveAttendee(rows["Kim from IT"]).Should().BeTrue("anyone added by name, whoever added them");
+        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeFalse("never someone who joined");
+        await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);
+        await svc.RemoveAttendeeAsync(rows["Old Entry"].Id);
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>();
+
+        // This brief's meeting live, and not seated in it: the follower's rules, not the record's.
+        _db.Live = new InMeeting(brief, Owner, Owner);
+        svc = _db.Meetings();
+        svc.CanAddAttendees(brief).Should().BeFalse();
+        await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Pat")).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Sam from the SOC"].Id)).Should().ThrowAsync<ForbiddenException>();
+
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Olive Owner", "Sam from the SOC");
     }
 
     [Fact]

@@ -372,10 +372,12 @@ seconds).
 **Attendance.** `MeetingService.JoinedAsync` records a `MeetingAttendee` the first time someone joins (who and when);
 joining again keeps the first join and clears the leaving time. Someone the presenter added by name before they joined
 in TIDE becomes them, not a second entry. As the meeting ends, `LeftAsync` writes each person's last leaving time.
-Names are added and taken off only from a seat in the brief's live meeting on the team edition
+While the meeting is live, names are added and taken off only from a seat in it on the team edition
 (`MeetingService.CanAddAttendees`, from `IMeetingsInProgress.SeatedIn`): each added row keeps who added it
-(`AddedById`), and only they, or whoever presents the meeting, can take it off (`CanRemoveAttendee`). No one takes off
-someone who joined. Each add and removal is in the audit log under whoever made it.
+(`AddedById`), and only they, or whoever presents the meeting, can take it off (`CanRemoveAttendee`). With no meeting
+of the brief live, before or after it, anyone with `PresentBriefs` corrects the record from the rail: adding, or taking
+off anyone added. A rehearsal changes none of it. No one takes off someone who joined. Each add and removal is in the
+audit log under whoever made it.
 
 **Notes and attendance publish `ChangeFeed.Meeting(briefId)`**, not the brief's own topic, so a note doesn't show as an
 edit to the brief.

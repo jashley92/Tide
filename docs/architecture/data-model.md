@@ -877,7 +877,7 @@ An article's place on a brief. An article can be carried onto a later brief. Wri
 
 ### `MeetingAttendees` (A)
 
-Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting adds someone
+Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting (or, with none live, whoever presents) adds someone
 who was there by name (no `UserId`, no times). Written by `MeetingService`.
 
 | Column | Type | Null | Meaning |

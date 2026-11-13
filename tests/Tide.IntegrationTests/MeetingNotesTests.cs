@@ -29,10 +29,7 @@ public class MeetingNotesTests(TideApp app) : IClassFixture<TideApp>
         if (notes.Length > 0)
         {
             await meetings.JoinedAsync(brief.Id);
-            // Added by name in the meeting, which is over now (and so took a seat in it to add).
-            await using var db = await scope.ServiceProvider.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
-            db.MeetingAttendees.Add(new Tide.Domain.Entities.MeetingAttendee { BriefId = brief.Id, Name = "Sam from the SOC", AddedById = SignIn.Analyst.UserId });
-            await db.SaveChangesAsync();
+            await meetings.AddAttendeeAsync(brief.Id, "Sam from the SOC");
         }
         return day;
     }

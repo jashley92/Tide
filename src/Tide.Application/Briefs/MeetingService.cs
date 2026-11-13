@@ -87,13 +87,13 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     /// <summary>
-    /// Adds someone who was there without joining in TIDE, as mine to take off again. Anyone seated in the brief's live
-    /// meeting from the team edition (<see cref="CanAddAttendees"/>): never a Visitor, and never in a rehearsal, which
-    /// has no seat. Someone already listed by that name isn't added twice.
+    /// Adds someone who was there without joining in TIDE, as mine to take off again (<see cref="CanAddAttendees"/>):
+    /// anyone seated in the brief's live meeting from the team edition, never a Visitor; or, with no meeting of it live,
+    /// whoever presents, correcting the record. Someone already listed by that name isn't added twice.
     /// </summary>
     public async Task AddAttendeeAsync(Guid briefId, string name, CancellationToken ct = default)
     {
-        if (!CanAddAttendees(briefId)) throw new ForbiddenException("Only someone in the brief's live meeting can add to who attended.");
+        if (!CanAddAttendees(briefId)) throw new ForbiddenException("Only someone in the brief's live meeting, or with none live whoever presents, can add to who attended.");
         var clean = ArticleService.Clean(name, 256);
         if (clean.Length == 0) throw new ArgumentException("Enter a name.");
         await using var db = await dbs.CreateAsync(ct);
@@ -107,7 +107,7 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>Takes off someone added by name (<see cref="CanRemoveAttendee"/>). One already gone is left so.</summary>
     public async Task RemoveAttendeeAsync(Guid attendeeId, CancellationToken ct = default)
     {
-        if (!MayAttend) throw new ForbiddenException("Only someone in the brief's live meeting can change who attended.");
+        if (!MayAttend && !user.Has(Permission.PresentBriefs)) throw new ForbiddenException("You can't change who attended a meeting.");
         await using var db = await dbs.CreateAsync(ct);
         if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a) return;
         if (!CanRemoveAttendee(a)) throw new ForbiddenException("Only whoever added a name, or the presenter, can take it off.");
@@ -116,13 +116,19 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     /// <summary>Whether I can add to who attended the brief's meeting: I'm seated in its live meeting, from the team
-    /// edition. The presenter is; a Visitor's seat isn't (they don't read the team edition).</summary>
-    public bool CanAddAttendees(Guid briefId) => SeatAt(briefId) is not null;
+    /// edition (the presenter is; a Visitor's seat isn't, as they don't read the team edition); or I correct its record
+    /// (<see cref="CorrectsRecord"/>). A rehearsal has no seat, and its page writes nothing.</summary>
+    public bool CanAddAttendees(Guid briefId) => SeatAt(briefId) is not null || CorrectsRecord(briefId);
 
     /// <summary>Whether I can take <paramref name="row"/> off who attended: someone added by name (never someone who
-    /// joined), that I added, or any such while I present the live meeting. Only from a seat in it, as for adding.</summary>
+    /// joined), that I added, from a seat in the live meeting; or any such while I present it, or correct the record.</summary>
     public bool CanRemoveAttendee(MeetingAttendee row) =>
-        row.UserId.Length == 0 && SeatAt(row.BriefId) is { } seat && (seat.Presenting || row.AddedById == user.UserId);
+        row.UserId.Length == 0
+        && (CorrectsRecord(row.BriefId) || SeatAt(row.BriefId) is { } seat && (seat.Presenting || row.AddedById == user.UserId));
+
+    // Whoever presents, with no meeting of the brief live (getting ready, or after it): the record is theirs to correct,
+    // as it was before anyone following could add to it. While it's live, the meeting's own rules hold.
+    private bool CorrectsRecord(Guid briefId) => user.Has(Permission.PresentBriefs) && meetings?.IsLive(briefId) != true;
 
     // On the team edition and able to join meetings: everyone but a Visitor (and a Reader, who joins none).
     private bool MayAttend => user.Has(Permission.ReadTeamEdition) && user.Has(Permission.JoinMeetings);

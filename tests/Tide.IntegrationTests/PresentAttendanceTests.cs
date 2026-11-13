@@ -122,11 +122,34 @@ public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
         await TwoArticleBrief(app, 0, "Attendance rehearsal");
         var brief = await BriefOf(day);
         Meetings.Get(day).Should().BeNull();
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<MeetingService>().AddAttendeeAsync(brief, "Sam from the SOC");
         await using var pat = await Rehearse(app, day, SignIn.Analyst);
         await pat.Click(p => p.OnPresentKey("last"));
-        (await pat.Html()).Should().NotContain(Box);
+        var html = await pat.Html();
+        html.Should().NotContain(Box).And.NotContain("Remove Sam from the SOC").And.NotContain("placeholder=\"Someone in the room\"");
         await Do(pat, p => p.AddAttendeeName = "Rehearsed Person");
         await Do(pat, p => p.AddAttendee());
-        (await Attendees(brief)).Should().NotContain(a => a.Name == "Rehearsed Person");
+        var sam = (await Attendees(brief)).Single(a => a.Name == "Sam from the SOC");
+        await Do(pat, p => p.RemoveAttendee(sam));
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Sam from the SOC");
+    }
+
+    [Fact]
+    public async Task WithNoMeetingLive_ThePresentersRail_StillAddsAndTakesOffNames()
+    {
+        var day = await TwoArticleBrief(app, 404, "Attendance");
+        var brief = await BriefOf(day);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<MeetingService>().AddAttendeeAsync(brief, "Sam from the SOC");
+        await using var pat = await Open(app, day);
+        await pat.Click(p => p.OnPresentKey("last"));
+        (await pat.Html()).Should().Contain("placeholder=\"Someone in the room\"").And.Contain("aria-label=\"Remove Sam from the SOC\"").And.NotContain(Box);
+
+        await Do(pat, p => p.AddAttendeeName = "Kim from IT");
+        await Do(pat, p => p.AddAttendee());
+        var sam = (await Attendees(brief)).Single(a => a.Name == "Sam from the SOC");
+        await Do(pat, p => p.RemoveAttendee(sam));
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Kim from IT");
     }
 }

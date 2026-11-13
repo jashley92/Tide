@@ -700,7 +700,7 @@ else
                                                 <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.Key)" aria-hidden="true">@MainLayout.Initials(p.Name)</span> @p.Name
                                                 @if (p.Here) { <span class="tide-present-help">here</span> }
                                                 @* Someone following takes off a name they added here; the presenter, any, from their rail. *@
-                                                @if (!Rail && p.Row is { } row && MeetingSvc.CanRemoveAttendee(row))
+                                                @if (!Rail && p.Row is { } row && MayRemove(row))
                                                 {
                                                     <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
                                                 }
@@ -948,7 +948,7 @@ else
                                 @foreach (var at in Attendance.Where(x => x.Row is not null))
                                 {
                                     <div class="tide-present-rail-row"><span class="tide-present-rail-grow">@at.Name</span>
-                                        @if (MeetingSvc.CanRemoveAttendee(at.Row!))
+                                        @if (MayRemove(at.Row!))
                                         {
                                             <button class="btn btn-sm btn-link p-0" aria-label="Remove @at.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(at.Row!)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
                                         }
@@ -3354,10 +3354,15 @@ else
     internal IReadOnlyCollection<Guid> Carried => _carry;
 
     /// <summary>
-    /// Whether this page adds to who attended: it's in the brief's live meeting on the team edition, presenting or
-    /// following (MeetingService.CanAddAttendees: never a Visitor, never a rehearsal, which has no seat).
+    /// Whether this page adds to who attended (MeetingService.CanAddAttendees): it's in the brief's live meeting on the
+    /// team edition, presenting or following (never a Visitor); or, with none live, it could present and corrects the
+    /// record. Never in a rehearsal.
     /// </summary>
     private bool MayAddAttendees => TeamEdition && !RehearsalAsked && _brief is not null && MeetingSvc.CanAddAttendees(_brief.Id);
+
+    /// <summary>Whether this page takes <paramref name="row"/> off who attended (MeetingService.CanRemoveAttendee): never in
+    /// a rehearsal.</summary>
+    private bool MayRemove(MeetingAttendee row) => TeamEdition && !RehearsalAsked && MeetingSvc.CanRemoveAttendee(row);
 
     internal Task AddAttendee() => Run(async () =>
     {
@@ -3376,7 +3381,7 @@ else
     // Whoever added a name, or the presenter: MeetingService checks again as it saves.
     internal Task RemoveAttendee(MeetingAttendee row) => Run(async () =>
     {
-        if (!MeetingSvc.CanRemoveAttendee(row)) return;
+        if (!MayRemove(row)) return;
         await MeetingSvc.RemoveAttendeeAsync(row.Id);
         await ReloadRecord();
     });
