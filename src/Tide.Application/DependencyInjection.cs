@@ -89,6 +89,7 @@ public static class DependencyInjection
         services.AddScoped<Preferences.UserPreferenceService>();
         services.AddSingleton(Operations.ReleaseNotesCatalog.Embedded);
         services.AddScoped<Operations.WhatsNewService>();
+        services.AddScoped<Operations.PageTipService>();
         services.AddScoped<Preferences.SavedViewService>();
         services.AddScoped<Preferences.NotificationPreferenceService>();
         services.AddScoped<Api.ApiTokenService>();

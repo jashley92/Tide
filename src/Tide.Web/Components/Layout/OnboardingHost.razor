@@ -1,0 +1,128 @@
+@* What MainLayout offers a person by itself, one thing at a time: What's new after an upgrade (WhatsNewDialog), then a
+   page's tip on the first visit to a page that changed (PageTips). Unasked only where OnboardingGate allows, and never
+   on present mode's shared screen (BlankLayout draws none of this, and neither the dialog nor PageTips takes a /present address).
+   A tip isn't modal: it never takes focus or keys, so ] and every shortcut still work; it's announced politely, sits
+   beside the control it's about (tips.js), and "Got it" puts it away for good. *@
+@implements IAsyncDisposable
+@using Tide.Application.Operations
+@inject PageTipService Tips
+@inject OnboardingGate Gate
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<OnboardingHost> Log
+
+<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" />
+
+<div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
+@if (Tip is { } tip)
+{
+    <aside class="tide-tip" @ref="_card" aria-labelledby="tide-tip-title">
+        <div class="tide-tip-head">
+            <span class="bi bi-lightbulb" aria-hidden="true"></span>
+            <h2 class="tide-tip-title" id="tide-tip-title">@tip.Title</h2>
+        </div>
+        <p class="tide-tip-text">@tip.Text</p>
+        <div class="tide-tip-actions">
+            <button type="button" class="btn btn-primary btn-sm" @onclick="DismissTipAsync">Got it</button>
+        </div>
+    </aside>
+}
+
+@code {
+    private ElementReference _card;
+    private bool _automatic;
+    private PageTip? _placed;
+    private bool _announced;
+    private string _page = "";
+
+    /// <summary>The What's new dialog.</summary>
+    public WhatsNewDialog? WhatsNew { get; private set; }
+
+    /// <summary>The tip shown, if any.</summary>
+    public PageTip? Tip { get; private set; }
+
+    // What the live region says: the tip once it's shown (one that needs its control isn't, without it), nothing once
+    // it's gone.
+    private string Announce => Tip is { } t && t == _placed && _announced ? $"Tip: {t.Title}. {t.Text}" : "";
+
+    // The page open, without its query: a filter or a search rewriting the address is the same page.
+    private string OpenPage => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant();
+
+    protected override void OnInitialized()
+    {
+        _page = OpenPage;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender && (_automatic = Gate.Automatic((await Auth.GetAuthenticationStateAsync()).User))) await SafelyAsync(CheckAsync);
+            if (Tip == _placed) return;
+            _placed = Tip;
+            if (Tip is { } tip)
+            {
+                var shown = await JS.InvokeAsync<bool>("tideTips.show", _card, tip.Target, new { needsTarget = tip.NeedsTarget });
+                _announced = shown;
+                if (shown) StateHasChanged();
+            }
+            else await JS.InvokeVoidAsync("tideTips.hide");
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    /// <summary>What's new if it's due (never in present mode: WhatsNewDialog.CheckAsync), else the page's tip.</summary>
+    public async Task CheckAsync()
+    {
+        if (WhatsNew is null) return;
+        await WhatsNew.CheckAsync();
+        if (!WhatsNew.IsOpen) await CheckTipAsync();
+    }
+
+    /// <summary>The page's tip, if one is due and nothing else is showing (present mode has none: PageTips.For).</summary>
+    public async Task CheckTipAsync()
+    {
+        if (WhatsNew?.IsOpen == true) return;
+        Tip = await Tips.DueAsync(Nav.ToBaseRelativePath(Nav.Uri));
+        StateHasChanged();
+    }
+
+    /// <summary>Got it: the tip goes, and isn't shown on this page again.</summary>
+    public async Task DismissTipAsync()
+    {
+        if (Tip is not { } tip) return;
+        Tip = null;
+        StateHasChanged();
+        await SafelyAsync(() => Tips.DismissAsync(tip));
+    }
+
+    private Task CheckTipSafelyAsync() => SafelyAsync(CheckTipAsync);
+
+    // A new page: its own tip, or none. The same page with another query keeps what it has.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(async () =>
+    {
+        if (OpenPage == _page) return;
+        _page = OpenPage;
+        Tip = null;
+        if (_automatic) await CheckTipSafelyAsync();
+        else StateHasChanged();
+    });
+
+    // Drawn outside the page's error boundary: a failed read or save shows nothing, and is tried on the next visit.
+    private async Task SafelyAsync(Func<Task> what)
+    {
+        try { await what(); }
+        catch (Exception ex) when (ex is not (OperationCanceledException or JSDisconnectedException))
+        {
+            Log.LogWarning(ex, "Couldn't read or save what's new or a page's tip for the signed-in person; nothing was shown.");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        if (_placed is not null) await JS.StopAsync("tideTips.hide");
+    }
+}

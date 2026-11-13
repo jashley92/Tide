@@ -197,7 +197,7 @@ To add a screen, add an entry to `screens`: a `name`, a `route` and an optional 
 
 ## What's new on the demo
 
-The demo never opens *What's new* by itself, so no page is checked or captured under it. A browser asks for it with
+The demo never opens *What's new* or a page's tip by itself, so no page is checked or captured under it. A browser asks for it with
 `?onboarding=on` on a page load (kept in a cookie for that browser, like `?as=`; `?onboarding=off` goes back), and it
 then opens once for each person, as after an upgrade. The `whatsnew` layout pages sign in as a different person at
 each width for that reason.
