@@ -42,29 +42,20 @@ public static class Stix
     private const string TlpExtension = "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d";
     private const string TlpCreated = "2022-10-01T00:00:00.000Z";
 
-    // The extension's own value for each level ("amber+strict"), and the marking's name ("TLP:AMBER+STRICT").
-    private static string TlpValue(TlpLevel tlp) => tlp switch
-    {
-        TlpLevel.Clear => "clear",
-        TlpLevel.Green => "green",
-        TlpLevel.Amber => "amber",
-        TlpLevel.AmberStrict => "amber+strict",
-        _ => "red",
-    };
-
-    // A TLP 2.0 marking definition, as the OASIS extension publishes it.
+    // A TLP 2.0 marking definition, as the OASIS extension publishes it: named "TLP:AMBER+STRICT", its value "amber+strict".
     private static void MarkingDefinition(Utf8JsonWriter w, TlpLevel tlp)
     {
+        var name = Tlp.Label(tlp);
         w.WriteStartObject();
         w.WriteString("type", "marking-definition");
         w.WriteString("spec_version", "2.1");
         w.WriteString("id", Marking(tlp));
         w.WriteString("created", TlpCreated);
-        w.WriteString("name", "TLP:" + TlpValue(tlp).ToUpperInvariant());
+        w.WriteString("name", name);
         w.WriteStartObject("extensions");
         w.WriteStartObject(TlpExtension);
         w.WriteString("extension_type", "property-extension");
-        w.WriteString("tlp_2_0", TlpValue(tlp));
+        w.WriteString("tlp_2_0", name["TLP:".Length..].ToLowerInvariant());
         w.WriteEndObject();
         w.WriteEndObject();
         w.WriteEndObject();

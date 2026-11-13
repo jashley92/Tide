@@ -617,7 +617,7 @@ else
     /// article that can still take a report covers it (<paramref name="attachTo"/>); otherwise promote, saying whether
     /// something covers it (<paramref name="covered"/>) that can't take it. Only what the row's flags already show is named.
     /// </summary>
-    internal static string Suggestion(Coverage? attachTo, Coverage? covered, int reports, DateOnly today = default)
+    internal static string Suggestion(Coverage? attachTo, Coverage? covered, int reports, DateOnly today)
     {
         var one = reports == 1;
         if (attachTo is { } to)

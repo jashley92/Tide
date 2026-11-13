@@ -718,11 +718,18 @@
 
     // The card's counts and Generate button follow when the page hands over the action read again (Changed), which
     // reads them once.
-    internal Task<bool> AddIndicators(IndicatorAdd.Addition add) => Run(async () =>
+    internal async Task<bool> AddIndicators(IndicatorAdd.Addition add)
     {
-        var n = await ActionSvc.AddIndicatorsAsync(Action.Id, add.Indicators);
-        Toasts.Show(n == 0 ? "Those are already there." : $"Added {Ui.Plural(n, "indicator")}{(Action.Article is null ? "" : " to the article")}.");
-    });
+        var added = await Run(async () =>
+        {
+            var n = await ActionSvc.AddIndicatorsAsync(Action.Id, add.Indicators);
+            Toasts.Show(n == 0 ? "Those are already there." : $"Added {Ui.Plural(n, "indicator")}{(Action.Article is null ? "" : " to the article")}.");
+        });
+        // The box calls this as a plain function, which redraws only the box: drawn again here, or the box stays as it
+        // was drawn while the page re-read the action, disabled (as ArticleEditorPanel does).
+        StateHasChanged();
+        return added;
+    }
 
     private Task RemoveIndicator(ActionIndicator i) => Run(() => ActionSvc.RemoveIndicatorAsync(i.Id));
 
@@ -817,12 +824,6 @@
             Toasts.Error(UserFacingError.For(ex));
             return false;
         }
-        finally
-        {
-            _busy = false;
-            // Drawn again: an add from the indicator box (a callback, not this card's own event) would leave the box
-            // drawn disabled, as it was while the page re-read the action.
-            StateHasChanged();
-        }
+        finally { _busy = false; }
     }
 }

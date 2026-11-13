@@ -152,14 +152,14 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
     // the circuit itself is kept for minutes in case it comes back, which is when it's back.
     public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        Down(circuit?.Id ?? "");
+        Down(CircuitId);
         return Task.CompletedTask;
     }
 
     public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         Connected(TransportHubFilter.Current);
-        Up(circuit?.Id ?? "");
+        Up(CircuitId);
         return Task.CompletedTask;
     }
 

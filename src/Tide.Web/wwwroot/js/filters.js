@@ -7,9 +7,8 @@
 // + Filter opens it, as on a menu button. The account menu (ProfileMenu) takes the arrows the same way.
 // One listener on the page for every bar, so there's nothing to start or stop.
 window.tideFilters = (function () {
-    const choices = '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])';
-    // The account menu's settings (radios) are among its choices.
-    const profileChoices = choices + ', .tide-profile-pop [role="radio"]';
+    // A menu's choices, and the account menu's settings (radios).
+    const choices = '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled]), [role="radio"]:not([disabled])';
 
     function focusIn(pop) {
         if (!pop || !pop.querySelector) return;
@@ -32,7 +31,7 @@ window.tideFilters = (function () {
             // down arrow opens it.
             if (trigger.getAttribute('aria-expanded') === 'true') {
                 e.preventDefault();
-                focusIn(document.getElementById(trigger.getAttribute('aria-controls')) || trigger.parentElement.querySelector('[role="menu"]'));
+                focusIn(document.getElementById(trigger.getAttribute('aria-controls')));
             } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 trigger.click();
@@ -41,8 +40,9 @@ window.tideFilters = (function () {
         }
         const pop = e.target.closest('.tide-filter-pop, .tide-menubutton-pop, .tide-profile-pop');
         if (!pop) return;
-        // The account menu's settings are Tab stops of their own; Tab moving out of it closes it (tidePopout).
-        if (e.key === 'Tab' && pop.classList.contains('tide-profile-pop')) return;
+        // A popover whose controls are Tab stops of their own (the account menu's settings) is tabbed through; Tab moving
+        // out of it closes it (tidePopout).
+        if (e.key === 'Tab' && pop.hasAttribute('data-tab-through')) return;
         if (e.key === 'Tab') {
             const backdrop = pop.parentElement.querySelector('.tide-popover-backdrop');
             // A typed filter's form (its box, Remove, Apply) is moved through with Tab, as any form is, and left closed
@@ -68,8 +68,7 @@ window.tideFilters = (function () {
             }
             return;
         }
-        const all = pop.querySelectorAll(pop.classList.contains('tide-profile-pop') ? profileChoices : choices);
-        const to = window.tideRoving(Array.prototype.slice.call(all), document.activeElement, e, 'y');
+        const to = window.tideRoving(Array.prototype.slice.call(pop.querySelectorAll(choices)), document.activeElement, e, 'y');
         if (!to) return;
         e.preventDefault();
         to.focus();
