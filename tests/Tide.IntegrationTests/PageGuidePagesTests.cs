@@ -61,7 +61,12 @@ public class PageGuidePagesTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/help", "Analyst", false)]
     public async Task ShowMeAround_IsOnAPageWithAGuide_ForSomeoneWhoCanUseIt(string path, string role, bool shown)
     {
-        await using var r = await RenderAsync<GuideLink>(app, path, @as: Person(role));
+        var who = Person(role);
+        await using (var scope = SignedIn(app, who))   // new today: the links show
+            await scope.ServiceProvider.GetRequiredService<Tide.Application.Preferences.UserPreferenceService>().SetAsync(
+                Tide.Application.Operations.GuideLinkService.Since, scope.ServiceProvider.GetRequiredService<Tide.Application.Org.OrgClock>().Today
+                    .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        await using var r = await RenderAsync<GuideLink>(app, path, @as: who);
         var html = await r.Html();
         if (shown) html.Should().Contain("Show me around").And.Contain("id=\"tide-guide-start\"");
         else html.Should().NotContain("Show me around");

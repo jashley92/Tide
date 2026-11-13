@@ -42,6 +42,14 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
                 {
                     UserId = userId, Name = tour, Value = Application.Preferences.UserPreferences.TourDue, UpdatedAtUtc = now,
                 });
+            // From the first sign-in, the pages' Show me around links show for a while (GuideLinkService).
+            const string since = Application.Operations.GuideLinkService.Since;
+            if (!await db.UserPreferences.AnyAsync(p => p.UserId == userId && p.Name == since, ct))
+                db.UserPreferences.Add(new UserPreference
+                {
+                    UserId = userId, Name = since, UpdatedAtUtc = now,
+                    Value = Application.Operations.GuideLinkService.Day(DateOnly.FromDateTime(now.UtcDateTime)),
+                });
         }
         // A stand-in name (the bare username: AD didn't answer in time) keeps the real one recorded, as for the address.
         if (!nameIsStandIn || string.IsNullOrWhiteSpace(row.DisplayName)) row.DisplayName = Cut(displayName);

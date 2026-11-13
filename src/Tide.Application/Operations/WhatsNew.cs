@@ -186,7 +186,8 @@ public sealed class ReleaseNotesCatalog
 /// "What's new" for the signed-in person: the releases whose highlights they haven't seen, by their role groups, and
 /// which one they last saw (the <see cref="Preferences.UserPreferences.WhatsNewSeen"/> preference, saved as any other).
 /// </summary>
-public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abstractions.ICurrentUser user, ReleaseNotesCatalog catalog)
+public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abstractions.ICurrentUser user, ReleaseNotesCatalog catalog,
+    TimeProvider time)
 {
     /// <summary>The release running (<see cref="ReleaseNotesCatalog.Running"/>).</summary>
     public ReleaseVersion? Running => catalog.Running(AppVersionInfo.Current);
@@ -207,10 +208,15 @@ public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abs
         return catalog.Due(running, seen, groups);
     }
 
-    /// <summary>Records that the person has seen what's new up to the release running, so it isn't shown again.</summary>
+    /// <summary>Records that the person has seen what's new up to the release running, so it isn't shown again; and
+    /// from today, a page the release changed shows its Show me around link for a while (<see cref="GuideLinkService"/>).</summary>
     public async Task MarkSeenAsync(CancellationToken ct = default)
     {
         if (Groups.Count == 0 || Running is not { } running) return;
-        await prefs.SetAsync(Preferences.UserPreferences.WhatsNewSeen, running.ToString(), ct);
+        await prefs.SetAsync(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [Preferences.UserPreferences.WhatsNewSeen] = running.ToString(),
+            [GuideLinkService.Release] = running + "@" + GuideLinkService.Day(DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)),
+        }, ct);
     }
 }

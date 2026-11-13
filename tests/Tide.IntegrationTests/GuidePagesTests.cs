@@ -73,8 +73,30 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await Rehearse(app, day, Person("Analyst"));
         var html = await r.Html();
         html.Should().Contain(Rehearsing).And.Contain("tide-tour").And.Contain("Step 1 of ").And.Contain("Learn to present");
-        html.Should().NotContain("Start the meeting").And.NotContain("Copy link").And.NotContain("tide-notes-btn");
+        html.Should().NotContain("tide-notes-btn");
+        // Start the meeting and Copy link are shown, for the guide to point at, and can't be used.
+        html.Should().Contain("id=\"present-start\"").And.Contain("Starts the real meeting; not in a rehearsal").And.Contain("id=\"present-copy-link\"");
         html.Should().Contain("aria-modal=\"true\"").And.Contain("End guide");
+    }
+
+    [Fact]
+    public async Task RehearsalsStart_IsShownDisabled_AndPressedAnyway_StartsNothing()
+    {
+        var day = await Day(303);
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var (audited, attendees) = (await db.AuditLog.CountAsync(), await db.MeetingAttendees.CountAsync());
+        await using (var r = await Rehearse(app, day, Person("Analyst")))
+        {
+            var html = await r.Html();
+            html.Should().MatchRegex("<button id=\"present-start\"[^>]*disabled", "shown where it always is, for the guide to ring");
+            // A script taking `disabled` away reaches the same handler: it refuses in a rehearsal.
+            await Do(r, p => p.StartMeeting());
+        }
+        app.Services.GetRequiredService<LiveMeetings>().Get(day).Should().BeNull("no meeting was started");
+        db.ChangeTracker.Clear();
+        (await db.AuditLog.CountAsync()).Should().Be(audited, "nothing was written");
+        (await db.MeetingAttendees.CountAsync()).Should().Be(attendees);
     }
 
     [Fact]
@@ -215,7 +237,7 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
     {
         var day = await Day(342);
         await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse={value}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Person("Analyst"));
-        (await r.Html()).Should().Contain(Rehearsing).And.NotContain("Start the meeting");
+        (await r.Html()).Should().Contain(Rehearsing).And.Contain("aria-disabled=\"true\"").And.Contain("Starts the real meeting; not in a rehearsal");
     }
 
     [Fact]

@@ -84,7 +84,7 @@ else
                 }
                 @if (_canWrite && next == BriefNext.MarkReady)
                 {
-                    <button class="btn btn-primary" disabled="@_busy" @onclick="AskReady"><span class="bi bi-check2-square" aria-hidden="true"></span> Mark ready</button>
+                    <button class="btn btn-primary" data-guide="brief-mark-ready" disabled="@_busy" @onclick="AskReady"><span class="bi bi-check2-square" aria-hidden="true"></span> Mark ready</button>
                 }
                 else if (_canWrite && _brief.Status == BriefStatus.Ready)
                 {
@@ -93,7 +93,7 @@ else
                 <LiveMeetingJoin Day="_date">
                     @if (canPresent && _brief.Items.Count > 0)
                     {
-                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
+                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)" data-guide="brief-present"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
                     }
                 </LiveMeetingJoin>
                 @if (canPresent && _brief.Status == BriefStatus.Presented)
@@ -110,7 +110,7 @@ else
                 }
                 @if (canPresent && next == BriefNext.Send)
                 {
-                    <button type="button" class="btn btn-primary" @onclick="AskSend"><span class="bi bi-send" aria-hidden="true"></span> @(Sends.EmailEnabled ? "Send" : "Distribute")</button>
+                    <button type="button" class="btn btn-primary" data-guide="brief-send" @onclick="AskSend"><span class="bi bi-send" aria-hidden="true"></span> @(Sends.EmailEnabled ? "Send" : "Distribute")</button>
                 }
                 @if (next == BriefNext.PostToSharePoint)
                 {

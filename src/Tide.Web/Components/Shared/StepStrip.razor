@@ -92,9 +92,9 @@
     {
         BriefStepKind.Triage when CanTriage => @<a href="triage" aria-describedby="@DetailId(s)">@s.Label</a>,
         BriefStepKind.Write when FirstNeedingWork is { } id => @<a href="articles/@id" title="Open the first article that needs work" aria-describedby="@DetailId(s)">@s.Label</a>,
-        BriefStepKind.Order when CanMarkReady => @<button type="button" class="btn btn-link p-0 tide-step-btn" disabled="@Busy" @onclick="OnMarkReady" title="Mark the brief ready for the meeting" aria-describedby="@DetailId(s)">@s.Label</button>,
+        BriefStepKind.Order when CanMarkReady => @<button type="button" class="btn btn-link p-0 tide-step-btn" data-guide="strip-mark-ready" disabled="@Busy" @onclick="OnMarkReady" title="Mark the brief ready for the meeting" aria-describedby="@DetailId(s)">@s.Label</button>,
         BriefStepKind.Present when CanPresent => @<a href="@Ui.PresentUrl(Day)" aria-describedby="@DetailId(s)">@s.Label</a>,
-        BriefStepKind.Send when CanPresent && OnSend.HasDelegate => @<button type="button" class="btn btn-link p-0 tide-step-btn" @onclick="OnSend" title="Send a test copy, then each edition" aria-describedby="@DetailId(s)">@s.Label</button>,
+        BriefStepKind.Send when CanPresent && OnSend.HasDelegate => @<button type="button" class="btn btn-link p-0 tide-step-btn" data-guide="strip-send" @onclick="OnSend" title="Send a test copy, then each edition" aria-describedby="@DetailId(s)">@s.Label</button>,
         _ => @<span>@s.Label</span>,
     };
 }

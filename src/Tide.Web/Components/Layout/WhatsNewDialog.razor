@@ -42,11 +42,16 @@
                 }
             </div>
             <div class="tide-modal-actions">
-                @if (OffersTour)
-                {
-                    <p class="tide-whatsnew-more">Want a walkthrough? Take the tour, or pick a guide in Help.</p>
-                }
-                <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                @* Two buttons, Take the tour and Got it (the main one); the rest are links in the line beside them. *@
+                <p class="tide-whatsnew-more">
+                    @if (OffersTour)
+                    {
+                        <text>Want a walkthrough? Take the tour,
+                            <button type="button" class="btn btn-link tide-inline-link" id="whatsnew-see-day" @onclick="SeeTheDayAsync">see the whole day</button>,
+                            or pick a guide in Help &middot; </text>
+                    }
+                    <a id="whatsnew-all" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                </p>
                 @if (OffersTour)
                 {
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="whatsnew-take-tour" @onclick="TakeTourAsync">Take the tour</button>
@@ -116,11 +121,20 @@
 
     /// <summary>Take the tour: What's new closes, marked seen as closing does, and the tour starts. The page's tip, which
     /// Got it would bring, waits.</summary>
-    public async Task TakeTourAsync()
+    public Task TakeTourAsync() => CloseThenAsync(TakeTour);
+
+    /// <summary>What's new's See the whole day (OnboardingHost: An analyst's day, or Following the brief).</summary>
+    [Parameter] public EventCallback SeeTheDay { get; set; }
+
+    /// <summary>See the whole day: What's new closes, marked seen as closing does, and the whole-day guide starts.</summary>
+    public Task SeeTheDayAsync() => CloseThenAsync(SeeTheDay);
+
+    // What's new closes, marked seen as closing does, without the page's tip, and `next` starts.
+    private async Task CloseThenAsync(EventCallback next)
     {
         if (!IsOpen) return;
         await CloseAsync(thenTip: false);
-        await TakeTour.InvokeAsync();
+        await next.InvokeAsync();
     }
 
     private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
