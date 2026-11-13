@@ -158,6 +158,19 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
     }
 
     [Fact]
+    public async Task AnAnalystsDay_CountsInItsPart_WithThePartsOnTheirOwnLine_BeforeTheTitle()
+    {
+        await using var host = await RenderAsync<OnboardingHost>(app, "/", @as: Person("Analyst"));
+        await Start(host, Guides.Day);
+        var html = await host.Html();
+        html.Should().Contain("Today · 1 of 2", "the header counts within the part");
+        var parts = html.IndexOf("class=\"tide-tour-parts\"", StringComparison.Ordinal);
+        parts.Should().BeGreaterThan(html.IndexOf("class=\"tide-tour-count\"", StringComparison.Ordinal), "after the count")
+            .And.BeLessThan(html.IndexOf("class=\"tide-tour-title\"", StringComparison.Ordinal), "and before the title, in the header");
+        html.Should().Contain("<strong aria-current=\"step\">Today</strong>").And.Contain("Back to Today", "a part come back to says so");
+    }
+
+    [Fact]
     public async Task AnAnalystsDay_SkipsADetailedSection_ToTheStepAfterIt()
     {
         var who = Person("Analyst");
