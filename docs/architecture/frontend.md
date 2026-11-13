@@ -608,7 +608,10 @@ same way, so the room's screen matches the presenter's.
 
 Present mode can be opened with no meeting by anyone who can present, but that page is the real one: its rail saves
 (Raise, Mark discussed, End the meeting), it joins the brief's presence, and Start the meeting is a click away. Help's
-**Learn to present** opens it in rehearsal instead (`?rehearse=1`), and nothing else links there.
+**Learn to present** opens it in rehearsal instead (`?rehearse=1`), and nothing else links there. Any `rehearse` in the
+address, whatever its value, is a rehearsal, so a mistyped one fails safe. A rehearsal is never seated in, counted in
+or recorded as attending a meeting, even one that starts while it's open, and leaving it never asks to discard
+anything: nothing there can be saved.
 
 - **Nothing shared or saved.** The top bar says "Rehearsal: nothing here is shared or saved". There's no Start the
   meeting, End the meeting, Copy link or Notes, no presence, and the tag editor isn't offered. The presenter's rail is

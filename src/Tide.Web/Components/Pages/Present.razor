@@ -1113,7 +1113,7 @@ else
         <ConfirmDialog @ref="_confirm" />
         <OverLimitDialog @ref="_overLimit" />
         @* A meeting note typed and not added: leaving present mode asks first. *@
-        <UnsavedGuard Dirty="Unsaved" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
+        <UnsavedGuard Dirty="AsksBeforeLeaving" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
         @* Learn to present, only in rehearsal: no meeting, nobody following, so nobody else ever sees it. Inside the slides'
            root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
         @if (Rehearsing && GuideStep is { } guideStep)
@@ -2120,6 +2120,8 @@ else
     // In the meeting, started or joined: on the team edition, following, and recorded as there.
     private async Task Seated()
     {
+        // A rehearsal is never in the meeting, however a seat came its way: it's given back, unrecorded.
+        if (RehearsalAsked) { LeaveMeeting(); return; }
         Refresh();
         (_attended, _following, _summons, _edition) = (true, true, _view?.Summons ?? 0, Edition.Team);
         _scrollCaughtUp = null;   // the slide drawn before the seat (the title, as the page opened) may be the presenter's
@@ -2476,11 +2478,12 @@ else
     public static string RehearsalHref(DateOnly day) => Ui.PresentUrl(day) + "?rehearse=1";
 
     /// <summary>
-    /// Whether the address asks for a rehearsal. Such a page never starts, joins or ends a meeting, joins nobody's
+    /// Whether the address asks for a rehearsal: `rehearse` in it at all, whatever its value (1, true, empty), so a
+    /// mistyped value fails safe, as a rehearsal. Such a page never starts, joins or ends a meeting, joins nobody's
     /// presence and broadcasts nothing; every step that saves is refused where it's handled (Run, InCharge), and the
     /// rail's controls are disabled. Nobody follows it, so Learn to present's steps are on this screen alone.
     /// </summary>
-    private bool RehearsalAsked => Rehearse == "1";
+    private bool RehearsalAsked => Rehearse is not null;
 
     private bool CanRehearse => !_visitor && CurrentUser.Has(Permission.PresentBriefs);
 
@@ -2633,6 +2636,10 @@ else
     private bool OpeningNoteDirty => _noteEditing && (_noteDraft ?? "") != (_noteBase ?? "");
     private bool NumbersDirty => _numberDrafts.Values.Any(v => !string.IsNullOrWhiteSpace(v));
     private bool Unsaved => NoteDirty || OpeningNoteDirty || NumbersDirty;
+
+    /// <summary>Whether leaving asks first: something typed and not saved, outside a rehearsal (where nothing can be saved,
+    /// so there's nothing to discard).</summary>
+    internal bool AsksBeforeLeaving => Unsaved && !RehearsalAsked;
     private string UnsavedMessage => NoteDirty ? "Your meeting note isn't added."
         : OpeningNoteDirty ? "Your edit to the opening note isn't saved." : "A number you typed isn't saved.";
 
