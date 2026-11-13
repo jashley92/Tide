@@ -864,6 +864,22 @@ const whatsNewAs = (people, ...keys) => async page => {
 /** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
 const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
 
+/** Setup: as tipAs, then `route` loaded afresh (What's new is seen by then), so that page's tip shows. */
+const tipOn = (route, people) => async page => {
+  await tipAs(people)(page);
+  await page.goto(new URL(`.${route}`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  await wideFont(page);
+};
+
+/** Setup: as tipAs, then Got it pressed from the keyboard. */
+const tipGotIt = people => async page => {
+  await tipAs(people)(page);
+  await page.locator('.tide-tip .btn-primary').focus();
+  await page.keyboard.press('Enter');
+  await idle(page);
+};
+
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
 const longQueueTicket = async page => {
@@ -1826,6 +1842,13 @@ const inWindow = selector => holds(`wholly in the window: ${selector}`, selector
     const r = e.getBoundingClientRect();
     return r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1
       ? [`${selector} #${i + 1} ("${(e.getAttribute('aria-label') ?? e.textContent).trim().slice(0, 30)}") is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${innerWidth}px window`] : [];
+  }), selector);
+
+/** Each shown match of `selector` lies within the page's own width, left of any scrollbar, its border included. */
+const inClient = selector => holds(`within the page's width: ${selector}`, selector =>
+  [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0).flatMap((e, i) => {
+    const r = e.getBoundingClientRect(), width = Math.min(document.documentElement.clientWidth, document.body.clientWidth);
+    return r.left < 0 || r.right > width ? [`${selector} #${i + 1} is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${width}px page`] : [];
   }), selector);
 
 /** How many are here is shown, and whole. */
@@ -3521,7 +3544,7 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
 
 /** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
 const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
-  hidden('.tide-whatsnew')];
+  hidden('.tide-whatsnew'), inClient('.tide-tip'), [1500, allBesides('.tide-tip', '#tide-rail')]];
 
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
@@ -4162,6 +4185,18 @@ const pages = [
     widths: [1920, 1440, 780], rules: tipRules },
   { name: 'tip-keys', route: '/help', setup: tipAs({ 1920: 'Vic' }, ']'), widths: [1920],
     rules: [visible('.tide-tip'), attr('html', 'data-rail', 'closed')] },
+  // With the rail open over the page (]), the tip stays beside it, not over what it shows.
+  { name: 'tip-rail-over', route: '/help', setup: tipAs({ 1440: 'Ola', 780: 'Oz' }, ']'), widths: [1440, 780],
+    rules: [visible('.tide-tip'), visible('#tide-rail'), allBesides('.tide-tip', '#tide-rail'), inClient('.tide-tip')] },
+  // Search's tip keeps off the page's own search box and its description.
+  { name: 'tip-search', route: '/help', setup: tipOn('/search', { 1920: 'Pia', 1440: 'Pat', 780: 'Pip&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: [visible('.tide-tip'), noOverlap('.tide-tip, form[role="search"], .tide-page-head .tide-sub'), inClient('.tide-tip')] },
+  // Triage's tip is beside the reading pane, and not shown where there's none beside the list.
+  { name: 'tip-triage', route: '/help', setup: tipOn('/triage', { 1920: 'Quin' }), widths: [1920],
+    rules: [visible('.tide-tip'), visible('.tide-reading.tide-tip-target'), inClient('.tide-tip')] },
+  { name: 'tip-triage-narrow', route: '/help', setup: tipOn('/triage', { 780: 'Quill' }), widths: [780], rules: [hidden('.tide-tip')] },
+  // Got it from the keyboard: the tip goes, and focus is on the page's heading, not lost.
+  { name: 'tip-got-it', route: '/help', setup: tipGotIt({ 1440: 'Rio' }), widths: [1440], rules: [hidden('.tide-tip'), focusOn('main h1')] },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },

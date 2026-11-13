@@ -241,8 +241,12 @@ person's first visit to it after the release it belongs to.
   again** clears them, for the pages the person can use. A tip is shown only to someone who can use its page.
 - **Not modal.** The card (`.tide-tip`) has no scrim and leaves the page live: it never takes focus or a key, so `]` and
   every shortcut still work. `tips.js` (`tideTips`) sets it beside the control it's about and rings that control
-  (`.tide-tip-target`), or leaves it in the bottom corner when the control isn't shown or there's no room. A polite live
-  region announces it. A new page drops the tip and checks that page's.
+  (`.tide-tip-target`), or puts it in the bottom corner when it has none (Search's, which would otherwise sit over the
+  page's own search box), the control isn't shown or there's no room. It never sits over the context rail, docked or
+  open over the page: it moves left of it, and moves again when the rail opens or closes. It keeps within the page's
+  width, left of the scrollbar. A tip that needs its control (Triage's, beside the reading pane) isn't shown where the
+  control isn't, nor announced. A polite live region announces a tip once it's shown. **Got it** from the keyboard
+  leaves focus on the page's heading. A new page drops the tip and checks that page's.
 
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the

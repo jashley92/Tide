@@ -33,6 +33,7 @@
     private ElementReference _card;
     private bool _automatic;
     private PageTip? _placed;
+    private bool _announced;
     private string _page = "";
 
     /// <summary>The What's new dialog.</summary>
@@ -41,8 +42,9 @@
     /// <summary>The tip shown, if any.</summary>
     public PageTip? Tip { get; private set; }
 
-    // What the live region says: the tip as it appears, nothing once it's gone.
-    private string Announce => Tip is { } t ? $"Tip: {t.Title}. {t.Text}" : "";
+    // What the live region says: the tip once it's shown (one that needs its control isn't, without it), nothing once
+    // it's gone.
+    private string Announce => Tip is { } t && t == _placed && _announced ? $"Tip: {t.Title}. {t.Text}" : "";
 
     // The page, without its query: a filter or a search rewriting the address is the same page.
     private string Page => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant();
@@ -60,7 +62,12 @@
             if (firstRender && (_automatic = Gate.Automatic((await Auth.GetAuthenticationStateAsync()).User))) await SafelyAsync(CheckAsync);
             if (Tip == _placed) return;
             _placed = Tip;
-            if (Tip is { } tip) await JS.InvokeVoidAsync("tideTips.show", _card, tip.Target);
+            if (Tip is { } tip)
+            {
+                var shown = await JS.InvokeAsync<bool>("tideTips.show", _card, tip.Target, new { needsTarget = tip.NeedsTarget });
+                _announced = shown;
+                if (shown) StateHasChanged();
+            }
             else await JS.InvokeVoidAsync("tideTips.hide");
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }

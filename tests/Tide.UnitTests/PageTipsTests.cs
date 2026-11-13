@@ -40,11 +40,34 @@ public class PageTipsTests
         PageTips.For(path).Should().BeNull();
 
     [Fact]
-    public void EveryTip_SaysWhatChanged_AndPointsAtSomething()
+    public void EveryTip_SaysWhatChanged()
     {
         PageTips.All.Should().OnlyHaveUniqueItems(t => t.Key);
-        PageTips.All.Should().OnlyContain(t => t.Title.Length > 0 && t.Text.Length > 0 && t.Target.Length > 0 && t.Version == V("1.13.0"));
+        PageTips.All.Should().OnlyContain(t => t.Title.Length > 0 && t.Text.Length > 0 && t.Version == V("1.13.0"));
         PageTips.For("")!.Text.Should().Contain("]", "Today's tip points at the context rail and its key");
+    }
+
+    [Fact]
+    public void NoTip_NamesAButtonByAWordItMayNotShow()
+    {
+        // On a narrow window the Context button is its icon alone.
+        PageTips.All.Should().OnlyContain(t => !t.Text.Contains("use Context") && !t.Text.Contains(", or Context"));
+        PageTips.For("")!.Text.Should().Contain("rail button");
+    }
+
+    [Fact]
+    public void SearchsTip_SitsInItsCorner_OffThePagesOwnSearchBox()
+    {
+        // Pointed at the top bar's search box it sat over the page's own box and its description.
+        PageTips.For("search")!.Target.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TriagesTip_ShowsOnlyBesideTheReadingPane()
+    {
+        // On a narrow window the reading pane isn't beside the list, and a tip in the corner sat over the decisions.
+        PageTips.For("triage")!.NeedsTarget.Should().BeTrue();
+        PageTips.All.Where(t => t.Key != "triage").Should().OnlyContain(t => !t.NeedsTarget);
     }
 
     [Fact]
