@@ -2796,7 +2796,7 @@ else
                 }
                 }
                 @* Taken only by a member of its team, as it's only given to one; an external team has none. *@
-                @if (r.AssigneeId != _me && MembersOf(r.TeamId).Any(m => m.UserId == _me))
+                @if (r.AssigneeId != _me && OnTeam(r))
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }
@@ -3114,10 +3114,11 @@ else
     private IReadOnlyList<TeamMember> MembersOf(Guid teamId) => _teams.FirstOrDefault(t => t.Id == teamId)?.Members ?? [];
 
 
-    // Who can take or assign it, as ActionService.CanWorkAsync decides (and checks again): analysts any action, others
-    // their own teams'. Assign offers the action's team's members, the only people AssignAsync gives it to.
-    private bool CanWork(EditionAction r) => r.Id != Guid.Empty &&
-        (_canCreate || _canWork && MembersOf(r.TeamId).Any(m => m.UserId == _me));
+    // Who can assign it, as ActionService.CanWork decides (and checks again): analysts any action, others their own
+    // teams'. Assign offers the action's team's members, the only people AssignAsync gives it to; only they take it.
+    private bool CanWork(EditionAction r) => r.Id != Guid.Empty && (_canCreate || _canWork && OnTeam(r));
+
+    private bool OnTeam(EditionAction r) => MembersOf(r.TeamId).Any(m => m.UserId == _me);
 
     internal Task Take(EditionAction r) => Run(async () =>
     {

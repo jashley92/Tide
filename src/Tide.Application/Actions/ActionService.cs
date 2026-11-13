@@ -314,16 +314,16 @@ public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, in
 }
 
 /// <summary>Which teams' actions the reader works: all of them (an analyst), or the teams they're on with WorkActions
-/// (ActionService.CanWork's rule, read once for a whole list or board). <see cref="OnTeams"/> are the teams they're a
-/// member of, whose actions alone they take on.</summary>
-public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams, IReadOnlySet<Guid> OnTeams)
+/// (ActionService.CanWork's rule, read once for a whole list or board). <see cref="Teams"/> are the teams they're on,
+/// whose actions alone they take.</summary>
+public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
 {
-    public static readonly ActionWorkers None = new(false, new HashSet<Guid>(), new HashSet<Guid>());
+    public static readonly ActionWorkers None = new(false, new HashSet<Guid>());
 
     public bool CanWork(Guid teamId) => All || Teams.Contains(teamId);
 
     /// <summary>Whether the reader may take this row on (<see cref="ActionRow.TakeableBy"/>).</summary>
-    public bool CanTake(ActionRow row) => row.TakeableBy(CanWork(row.TeamId), OnTeams.Contains(row.TeamId));
+    public bool CanTake(ActionRow row) => row.TakeableBy(CanWork(row.TeamId), Teams.Contains(row.TeamId));
 }
 
 /// <summary>
@@ -379,16 +379,14 @@ public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overd
 /// <summary>
 /// The actions board: open actions, a column per working status, and which of them the current user may move (the teams
 /// they work, or all for an analyst). Closed ones are counted under it (<see cref="ActionViewCounts.ClosedAs"/>), not drawn.
+/// <see cref="WorkTeams"/> are the teams the reader is on, whose cards alone they take.
 /// </summary>
 public sealed record ActionBoard(IReadOnlyList<ActionRow> Cards, bool CanWorkAll, IReadOnlySet<Guid> WorkTeams)
 {
-    /// <summary>The teams the reader is a member of, whose cards alone they take on.</summary>
-    public IReadOnlySet<Guid> OnTeams { get; init; } = new HashSet<Guid>();
-
     public bool CanMove(ActionRow card) => CanWorkAll || WorkTeams.Contains(card.TeamId);
 
     /// <summary>Whether the reader may take this card on (<see cref="ActionRow.TakeableBy"/>).</summary>
-    public bool CanTake(ActionRow card) => card.TakeableBy(CanMove(card), OnTeams.Contains(card.TeamId));
+    public bool CanTake(ActionRow card) => card.TakeableBy(CanMove(card), WorkTeams.Contains(card.TeamId));
 
     public IReadOnlyList<ActionRow> In(ActionStatus status) => Cards.Where(c => c.Status == status).ToList();
 }
@@ -586,8 +584,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         var all = user.Has(Permission.WriteArticles);
         if (!all && !user.Has(Permission.WorkActions)) return ActionWorkers.None;
-        var on = (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet();
-        return new ActionWorkers(all, all ? new HashSet<Guid>() : on, on);
+        return new ActionWorkers(all, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
     }
 
     // An article's title (and what's read from it, the recommended line copied from it among them) is shown only to
@@ -768,7 +765,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // By due date then priority.
         var cards = rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
         var workers = await WorkersAsync(db, ct);
-        return new ActionBoard(cards, workers.All, workers.Teams) { OnTeams = workers.OnTeams };
+        return new ActionBoard(cards, workers.All, workers.Teams);
     }
 
     // How far back the board's closed strip counts: the last closedDays days, a day to BoardOlderDays.
@@ -1176,8 +1173,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
         var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
-        var canWork = await CanWork(db, user, a.TeamId, ct);
+        // On its team: a member takes it on, and one with WorkActions works it (CanWork's rule, read once).
         var onTeam = await db.TeamMembers.AnyAsync(m => m.TeamId == a.TeamId && m.UserId == user.UserId, ct);
+        var canWork = user.Has(Permission.WriteArticles) || (user.Has(Permission.WorkActions) && onTeam);
         var handedFrom = a.HandedFromTeamId is { } from ? await TeamName(db, from, ct) : null;
         var lineage = children.Count > 0 ? ParentLineage(a, handedFrom, children)
             : parent is not null ? await PartLineageAsync(db, a, parent, ct) : null;
@@ -2492,13 +2490,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await db.Actions.FirstAsync(x => x.Id == hunt.ActionId, ct);
         await RequireWork(db, user, a, ct);
         return (hunt, a);
-    }
-
-    /// <summary>Whether the current user may work actions of <paramref name="teamId"/>.</summary>
-    public async Task<bool> CanWorkAsync(Guid teamId, CancellationToken ct = default)
-    {
-        await using var db = await dbs.CreateAsync(ct);
-        return await CanWork(db, user, teamId, ct);
     }
 
     // --- helpers ------------------------------------------------------------------------------------------------
