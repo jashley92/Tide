@@ -30,6 +30,21 @@ public sealed record LeaseStatus(LeaseState State, string? Holder, DateTimeOffse
 
     /// <summary>"WEB01, process 4312", or null.</summary>
     public string? HolderName => BackgroundJobLease.Describe(Holder);
+
+    /// <summary>This process's own id on the lease, once it has asked.</summary>
+    public string? Self { get; init; }
+
+    /// <summary>The other processes on the database whose heartbeat hasn't lapsed (their ids): none, when TIDE is the one
+    /// process it's meant to be.</summary>
+    public IReadOnlyList<string> Others { get; init; } = [];
+
+    /// <summary>A sentence naming this process and the others, when there are others; null otherwise. TIDE runs as one
+    /// process (ADR 0001): some of its locks hold only within a process, so a second one serving pages can get round them.</summary>
+    public string? Alarm => Others.Count == 0 ? null
+        : $"Another TIDE process is running on this database: {string.Join(" and ", Others.Select(o => BackgroundJobLease.Describe(o)))}, as well as this one "
+          + $"({BackgroundJobLease.Describe(Self) ?? "this process"}). TIDE is meant to run as one process: some of its locks (rotation decisions, "
+          + "metric imports, reminder scans) hold only within a process, so two can make conflicting changes. Stop the extra one (a web garden, "
+          + "an overlapping recycle, or a second server pointed at this database).";
 }
 
 /// <summary>Whether this process runs the background jobs: each hosted service asks before each pass, and skips the pass
@@ -41,6 +56,9 @@ public interface IJobLease
 
     /// <summary>The lease as this process last saw it.</summary>
     LeaseStatus Status { get; }
+
+    /// <summary>Raised when <see cref="LeaseStatus.Alarm"/> starts, stops or names other processes, for a page to redraw.</summary>
+    event Action? AlarmChanged { add { } remove { } }
 }
 
 /// <summary>A job run by hand (an administrator's Run now, an analyst's Pull now) on a process that's standing by: the
@@ -95,6 +113,8 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
 
     public LeaseStatus Status => _status;
 
+    public event Action? AlarmChanged;
+
     public async Task<bool> HoldAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -114,8 +134,9 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
                 // else can take it before then); after that, or if it didn't hold it, it runs nothing.
                 var stillHeld = before.State == LeaseState.Held && before.ExpiresAtUtc is { } until && now < until - Margin;
                 var problem = SecretMask.Scrub(ex.GetType().Name + ": " + ex.Message);
+                // The other processes aren't known afresh: the last seen are kept, rather than an alarm flickering off.
                 _status = stillHeld ? before with { CheckedAtUtc = now, Problem = problem }
-                    : new LeaseStatus(LeaseState.Unreachable, before.Holder, before.ExpiresAtUtc, null, now, problem);
+                    : new LeaseStatus(LeaseState.Unreachable, before.Holder, before.ExpiresAtUtc, null, now, problem) { Self = Holder, Others = before.Others };
                 log.LogWarning(ex, "Couldn't take or renew the background jobs' lease{Still}.", stillHeld ? "; still holding it until it nears its expiry" : "; no background job runs here until it can");
             }
             if (before.State != _status.State)
@@ -123,6 +144,12 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
                 if (_status.State == LeaseState.Held) log.LogInformation("This process ({Holder}) now runs the background jobs.", Holder);
                 else if (_status.State == LeaseState.StandingBy)
                     log.LogInformation("Standing by: {Other} runs the background jobs, so this process ({Holder}) runs none until it stops.", _status.HolderName, Holder);
+            }
+            if (!before.Others.SequenceEqual(_status.Others))
+            {
+                if (_status.Alarm is { } alarm) log.LogError("{Alarm}", alarm);
+                else log.LogInformation("No other TIDE process is running on this database now.");
+                AlarmChanged?.Invoke();
             }
             return _status.State == LeaseState.Held;
         }
@@ -132,7 +159,31 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     private async Task<LeaseStatus> TakeAsync(LeaseStatus before, DateTimeOffset now, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
+        var dbs = scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>();
+        var others = await HeartbeatAsync(dbs, now, ct);
+        return await LeaseAsync(dbs, before, now, ct) with { Self = Holder, Others = others };
+    }
+
+    /// <summary>Writes this process's heartbeat, deletes the lapsed ones, and says which other processes are running: those
+    /// whose heartbeat hasn't lapsed, but for one on this machine whose process is gone.</summary>
+    private async Task<IReadOnlyList<string>> HeartbeatAsync(IAppDbContextFactory dbs, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var me = Holder;
+        var lapsed = now - Expiry;
+        await db.JobProcesses.Where(p => p.LastSeenAtUtc < lapsed).ExecuteDeleteAsync(ct);
+        if (await db.JobProcesses.Where(p => p.Holder == me).ExecuteUpdateAsync(u => u.SetProperty(p => p.LastSeenAtUtc, now), ct) == 0)
+        {
+            db.JobProcesses.Add(new Domain.Entities.JobProcess { Holder = me, StartedAtUtc = now, LastSeenAtUtc = now });
+            await db.SaveChangesAsync(ct);
+        }
+        var others = await db.JobProcesses.AsNoTracking().Where(p => p.Holder != me).OrderBy(p => p.Holder).Select(p => p.Holder).ToListAsync(ct);
+        return [.. others.Where(h => !IsGoneFromThisMachine(h))];
+    }
+
+    private async Task<LeaseStatus> LeaseAsync(IAppDbContextFactory dbs, LeaseStatus before, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
         var me = Holder;
         var until = now + Expiry;
         // One statement: whoever's renewal or takeover lands first wins, and the other's matches no row.
@@ -179,7 +230,7 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     }
 
     /// <summary>Lets the lease go (at shutdown), so a standing-by process takes over at its next check rather than when it
-    /// lapses. Only this holder's lease is let go.</summary>
+    /// lapses, and its heartbeat with it, so no other process is alarmed by it. Only this holder's lease is let go.</summary>
     /// <remarks>At shutdown the host may already have disposed the container and the loggers (a test host does): nothing
     /// here throws but to cancel, the gate is never disposed, and a log line that can't be written is dropped.</remarks>
     public async Task ReleaseAsync(CancellationToken ct = default)
@@ -189,14 +240,17 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         {
             await _gate.WaitAsync(ct);
             entered = true;
-            if (_status.State != LeaseState.Held) return;
+            if (_status.Self is null) return;   // never asked, or let go already: nothing written
+            var held = _status.State == LeaseState.Held;
+            _status = LeaseStatus.NotChecked;
             await using var scope = scopes.CreateAsyncScope();
             await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
             var me = Holder;
+            await db.JobProcesses.Where(p => p.Holder == me).ExecuteDeleteAsync(ct);
+            if (!held) return;
             var now = time.GetUtcNow();
             await db.JobLeases.Where(l => l.Name == BackgroundJobs && l.Holder == me)
                 .ExecuteUpdateAsync(u => u.SetProperty(l => l.ExpiresAtUtc, now), ct);
-            _status = LeaseStatus.NotChecked;
             TryLog(() => log.LogInformation("Let go of the background jobs' lease ({Holder}) at shutdown.", Holder));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

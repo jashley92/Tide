@@ -172,10 +172,19 @@ pool's `startMode` to `AlwaysRunning` and its idle timeout to zero. Don't change
 the holder runs the jobs, and any other (a web garden, an overlapping recycle, a standby server started by mistake)
 skips its passes, so no reminder is sent twice. The lease is taken and renewed with one conditional `UPDATE` every 30
 seconds (`JobUpkeepHostedService`) and lapses 3 minutes after its last renewal, so a standby takes over within a few
-minutes of the holder dying, and within 30 seconds when the holder shuts down cleanly (it lets the lease go). The expiry is
+minutes of the holder dying, within 30 seconds when the holder shuts down cleanly (it lets the lease go), and at its
+next check when the holder was on the same server and its process is gone (killed or crashed). The expiry is
 compared on each server's clock, so keep the servers' clocks in sync (domain time is enough). Diagnostics names the
 holder ("Job lease"), and on a standby says it's standing by. The installer and the upgrade also set the pool to one
 worker process (`maxProcesses = 1`).
+
+**A second process is an alarm.** TIDE is meant to run as one process ([ADR 0001](../decisions/0001-blazor-server-on-prem.md)):
+some of its locks are the process's own, so a second one serving pages can make conflicting changes even though only
+one runs the jobs. Each process writes a heartbeat (the `JobProcesses` table) when it checks the lease, and one that
+sees another's shows administrators a banner on every page, a "Second process" problem on Diagnostics, and answers
+`/health/jobs` with `Degraded`, naming both processes (machine and process id). A heartbeat lapses 3 minutes after it
+was last written, so the alarm clears within a few minutes of the other process stopping, and at once when it shuts
+down cleanly. Expect it briefly during an overlapping recycle; one that lasts means a web garden or a second server.
 
 **Each run is kept** in the job history (the `JobRuns` table) for 30 days, pruned daily: the job, the server, when it
 started and finished, whether it went well, and its summary or its error (scrubbed of credentials, at most 500
@@ -242,8 +251,9 @@ Point SCOM, or an uptime monitor that reads the body, at `/health/jobs` as a sec
   least 15 minutes, counted from when it was turned on or the process took the lease if that's later);
 - **Degraded** when its last 3 or more runs failed.
 
-A job that's off isn't counted, and a process standing by under the job lease answers `Healthy` (another runs the
-jobs). Alert on `Unhealthy`, and on `Degraded` that lasts; Diagnostics says which job and why. A monitor that only
+It's also **Degraded** while a second TIDE process is running on the database (see above), on either process. A job
+that's off isn't counted, and a process standing by under the job lease answers `Healthy` (another runs the jobs)
+unless it sees that second process. Alert on `Unhealthy`, and on `Degraded` that lasts; Diagnostics says which job and why. A monitor that only
 reads status codes sees `Degraded` as 200: match the body's word instead. While it isn't healthy, one warning a minute
 is logged as `Tide.Health` ("Background jobs is Unhealthy: jobs …").
 

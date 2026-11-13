@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tide.Application.Abstractions;
 using Tide.Application.Operations;
+using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
 
@@ -108,6 +109,179 @@ public class DeadHolderTakeoverTests
         BackgroundJobLease.IsGoneFromThisMachine($"{Here.ToLowerInvariant()}/{DeadPid()}/x").Should().BeTrue("machine names are compared ignoring case");
         BackgroundJobLease.IsGoneFromThisMachine($"{Here}/{Environment.ProcessId}/x").Should().BeFalse();
         BackgroundJobLease.IsGoneFromThisMachine($"NOT-{Here}/{DeadPid()}/x").Should().BeFalse();
+    }
+}
+
+/// <summary>Each process's heartbeat: every process, the holder too, sees whether another is running on the database.</summary>
+public class SecondProcessTests
+{
+    private static readonly DateTimeOffset Start = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
+
+    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder)
+    {
+        var provider = new ServiceCollection().AddSingleton(dbs).BuildServiceProvider();
+        return (new BackgroundJobLease(provider.GetRequiredService<IServiceScopeFactory>(), clock, NullLogger<BackgroundJobLease>.Instance, holder), provider);
+    }
+
+    private static async Task<List<string>> Heartbeats(TestDb db)
+    {
+        await using var ctx = db.Context();
+        return await ctx.JobProcesses.OrderBy(p => p.Holder).Select(p => p.Holder).ToListAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task TheHolderAndTheStandbySeeEachOther_UntilOneStops(string provider)
+    {
+        using var db = new TestDb(provider: provider);
+        var clock = new TestClock(Start);
+        var (a, pa) = Lease(db, clock, "WEB01/100/aaaa");
+        var (b, pb) = Lease(db, clock, "WEB02/200/bbbb");
+        await using var _ = pa;
+        await using var __ = pb;
+        var changes = 0;
+        a.AlarmChanged += () => changes++;
+
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Should().Match<LeaseStatus>(s => s.Self == "WEB01/100/aaaa" && s.Others.Count == 0 && s.Alarm == null);
+        (await b.HoldAsync()).Should().BeFalse();
+        b.Status.Others.Should().Equal("WEB01/100/aaaa");
+        b.Status.Alarm.Should().Contain("WEB01, process 100").And.Contain("WEB02, process 200");
+
+        // The holder sees the standby at its next check.
+        clock.Now = Start + BackgroundJobLease.RenewAfter;
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Others.Should().Equal("WEB02/200/bbbb");
+        a.Status.Alarm.Should().Contain("WEB01, process 100").And.Contain("WEB02, process 200");
+        changes.Should().Be(1);
+        (await Heartbeats(db)).Should().Equal("WEB01/100/aaaa", "WEB02/200/bbbb");
+
+        // The standby stops (recycled, or killed): its heartbeat lapses as a lease does, and its row is cleared.
+        clock.Now = Start + BackgroundJobLease.Expiry;
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Others.Should().Equal(["WEB02/200/bbbb"], "it last beat at the start, an expiry ago");
+        clock.Now = Start + BackgroundJobLease.Expiry + BackgroundJobLease.RenewAfter;
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Alarm.Should().BeNull();
+        changes.Should().Be(2);
+        (await Heartbeats(db)).Should().Equal("WEB01/100/aaaa");
+
+        // Let go at shutdown, its own heartbeat goes too: the next process isn't alarmed by it.
+        await a.ReleaseAsync();
+        (await Heartbeats(db)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AHeartbeatFromADeadProcessOnThisMachine_IsntAnAlarm()
+    {
+        using var db = new TestDb();
+        var clock = new TestClock(Start);
+        await using (var ctx = db.Context())
+        {
+            ctx.JobProcesses.Add(new Domain.Entities.JobProcess { Holder = $"{Environment.MachineName}/{DeadHolderTakeoverTests.DeadPid()}/dead", StartedAtUtc = Start, LastSeenAtUtc = Start });
+            await ctx.SaveChangesAsync();
+        }
+        var (a, pa) = Lease(db, clock, $"{Environment.MachineName}/{Environment.ProcessId}/aaaa");
+        await using var _ = pa;
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Alarm.Should().BeNull("that process is gone");
+    }
+
+    [Fact]
+    public async Task AStandbyWithNoAlarm_StandsByQuietly_AndAReleaseByAStandbyClearsItsHeartbeat()
+    {
+        using var db = new TestDb();
+        var clock = new TestClock(Start);
+        var (a, pa) = Lease(db, clock, "WEB01/100/aaaa");
+        var (b, pb) = Lease(db, clock, "WEB02/200/bbbb");
+        await using var _ = pa;
+        await using var __ = pb;
+        (await a.HoldAsync()).Should().BeTrue();
+        (await b.HoldAsync()).Should().BeFalse();
+        await b.ReleaseAsync();
+        (await Heartbeats(db)).Should().Equal("WEB01/100/aaaa");
+    }
+}
+
+/// <summary>A lease that sees a second process on the database.</summary>
+public sealed class AlarmLease : IJobLease
+{
+    public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(true);
+    public LeaseStatus Status { get; } = new(LeaseState.Held, "WEB01/100/aaaa", null, null, null, null) { Self = "WEB01/100/aaaa", Others = ["WEB02/200/bbbb"] };
+}
+
+/// <summary>The app on a process that sees another on its database.</summary>
+public sealed class SecondProcessApp : TideApp
+{
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        Microsoft.AspNetCore.TestHost.WebHostBuilderExtensions.ConfigureTestServices(builder, services =>
+        {
+            Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.RemoveAll<IJobLease>(services);
+            services.AddSingleton<IJobLease, AlarmLease>();
+        });
+    }
+}
+
+public class SecondProcessAlarmTests(SecondProcessApp app) : IClassFixture<SecondProcessApp>
+{
+    [Fact]
+    public async Task HealthJobs_IsDegraded()
+    {
+        var res = await app.CreateClient().GetAsync("/health/jobs");
+        (await res.Content.ReadAsStringAsync()).Should().Be("Degraded");
+        var check = new JobsHealthCheck(new JobMonitor(TimeProvider.System), new AlarmLease(), TimeProvider.System);
+        var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        result.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
+        result.Description.Should().Contain("WEB01, process 100").And.Contain("WEB02, process 200");
+    }
+
+    [Fact]
+    public async Task AnAdministrator_SeesTheBanner_NamingBothProcesses()
+    {
+        await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Shared.SecondProcessBanner>(app, "/");
+        var html = await page.Html();
+        html.Should().Contain("WEB01, process 100").And.Contain("WEB02, process 200").And.Contain("admin/system");
+    }
+
+    [Fact]
+    public async Task SomeoneWhoIsntAnAdministrator_DoesNot()
+    {
+        await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Shared.SecondProcessBanner>(app, "/",
+            @as: new ComponentHarness.SignIn("dev:sam", "Sam", "Analyst"));
+        (await page.Html()).Should().NotContain("process 200");
+    }
+
+    [Fact]
+    public async Task Diagnostics_HasALine_NamingBothProcesses()
+    {
+        await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Admin.DiagnosticsAdmin>(app, "/admin/system");
+        var html = await page.HtmlOnce("Second process");
+        html.Should().Contain("Second process").And.Contain("WEB02, process 200");
+    }
+}
+
+public class SecondProcessCheckTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void JobChecks_AddAProblemLine_ForASecondProcess_OnTheHolderOrAStandby()
+    {
+        var jobs = new JobMonitor(new TestClock(Now));
+        foreach (var lease in new[]
+                 {
+                     new LeaseStatus(LeaseState.Held, "WEB01/100/aaaa", Now.AddMinutes(3), Now, Now, null) { Self = "WEB01/100/aaaa", Others = ["WEB02/200/bbbb"] },
+                     new LeaseStatus(LeaseState.StandingBy, "WEB02/200/bbbb", Now.AddMinutes(3), null, Now, null) { Self = "WEB01/100/aaaa", Others = ["WEB02/200/bbbb"] },
+                 })
+        {
+            var checks = SystemDiagnostics.JobChecks(jobs.States, lease, JobHealth.Evaluate(jobs.States, lease, Now)).ToList();
+            checks.Should().ContainSingle(c => c.Label == "Second process").Which.Should().Match<HealthItem>(c =>
+                c.Level == CheckLevel.Problem && c.Detail.Contains("WEB01, process 100") && c.Detail.Contains("WEB02, process 200"));
+        }
+        var alone = new LeaseStatus(LeaseState.Held, "WEB01/100/aaaa", Now.AddMinutes(3), Now, Now, null) { Self = "WEB01/100/aaaa" };
+        SystemDiagnostics.JobChecks(jobs.States, alone, JobHealth.Evaluate(jobs.States, alone, Now)).Should().NotContain(c => c.Label == "Second process");
     }
 }
 
