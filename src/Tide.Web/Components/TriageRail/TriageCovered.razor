@@ -8,6 +8,7 @@
 @inject ActionService ActionSvc
 @inject StoryService Stories
 @inject ICurrentUser CurrentUser
+@inject OrgClock Clock
 
 @if (Coverage.Count > 0)
 {
@@ -17,7 +18,7 @@
         <a class="tide-rail-article-title" href="articles/@main.ArticleId">@main.ArticleTitle</a>
         <div class="tide-rail-badges small">
             @if (_known?.Article is { } a) { <ClassBadge Classification="a.Classification" Priority="a.Priority" /> }
-            <span class="tide-muted">@(main.BriefDate is { } d ? $"briefed {Ui.ShortDay(d)}" : "not briefed yet")</span>
+            <span class="tide-muted">@(TriageNews.BriefedSaid(main, Clock.Today) ?? "not briefed yet")</span>
             @if (!main.Attachable) { <span class="tide-muted">· can't take another report now</span> }
         </div>
         @if (_known is { Actions: { } open })

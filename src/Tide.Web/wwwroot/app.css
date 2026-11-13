@@ -376,7 +376,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-chip-remove { display: inline-flex; padding: 0 var(--tide-space-1); margin-right: calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
-.tide-dt-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+/* A table that scrolls inside its card. Positioned, so a visually hidden header label in it (absolutely placed) is
+   clipped with the rest of the table rather than widening the page. */
+.tide-dt-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; position: relative;
     background: linear-gradient(to right, var(--tide-surface) 30%, transparent) left center / 2rem 100% no-repeat local,
         linear-gradient(to left, var(--tide-surface) 30%, transparent) right center / 2rem 100% no-repeat local,
         radial-gradient(farthest-side at 0 50%, var(--tide-shadow), transparent) left center / .75rem 100% no-repeat scroll,

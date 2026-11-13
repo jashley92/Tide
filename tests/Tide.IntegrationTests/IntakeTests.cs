@@ -613,7 +613,17 @@ public class IntakeServiceTests : IDisposable
         var coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage.Single();
         coverage.Why.Should().Be("CVE-2026-0001");
         coverage.ArticleTitle.Should().Be("Earlier VPN article");
+        coverage.BriefDate.Should().BeNull("a brief that hasn't been presented hasn't briefed it, as Search says");
+        coverage.OnBrief.Should().Be(new DateOnly(2026, 10, 14));
+
+        await using (var db = _db.Context())
+        {
+            (await db.Briefs.SingleAsync(b => b.Id == brief.Id)).Status = BriefStatus.Presented;
+            await db.SaveChangesAsync();
+        }
+        coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage.Single();
         coverage.BriefDate.Should().Be(new DateOnly(2026, 10, 14));
+        coverage.OnBrief.Should().BeNull();
     }
 
     [Fact]

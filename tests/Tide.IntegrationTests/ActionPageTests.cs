@@ -213,4 +213,20 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
         (await r.Html()).Should().Contain("Add checklist item").And.NotContain("Add hunt query").And.NotContain("<h2>Hunt queries");
     }
+
+    [Fact]
+    public async Task AHistoryLineByAPerson_ShowsTheirInitials_AndOnlyTidesOwnLinesShowT()
+    {
+        // Every history line showed "T" (TIDE's mark), even one naming Robin, beside Robin's own "R" comments.
+        var robin = new SignIn("dev:hist-robin", "Robin Hale", "Analyst", "Admin");
+        var teamId = await TeamId("Cyber Defense");
+        var number = await As((actions, _) => actions.CreateAsync(new ActionForm { Title = "History initials", Kind = ActionKind.Block, TeamId = teamId }), robin);
+
+        await using var page = await RenderAsync<ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number }, robin);
+        var html = System.Net.WebUtility.HtmlDecode(await page.HtmlOnce("History initials"));
+
+        var line = html[html.IndexOf("tide-feed-line", StringComparison.Ordinal)..];
+        line = line[..line.IndexOf("</li>", StringComparison.Ordinal)];
+        line.Should().Contain("Robin Hale").And.Contain(">RH</span>").And.NotContain("tide-feed-sys");
+    }
 }

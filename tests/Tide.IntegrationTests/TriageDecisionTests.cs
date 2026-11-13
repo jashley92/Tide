@@ -175,7 +175,15 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         var briefed = Covered(attachable: true, brief: new DateOnly(2026, 11, 9));
         Triage.Suggestion(briefed, briefed, 1)
             .Should().Be("Already covered by “Flaw” (briefed Mon Nov 9), so the suggested step is to attach it as another report.");
+        // On a brief not yet presented: not "briefed", as Search says of the same article.
+        var today = new DateOnly(2026, 11, 12);
+        var onToday = Covered(attachable: true, brief: null) with { OnBrief = today };
+        Triage.Suggestion(onToday, onToday, 1, today)
+            .Should().Be("Already covered by “Flaw” (on today's brief, not presented yet), so the suggested step is to attach it as another report.");
+        Tide.Web.Services.TriageNews.BriefedSaid(onToday with { OnBrief = today.AddDays(1) }, today).Should().Be("on the brief for Fri Nov 13, not presented yet");
+        Tide.Web.Services.TriageNews.BriefedSaid(briefed, today).Should().Be("briefed Mon Nov 9");
         var draft = Covered(attachable: true, brief: null);
+        Tide.Web.Services.TriageNews.BriefedSaid(draft, today).Should().BeNull();
         Triage.Suggestion(draft, draft, 3)
             .Should().Be("Already covered by “Flaw”, so the suggested step is to attach all 3 as more reports of it.");
         Triage.Suggestion(null, Covered(attachable: false, brief: null), 1)
