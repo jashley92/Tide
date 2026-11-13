@@ -57,6 +57,7 @@ else
             <ChangedElsewhere By="@_changedBy" What="brief's presenter or title slide line" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
             <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
             <h1>@(AsToday ? "Today, " : "Brief for ")@Ui.Day(_date)</h1>
+            @if (AsToday) { <GuideLink /> }
             @if (AsToday && Clock.Days.HolidayOn(Clock.Today) is { } holiday)
             {
                 <div class="alert alert-info small py-2 mb-2" role="status"><span class="bi bi-calendar-x me-1" aria-hidden="true"></span>@holiday: no brief today. This is the next one.</div>

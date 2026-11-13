@@ -258,7 +258,8 @@ uses, before anything else.
   instead. It stays `due` until the tour ends (Done, Skip tour, Escape, or leaving the page another way), so a reload
   mid-tour starts it again. Then it's `done`, and What's new and the what-changed tips up to the release running are
   marked seen (`TourService.FinishedAsync`): someone shown round doesn't need them. A second tab of the same person's
-  doesn't start another tour while one shows it (`TourClaims`, in memory).
+  doesn't start another first tour while one shows it (`TourClaims`, in memory); a tour or guide that's asked for starts
+  whatever another tab shows.
 - **The steps.** `Tours` (`Tide.Application/Operations/Tours.cs`) lists each step's page, the permission it needs, the
   control it points at and what it says, and which steps each role group's tour has. A step the person can't use is
   left out; a Reader or a Visitor has no tour. No step is in present mode.

@@ -8,13 +8,15 @@
    light scrim (GuideStepDialog): each step is announced, and Escape, Skip tour (End guide) or Done ends it, focus going
    back to what started it when that's still there (Help's Take the tour, the page's Show me around), else to the page's
    heading. Leaving the page another way ends it too. The first tour stays due until it ends, so a reload mid-tour starts
-   it again; a second tab of the same person's doesn't start another tour or guide (TourClaims). A guide stores nothing. *@
+   it again; a second tab of the same person's doesn't start another first tour (TourClaims). A guide stores nothing. *@
 @implements IAsyncDisposable
 @using Tide.Application.Operations
 @inject PageTipService Tips
 @inject TourService Tour
 @inject TourRequests TourAsked
 @inject TourClaims Claims
+@inject GuideStarts Starts
+@inject ToastService Toasts
 @inject OnboardingGate Gate
 @inject AuthenticationStateProvider Auth
 @inject ICurrentUser CurrentUser
@@ -147,19 +149,27 @@ else if (Tip is { } tip)
     // The tour from its first step: on Today, or, asked from Help, on Help until Next.
     private void StartTour(bool first, bool fromHelp) => Start(Tour.Steps, null, first, fromHelp, navigate: !fromHelp);
 
-    // A guide on its page: the one open, from its Show me around; from Help, its page is opened first. Learn to present
-    // isn't the layout's: Help links to present mode's rehearsal, which shows it.
-    private void StartGuide(Guide guide, bool fromHelp)
+    // A guide on its page: the one open, from its Show me around; from Help, its page is opened first (for an article's
+    // or an action's, a real one: GuideStarts). Learn to present isn't the layout's: Help links to present mode's
+    // rehearsal, which shows it.
+    private async Task StartGuideAsync(Guide guide, bool fromHelp)
     {
         if (guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
-        var page = fromHelp ? guide.Page : OpenPage;
+        var page = fromHelp ? await Starts.PageAsync(guide) : OpenPage;
+        if (page is null)
+        {
+            Toasts.Show($"There's nothing to show {guide.Title.ToLowerInvariant()} on yet.");
+            return;
+        }
         Start(guide.Steps.Select(s => s with { Route = page }).ToList(), guide, first: false, fromHelp, navigate: fromHelp);
     }
 
-    // The steps from the first. Not while another tab of the person's shows the tour or a guide.
+    // The steps from the first. The first-sign-in tour, which starts by itself, not while another tab of the person's
+    // shows it; one asked for (Help, What's new, Show me around) starts here whatever another tab, or one closed a moment
+    // ago and not yet gone, is showing.
     private void Start(IReadOnlyList<TourStep> steps, Guide? guide, bool first, bool fromHelp, bool navigate)
     {
-        if (steps.Count == 0 || Step is not null || !Claims.TryClaim(CurrentUser.UserId, this)) return;
+        if (steps.Count == 0 || Step is not null || first && !Claims.TryClaim(CurrentUser.UserId, this)) return;
         (_firstTour, _fromHelp, _guide) = (first, fromHelp, guide);
         Tip = null;
         _tour = steps;
@@ -208,9 +218,7 @@ else if (Tip is { } tip)
     });
 
     private void OnGuideAsked(string key, bool fromHelp) => _ = InvokeAsync(() =>
-    {
-        if (Guides.Find(key, CurrentUser.Has) is { } guide) StartGuide(guide, fromHelp);
-    });
+        Guides.Find(key, CurrentUser.Has) is { } guide ? SafelyAsync(() => StartGuideAsync(guide, fromHelp)) : Task.CompletedTask);
 
     // What's new's Take the tour: it has closed, marked seen; the tour runs, and a page's tip waits until it's over.
     private void TakeTourFromWhatsNew() => StartTour(first: false, fromHelp: false);

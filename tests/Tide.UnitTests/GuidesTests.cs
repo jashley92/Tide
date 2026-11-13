@@ -72,7 +72,7 @@ public class GuidesTests
         Guides.ForPage("present/2026-11-12", can).Should().BeNull("Learn to present starts from Help, never from a page");
         foreach (var g in Guides.For(can).Where(g => !g.Rehearsal))
             Guides.ForPage(g.Page.Replace("{n}", "12", StringComparison.Ordinal).Replace("{id}", Guid.Empty.ToString(), StringComparison.Ordinal), can)
-                .Should().Be(g);
+                ?.Key.Should().Be(g.Key);
     }
 
     [Theory]

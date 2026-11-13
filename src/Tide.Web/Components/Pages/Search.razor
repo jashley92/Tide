@@ -17,12 +17,13 @@
     <div>
         <h1>Search</h1>
         <div class="tide-sub">Articles, actions and stories. Paste an IP, domain, URL, hash, email address or CVE to find every mention.</div>
+        <GuideLink />
     </div>
 </div>
 
 <div class="tide-card">
     <form class="d-flex gap-2 flex-wrap" role="search" @onsubmit="Go" @onsubmit:preventDefault="true">
-        <input class="tide-maxw-2xl form-control" type="search" maxlength="500" aria-label="Search"
+        <input id="search-q" class="tide-maxw-2xl form-control" type="search" maxlength="500" aria-label="Search"
                placeholder='Words, "a phrase", A-12, an indicator or a CVE' @bind="_text" />
         <button class="btn btn-primary" type="submit"><span class="bi bi-search" aria-hidden="true"></span> Search</button>
     </form>

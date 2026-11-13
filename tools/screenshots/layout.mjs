@@ -926,6 +926,25 @@ const rehearsal = (...keys) => async page => {
   await wideFont(page);
 };
 
+/** Setup: the page's guide started from its Show me around, then `keys` (Enter: Next); wider letters. */
+const guideOn = (...keys) => async page => {
+  await page.locator('#tide-guide-start').click();
+  await page.locator('.tide-tour').waitFor();
+  await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
+  await wideFont(page);
+};
+
+/** Setup: a guide started from Help's Guides (`key`), which opens its page. */
+const guideFromHelp = key => async page => {
+  await page.goto(new URL('./help', page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  await page.locator(`#help-guide-${key}`).click();
+  await page.locator('.tide-tour').waitFor();
+  await idle(page);
+  await wideFont(page);
+};
+
 /** Setup: today's meeting started (or taken up) in another browser, then this page asks for a rehearsal of it. */
 const rehearsalWhileLive = async (page, demo) => {
   for (const c of meetingGuests.contexts) await c.close().catch(() => {});
@@ -3612,6 +3631,15 @@ const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour
 const rehearsalRules = [...tourRules, visible('.tide-rehearsal'), inWindow('.tide-rehearsal'), hidden('.tide-present-tools .btn-primary'),
   fits('.tide-present-top'), visible('.tide-tip-target')];
 
+/** A page guide's step: a tour step's rules, with the control it's about ringed. */
+const guideRules = [...tourRules, visible('.tide-tip-target')];
+
+/** As guideRules, on a page with a context rail: the step keeps off the rail where it's docked. */
+const railGuideRules = [...guideRules, [1500, allBesides('.tide-tour', '#tide-rail')]];
+
+/** Show me around in a page's header: shown, within the window, and the header still fits. */
+const guideLinkRules = [noSidewaysScroll, visible('#tide-guide-start'), inWindow('#tide-guide-start'), fits('.tide-page-head')];
+
 /** The page is still `path` (from the app's root: "/" for Today). */
 const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseURI).pathname.replace(/\/$/, '') + path === location.pathname
   ? [] : [`the page is ${location.pathname}`], path);
@@ -4259,6 +4287,29 @@ const pages = [
     rules: [...rehearsalRules, visible('.tide-wrap'), [1500, visible('#present-end.tide-tip-target:disabled')]] },
   { name: 'rehearsal-escape', route: '/help', setup: rehearsal('Escape'), widths: [1440],
     rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('h1'), visible('.tide-rehearsal')] },
+  // Each page's Show me around, in its header, at three widths.
+  ...[['today', '/'], ['triage', '/triage'], ['article', '/articles/{vpnArticle}'], ['actions', '/actions'], ['action', '/actions/{detailAction}'],
+    ['metrics', '/metrics'], ['trends', '/trends'], ['stories', '/stories'], ['adversaries', '/adversaries'], ['coverage', '/coverage'],
+    ['library', '/library'], ['stack', '/stack'], ['search', '/search'], ['workload', '/workload'], ['rotation', '/rotation']]
+    .map(([key, route]) => ({ name: `guide-link-${key}`, route, setup: wideFont, widths: [1920, 1440, 780], rules: guideLinkRules })),
+  // A page's guide, its steps beside what they point at: on the page's own controls; on the context rail docked (1920) or
+  // on its Context button where it's shut (1440, 780); and a lookup's export in the rail.
+  { name: 'guide-metrics', route: '/metrics', setup: guideOn(), widths: [1920, 1440, 780], rules: [...guideRules, ...tabWraps('.tide-tour', 4)] },
+  { name: 'guide-triage-decide', route: '/triage', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780], rules: guideRules },
+  { name: 'guide-actions-rail', route: '/actions', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
+    rules: [...railGuideRules, [1500, visible('#tide-rail.tide-tip-target')]] },
+  { name: 'guide-today-rail', route: '/', setup: guideOn('Enter', 'Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
+    rules: [...railGuideRules, visible('#tide-rail.tide-tip-target, #tide-rail-toggle.tide-tip-target')] },
+  { name: 'guide-search-export', route: '/search?q=203.0.113.45', setup: guideOn('Enter', 'Enter', 'Enter'), widths: [1920, 1440, 780],
+    rules: [...railGuideRules, [1500, visible('#lookup-export-h.tide-tip-target')]] },
+  { name: 'guide-rotation', route: '/rotation', setup: guideOn('Enter'), widths: [1920, 1440, 780], rules: guideRules },
+  { name: 'guide-dark', route: '/stack', context: { theme: 'dark' }, setup: guideOn(), widths: [1440], rules: guideRules },
+  // Started from Help's Guides: its page opens, the step on its control; the article editor's on a real article.
+  { name: 'guide-from-help', route: '/help', setup: guideFromHelp('trends'), widths: [1440], rules: [...guideRules, stillAt('/trends')] },
+  { name: 'guide-from-help-editor', route: '/help', setup: guideFromHelp('article'), widths: [1920], rules: guideRules },
+  // Escape ends it, and focus is back on Show me around.
+  { name: 'guide-escape', route: '/library', setup: guideOn('Escape'), widths: [1440],
+    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('#tide-guide-start')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;

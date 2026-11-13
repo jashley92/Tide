@@ -100,6 +100,7 @@ else
                     <a class="tide-kcard-parent" href="@Ui.ActionUrl(parentRow.Number)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parentRow.Number)</a>
                 }
                 <PresenceNote Place="@ActionPlace(a.Number)" Editing="Editing" />
+                <GuideLink />
             </div>
             <div class="tide-sub tide-action-who">
                 <span>@a.Team?.Name</span> &middot; <span><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
