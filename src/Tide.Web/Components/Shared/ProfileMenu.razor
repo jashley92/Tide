@@ -9,14 +9,14 @@
 
 <div class="tide-profile" @ref="_holder">
     <button type="button" class="tide-profile-btn" @ref="_button" @onclick="Toggle" title="@CurrentUser.DisplayName"
-            aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-label="Account menu">
+            aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_open ? "account-menu" : null)" aria-label="Account menu">
         <span class="tide-avatar" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
     </button>
 
     @if (_open)
     {
         <div class="tide-popover-backdrop" @onclick="Close"></div>
-        <div class="tide-popover tide-popover-end" role="menu" aria-label="Account">
+        <div class="tide-popover tide-popover-end tide-profile-pop" id="account-menu" role="menu" aria-label="Account" data-tab-through>
             <div class="tide-profile-id">
                 <span class="tide-avatar tide-avatar-lg" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
                 <div class="tide-profile-id-text">

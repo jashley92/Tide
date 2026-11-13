@@ -145,6 +145,18 @@ const lanesFillTheHeight = {
   }),
 };
 
+/** On a narrow window the board's lanes stay tall enough to read a card in (8rem of each), the page scrolling instead. */
+const lanesTallEnough = {
+  name: 'each lane shows at least 8rem of its cards',
+  check: page => page.evaluate(() => {
+    const lanes = [...document.querySelectorAll('.tide-board .tide-kcol-cards')].filter(l => l.getClientRects().length);
+    if (!lanes.length) return ['no lanes shown'];
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return lanes.flatMap(l => l.clientHeight >= 8 * rem - 1 ? []
+      : [`the ${l.closest('.tide-kcol')?.dataset.status} lane shows ${l.clientHeight}px of its cards`]);
+  }),
+};
+
 /** The closed strip has a chip for each way of closing, each a drop target (a .tide-kchip with its status) and shown. */
 const chipsAreDropTargets = {
   name: 'a drop target for each way of closing',
@@ -240,12 +252,14 @@ const reopenNamed = {
 
 const selectedAction = page => page.evaluate(() => {
   const rows = [...document.querySelectorAll('.tide-action-row')];
-  return { at: rows.findIndex(r => r.classList.contains('selected')), focused: rows.indexOf(document.activeElement), row: new URL(location.href).searchParams.get('row') };
+  const at = rows.findIndex(r => r.classList.contains('selected')), params = new URL(location.href).searchParams;
+  const number = rows[at]?.querySelector('a[href^="actions/"]:not(.tide-kcard-parent)')?.getAttribute('href').match(/\d+/)?.[0];
+  return { at, focused: rows.indexOf(document.activeElement), row: params.get('row'), card: params.get('card'), number };
 });
 
 /**
- * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names it), K and
- * the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
+ * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names its action),
+ * K and the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
  */
 const actionKeys = {
   name: 'J and K move the selected action; T in a field is typing',
@@ -257,7 +271,8 @@ const actionKeys = {
       await idle(page);
       const now = await selectedAction(page);
       if (now.at !== at || now.focused !== at) problems.push(`after ${key} row ${now.at + 1} is selected and row ${now.focused + 1} has focus, not row ${at + 1}`);
-      if ((now.row ?? '0') !== String(at)) problems.push(`after ${key} the address says row=${now.row}, not ${at}`);
+      // The address names the selected action by its number (the first row is left out), not by its place.
+      if (now.row !== null || now.card !== (at ? now.number : null)) problems.push(`after ${key} the address says ${new URLSearchParams({ ...(now.row && { row: now.row }), ...(now.card && { card: now.card }) })}, not card=${at ? now.number : '(none)'}`);
     }
     const takes = await page.locator('.tide-row-take').count();
     const box = page.getByRole('searchbox', { name: 'Search actions' });
@@ -2443,6 +2458,26 @@ async function selectUnread(page) {
   for (let i = 0; i < 12 && !(await unread()); i++) await pressJ(page);
 }
 
+/** Setup: the account menu opened from the keyboard (Enter on the avatar), then the down arrow pressed on the avatar. */
+async function accountMenuArrow(page) {
+  await page.locator('.tide-profile-btn').focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.tide-profile [role="menu"]').waitFor();
+  await page.keyboard.press('ArrowDown');
+  await idle(page);
+}
+
+/** The down arrow on the open account menu's avatar went into the menu: it's still open, focus is in it, and Triage's
+ * selection stayed on its first row (the address names no other). */
+const arrowIntoAccountMenu = holds('the down arrow goes into the account menu, not the list under it', () => {
+  const pop = document.querySelector('.tide-profile [role="menu"]');
+  if (!pop) return ['the account menu closed'];
+  const wrong = [];
+  if (!pop.contains(document.activeElement)) wrong.push(`focus is on ${document.activeElement?.outerHTML.slice(0, 90)}, not in the menu`);
+  if (new URLSearchParams(location.search).has('row')) wrong.push(`Triage's selection moved (${location.search})`);
+  return wrong;
+});
+
 /** Setup: the first "Looks like one event" group opened, its reports listed under it. */
 async function openGroup(page) {
   await page.locator('.tide-triage-group .tide-group-toggle').first().click();
@@ -3651,6 +3686,8 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
       onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // A narrow window: the lanes keep room to read a card, and the page scrolls.
+  { name: 'actions-board-narrow', route: '/actions?view=open&layout=board', widths: [700, 641, [400, 800]], rules: [noSidewaysScroll, lanesTallEnough] },
   // Who has an action can be an external team's ticket reference: the longest wraps within its card and its row rather
   // than widening them, on the board and the list.
   { name: 'actions-board-long-ticket', route: '/actions?view=open&layout=board', setup: longTicket, widths: [[1440, 900], [780, 900]],
@@ -3763,6 +3800,9 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-pull-head .tide-pull-all > button'), fits('.tide-pull-head'), fits('.content .tide-card-scroll'), [1440, oneRow('.tide-pull-head')],
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
+  { name: 'triage-account-menu-arrow', route: '/triage', setup: accountMenuArrow, widths: [1440], rules: [arrowIntoAccountMenu] },
+  // Coverage: its tables scroll inside their cards at every width, the page itself never sideways.
+  { name: 'coverage', route: '/coverage', widths: [1440, 780, 700, 660, 641, 400], rules: [noSidewaysScroll] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
   // The decision bar, as designed: the list a column of about 440px, the selected item's buttons in a bar at the foot of

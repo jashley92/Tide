@@ -237,8 +237,10 @@ switched on screen; joining a live meeting switches to the team edition. Article
 (`BriefService.SetDiscussedAsync`, `PresentBriefs`).
 
 From an article's slide the presenter can open an action, an Our stack product's card or the article's indicators over
-the slide for the room (`LiveMeetings.Open`, `Show`), and edit its scorecard tags and techniques
-(`PresentTagEditor`, through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies). Raising actions is on
+the slide for the room (`LiveMeetings.Open`, `Show`). Anyone who may write articles, presenting or following, can edit
+an article's scorecard tags and techniques from **Edit tags** on its slide in the team edition (`PresentTagEditor`,
+through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies); the editor opens on their own screen
+only. Viewers and Visitors never see the button. Raising actions is on
 [actions-and-hunting.md](actions-and-hunting.md).
 
 The slides are the room's: they show what's being discussed and none of the presenter's controls. The presenter's

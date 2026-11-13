@@ -468,6 +468,32 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
     }
 
     [Fact]
+    public async Task TheListsAddress_NamesTheSelectedActionByItsNumber_SoALinkStillFindsItOnceRowsMove()
+    {
+        // ?row= was a place on the page: a shared link selected whatever action had come to be there.
+        var owner = Owner();
+        var token = $"alcard{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL card", owner);
+        await Raise(team, $"{token} 0");
+        await Raise(team, $"{token} 1");
+        await Raise(team, $"{token} 2");
+        int[] numbers;
+        await using (var all = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner))
+        {
+            await all.HtmlOnce(token);
+            numbers = [.. all.Component.Rows.Select(x => x.Number)];
+        }
+
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}&card={numbers[2]}&row=0", @as: owner);
+        await r.HtmlOnce(token);
+
+        r.Component.Selected.Should().Be(2, "?card= names the action, as on the board, ahead of any ?row=");
+        var address = r.Component.RowAddress(1);
+        address.Should().Contain($"card={numbers[1]}").And.NotContain("row=");
+        r.Component.RowAddress(0).Should().NotContain("card=").And.NotContain("row=", "the first row is left out of the address");
+    }
+
+    [Fact]
     public async Task TheTakeKey_IsOfferedOnlyToSomeoneWhoMayTakeActions()
     {
         await using (var viewer = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: Viewer))

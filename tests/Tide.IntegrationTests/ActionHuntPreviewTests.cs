@@ -415,4 +415,20 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         hunts.Should().HaveCount(2, "Keep puts the regenerated query on the action");
         hunts.Should().Contain(h => h.Dialect == "xql" && HuntQueryBuilder.WindowOf(h.GeneratedText) == 20);
     }
+
+    [Fact]
+    public async Task AfterAnIndicatorIsAdded_TheAddBoxIsUsableAgain()
+    {
+        // The box's Disabled followed the card's busy flag, drawn while the add was still running and never again after.
+        var (number, _) = await Raise("Indicator box stays usable");
+        await using var page = await Open(number);
+        await page.Click(p => { p.Drawer!.Hunt!.ToggleIndicators(); return Task.CompletedTask; });
+
+        await page.Click(p => p.Drawer!.Hunt!.AddIndicators(new([new IndicatorForm { Type = IndicatorType.Domain, Value = "after-add.example" }], [], Picked: false)));
+
+        var html = WebUtility.HtmlDecode(await page.Html());
+        html.Should().Contain("after-add.example");
+        Regex.Match(html, "<input[^>]*aria-label=\"New indicator\"[^>]*>").Value.Should().NotContain("disabled");
+        Button(html, ">Add</button>").Should().NotContain("disabled");
+    }
 }

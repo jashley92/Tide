@@ -91,12 +91,15 @@ public enum InboxCves
 public sealed record InboxPage(IReadOnlyList<InboxRow> Rows, int Total, int Page);
 
 /// <summary>
-/// Where a feed item overlaps what's already been covered: an article (and the first brief it was on, if any), the
-/// numbers of the actions raised from it that are still open, and whether a report can still be attached to it (it's
-/// a draft or ready, and no brief has been presented or sent with it).
+/// Where a feed item overlaps what's already been covered: an article (and the first brief that briefed it, if any: one
+/// presented or sent, as Search counts it), the numbers of the actions raised from it that are still open, and whether
+/// a report can still be attached to it (it's a draft or ready, and no brief has been presented or sent with it).
 /// </summary>
 public sealed record Coverage(string Why, Guid ArticleId, string ArticleTitle, DateOnly? BriefDate)
 {
+    /// <summary>The latest brief it's on that hasn't been presented yet, if any (Search's "not presented yet").</summary>
+    public DateOnly? OnBrief { get; init; }
+
     public IReadOnlyList<int> OpenActions { get; init; } = [];
     public bool Attachable { get; init; } = true;
 }
@@ -997,17 +1000,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                 .Join(db.Articles, l => l.ArticleId, a => a.Id, (l, a) => new { a.Id, a.Title, SourceUrl = (string?)l.Url }).ToListAsync(ct))
             .Select(a => (a.Id, a.Title, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct().ToList();
         var articleIds = byCve.Select(x => x.Id).Concat(recentLinks.Select(x => x.Id)).Distinct().ToList();
-        var briefs = await ArticleDates.FirstBriefedAsync(db, ct, articleIds);
+        var briefs = await Search.Lookups.BriefsAsync(db, articleIds, ct);
         var open = (await db.Actions.AsNoTracking()
                 .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))
                 .WhereOpen()
                 .Select(a => new { ArticleId = a.ArticleId!.Value, a.Number }).ToListAsync(ct))
             .GroupBy(a => a.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<int>)g.Select(a => a.Number).Order().ToList());
         var attachable = (await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Where(Unfrozen(db)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-        Coverage Of(string why, Guid id, string title) => new(why, id, title, briefs.TryGetValue(id, out var d) ? d : null)
+        Coverage Of(string why, Guid id, string title)
         {
-            OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
-        };
+            var on = briefs.GetValueOrDefault(id) ?? [];
+            return new(why, id, title, on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
+            {
+                OnBrief = on.Where(b => !b.Presented).Select(b => (DateOnly?)b.Day).Max(),
+                OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
+            };
+        }
         var result = new Dictionary<Guid, IReadOnlyList<Coverage>>();
         foreach (var item in items)
         {

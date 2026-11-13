@@ -101,6 +101,7 @@
                 </div>
                 <div>
                     <div class="tide-slide-section">History</div>
+                    @if (a.Events.Count == 0) { <div class="tide-present-help">None yet.</div> }
                     <ul class="tide-timeline">
                         @foreach (var e in a.Events)
                         {

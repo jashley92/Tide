@@ -518,7 +518,7 @@ else
         {
             var group = line.Group!;
             var n = line.Members.Count;
-            <p class="tide-triage-why">@Suggestion(attachTo, line.Members.SelectMany(m => m.Coverage).FirstOrDefault(), n)</p>
+            <p class="tide-triage-why">@Suggestion(attachTo, line.Members.SelectMany(m => m.Coverage).FirstOrDefault(), n, Clock.Today)</p>
             if (_promoting == group.Newest && _promotingGroup is not null)
             {
                 @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {n} as one and write")
@@ -563,7 +563,7 @@ else
             <p class="tide-triage-why">Promoted already: its article opens from the row.</p>
             return;
         }
-        <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1)</p>
+        <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1, Clock.Today)</p>
         if (_promoting == item.Id && _promotingGroup is null)
         {
             @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write")
@@ -617,11 +617,11 @@ else
     /// article that can still take a report covers it (<paramref name="attachTo"/>); otherwise promote, saying whether
     /// something covers it (<paramref name="covered"/>) that can't take it. Only what the row's flags already show is named.
     /// </summary>
-    internal static string Suggestion(Coverage? attachTo, Coverage? covered, int reports)
+    internal static string Suggestion(Coverage? attachTo, Coverage? covered, int reports, DateOnly today)
     {
         var one = reports == 1;
         if (attachTo is { } to)
-            return $"Already covered by “{Short(to.ArticleTitle)}”{(to.BriefDate is { } d ? $" (briefed {Ui.ShortDay(d)})" : "")}, so the suggested step is to "
+            return $"Already covered by “{Short(to.ArticleTitle)}”{(TriageNews.BriefedSaid(to, today) is { } when ? $" ({when})" : "")}, so the suggested step is to "
                 + (one ? "attach it as another report." : $"attach all {reports} as more reports of it.");
         if (covered is { } c)
             return $"Covered by “{Short(c.ArticleTitle)}”, which cannot take another report now, so the suggested step is to "
