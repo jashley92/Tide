@@ -13,8 +13,8 @@ public class ActionGuideTests
 
     private static ActionFacts Facts(ActionStatus status = ActionStatus.InProgress, ActionKind kind = ActionKind.Block, bool canWork = true,
         bool assigned = true, bool external = false, int openParts = 0, int emails = 0, bool waiting = false, bool mine = false,
-        bool canEditAll = false, bool topLevel = true) =>
-        new(status, kind, canWork, assigned, external, openParts, emails, waiting, mine, canEditAll, topLevel);
+        bool canEditAll = false, bool topLevel = true, bool onTeam = true) =>
+        new(status, kind, canWork, assigned, external, openParts, emails, waiting, mine, canEditAll, topLevel, OnTeam: onTeam);
 
     // The Next line's facts on Wednesday, its SLA worked out as the page does.
     private static NextFacts On(ActionStatus status, DateOnly? due, bool canWork = true, IReadOnlyList<LineageNode>? parts = null,
@@ -87,6 +87,9 @@ public class ActionGuideTests
 
         ActionGuide.CanTake(Facts(ActionStatus.Open)).Should().BeTrue();
         ActionGuide.CanTake(Facts(ActionStatus.Done)).Should().BeFalse();
+        ActionGuide.CanTake(Facts(ActionStatus.Open, onTeam: false)).Should().BeFalse("only a member of the action's team takes it on");
+        ActionGuide.Primary(Facts(ActionStatus.Open, assigned: false, onTeam: false)).Should().Be(ActionFlow.StartWork, "an analyst off the team still works it");
+        ActionGuide.More(Facts(ActionStatus.Open, onTeam: false)).Should().NotContain(ActionFlow.TakeIt);
         Enum.GetValues<ActionFlow>().Where(f => f != ActionFlow.None)
             .Should().OnlyContain(f => ActionGuide.Label(f).Length > 0 && ActionGuide.Icon(f).StartsWith("bi-"), "every flow has words and an icon");
         new[] { ActionFlow.HandOff, ActionFlow.SplitToTeams, ActionFlow.SplitOffPart, ActionFlow.Edit, ActionFlow.ChangeStatus, ActionFlow.Comment }

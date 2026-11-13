@@ -84,14 +84,14 @@ else if (Tip is { } tip)
     private string Announce => Step is { } s ? $"Step {_step + 1} of {_tour.Count}: {s.Title}. {s.Text}"
         : Tip is { } t && t == _placed && _tipShown ? $"Tip: {t.Title}. {t.Text}" : "";
 
-    // The page, without its query: a filter or a search rewriting the address is the same page.
-    private string Page => PageOf(Nav.Uri);
+    // The page open, without its query: a filter or a search rewriting the address is the same page.
+    private string OpenPage => PageOf(Nav.Uri);
 
     private string PageOf(string uri) => Nav.ToBaseRelativePath(uri).Split('?', '#')[0].ToLowerInvariant();
 
     protected override void OnInitialized()
     {
-        _page = Page;
+        _page = OpenPage;
         Nav.LocationChanged += OnLocationChanged;
         TourAsked.Asked += OnTourAsked;
     }
@@ -128,7 +128,7 @@ else if (Tip is { } tip)
             }
             // The tour has ended: focus on Help's Take the tour if it started and ended there, else the page's heading.
             if (wasStep && showing is not TourStep)
-                await JS.InvokeVoidAsync("tideTips.focusPage", _fromHelp && Page == "help" ? "#help-take-tour" : null);
+                await JS.InvokeVoidAsync("tideTips.focusPage", _fromHelp && OpenPage == "help" ? "#help-take-tour" : null);
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
     }
@@ -208,7 +208,7 @@ else if (Tip is { } tip)
     {
         _step = step;
         StateHasChanged();
-        if (!navigate || Step is not { } s || Page == s.Route.ToLowerInvariant()) return;
+        if (!navigate || Step is not { } s || OpenPage == s.Route.ToLowerInvariant()) return;
         _page = s.Route.ToLowerInvariant();
         Nav.NavigateTo(s.Route.Length == 0 ? Nav.BaseUri : s.Route);
     }

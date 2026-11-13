@@ -199,7 +199,7 @@ public static class DemoSeeder
         {
             await using var db = await dbs.CreateAsync(ct);
             var tags = await db.ScorecardTags.ToDictionaryAsync(t => t.Key, t => t.Id, ct);
-            var teams = await TeamsAsync(db, ct);
+            var teams = await TeamsAsync(db, dev, ct);
             var vpn = await db.Articles.FirstAsync(a => a.Title.StartsWith("Edge VPN"), ct);
             var adversaries = Adversaries(db);
             var sources = Sources(db);
@@ -256,7 +256,9 @@ public static class DemoSeeder
 
         // --- reference data ----------------------------------------------------------------------------------------
 
-        private static async Task<Dictionary<string, Team>> TeamsAsync(IAppDbContext db, CancellationToken ct)
+        // The sample teams and two more, with the dev sign-in on each: only a team's members take its actions on, and the
+        // pages the screenshot tools check take them.
+        private static async Task<Dictionary<string, Team>> TeamsAsync(IAppDbContext db, DevAuthOptions dev, CancellationToken ct)
         {
             var teams = await db.Teams.ToDictionaryAsync(t => t.Key, ct);
             var identity = new Team { Key = "identity-access", Name = "Identity & Access", SortOrder = 2 };
@@ -264,6 +266,8 @@ public static class DemoSeeder
             db.Teams.AddRange(identity, fraud);
             teams[identity.Key] = identity;
             teams[fraud.Key] = fraud;
+            foreach (var team in teams.Values)
+                db.TeamMembers.Add(new TeamMember { TeamId = team.Id, UserId = dev.UserId, DisplayName = dev.DisplayName, AddedAtUtc = DateTimeOffset.UtcNow });
             return teams;
         }
 

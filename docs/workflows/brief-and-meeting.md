@@ -60,6 +60,10 @@ zone). Someone without the team edition (a Reader, a Visitor) is sent to `/publi
 - the step strip, with one main button for whichever step is next (`BriefSteps.Next`: Mark ready, Present, Send, Post
   to SharePoint, or read it as sent). The step it's on also shows in the top bar of every page, as a link back to
   Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
+- a brief is Sent from its first real send, but while one of the two editions (security team and company-wide) has
+  gone and the other is still to go, Today's header status, the note under it, the strip's Send step and the brief chip
+  all say **1 of 2 sent**, and the next step is still Send (`BriefSteps.PartlySent`). They say **Sent** only once both
+  have gone, or once the one that went is the only edition with anything in it;
 - under the strip, from `Intake:PulledBy` on a working day, how many polled feeds haven't been pulled since, with
   **Pull all** (see [intake-and-triage.md](intake-and-triage.md#feeds-not-pulled-since-the-morning));
 
@@ -240,7 +244,8 @@ From an article's slide the presenter can open an action, an Our stack product's
 the slide for the room (`LiveMeetings.Open`, `Show`). Anyone who may write articles, presenting or following, can edit
 an article's scorecard tags and techniques from **Edit tags** on its slide in the team edition (`PresentTagEditor`,
 through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies); the editor opens on their own screen
-only. Viewers and Visitors never see the button. Raising actions is on
+only. Following the meeting doesn't take it away: an analyst following has it as the presenter does. Viewers,
+Visitors and action owners never see the button, nor does the company-wide edition. Raising actions is on
 [actions-and-hunting.md](actions-and-hunting.md).
 
 The slides are the room's: they show what's being discussed and none of the presenter's controls. The presenter's
@@ -348,7 +353,7 @@ What people in the meeting can do:
 |---|---|
 | Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the top bar with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
-| The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it (they can hand it on) and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
+| The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it when they're on that team, else the team's (they can hand it on), and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take them (when on their team) or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
 | The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 

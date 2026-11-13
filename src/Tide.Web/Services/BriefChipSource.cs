@@ -15,19 +15,22 @@ namespace Tide.Web.Services;
 /// What the top bar's brief chip says: the brief Today shows (<see cref="Day"/>), when it meets, and the step it's on
 /// (<see cref="BriefSteps.On"/> over the same steps as Today's strip). <see cref="Step"/> is null while the brief
 /// hasn't been started. <see cref="Met"/> is the strip's own fact that the meeting is over (its Present step is done):
-/// from then the chip says "presented" where the time was, as Today says when the brief met.
+/// from then the chip says "presented" where the time was, as Today says when the brief met. With one of the two
+/// editions gone and the other still to go (the Send step's <see cref="BriefStep.PartlySent"/>), the chip says
+/// "1 of 2 sent", as Today's header and strip do.
 /// </summary>
 public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, int Number, int Of, BriefStep? Step, bool Met = false)
 {
-    // Send done: nothing is left, and the chip says what the strip's last step says ("Sent", "Distributed", "Not sent").
-    private bool Finished => Step is { State: StepState.Done };
+    // Send done, or one edition of two gone: the chip says what the strip's last step says ("Sent", "Distributed", "Not
+    // sent", "1 of 2 sent").
+    private bool Finished => Step is { State: StepState.Done } or { PartlySent: true };
 
     /// <summary>What's seen in a wide window: "Brief 10:30 AM · step 3 of 5 · Order", "Brief 10:30 AM · not started",
-    /// "Brief presented · step 5 of 5 · Send", "Brief · Sent".</summary>
+    /// "Brief presented · step 5 of 5 · Send", "Brief · Sent", "Brief · 1 of 2 sent".</summary>
     public string Full => Step switch
     {
         null => $"Brief {Meets} · not started",
-        _ when Finished => $"Brief · {Step.Detail}",
+        _ when Finished => $"Brief · {Said}",
         _ => $"Brief {(Met ? "presented" : Meets)} · step {Number} of {Of} · {Step.Label}",
     };
 
@@ -35,7 +38,7 @@ public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, in
     public string Short => Step switch
     {
         null => Meets,
-        _ when Finished => Step.Detail.Split(" · ")[0],
+        _ when Finished => Said.Split(" · ")[0],
         _ => $"{(Met ? "Presented" : Meets)} · {Number}/{Of}",
     };
 
@@ -44,9 +47,13 @@ public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, in
     public string Name => Step switch
     {
         null => $"Brief at {Meets}, not started",
-        _ when Finished => $"Brief, {Step.Detail.Replace(" · ", ", ")}",
+        _ when Finished => $"Brief, {Said.Replace(" · ", ", ")}",
         _ => $"Brief {(Met ? "presented" : "at " + Meets)}, step {Number} of {Of}, {Step.Label}",
     };
+
+    // What a finished chip says: the strip's last step, or "1 of 2 sent" while the other edition is still to go (even
+    // when the strip has a failed send of it to point out).
+    private string Said => Step!.PartlySent ? BriefSteps.PartlySentLabel : Step.Detail;
 
     /// <summary>When the brief meets, as the chip says it: "10:30 AM", with the day in front ("Mon 10:30 AM") when
     /// that isn't today (a weekend or a holiday, when Today shows the next brief).</summary>

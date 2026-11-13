@@ -151,6 +151,60 @@ public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task OneOfTheTwoEditionsSent_TodaysHeaderTheChipAndTheStripAllSay1Of2Sent_AndSentOnlyOnceBothHaveGone()
+    {
+        // A real send of the team edition makes the brief Sent; the company-wide edition (the sample brief has articles
+        // below its ceiling) is still to go.
+        var briefId = await BriefChipPage.Change(app, b => b.Status = BriefStatus.Sent);
+        var team = await AddSend(briefId, Edition.Team);
+        Guid? company = null;
+        try
+        {
+            var chip = await BriefChipPage.On(app);
+            chip.Should().Contain(BriefChipPage.Full("Brief · 1 of 2 sent")).And.Contain(BriefChipPage.Short("1 of 2 sent"))
+                .And.Contain(BriefChipPage.Named("Brief, 1 of 2 sent"));
+
+            var today = await app.CreateClient().GetStringAsync("/");
+            BriefChipPage.In(today).Should().Contain(BriefChipPage.Full("Brief · 1 of 2 sent"));
+            today.Should().Contain("<span class=\"tide-step-detail\" id=\"step-send-detail\" title=\"1 of 2 sent\">1 of 2 sent</span>", "the strip says it");
+            today.Should().MatchRegex("<span class=\"tide-badge[^\"]*\">1 of 2 sent</span>", "the header's status says it");
+            today.Should().NotMatchRegex("<span class=\"tide-badge[^\"]*\">Sent</span>")
+                .And.NotContain("This brief has been sent.")
+                .And.Contain("Only the security team edition has been sent", "the note under the header says which went");
+
+            company = await AddSend(briefId, Edition.Public);
+            (await BriefChipPage.On(app)).Should().Contain(BriefChipPage.Full("Brief · Sent"));
+            today = await app.CreateClient().GetStringAsync("/");
+            today.Should().MatchRegex("<span class=\"tide-badge[^\"]*\">Sent</span>").And.Contain("This brief has been sent.")
+                .And.NotContain("1 of 2 sent");
+        }
+        finally
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.BriefSends.Where(s => s.Id == team || s.Id == company).ExecuteDeleteAsync();
+        }
+    }
+
+    // A real send of edition, recorded as the send log has it, published as the brief's change so the chip re-reads.
+    private async Task<Guid> AddSend(Guid briefId, Edition edition)
+    {
+        var send = new BriefSend
+        {
+            BriefId = briefId, BriefDate = BriefChipPage.Day(app), Edition = edition, Status = SendStatus.Sent, Subject = "Brief",
+            SentAtUtc = DateTimeOffset.UtcNow, SentById = "dev:someone", SentByName = "Someone",
+        };
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.BriefSends.Add(send);
+            await db.SaveChangesAsync();
+        }
+        await BriefChipPage.Change(app, b => b.EditVersion = Guid.NewGuid());
+        return send.Id;
+    }
+
+    [Fact]
     public async Task WhileTheMeetingIsLive_TheChipSaysSo_AndLeavesJoiningToTheBanner()
     {
         var briefId = await BriefChipPage.Change(app, b => b.Status = BriefStatus.Ready);

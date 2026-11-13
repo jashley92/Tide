@@ -241,6 +241,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     public async Task TakingAnAction_AtATeamsLimit_IsntRefused_ItWasActiveAlready()
     {
         var team = await Limited("Network Engineering", 1, ActiveLimitMode.Refuse);
+        await _db.Teams().AddMemberAsync(team, _db.User.UserId, _db.User.DisplayName);
         var a = await New(team);
         await _db.Actions().TakeAsync(a.Id);
         var taken = (await _db.Actions().GetAsync(a.Number))!.Action;
