@@ -70,7 +70,7 @@ public static class JobLeaseExtensions
 /// seconds of each other, well inside the margin.
 /// Singleton (it's asked from the hosted services, so it makes a scope for each database call).
 /// </summary>
-public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider time, ILogger<BackgroundJobLease> log, string? holder = null) : IJobLease, IDisposable
+public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider time, ILogger<BackgroundJobLease> log, string? holder = null) : IJobLease
 {
     /// <summary>The lease the background jobs share.</summary>
     public const string BackgroundJobs = "background-jobs";
@@ -145,6 +145,22 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         // A renewal is the one statement: it was this holder's, so it's held since it was taken.
         if (taken) return new LeaseStatus(LeaseState.Held, me, until, before.State == LeaseState.Held ? before.HeldSinceUtc : now, now, null);
         var row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
+        // Its holder's process is gone from this machine (it was killed, or crashed): taken over now rather than when it
+        // lapses, by one statement that matches only the holder just read, so a renewal or another takeover in between wins.
+        if (row is not null && IsGoneFromThisMachine(row.Holder))
+        {
+            var dead = row.Holder;
+            if (await db.JobLeases.Where(l => l.Name == BackgroundJobs && l.Holder == dead)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(l => l.AcquiredAtUtc, now)
+                        .SetProperty(l => l.Holder, me)
+                        .SetProperty(l => l.ExpiresAtUtc, until), ct) == 1)
+            {
+                log.LogInformation("Took over the background jobs' lease from {Dead}, whose process is no longer running.", Describe(dead));
+                return new LeaseStatus(LeaseState.Held, me, until, now, now, null);
+            }
+            row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
+        }
         if (row is null)
         {
             db.JobLeases.Add(new Domain.Entities.JobLease { Name = BackgroundJobs, Holder = me, AcquiredAtUtc = now, ExpiresAtUtc = until });
@@ -164,11 +180,15 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
 
     /// <summary>Lets the lease go (at shutdown), so a standing-by process takes over at its next check rather than when it
     /// lapses. Only this holder's lease is let go.</summary>
+    /// <remarks>At shutdown the host may already have disposed the container and the loggers (a test host does): nothing
+    /// here throws but to cancel, the gate is never disposed, and a log line that can't be written is dropped.</remarks>
     public async Task ReleaseAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        var entered = false;
         try
         {
+            await _gate.WaitAsync(ct);
+            entered = true;
             if (_status.State != LeaseState.Held) return;
             await using var scope = scopes.CreateAsyncScope();
             await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
@@ -177,13 +197,41 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
             await db.JobLeases.Where(l => l.Name == BackgroundJobs && l.Holder == me)
                 .ExecuteUpdateAsync(u => u.SetProperty(l => l.ExpiresAtUtc, now), ct);
             _status = LeaseStatus.NotChecked;
-            log.LogInformation("Let go of the background jobs' lease ({Holder}) at shutdown.", Holder);
+            TryLog(() => log.LogInformation("Let go of the background jobs' lease ({Holder}) at shutdown.", Holder));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            log.LogWarning(ex, "Couldn't let go of the background jobs' lease at shutdown; another process takes it when it lapses.");
+            TryLog(() => log.LogWarning(ex, "Couldn't let go of the background jobs' lease at shutdown; another process takes it when it lapses."));
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            if (entered) _gate.Release();
+        }
+    }
+
+    // A logger disposed with its host throws ObjectDisposedException, or an AggregateException of them from several
+    // providers: the line is dropped.
+    private static void TryLog(Action write)
+    {
+        try { write(); }
+        catch (Exception ex) when (ex is ObjectDisposedException or AggregateException) { /* the logging is gone */ }
+    }
+
+    /// <summary>Whether <paramref name="holder"/> ("MACHINE/pid/…") names this machine and a process id that isn't running
+    /// here. Conservative: a running process with that id (the holder, or another given its id since) is taken as alive,
+    /// and so is anything that can't be read or looked up.</summary>
+    public static bool IsGoneFromThisMachine(string? holder)
+    {
+        var parts = holder?.Split('/');
+        if (parts is not { Length: >= 3 } || !string.Equals(parts[0], Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var pid)) return false;
+        try
+        {
+            using var _ = System.Diagnostics.Process.GetProcessById(pid);
+            return false;
+        }
+        catch (ArgumentException) { return true; }   // no process has that id
+        catch (Exception) { return false; }
     }
 
     /// <summary>A holder id for a person: "WEB01, process 4312" (null for none).</summary>
@@ -194,5 +242,4 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         return parts.Length >= 2 && int.TryParse(parts[1], out var pid) ? $"{parts[0]}, process {pid}" : holder;
     }
 
-    public void Dispose() => _gate.Dispose();
 }
