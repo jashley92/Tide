@@ -55,7 +55,7 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         });
         (await r.Until(h => h.Step is not null, seconds: 5)).Should().BeTrue(key);
         // How many steps it says it has: "Step 1 of N".
-        var said = Regex.Match(await r.Html(), @"Step 1 of (\d+)");
+        var said = Regex.Match(await r.Html(), @"[Ss]tep 1 of (\d+)");
         said.Success.Should().BeTrue(key);
         return int.Parse(said.Groups[1].Value, CultureInfo.InvariantCulture);
     }

@@ -175,8 +175,9 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person("Viewer"));
         await r.Click(c => c.CheckAsync());
         var html = await r.Html();
-        html.Should().Contain("Want a walkthrough? Take the tour, see the whole day, or pick a guide in Help.");
-        html.Should().Contain("id=\"whatsnew-see-day\"");
+        html.Should().Contain("Want a walkthrough? Take the tour,").And.Contain(">see the whole day</button>").And.Contain("or pick a guide in Help");
+        html.Should().Contain("id=\"whatsnew-see-day\"").And.Contain("class=\"btn btn-link tide-inline-link\"", "a link in the line, not a third button");
+        html.Should().Contain("id=\"whatsnew-all\"").And.NotContain("btn-sm\" href=", "See all changes is a link in the line too");
         html.Should().Contain("id=\"whatsnew-take-tour\"").And.Contain(">Take the tour</button>");
         html.IndexOf("Take the tour</button>", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf(">Got it</button>", StringComparison.Ordinal),
             "Got it stays last, the main button");
@@ -221,7 +222,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, c => c.CheckAsync());
         await Do(r, c => c.WhatsNew!.SeeTheDayAsync());
         var html = await r.Html();
-        html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("Step 1 of");
+        html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("1 of");
         (await Seen(who)).Should().Be("1.13.0");
     }
 

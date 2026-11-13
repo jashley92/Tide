@@ -33,9 +33,11 @@
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)
 {
+    var parts = PartsNow;
     <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title"
                      AlsoLabel="@(_guide is null && _step == _tour.Count - 1 && WholeDay is not null ? GuideStepDialog.SeeTheWholeDay : null)" OnAlso="SeeTheWholeDayAsync"
                      Skips="@(SkipsTo is not null)" OnSkip="SkipAsync"
+                     Parts="@parts.Names" PartAt="@parts.At" PartIndex="@parts.Index" PartCount="@parts.Count"
                      OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
 }
 else if (Tip is { } tip)
@@ -76,6 +78,27 @@ else if (Tip is { } tip)
 
     // The step the tour or guide is at, shown or not yet.
     private TourStep? Current => _step < _tour.Count ? _tour[_step] : null;
+
+    // A long guide's parts as its steps run (consecutive steps of one part are one), and where this step is in them; no
+    // parts for a guide counted as a whole.
+    private (IReadOnlyList<string>? Names, int At, int Index, int Count) PartsNow
+    {
+        get
+        {
+            if (Current?.Part is null) return (null, 0, 0, 0);
+            var names = new List<string>();
+            int at = 0, from = 0, to = 0;
+            for (var i = 0; i < _tour.Count; i++)
+            {
+                if (i > 0 && _tour[i].Part == _tour[i - 1].Part) continue;
+                var end = i;
+                while (end < _tour.Count && _tour[end].Part == _tour[i].Part) end++;
+                if (_step >= i && _step < end) (at, from, to) = (names.Count, i, end);
+                names.Add(_tour[i].Part ?? "");
+            }
+            return (names, at, _step - from, to - from);
+        }
+    }
 
     // On the first step of a page's guide inline in An analyst's day: the step after it, where Skip the details goes.
     private int? SkipsTo

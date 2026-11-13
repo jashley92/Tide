@@ -42,15 +42,19 @@
                 }
             </div>
             <div class="tide-modal-actions">
-                @if (OffersTour)
-                {
-                    <p class="tide-whatsnew-more">Want a walkthrough? Take the tour, see the whole day, or pick a guide in Help.</p>
-                }
-                <a class="btn btn-outline-secondary btn-sm" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                @* Two buttons, Take the tour and Got it (the main one); the rest are links in the line beside them. *@
+                <p class="tide-whatsnew-more">
+                    @if (OffersTour)
+                    {
+                        <text>Want a walkthrough? Take the tour,
+                            <button type="button" class="btn btn-link tide-inline-link" id="whatsnew-see-day" @onclick="SeeTheDayAsync">see the whole day</button>,
+                            or pick a guide in Help &middot; </text>
+                    }
+                    <a id="whatsnew-all" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                </p>
                 @if (OffersTour)
                 {
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="whatsnew-take-tour" @onclick="TakeTourAsync">Take the tour</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="whatsnew-see-day" @onclick="SeeTheDayAsync">@GuideStepDialog.SeeTheWholeDay</button>
                 }
                 <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="CloseAsync">Got it</button>
             </div>

@@ -10,10 +10,17 @@ namespace Tide.Application.Operations;
 /// whole), and what to say. <paramref name="Opens"/>: a tab, section, menu or picker to open first when the control is
 /// inside it and shut (opening it only shows it), and <paramref name="Closes"/>, what closes it again without keeping
 /// anything chosen in it, when it has a close of its own. <paramref name="Section"/>: in a guide across pages, the page's
-/// own guide a step is part of (Skip the details on its first step goes on past it).
+/// own guide a step is part of (Skip the details on its first step goes on past it); <paramref name="Part"/>, the part of
+/// the day it's in, which its header counts by. <paramref name="Moves"/>: the step's control is out of the page's reading
+/// order on purpose (the top bar's brief chip); one in a rail, or in what it opens, is too (<see cref="Leaps"/>).
 /// </summary>
 public sealed record TourStep(string Key, string Route, Permission Needs, string? Target, string Title, string Text, string? Opens = null,
-    string? Closes = null, string? Section = null);
+    string? Closes = null, string? Section = null, string? Part = null, bool Moves = false)
+{
+    /// <summary>Whether its control may come before the last step's in the page's order: one in the top bar, in a rail
+    /// (it falls back to the rail's button), or in a tab, section, menu or picker it opens.</summary>
+    public bool Leaps => Moves || Opens is not null || (Target?.Contains("-rail-toggle", StringComparison.Ordinal) ?? false);
+}
 
 /// <summary>The tour each role takes: the main pages and controls they'll use, and only those.</summary>
 public static class Tours

@@ -12,8 +12,8 @@ public static partial class Guides
     private static string InRail(string target) => $"{target} || #tide-rail-toggle";
 
     private static TourStep Step(string key, Permission needs, string target, string title, string text, string? opens = null,
-        string? closes = null) =>
-        new(key, "", needs, target, title, text, opens, closes);
+        string? closes = null, bool moves = false) =>
+        new(key, "", needs, target, title, text, opens, closes, Moves: moves);
 
     // The ATT&CK picker, opened by Choose techniques and closed by its own Close, which drops anything ticked.
     private const string Attack = "#f-techniques", AttackClose = ".tide-atkm-panel .btn-close";
@@ -27,7 +27,7 @@ public static partial class Guides
             Step("head", Team, ".tide-page-head h1", "Today",
                 "Today is the day's brief and where it stands. The links above the title open the day before or after."),
             Step("chip", Write, "a.tide-brief-chip", "The brief, from anywhere",
-                "The top bar shows the brief's time and step on every page. Select it to come back here."),
+                "The top bar shows the brief's time and step on every page. Select it to come back here.", moves: true),
             Step("next", Write, ".tide-brief-head .btn-primary", "The next step",
                 "The main button does whatever the brief needs next: Mark ready, Present or Send."),
             Step("steps", Write, "ol.tide-steps", "Where the brief is up to",
@@ -65,10 +65,10 @@ public static partial class Guides
         ]),
         new("triage", "Triage", "triage", Write,
         [
-            Step("tabs", Write, ".tide-tabbar[aria-label=\"Inbox\"]", "The inbox",
-                "New items wait under New; the other tabs keep what's been decided."),
             Step("hand", Write, ".tide-page-head a[href=\"articles?new=1\"]", "Writing one by hand",
                 "For something no feed brought in."),
+            Step("tabs", Write, ".tide-tabbar[aria-label=\"Inbox\"]", "The inbox",
+                "New items wait under New; the other tabs keep what's been decided."),
             Step("filter", Write, "#main-content .tide-filterbar input[aria-label=\"Search\"]", "Finding items",
                 "Search titles and CVEs."),
             Step("pills", Write, "#main-content .tide-filterbar-pills", "Narrowing",
@@ -83,7 +83,7 @@ public static partial class Guides
                 "J and K move through the items, and the one selected is marked. ? lists every key."),
             Step("group", Write, "li.tide-triage-group", "Looks like one event",
                 "Reports from several feeds that seem to be about the same thing. Attach all, or Promote as one article; Not the same: split separates them."),
-            Step("covered", Write, ".tide-triage-cov", "Already covered",
+            Step("covered", Write, "li.tide-triage-row.selected .tide-triage-cov || .tide-triage-cov", "Already covered",
                 "Covered names the article that already covers an item, so the suggested step is to attach it as another report."),
             Step("read", Write, ".tide-reading-text || aside.tide-reading", "Reading it here",
                 "The article's text, in the reading pane. Read it here (V) fetches it, only when you ask: nothing is fetched by itself."),
@@ -111,7 +111,7 @@ public static partial class Guides
                 "Choose a colleague and what to look at; Ask for review sends them the request. Reviews asked of you wait on Today."),
             Step("pills", Write, "nav.tide-section-pills", "Sections",
                 "Each section's pill says where it stands: needed, done, a count, or check TLP. Select one to jump to it."),
-            Step("class", Write, "#cls-threat", "Assessment",
+            Step("class", Write, "[data-guide=\"classification\"]", "Assessment",
                 "Threat or Informational. A threat gets a priority."),
             Step("prio", Write, "#prio", "Priority",
                 "P1 to P4: how soon readers should act."),
@@ -137,8 +137,6 @@ public static partial class Guides
                 "One or two sentences: what happened and why the reader should care. It leads the brief."),
             Step("bullets", Write, "#f-bullet-0 || #sec-bullets", "Bullets",
                 "The key facts, one per box, each with its own TLP. A box grows as you type; Add a bullet starts another, and Paste several turns lines into bullets."),
-            Step("shots", Write, "#shot-zone", "Screenshots",
-                "Paste a screenshot anywhere on the page, drop one here, or choose files. Each has a caption and its own TLP."),
             Step("why", Write, "#f-why", "Why it matters to us",
                 "What it means here: do we run it, are we targeted. It has its own TLP."),
             Step("whycheck", Write, ".tide-why-check .btn-outline-secondary", "Reaching everyone",
@@ -147,6 +145,8 @@ public static partial class Guides
                 "Tag a product from Our stack that the article is about, by any of its names. Tagging saves straight away."),
             Step("rec", Write, "#f-rec", "Recommended actions",
                 "One line for each thing to do. At the meeting, each line can become an action."),
+            Step("shots", Write, "#shot-zone", "Screenshots",
+                "Paste a screenshot anywhere on the page, drop one here, or choose files. Each has a caption and its own TLP."),
             Step("indicators", Write, "#main-content input[aria-label=\"New indicator\"]", "Indicators and CVEs",
                 "Add an indicator or a CVE; defanged is fine, and each is shown defanged."),
             Step("find", Write, "#sec-ind textarea[aria-label=\"Text to search for indicators\"]", "Finding them in text",
@@ -258,6 +258,8 @@ public static partial class Guides
         ]),
         new("metrics", "Metric history", "metrics", Team,
         [
+            Step("export", Team, ".tide-page-head a[download]", "Export",
+                "Export CSV downloads the values for the days shown."),
             Step("range", Team, "#from", "Days",
                 "Choose the days to show, or one of the ranges beside them."),
             Step("pick", Team, "#main-content .tide-menubutton-btn", "Metrics to chart",
@@ -266,8 +268,6 @@ public static partial class Guides
                 "With several metrics, One chart or A chart each changes the layout. Select a metric in the key to take it off."),
             Step("table", Team, ".tide-mh-table thead || .tide-mh-scroll", "Every value",
                 "Each business day's numbers, by metric group. A day opens that day's brief."),
-            Step("export", Team, ".tide-page-head a[download]", "Export",
-                "Export CSV downloads the values for the days shown."),
         ]),
         new("trends", "Trends", "trends", Team,
         [
@@ -311,12 +311,12 @@ public static partial class Guides
         ]),
         new("library", "Library", "library", Read,
         [
+            Step("new", Work, ".tide-page-head > button.btn-primary", "Adding one",
+                "New adds an entry to the tab you're on."),
             Step("tabs", Read, "nav.tide-tabbar[aria-label=\"Library\"]", "Four libraries",
                 "Saved queries, outreach templates, playbooks and board rules, each with how many are in use."),
             Step("find", Read, "#library-find", "Searching",
                 "Search every tab at once. Each tab counts what matches."),
-            Step("new", Work, ".tide-page-head > button.btn-primary", "Adding one",
-                "New adds an entry to the tab you're on."),
             Step("list", Read, ".tide-library-list || .tide-library-filters", "Reading one",
                 "Select an entry to read it in full and copy it. J and K move between them."),
             Step("try", Work, InRail(".tide-lib-try || #tide-rail"), "Trying it",
@@ -348,27 +348,27 @@ public static partial class Guides
         ]),
         new("workload", "Workload", "workload", Read,
         [
+            Step("longer", Team, ".tide-page-head a[href=\"reports/teams\"]", "Longer windows",
+                "Team commitments looks back over longer windows."),
             Step("teams", Read, ".tide-load > .tide-card", "Each team",
                 "A card per team, with its open, overdue, due-soon, blocked and P1 actions."),
             Step("nums", Read, ".tide-load-nums", "Into the list",
                 "Open and Overdue open that team's actions in the Actions list."),
             Step("holders", Read, ".tide-load .tide-table", "Who holds what",
                 "Each holder's open, overdue and P1 actions. A name opens theirs."),
-            Step("longer", Team, ".tide-page-head a[href=\"reports/teams\"]", "Longer windows",
-                "Team commitments looks back over longer windows."),
         ]),
         new("rotation", "Brief rotation", "rotation", Team,
         [
             Step("who", Team, ".tide-page-head .tide-sub", "Who presents",
                 "Who presents the next brief, and whom they're covering if the day changed hands."),
-            Step("calendar", Team, "table.tide-rota", "The calendar",
-                "Who presents each weekday. Your days are marked, and the arrows change the month."),
-            Step("request", Write, "#rotation-request", "Swaps and cover",
-                "If you're on the rotation, Swap or get cover asks a colleague to take your days, or swap them."),
-            Step("upcoming", Team, "#rotation-upcoming", "Coming up",
-                "Your next brief days, and any request waiting on you."),
             Step("ics", Team, ".tide-page-head a[href=\"rotation/my.ics\"]", "In your calendar",
                 "My brief days downloads your days for your calendar."),
+            Step("request", Write, "#rotation-request", "Swaps and cover",
+                "If you're on the rotation, Swap or get cover asks a colleague to take your days, or swap them."),
+            Step("calendar", Team, "table.tide-rota", "The calendar",
+                "Who presents each weekday. Your days are marked, and the arrows change the month."),
+            Step("upcoming", Team, "#rotation-upcoming", "Coming up",
+                "Your next brief days, and any request waiting on you."),
         ]),
     ];
 }

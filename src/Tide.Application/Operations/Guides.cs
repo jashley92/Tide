@@ -102,6 +102,23 @@ public static partial class Guides
     private static TourStep On(string route, string key, Permission needs, string target, string title, string text, string? section = null) =>
         new(key, route, needs, target, title, text, Section: section);
 
+    // The parts of An analyst's day its header counts by ("An analyst's day · Writing · 4 of 31"), by step.
+    private static string PartOf(TourStep step) => step.Section switch
+    {
+        "triage" => "Triage",
+        "article" => "Writing",
+        "actions" => "Actions",
+        Presenting => "Presenting",
+        _ => step.Key switch
+        {
+            "save" or "review" or "ready" or "brief" => "Writing",
+            "send" => "Send",
+            "work" => "Actions",
+            "search" => "Search",
+            _ => "Today",
+        },
+    };
+
     private const string TodayHead = ".tide-page-head h1";
 
     /// <summary>An analyst's day's presenting section: its one step on Today, after which Next opens present mode in
@@ -116,7 +133,7 @@ public static partial class Guides
 
     // The workflow in the order an analyst works it, across pages, each page's own guide walked inline between Today's
     // steps. Built once it's first asked for (the pages' guides are built first).
-    private static Guide AnalystsDay => _analystsDay ??= new Guide(Day, "An analyst's day", "", Permission.WriteArticles,
+    private static Guide AnalystsDay => _analystsDay ??= Parted(new Guide(Day, "An analyst's day", "", Permission.WriteArticles,
         [
             On("", "strip", Permission.WriteArticles, "ol.tide-steps || " + TodayHead, "Where the brief is up to",
                 "This strip shows where today's brief is up to: Triage, Write, Order, Present and Send, with Now on the step it's at."),
@@ -151,7 +168,10 @@ public static partial class Guides
                 "Search: paste an indicator or a CVE to see every article and action that names it."),
         ],
         Summary: "The whole workflow across pages, with each page's guide on the way: Today, triage, writing, the running order, presenting in rehearsal, sending, actions and Search.")
-    { Travels = true };
+    { Travels = true });
+
+    // Each step of the day with the part its header counts by.
+    private static Guide Parted(Guide day) => day with { Steps = day.Steps.Select(s => s with { Part = PartOf(s) }).ToList() };
 
     private static Guide? _analystsDay;
 
