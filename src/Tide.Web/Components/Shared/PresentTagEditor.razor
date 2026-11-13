@@ -57,6 +57,9 @@
 }
 
 @code {
+    /// <summary>Drawn read-only (present mode in rehearsal, ReadOnlyCascade): nothing here saves.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
+
     /// <summary>The article whose tags are edited.</summary>
     [Parameter, EditorRequired] public Guid ArticleId { get; set; }
 
@@ -131,7 +134,7 @@
     /// the article page: the article's tags as saved now are shown, the choice made here stays, and Save again replaces them.</summary>
     internal async Task Save()
     {
-        if (_busy || _version is not { } version) return;
+        if (_busy || ReadOnly || _version is not { } version) return;
         _busy = true;
         try
         {

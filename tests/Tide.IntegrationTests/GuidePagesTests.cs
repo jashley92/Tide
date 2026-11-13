@@ -26,9 +26,6 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
 
     private const string Rehearsing = "Rehearsal: nothing here is shared or saved";
 
-    private static Task<Rendered<Present>> Rehearse(TideApp app, DateOnly day, SignIn who) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}?rehearse=1", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
     // Today's brief (a rehearsal is only ever of today's), with two more articles named for the test (`n`).
     private async Task<DateOnly> Day(int n)
     {

@@ -57,6 +57,9 @@
 <OverLimitDialog @ref="_overLimit" />
 
 @code {
+    /// <summary>Drawn read-only (present mode in rehearsal, ReadOnlyCascade): nothing here saves.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
+
     [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
 
     /// <summary>How many of its parts are still open: closing it with any asks first.</summary>
@@ -201,6 +204,7 @@
     // with nothing to lose) or leaves the prompt open for the page to say so (an outcome being written).
     private async Task<bool> Move(ActionStatus from, ActionStatus to, ActionOutcome outcome, string? note)
     {
+        if (ReadOnly) return false;
         _busy = true;
         try
         {

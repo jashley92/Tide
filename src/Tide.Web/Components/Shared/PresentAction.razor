@@ -146,8 +146,9 @@
     /// <summary>After a status move or a tick here: the page re-reads the action.</summary>
     [Parameter] public EventCallback Changed { get; set; }
 
-    /// <summary>Read-only (present mode in rehearsal): nothing on the card works the action, whoever opens it.</summary>
-    [Parameter] public bool ReadOnly { get; set; }
+    /// <summary>Read-only (present mode in rehearsal, ReadOnlyCascade): nothing on the card works the action, whoever
+    /// opens it.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
 
     // Whether the card offers its status and its checklist: to whoever may work the action, outside a rehearsal.
     private bool CanWork => Detail.CanWork && !ReadOnly;

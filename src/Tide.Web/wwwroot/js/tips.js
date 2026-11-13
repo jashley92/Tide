@@ -8,7 +8,7 @@
 // view once found. A selector can name fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail
 // button). CSP-safe (an external file).
 window.tideTips = (function () {
-    var card = null, target = null, looking = null, size = null, frame = 0, needsTarget = false, dialog = false, inside = false;
+    var card = null, target = null, looking = null, opener = null, size = null, frame = 0, needsTarget = false, dialog = false, inside = false;
     var GAP = 10, EDGE = 8;
     var root = document.documentElement;
 
@@ -34,9 +34,11 @@ window.tideTips = (function () {
         if (target) target.classList.remove('tide-tip-target');
         target = now;
         if (!shown(target)) return;
+        // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top. (Read
+        // before the ring is written, so this costs no extra layout.)
+        var tall = target.getBoundingClientRect().height > innerHeight * 0.6;
         target.classList.add('tide-tip-target');
-        // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top.
-        target.scrollIntoView({ block: target.getBoundingClientRect().height > innerHeight * 0.6 ? 'start' : 'nearest', inline: 'nearest' });
+        target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
     // Where the window is free of the sticky top bar (the app's, or present mode's): a card never goes above it.
@@ -91,10 +93,11 @@ window.tideTips = (function () {
         if (!target || !target.isConnected || !target.classList.contains('tide-tip-target')) soon();
     });
 
-    function toPage(selector) {
-        var to = (selector && document.querySelector(selector)) || document.querySelector('main h1') || document.querySelector('h1');
+    // Focus on the page's heading (present mode's is outside <main>).
+    function toPage() {
+        var to = document.querySelector('main h1') || document.querySelector('h1');
         if (!to) return;
-        if (to.tagName === 'H1' && !to.hasAttribute('tabindex')) to.setAttribute('tabindex', '-1');
+        if (!to.hasAttribute('tabindex')) to.setAttribute('tabindex', '-1');
         to.focus();
     }
 
@@ -114,6 +117,8 @@ window.tideTips = (function () {
             card = el;
             needsTarget = !!(options && options.needsTarget);
             dialog = !!(options && options.dialog);
+            // A tour's or guide's first step: what had focus (its Show me around, Help's Start) gets it back at the end.
+            if (dialog && options.first) opener = document.activeElement !== document.body ? document.activeElement : null;
             if (dialog && selector) {
                 // A step looks for its control (find, from place) now and again as the page changes; a tip shows beside
                 // what's there as it opens.
@@ -144,10 +149,15 @@ window.tideTips = (function () {
             pageWatch.disconnect();
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });
-            if (lost) toPage(null);
+            if (lost) toPage();
         },
-        // A step has ended: focus on `selector` (what started it) when it's there, else the page's heading. A tip the
-        // new page shows stays up.
-        focusPage: function (selector) { toPage(selector); }
+        // A tour or guide has ended: focus back on what started it when that's still on the page, else the page's
+        // heading. A tip the new page shows stays up.
+        end: function () {
+            var to = opener;
+            opener = null;
+            if (shown(to)) to.focus();
+            else toPage();
+        }
     };
 })();

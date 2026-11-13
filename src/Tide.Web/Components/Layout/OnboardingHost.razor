@@ -28,7 +28,7 @@
 @if (Step is { } step)
 {
     <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title"
-                     ReturnTo="@_returnTo" OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
+                     OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
 }
 else if (Tip is { } tip)
 {
@@ -47,9 +47,6 @@ else if (Tip is { } tip)
 @code {
     private ElementReference _card;
     private bool _automatic, _returning, _tipShown, _firstTour;
-    // Where focus goes as a step ends (GuideStepDialog): the control that started it, when it's still on the page (Help's
-    // Take the tour or a guide's Start, What's new's Take the tour, the page's Show me around); else the page's heading.
-    private string? _returnTo;
     private PageTip? _placed;
     private string _page = "";
     private IReadOnlyList<TourStep> _tour = [];
@@ -115,7 +112,7 @@ else if (Tip is { } tip)
         if (WhatsNew is null || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
         if (!_returning && await Tour.IsDueAsync())
         {
-            StartTour(first: true, returnTo: null);
+            StartTour(first: true, fromHelp: false);
             return;
         }
         await WhatsNew.CheckAsync();
@@ -142,7 +139,7 @@ else if (Tip is { } tip)
     private Task CheckTipSafelyAsync() => SafelyAsync(CheckTipAsync);
 
     // The tour from its first step: on Today, or, asked from Help, on Help until Next.
-    private void StartTour(bool first, string? returnTo, bool onHelp = false) => Start(Tour.Steps, null, first, returnTo, navigate: !onHelp);
+    private void StartTour(bool first, bool fromHelp) => Start(Tour.Steps, null, first, navigate: !fromHelp);
 
     // A guide on its page: the one open, from its Show me around; from Help, its page is opened first. Learn to present
     // isn't the layout's: Help links to present mode's rehearsal, which shows it.
@@ -150,15 +147,14 @@ else if (Tip is { } tip)
     {
         if (guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
         var page = fromHelp ? guide.Page : OpenPage;
-        Start(guide.Steps.Select(s => s with { Route = page }).ToList(), guide, first: false,
-            fromHelp ? $"#help-guide-{guide.Key}" : "#" + GuideLink.Id, navigate: fromHelp);
+        Start(guide.Steps.Select(s => s with { Route = page }).ToList(), guide, first: false, navigate: fromHelp);
     }
 
     // The steps from the first. Not while another tab of the person's shows the tour or a guide.
-    private void Start(IReadOnlyList<TourStep> steps, Guide? guide, bool first, string? returnTo, bool navigate)
+    private void Start(IReadOnlyList<TourStep> steps, Guide? guide, bool first, bool navigate)
     {
         if (steps.Count == 0 || Step is not null || !Claims.TryClaim(CurrentUser.UserId, this)) return;
-        (_firstTour, _returnTo, _guide) = (first, returnTo, guide);
+        (_firstTour, _guide) = (first, guide);
         Tip = null;
         _tour = steps;
         GoToStep(0, navigate);
@@ -202,7 +198,7 @@ else if (Tip is { } tip)
     private void OnTourAsked(bool fromHelp) => _ = InvokeAsync(async () =>
     {
         if (WhatsNew?.IsOpen == true) await WhatsNew.CloseAsync();
-        StartTour(first: false, fromHelp ? "#help-take-tour" : null, onHelp: fromHelp);
+        StartTour(first: false, fromHelp);
     });
 
     private void OnGuideAsked(string key, bool fromHelp) => _ = InvokeAsync(() =>
@@ -211,7 +207,7 @@ else if (Tip is { } tip)
     });
 
     // What's new's Take the tour: it has closed, marked seen; the tour runs, and a page's tip waits until it's over.
-    private void TakeTourFromWhatsNew() => StartTour(first: false, "#whatsnew-take-tour");
+    private void TakeTourFromWhatsNew() => StartTour(first: false, fromHelp: false);
 
     /// <summary>
     /// A page opened (<paramref name="page"/>, as <c>PageOf</c> gives it). One the tour or guide didn't open (a link, the

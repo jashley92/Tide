@@ -2,7 +2,8 @@
    scrim does nothing and leaves focus in the step). tips.js sets it beside the control it points at and rings that
    control, finding it once it's drawn and scrolling it into view; focus goes to Next as it opens and stays in it
    (dialog.js, and tips.js when a new page focuses its heading). Escape, the close button or the end button ends it; as
-   it goes, focus goes to ReturnTo when that's there, else the page's heading. OnboardingHost draws it for the tour and
+   it goes, focus goes back to the control that had it as the first step opened (Help's Take the tour or Start, the
+   page's Show me around) when that's still on the page, else to the page's heading (tips.js). OnboardingHost draws it for the tour and
    a page's guide; present mode draws it only in rehearsal, for Learn to present. *@
 @implements IAsyncDisposable
 @using Tide.Application.Operations
@@ -51,9 +52,6 @@
     /// <summary>What a live region says as a step shows: "Step 2 of 5: Title. Text".</summary>
     public static string Said(TourStep step, int index, int count) => $"Step {index + 1} of {count}: {step.Title}. {step.Text}";
 
-    /// <summary>Where focus goes as it ends (a CSS selector), when that's on the page; else the page's heading.</summary>
-    [Parameter] public string? ReturnTo { get; set; }
-
     /// <summary>Next, or Done on the last step.</summary>
     [Parameter] public EventCallback OnNext { get; set; }
 
@@ -70,7 +68,7 @@
         _placed = Step;
         try
         {
-            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true });
+            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first });
             // The dialog takes focus as it opens; each step after puts it on Next.
             if (first) await JS.InvokeVoidAsync("tideDialog.open", _next);
             else await _next.FocusAsync();
@@ -84,6 +82,6 @@
     {
         if (_placed is null) return;   // never shown in a browser
         await JS.StopAsync("tideTips.hide");
-        await JS.StopAsync("tideTips.focusPage", ReturnTo);
+        await JS.StopAsync("tideTips.end");
     }
 }
