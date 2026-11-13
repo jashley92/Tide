@@ -145,6 +145,18 @@ const lanesFillTheHeight = {
   }),
 };
 
+/** On a narrow window the board's lanes stay tall enough to read a card in (8rem of each), the page scrolling instead. */
+const lanesTallEnough = {
+  name: 'each lane shows at least 8rem of its cards',
+  check: page => page.evaluate(() => {
+    const lanes = [...document.querySelectorAll('.tide-board .tide-kcol-cards')].filter(l => l.getClientRects().length);
+    if (!lanes.length) return ['no lanes shown'];
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return lanes.flatMap(l => l.clientHeight >= 8 * rem - 1 ? []
+      : [`the ${l.closest('.tide-kcol')?.dataset.status} lane shows ${l.clientHeight}px of its cards`]);
+  }),
+};
+
 /** The closed strip has a chip for each way of closing, each a drop target (a .tide-kchip with its status) and shown. */
 const chipsAreDropTargets = {
   name: 'a drop target for each way of closing',
@@ -240,12 +252,14 @@ const reopenNamed = {
 
 const selectedAction = page => page.evaluate(() => {
   const rows = [...document.querySelectorAll('.tide-action-row')];
-  return { at: rows.findIndex(r => r.classList.contains('selected')), focused: rows.indexOf(document.activeElement), row: new URL(location.href).searchParams.get('row') };
+  const at = rows.findIndex(r => r.classList.contains('selected')), params = new URL(location.href).searchParams;
+  const number = rows[at]?.querySelector('a[href^="actions/"]:not(.tide-kcard-parent)')?.getAttribute('href').match(/\d+/)?.[0];
+  return { at, focused: rows.indexOf(document.activeElement), row: params.get('row'), card: params.get('card'), number };
 });
 
 /**
- * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names it), K and
- * the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
+ * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names its action),
+ * K and the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
  */
 const actionKeys = {
   name: 'J and K move the selected action; T in a field is typing',
@@ -257,7 +271,8 @@ const actionKeys = {
       await idle(page);
       const now = await selectedAction(page);
       if (now.at !== at || now.focused !== at) problems.push(`after ${key} row ${now.at + 1} is selected and row ${now.focused + 1} has focus, not row ${at + 1}`);
-      if ((now.row ?? '0') !== String(at)) problems.push(`after ${key} the address says row=${now.row}, not ${at}`);
+      // The address names the selected action by its number (the first row is left out), not by its place.
+      if (now.row !== null || now.card !== (at ? now.number : null)) problems.push(`after ${key} the address says ${new URLSearchParams({ ...(now.row && { row: now.row }), ...(now.card && { card: now.card }) })}, not card=${at ? now.number : '(none)'}`);
     }
     const takes = await page.locator('.tide-row-take').count();
     const box = page.getByRole('searchbox', { name: 'Search actions' });
@@ -855,6 +870,41 @@ const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
 
 /** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
 const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
+
+/** Setup: as tourAs, then a mouse click at the middle of `selector`, as on the page under the step. */
+const tourClick = (people, selector) => async page => {
+  await tourAs(people)(page);
+  const box = await page.locator(selector).first().boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await idle(page);
+};
+
+/** Setup: someone who used TIDE before, on Help, takes the tour from there, then ends it at once with Escape. */
+const tourFromHelp = people => async page => {
+  await page.goto(new URL(`./help?as=${people[page.viewportSize().width]}&onboarding=returning`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  if (await page.locator('.tide-whatsnew').count()) { await page.keyboard.press('Escape'); await idle(page); }
+  await page.locator('#help-take-tour').click();
+  await idle(page);
+  await page.keyboard.press('Escape');
+  await idle(page);
+};
+
+/** Setup: as tipAs, then `route` loaded afresh (What's new is seen by then), so that page's tip shows. */
+const tipOn = (route, people) => async page => {
+  await tipAs(people)(page);
+  await page.goto(new URL(`.${route}`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  await wideFont(page);
+};
+
+/** Setup: as tipAs, then Got it pressed from the keyboard. */
+const tipGotIt = people => async page => {
+  await tipAs(people)(page);
+  await page.locator('.tide-tip .btn-primary').focus();
+  await page.keyboard.press('Enter');
+  await idle(page);
+};
 
 /** Setup: a Today queue row whose line says whose it is with the longest ticket reference the field takes, as an
  *  external team's escalated action does, with wider letters. */
@@ -1820,6 +1870,13 @@ const inWindow = selector => holds(`wholly in the window: ${selector}`, selector
       ? [`${selector} #${i + 1} ("${(e.getAttribute('aria-label') ?? e.textContent).trim().slice(0, 30)}") is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${innerWidth}px window`] : [];
   }), selector);
 
+/** Each shown match of `selector` lies within the page's own width, left of any scrollbar, its border included. */
+const inClient = selector => holds(`within the page's width: ${selector}`, selector =>
+  [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0).flatMap((e, i) => {
+    const r = e.getBoundingClientRect(), width = Math.min(document.documentElement.clientWidth, document.body.clientWidth);
+    return r.left < 0 || r.right > width ? [`${selector} #${i + 1} is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${width}px page`] : [];
+  }), selector);
+
 /** How many are here is shown, and whole. */
 const countWhole = holds('the count is shown, whole', () => {
   const here = document.querySelector('.tide-present-here');
@@ -2461,6 +2518,26 @@ async function selectUnread(page) {
   await page.locator('.tide-triage-row.selected').focus();
   for (let i = 0; i < 12 && !(await unread()); i++) await pressJ(page);
 }
+
+/** Setup: the account menu opened from the keyboard (Enter on the avatar), then the down arrow pressed on the avatar. */
+async function accountMenuArrow(page) {
+  await page.locator('.tide-profile-btn').focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.tide-profile [role="menu"]').waitFor();
+  await page.keyboard.press('ArrowDown');
+  await idle(page);
+}
+
+/** The down arrow on the open account menu's avatar went into the menu: it's still open, focus is in it, and Triage's
+ * selection stayed on its first row (the address names no other). */
+const arrowIntoAccountMenu = holds('the down arrow goes into the account menu, not the list under it', () => {
+  const pop = document.querySelector('.tide-profile [role="menu"]');
+  if (!pop) return ['the account menu closed'];
+  const wrong = [];
+  if (!pop.contains(document.activeElement)) wrong.push(`focus is on ${document.activeElement?.outerHTML.slice(0, 90)}, not in the menu`);
+  if (new URLSearchParams(location.search).has('row')) wrong.push(`Triage's selection moved (${location.search})`);
+  return wrong;
+});
 
 /** Setup: the first "Looks like one event" group opened, its reports listed under it. */
 async function openGroup(page) {
@@ -3493,11 +3570,15 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
 
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
-  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip')];
+  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour')];
+
+/** The page is still `path` (from the app's root: "/" for Today). */
+const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseURI).pathname.replace(/\/$/, '') + path === location.pathname
+  ? [] : [`the page is ${location.pathname}`], path);
 
 /** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
 const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
-  hidden('.tide-whatsnew')];
+  hidden('.tide-whatsnew'), inClient('.tide-tip'), [1500, allBesides('.tide-tip', '#tide-rail')]];
 
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
@@ -3682,6 +3763,8 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
       onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // A narrow window: the lanes keep room to read a card, and the page scrolls.
+  { name: 'actions-board-narrow', route: '/actions?view=open&layout=board', widths: [700, 641, [400, 800]], rules: [noSidewaysScroll, lanesTallEnough] },
   // Who has an action can be an external team's ticket reference: the longest wraps within its card and its row rather
   // than widening them, on the board and the list.
   { name: 'actions-board-long-ticket', route: '/actions?view=open&layout=board', setup: longTicket, widths: [[1440, 900], [780, 900]],
@@ -3794,6 +3877,9 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-pull-head .tide-pull-all > button'), fits('.tide-pull-head'), fits('.content .tide-card-scroll'), [1440, oneRow('.tide-pull-head')],
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
+  { name: 'triage-account-menu-arrow', route: '/triage', setup: accountMenuArrow, widths: [1440], rules: [arrowIntoAccountMenu] },
+  // Coverage: its tables scroll inside their cards at every width, the page itself never sideways.
+  { name: 'coverage', route: '/coverage', widths: [1440, 780, 700, 660, 641, 400], rules: [noSidewaysScroll] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
   // The decision bar, as designed: the list a column of about 440px, the selected item's buttons in a bar at the foot of
@@ -4141,6 +4227,27 @@ const pages = [
     widths: [1920, 1440, 780], rules: tourRules },
   { name: 'tour-step-two', route: '/help', setup: tourAs({ 1920: 'Yan', 1440: 'Yul', 780: 'Yve&roles=Viewer' }, 'Enter'),
     widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail-toggle.tide-tip-target')] },
+  // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
+  { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
+    rules: [visible('.tide-tour'), stillAt('/'), visible('.tide-tour-count:text("Step 1 of")'), focusOn('.tide-tour .btn-primary')] },
+  // Escape ends the tour, and focus is on the page's heading.
+  { name: 'tour-escape', route: '/help', setup: tourAs({ 1440: 'Zia' }, 'Escape'), widths: [1440],
+    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('main h1')] },
+  // Started from Help and ended there: focus is back on Take the tour.
+  { name: 'tour-from-help', route: '/help', setup: tourFromHelp({ 1440: 'Zoe' }), widths: [1440],
+    rules: [hidden('.tide-tour'), stillAt('/help'), focusOn('#help-take-tour')] },
+  // With the rail open over the page (]), the tip stays beside it, not over what it shows.
+  { name: 'tip-rail-over', route: '/help', setup: tipAs({ 1440: 'Ola', 780: 'Oz' }, ']'), widths: [1440, 780],
+    rules: [visible('.tide-tip'), visible('#tide-rail'), allBesides('.tide-tip', '#tide-rail'), inClient('.tide-tip')] },
+  // Search's tip keeps off the page's own search box and its description.
+  { name: 'tip-search', route: '/help', setup: tipOn('/search', { 1920: 'Pia', 1440: 'Pat', 780: 'Pip&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: [visible('.tide-tip'), noOverlap('.tide-tip, form[role="search"], .tide-page-head .tide-sub'), inClient('.tide-tip')] },
+  // Triage's tip is beside the reading pane, and not shown where there's none beside the list.
+  { name: 'tip-triage', route: '/help', setup: tipOn('/triage', { 1920: 'Quin' }), widths: [1920],
+    rules: [visible('.tide-tip'), visible('.tide-reading.tide-tip-target'), inClient('.tide-tip')] },
+  { name: 'tip-triage-narrow', route: '/help', setup: tipOn('/triage', { 780: 'Quill' }), widths: [780], rules: [hidden('.tide-tip')] },
+  // Got it from the keyboard: the tip goes, and focus is on the page's heading, not lost.
+  { name: 'tip-got-it', route: '/help', setup: tipGotIt({ 1440: 'Rio' }), widths: [1440], rules: [hidden('.tide-tip'), focusOn('main h1')] },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },

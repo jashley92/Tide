@@ -208,24 +208,25 @@ except My notifications, which is stored per user.
 person, the first time they open TIDE on a release with highlights for them.
 
 - **Where the content lives.** Each release with user-facing changes has a highlights file, `docs/whats-new/vX.Y.Z.md`:
-  a short introduction, then a `## Analysts`, `## Presenters and admins` and `## Viewers and action owners` section of
-  short bullets. A patch or an operator-only release has none, and shows nothing. The full notes are the release's
+  a short introduction, then a `## Analysts`, `## Presenters`, `## Administrators` and `## Viewers and action owners`
+  section of short bullets. A patch or an operator-only release has none, and shows nothing. The full notes are the release's
   `### vX.Y.Z` section of `docs/UPGRADE.md`, read as `tools/ci/extract-release-notes.sh` reads it. Both are built into
   `Tide.Application` as resources, and `ReleaseNotesCatalog` (`Operations/WhatsNew.cs`) reads them at start-up.
-- **Who reads what.** `RoleGroups.For` maps roles to groups: Analysts and Administrators read the analysts' and the
-  presenters' and admins' sections; Viewers and Action owners read theirs; Readers and Visitors read none, so nothing is
-  ever shown to them.
+- **Who reads what.** `RoleGroups.For` maps roles to groups: Analysts read the analysts' and the presenters'
+  sections, Administrators those and the administrators', Viewers and Action owners theirs; Readers and Visitors read
+  none, so nothing is ever shown to them.
 - **When.** The release running is `AppVersionInfo.Current` (a development build counts as the newest release with
   notes). `ReleaseNotesCatalog.Due` lists the releases after the one the person last saw, up to the one running, that
   have highlights for their groups; someone who has seen none is shown only the newest. The release last seen is the
   person's `whatsnew.seen` preference (`UserPreferenceService`, which checks the permission and a second tab's save),
-  set as the dialog opens, so a reload doesn't show it again.
+  set as the dialog closes (Got it, Escape, a click outside, See all changes), so a reload while it's up shows it again.
 - **Where never.** `BlankLayout` doesn't draw it, so present mode never shows it, to the presenter or a follower, and
   `OnboardingGate.AllowedAt` refuses a `/present` address besides. `OnboardingGate` keeps it from opening by itself
   when `Onboarding:Enabled` is `false`, and on the screenshot tools' demo (`Demo:Seed`), where a browser asks for it
   with the dev sign-in's `?onboarding=on`. The tests turn it off.
 - **The dialog.** A `.tide-modal`: focus moves to Got it as it opens and back as it closes (`tideDialog`), Tab stays in
-  it, and Escape closes it. **See all changes** opens Help at that release with its full notes open.
+  it, and Escape closes it. **See all changes** opens Help at that release: an administrator's with its full
+  notes open.
 
 **Page tips.** `OnboardingHost`, which `MainLayout` draws (and which draws `WhatsNewDialog`), offers one thing at a time:
 What's new first; once that's closed, or on a page without it, the page's tip. A tip says what changed on a page, on the
@@ -240,24 +241,33 @@ person's first visit to it after the release it belongs to.
   again** clears them, for the pages the person can use. A tip is shown only to someone who can use its page.
 - **Not modal.** The card (`.tide-tip`) has no scrim and leaves the page live: it never takes focus or a key, so `]` and
   every shortcut still work. `tips.js` (`tideTips`) sets it beside the control it's about and rings that control
-  (`.tide-tip-target`), or leaves it in the bottom corner when the control isn't shown or there's no room. A polite live
-  region announces it. A new page drops the tip and checks that page's.
+  (`.tide-tip-target`), or puts it in the bottom corner when it has none (Search's, which would otherwise sit over the
+  page's own search box), the control isn't shown or there's no room. It never sits over the context rail, docked or
+  open over the page: it moves left of it, and moves again when the rail opens or closes. It keeps within the page's
+  width, left of the scrollbar. A tip that needs its control (Triage's, beside the reading pane) isn't shown where the
+  control isn't, nor announced. A polite live region announces a tip once it's shown. **Got it** from the keyboard
+  leaves focus on the page's heading. A new page drops the tip and checks that page's.
 
 **The tour.** On a person's first-ever sign-in, `OnboardingHost` steps them through the pages and controls their role
 uses, before anything else.
 
 - **Who gets it.** When the user mirror (`UserDirectory.TouchAsync`) records someone for the first time, it also sets
   their `tour.state` preference to `due`. Everyone recorded before the tour existed has none, so they get What's new
-  instead. Starting the tour sets it to `done`, and marks What's new and the what-changed tips up to the release
-  running as seen (`TourService.FirstStartedAsync`): someone shown round doesn't need them.
+  instead. It stays `due` until the tour ends (Done, Skip tour, Escape, or leaving the page another way), so a reload
+  mid-tour starts it again. Then it's `done`, and What's new and the what-changed tips up to the release running are
+  marked seen (`TourService.FinishedAsync`): someone shown round doesn't need them. A second tab of the same person's
+  doesn't start another tour while one shows it (`TourClaims`, in memory).
 - **The steps.** `Tours` (`Tide.Application/Operations/Tours.cs`) lists each step's page, the permission it needs, the
   control it points at and what it says, and which steps each role group's tour has. A step the person can't use is
   left out; a Reader or a Visitor has no tour. No step is in present mode.
-- **A dialog.** Each step is a `.tide-modal` (`role="dialog"`, `aria-modal`): focus goes to Next and Tab stays in it
-  (`tideDialog`), the step and its text are announced, and Escape, the close button or **Skip tour** ends it at any
-  step, focus going back to where it was. It has no scrim, so the control it points at shows: `tideTips` places it
-  beside that control and rings it, as for a tip. Next opens the next step's page.
-- **Again.** Help's **Take the tour** asks `TourRequests` (one per circuit), which the layout's host listens to.
+- **A dialog.** Each step is a `.tide-modal` (`role="dialog"`, `aria-modal`) over a light scrim
+  (`.tide-tour-scrim`) that takes every click on the page and does nothing with it, so the tour can't fall out of
+  step with the page: Next, Back, Skip tour and Escape are the ways on. Focus goes to Next and stays in the step
+  (`tideDialog`, and `tideTips` when a new page focuses its heading); the step and its text are announced. `tideTips`
+  places it beside the control it points at and rings it, as for a tip. Next opens the next step's page; a page opened
+  any other way ends the tour, as Skip tour would. When it ends, focus goes to the page's heading.
+- **Again.** Help's **Take the tour** asks `TourRequests` (one per circuit), which the layout's host listens to. Asked
+  from Help, the first step shows on Help until Next, and ending it there puts focus back on Take the tour.
 - **On the demo.** `?onboarding=on` offers everything, the tour included for a new name; `?onboarding=returning` signs
   in as someone who used TIDE before, so What's new and the tips show rather than the tour.
 
@@ -307,7 +317,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/hunts/saved`, `/outreach/templates`, `/playbooks`, `/board-rules`, `/admin/playbooks` | `LibraryMoved` | `ReadActions` | The addresses the Library's tabs had as pages: each redirects to its tab, keeping its query string. |
 | `/teams/external` | `ExternalTeams` | `ReadActions` | The teams that work outside TIDE: their contact, reminder cadence and escalation contact. Kept by `WorkActions`; an administrator also sets their limits. |
 | `/notifications` | `MyNotifications` | `ReadActions` | The person's own email choices (from the account menu). |
-| `/help` | `HelpPage` | `ReadTeamEdition` | Help (the account menu, the `?` overlay): every release, newest first, with its highlights for the person's role groups and its full notes folded under them. `?release=1.13.0` opens that release's notes, as *What's new*'s **See all changes** links to it. |
+| `/help` | `HelpPage` | `ReadTeamEdition` | Help (the account menu, the `?` overlay): each release with highlights for the person's role groups, newest first. An administrator gets every release, with its full notes (the operators': upgrade steps, migrations, settings) folded under it. `?release=1.13.0` opens that release's notes, as *What's new*'s **See all changes** links to it. |
 | `/published`, `/published/{Day}` | `Published` | `ReadPublished` | The Reader archive of sent company-wide editions. `?q=`. |
 | `/briefs/{Day}/sharepoint` | `SharePointPage` | `ReadTeamEdition` | The company-wide edition as clean HTML to copy, and its images as a zip. |
 
@@ -524,8 +534,11 @@ view (Bring everyone here, Lock to me, Hand off).
   markup, an analyst who could present included; a test asserts this on every slide.
 - **Checked where it's handled.** Each of the presenter's steps checks `InCharge` again when it runs, and the services
   check permissions behind that, so a follower's key or a forged event changes nothing.
-- **The slide has no controls.** Nothing the presenter alone uses is on the slide; the rail sits outside the fitted
-  slide body (`.tide-slide-body`) at its own size.
+- **The slide has no controls of the presenter's.** Nothing the presenter alone uses is on the slide; the rail sits
+  outside the fitted slide body (`.tide-slide-body`) at its own size. The one button on an article's slide, **Edit
+  tags** (or **Add tags**), is anyone's who may write articles, presenting or following, in the team edition: its
+  editor opens over the slide on their own screen only. Viewers, Visitors and action owners don't get it, nor does the
+  company-wide edition.
 - **Docked or over the slide.** `present.js` tells the page whether the window is 1500px or wider. There the rail is
   open, docked as the page's last grid column, and the slide's column narrows and fits what's left. Below that it's
   shut, and **Rail** in the top bar or `]` opens it over the slide as a modal dialog (`role="dialog"`,

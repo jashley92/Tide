@@ -19,7 +19,7 @@ public static class Tours
         new("today", "", Permission.ReadTeamEdition, ".tide-page-head h1", "Today",
             "Today is the day's brief: what's on it, how far it's got and the actions that are yours. Every page has it in the sidebar."),
         new("rail", "", Permission.ReadTeamEdition, "#tide-rail-toggle", "The context rail",
-            "What TIDE already knows about what you select is in the context rail on the right. Press ] to show or hide it, or use Context."),
+            "What TIDE already knows about what you select is in the context rail on the right. After the tour, ] shows or hides it, as does the rail button ringed here."),
         new("triage", "triage", Permission.WriteArticles, null, "Triage",
             "New items from the feeds wait here. J and K move, V reads one in the reading pane, P promotes it to an article. Nothing is fetched until you ask."),
         new("articles", "articles", Permission.WriteArticles, null, "Articles",
@@ -42,7 +42,8 @@ public static class Tours
     private static readonly Dictionary<RoleGroup, string[]> ByGroup = new()
     {
         [RoleGroup.Analysts] = ["today", "rail", "triage", "articles", "actions", "search", "present", "help"],
-        [RoleGroup.PresentersAndAdmins] = ["today", "rail", "present", "admin", "help"],
+        [RoleGroup.Presenters] = ["today", "rail", "present", "help"],
+        [RoleGroup.Administrators] = ["admin", "help"],
         [RoleGroup.ViewersAndActionOwners] = ["today", "rail", "actions", "search", "meeting", "help"],
     };
 
@@ -70,9 +71,10 @@ public sealed class TourService(UserPreferenceService prefs, ICurrentUser user, 
     public async Task<bool> IsDueAsync(CancellationToken ct = default) =>
         Steps.Count > 0 && await prefs.GetAsync(UserPreferences.TourState, ct) == UserPreferences.TourDue;
 
-    /// <summary>The first tour has started: it isn't due again, and What's new and the tips up to this release are
-    /// treated as seen.</summary>
-    public async Task FirstStartedAsync(CancellationToken ct = default)
+    /// <summary>The first tour has ended (Done, Skip tour, Escape, or the person went elsewhere): it isn't due again, and
+    /// What's new and the tips up to this release are treated as seen. Until then it stays due, so a reload mid-tour
+    /// starts it again.</summary>
+    public async Task FinishedAsync(CancellationToken ct = default)
     {
         var settled = new Dictionary<string, string>(StringComparer.Ordinal) { [UserPreferences.TourState] = UserPreferences.TourDone };
         if (whatsNew.Running is { } running) settled[UserPreferences.WhatsNewSeen] = running.ToString();

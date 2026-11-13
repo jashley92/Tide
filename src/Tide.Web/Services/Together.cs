@@ -18,11 +18,15 @@ public interface IPresenceVisit : IDisposable
 /// <summary>
 /// Who else has a page open: on a brief, an article, an action, a triage item, so two people
 /// don't edit the same thing without knowing. In memory, per app (ADR 0001); an open page joins a place and leaves when
-/// it closes, and a tab that closes without saying so is cleared when its circuit ends (<see cref="PresenceCircuit"/>).
+/// it closes. A tab that closes without saying so stops showing as soon as its connection drops, and is cleared when its
+/// circuit ends (<see cref="PresenceCircuit"/>).
 /// </summary>
 public sealed class Presence
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, Visit>> _places = new(StringComparer.Ordinal);
+
+    // Circuits whose browser has gone for now (SetConnected).
+    private readonly ConcurrentDictionary<string, byte> _away = new(StringComparer.Ordinal);
 
     // Joining and leaving change a place's set and whether the place is kept together; reads go without it.
     private readonly Lock _gate = new();
@@ -42,7 +46,7 @@ public sealed class Presence
     /// <summary>The other people at <paramref name="place"/>, each once however many tabs, editing if any tab is.</summary>
     public IReadOnlyList<PresentPerson> Others(string place, string userId) =>
         _places.TryGetValue(place, out var visits)
-            ? visits.Values.Where(v => v.UserId != userId)
+            ? visits.Values.Where(v => v.UserId != userId && !_away.ContainsKey(v.CircuitId))
                 .GroupBy(v => v.UserId, StringComparer.Ordinal)
                 .Select(g => new PresentPerson(g.Key, g.First().Name, g.Any(v => v.Editing)))
                 .OrderBy(p => p.Name, StringComparer.CurrentCulture)
@@ -53,6 +57,7 @@ public sealed class Presence
     public void RemoveCircuit(string circuitId)
     {
         if (circuitId.Length == 0) return;
+        _away.TryRemove(circuitId, out _);
         foreach (var visit in _places.Values.SelectMany(v => v.Values).Where(v => v.CircuitId == circuitId).ToList())
             visit.Dispose();
     }
@@ -67,6 +72,21 @@ public sealed class Presence
         }
         Notify(visit.Place);
     }
+
+    /// <summary>
+    /// A circuit whose browser has gone (closed, or its connection dropped) is kept for minutes in case it comes back; its
+    /// pages aren't shown as here meanwhile, and are again if it reconnects.
+    /// </summary>
+    public void SetConnected(string circuitId, bool connected)
+    {
+        if (circuitId.Length == 0) return;
+        if (!(connected ? _away.TryRemove(circuitId, out _) : _away.TryAdd(circuitId, 0))) return;
+        foreach (var place in _places.Where(p => p.Value.Values.Any(v => v.CircuitId == circuitId)).Select(p => p.Key).ToList())
+            Notify(place);
+    }
+
+    /// <summary>How many circuits are away (for tests: a closed one isn't kept).</summary>
+    internal int AwayCount => _away.Count;
 
     /// <summary>How many places have someone at them (for tests: a place everyone left isn't kept).</summary>
     internal int PlaceCount => _places.Count;
@@ -128,19 +148,33 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
         return Task.CompletedTask;
     }
 
-    // A dropped connection (a closed lid, lost Wi-Fi) is away from a live meeting at once; the circuit itself is kept for
-    // minutes in case it comes back, which is when it's back in the meeting.
+    // A dropped connection (a closed lid, lost Wi-Fi, a closed browser) is away from a live meeting and its places at once;
+    // the circuit itself is kept for minutes in case it comes back, which is when it's back.
     public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        meetings?.SetConnected(circuit.Id, false);
+        Down(CircuitId);
         return Task.CompletedTask;
     }
 
     public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         Connected(TransportHubFilter.Current);
-        meetings?.SetConnected(circuit.Id, true);
+        Up(CircuitId);
         return Task.CompletedTask;
+    }
+
+    /// <summary>The circuit's browser went away (closed, or its connection dropped): it isn't shown as here meanwhile.</summary>
+    public void Down(string circuitId)
+    {
+        presence.SetConnected(circuitId, false);
+        meetings?.SetConnected(circuitId, false);
+    }
+
+    /// <summary>The circuit's browser is back.</summary>
+    public void Up(string circuitId)
+    {
+        presence.SetConnected(circuitId, true);
+        meetings?.SetConnected(circuitId, true);
     }
 
     public void Opened(string circuitId) => CircuitId = circuitId;

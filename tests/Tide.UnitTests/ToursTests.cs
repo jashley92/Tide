@@ -21,7 +21,9 @@ public class ToursTests
         var steps = For(AppRole.Analyst);
         steps.Select(s => s.Key).Should().ContainInOrder("today", "rail", "triage", "actions", "search", "help");
         steps.Should().Contain(s => s.Key == "present").And.NotContain(s => s.Key == "admin");
-        steps.Single(s => s.Key == "rail").Text.Should().Contain("]");
+        steps.Single(s => s.Key == "rail").Text.Should().Contain("]").And.Contain("After the tour",
+            "] does nothing while a step is up, so the step doesn't ask for it now");
+        steps.Should().OnlyContain(s => !s.Text.Contains("use Context"), "a narrow window shows the button as its icon alone");
     }
 
     [Fact]

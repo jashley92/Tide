@@ -214,10 +214,11 @@ the right, so you leave the page less. Every route, key and name that worked bef
 
 **For everyone**
 - **What's new.** The first time each person opens TIDE after this upgrade, a dialog lists what changed for their
-  role, once. **See all changes**, and **Help and what's new** in the account menu, open Help with every release's
-  notes. Never in present mode, and never for a Reader or a Visitor. Then each page that changed shows a tip on the
-  first visit to it, until **Got it**; Help's **Show tips again** brings them back. Someone signing in for the first
-  time gets a short tour for their role instead, which Help's **Take the tour** starts again.
+  role, once. **See all changes**, and **Help and what's new** in the account menu, open Help with each release's
+  highlights for that role (and, for administrators, the full notes). Never in present mode, and never for a Reader
+  or a Visitor. Then each page that changed shows a tip on the first visit to it, until **Got it**; Help's **Show tips
+  again** brings them back. Someone signing in for the first time gets a short tour for their role instead, which
+  Help's **Take the tour** starts again.
 - **Every page.** A **context rail** on the right of Today, Triage, the article editor, Actions, an action, Search,
   Our stack, the Library and Adversaries shows what TIDE knows about what's selected. It's open beside the page on a
   window 1500px or wider; below that, **Context** in the top bar opens it over the page. `]` shows or hides it. A

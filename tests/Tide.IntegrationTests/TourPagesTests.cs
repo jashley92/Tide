@@ -63,9 +63,12 @@ public class TourPagesTests(TideApp app) : IClassFixture<TideApp>
             var html = await r.Html();
             html.Should().Contain("tide-tour").And.Contain("Step 1 of").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
             html.Should().NotContain("tide-whatsnew").And.NotContain("class=\"tide-tip\"");
-            html.Should().Contain("Skip tour");
+            html.Should().Contain("Skip tour").And.Contain("tide-tour-scrim", "the page under it can't be clicked");
+            (await Pref(who, UserPreferences.TourState)).Should().Be(UserPreferences.TourDue, "a reload mid-tour starts it again");
+            (await Pref(who, UserPreferences.WhatsNewSeen)).Should().BeEmpty();
+            await Do(r, c => c.EndTourAsync());
         }
-        (await Pref(who, UserPreferences.TourState)).Should().Be(UserPreferences.TourDone);
+        (await Pref(who, UserPreferences.TourState)).Should().Be(UserPreferences.TourDone, "Done or Skip settles it");
         (await Pref(who, UserPreferences.WhatsNewSeen)).Should().Be("1.13.0", "the tour stands in for What's new");
         await using var scope = SignedIn(app, who);
         (await scope.ServiceProvider.GetRequiredService<PageTipService>().DueAsync("triage")).Should().BeNull("nor do they need what-changed tips");
@@ -73,6 +76,34 @@ public class TourPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var again = await RenderAsync<OnboardingHost>(app, "/", @as: who);
         await Do(again, c => c.CheckAsync());
         (await again.Html()).Should().NotContain("tide-tour").And.NotContain("tide-whatsnew");
+    }
+
+    [Fact]
+    public async Task ASecondTab_DoesntStartASecondTour()
+    {
+        var who = Person("Analyst");
+        await FirstSignIn(who);
+        await using var first = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        await Do(first, c => c.CheckAsync());
+        await using (var second = await RenderAsync<OnboardingHost>(app, "/", @as: who))
+        {
+            await Do(second, c => c.CheckAsync());
+            (await second.Html()).Should().NotContain("tide-tour").And.NotContain("tide-whatsnew");
+        }
+        (await first.Html()).Should().Contain("tide-tour");
+        await Do(first, c => c.EndTourAsync());
+    }
+
+    [Fact]
+    public async Task LeavingThePageAnotherWay_EndsTheTour_AsSkipped()
+    {
+        var who = Person("Viewer");
+        await FirstSignIn(who);
+        await using var r = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        await Do(r, c => c.CheckAsync());
+        await Do(r, c => c.PageChangedAsync("actions"));
+        (await r.Html()).Should().NotContain("tide-tour");
+        (await Pref(who, UserPreferences.TourState)).Should().Be(UserPreferences.TourDone);
     }
 
     [Fact]

@@ -394,7 +394,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             moved.Should().BeGreaterThan(first, "oldest first: the history line comes between the comments");
             second.Should().BeGreaterThan(moved);
             feed.Should().Contain("<span class=\"tide-avatar tide-feed-mark\" aria-hidden=\"true\" title=\"Tester\">T</span>", "a comment carries its author's initials")
-                .And.Contain("<span class=\"tide-avatar tide-feed-mark tide-feed-sys\" aria-hidden=\"true\" title=\"From its history\">T</span>", "a history line TIDE's mark")
+                .And.Contain("<li class=\"tide-feed-item tide-feed-line\"><span class=\"tide-avatar tide-feed-mark\" aria-hidden=\"true\" title=\"Tester\">T</span>", "a history line its person's, as their comments are")
                 .And.Contain("class=\"tide-feed-item tide-feed-line\"").And.Contain("class=\"tide-feed-item tide-comment\"");
 
             var box = feed[feed.IndexOf("<div id=\"comment-zone\"", StringComparison.Ordinal)..];

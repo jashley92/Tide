@@ -6,10 +6,11 @@ namespace Tide.Application.Operations;
 
 /// <summary>
 /// A page's tip: what changed on it in <paramref name="Version"/>, pointing at <paramref name="Target"/> (a CSS selector
-/// for the control that changed; the tip sits in a corner when it isn't shown). Shown on a page the person can use
+/// for the control that changed, or "" for none; the tip sits in a corner when it has none or that control isn't shown,
+/// unless it <paramref name="NeedsTarget"/>, when it isn't shown either). Shown on a page the person can use
 /// (<paramref name="Needs"/>), once: "Got it" keeps the release dismissed in the person's <see cref="Preference"/>.
 /// </summary>
-public sealed record PageTip(string Key, ReleaseVersion Version, Permission Needs, string Target, string Title, string Text)
+public sealed record PageTip(string Key, ReleaseVersion Version, Permission Needs, string Target, string Title, string Text, bool NeedsTarget = false)
 {
     /// <summary>The preference that holds the release whose tip the person dismissed here ("tip.triage").</summary>
     public string Preference => "tip." + Key;
@@ -29,16 +30,17 @@ public static class PageTips
     public static readonly IReadOnlyList<PageTip> All =
     [
         new("today", V1_13, Permission.ReadTeamEdition, Rail, "The context rail",
-            "What TIDE knows about what you select is in the context rail. Press ] to show or hide it, or use Context."),
+            "What TIDE knows about what you select is in the context rail. Press ] to show or hide it, or use the rail button in the top bar."),
         new("triage", V1_13, Permission.WriteArticles, ".tide-reading", "The reading pane",
-            "Read an item here without leaving Triage. It fetches the article only when you press V or Read it here. The decisions sit under it."),
+            "Read an item here without leaving Triage. It fetches the article only when you press V or Read it here. The decisions sit under it.",
+            NeedsTarget: true),
         new("editor", V1_13, Permission.ReadTeamEdition, Rail, "One column",
             "The editor is one column, in the order the brief reads. The reader preview is in the context rail: press ] to show or hide it."),
         new("actions", V1_13, Permission.ReadActions, Rail, "The selected action",
             "Select a row with J and K, or a click. The context rail shows it; Enter opens it. No owner finds work nobody has."),
         new("action", V1_13, Permission.ReadActions, Rail, "Facts and files in the rail",
             "An action's facts, its source article and its files are in the context rail. Press ] to show or hide it."),
-        new("search", V1_13, Permission.ReadTeamEdition, ".tide-top-find", "Answers first",
+        new("search", V1_13, Permission.ReadTeamEdition, "", "Answers first",
             "A lookup answers in its first line. The hunt query, the sweeps and the export are in the context rail."),
         new("library", V1_13, Permission.ReadActions, Rail, "One Library",
             "Saved queries, outreach templates, playbooks and board rules are one Library: four tabs and one search."),

@@ -7,8 +7,9 @@ namespace Tide.Application.Operations;
 public enum RoleGroup
 {
     Analysts = 0,
-    PresentersAndAdmins = 1,
+    Presenters = 1,
     ViewersAndActionOwners = 2,
+    Administrators = 3,
 }
 
 /// <summary>Which highlights each role reads.</summary>
@@ -18,7 +19,8 @@ public static class RoleGroups
     public static readonly IReadOnlyList<(RoleGroup Group, string Heading)> Headings =
     [
         (RoleGroup.Analysts, "Analysts"),
-        (RoleGroup.PresentersAndAdmins, "Presenters and admins"),
+        (RoleGroup.Presenters, "Presenters"),
+        (RoleGroup.Administrators, "Administrators"),
         (RoleGroup.ViewersAndActionOwners, "Viewers and action owners"),
     ];
 
@@ -28,13 +30,14 @@ public static class RoleGroups
     /// <summary>
     /// The groups whose highlights a person with <paramref name="roles"/> reads, in the order they're shown. Analysts
     /// present the brief, so they read the presenters' highlights too; administrators hold every permission, so they read
-    /// the analysts'. Someone who works as an analyst doesn't also read the viewers' narrower version of the same pages.
-    /// Readers and Visitors read none: they see the published archive, or a meeting only from a seat in it.
+    /// those and their own. Someone who works as an analyst doesn't also read the viewers' narrower version of the same
+    /// pages. Readers and Visitors read none: they see the published archive, or a meeting only from a seat in it.
     /// </summary>
     public static IReadOnlyList<RoleGroup> For(IEnumerable<AppRole> roles)
     {
         var list = roles as ICollection<AppRole> ?? roles.ToList();
-        return list.Any(r => r is AppRole.Analyst or AppRole.Admin) ? [RoleGroup.Analysts, RoleGroup.PresentersAndAdmins]
+        return list.Contains(AppRole.Admin) ? [RoleGroup.Analysts, RoleGroup.Presenters, RoleGroup.Administrators]
+            : list.Contains(AppRole.Analyst) ? [RoleGroup.Analysts, RoleGroup.Presenters]
             : list.Any(r => r is AppRole.Viewer or AppRole.ActionOwner) ? [RoleGroup.ViewersAndActionOwners]
             : [];
     }

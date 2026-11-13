@@ -281,7 +281,15 @@ else
                     else if (entry.Event is { } e)
                     {
                         <li class="tide-feed-item tide-feed-line" @key="e.Id">
-                            <span class="tide-avatar tide-feed-mark tide-feed-sys" aria-hidden="true" title="From its history">T</span>
+                            @* The person who did it, as on their comments; TIDE's mark only for TIDE's own lines (an escalation). *@
+                            @if (string.IsNullOrWhiteSpace(e.ByName) || e.ByName == ReminderService.EscalatedBy)
+                            {
+                                <span class="tide-avatar tide-feed-mark tide-feed-sys" aria-hidden="true" title="From its history">T</span>
+                            }
+                            else
+                            {
+                                <span class="tide-avatar tide-feed-mark" aria-hidden="true" title="@e.ByName">@MainLayout.Initials(e.ByName)</span>
+                            }
                             <div class="tide-feed-body">
                                 <div class="small tide-muted">@e.ByName &middot; @Ui.When(Clock, e.AtUtc)</div>
                                 <div>@e.Text</div>
