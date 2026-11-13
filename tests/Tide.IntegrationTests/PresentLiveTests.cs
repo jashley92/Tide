@@ -120,7 +120,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.JoinIfLive());
 
         await Do(pat, p => p.ToggleLock());
-        (await pat.Html()).Should().Contain("Unlock").And.Contain("aria-pressed=\"true\"");
+        (await pat.Html()).Should().Contain("id=\"present-rail-lock\" class=\"btn btn-sm btn-primary\" aria-pressed=\"true\"");
         await Do(owner, p => p.Follow());
         PresentFollowPillTests.Heard(await owner.Html()).Should().Be("Following Tester · locked by the presenter");
         (await owner.Html()).Should().Contain("disabled aria-label=\"Next slide\"", "the slide buttons are off");

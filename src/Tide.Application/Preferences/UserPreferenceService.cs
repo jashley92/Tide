@@ -108,7 +108,7 @@ public static class UserPreferences
                 Definition.Matching(Operations.GuideLinkService.Since, "", Operations.GuideLinkService.IsDayOrNone, Permission.ReadTeamEdition),
                 Definition.Matching(Operations.GuideLinkService.Release, "", Operations.GuideLinkService.IsReleaseOrNone, Permission.ReadTeamEdition),
             ])
-            .Concat(Operations.Guides.OnPages.Select(g => new Definition(Operations.GuideLinkService.Done(g), ["", Operations.GuideLinkService.DoneValue], g.Needs)))
+            .Concat(Operations.Guides.OnPages.Select(g => new Definition(Operations.GuideLinkService.DoneKey(g), ["", Operations.GuideLinkService.DoneValue], g.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>

@@ -1520,13 +1520,21 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present > .tide-present-top { grid-row: 1; grid-column: 1 / -1; }
 .tide-present > .tide-slide { grid-row: 2; grid-column: 1; }
 .tide-present > .tide-present-bottom { grid-row: 3; grid-column: 1 / -1; }
-.tide-present-rail { grid-row: 2; display: flex; flex-direction: column; gap: .9em; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+.tide-present-rail { grid-row: 2; display: flex; flex-direction: column; gap: .6em; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
     padding: 1em 1.1em; background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .82em; }
 .tide-present-rail.is-docked { grid-column: -2; border-left: 1px solid var(--tide-slide-line); }
 .tide-present-rail.is-over { grid-column: 1 / -1; justify-self: end; width: min(26em, 100%); z-index: 15; border-left: 1px solid var(--tide-slide-line-strong); box-shadow: -10px 0 30px var(--tide-shadow-strong); }
 .tide-present-rail:focus { outline: none; }
 .tide-present-rail-head { display: flex; align-items: center; justify-content: space-between; gap: .6em; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .85em; }
-.tide-present-rail section { display: grid; gap: .45em; padding-top: .8em; border-top: 1px solid var(--tide-slide-line); }
+.tide-present-rail section { display: grid; gap: .35em; padding-top: .55em; border-top: 1px solid var(--tide-slide-line); }
+/* Pinned at the rail's top, never scrolled away: its head, and the bar of what's pressed most (Mark discussed with its D,
+   Lock to me, the hands). The rail scrolls under it, so it covers what passes beneath. */
+.tide-present-rail-pin { position: sticky; top: -1em; z-index: 2; display: grid; gap: .5em; margin: -1em -1.1em 0; padding: 1em 1.1em .5em;
+    background: var(--tide-slide-surface); border-bottom: 1px solid var(--tide-slide-line); }
+.tide-present-rail-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; }
+.tide-present-rail-bar .btn { display: inline-flex; align-items: center; gap: .35em; white-space: nowrap; }
+.tide-present-rail-state { color: var(--tide-slide-muted); font-size: .85em; text-transform: uppercase; letter-spacing: .06em; }
+.tide-present-rail-bar .btn-primary .tide-present-rail-state { color: inherit; }
 .tide-present-rail h3 { margin: 0; font-size: 1.05em; font-weight: var(--tide-weight-semibold); }
 .tide-present-rail .tide-present-help { margin: 0; }
 .tide-present-rail .form-control, .tide-present-rail .form-select, .tide-wrap-add > .form-control { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .95em; color-scheme: dark; }
@@ -1536,21 +1544,50 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present-rail-warn { color: var(--tide-slide-warn); font-weight: var(--tide-weight-bold); }
 .tide-present-rail-sub { margin-top: .3em; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .06em; font-size: .85em; }
 .tide-present-rail-action { display: grid; gap: .3em; }
-.tide-present-rail .tide-action-assign { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .4em; }
-.tide-present-rail-raise { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .4em; align-items: center; }
-.tide-present-rail-raise-line { grid-column: 1 / -1; overflow-wrap: anywhere; }
-/* The meeting's quick add: what needs doing across the top, then kind, team, due date and Add two to a row. */
+/* An action on the article: its title line, then its due date and who has it side by side (and Take it). */
+.tide-present-rail .tide-action-assign { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4em; }
+.tide-present-rail .tide-action-assign > input { flex: 0 1 9.5em; min-width: 8.5em; }
+/* The holder whole: beside the date where it fits, else on a row of its own. */
+.tide-present-rail .tide-action-assign > select { flex: 1 1 8em; min-width: max-content; }
+/* A recommended line with its one Raise beside it; under it, what it'll be raised as, a chip that opens its lists. */
+.tide-present-rail-raise { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25em .5em; align-items: start; }
+.tide-present-rail-raise-line { overflow-wrap: anywhere; }
+.tide-present-rail-chip { display: inline-flex; align-items: center; gap: .4em; justify-self: start; max-width: 100%; min-width: 0; padding: .1em .55em;
+    border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-pill); background: transparent; color: var(--tide-slide-muted); font-size: .88em; text-align: start; }
+.tide-present-rail-chip > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.tide-present-rail-chip:hover, .tide-present-rail-chip[aria-expanded="true"] { color: var(--tide-slide-text); border-color: var(--tide-slide-accent); }
+.tide-present-rail-raise > .tide-present-rail-chip, .tide-present-rail-chip-edit { grid-column: 1 / -1; }
+/* The chip opened: its kind and team, each a list the rail's width, so a long one ("Vulnerability Management") shows whole. */
+.tide-present-rail-chip-edit { display: grid; gap: .3em; }
+/* The meeting's quick add: what needs doing across the top, then the rest two to a row (in the rail, see below). */
 .tide-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .4em; align-items: center; }
 .tide-quick-add > input:first-child { grid-column: 1 / -1; }
-.tide-present-rail-discussed { margin-top: auto; width: 100%; }
+.tide-present-rail-discussed { flex: 1 1 auto; justify-content: center; border-color: var(--tide-slide-line-strong); color: var(--tide-slide-text); }
+.tide-present-rail-discussed:hover { border-color: var(--tide-slide-accent); color: var(--tide-slide-strong); }
 .tide-present-rail-discussed.on { background: var(--tide-slide-ok); border-color: var(--tide-slide-ok); color: var(--tide-slide-bg); }
+/* In the rail the quick add is Another action until opened; then its title, and a row of its chip, due date and Add. */
+.tide-present-rail .tide-quick-add { grid-template-columns: minmax(0, 1fr); gap: .3em; }
+.tide-quick-add-open { justify-self: start; padding: 0; color: var(--tide-slide-accent); text-decoration: none; }
+.tide-quick-add-open:hover { color: var(--tide-slide-accent-hover); }
+.tide-quick-add-row { display: flex; align-items: center; gap: .4em; min-width: 0; }
+.tide-quick-add-row > .tide-present-rail-chip { flex: 1 1 auto; }
+.tide-quick-add-row > input { flex: 0 1 9.5em; min-width: 7.5em; }
+.tide-quick-add-row > .btn { flex: none; }
+/* Your note: one line until it's focused or written in, growing as it is; Add note beside it. */
+.tide-present-rail-note { display: flex; align-items: flex-start; gap: .4em; }
+.tide-present-rail-note > textarea { flex: 1 1 auto; min-width: 0; }
+.tide-present-rail-note > textarea:focus { min-height: calc(3em + .75rem + 2px); }
+.tide-present-rail-note > .btn { flex: none; }
+/* Up next: one line at the foot of the slide's controls. */
+.tide-present-rail-next { margin: 0; padding-top: .45em; border-top: 1px solid var(--tide-slide-line); color: var(--tide-slide-muted); overflow-wrap: anywhere; }
+.tide-present-rail-next-label { margin-right: .4em; text-transform: uppercase; letter-spacing: .06em; font-size: .85em; }
 .tide-present-rail-foot { color: var(--tide-slide-muted); }
 /* Open over the slide, the rail is modal: a scrim over the page under it, which closes it on a click. */
 .tide-present-scrim { position: fixed; inset: 0; z-index: 14; background: var(--tide-scrim); }
-/* Its lists take the rail's width, each on a line of its own, so a long team or kind ("Vulnerability Management") shows
-   whole; the box and the button beside them keep a row. */
-.tide-present-rail :is(.tide-present-rail-raise, .tide-quick-add, .tide-action-assign) > select { grid-column: 1 / -1; }
-.tide-present-rail .tide-action-assign > .tide-assign-none { grid-column: 1 / -1; }
+/* Its lists take the rail's width, each on a line of its own, so a long team or kind shows whole: an action's assignee
+   keeps its row beside the due date. */
+.tide-present-rail :is(.tide-present-rail-raise, .tide-quick-add) > select { grid-column: 1 / -1; }
+.tide-present-rail .tide-action-assign > .tide-assign-none { flex-basis: 100%; }
 
 /* An action opened in a meeting, beside the slide where the organization has chosen that (Org:ActionBesideSlide): from
    1200px wide, a column of the page between the slide and the presenter's rail. It's as wide for the presenter as for

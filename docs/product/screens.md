@@ -629,19 +629,19 @@ on it, and gets its full time again after. `Alt+Z` (`⌥ Z` on a Mac) presses th
 
 A full-screen, keyboard-driven slide deck, always dark because it's on a shared screen:
 
-- a title slide with the articles in order (KEV marked) and what comes first ("First: the opening note, the numbers
-  and 4 actions that need review.");
+- a title slide with the articles in order (KEV marked), what comes first ("First: the opening note and the
+  numbers.") and what comes after them ("After the articles: 4 actions that need review.");
 - the team's opening note (what's coming up, the week's phishing trends; team edition only, carried from the
   previous brief, and flagged *Not updated* for analysts until it's changed or kept with *Still current*);
 - the opening numbers, a slide per metric group;
-- (team edition) **Actions that need review**: open actions from any brief that are overdue, escalated, or have gone
+- one slide per article, with its indicators as defanged chips (a chip opens the larger card) and its CVEs; each
+  recommended line shows the action it became ("✓ A-2 · In progress · Sam"), and the article's other actions are
+  listed apart;
+- after the articles, just before the wrap-up, (team edition) **Actions that need review**: open actions from any brief that are overdue, escalated, or have gone
   too long without an update by a person (2 business days, or 5 when Blocked; an administrator sets both), each once,
   most pressing first, at most 8. Each row says every reason it's there, its last update ("last: comment by Sam"), and
   one thing the room can do (ask for an update, reassign it, find someone to take it, ask what it's waiting on, agree
   a new due date);
-- one slide per article, with its indicators as defanged chips (a chip opens the larger card) and its CVEs; each
-  recommended line shows the action it became ("✓ A-2 · In progress · Sam"), and the article's other actions are
-  listed apart;
 - a wrap-up of three lists: the recommended lines not raised yet, who has what (the brief's actions by team and
   holder), and the articles not discussed.
 
@@ -666,18 +666,21 @@ present corrects the list from the rail. The brief's page keeps who attended and
 **The presenter's rail** holds what only the presenter does, and is never on a follower's screen. From 1500px wide
 it's docked beside the slide, which narrows to fit; below that **Rail** or `]` opens it over the slide. For the slide
 on screen it holds: *Ready to present?* on the title slide; *Still current* and *Edit* for an opening note carried
-over; a box for each number not entered yet; an article's actions with *Take it*, its recommended lines to raise (each
-in one click, at the article's priority, as the kind its wording suggests and for the team that last took that kind;
-both can be changed first), the quick add, your note (Ctrl+Enter adds it) and *Mark discussed* (D); and on the
+over; a box for each number not entered yet; an article's actions, compact (the title, then its due date and holder
+side by side, and *Take it*), its recommended lines to raise (each in one click, at the article's priority, as the kind
+its wording suggests and for the team that last took that kind, shown as a chip that opens both to change first),
+*Another action* (the quick add, opened when wanted) and your note (one line, Ctrl+Enter adds it); and on the
 wrap-up, *Before you end*: what's not raised, the articles not discussed (tick to carry each to the next brief),
-attendance and *End the meeting*. In a meeting it also has the hands (lower one, or clear all) and everyone's view:
-bring everyone here, lock everyone to your slide, and hand presenting to another analyst. If the presenter drops out,
+attendance and *End the meeting*. A bar pinned at its top never scrolls away: *Mark discussed* (D) with the slide's
+state, and in a meeting *Lock to me* (on or off) and the count of hands up, which opens their list. At its foot, in a
+meeting, the hands (lower one, or clear all) and everyone's view: bring everyone here, and hand presenting to another
+analyst. If the presenter drops out,
 another analyst can take over. Ending the meeting asks first.
 
 ![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
 
-*The presenter's rail on an article's slide: (1) its actions with Take it, (2) a recommended line to raise, (3) the
-quick add, (4) your note.*
+*The presenter's rail on an article's slide: (1) its actions with Take it, (2) a recommended line to raise, (3)
+Another action, the quick add, (4) your note.*
 
 ![The wrap-up, with Before you end in the presenter's rail](../screenshots/present-wrap-up.png)
 

@@ -86,8 +86,7 @@ else
 {
     var edition = Cut(_brief);
     var count = edition.Articles.Count;
-    var m = LeadSlides;
-    var last = count + m + 1;
+    var last = LastSlide;
     @* Worked out once a render, for the slide and the rail both. *@
     var slideArticle = ArticleAt(edition, _slide);
     var slideMatch = slideArticle is null ? default : RecommendedActions.Match(slideArticle.Article.RecommendedActions, slideArticle.Actions, r => r.Recommendation);
@@ -247,6 +246,10 @@ else
                         {
                             <p class="tide-agenda-first">First: @first.</p>
                         }
+                        @if (AfterArticles is { } after)
+                        {
+                            <p class="tide-agenda-first">After the articles: @after.</p>
+                        }
                         <ol class="tide-agenda">
                             @foreach (var (ea, i) in edition.Articles.Select((a, i) => (a, i)))
                             {
@@ -278,7 +281,7 @@ else
                         <Md Text="@note" />
                     </div>
                 }
-                else if (OpenSlides == 1 && _slide == NoteSlides + MetricsSlides + 1)
+                else if (OpenSlides == 1 && _slide == OpenAt)
                 {
                     @* The open actions the room should look at, from any brief: overdue, escalated, or gone too long without an
                        update (ActionService.MeetingActionsAsync). Team edition only (ADR 0005), at most 8, most pressing first. *@
@@ -369,7 +372,7 @@ else
                     var item = ItemFor(a.Id);
                     <div class="@(a.Classification == Classification.Threat ? "tide-slide-threat" : "")">
                         <div class="tide-slide-kicker">
-                            <span>@(_slide - m) of @count</span>
+                            <span>@(_slide - LeadSlides) of @count</span>
                             <ClassBadge Classification="a.Classification" Priority="a.Priority" />
                             <TlpBadge Level="a.Tlp" />
                             @if (ea.Marking > a.Tlp) { <span title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="ea.Marking" /></span> }
@@ -758,9 +761,37 @@ else
             }
             <aside id="present-rail" class="tide-present-rail @(RailDocked ? "is-docked" : "is-over")" tabindex="-1" @ref="_railBox"
                    role="@(RailDocked ? null : "dialog")" aria-modal="@(RailOver ? "true" : null)" aria-label="Presenter's controls">
+                @* Pinned at the top, never scrolled away: the rail's head, and the bar of what's pressed most (Mark
+                   discussed, Lock to me, the hands). Below it the rail scrolls. *@
+                <div class="tide-present-rail-pin">
                 <div class="tide-present-rail-head">
                     <span>Presenter &middot; @(_slide == 0 ? "before you start" : _slide == last ? "before you end" : "this slide")</span>
                     <button type="button" id="present-rail-close" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @ref="_railClose" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
+                </div>
+                @if (railItem is not null || _view is not null && Presenting)
+                {
+                    <fieldset class="tide-rehearsal-controls" disabled="@RehearsalAsked">
+                    <div class="tide-present-rail-bar">
+                        @if (railItem is not null)
+                        {
+                            <button type="button" class="btn btn-sm tide-present-rail-discussed @(railItem.Discussed ? "on" : "")" aria-pressed="@Ui.Aria(railItem.Discussed)" @onclick="() => ToggleDiscussed(railItem)">
+                                <span class="bi @(railItem.Discussed ? "bi-check2" : "bi-square")" aria-hidden="true"></span> @(railItem.Discussed ? "Discussed" : "Mark discussed") <span class="tide-kbd">D</span>
+                            </button>
+                        }
+                        @if (_view is { } pinned && Presenting)
+                        {
+                            <button type="button" id="present-rail-lock" class="btn btn-sm @(pinned.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(pinned.Locked)"
+                                    title="@(pinned.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
+                                <span class="bi @(pinned.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> Lock to me <span class="tide-present-rail-state">@(pinned.Locked ? "On" : "Off")</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary tide-present-rail-hands" aria-label="Hands up: @pinned.Hands.Count" aria-expanded="@Ui.Aria(HandsListOpen)"
+                                    aria-controls="present-hands" disabled="@(pinned.Hands.Count == 0)" @onclick="ToggleHandsList">
+                                <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @pinned.Hands.Count
+                            </button>
+                        }
+                    </div>
+                    </fieldset>
+                }
                 </div>
                 @* In rehearsal every control here is disabled (and each step checks again where it's handled). *@
                 <fieldset class="tide-rehearsal-controls" disabled="@RehearsalAsked">
@@ -870,43 +901,70 @@ else
                             @foreach (var line in railLines.Where(l => l.Action is null).Select(l => l.Line))
                             {
                                 var draft = LineDraft(ra.Article.Id, line);
+                                var chipOpen = _chipsOpen.Contains((ra.Article.Id, line));
+                                @* The line and its one Raise; under it, what it'll be raised as, a chip that opens the two lists in place. *@
                                 <div class="tide-present-rail-raise" @key="line">
                                     <div class="tide-present-rail-raise-line">@line</div>
-                                    <select class="form-select form-select-sm" aria-label="Kind for: @line" value="@draft.Kind" @onchange="e => SetLineKind(draft, e)">
-                                        @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
-                                    </select>
-                                    <select class="form-select form-select-sm" aria-label="Team for: @line" @bind="draft.Team">
-                                        @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
-                                    </select>
                                     <button type="button" class="btn btn-sm btn-primary" disabled="@_raising" @onclick="() => Raise(ra.Article.Id, line, draft)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Raise</button>
+                                    @KindTeamChip("Change the kind and team for: " + line, draft.Kind, draft.Team, chipOpen, () => EditRaiseChip(ra.Article.Id, line))
+                                    @if (chipOpen)
+                                    {
+                                        <div class="tide-present-rail-chip-edit">
+                                            <select class="form-select form-select-sm" aria-label="Kind for: @line" value="@draft.Kind" @onchange="e => SetLineKind(draft, e)">
+                                                @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+                                            </select>
+                                            <select class="form-select form-select-sm" aria-label="Team for: @line" @bind="draft.Team">
+                                                @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                                            </select>
+                                        </div>
+                                    }
                                 </div>
                             }
-                            <div class="tide-quick-add">
-                                <input class="form-control form-control-sm" placeholder="Another action: what needs doing" aria-label="New action title" maxlength="300"
-                                       @bind:get="QuickAddTitle(ra.Article.Id)" @bind:set="v => TypeQuickAddTitle(ra.Article.Id, v)" @bind:event="oninput" />
-                                <select class="form-select form-select-sm" aria-label="Kind" @bind="_qaKind">
-                                    @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
-                                </select>
-                                <select class="form-select form-select-sm" aria-label="Team" @bind="_qaTeam">
-                                    @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
-                                </select>
-                                <input type="date" class="form-control form-control-sm" aria-label="Due (blank: from the SLA)" title="Due (blank: from the SLA)" @bind="_qaDue" />
-                                @if (_qaDue is { } qd && qd < ActionSvc.Today)
+                            @* Another action: collapsed to its button; opened, the title on a row, then its kind and team, due date and Add. *@
+                            <div class="tide-quick-add @(QuickAddOpen(ra.Article.Id) ? "is-open" : "")">
+                                @if (!QuickAddOpen(ra.Article.Id))
                                 {
-                                    <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
+                                    <button type="button" class="btn btn-sm btn-link tide-quick-add-open" @onclick="() => OpenQuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Another action</button>
                                 }
-                                <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(ra.Article.Id)))" @ref="_quickAddButton" @onclick="() => QuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                else
+                                {
+                                    <input class="form-control form-control-sm" placeholder="What needs doing" aria-label="New action title" maxlength="300" @ref="_quickAddTitleBox"
+                                           @bind:get="QuickAddTitle(ra.Article.Id)" @bind:set="v => TypeQuickAddTitle(ra.Article.Id, v)" @bind:event="oninput" />
+                                    <div class="tide-quick-add-row">
+                                        @KindTeamChip("Change the kind and team for the new action", _qaKind, _qaTeam, _qaChipOpen, () => _qaChipOpen = !_qaChipOpen)
+                                        <input type="date" class="form-control form-control-sm" aria-label="Due (blank: from the SLA)" title="Due (blank: from the SLA)" @bind="_qaDue" />
+                                        <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(ra.Article.Id)))" @ref="_quickAddButton" @onclick="() => QuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                    </div>
+                                    @if (_qaChipOpen)
+                                    {
+                                        <div class="tide-present-rail-chip-edit">
+                                            <select class="form-select form-select-sm" aria-label="Kind" @bind="_qaKind">
+                                                @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+                                            </select>
+                                            <select class="form-select form-select-sm" aria-label="Team" @bind="_qaTeam">
+                                                @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                                            </select>
+                                        </div>
+                                    }
+                                    @if (_qaDue is { } qd && qd < ActionSvc.Today)
+                                    {
+                                        <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
+                                    }
+                                }
                             </div>
                         }
                     </section>
                     @if (_readsTeam && _canNote)
                     {
+                        @* One line until it's written in, growing as it is; Add note beside it. The team's meeting notes:
+                           everyone in the meeting reads them under Notes. *@
                         <section aria-labelledby="rail-note-mine-h">
                             <h3 id="rail-note-mine-h">Your note</h3>
-                            <textarea class="form-control form-control-sm" rows="2" aria-label="Note on this article" maxlength="@MeetingService.MaxNote" placeholder="Note on this article. Ctrl+Enter adds it."
-                                      @bind:get="_noteText" @bind:set="TypeNote" @bind:event="oninput" @onkeydown="RailNoteKey"></textarea>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" @onclick="AddNote">Add note</button>
-                            <p class="tide-present-help">The team's meeting notes: everyone in the meeting reads them under Notes.</p>
+                            <div class="tide-present-rail-note">
+                                <textarea class="form-control form-control-sm tide-autogrow" rows="1" aria-label="Note on this article" maxlength="@MeetingService.MaxNote" placeholder="Note on this article. Ctrl+Enter adds it."
+                                          @bind:get="_noteText" @bind:set="TypeNote" @bind:event="oninput" @onkeydown="RailNoteKey"></textarea>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" @onclick="AddNote">Add note</button>
+                            </div>
                         </section>
                     }
                 }
@@ -988,10 +1046,11 @@ else
                 }
                 @if (_slide > 0 && _slide < last)
                 {
-                    <section aria-labelledby="rail-next-h"><h3 id="rail-next-h">Up next</h3><p class="tide-present-help">@SlideTitle(edition, _slide + 1)</p></section>
+                    <p class="tide-present-rail-next"><span class="tide-present-rail-next-label">Up next</span> @SlideTitle(edition, _slide + 1)</p>
                 }
                 @if (_view is { } room && Presenting)
                 {
+                    @* Everyone's view, at the foot: the hands to lower, bringing everyone back, handing presenting on. *@
                     <section aria-labelledby="rail-hands-h">
                         <h3 id="rail-hands-h">Hands</h3>
                         @if (room.Hands.Count == 0)
@@ -1015,10 +1074,6 @@ else
                             {
                                 <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
                             }
-                            <button class="btn btn-sm @(room.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(room.Locked)"
-                                    title="@(room.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
-                                <span class="bi @(room.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(room.Locked ? "Unlock" : "Lock to me")
-                            </button>
                             @if (room.People.Any(p => p.CanPresent && !room.IsPresenter(p.UserId)))
                             {
                                 <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="@(_handTo ?? "")" @key="HandOffResets" @onchange="ChooseHandOff">
@@ -1029,12 +1084,6 @@ else
                             }
                         </div>
                     </section>
-                }
-                @if (railItem is not null)
-                {
-                    <button class="btn btn-primary tide-present-rail-discussed @(railItem.Discussed ? "on" : "")" aria-pressed="@Ui.Aria(railItem.Discussed)" @onclick="() => ToggleDiscussed(railItem)">
-                        <span class="bi @(railItem.Discussed ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> @(railItem.Discussed ? "Discussed" : "Mark discussed") <span class="tide-kbd">D</span>
-                    </button>
                 }
                 </fieldset>
                 <p class="tide-present-help tide-present-rail-foot">@(RehearsalAsked ? "A rehearsal: these controls do nothing here." : "Only on your page: never on a follower's.")</p>
@@ -1336,6 +1385,11 @@ else
             _focusQuickAdd = false;
             await _quickAddButton.TryFocusAsync(orGone: true);
         }
+        if (_focusQuickAddTitle)
+        {
+            _focusQuickAddTitle = false;   // Another action opened it: the title is what's typed first
+            await _quickAddTitleBox.TryFocusAsync(orGone: true);
+        }
         if (_focusEnd)
         {
             // The top bar's End brought the wrap-up forward: focus goes to its choices in the rail, read from their heading.
@@ -1398,7 +1452,7 @@ else
             var group = MetricPlan[n - 1 - NoteSlides].Group?.Group.Name;
             return shortName ? group ?? "Numbers" : "Numbers: " + (group ?? "all 0");
         }
-        if (n <= LeadSlides) return ReviewTitle;
+        if (OpenSlides == 1 && n == OpenAt) return ReviewTitle;
         return ArticleAt(e, n) is not { } x ? "Wrap-up"
             : shortName ? $"{n - LeadSlides} · {FirstWords(x.Article.Title, 2)}" : $"{n - LeadSlides}. {x.Article.Title}";
     }
@@ -1456,7 +1510,7 @@ else
     private Tide.Application.Metrics.MetricDay? _planOf;
 
     // The actions that need review (overdue, escalated, or gone too long without an update: ActionService.MeetingActionsAsync)
-    // follow the numbers on the team edition when there are any; never on the public one.
+    // come after the articles, just before the wrap-up, on the team edition when there are any; never on the public one.
     private OpenActionsReview _open = OpenActionsReview.None;
     private int OpenSlides => TeamEdition && _open.Any ? 1 : 0;
 
@@ -1471,10 +1525,13 @@ else
     /// <summary>The opening note's slide key.</summary>
     internal const string NoteKey = "note";
 
-    /// <summary>The slides before the first article: the opening note, the numbers, then the actions that need review.</summary>
-    private int LeadSlides => NoteSlides + MetricsSlides + OpenSlides;
+    /// <summary>The slides before the first article: the opening note, then the numbers.</summary>
+    private int LeadSlides => NoteSlides + MetricsSlides;
 
-    private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + 1;
+    /// <summary>The actions that need review's slide, after the articles (when there's one: <see cref="OpenSlides"/>).</summary>
+    private int OpenAt => _brief is null ? 0 : LeadSlides + Cut(_brief).Articles.Count + 1;
+
+    private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + OpenSlides + 1;
 
     private void Go(int n)
     {
@@ -1711,8 +1768,8 @@ else
     private string SlideKey(int n) =>
         _brief is null ? ""
         : n == 0 ? "title" : n <= NoteSlides ? NoteKey
-        : n <= NoteSlides + MetricsSlides ? MetricPlan[n - 1 - NoteSlides].Key : n <= LeadSlides ? "open"
-        : ArticleAt(Cut(_brief), n) is { } x ? ArticleKey(x.Article.Id) : "wrap";
+        : n <= LeadSlides ? MetricPlan[n - 1 - NoteSlides].Key
+        : ArticleAt(Cut(_brief), n) is { } x ? ArticleKey(x.Article.Id) : OpenSlides == 1 && n == OpenAt ? "open" : "wrap";
 
     // An article's slide key.
     private static string ArticleKey(Guid articleId) => "article:" + articleId;
@@ -1727,11 +1784,12 @@ else
         // The note's slide, or the title when this page has none (the note was cleared, or this is the company-wide edition).
         NoteKey => NoteSlides,
         var k when MetricsSlides > 0 && Tide.Application.Metrics.MetricSlides.IndexOf(MetricPlan, k) is { } at => at + 1 + NoteSlides,
-        "open" when OpenSlides > 0 => NoteSlides + MetricsSlides + 1,
+        "open" when OpenSlides > 0 => OpenAt,
         // A numbers or open actions slide this page doesn't have (the company-wide edition, or none left): the slide
-        // in its place, rather than whichever article has its number.
-        var k when k == "open" || k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
-            => Math.Min(k == "open" ? NoteSlides + MetricsSlides + 1 : NoteSlides + 1, LastSlide),
+        // in its place (the first article; the wrap-up), rather than whichever slide has its number.
+        "open" => LastSlide,
+        var k when k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
+            => Math.Min(NoteSlides + 1, LastSlide),
         "wrap" => LastSlide,
         var k when k.StartsWith("article:", StringComparison.Ordinal) => SlideOf(k),
         _ => null,
@@ -1769,6 +1827,36 @@ else
     /// <summary>The quick-add title typed for an article's slide, not yet added.</summary>
     internal string? QuickAddTitle(Guid articleId) => _qaTitles.GetValueOrDefault(articleId);
 
+    // The recommended lines whose kind and team chip is open for editing, by article and line; the quick add's own chip,
+    // and the articles whose quick add is open (one typed in stays open, as it would be left).
+    private readonly HashSet<(Guid Article, string Line)> _chipsOpen = [];
+    private readonly HashSet<Guid> _quickAddsOpen = [];
+    private bool _qaChipOpen, _focusQuickAddTitle;
+    private ElementReference _quickAddTitleBox;
+
+    /// <summary>Opens a recommended line's kind and team chip into its two lists, or shuts it again.</summary>
+    internal void EditRaiseChip(Guid articleId, string line)
+    {
+        if (!_chipsOpen.Remove((articleId, line))) _chipsOpen.Add((articleId, line));
+    }
+
+    /// <summary>Whether the article's quick add is open: opened, or with a title typed in it.</summary>
+    private bool QuickAddOpen(Guid articleId) => _quickAddsOpen.Contains(articleId) || !string.IsNullOrEmpty(QuickAddTitle(articleId));
+
+    /// <summary>Another action: opens the article's quick add, its title box taking focus.</summary>
+    internal void OpenQuickAdd(Guid articleId)
+    {
+        _quickAddsOpen.Add(articleId);
+        _focusQuickAddTitle = true;
+    }
+
+    // A kind and team, as a chip ("Threat hunt · Identity & Access ✎"); pressed, it opens or shuts the lists that change them.
+    private RenderFragment KindTeamChip(string label, ActionKind kind, Guid team, bool open, Action toggle) =>
+        @<button type="button" class="tide-present-rail-chip" aria-label="@label" aria-expanded="@Ui.Aria(open)" @onclick="toggle">
+            <span>@ActionService.KindName(kind) &middot; @(_teams.FirstOrDefault(t => t.Id == team)?.Name ?? "no team")</span>
+            <span class="bi @(open ? "bi-check2" : "bi-pencil")" aria-hidden="true"></span>
+        </button>;
+
     /// <summary>The quick-add box, as typed (each keystroke).</summary>
     internal void TypeQuickAddTitle(Guid articleId, string? title) => _qaTitles[articleId] = title;
 
@@ -1783,6 +1871,8 @@ else
             return;
         }
         _qaTitles.Remove(articleId);
+        _quickAddsOpen.Remove(articleId);   // added: back to Another action
+        _qaChipOpen = false;
         _qaDue = null;
         await LoadActions();
         Toasts.Show($"{Ui.ActionLabel(number)} added and assigned to you.");
@@ -2846,8 +2936,8 @@ else
         Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
     }
 
-    /// <summary>The slides before the articles, in a line for the title slide: "the opening note, the numbers and 2 actions
-    /// that need review"; null when the articles come first.</summary>
+    /// <summary>The slides before the articles, in a line for the title slide: "the opening note and the numbers"; null
+    /// when the articles come first.</summary>
     private string? FirstUp
     {
         get
@@ -2855,7 +2945,6 @@ else
             List<string> parts = [];
             if (NoteSlides > 0) parts.Add("the opening note");
             if (MetricsSlides > 0) parts.Add("the numbers");
-            if (OpenSlides > 0) parts.Add(Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review"));
             return parts.Count switch
             {
                 0 => null,
@@ -2864,6 +2953,10 @@ else
             };
         }
     }
+
+    /// <summary>What comes after the articles, before the wrap-up, for the title slide: "2 actions that need review"; null
+    /// when the wrap-up follows them.</summary>
+    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review") : null;
 
 
     private Task HandsListDismissed() => InvokeAsync(() =>

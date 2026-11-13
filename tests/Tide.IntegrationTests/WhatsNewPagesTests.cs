@@ -162,6 +162,22 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         page.Should().Contain("<details class=\"tide-help-notes\" open").And.Contain("All changes in 1.13.0").And.Contain("Upgrade-Tide.ps1");
     }
 
+    [Fact]
+    public async Task TheIntro_IsMarkdown_AsTheHighlightsAre_InThePopUpAndInHelp()
+    {
+        foreach (var role in new[] { "Analyst", "Viewer", "Admin" })
+        {
+            await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person(role));
+            await r.Click(c => c.CheckAsync());
+            var html = await r.Html();
+            html.Should().Contain("class=\"tide-whatsnew-intro\"").And.Contain("<strong>context rail</strong>")
+                .And.NotContain("**", $"the pop-up's intro and highlights are rendered for an {role}");
+            await using var help = await RenderAsync<HelpPage>(app, "/help?release=1.13.0", @as: Person(role));
+            var page = await help.Html();
+            page.Should().Contain("class=\"tide-help-intro\"").And.NotContain("**", $"Help's 1.13.0 is rendered for an {role}");
+        }
+    }
+
     // The host moves to the tour's first page, which a page rendered outside a circuit can't (it throws).
     private static async Task Do(Rendered<OnboardingHost> r, Func<OnboardingHost, Task> what)
     {

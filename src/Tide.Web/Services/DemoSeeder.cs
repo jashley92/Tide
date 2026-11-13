@@ -145,13 +145,17 @@ public static class DemoSeeder
     /// <summary>
     /// <c>Demo:SlideFiller=true</c>: a dozen indicators (a long hash and a long address among them) and a dozen CVEs on the
     /// last article of today's brief, for the layout checks on a slide that holds many; and an opening note carried over
-    /// from the last brief and not yet looked at, for the presenter's Still current and Edit on its slide.
+    /// from the last brief and not yet looked at, for the presenter's Still current and Edit on its slide. And a third
+    /// recommended line on the first article, beside its two actions: two lines still to raise, the presenter's rail as
+    /// full as an article's gets.
     /// </summary>
     private static async Task SlideFillerAsync(IAppDbContextFactory dbs, DateOnly today, CancellationToken ct)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var brief = await db.Briefs.Include(b => b.Items).FirstAsync(b => b.BriefDate == today, ct);
+        var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).FirstAsync(b => b.BriefDate == today, ct);
         var last = brief.Items.OrderBy(i => i.SortOrder).Last().ArticleId;
+        var first = brief.Items.OrderBy(i => i.SortOrder).First().Article!;
+        first.RecommendedActions = (first.RecommendedActions ?? "").TrimEnd() + "\n- Reset the passwords of the accounts the gateways' admin console uses.";
         brief.TeamNote ??= "Payroll lures are up again: treat any request to change bank details as suspect.";
         brief.TeamNoteReviewedAtUtc = null;
         db.ArticleIndicators.AddRange([
