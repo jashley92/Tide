@@ -23,21 +23,22 @@
             {
                 <span class="tide-tour-count">@(Name is null ? "" : Name + " · ")Step @(Index + 1) of @Count</span>
             }
-            <span>@Step.Title</span>
+            @* The parts on a line of their own, between the count and the title, wrapping as they need. *@
+            @if (Parts is { Count: > 0 } all)
+            {
+                <span class="tide-tour-parts">
+                    @for (var i = 0; i < all.Count; i++)
+                    {
+                        @if (i > 0) { <span aria-hidden="true"> · </span> }
+                        @if (i == PartAt) { <strong aria-current="step">@all[i]</strong> } else { <span>@all[i]</span> }
+                    }
+                    <span class="tide-tour-total"> &middot; step @(Index + 1) of @Count</span>
+                </span>
+            }
+            <span class="tide-tour-title">@Step.Title</span>
         </h2>
         <button type="button" class="btn-close" aria-label="@EndLabel" @onclick="OnEnd"></button>
     </div>
-    @if (Parts is { Count: > 0 } all)
-    {
-        <p class="tide-tour-parts">
-            @for (var i = 0; i < all.Count; i++)
-            {
-                @if (i > 0) { <span aria-hidden="true"> · </span> }
-                @if (i == PartAt) { <strong aria-current="step">@all[i]</strong> } else { <span>@all[i]</span> }
-            }
-            <span class="tide-tour-total"> &middot; step @(Index + 1) of @Count</span>
-        </p>
-    }
     <p class="tide-tour-text" id="tide-tour-text">@Step.Text</p>
     <div class="tide-modal-actions">
         <button type="button" class="btn btn-link btn-sm me-auto" @onclick="OnEnd">@EndLabel</button>
