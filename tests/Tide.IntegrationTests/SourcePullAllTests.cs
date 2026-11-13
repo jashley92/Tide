@@ -205,6 +205,7 @@ public class SourcePullAllTests : IDisposable
     {
         public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(false);
         public LeaseStatus Status { get; } = new(LeaseState.StandingBy, "WEB02/4312/abc", null, null, null, null);
+        public event Action? AlarmChanged { add { } remove { } }
     }
 
     [Fact]

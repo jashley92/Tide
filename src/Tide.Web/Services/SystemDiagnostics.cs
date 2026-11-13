@@ -116,6 +116,7 @@ public sealed class SystemDiagnostics(
                 $"Couldn't take the lease ({lease.Problem}): no background job runs here until the database answers."),
             _ => new("Job lease", CheckLevel.Info, "Not asked yet: it's taken within a minute of start-up."),
         };
+        if (lease.Alarm is { } alarm) yield return new("Second process", CheckLevel.Problem, alarm);
         if (health.StandingBy)
         {
             yield return new("Background jobs", CheckLevel.Info, $"Not run here: {holder} runs them.");

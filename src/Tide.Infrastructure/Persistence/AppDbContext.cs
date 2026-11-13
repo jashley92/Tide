@@ -84,6 +84,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RotationOverride> RotationOverrides => Set<RotationOverride>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<JobLease> JobLeases => Set<JobLease>();
+    public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -716,6 +717,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasKey(x => x.Name);
             e.Property(x => x.Name).HasMaxLength(JobLease.MaxName);
             e.Property(x => x.Holder).HasMaxLength(JobLease.MaxHolder);
+        });
+
+        // Each process's heartbeat: read and deleted by age.
+        b.Entity<JobProcess>(e =>
+        {
+            e.HasKey(x => x.Holder);
+            e.Property(x => x.Holder).HasMaxLength(JobLease.MaxHolder);
+            e.HasIndex(x => x.LastSeenAtUtc);
         });
 
         // Diagnostics reads each job's latest runs; the prune deletes by age.

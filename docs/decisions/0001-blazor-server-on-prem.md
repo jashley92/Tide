@@ -20,6 +20,15 @@ with Windows (Negotiate) authentication and keeps its data in SQL Server.
   sits in the browser beyond what's on screen.
 - A circuit holds one DI scope, so services open a short-lived database context per operation
   (`IAppDbContextFactory`).
+- TIDE runs as **one process** on its database. Some of its locks are the process's own (`RotationService.Deciding`,
+  `MetricImportService.Gate`, `ReminderService.Running`), so a second process serving pages (a web garden, an overlapping
+  recycle, a second server pointed at the same database) could get round them. The background jobs' lease keeps the
+  jobs in one process, but not the pages. So every process writes a heartbeat (the `JobProcesses` table) each time it
+  checks the lease, every 30 seconds, and one that sees another's raises an alarm rather than standing by quietly:
+  a banner for administrators, a "Second process" problem on Diagnostics, and `/health/jobs` Degraded, naming both
+  processes. A heartbeat lapses 3 minutes after it was last written, as the lease does, so the alarm clears a few
+  minutes after the other process stops (at once when it shuts down cleanly). A holder whose process is gone from the
+  same machine is taken over at the next check rather than when its lease lapses.
 - An app-pool recycle drops open circuits. The installer turns off scheduled recycling, and Data Protection keys
   persist so sign-ins survive a restart.
 - TIDE gets a site and host name of its own by default. Where a host name is hard to get, it can optionally run as an

@@ -1,0 +1,26 @@
+@* Another TIDE process on this database (the job lease's heartbeats see it), as a banner across every page, for
+   administrators only: they're the ones who can stop it. It names both processes and links to Diagnostics, and goes
+   once the other's heartbeat lapses. *@
+@using Tide.Application.Operations
+@inject IJobLease Lease
+@inject ICurrentUser CurrentUser
+@implements IDisposable
+
+@if (Shown is { } alarm)
+{
+    <div class="tide-alarm-banner" role="alert" data-second-process>
+        <span class="bi bi-exclamation-octagon tide-alarm-icon" aria-hidden="true"></span>
+        <span class="tide-alarm-text"><strong>Second process running.</strong> @alarm</span>
+        <a class="btn btn-sm btn-outline-secondary text-nowrap" href="admin/system">Diagnostics</a>
+    </div>
+}
+
+@code {
+    private string? Shown => CurrentUser.Has(Permission.Administer) ? Lease.Status.Alarm : null;
+
+    protected override void OnInitialized() => Lease.AlarmChanged += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Lease.AlarmChanged -= OnChanged;
+}
