@@ -292,8 +292,12 @@ step for a control they can't.
 - **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; a
   page with a guide has **Show me around** in its header (`GuideLink`), which starts it in place and gets focus back as
   it ends. Both ask `TourRequests.AskGuide`; nothing starts a guide by itself, and a guide stores nothing.
-- **Only pointing.** A guide never presses a control for you: it may select a shut tab its control is in (a step's
-  `Opens`, such as the article's rail Actions tab), which saves nothing. Walking a guide to Done, or leaving it with
+- **Only pointing.** A guide never presses a control for you. A step whose control is in a shut tab, section, menu or
+  picker opens it first (its `Opens`: the rail's Actions tab, Draft from the sources, Browse all tags, the ATT&CK picker,
+  Triage's promote form, Actions' Filter and a card's Move, an action's status and More) and points inside it; what the
+  guide opened it closes again when a step leaves it or the guide ends (by the step's `Closes`, such as the picker's
+  Close, else by its opener), choosing nothing, so the article stays exactly as it was. Escape closes it with the guide.
+  Nothing that fetches, drafts, pulls or sends is ever pressed. Walking a guide to Done, or leaving it with
   Escape, writes nothing and makes no outgoing call (`GuideWalkTests`).
 - **Where it starts.** From Help, `GuideStarts` opens its page: the newest article for the editor's, the open action due
   first for an action's. Search's looks something up itself, the normal way (`search?q=`): the first CVE, else the first
@@ -307,6 +311,13 @@ step for a control they can't.
   the shut rail with the rail's button as a fallback, or in a tab the step opens); the others are left out, so "Step 2
   of 7" counts what's shown and every step points at something. A step whose control is still being drawn waits in the
   middle, with no arrow.
+- **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked: Today, Triage,
+  the editor on the newest article, Today's running order, edition check and Mark ready, Present, Send, Actions and an
+  action, and Search on a sample lookup. **Following the brief** is the shorter one for whoever can't write (Today, the
+  meeting, their actions, Search). A cross-page guide (`Guide.Travels`) opens each step's page as it's reached
+  (`GuideStarts.RoutesAsync`); a step whose control a page may not draw falls back to one that's always there, such as
+  the page's heading. Help, What's
+  new's **See the whole day** and the tour's last step start it; no page's Show me around does.
 - **Learn to present** is the one guide that isn't a page's. For whoever can present (`PresentBriefs`), Help links to
   present mode in rehearsal (`/present/{day}?rehearse=1`, today's brief). See [rehearsal](#rehearsal).
 

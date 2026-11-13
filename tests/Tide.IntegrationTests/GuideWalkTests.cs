@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
@@ -80,6 +81,9 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
     [InlineData("action", "Analyst")]
     [InlineData("action", "Viewer")]
     [InlineData("search", "Viewer")]
+    [InlineData("day", "Analyst")]
+    [InlineData("following", "Viewer")]
+    [InlineData("following", "ActionOwner")]
     public async Task WalkingAGuide_ToTheEnd_WritesNothing_AndNothingGoesOut(string key, string role)
     {
         await TwoArticleBrief(app, 0, $"Walk {key}");
@@ -94,7 +98,8 @@ public class GuideWalkTests(RecordingHttpApp app) : IClassFixture<RecordingHttpA
         while (host.Component.Step is not null)
         {
             walked++;
-            await host.Click(h => h.NextStepAsync());
+            // A guide across pages opens each step's page, which a page drawn outside a circuit can't: it says where it went.
+            try { await host.Click(h => h.NextStepAsync()); } catch (NavigationException) { }
         }
 
         walked.Should().Be(count, "every step is shown, Next to Done");

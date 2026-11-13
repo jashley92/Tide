@@ -11,7 +11,8 @@ public class PageGuidesTests
 {
     private static Func<Permission, bool> Can(params AppRole[] roles) => RoleDefinitions.PermissionsFor(roles).Contains;
 
-    private static string[] Keys(params AppRole[] roles) => Guides.For(Can(roles)).Where(g => !g.Rehearsal).Select(g => g.Key).ToArray();
+    private static string[] Keys(params AppRole[] roles) =>
+        Guides.For(Can(roles)).Where(g => !g.Rehearsal && !g.Travels).Select(g => g.Key).ToArray();
 
     private static readonly string[] Everyones =
         ["today", "actions", "action", "metrics", "trends", "stories", "adversaries", "library", "stack", "search", "workload", "rotation"];
@@ -39,7 +40,7 @@ public class PageGuidesTests
     {
         foreach (var g in Guides.For(Can(AppRole.Analyst)).Where(g => !g.Rehearsal))
         {
-            if (Walkthroughs.Contains(g.Key)) g.Steps.Count.Should().BeInRange(9, 11, g.Key);
+            if (Walkthroughs.Contains(g.Key) || g.Travels) g.Steps.Count.Should().BeGreaterThanOrEqualTo(9, g.Key);
             else g.Steps.Count.Should().BeInRange(3, 5, g.Key);
             g.Steps.Should().OnlyContain(s => s.Target != null, g.Key);
             g.Steps.Select(s => s.Key).Should().OnlyHaveUniqueItems(g.Key);
@@ -109,7 +110,7 @@ public class PageGuidesTests
     public void AGuidesDescription_IsMadeOfTheStepsThePersonGets(AppRole role)
     {
         var today = Guides.Find("today", Can(role))!;
-        today.Description.Should().Contain("Beside the brief").And.NotContain("running order").And.NotContain("My actions");
+        today.Description.Should().Contain("Today's brief").And.NotContain("running order").And.NotContain("Edition check");
         Guides.Find("today", Can(AppRole.Analyst))!.Description.Should().Contain("running order");
     }
 
@@ -118,29 +119,69 @@ public class PageGuidesTests
         Guides.Find("search", Can(AppRole.Viewer))!.Steps.Should().Contain(s => s.Text.Contains("STIX 2.1", StringComparison.Ordinal));
 
     [Fact]
-    public void TheEditorsGuide_WalksTheWholeForm_InTheEditorsOrder()
+    public void TheEditorsGuide_WalksTheWholeForm_InThePagesOrder_FromItsTitle()
     {
         var steps = Guides.Find("article", Can(AppRole.Analyst))!.Steps;
-        steps.Select(s => s.Key).Should().Equal("draft", "bluf", "bullets", "why", "werun", "indicators", "tags", "attack", "adversary", "raise", "save");
-        steps.Single(s => s.Key == "why").Text.Should().Contain("Set to AMBER").And.Contain("Keep it");
+        steps.Select(s => s.Key).Should().Equal("title", "review", "pills", "class", "prio", "tlp", "source", "addlink", "linkform", "draft",
+            "fetch", "drafting", "bluf", "bullets", "shots", "why", "whycheck", "werun", "rec", "indicators", "find", "tags", "browse", "attack",
+            "atkfilter", "atktactic", "atkcell", "atkapply", "adversary", "preview", "raise", "saved", "save", "brief");
+        steps.Single(s => s.Key == "whycheck").Text.Should().Contain("Set to AMBER").And.Contain("Keep it");
         steps.Single(s => s.Key == "bullets").Text.Should().Contain("grows");
         steps.Single(s => s.Key == "raise").Opens.Should().Be("#reader-panel-tab-actions", "its control is under the rail's Actions tab");
     }
 
+    [Fact]
+    public void AStepInAPicker_OpensIt_AndAPickerItOpensHasItsOwnClose()
+    {
+        // The ATT&CK picker's steps open it and close it by its own Close, which keeps nothing ticked; a section, menu or
+        // tab the guide opens closes by its own button, which says whether it's open (aria-expanded).
+        var attack = Guides.Find("article", Can(AppRole.Analyst))!.Steps.Where(s => s.Key.StartsWith("atk", StringComparison.Ordinal)).ToList();
+        attack.Should().HaveCount(4).And.OnlyContain(s => s.Opens == "#f-techniques" && s.Closes == ".tide-atkm-panel .btn-close");
+        Guides.Find("article", Can(AppRole.Analyst))!.Steps.Single(s => s.Key == "linkform").Closes.Should().NotBeNull("Add a report link has no open state");
+        Guides.Find("triage", Can(AppRole.Analyst))!.Steps.Single(s => s.Key == "promote").Closes.Should().NotBeNull("Promote opens a form with its own Cancel");
+    }
+
     [Theory]
-    [InlineData("today", new[] { "head", "steps", "feeds", "order", "fix", "note", "mine", "recent", "chip", "check", "rail" })]
-    [InlineData("triage", new[] { "tabs", "filter", "groups", "list", "read", "decide", "group", "covered", "cves", "sources" })]
-    [InlineData("actions", new[] { "views", "noowner", "search", "layout", "rows", "lanes", "closed", "rail", "take", "move", "reopen" })]
-    [InlineData("action", new[] { "next", "badges", "do", "more", "checklist", "hunt", "feed", "comment", "facts", "article" })]
+    [InlineData("today", new[] { "head", "chip", "next", "steps", "feeds", "order", "fix", "move", "add", "note", "mine", "recent", "numbers",
+        "brief", "check", "queue", "reviews", "meeting", "coming" })]
+    [InlineData("triage", new[] { "tabs", "hand", "filter", "pills", "sort", "missed", "groups", "list", "group", "covered", "read", "decide",
+        "promote", "cves", "railcovered", "same", "named", "sources" })]
+    [InlineData("actions", new[] { "new", "views", "saveview", "layout", "search", "pills", "filter", "rows", "lanes", "move", "closed", "rail",
+        "take", "moveto", "reopen", "open" })]
+    [InlineData("action", new[] { "title", "badges", "status", "do", "more", "next", "checklist", "hunt", "outreach", "feed", "comment", "facts",
+        "article", "files" })]
     public void AWorkPagesGuide_WalksItInThePagesOrder(string key, string[] keys) =>
         Guides.Find(key, Can(AppRole.Admin))!.Steps.Select(s => s.Key).Should().Equal(keys);
 
     [Fact]
     public void AViewersWorkPageGuides_HaveOnlyStepsForWhatTheyCanUse()
     {
-        Guides.Find("today", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().Equal("head", "rail");
-        Guides.Find("actions", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["take", "move", "reopen"]);
-        Guides.Find("action", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["do", "more", "comment"]);
+        Guides.Find("today", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().Equal("head", "brief", "meeting", "coming");
+        Guides.Find("actions", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["new", "take", "move", "moveto", "reopen"]);
+        Guides.Find("action", Can(AppRole.Viewer))!.Steps.Select(s => s.Key).Should().NotContain(["status", "do", "more", "comment"]);
+    }
+
+    [Fact]
+    public void AnAnalystsDay_WalksTheWorkflowAcrossPages_InTheOrderItsWorked()
+    {
+        var day = Guides.WholeDay(Can(AppRole.Analyst))!;
+        day.Key.Should().Be(Guides.Day);
+        day.Travels.Should().BeTrue();
+        day.Steps.Select(s => s.Route).Should().Equal("", "", "triage", "triage", "triage", "articles/{id}", "articles/{id}", "articles/{id}",
+            "", "", "", "", "", "actions", "actions/{n}", "search");
+        Guides.ForPage("", Can(AppRole.Analyst))!.Key.Should().Be("today", "Today's Show me around is Today's own guide");
+    }
+
+    [Theory]
+    [InlineData(AppRole.Viewer)]
+    [InlineData(AppRole.ActionOwner)]
+    public void SomeoneWhoFollowsTheBrief_GetsFollowingTheBrief_NotTheAnalystsDay(AppRole role)
+    {
+        var day = Guides.WholeDay(Can(role))!;
+        day.Key.Should().Be(Guides.Following);
+        day.Steps.Select(s => s.Key).Should().Equal("today", "brief", "meeting", "actions", "search");
+        Guides.Find(Guides.Day, Can(role)).Should().BeNull();
+        Guides.Find(Guides.Following, Can(AppRole.Analyst)).Should().BeNull("an analyst has the whole day instead");
     }
 
     [Fact]

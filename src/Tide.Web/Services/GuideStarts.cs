@@ -18,19 +18,36 @@ public sealed class GuideStarts(ArticleService articles, ActionService actions, 
 
     /// <summary>Whether <paramref name="guide"/> looks something up itself (Search's), so is opened on its lookup even
     /// from its own page's Show me around.</summary>
-    public static bool LooksUp(Guide guide) => guide.Key == "search";
+    public static bool LooksUp(Guide guide) => LooksUp(guide.Page);
+
+    // Search's page: a guide that opens it looks something up.
+    private static bool LooksUp(string page) => page == "search";
 
     /// <summary>The page to open for <paramref name="guide"/>, as a link from the app's root has it, and the value it looks
     /// up (Search's; empty for the others); null when there's no article or action to show it on yet.</summary>
-    public async Task<(string Page, string LookedUp)?> StartAsync(Guide guide, CancellationToken ct = default)
+    public Task<(string Page, string LookedUp)?> StartAsync(Guide guide, CancellationToken ct = default) =>
+        OpenAsync(guide.Page, ct);
+
+    // `page` with a real article for "{id}" and a real action for "{n}", or Search on a lookup.
+    private async Task<(string Page, string LookedUp)?> OpenAsync(string page, CancellationToken ct)
     {
-        if (guide.Page.Contains("{id}", StringComparison.Ordinal))
+        if (page.Contains("{id}", StringComparison.Ordinal))
             return await articles.ListAsync(take: 1, ct: ct) is [var article, ..]
-                ? (guide.Page.Replace("{id}", article.Id.ToString(), StringComparison.Ordinal), "") : null;
-        if (guide.Page.Contains("{n}", StringComparison.Ordinal))
+                ? (page.Replace("{id}", article.Id.ToString(), StringComparison.Ordinal), "") : null;
+        if (page.Contains("{n}", StringComparison.Ordinal))
             return (await actions.PageAsync(new ActionFilter(), size: 1, ct: ct)).Rows is [var action, ..] ? (Ui.ActionUrl(action.Number), "") : null;
-        if (LooksUp(guide) && await LookupAsync(ct) is { } value) return (Ui.LookupUrl(value), value);
-        return (guide.Page, "");
+        if (LooksUp(page) && await LookupAsync(ct) is { } value) return (Ui.LookupUrl(value), value);
+        return (page, "");
+    }
+
+    /// <summary>A guide across pages' steps, each on its page: a real article for "articles/{id}", a real action for
+    /// "actions/{n}", Search on a lookup; a step whose page has nothing to show it on is left out.</summary>
+    public async Task<IReadOnlyList<TourStep>> RoutesAsync(IReadOnlyList<TourStep> steps, CancellationToken ct = default)
+    {
+        var pages = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var route in steps.Select(s => s.Route).Distinct(StringComparer.Ordinal))
+            pages[route] = (await OpenAsync(route, ct))?.Page;
+        return steps.Where(s => pages[s.Route] is not null).Select(s => s with { Route = pages[s.Route]! }).ToList();
     }
 
     /// <summary>The page to open for <paramref name="guide"/> (<see cref="StartAsync"/>), or null.</summary>

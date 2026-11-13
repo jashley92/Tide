@@ -25,12 +25,13 @@
 @inject IJSRuntime JS
 @inject ILogger<OnboardingHost> Log
 
-<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" />
+<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
 
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)
 {
     <GuideStepDialog Step="step" Index="_step" Count="_tour.Count" Name="@_guide?.Title"
+                     AlsoLabel="@(_guide is null && _step == _tour.Count - 1 && WholeDay is not null ? GuideStepDialog.SeeTheWholeDay : null)" OnAlso="SeeTheWholeDayAsync"
                      OnNext="NextStepAsync" OnBack="PreviousStepAsync" OnEnd="EndTourAsync" />
 }
 else if (Tip is { } tip)
@@ -152,6 +153,12 @@ else if (Tip is { } tip)
     private async Task StartGuideAsync(Guide guide, bool fromHelp)
     {
         if (Step is not null || guide.Rehearsal || !fromHelp && !Guides.Matches(guide.Page, OpenPage)) return;
+        if (guide.Travels)
+        {
+            // Across pages: each step on its own page (a real article, action and lookup), opened as it's reached.
+            Start(await Starts.RoutesAsync(guide.Steps), guide, first: false, navigate: true);
+            return;
+        }
         var here = Nav.ToBaseRelativePath(Nav.Uri);
         var searched = QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("q", out var q) ? q.ToString() : null;
         (string Page, string LookedUp)? start = fromHelp || GuideStarts.LooksUp(guide) && searched is null
@@ -164,6 +171,8 @@ else if (Tip is { } tip)
         var (page, lookup) = opened;
         if (page != here)
         {
+            // Another page: its steps are looked for once this one has gone (the same page with a search keeps its heading).
+            if (PageOf(Nav.BaseUri + page) != OpenPage) await LeavingAsync();
             _page = PageOf(Nav.BaseUri + page);
             Nav.NavigateTo(page);
         }
@@ -171,6 +180,25 @@ else if (Tip is { } tip)
         var steps = guide.Steps.Where((s, i) => i >= shown.Length || shown[i])
             .Select(s => s with { Route = page, Text = s.Text.Replace("{lookup}", lookup, StringComparison.Ordinal) }).ToList();
         Start(steps, guide, first: false, navigate: false);
+    }
+
+    // The whole-day guide for this person (An analyst's day, else Following the brief), if they have one.
+    private Guide? WholeDay => Guides.WholeDay(CurrentUser.Has);
+
+    /// <summary>See the whole day, from the tour's last step or What's new: the tour ends, settled as Done settles it, and
+    /// the whole-day guide starts from its first page.</summary>
+    public async Task SeeTheWholeDayAsync()
+    {
+        if (WholeDay is not { } day) return;
+        await EndTourAsync();
+        await SafelyAsync(() => StartGuideAsync(day, fromHelp: true));
+    }
+
+    // The page is about to change for a guide: its steps are looked for on the new one, once this one has gone.
+    private async Task LeavingAsync()
+    {
+        try { await JS.InvokeVoidAsync("tideTips.leaving"); }
+        catch (InvalidOperationException) { /* no browser to look in */ }
     }
 
     // Which steps have their control on the page; with no browser to look in (a page drawn on the server alone), every

@@ -12,6 +12,14 @@ namespace Tide.Application.Operations;
 /// </summary>
 public sealed record Guide(string Key, string Title, string Page, Permission Needs, IReadOnlyList<TourStep> Steps, string? Summary = null)
 {
+    /// <summary>A guide across pages (An analyst's day, Following the brief): each step's <c>Route</c> is its page, and it
+    /// has no page's Show me around.</summary>
+    public bool Travels { get; init; }
+
+    /// <summary>Whom it isn't for: someone who can this has the fuller guide instead (Following the brief is for those
+    /// who can't write).</summary>
+    public Permission? NotFor { get; init; }
+
     /// <summary>Whether it's "Learn to present", which runs in present mode's rehearsal.</summary>
     public bool Rehearsal => Key == Guides.Present;
 
@@ -80,8 +88,77 @@ public static partial class Guides
         ],
         Summary: "Present mode in rehearsal, on today's brief: the slides, your rail, and ending the meeting. No meeting starts, and nothing is shared or saved.");
 
-    // Each page's guide (Guides.Pages.cs), then Learn to present.
-    private static IEnumerable<Guide> All => PageGuides.Append(LearnToPresent);
+    /// <summary>"An analyst's day"'s key, and "Following the brief"'s.</summary>
+    public const string Day = "day", Following = "following";
+
+    // A cross-page step: on `route` (Today is "", a real article's "articles/{id}", an action's "actions/{n}", Search's
+    // "search", opened on a lookup). A control a page may not draw names a fallback that's always there (its heading).
+    private static TourStep On(string route, string key, Permission needs, string target, string title, string text) =>
+        new(key, route, needs, target, title, text);
+
+    private const string TodayHead = ".tide-page-head h1";
+
+    // The whole workflow in the order an analyst works it, across pages; each stop rings its real control.
+    private static readonly Guide AnalystsDay = new(Day, "An analyst's day", "", Permission.WriteArticles,
+        [
+            On("", "today", Permission.WriteArticles, "ol.tide-steps || " + TodayHead, "1. Today",
+                "The day starts on Today: the brief's steps show where it stands, and the main button does what's next."),
+            On("", "due", Permission.WorkActions, "#my-actions-h || " + TodayHead, "What's due",
+                "Your actions with their due dates; in the rail, your teams' queue and the reviews asked of you."),
+            On("triage", "pull", Permission.WriteArticles, ".tide-tabbar[aria-label=\"Inbox\"] .tide-tabbar-apart || .tide-tabbar[aria-label=\"Inbox\"]",
+                "2. Triage: the feeds", "New reports come in from the feeds. Sources, or Pull all on Today, pulls them now; nothing is pulled unless you ask."),
+            On("triage", "read", Permission.WriteArticles, ".tide-reading-tools button || li.tide-triage-row.selected || ol.tide-triage", "Reading",
+                "J and K move through the items. Read it here (V) reads one in the pane, only when you ask."),
+            On("triage", "decide", Permission.WriteArticles, "section.tide-triage-decide || .tide-triage-layout", "Deciding",
+                "Promote makes an item an article, Attach adds it to the one that covers it, and Dismiss puts it away with a reason."),
+            On("articles/{id}", "write", Permission.WriteArticles, ".tide-page-head-main input[aria-label=\"Title\"] || .tide-page-head-main",
+                "3. Writing the article", "The title and assessment, then the bottom line, bullets and why it matters. The editor's own guide walks every part."),
+            On("articles/{id}", "review", Permission.WriteArticles, "#review-who || nav.tide-section-pills", "Asking for a review",
+                "Choose a colleague and what to look at, then Ask for review."),
+            On("articles/{id}", "ready", Permission.WriteArticles, ".tide-sticky-save .btn-primary || .tide-sticky-save", "Marking it ready",
+                "Save and mark ready says it can go on a brief; Add to today's brief puts it in the running order."),
+            On("", "order", Permission.WriteArticles, "#running-order-h || " + TodayHead, "4. Back on Today: the order",
+                "The brief's articles in the order they're read, each with what it still needs. Drag a row, or use its arrows."),
+            On("", "check", Permission.WriteArticles, "#edition-check-h || #tide-rail-toggle", "The edition check",
+                "In the rail: what each edition will carry. A row's Set to AMBER or Keep it, in the running order, fixes what reaches everyone."),
+            On("", "briefready", Permission.WriteArticles, "ol.tide-steps .tide-step-btn[title^=\"Mark the brief ready\"] || .tide-brief-head .btn-primary || " + TodayHead,
+                "The brief, ready", "Order marks the brief ready once its articles are; so does the main button."),
+            On("", "present", Permission.PresentBriefs, "ol.tide-steps a[href^=\"present/\"] || .tide-brief-head a[href^=\"present/\"] || " + TodayHead,
+                "5. Presenting", "Present opens present mode for the meeting. Help's Learn to present rehearses it first, with nothing shared or saved."),
+            On("", "send", Permission.PresentBriefs, "ol.tide-steps button.tide-step-btn[title^=\"Send a test copy\"] || " + TodayHead,
+                "6. Sending the editions", "After the meeting, Send emails each edition, with a test copy to you first."),
+            On("actions", "actions", Permission.ReadActions, ".tide-actions-views", "7. Following up",
+                "What the meeting raised: Mine and My teams list it, each with its due date."),
+            On("actions/{n}", "work", Permission.WorkActions, ".tide-action-do [data-primary] || .tide-action-do .btn-primary || .tide-action-head h1",
+                "Working an action", "On an action's page, the main button does what's next, such as Take it, Start work or Close."),
+            On("search", "search", Permission.ReadTeamEdition, "#search-q", "8. When something comes up",
+                "Search: paste an indicator or a CVE to see every article and action that names it."),
+        ],
+        Summary: "The whole workflow across pages: Today, triage, writing, the running order, presenting, sending, actions and Search.")
+    { Travels = true };
+
+    // For whoever follows the brief rather than writing it.
+    private static readonly Guide FollowingTheBrief = new(Following, "Following the brief", "", Permission.ReadTeamEdition,
+        [
+            On("", "today", Permission.ReadTeamEdition, TodayHead, "Today", "Today shows the day's brief and where it stands."),
+            On("", "brief", Permission.ReadTeamEdition, "#todays-brief-h || .tide-page-head", "The brief",
+                "Its articles, in order. Read it opens the edition you get."),
+            On("", "meeting", Permission.ReadTeamEdition, "#meeting-h || #tide-rail-toggle", "The meeting",
+                "When it meets and who presents. While it's live, Join in the top bar follows it."),
+            On("actions", "actions", Permission.ReadActions, ".tide-actions-views", "Actions",
+                "Mine lists the actions you hold, and My teams your teams'."),
+            On("search", "search", Permission.ReadTeamEdition, "#search-q", "Search",
+                "Paste an indicator or a CVE to see every article and action that names it."),
+        ],
+        Summary: "Today, the meeting, your actions and Search, across pages.")
+    { Travels = true, NotFor = Permission.WriteArticles };
+
+    /// <summary>The whole-day guide for someone who <paramref name="can"/> what they can: An analyst's day, else Following
+    /// the brief.</summary>
+    public static Guide? WholeDay(Func<Permission, bool> can) => Find(Day, can) ?? Find(Following, can);
+
+    // The guides across pages, each page's guide (Guides.Pages.cs), then Learn to present.
+    private static IEnumerable<Guide> All => new[] { AnalystsDay, FollowingTheBrief }.Concat(PageGuides).Append(LearnToPresent);
 
     /// <summary>The guides for someone who <paramref name="can"/> what they can: those for pages they can use, without any
     /// step whose control they can't, in Help's order.</summary>
@@ -94,13 +171,13 @@ public static partial class Guides
     /// <summary>The guide for the page open at <paramref name="page"/> (as a link from the app's root has it, without its
     /// query), if there's one of theirs. Never Learn to present: that one starts from Help.</summary>
     public static Guide? ForPage(string page, Func<Permission, bool> can) =>
-        All.FirstOrDefault(g => !g.Rehearsal && Matches(g.Page, page)) is { } guide ? Theirs(guide, can) : null;
+        All.FirstOrDefault(g => !g.Rehearsal && !g.Travels && Matches(g.Page, page)) is { } guide ? Theirs(guide, can) : null;
 
     // The guide as someone who can what they can sees it: none for a page they can't use, and without any step whose
     // control they can't; none if that leaves no step.
     private static Guide? Theirs(Guide guide, Func<Permission, bool> can)
     {
-        if (!can(guide.Needs)) return null;
+        if (!can(guide.Needs) || guide.NotFor is { } not && can(not)) return null;
         var steps = guide.Steps.Where(s => can(s.Needs)).ToList();
         return steps.Count > 0 ? guide with { Steps = steps } : null;
     }

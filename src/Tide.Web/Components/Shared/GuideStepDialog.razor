@@ -10,7 +10,7 @@
 @inject IJSRuntime JS
 
 <div class="tide-tour-scrim" aria-hidden="true" @onmousedown:preventDefault="true"></div>
-<div class="tide-modal tide-tour" @ref="_card" tabindex="-1" role="dialog" aria-modal="true"
+<div class="tide-modal tide-tour" @ref="_card" tabindex="-1" role="dialog" aria-modal="true" data-keeps-popouts
      aria-labelledby="tide-tour-title" aria-describedby="tide-tour-text" @onkeydown="OnKey">
     <div class="tide-tour-head">
         <h2 class="tide-modal-title" id="tide-tour-title">
@@ -22,6 +22,10 @@
     <p class="tide-tour-text" id="tide-tour-text">@Step.Text</p>
     <div class="tide-modal-actions">
         <button type="button" class="btn btn-link btn-sm me-auto" @onclick="OnEnd">@EndLabel</button>
+        @if (Index == Count - 1 && AlsoLabel is not null)
+        {
+            <button type="button" id="tide-tour-also" class="btn btn-outline-secondary btn-sm" @onclick="OnAlso">@AlsoLabel</button>
+        }
         @if (Index > 0)
         {
             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OnBack">Back</button>
@@ -52,6 +56,15 @@
     /// <summary>What a live region says as a step shows: "Step 2 of 5: Title. Text".</summary>
     public static string Said(TourStep step, int index, int count) => $"Step {index + 1} of {count}: {step.Title}. {step.Text}";
 
+    /// <summary>The tour's way on to the whole-day guide, and What's new's.</summary>
+    public const string SeeTheWholeDay = "See the whole day";
+
+    /// <summary>On the last step, a second way on beside Done (the tour's See the whole day); none without it.</summary>
+    [Parameter] public string? AlsoLabel { get; set; }
+
+    /// <summary>What <see cref="AlsoLabel"/> does.</summary>
+    [Parameter] public EventCallback OnAlso { get; set; }
+
     /// <summary>Next, or Done on the last step.</summary>
     [Parameter] public EventCallback OnNext { get; set; }
 
@@ -68,7 +81,7 @@
         _placed = Step;
         try
         {
-            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first, opens = Step.Opens });
+            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first, opens = Step.Opens, closes = Step.Closes });
             // The dialog takes focus as it opens; each step after puts it on Next.
             if (first) await JS.InvokeVoidAsync("tideDialog.open", _next);
             else await _next.FocusAsync();
