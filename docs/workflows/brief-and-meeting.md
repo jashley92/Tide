@@ -60,6 +60,10 @@ zone). Someone without the team edition (a Reader, a Visitor) is sent to `/publi
 - the step strip, with one main button for whichever step is next (`BriefSteps.Next`: Mark ready, Present, Send, Post
   to SharePoint, or read it as sent). The step it's on also shows in the top bar of every page, as a link back to
   Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
+- a brief is Sent from its first real send, but while one of the two editions (security team and company-wide) has
+  gone and the other is still to go, Today's header status, the note under it, the strip's Send step and the brief chip
+  all say **1 of 2 sent**, and the next step is still Send (`BriefSteps.PartlySent`). They say **Sent** only once both
+  have gone, or once the one that went is the only edition with anything in it;
 - under the strip, from `Intake:PulledBy` on a working day, how many polled feeds haven't been pulled since, with
   **Pull all** (see [intake-and-triage.md](intake-and-triage.md#feeds-not-pulled-since-the-morning));
 
