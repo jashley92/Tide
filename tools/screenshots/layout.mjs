@@ -871,6 +871,17 @@ const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
 /** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
 const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
 
+/** Setup: as tourAs, then Next (Enter) until the tour's last step, however many steps the person's roles give it. */
+const tourToLast = people => async page => {
+  await tourAs(people)(page);
+  for (let i = 0; i < 20; i++) {
+    const [at, of] = ((await page.locator('.tide-tour-count').textContent()).match(/Step (\d+) of (\d+)/) ?? []).slice(1).map(Number);
+    if (at === of) break;
+    await page.keyboard.press('Enter');
+    await idle(page);
+  }
+};
+
 /** Setup: as tourAs, then a mouse click at the middle of `selector`, as on the page under the step. */
 const tourClick = (people, selector) => async page => {
   await tourAs(people)(page);
@@ -4345,7 +4356,7 @@ const pages = [
   { name: 'tour-from-whatsnew-escape', route: '/help', setup: async page => { await tourFromWhatsNew({ 1440: 'Abi' })(page); await page.keyboard.press('Escape'); await idle(page); },
     widths: [1440], rules: [hidden('.tide-tour'), focusOn('main h1')] },
   // The tour's last step is on Help, ringing its Guides (or Take the tour, for someone with none).
-  { name: 'tour-last-step', route: '/help', setup: tourAs({ 1920: 'Lia', 1440: 'Lou', 780: 'Lyn' }, ...Array(7).fill('Enter')), widths: [1920, 1440, 780],
+  { name: 'tour-last-step', route: '/help', setup: tourToLast({ 1920: 'Lia', 1440: 'Lou', 780: 'Lyn' }), widths: [1920, 1440, 780],
     rules: [...tourRules, stillAt('/help'), visible('#help-guides.tide-tip-target, #help-take-tour.tide-tip-target')] },
   // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
   { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
