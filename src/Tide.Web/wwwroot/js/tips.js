@@ -1,10 +1,11 @@
-// A page's tip (OnboardingHost): set beside the control it's about, which is marked, or in the bottom corner when it has
-// none, that control isn't shown or there's no room beside it. Never over the context rail, docked or open over the
-// page: it moves left of it. A tip that needs its control (needsTarget) isn't shown without it. A tip isn't modal: this
-// never takes a key, and moves focus only to give it back to the page's heading when Got it took it away. CSP-safe (an
-// external file).
+// A page's tip, or a step of the tour (OnboardingHost): set beside the control it's about, which is marked, or in the
+// bottom corner when it has none, that control isn't shown or there's no room beside it. Never over the context rail,
+// docked or open over the page: it moves left of it. A tip that needs its control (needsTarget) isn't shown without it.
+// A tip isn't modal: this never takes a key from it, and moves focus only to give it back to the page's heading when Got
+// it took it away. A tour step is a dialog (options.dialog): focus that lands outside it (a new page focuses its heading
+// as it opens) goes back to its main button. CSP-safe (an external file).
 window.tideTips = (function () {
-    var card = null, target = null, size = null, frame = 0, needsTarget = false, inside = false;
+    var card = null, target = null, size = null, frame = 0, needsTarget = false, dialog = false, inside = false;
     var GAP = 10, EDGE = 8;
     var root = document.documentElement;
 
@@ -40,25 +41,32 @@ window.tideTips = (function () {
     // At most once a frame, however many scrolls, resizes or rail changes come in it.
     function soon() { if (!frame) frame = requestAnimationFrame(place); }
 
-    // The rail opening or closing (theme.js marks it on <html>) moves the tip off it.
+    // The rail opening or closing (theme.js marks it on <html>) moves the card off it.
     var railWatch = new MutationObserver(soon);
 
-    // Whether focus is in the tip, so that when Got it takes the tip away the page's heading gets it, not the page.
-    document.addEventListener('focusin', function (e) { inside = !!card && card.contains(e.target); });
-
-    function toHeading() {
-        var heading = document.querySelector('main h1');
-        if (!heading) return;
-        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
-        heading.focus();
+    function toPage(selector) {
+        var to = (selector && document.querySelector(selector)) || document.querySelector('main h1');
+        if (!to) return;
+        if (to.tagName === 'H1' && !to.hasAttribute('tabindex')) to.setAttribute('tabindex', '-1');
+        to.focus();
     }
 
+    // Whether focus is in the card: a tip's Got it taking it away gives it to the page's heading, not the page; a tour
+    // step keeps it.
+    document.addEventListener('focusin', function (e) {
+        inside = !!card && card.contains(e.target);
+        if (!dialog || !card || !card.isConnected || inside) return;
+        var main = card.querySelector('.btn-primary');
+        if (main) setTimeout(function () { if (dialog && card && card.isConnected && !card.contains(document.activeElement)) main.focus(); }, 0);
+    });
+
     return {
-        // options.needsTarget: show the tip only beside its control.
+        // options.needsTarget: show it only beside its control. options.dialog: a tour step, which keeps focus.
         show: function (el, selector, options) {
             this.hide();
             card = el;
             needsTarget = !!(options && options.needsTarget);
+            dialog = !!(options && options.dialog);
             target = selector ? document.querySelector(selector) : null;
             if (shown(target)) target.classList.add('tide-tip-target');
             // The card's size doesn't change while it's up: measured once, where it starts.
@@ -74,14 +82,17 @@ window.tideTips = (function () {
         hide: function () {
             if (target) target.classList.remove('tide-tip-target');
             if (frame) cancelAnimationFrame(frame);
-            var lost = inside && (!document.activeElement || document.activeElement === document.body);
+            var lost = inside && !dialog && (!document.activeElement || document.activeElement === document.body);
             card = target = size = null;
             frame = 0;
-            inside = false;
+            inside = dialog = false;
             railWatch.disconnect();
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });
-            if (lost) toHeading();
-        }
+            if (lost) toPage(null);
+        },
+        // The tour has ended: focus on `selector` (Help's Take the tour) when it's there, else the page's heading. A tip
+        // the new page shows stays up.
+        focusPage: function (selector) { toPage(selector); }
     };
 })();

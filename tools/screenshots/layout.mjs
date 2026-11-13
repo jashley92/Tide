@@ -853,16 +853,42 @@ const navigateToAdmin = async page => {
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
 /** Setup: Today, signed in as `people[width]` (a name, and `&roles=…` when not the dev sign-in's) with what's new, tips
- *  and the tour asked for (`?onboarding=on`; off on the demo otherwise), so what's new opens over it; wider letters. */
-const whatsNewAs = (people, ...keys) => async page => {
-  await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=on`, page.url()).href, { waitUntil: 'load' });
+ *  and the tour asked for (`?onboarding=…`; off on the demo otherwise), then `keys`; wider letters. `how` is `on` (a new
+ *  name takes the first-sign-in tour) or `returning` (someone who used TIDE before: what's new opens). */
+const onboardingAs = (how, people, ...keys) => async page => {
+  await page.goto(new URL(`./?as=${people[page.viewportSize().width]}&onboarding=${how}`, page.url()).href, { waitUntil: 'load' });
   await idle(page);
   for (const key of keys) { await page.keyboard.press(key); await idle(page); }
   await wideFont(page);
 };
 
+/** Setup: What's new over Today, as someone who used TIDE before. */
+const whatsNewAs = (people, ...keys) => onboardingAs('returning', people, ...keys);
+
 /** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
 const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
+
+/** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
+const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
+
+/** Setup: as tourAs, then a mouse click at the middle of `selector`, as on the page under the step. */
+const tourClick = (people, selector) => async page => {
+  await tourAs(people)(page);
+  const box = await page.locator(selector).first().boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await idle(page);
+};
+
+/** Setup: someone who used TIDE before, on Help, takes the tour from there, then ends it at once with Escape. */
+const tourFromHelp = people => async page => {
+  await page.goto(new URL(`./help?as=${people[page.viewportSize().width]}&onboarding=returning`, page.url()).href, { waitUntil: 'load' });
+  await idle(page);
+  if (await page.locator('.tide-whatsnew').count()) { await page.keyboard.press('Escape'); await idle(page); }
+  await page.locator('#help-take-tour').click();
+  await idle(page);
+  await page.keyboard.press('Escape');
+  await idle(page);
+};
 
 /** Setup: as tipAs, then `route` loaded afresh (What's new is seen by then), so that page's tip shows. */
 const tipOn = (route, people) => async page => {
@@ -3543,6 +3569,14 @@ const CHANGES_THE_DEMO = Symbol('changes the demo');
 const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.tide-whatsnew'), fits('.tide-whatsnew'),
   fits('.tide-whatsnew-body'), visible('.tide-whatsnew .tide-modal-actions'), focusOn('.tide-whatsnew .btn-primary')];
 
+/** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
+const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
+  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour')];
+
+/** The page is still `path` (from the app's root: "/" for Today). */
+const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseURI).pathname.replace(/\/$/, '') + path === location.pathname
+  ? [] : [`the page is ${location.pathname}`], path);
+
 /** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
 const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
   hidden('.tide-whatsnew'), inClient('.tide-tip'), [1500, allBesides('.tide-tip', '#tide-rail')]];
@@ -4186,6 +4220,23 @@ const pages = [
     widths: [1920, 1440, 780], rules: tipRules },
   { name: 'tip-keys', route: '/help', setup: tipAs({ 1920: 'Vic' }, ']'), widths: [1920],
     rules: [visible('.tide-tip'), attr('html', 'data-rail', 'closed')] },
+  // The first-sign-in tour: a step's dialog in the window, its parts within it, focus on Next, Tab kept in it; the
+  // second step (Next, by Enter) beside the Context button it rings.
+  { name: 'tour', route: '/help', setup: tourAs({ 1920: 'Wes', 1440: 'Wyn', 780: 'Wim&roles=Viewer' }), widths: [1920, 1440, 780],
+    rules: [...tourRules, ...tabWraps('.tide-tour', 6)] },
+  { name: 'tour-dark', route: '/help', context: { theme: 'dark' }, setup: tourAs({ 1920: 'Xan', 1440: 'Xia', 780: 'Xu&roles=Viewer' }),
+    widths: [1920, 1440, 780], rules: tourRules },
+  { name: 'tour-step-two', route: '/help', setup: tourAs({ 1920: 'Yan', 1440: 'Yul', 780: 'Yve&roles=Viewer' }, 'Enter'),
+    widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail-toggle.tide-tip-target')] },
+  // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
+  { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
+    rules: [visible('.tide-tour'), stillAt('/'), visible('.tide-tour-count:text("Step 1 of")'), focusOn('.tide-tour .btn-primary')] },
+  // Escape ends the tour, and focus is on the page's heading.
+  { name: 'tour-escape', route: '/help', setup: tourAs({ 1440: 'Zia' }, 'Escape'), widths: [1440],
+    rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('main h1')] },
+  // Started from Help and ended there: focus is back on Take the tour.
+  { name: 'tour-from-help', route: '/help', setup: tourFromHelp({ 1440: 'Zoe' }), widths: [1440],
+    rules: [hidden('.tide-tour'), stillAt('/help'), focusOn('#help-take-tour')] },
   // With the rail open over the page (]), the tip stays beside it, not over what it shows.
   { name: 'tip-rail-over', route: '/help', setup: tipAs({ 1440: 'Ola', 780: 'Oz' }, ']'), widths: [1440, 780],
     rules: [visible('.tide-tip'), visible('#tide-rail'), allBesides('.tide-tip', '#tide-rail'), inClient('.tide-tip')] },

@@ -100,7 +100,17 @@ public sealed class PageTipService(UserPreferenceService prefs, ICurrentUser use
     /// <summary>Show tips again: each tip on a page the person can use shows on their next visit to it.</summary>
     public async Task ResetAsync(CancellationToken ct = default)
     {
-        foreach (var tip in Usable) await prefs.SetAsync(tip.Preference, "", ct);
+        await prefs.SetAsync(Usable.ToDictionary(t => t.Preference, _ => "", StringComparer.Ordinal), ct);
+        _dismissed = null;
+    }
+
+    /// <summary>Every tip up to the release running is put away, as for someone the tour has just shown round.</summary>
+    public async Task DismissAllAsync(CancellationToken ct = default)
+    {
+        if (whatsNew.Running is not { } running) return;
+        var tips = Usable.Where(t => t.Version <= running).ToList();
+        if (tips.Count == 0) return;
+        await prefs.SetAsync(tips.ToDictionary(t => t.Preference, t => t.Version.ToString(), StringComparer.Ordinal), ct);
         _dismissed = null;
     }
 }

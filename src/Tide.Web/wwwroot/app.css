@@ -1841,12 +1841,23 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
     padding: var(--tide-space-3) var(--tide-space-4); }
-.tide-tip.is-placed { right: auto; bottom: auto; }
+.tide-tip.is-placed, .tide-tour.is-placed { right: auto; bottom: auto; }
 .tide-tip-head { display: flex; align-items: center; gap: var(--tide-space-2); color: var(--tide-accent); }
 .tide-tip-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: 0; color: var(--tide-text); }
-.tide-tip-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
+.tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
 .tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
+/* A tour step (OnboardingHost): a dialog without a scrim, so the control it's about shows; in the bottom corner, or
+   beside that control when tips.js finds room (is-placed), as a tip is. */
+.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;
+    width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
+/* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.
+   A click on it does nothing; Next, Back, Skip tour and Escape are the ways on. The ringed control shows through it. */
+.tide-tour-scrim { position: fixed; inset: 0; z-index: 3390; background: var(--tide-overlay); opacity: .4; }
+.tide-tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-3); }
+.tide-tour-head .tide-modal-title { display: flex; flex-direction: column; gap: var(--tide-space-1); margin: 0; }
+.tide-tour-count { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); }
+.tide-tour .tide-modal-actions { flex-wrap: wrap; align-items: center; }
 /* Something waiting on the person (a rotation request to approve): an accent panel inside a card. */
 .tide-waiting { border-left: 3px solid var(--tide-accent); background: var(--tide-accent-soft); border-radius: var(--tide-radius-lg); padding: var(--tide-space-3) var(--tide-space-4); }
 /* A screenshot opened from a comment or hunt (ScreenshotDialog): titled, the image on a quiet panel, then

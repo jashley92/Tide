@@ -137,6 +137,10 @@ builder.Services.AddScoped<PrerenderHandoff>();
 builder.Services.AddScoped<BriefChipSource>();
 // Whether what's new, tips and the tour are offered unasked (off on the screenshot tools' demo).
 builder.Services.AddSingleton<OnboardingGate>();
+// Help's Take the tour, to the layout's OnboardingHost in the same circuit.
+builder.Services.AddScoped<TourRequests>();
+// Which circuit shows each person their tour, so a second tab doesn't start a second one.
+builder.Services.AddSingleton<TourClaims>();
 // The Library's one search, over the tabs the person may open.
 builder.Services.AddScoped<LibrarySearch>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());

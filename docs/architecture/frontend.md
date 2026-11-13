@@ -250,6 +250,29 @@ person's first visit to it after the release it belongs to.
   control isn't, nor announced. A polite live region announces a tip once it's shown. **Got it** from the keyboard
   leaves focus on the page's heading. A new page drops the tip and checks that page's.
 
+**The tour.** On a person's first-ever sign-in, `OnboardingHost` steps them through the pages and controls their role
+uses, before anything else.
+
+- **Who gets it.** When the user mirror (`UserDirectory.TouchAsync`) records someone for the first time, it also sets
+  their `tour.state` preference to `due`. Everyone recorded before the tour existed has none, so they get What's new
+  instead. It stays `due` until the tour ends (Done, Skip tour, Escape, or leaving the page another way), so a reload
+  mid-tour starts it again. Then it's `done`, and What's new and the what-changed tips up to the release running are
+  marked seen (`TourService.FinishedAsync`): someone shown round doesn't need them. A second tab of the same person's
+  doesn't start another tour while one shows it (`TourClaims`, in memory).
+- **The steps.** `Tours` (`Tide.Application/Operations/Tours.cs`) lists each step's page, the permission it needs, the
+  control it points at and what it says, and which steps each role group's tour has. A step the person can't use is
+  left out; a Reader or a Visitor has no tour. No step is in present mode.
+- **A dialog.** Each step is a `.tide-modal` (`role="dialog"`, `aria-modal`) over a light scrim
+  (`.tide-tour-scrim`) that takes every click on the page and does nothing with it, so the tour can't fall out of
+  step with the page: Next, Back, Skip tour and Escape are the ways on. Focus goes to Next and stays in the step
+  (`tideDialog`, and `tideTips` when a new page focuses its heading); the step and its text are announced. `tideTips`
+  places it beside the control it points at and rings it, as for a tip. Next opens the next step's page; a page opened
+  any other way ends the tour, as Skip tour would. When it ends, focus goes to the page's heading.
+- **Again.** Help's **Take the tour** asks `TourRequests` (one per circuit), which the layout's host listens to. Asked
+  from Help, the first step shows on Help until Next, and ending it there puts focus back on Take the tour.
+- **On the demo.** `?onboarding=on` offers everything, the tour included for a new name; `?onboarding=returning` signs
+  in as someone who used TIDE before, so What's new and the tips show rather than the tour.
+
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
 current address. The page list is in [screens: administration](../product/screens.md#administration).

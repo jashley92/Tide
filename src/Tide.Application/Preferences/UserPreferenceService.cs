@@ -36,6 +36,12 @@ public static class UserPreferences
     /// <summary>The release whose "What's new" the person last saw ("1.13.0"); none ("") until they've seen one.</summary>
     public const string WhatsNewSeen = "whatsnew.seen";
 
+    /// <summary>The first-sign-in tour: due (the user mirror sets it on a person's first sign-in), done, or none for
+    /// someone who used TIDE before the tour existed, who gets What's new instead.</summary>
+    public const string TourState = "tour.state";
+
+    public const string TourDue = "due", TourDone = "done";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -90,6 +96,7 @@ public static class UserPreferences
                 new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
                 // Everyone who reads release highlights reads the team edition (RoleGroups.For).
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
+                new(TourState, ["", TourDue, TourDone], Permission.ReadTeamEdition),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             // Each page's tip: the release whose tip the person dismissed there, for whoever can use the page.
@@ -135,24 +142,36 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
 
     /// <summary>Keeps <paramref name="value"/> as the person's <paramref name="name"/>. Throws
     /// <see cref="ArgumentException"/> for a value the preference can't hold.</summary>
-    public async Task SetAsync(string name, string value, CancellationToken ct = default)
+    public Task SetAsync(string name, string value, CancellationToken ct = default) =>
+        SetAsync(new Dictionary<string, string>(StringComparer.Ordinal) { [name] = value }, ct);
+
+    /// <summary>Keeps each of <paramref name="values"/> as the person's, in one save: all or none. Throws as
+    /// <see cref="SetAsync(string, string, CancellationToken)"/> does for any one of them, before saving anything.</summary>
+    public async Task SetAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct = default)
     {
-        var d = Require(name);
-        if (!d.Allows(value))
-            throw new ArgumentException(d.Values.Count > 0 ? $"\"{value}\" isn't one of {string.Join(", ", d.Values)}." : $"\"{value}\" isn't a value {d.Name} can hold.", nameof(value));
+        foreach (var (name, value) in values)
+        {
+            var d = Require(name);
+            if (!d.Allows(value))
+                throw new ArgumentException(d.Values.Count > 0 ? $"\"{value}\" isn't one of {string.Join(", ", d.Values)}." : $"\"{value}\" isn't a value {d.Name} can hold.", nameof(values));
+        }
+        var names = values.Keys.ToList();
         for (var attempt = 0; ; attempt++)
         {
             await using var db = await dbs.CreateAsync(ct);
-            var row = await db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == user.UserId && p.Name == d.Name, ct);
-            if (row is null) db.UserPreferences.Add(row = new UserPreference { UserId = user.UserId, Name = d.Name });
-            row.Value = value;
-            row.UpdatedAtUtc = time.GetUtcNow();
+            var rows = await db.UserPreferences.Where(p => p.UserId == user.UserId && names.Contains(p.Name)).ToDictionaryAsync(p => p.Name, StringComparer.Ordinal, ct);
+            foreach (var (name, value) in values)
+            {
+                if (!rows.TryGetValue(name, out var row)) db.UserPreferences.Add(row = new UserPreference { UserId = user.UserId, Name = name });
+                row.Value = value;
+                row.UpdatedAtUtc = time.GetUtcNow();
+            }
             try
             {
                 await db.SaveChangesAsync(ct);
                 return;
             }
-            // The same person's other tab added the row first: change that one instead.
+            // The same person's other tab added a row first: change that one instead.
             catch (DbUpdateException) when (attempt == 0) { }
         }
     }

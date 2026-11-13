@@ -32,7 +32,17 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var row = await db.Users.FirstOrDefaultAsync(u => u.Sid == userId, ct);
-        if (row is null) db.Users.Add(row = new AppUser { Sid = userId });
+        if (row is null)
+        {
+            db.Users.Add(row = new AppUser { Sid = userId });
+            // A first sign-in: the tour is due. Someone already recorded (who used TIDE before) gets What's new instead.
+            const string tour = Application.Preferences.UserPreferences.TourState;
+            if (!await db.UserPreferences.AnyAsync(p => p.UserId == userId && p.Name == tour, ct))
+                db.UserPreferences.Add(new UserPreference
+                {
+                    UserId = userId, Name = tour, Value = Application.Preferences.UserPreferences.TourDue, UpdatedAtUtc = now,
+                });
+        }
         // A stand-in name (the bare username: AD didn't answer in time) keeps the real one recorded, as for the address.
         if (!nameIsStandIn || string.IsNullOrWhiteSpace(row.DisplayName)) row.DisplayName = Cut(displayName);
         row.UserPrincipalName = Cut(upn ?? "");
