@@ -34,8 +34,8 @@ public static class Tours
             "When the brief meeting is live, a banner across every page says so. Join follows the presenter's slides, and you can raise a hand."),
         new("admin", "admin", Permission.Administer, null, "Administration",
             "Sources, teams, roles and the organization's settings are in Administration."),
-        new("help", "", Permission.ReadTeamEdition, ".tide-profile-btn", "Help",
-            "Help and what's new is in the account menu: every release's notes, Show tips again, and this tour, whenever you want it again. There's a guide for each page in Help."),
+        new("help", "help", Permission.ReadTeamEdition, "#help-guides || #help-take-tour", "Help",
+            "This is Help, in the account menu: every release's notes, Show tips again, and this tour whenever you want it. There's a guide for each page in Help."),
     ];
 
     // Which steps each group's tour has; a person with several groups takes each step once, in the order above.

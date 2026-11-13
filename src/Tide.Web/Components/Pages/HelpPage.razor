@@ -56,7 +56,7 @@
                         </div>
                         @if (!guide.Rehearsal)
                         {
-                            <button type="button" id="help-guide-@guide.Key" class="btn btn-outline-secondary btn-sm" aria-label="Start the @guide.Title guide"
+                            <button type="button" id="help-guide-@guide.Key" class="btn btn-outline-secondary btn-sm" aria-label="Start the guide: @guide.Title"
                                     @onclick="() => TourAsked.AskGuide(guide.Key, fromHelp: true)">Start</button>
                         }
                         else if (Meetings.Get(Clock.CurrentBriefDate) is not null)

@@ -3605,7 +3605,7 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
 
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
-  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour')];
+  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour'), belowTopBar('.tide-tour')];
 
 /** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, no Start the
  *  meeting, the top bar within the window, and the step's control ringed. */
@@ -4287,6 +4287,12 @@ const pages = [
   // What's new's Take the tour: What's new goes, and the tour's first step is up on Today, focus on Next.
   { name: 'tour-from-whatsnew', route: '/help', setup: tourFromWhatsNew({ 1920: 'Abe', 1440: 'Ada', 780: 'Ari&roles=Viewer' }), widths: [1920, 1440, 780],
     rules: [...tourRules, stillAt('/')] },
+  // Escape from it: What's new's Take the tour is gone, so focus is on the page's heading.
+  { name: 'tour-from-whatsnew-escape', route: '/help', setup: async page => { await tourFromWhatsNew({ 1440: 'Abi' })(page); await page.keyboard.press('Escape'); await idle(page); },
+    widths: [1440], rules: [hidden('.tide-tour'), focusOn('main h1')] },
+  // The tour's last step is on Help, ringing its Guides (or Take the tour, for someone with none).
+  { name: 'tour-last-step', route: '/help', setup: tourAs({ 1920: 'Lia', 1440: 'Lou', 780: 'Lyn' }, ...Array(7).fill('Enter')), widths: [1920, 1440, 780],
+    rules: [...tourRules, stillAt('/help'), visible('#help-guides.tide-tip-target, #help-take-tour.tide-tip-target')] },
   // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
   { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
     rules: [visible('.tide-tour'), stillAt('/'), visible('.tide-tour-count:text("Step 1 of")'), focusOn('.tide-tour .btn-primary')] },
