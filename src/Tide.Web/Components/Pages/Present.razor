@@ -2795,7 +2795,8 @@ else
                         @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
                 }
                 }
-                @if (r.AssigneeId != _me && !r.TeamExternal)
+                @* Taken only by a member of its team, as it's only given to one; an external team has none. *@
+                @if (r.AssigneeId != _me && MembersOf(r.TeamId).Any(m => m.UserId == _me))
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }

@@ -157,7 +157,10 @@ An action is open while it's Open, In progress, Blocked or Tracking, and closed 
   when it has moved since, and recorded as any move is.
 - **An outcome the action already has stays a choice** even if its kind's list no longer includes it
   (`OutcomesFor`), so an action closed before a kind's list narrowed keeps what it was closed with.
-- **Take it** assigns the action to the person and moves Open to In progress (`TakeAsync`).
+- **Take it** assigns the action to the person and moves Open to In progress (`TakeAsync`). It's offered to, and
+  allowed for, only a member of the action's team (`ActionGuide.CanTake`, with `ActionFacts.OnTeam`; the service
+  refuses anyone else, "That person isn't on the action's team."). An analyst who isn't on the team still works the
+  action, but doesn't take it on.
 
 ```mermaid
 stateDiagram-v2
@@ -347,7 +350,8 @@ before this was kept start from the date they had at the upgrade (the migration 
   the meeting's quick add, which gives the action to whoever raises it only when they're on the team (otherwise it's
   the team's). The name is the one the team has for them. An external team has no members, so its actions are nobody's
   and show their ticket instead. Whoever holds an action already keeps it while it stays on its team, member or not
-  (one given it before this rule, or an analyst who took it on): it still shows them, and saving the editor without
+  (one given it before this rule, or an analyst who took it on before Take it was held to it): it still shows them,
+  and saving the editor without
   changing the assignee keeps them. Only a change of holder must be a member. Moved to another team, an action keeps
   its holder only if they're on that team; otherwise it's the new team's to give out. The meeting's assignee and due
   boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
@@ -1054,7 +1058,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Two actions created at the same moment | Both took the same number; the second save fails on the unique index and retries with the next number (three attempts). |
 | A saved action edited by two people | The second save is refused as stale; the page offers a reload. |
 | A colleague moves a card while you drag it | The move is refused, naming where it went. |
-| Assigning someone not on the team (editor, meeting) | Refused: "That person isn't on the action's team." |
+| Assigning someone not on the team (editor, meeting), or taking it on when you aren't | Refused: "That person isn't on the action's team." |
 | Retired team | Can't be chosen for a new action or a move; an action already on it stays, and the team stays on Workload (marked Retired) while it has open actions. |
 | Generate with no indicators | Refused, saying to add them on the article, on the card, or build from the story. |
 | A saved query placeholder with no values | Refused when it's added. |

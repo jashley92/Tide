@@ -94,6 +94,38 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheSlidesTakeIt_IsOnlyForAMemberOfTheActionsTeam()
+    {
+        var (day, article) = await BriefWithRecommendations(14);
+        Guid team;
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Take on the slide team", null, null);
+            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
+        }
+        var take = $"aria-label=\"Take A-{number}\"";
+
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            var slide = await r.Html();
+            slide.Should().Contain($"A-{number}</button>", "the raised action is on its line").And.NotContain(take, "the presenter isn't on its team");
+        }
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<TeamService>().AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            (await r.Html()).Should().Contain(take, "on the team now, the presenter may take it");
+        }
+    }
+
+    [Fact]
     public async Task TheSlidesRowsOfControls_EachHaveTheirLayout()
     {
         // A stylesheet edit once dropped the quick add's grid, and its five controls stacked one per line: each row of

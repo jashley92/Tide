@@ -1,6 +1,7 @@
 using System.Net;
 using AwesomeAssertions;
 using Tide.Application.Actions;
+using Microsoft.Extensions.DependencyInjection;
 using Tide.Domain.Entities;
 using Tide.Web.Components.Shared;
 
@@ -44,6 +45,27 @@ public class ActionEditorAssigneeTests(TideApp app) : IClassFixture<TideApp>
         at.Should().BeGreaterThan(0, "the page draws the editor");
         var picker = html[at..html.IndexOf("</select>", at, StringComparison.Ordinal)];
         picker.Should().NotContain("Everyone else").And.NotContain("label=\"People\"");
+    }
+
+    [Fact]
+    public async Task TheActionPage_OffersTakeIt_OnlyToAMemberOfTheTeam()
+    {
+        const string devUser = "S-1-5-21-DEV-1001";   // the dev sign-in the app's client uses: an analyst
+        Guid team;
+        int number;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Take it page team " + Guid.NewGuid().ToString("N")[..6], null, null);
+            number = await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "Unowned sweep", TeamId = team });
+        }
+
+        var page = await app.CreateClient().GetStringAsync($"/actions/{number}");
+        page.Should().Contain("Unowned sweep").And.NotContain(">Take it<", "an analyst not on the team doesn't take it on")
+            .And.NotContain("Take it.", "nor does the Next line say to");
+
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<TeamService>().AddMemberAsync(team, devUser, "Dev Analyst");
+        (await app.CreateClient().GetStringAsync($"/actions/{number}")).Should().Contain("Take it", "on the team, they may");
     }
 
     [Fact]

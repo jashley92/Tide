@@ -217,7 +217,13 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await Open(domain, owner);
         var sweep = r.Component.Sweeps.Single(a => a.Number == number);
         await using (var scope = SignedIn(app, SignIn.Analyst))
-            await scope.ServiceProvider.GetRequiredService<ActionService>().TakeAsync(sweep.Id);
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            // A colleague on the team takes it first.
+            await scope.ServiceProvider.GetRequiredService<TeamService>()
+                .AddMemberAsync((await actions.GetAsync(number))!.Action.TeamId, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+            await actions.TakeAsync(sweep.Id);
+        }
 
         await r.Click(p => p.Take(sweep));
 

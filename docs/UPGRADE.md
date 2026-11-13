@@ -211,6 +211,10 @@ the right, so you leave the page less. Every route, key and name that worked bef
   whoever raises it only when they're on the team; otherwise it's the team's. Actions whose holder isn't on the team
   keep them, and editing such an action without changing the holder still saves. Moving an action to another team
   keeps its holder only if they're on that team, as before.
+- **Take it is for a member of the action's team.** It's shown, and allowed, only to the team's members, everywhere
+  it appears (the action page, the Actions list and board, a lookup's sweeps, Today, the meeting). An analyst who isn't
+  on the team still works the action but no longer takes it on: add them to the team if they should. Actions they
+  already hold stay theirs.
 - **Today says *1 of 2 sent*** in its header, its step strip and the top bar's brief chip while one of the day's two
   editions has gone and the other hasn't. It says *Sent* once both have (or the one that went is the only one with
   anything in it).

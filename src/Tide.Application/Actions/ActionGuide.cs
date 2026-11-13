@@ -66,8 +66,11 @@ public enum NextKind { PartLate = 0, NoReply, Escalated, Blocked, Overdue, Unown
 /// <param name="CanEditAll">Whether the viewer is an analyst (ActionDetail.CanEditAll), who splits.</param>
 /// <param name="TopLevel">Whether it isn't a part, so it can be split.</param>
 /// <param name="CanDelete">Whether the viewer may delete it: an analyst or administrator who may work it.</param>
+/// <param name="OnTeam">Whether the viewer is a member of its team, the only people who take it on (an external team
+/// has none).</param>
 public sealed record ActionFacts(ActionStatus Status, ActionKind Kind, bool CanWork, bool Assigned, bool External,
-    int OpenParts = 0, int Emails = 0, bool Waiting = false, bool Mine = false, bool CanEditAll = false, bool TopLevel = true, bool CanDelete = false)
+    int OpenParts = 0, int Emails = 0, bool Waiting = false, bool Mine = false, bool CanEditAll = false, bool TopLevel = true, bool CanDelete = false,
+    bool OnTeam = false)
 {
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
 }
@@ -107,8 +110,9 @@ public sealed record NextStep(NextKind Kind, string Text, IReadOnlyList<NextLink
 /// </summary>
 public static class ActionGuide
 {
-    /// <summary>The one rule for taking an action: open, someone else's or nobody's, and on a team with members.</summary>
-    public static bool CanTake(ActionFacts f) => f.CanWork && f.IsOpen && !f.Mine && !f.External;
+    /// <summary>The one rule for taking an action: open, someone else's or nobody's, and taken by a member of its team
+    /// (so never an external team's, which has none), as an assignee always is.</summary>
+    public static bool CanTake(ActionFacts f) => f.CanWork && f.OnTeam && f.IsOpen && !f.Mine && !f.External;
 
     /// <summary>
     /// The primary button, by the first rule that applies: nothing for a closed action or a viewer who can't work it;

@@ -54,6 +54,7 @@ public class ActionServiceTests : IDisposable
         var at = new DateTimeOffset(2026, 3, 2, 15, 0, 0, TimeSpan.Zero);
         var time = new TestClock(at);
         var svc = _db.Actions(new OrgClock(Options.Create(new OrgOptions()), time));
+        await _db.Teams().AddMemberAsync(team, _db.User.UserId, _db.User.DisplayName);
         var number = await svc.CreateAsync(new ActionForm { Title = "Dated by the clock", Kind = ActionKind.PatchRemediate, TeamId = team });
         var id = (await svc.GetAsync(number))!.Action.Id;
 

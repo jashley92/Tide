@@ -223,10 +223,12 @@ public class ActionsListBoardServiceTests : IDisposable
         var page = await _db.Actions().PageAsync(new ActionFilter(ActionView.Open));
         Offered(page).Should().Equal([(mine, (string?)null)], "only my team's, nobody's; not another team's, a held one or a closed one");
 
-        // An analyst works every action: any open one nobody has, but not an external team's (nobody in TIDE takes it).
+        // An analyst works every action, but takes on only their own teams' (as only a member is given one), and never an
+        // external team's (nobody in TIDE takes it).
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         page = await _db.Actions().PageAsync(new ActionFilter(ActionView.Open));
-        Offered(page).Should().BeEquivalentTo([(mine, (string?)null), (other, (string?)null)]);
+        Offered(page).Should().Equal([(mine, (string?)null)], "not another team's, though an analyst works it");
+        page.Rows.Where(r => r.TeamId == other).Should().OnlyContain(r => page.Workers.CanWork(r.TeamId));
 
         // A viewer works none.
         _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
@@ -239,6 +241,7 @@ public class ActionsListBoardServiceTests : IDisposable
     public async Task TakeIt_FromARow_IsRefused_WhenSomeoneTookItMeanwhile()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        await _db.Teams().AddMemberAsync(team, Me, "Test Analyst");
         var a = await Add(team);
         var svc = _db.Actions();
         await using (var ctx = _db.Context())
@@ -336,6 +339,7 @@ public class ActionsListBoardServiceTests : IDisposable
     public async Task EveryWayAnActionsStatusChanges_RecordsWhen_AndNothingElseDoes()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        await _db.Teams().AddMemberAsync(team, Me, "Test Analyst");
         var other = await _db.Teams().AddAsync("Network Engineering", null, null);
         var svc = _db.Actions();
         static void Now(DateTimeOffset? at, string because) => at!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1), because);

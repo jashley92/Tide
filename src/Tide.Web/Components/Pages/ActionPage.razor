@@ -698,7 +698,7 @@ else
         _openParts = d.Children.Count(c => c.IsOpen);
         var facts = new ActionFacts(a.Status, a.Kind, d.CanWork, a.AssigneeId is not null, a.Team?.IsExternal == true, _openParts,
             d.Emails, d.Waiting is not null, a.AssigneeId == CurrentUser.UserId, d.CanEditAll, a.ParentId is null,
-            CanDelete: d.CanWork && ActionSvc.MayDelete);
+            CanDelete: d.CanWork && ActionSvc.MayDelete, OnTeam: d.OnTeam);
         _primary = ActionGuide.Primary(facts);
         var more = ActionGuide.More(facts);
         _moreItems = [.. more.Select(f => f == ActionFlow.SplitOffPart
