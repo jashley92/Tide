@@ -54,6 +54,7 @@ public class ActionServiceTests : IDisposable
         var at = new DateTimeOffset(2026, 3, 2, 15, 0, 0, TimeSpan.Zero);
         var time = new TestClock(at);
         var svc = _db.Actions(new OrgClock(Options.Create(new OrgOptions()), time));
+        await _db.Teams().AddMemberAsync(team, _db.User.UserId, _db.User.DisplayName);
         var number = await svc.CreateAsync(new ActionForm { Title = "Dated by the clock", Kind = ActionKind.PatchRemediate, TeamId = team });
         var id = (await svc.GetAsync(number))!.Action.Id;
 
@@ -74,9 +75,10 @@ public class ActionServiceTests : IDisposable
         var today = svc.Today;
         var held = await svc.CreateAsync(new ActionForm { Title = "Held on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
         await svc.CreateAsync(new ActionForm { Title = "Nobody's on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
-        var form = ActionForm.From((await svc.GetAsync(held))!.Action);
-        (form.AssigneeId, form.AssigneeName) = ("dev:sam", "Sam");
-        await svc.SaveAsync(form);
+        // Held by Sam, who isn't on the team (it has no members): given before holders had to be members.
+        await using (var ctx = _db.PlainContext())
+            await ctx.Actions.Where(a => a.Number == held)
+                .ExecuteUpdateAsync(u => u.SetProperty(a => a.AssigneeId, "dev:sam").SetProperty(a => a.AssigneeName, "Sam"));
 
         var rows = (await svc.OutstandingAsync(today, TlpLevel.AmberStrict)).Rows;
         rows.Single(o => o.Row.Title == "Held on an empty team").NoOneToOwn.Should().BeFalse("Sam holds it, as the action page says");
@@ -597,6 +599,7 @@ public class ActionServiceTests : IDisposable
     public async Task Workload_CountsOpenOverdueAndClosures()
     {
         var team = await Team();
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
         var svc = _db.Actions();
         var today = _db.Clock.Today;
         await svc.CreateAsync(new ActionForm { Title = "late", TeamId = team, DueDate = today.AddDays(-10) });
@@ -619,6 +622,8 @@ public class ActionServiceTests : IDisposable
     public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
     {
         var team = await Team();
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
+        await _db.Teams().AddMemberAsync(team, "u2", "Alex");
         var outside = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example", confirmOutside: true);
         var svc = _db.Actions();
         var me = _db.User.UserId;
@@ -647,6 +652,8 @@ public class ActionServiceTests : IDisposable
         var svc = _db.Actions();
         var today = _db.Clock.Today;
         var me = _db.User.UserId;
+        await _db.Teams().AddMemberAsync(team, me, "Me");
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
         await svc.CreateAsync(new ActionForm { Title = "mine, late", TeamId = team, DueDate = today.AddDays(-3), AssigneeId = me, AssigneeName = "Me" });
         await svc.CreateAsync(new ActionForm { Title = "mine, due today", TeamId = team, DueDate = today, AssigneeId = me, AssigneeName = "Me" });
         await svc.CreateAsync(new ActionForm { Title = "theirs, late", TeamId = team, DueDate = today.AddDays(-3), AssigneeId = "u1", AssigneeName = "Robin" });
@@ -877,6 +884,7 @@ public class ReminderTests : IDisposable
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
         await Person("S-ROBIN", "robin@example.org");
+        await _db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
         var today = _db.Clock.Today;
         var svc = _db.Actions();
         await svc.CreateAsync(new ActionForm { Title = "Robin first", TeamId = team, DueDate = today, AssigneeId = "S-ROBIN", AssigneeName = "Robin" });
@@ -916,6 +924,7 @@ public class ReminderTests : IDisposable
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
         await Person("S-ROBIN", "robin@example.org");
+        await _db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
         var today = _db.Clock.Today;
         await _db.Actions().CreateAsync(new ActionForm { Title = "Robin's", TeamId = team, DueDate = today, AssigneeId = "S-ROBIN", AssigneeName = "Robin" });
         await _db.Actions().CreateAsync(new ActionForm { Title = "The team's", TeamId = team, DueDate = today });

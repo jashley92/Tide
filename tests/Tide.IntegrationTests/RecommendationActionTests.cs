@@ -209,7 +209,11 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
         form.RecommendedActions = Lines;
         await articles.SaveAsync(form);
         await briefs.AddArticleAsync(brief.Id, id);
-        var team = await scope.ServiceProvider.GetRequiredService<Tide.Application.Actions.TeamService>().AddAsync($"Slide team {daysBack}", null, null);
+        var teams = scope.ServiceProvider.GetRequiredService<Tide.Application.Actions.TeamService>();
+        var team = await teams.AddAsync($"Slide team {daysBack}", null, null);
+        // The tester and Robin are on it: what they raise is theirs, and the tester may take Robin's.
+        await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        await teams.AddMemberAsync(team, Robin.UserId, Robin.Name);
         return (day, id, team);
     }
 

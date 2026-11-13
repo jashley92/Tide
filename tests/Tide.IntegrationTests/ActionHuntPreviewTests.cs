@@ -39,7 +39,9 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         form.Bluf = "Exploited.";
         form.Indicators = [new() { Type = IndicatorType.IpAddress, Value = ip }];
         await articles.SaveAsync(form);
-        var team = await sp.GetRequiredService<TeamService>().AddAsync(title + " team", null, null);
+        var teams = sp.GetRequiredService<TeamService>();
+        var team = await teams.AddAsync(title + " team", null, null);
+        await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);   // so the tester may take it on
         var number = await actions.CreateAsync(new ActionForm { Title = title, Kind = kind, TeamId = team, ArticleId = article });
         return (number, (await actions.GetAsync(number))!.Action.Id);
     });

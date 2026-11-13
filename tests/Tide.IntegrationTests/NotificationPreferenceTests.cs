@@ -372,6 +372,7 @@ public class NotificationPreferenceTests : IDisposable
             .And.Contain("Your other open actions").And.NotContain("Sam one");
         mail.Html.Should().Contain("daily digest because you chose it in My notifications");
 
+        await _db.Teams().AddMemberAsync(theirs, Robin, "robin");
         await svc.CreateAsync(new ActionForm { Title = "Robin new one", TeamId = theirs, DueDate = monday.AddDays(30), AssigneeId = Robin, AssigneeName = "robin" });
         await _db.Reminders(options, At(27)).RunDueAsync();
         var next = _db.Email.Sent[1].Html;
@@ -383,7 +384,7 @@ public class NotificationPreferenceTests : IDisposable
     public async Task PersonalDigest_Weekly_GoesOnTheDigestDay_OncePerWeek()
     {
         await Person(Robin, "robin@example.org");
-        var team = await TeamWith(null);
+        var team = await TeamWith(null, Robin);
         await _db.Actions().CreateAsync(new ActionForm { Title = "Robin one", TeamId = team, DueDate = new DateOnly(2026, 10, 27), AssigneeId = Robin, AssigneeName = "robin" });
         await Choose(Robin, NotifyDigest, Weekly);
         var options = new ReminderOptions { Digest = { Day = DayOfWeek.Tuesday, Time = "09:00" } };

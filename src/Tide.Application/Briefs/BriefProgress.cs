@@ -13,10 +13,12 @@ public enum StepState { Todo, Current, Done, Attention }
 
 /// <summary>One step of the brief: what it is, a few words on where it stands ("2 of 5 need work"), and its state.
 /// Triage also says how many of the feed's new items name a CVE on the known exploited list (<see cref="Kev"/>), which
-/// the strip shows as a flag beside the words.</summary>
+/// the strip shows as a flag beside the words. The Send step says whether one of the two editions has gone and the
+/// other is still to go (<see cref="PartlySent"/>), whatever its words are (a failed send of the other, say).</summary>
 public sealed record BriefStep(BriefStepKind Kind, string Label, string Detail, StepState State)
 {
     public int Kev { get; init; }
+    public bool PartlySent { get; init; }
 }
 
 /// <summary>How far the day's brief has got: the step strip at the top of Today (Triage · Write · Order · Present ·
@@ -90,23 +92,44 @@ public static class BriefSteps
                 ? Finished(brief, done, sharePointRequired)
                 : new(BriefStepKind.Send, "Send", "2 editions", StepState.Todo);
         var real = sends.Where(s => !s.IsTest).ToList();
-        var editions = real.Where(s => s.Status == SendStatus.Sent).Select(s => s.Edition).Distinct().ToList();
-        var went = editions.Count;
-        var empty = nothingToSend?.Where(e => !editions.Contains(e)).Distinct().Count() ?? 0;
-        if (went >= 2 || (went == 0 && brief.Status == BriefStatus.Sent))
+        var went = Went(sends);
+        if (went.Count >= 2 || (went.Count == 0 && brief.Status == BriefStatus.Sent))
             return Finished(brief, done, sharePointRequired);
-        if (went == 1 && empty >= 1)
+        var partly = OtherToGo(went, nothingToSend) is not null;
+        if (went.Count == 1 && !partly)
             return Finished(brief, "Sent · nothing in the other edition", sharePointRequired);
-        return (real.MaxBy(s => s.SentAtUtc) is { } latest ? Distribution.SendOutcome.Seen(latest.Status, latest.SentAtUtc) : (SendStatus?)null) switch
+        BriefStep step = (real.MaxBy(s => s.SentAtUtc) is { } latest ? Distribution.SendOutcome.Seen(latest.Status, latest.SentAtUtc) : (SendStatus?)null) switch
         {
             SendStatus.Failed => new(BriefStepKind.Send, "Send", "Last send failed", StepState.Attention),
             SendStatus.Unknown => new(BriefStepKind.Send, "Send", "May have gone: check", StepState.Attention),
             SendStatus.Sending => new(BriefStepKind.Send, "Send", "Sending…", StepState.Todo),
-            _ when went == 1 => new(BriefStepKind.Send, "Send", "1 of 2 sent", StepState.Todo),
+            _ when partly => new(BriefStepKind.Send, "Send", PartlySentLabel, StepState.Todo),
             _ when sends.Any(s => s.IsTest && s.Status == SendStatus.Sent) => new(BriefStepKind.Send, "Send", "Test sent · 2 editions", StepState.Todo),
             _ => new(BriefStepKind.Send, "Send", "2 editions", StepState.Todo),
         };
+        return step with { PartlySent = partly };
     }
+
+    /// <summary>What a brief says while one of its two editions has gone and the other is still to go.</summary>
+    public const string PartlySentLabel = "1 of 2 sent";
+
+    /// <summary>
+    /// The edition still to go while the other of the day's two has really gone (not a test copy): it hasn't gone, and it
+    /// has something in it to send (it isn't in <paramref name="nothingToSend"/>). Null otherwise, and while the send log
+    /// isn't known. The brief is Sent from the first real send, but Today's header, its strip and the top bar's chip say
+    /// "1 of 2 sent" until the other goes; "Sent" only once both have.
+    /// </summary>
+    public static Edition? PartlySent(IReadOnlyList<BriefSend>? sends, IReadOnlyCollection<Edition>? nothingToSend = null) =>
+        sends is null ? null : OtherToGo(Went(sends), nothingToSend);
+
+    // The edition still to go when exactly one has gone and the other has something in it.
+    private static Edition? OtherToGo(List<Edition> went, IReadOnlyCollection<Edition>? nothingToSend) =>
+        went is [var one] && (one == Edition.Team ? Edition.Public : Edition.Team) is var other && nothingToSend?.Contains(other) != true
+            ? other : null;
+
+    // The editions a real send went out for.
+    private static List<Edition> Went(IReadOnlyList<BriefSend> sends) =>
+        sends.Where(s => !s.IsTest && s.Status == SendStatus.Sent).Select(s => s.Edition).Distinct().ToList();
 
     // Gone out: done, unless its SharePoint copy is required and not confirmed posted yet.
     private static BriefStep Finished(Brief brief, string detail, bool sharePointRequired) =>
@@ -120,9 +143,13 @@ public static class BriefSteps
 
     /// <summary>A brief's status as people read it: "Distributed" for one finished without email, "Not sent" for one
     /// finished without sending while email was on (and not emailed since), and "SharePoint to post" for one gone out
-    /// whose SharePoint copy is required (now, and when it went out) and not confirmed yet.</summary>
-    public static string StatusLabel(BriefStatus status, bool distributed, bool sharePointPosted, bool sharePointRequired, bool notSent = false) => status switch
+    /// whose SharePoint copy is required (now, and when it went out) and not confirmed yet. One of whose two editions
+    /// has gone and the other not (<paramref name="partlySent"/>, <see cref="PartlySent"/>) is "1 of 2 sent": "Sent"
+    /// only once both have.</summary>
+    public static string StatusLabel(BriefStatus status, bool distributed, bool sharePointPosted, bool sharePointRequired, bool notSent = false,
+        bool partlySent = false) => status switch
     {
+        BriefStatus.Sent when partlySent => PartlySentLabel,
         BriefStatus.Sent when sharePointRequired && !sharePointPosted => "SharePoint to post",
         BriefStatus.Sent when notSent => "Not sent",
         BriefStatus.Sent when distributed => "Distributed",
@@ -168,10 +195,12 @@ public static class BriefSteps
     /// <summary>
     /// The one thing to do next with a brief, the page header's primary button: mark it ready while it's a draft with
     /// articles on it, present it once ready, send it once presented, and read it as sent after. A draft with nothing on
-    /// it has none. Sent with its SharePoint copy still to confirm (<paramref name="sharePointDue"/>), it's posting it.
+    /// it has none. Sent with its SharePoint copy still to confirm (<paramref name="sharePointDue"/>), it's posting it;
+    /// with one of its two editions still to go (<paramref name="partlySent"/>), it's sending that first.
     /// </summary>
-    public static BriefNext Next(BriefStatus status, int articles, bool sharePointDue = false) => status switch
+    public static BriefNext Next(BriefStatus status, int articles, bool sharePointDue = false, bool partlySent = false) => status switch
     {
+        BriefStatus.Sent when partlySent => BriefNext.Send,
         BriefStatus.Draft => articles > 0 ? BriefNext.MarkReady : BriefNext.None,
         BriefStatus.Ready => BriefNext.Present,
         BriefStatus.Presented => BriefNext.Send,

@@ -187,7 +187,9 @@ no top bar, so none there.
 
 - **What it says.** The brief is the one Today shows (`OrgClock.CurrentBriefDate`), so on a weekend or a holiday it
   names the day ("Mon 10:30 AM"). The step is `BriefSteps.On` over the same `BriefSteps.For` steps as Today's strip: the
-  current one, or what Send says once nothing is left ("Sent"). With no brief started it says "not started". While the
+  current one, or what Send says once nothing is left ("Sent"). Once one of the day's two editions has gone and the
+  other is still to go (`BriefSteps.PartlySent`) it says "Brief · 1 of 2 sent", as Today's header and strip do; "Sent"
+  only once both have. With no brief started it says "not started". While the
   brief's meeting is live it says "Brief is live" and nothing else: joining is the banner's (`LiveMeetingJoin`).
 - **What it costs.** `BriefChipSource` (`src/Tide.Web/Services/BriefChipSource.cs`, one per circuit) reads the brief,
   its sends and the edition ceilings once and keeps the answer, so drawing the top bar on a navigation reads nothing.

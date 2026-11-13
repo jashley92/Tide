@@ -74,11 +74,13 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
-            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            var team = await teams.AddAsync("Recommended lines team", null, null);
+            await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
             number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
             var made = (await actions.GetAsync(number))!.Action;
             made.Priority.Should().Be(Priority.P1, "the article's priority");
-            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
+            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting, on its team, holds it");
         }
         await using var again = await PresentHarness.Open(app, day);
         await again.Click(p => p.OnPresentKey("last"));
@@ -89,6 +91,38 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
             .And.Contain("<li>Notify the service desk</li>");
+    }
+
+    [Fact]
+    public async Task TheSlidesTakeIt_IsOnlyForAMemberOfTheActionsTeam()
+    {
+        var (day, article) = await BriefWithRecommendations(14);
+        Guid team;
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Take on the slide team", null, null);
+            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
+        }
+        var take = $"aria-label=\"Take A-{number}\"";
+
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            var slide = await r.Html();
+            slide.Should().Contain($"A-{number}</button>", "the raised action is on its line").And.NotContain(take, "the presenter isn't on its team");
+        }
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<TeamService>().AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            (await r.Html()).Should().Contain(take, "on the team now, the presenter may take it");
+        }
     }
 
     [Fact]

@@ -106,9 +106,11 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     /// <summary>How many of its parts are still open.</summary>
     public int ChildrenOpen => Children - ChildrenClosed;
 
-    /// <summary>Whether someone who <paramref name="canWork"/> it may take it on from a list: nobody has it, and taking
-    /// is allowed (<see cref="ActionGuide.CanTake"/>, the action page's rule).</summary>
-    public bool TakeableBy(bool canWork) => AssigneeId is null && ActionGuide.CanTake(new ActionFacts(Status, Kind, canWork, Assigned: false, TeamExternal));
+    /// <summary>Whether someone who <paramref name="canWork"/> it, and is <paramref name="onTeam"/> (a member of its
+    /// team), may take it on from a list: nobody has it, and taking is allowed (<see cref="ActionGuide.CanTake"/>, the
+    /// action page's rule).</summary>
+    public bool TakeableBy(bool canWork, bool onTeam) =>
+        AssigneeId is null && ActionGuide.CanTake(new ActionFacts(Status, Kind, canWork, Assigned: false, TeamExternal, OnTeam: onTeam));
 }
 
 /// <summary>A deleted action on the administrators' list: who deleted it, when and why, and whether its parent is deleted
@@ -312,7 +314,8 @@ public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, in
 }
 
 /// <summary>Which teams' actions the reader works: all of them (an analyst), or the teams they're on with WorkActions
-/// (ActionService.CanWork's rule, read once for a whole list or board).</summary>
+/// (ActionService.CanWork's rule, read once for a whole list or board). <see cref="Teams"/> are the teams they're on,
+/// whose actions alone they take.</summary>
 public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
 {
     public static readonly ActionWorkers None = new(false, new HashSet<Guid>());
@@ -320,7 +323,7 @@ public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
     public bool CanWork(Guid teamId) => All || Teams.Contains(teamId);
 
     /// <summary>Whether the reader may take this row on (<see cref="ActionRow.TakeableBy"/>).</summary>
-    public bool CanTake(ActionRow row) => row.TakeableBy(CanWork(row.TeamId));
+    public bool CanTake(ActionRow row) => row.TakeableBy(CanWork(row.TeamId), Teams.Contains(row.TeamId));
 }
 
 /// <summary>
@@ -376,10 +379,14 @@ public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overd
 /// <summary>
 /// The actions board: open actions, a column per working status, and which of them the current user may move (the teams
 /// they work, or all for an analyst). Closed ones are counted under it (<see cref="ActionViewCounts.ClosedAs"/>), not drawn.
+/// <see cref="WorkTeams"/> are the teams the reader is on, whose cards alone they take.
 /// </summary>
 public sealed record ActionBoard(IReadOnlyList<ActionRow> Cards, bool CanWorkAll, IReadOnlySet<Guid> WorkTeams)
 {
     public bool CanMove(ActionRow card) => CanWorkAll || WorkTeams.Contains(card.TeamId);
+
+    /// <summary>Whether the reader may take this card on (<see cref="ActionRow.TakeableBy"/>).</summary>
+    public bool CanTake(ActionRow card) => card.TakeableBy(CanMove(card), WorkTeams.Contains(card.TeamId));
 
     public IReadOnlyList<ActionRow> In(ActionStatus status) => Cards.Where(c => c.Status == status).ToList();
 }
@@ -429,6 +436,9 @@ public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnl
 {
     /// <summary>The files on the action and its comments, newest first, and (for an administrator) the removed ones.</summary>
     public ActionFileList Files { get; init; } = ActionFileList.None;
+
+    /// <summary>Whether the reader is a member of its team, so may take it on (<see cref="ActionGuide.CanTake"/>).</summary>
+    public bool OnTeam { get; init; }
 
     /// <summary>The team it was last handed from (by <see cref="ActionItem.HandedByName"/>, why: <see cref="ActionItem.HandoffReason"/>), or null.</summary>
     public string? HandedFrom { get; init; }
@@ -560,13 +570,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return new ActionListPage(rows, total, page, groups) { Workers = await WorkersAsync(db, ct), GroupsUnowned = unowned };
     }
 
+    /// <summary>Which teams' actions the reader works and takes on (<see cref="ActionWorkers"/>), for rows read
+    /// elsewhere (a lookup's sweeps).</summary>
+    public async Task<ActionWorkers> WorkersAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        return await WorkersAsync(db, ct);
+    }
+
     // Which teams' actions the reader works (CanWork's rule, for every row at once): all for an analyst, none without
-    // WorkActions, otherwise the teams they're on.
+    // WorkActions, otherwise the teams they're on; and the teams they're on, whose actions alone they take.
     private async Task<ActionWorkers> WorkersAsync(IAppDbContext db, CancellationToken ct)
     {
-        if (user.Has(Permission.WriteArticles)) return new ActionWorkers(true, new HashSet<Guid>());
-        if (!user.Has(Permission.WorkActions)) return ActionWorkers.None;
-        return new ActionWorkers(false, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
+        var all = user.Has(Permission.WriteArticles);
+        if (!all && !user.Has(Permission.WorkActions)) return ActionWorkers.None;
+        return new ActionWorkers(all, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
     }
 
     // An article's title (and what's read from it, the recommended line copied from it among them) is shown only to
@@ -1155,7 +1173,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
         var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
-        var canWork = await CanWork(db, user, a.TeamId, ct);
+        // On its team: a member takes it on, and one with WorkActions works it (CanWork's rule, read once).
+        var onTeam = await db.TeamMembers.AnyAsync(m => m.TeamId == a.TeamId && m.UserId == user.UserId, ct);
+        var canWork = user.Has(Permission.WriteArticles) || (user.Has(Permission.WorkActions) && onTeam);
         var handedFrom = a.HandedFromTeamId is { } from ? await TeamName(db, from, ct) : null;
         var lineage = children.Count > 0 ? ParentLineage(a, handedFrom, children)
             : parent is not null ? await PartLineageAsync(db, a, parent, ct) : null;
@@ -1163,7 +1183,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             Files = await ActionFileService.ListAsync(db, user, a.Id, ct, a.Comments), HandedFrom = handedFrom,
             Rollup = lineage?.Parent.Id == a.Id ? lineage.Rollup : "", Lineage = lineage,
-            RaisedWith = await RaisedWithAsync(db, a, lineage, ct),
+            RaisedWith = await RaisedWithAsync(db, a, lineage, ct), OnTeam = onTeam,
         };
     }
 
@@ -1439,7 +1459,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
-    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. Internal teams only: an external
+    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it when they're on the team (an analyst who
+    /// isn't leaves it the team's). Internal teams only: an external
     /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA
     /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
@@ -1448,18 +1469,23 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
+        bool member;
         await using (var db = await dbs.CreateAsync(ct))
         {
-            if (await db.Teams.AsNoTracking().AnyAsync(t => t.Id == teamId && t.IsExternal, ct))
+            var team = await db.Teams.AsNoTracking().Where(t => t.Id == teamId)
+                .Select(t => new { t.IsExternal, Member = t.Members.Any(m => m.UserId == user.UserId) }).FirstOrDefaultAsync(ct);
+            if (team?.IsExternal == true)
                 throw new ArgumentException("An external team's work is split off an action as a part. Raise it for one of your teams, then split it.");
+            member = team?.Member == true;
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
         }
         return await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
             RaisedOn = raisedOn, OverLimitReason = overLimitReason, RecommendationLine = recommendation,
-            // Whoever raises it in the meeting holds it, so it's on someone's list from the start; they can hand it on.
-            AssigneeId = user.UserId, AssigneeName = user.DisplayName,
+            // Whoever raises it in the meeting holds it when they're on the team, so it's on someone's list from the start;
+            // they can hand it on. Otherwise it's the team's, as a holder is always one of its members.
+            AssigneeId = member ? user.UserId : null,
         }, ct);
     }
 
@@ -1527,7 +1553,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (form.TeamId != a.TeamId)
         {
             var to = await HandoffService.ReceivingTeamAsync(db, form.TeamId, ct);
-            if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) (form.AssigneeId, form.AssigneeName) = (null, null);
+            if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) form.AssigneeId = null;
             handover = await HandoffService.HandOverAsync(db, user, a, to,
                 string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, form.TurnRemindersOn, ct);
         }
@@ -1576,21 +1602,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>Takes the action on (assigns it to me), starting it if it was open. Held to <see cref="ActionGuide.CanTake"/>
     /// as the action is now, so one closed or handed to an external team since the caller's copy was read is refused as
     /// stale. From a list that showed it as nobody's (<paramref name="onlyIfNobodys"/>), it's also refused when someone
-    /// else has taken it since.</summary>
+    /// else has taken it since. Only a member of its team takes it, as only a member is given it (<see cref="HolderAsync"/>),
+    /// under the name the team has for them.</summary>
     public async Task TakeAsync(Guid id, bool onlyIfNobodys = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
         var external = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct);
-        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external)))
+        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external, OnTeam: true)))
             throw new StaleEditException(external
                 ? $"A-{a.Number} is with an external team now, so nobody here takes it on."
                 : $"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
         // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
         if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
             throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");
-        a.AssigneeId = user.UserId;
-        a.AssigneeName = user.DisplayName;
+        (a.AssigneeId, a.AssigneeName) = await HolderAsync(db, a, a.TeamId, user.UserId, ct);
         var started = a.Status == ActionStatus.Open;
         var to = started ? ActionStatus.InProgress : a.Status;
         // Open to In progress stays active, so it never adds to the team's count; held to the rule all the same, so a
@@ -1621,13 +1647,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await WorkableAsync(db, id, ct);
         if (keepAssignee) assigneeId = a.AssigneeId;
         // A new assignee must be on the team. The one it has already keeps it, team or not (an analyst who took it on).
-        var name = a.AssigneeName;
-        if (assigneeId is null) name = null;
-        else if (assigneeId != a.AssigneeId)
-        {
-            name = await db.TeamMembers.Where(m => m.TeamId == a.TeamId && m.UserId == assigneeId).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
-                   ?? throw new ArgumentException("That person isn't on the action's team.");
-        }
+        (assigneeId, var name) = await HolderAsync(db, a, a.TeamId, assigneeId, ct);
         if (due != a.DueDate) CheckDue(due);
         var changes = new List<string>();
         if (a.AssigneeId != assigneeId) changes.Add($"assignee: {a.AssigneeName ?? "nobody"} → {name ?? "nobody"}");
@@ -2472,13 +2492,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return (hunt, a);
     }
 
-    /// <summary>Whether the current user may work actions of <paramref name="teamId"/>.</summary>
-    public async Task<bool> CanWorkAsync(Guid teamId, CancellationToken ct = default)
-    {
-        await using var db = await dbs.CreateAsync(ct);
-        return await CanWork(db, user, teamId, ct);
-    }
-
     // --- helpers ------------------------------------------------------------------------------------------------
 
     private async Task Apply(IAppDbContext db, ActionItem a, ActionForm form, CancellationToken ct)
@@ -2502,18 +2515,34 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ParentId == a.Id, ct))
                 throw new ArgumentException("Actions split one level deep: this one already has parts, so it can't become a part.");
         }
+        var (holder, holderName) = await HolderAsync(db, a, team.Id, form.AssigneeId, ct);
         a.Title = title;
         a.Description = ArticleService.CleanOrNull(form.Description, 8000, multiline: true);
         a.Kind = form.Kind;
         a.Priority = form.Priority;
         a.TeamId = team.Id;
-        a.AssigneeId = string.IsNullOrWhiteSpace(form.AssigneeId) ? null : form.AssigneeId.Trim();
-        a.AssigneeName = a.AssigneeId is null ? null : ArticleService.Clean(form.AssigneeName ?? form.AssigneeId, 256);
+        (a.AssigneeId, a.AssigneeName) = (holder, holderName);
         a.DueDate = form.DueDate;
         a.TicketRef = ArticleService.CleanOrNull(form.TicketRef, 100);
         a.TicketUrl = ArticleService.CheckUrl(form.TicketUrl, "The ticket link");
         a.ArticleId = form.ArticleId;
         a.ParentId = form.ParentId;
+    }
+
+    /// <summary>
+    /// Who holds <paramref name="a"/> once it's on <paramref name="teamId"/> and given to <paramref name="assigneeId"/>
+    /// (nobody when blank), and their name. A holder is a member of the team, under the name the team has for them, so
+    /// an external team's action (no members) is nobody's. Whoever holds it already keeps it while it stays on its team,
+    /// member or not (one given it before the rule, or an analyst who took it on): only a change of holder is checked.
+    /// </summary>
+    private static async Task<(string? Id, string? Name)> HolderAsync(IAppDbContext db, ActionItem a, Guid teamId, string? assigneeId,
+        CancellationToken ct)
+    {
+        var id = string.IsNullOrWhiteSpace(assigneeId) ? null : assigneeId.Trim();
+        if (id is null) return (null, null);
+        if (id == a.AssigneeId && teamId == a.TeamId) return (id, a.AssigneeName);
+        return (id, await db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == id).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
+                    ?? throw new ArgumentException("That person isn't on the action's team."));
     }
 
     /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a

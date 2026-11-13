@@ -191,8 +191,11 @@ public class MeetingServiceTests : IDisposable
         await actions.AssignAsync(id, null, null);
         await using (var ctx = _db.Context()) (await ctx.Actions.SingleAsync(x => x.Id == id)).AssigneeName.Should().BeNull();
 
-        // An analyst who took it on, not being on its team, can still have its due date moved.
-        await actions.TakeAsync(id);
+        // An analyst who holds it without being on its team (given it before holders had to be members) can still have
+        // its due date moved.
+        await using (var ctx = _db.Context())
+            await ctx.Actions.Where(x => x.Id == id)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.AssigneeId, _db.User.UserId).SetProperty(x => x.AssigneeName, _db.User.DisplayName));
         await actions.AssignAsync(id, _db.User.UserId, due.AddDays(2));
         await using (var ctx = _db.Context())
         {

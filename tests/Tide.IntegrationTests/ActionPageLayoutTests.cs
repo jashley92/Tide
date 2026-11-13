@@ -35,9 +35,15 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     private Task As(Func<ActionService, Task> what, SignIn? who = null) =>
         As(async sp => { await what(sp.GetRequiredService<ActionService>()); return true; }, who);
 
-    private Task<Guid> Team(string name, bool external = false) => As(sp => external
-        ? sp.GetRequiredService<TeamService>().AddExternalAsync(name, "noc@provider.example", confirmOutside: true)
-        : sp.GetRequiredService<TeamService>().AddAsync(name, null, null));
+    // A team; with onIt, the tester is on it, so may take its actions on.
+    private Task<Guid> Team(string name, bool external = false, bool onIt = false) => As(async sp =>
+    {
+        var teams = sp.GetRequiredService<TeamService>();
+        if (external) return await teams.AddExternalAsync(name, "noc@provider.example", confirmOutside: true);
+        var team = await teams.AddAsync(name, null, null);
+        if (onIt) await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        return team;
+    });
 
     private Task<int> Raise(Guid team, string title, ActionKind kind = ActionKind.Block, DateOnly? due = null, Guid? parent = null,
         Priority priority = Priority.P3, string? description = null) =>
@@ -84,7 +90,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheHeader_HasTheTitle_OneLineOfBadges_WhoHasIt_AndOnePrimaryButton()
     {
-        var team = await Team("Layout header team");
+        var team = await Team("Layout header team", onIt: true);
         var number = await Raise(team, "Layout patch the gateways", ActionKind.PatchRemediate, Today.AddDays(-2), priority: Priority.P2);
         await Escalate(number);
 
@@ -200,7 +206,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TakeIt_IsUnderMore_WhenSomeoneElseHasIt_AndThePrimaryIsTheStatusMoveThatFits()
     {
-        var team = await Team("Layout take team");
+        var team = await Team("Layout take team", onIt: true);
         await As(async sp => { await sp.GetRequiredService<TeamService>().AddMemberAsync(team, Owner.UserId, Owner.Name); return true; });
         var number = await Raise(team, "Layout someone else's");
         await As(async actions => await actions.TakeAsync((await actions.GetAsync(number))!.Action.Id), Owner);
@@ -286,7 +292,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheNextLine_SaysEscalatedBlockedOrOverdue_RunsItsLinks_AndIsntThereWhenNothingNeedsDoing()
     {
-        var team = await Team("Layout next team");
+        var team = await Team("Layout next team", onIt: true);
         var escalated = await Raise(team, "Layout escalated", due: Today.AddDays(-1));
         await Escalate(escalated);
         var blocked = await Raise(team, "Layout blocked", due: Today.AddDays(5));
