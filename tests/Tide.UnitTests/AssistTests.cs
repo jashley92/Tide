@@ -535,7 +535,7 @@ public class DraftPromptTests
         DraftPrompt.Material(Input(null)).Should().NotContain("SecurityWeek").And.Contain("SOURCE 1 (feed summary)");
         var copy = DraftPrompt.ForCopy(Input());
         copy.Should().StartWith(DraftPrompt.Instructions).And.Contain("\"bottomLine\"").And.EndWith(DraftPrompt.Material(Input()));
-        System.Text.Json.JsonDocument.Parse(DraftPrompt.Schema).RootElement.GetProperty("required").GetArrayLength().Should().Be(10);
+        System.Text.Json.JsonElement.Parse(DraftPrompt.Schema).GetProperty("required").GetArrayLength().Should().Be(10);
     }
 }
 

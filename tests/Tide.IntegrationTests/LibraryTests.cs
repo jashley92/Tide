@@ -152,8 +152,8 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
 
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("<ul class=\"tide-library-list\" aria-label=\"Outreach templates\">");
-        Regex.Matches(html, "<li class=\"tide-library-row").Should().HaveCount(20, "the list is the page's entries");
-        Regex.Matches(html, "aria-current=\"true\"").Should().HaveCount(1);
+        html.Should().Contain("<li class=\"tide-library-row", Exactly.Times(20), "the list is the page's entries");
+        html.Should().Contain("aria-current=\"true\"", Exactly.Once());
         html.Should().MatchRegex($"<li class=\"tide-library-row selected\" aria-current=\"true\" tabindex=\"0\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 00</span>")
             .And.MatchRegex($"<li class=\"tide-library-row\" tabindex=\"-1\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 01</span>", "the selected row is the one tab stop")
             .And.Contain("<span class=\"tide-library-row-about\">For the vendor 1</span>").And.Contain("TLP:CLEAR · Not used yet");

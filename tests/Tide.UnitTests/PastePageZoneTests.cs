@@ -73,7 +73,7 @@ public class PastePageZoneTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = JsonDocument.Parse(stdout).RootElement;
+                var said = JsonElement.Parse(stdout);
                 said.GetProperty("nothingFocused").GetBoolean().Should().BeTrue("with nothing focused, the page zone takes the screenshot");
                 said.GetProperty("searchFocused").GetBoolean().Should().BeFalse("a paste with the search box focused isn't a new file");
                 said.GetProperty("inADialog").GetBoolean().Should().BeFalse("nor one inside a dialog");

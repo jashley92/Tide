@@ -61,7 +61,7 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
         html.Should().Contain("tide-present-action", "the card opens, to read");
         html.Should().NotContain("tide-status-badge").And.NotContain("tide-status-opt").And.NotContain("data-status=", "no status to change");
         html.Should().NotContain("Take it").And.NotContain("Add checklist item");
-        Regex.Matches(html, "<input type=\"checkbox\"[^>]*>").Where(m => !m.Value.Contains("disabled", StringComparison.Ordinal))
+        Checkbox().Matches(html).Where(m => !m.Value.Contains("disabled", StringComparison.Ordinal))
             .Should().BeEmpty("no checklist item can be ticked");
         await Do(r, p => p.OnActionChanged());
         await Do(r, p => p.CloseAction());
@@ -129,4 +129,7 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
 
     [GeneratedRegex(@"<([A-Z][A-Za-z0-9]+)[\s/>]")]
     private static partial Regex Tag();
+
+    [GeneratedRegex("<input type=\"checkbox\"[^>]*>")]
+    private static partial Regex Checkbox();
 }

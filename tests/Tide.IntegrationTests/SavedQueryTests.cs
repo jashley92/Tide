@@ -322,7 +322,7 @@ public class SavedQueryServiceTests : IDisposable
         var action = await Action();
         var svc = _db.Actions();
         // 400 SHA-256 hashes: about 27,000 characters once quoted, more than a person may write by hand.
-        await svc.AddIndicatorsAsync(action.Id, Enumerable.Range(0, 400).Select(i => new IndicatorForm { Type = IndicatorType.FileHash, Value = i.ToString("x64") }));
+        await svc.AddIndicatorsAsync(action.Id, Enumerable.Range(0, 400).Select(i => new IndicatorForm { Type = IndicatorType.FileHash, Value = i.ToString("x64", System.Globalization.CultureInfo.InvariantCulture) }));
 
         var saved = await svc.AddSavedHuntAsync(action.Id, await Save("Hash sweep", text: "DeviceFileEvents\n| where SHA256 in~ ({{values}})"));
         saved.Text.Length.Should().BeGreaterThan(20000);

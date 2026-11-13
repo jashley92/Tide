@@ -98,7 +98,7 @@ public class ClosedListReachServiceTests : IDisposable
 /// the strip's reach, with the board's filters. A closed action's rail on the list offers Reopen, through the same
 /// checked, recorded move the board makes, to whoever may move it.
 /// </summary>
-public class BoardClosedLinksTests(TideApp app) : IClassFixture<TideApp>
+public partial class BoardClosedLinksTests(TideApp app) : IClassFixture<TideApp>
 {
     private static SignIn Owner() => new($"dev:bcl-owner-{Guid.NewGuid():N}", "Cal Owner", "ActionOwner");
     private static readonly SignIn Viewer = new("dev:bcl-viewer", "Vic Viewer", "Viewer");
@@ -153,7 +153,7 @@ public class BoardClosedLinksTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // Where a status's chip links.
-    private static string ChipHref(string html, ActionStatus status) => Regex.Match(Chip(html, status), "href=\"([^\"]+)\"").Groups[1].Value;
+    private static string ChipHref(string html, ActionStatus status) => Href().Match(Chip(html, status)).Groups[1].Value;
 
     [Fact]
     public async Task EachClosedChip_LinksToRecentlyClosed_AtItsStatusAndReach_WithTheBoardsFilters()
@@ -320,4 +320,7 @@ public class BoardClosedLinksTests(TideApp app) : IClassFixture<TideApp>
         r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Select(t => t.Message)
             .Should().Contain($"Someone else moved A-{number} to Cancelled in the meantime.");
     }
+
+    [GeneratedRegex("href=\"([^\"]+)\"")]
+    private static partial Regex Href();
 }

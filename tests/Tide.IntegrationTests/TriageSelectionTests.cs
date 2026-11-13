@@ -13,7 +13,7 @@ namespace Tide.IntegrationTests;
 /// <c>selected</c>, <c>aria-current</c> and the list's tab stop, J and K moving it and stopping at the ends of the only
 /// page, and the reading pane following it. (J and K across pages are in <c>PagingAndFiltersPageTests</c>.)
 /// </summary>
-public class TriageSelectionTests(TideApp app) : IClassFixture<TideApp>
+public partial class TriageSelectionTests(TideApp app) : IClassFixture<TideApp>
 {
     // Dismissed items of a source of their own, newest first as numbered, so a test's rows are only its own.
     private async Task<(Guid Source, List<string> Titles)> Seed(int count, bool withText = false)
@@ -41,7 +41,7 @@ public class TriageSelectionTests(TideApp app) : IClassFixture<TideApp>
 
     // Each row's opening <li> tag, in the order shown.
     private static List<string> RowTags(string html) =>
-        Regex.Matches(html, "<li class=\"tide-triage-row[^>]*>").Select(m => m.Value).ToList();
+        TriageRowTag().Matches(html).Select(m => m.Value).ToList();
 
     // Exactly the row at `at` is selected: its class, aria-current and the one tab stop; every other row has none of them.
     private static void OnlySelected(string html, int at, IReadOnlyList<string> titles)
@@ -140,4 +140,7 @@ public class TriageSelectionTests(TideApp app) : IClassFixture<TideApp>
         Triage.Address(FeedItemStatus.New, null, null, sinceLast: false, null, 4, page: 2).Should().Be("triage?tab=new&page=2&row=4");
         Triage.Address(FeedItemStatus.New, null, null, sinceLast: false, null, 0, page: 2).Should().Be("triage?tab=new&page=2");
     }
+
+    [GeneratedRegex("<li class=\"tide-triage-row[^>]*>")]
+    private static partial Regex TriageRowTag();
 }

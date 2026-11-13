@@ -95,7 +95,7 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     {
         var info = Info();
         var today = app.Services.GetRequiredService<Tide.Application.Org.OrgClock>().CurrentBriefDate;
-        Day(info.Today).Should().Be(today, "Today and /present/{today} show the brief day it names");
+        Day(info.Today).Should().Be(today, "Today and /present/<today> show the brief day it names");
         await using var db = Db();
         (await db.Briefs.SingleAsync(b => b.BriefDate == today)).Status.Should().NotBe(BriefStatus.Presented).And.NotBe(BriefStatus.Sent);
     }

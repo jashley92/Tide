@@ -45,7 +45,7 @@ public static class FileDownloads
         // Classic PKWARE encryption (ZipCrypto), not AES, so Windows File Explorer opens it with the password as well as any
         // zip tool. It's deliberately weak: its job is to stop a double-click running the file and antivirus deleting it on
         // arrival, not to keep it secret (the password is the field's public convention).
-        zip.PutNextEntry(new ZipEntry(entryName) { DateTime = modifiedUtc, Size = size, AESKeySize = 0 });
+        await zip.PutNextEntryAsync(new ZipEntry(entryName) { DateTime = modifiedUtc, Size = size, AESKeySize = 0 });
         await source.CopyToAsync(zip, 1 << 16);
         zip.CloseEntry();
         zip.Finish();

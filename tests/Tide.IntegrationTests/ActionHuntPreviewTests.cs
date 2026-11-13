@@ -18,7 +18,7 @@ namespace Tide.IntegrationTests;
 /// A sweep's or hunt's query previewed when its page opens: shown to whoever may work it, with nothing saved or logged
 /// until they copy or keep it, and the result buttons held back until a saved query exists.
 /// </summary>
-public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
+public partial class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Outsider = new("dev:preview-outsider", "Omar Outsider", "ActionOwner");
     private static readonly SignIn Viewer = new("dev:preview-viewer", "Viewer", "Viewer");
@@ -276,7 +276,7 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         {
             page.Component.Next!.Kind.Should().Be(NextKind.Unowned);
             WebUtility.HtmlDecode(await page.Html()).Should().Contain("data-next=\"Unowned\"").And.Contain("Nobody has it yet.").And.Contain("Take it</button>");
-            System.Text.RegularExpressions.Regex.Matches(await page.Html(), "class=\"tide-next\"").Should().HaveCount(1, "one Next line");
+            (await page.Html()).Should().Contain("class=\"tide-next\"", Exactly.Once(), "one Next line");
         }
 
         await As(async sp => { await sp.GetRequiredService<ActionService>().TakeAsync(id); return true; });
@@ -313,7 +313,7 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(number);
         var html = WebUtility.HtmlDecode(await page.Html());
 
-        var tabs = Regex.Matches(html, "role=\"tab\" id=\"tool-panel-tab-([a-z]+)\"").Select(m => m.Groups[1].Value).ToList();
+        var tabs = ToolTab().Matches(html).Select(m => m.Groups[1].Value).ToList();
         tabs.Should().StartWith(["hunt"], "a sweep's query is its work: its tab comes first");
         html.Should().MatchRegex("Sweeping for</span>\\s*<span class=\"tide-chip[^\"]*\"[^>]*>[^<]*203\\.0\\.113\\[\\.\\]45", "the indicators the query is built from, as chips");
         html.Should().MatchRegex("<div class=\"[^\"]*\" role=\"group\" aria-label=\"Query language\">", "the language is a segmented control")
@@ -430,7 +430,13 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
 
         var html = WebUtility.HtmlDecode(await page.Html());
         html.Should().Contain("after-add.example");
-        Regex.Match(html, "<input[^>]*aria-label=\"New indicator\"[^>]*>").Value.Should().NotContain("disabled");
+        NewIndicatorBox().Match(html).Value.Should().NotContain("disabled");
         Button(html, ">Add</button>").Should().NotContain("disabled");
     }
+
+    [GeneratedRegex("<input[^>]*aria-label=\"New indicator\"[^>]*>")]
+    private static partial Regex NewIndicatorBox();
+
+    [GeneratedRegex("role=\"tab\" id=\"tool-panel-tab-([a-z]+)\"")]
+    private static partial Regex ToolTab();
 }

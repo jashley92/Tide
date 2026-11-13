@@ -1,6 +1,7 @@
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Org;
 using Tide.Application.Search;
 using Tide.Domain.Enums;
@@ -9,7 +10,7 @@ using Tide.Web.Components.Layout;
 namespace Tide.IntegrationTests;
 
 /// <summary>The command palette's entries (PaletteEntries) and the shortcuts list (Shortcuts), per person and page.</summary>
-public class PaletteEntryTests
+public partial class PaletteEntryTests
 {
     private static readonly DateOnly Day = new(2026, 10, 29);
 
@@ -215,9 +216,9 @@ public class PaletteEntryTests
         var dir = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;
         var js = File.ReadAllText(Path.Combine(dir, "src", "Tide.Web", "wwwroot", "js", "present.js"));
-        var map = System.Text.RegularExpressions.Regex.Match(js, @"const keys = \{([^}]*)\}").Groups[1].Value;
+        var map = KeyMap().Match(js).Groups[1].Value;
         var named = new Dictionary<string, string> { ["ArrowRight"] = "→", ["ArrowLeft"] = "←", ["Escape"] = "Esc" };
-        var handled = System.Text.RegularExpressions.Regex.Matches(map, @"'?([^\s,:']+)'?\s*:").Select(m => m.Groups[1].Value)
+        var handled = KeyName().Matches(map).Select(m => m.Groups[1].Value)
             .Select(k => named.GetValueOrDefault(k, k.Length == 1 ? k.ToUpperInvariant() : k)).Distinct().ToList();
         handled.Should().Contain(["→", "Enter", "←", "Backspace", "Home", "End", "F", "D", "]", "Esc"]);
 
@@ -243,6 +244,12 @@ public class PaletteEntryTests
         triage.Single(k => k.Keys.Contains("↓")).Letter.Should().BeFalse("arrows aren't affected by the switch");
         Shortcuts.Everywhere.Keys.Single(k => k.Keys.Contains("?")).Letter.Should().BeTrue();
     }
+
+    [GeneratedRegex(@"'?([^\s,:']+)'?\s*:")]
+    private static partial Regex KeyName();
+
+    [GeneratedRegex(@"const keys = \{([^}]*)\}")]
+    private static partial Regex KeyMap();
 }
 
 /// <summary>The palette's and the shortcuts list's buttons and script, as rendered.</summary>

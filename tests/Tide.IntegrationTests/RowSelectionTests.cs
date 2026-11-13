@@ -13,7 +13,7 @@ namespace Tide.IntegrationTests;
 /// nothing but its adoption: the row the address names, the one row that is selected, <c>aria-current</c> and the tab
 /// stop, J and K and the ends of a page, Enter, and the address following the selection.
 /// </summary>
-public class RowSelectionTests(TideApp app) : IClassFixture<TideApp>
+public partial class RowSelectionTests(TideApp app) : IClassFixture<TideApp>
 {
     /// <summary>
     /// A list page that adopts the selection, and does nothing else. In Razor it is the query parameter, a number, and:
@@ -87,7 +87,7 @@ public class RowSelectionTests(TideApp app) : IClassFixture<TideApp>
         }
     }
 
-    private static List<string> Rows(string html) => Regex.Matches(html, "<li[^>]*>[^<]*</li>").Select(m => m.Value).ToList();
+    private static List<string> Rows(string html) => PlainItem().Matches(html).Select(m => m.Value).ToList();
 
     // Exactly the row at `at` is selected, and the rows are these.
     private static void OnlySelected(string html, int at, params string[] names)
@@ -252,4 +252,7 @@ public class RowSelectionTests(TideApp app) : IClassFixture<TideApp>
         RowSelection.Clamp(2, 4).Should().Be(2);
         RowSelection.Clamp(5, 0).Should().Be(0);
     }
+
+    [GeneratedRegex("<li[^>]*>[^<]*</li>")]
+    private static partial Regex PlainItem();
 }

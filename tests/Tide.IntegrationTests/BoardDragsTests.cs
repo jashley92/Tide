@@ -135,7 +135,7 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         strip.Should().BePositive("the closed statuses are a strip under the lanes");
         foreach (var s in new[] { ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked, ActionStatus.Tracking })
             html.IndexOf($"<section class=\"tide-kcol\" data-status=\"{s}\"", StringComparison.Ordinal).Should().BeInRange(0, strip, $"{s} is a lane, above the strip");
-        Regex.Count(html[..strip], "class=\"tide-kcol-drop\"").Should().Be(4, "every lane has a place to drop under its cards");
+        html[..strip].Should().Contain("class=\"tide-kcol-drop\"", Exactly.Times(4), "every lane has a place to drop under its cards");
         html.Should().NotContain("data-status=\"Done\" aria-labelledby", "no lane for a closed status");
 
         var closed = html[strip..];

@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
@@ -363,7 +364,7 @@ public class StackServiceTests : IDisposable
     }
 }
 
-public class StackPageTests(TideApp app) : IClassFixture<TideApp>
+public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
 {
     [Fact]
     public async Task OurStack_ListsTheProducts_AndAProductsPageEditsAndShowsItsHistory()
@@ -396,7 +397,7 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
 
     // The product names in the order the list shows them.
     private static List<string> Names(string html) =>
-        [.. System.Text.RegularExpressions.Regex.Matches(html, "<td><a href=\"stack/[0-9a-f-]+\">([^<]+)</a>").Select(m => m.Groups[1].Value)];
+        [.. StackName().Matches(html).Select(m => m.Groups[1].Value)];
 
     [Fact]
     public async Task TheAddForm_IsBehindItsButton_AndOnlyForThoseWhoKeepTheList()
@@ -544,4 +545,7 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
         for (var i = 0; i < 50 && (await robin.Html()).Contains("Untag Card Test Gateway", StringComparison.Ordinal); i++) await Task.Delay(100);
         (await robin.Html()).Should().NotContain("Untag Card Test Gateway");
     }
+
+    [GeneratedRegex("<td><a href=\"stack/[0-9a-f-]+\">([^<]+)</a>")]
+    private static partial Regex StackName();
 }

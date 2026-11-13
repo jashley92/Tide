@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Metrics;
@@ -17,7 +18,7 @@ namespace Tide.IntegrationTests;
 /// team edition only and only when it isn't blank; a meeting's followers landing on it by its key; a colleague's edit
 /// showing on the slides and the brief page as it lands. Its own app, since metrics are global.
 /// </summary>
-public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
+public partial class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:note-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:note-robin", "Robin Analyst", "Analyst");
@@ -80,7 +81,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
     // The slides' titles in order, as the progress bar lists them.
     private static List<string> Titles(string html) =>
-        System.Text.RegularExpressions.Regex.Matches(html, "<nav class=\"tide-progress\"[\\s\\S]*?</nav>").Single().Value
+        ProgressNav().Matches(html).Single().Value
             .Split("title=\"").Skip(1).Select(t => System.Net.WebUtility.HtmlDecode(t[..t.IndexOf('"')])).ToList();
 
     [Fact]
@@ -96,7 +97,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
         html.Should().Contain("class=\"tide-slide-note\"").And.Contain("tabindex=\"-1\">Before we start</h2>").And.Contain("team edition only")
             .And.Contain("Slide 2 of").And.Contain(": Opening note");
-        System.Text.RegularExpressions.Regex.IsMatch(html, @"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>\s*</ul>\s*</li>")
+        NestedList().IsMatch(html)
             .Should().BeTrue("the sub-bullet is a list inside its bullet");
 
         await r.Click(p => p.OnPresentKey("next"));
@@ -208,7 +209,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         {
             var theirs = await owner.Html();
             theirs.Should().Contain("id=\"team-note-h\"").And.NotContain("id=\"team-note\"", "an action owner reads it, and can't edit it");
-            System.Text.RegularExpressions.Regex.IsMatch(theirs, @"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>").Should().BeTrue();
+            NestedListStart().IsMatch(theirs).Should().BeTrue();
         }
 
         await SaveAs(Robin, brief, "- Tabletop exercise on Friday");
@@ -252,4 +253,13 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await using var scope = SignedIn(app, SignIn.Analyst);
         (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("- Typed and not saved");
     }
+
+    [GeneratedRegex(@"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>\s*</ul>\s*</li>")]
+    private static partial Regex NestedList();
+
+    [GeneratedRegex(@"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>")]
+    private static partial Regex NestedListStart();
+
+    [GeneratedRegex("<nav class=\"tide-progress\"[\\s\\S]*?</nav>")]
+    private static partial Regex ProgressNav();
 }

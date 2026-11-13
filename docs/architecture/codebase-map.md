@@ -23,7 +23,7 @@ who are new to TIDE or about to change an area they haven't worked in. Paths are
 
 ```
 Tide.sln
-Directory.Build.props        .NET 10, nullable on, latest-recommended analyzers, InvariantGlobalization=false
+Directory.Build.props        .NET 10, nullable on, analyzers pinned at 10.0-recommended, InvariantGlobalization=false
 .github/workflows/           ci.yml (build, test, migration guards, SQL Server job, upgrade test) and release.yml (bundle)
 deploy/                      PowerShell install, upgrade, backup and restore-drill scripts, SQL, production config template
 docs/                        This documentation set, ADRs (docs/decisions) and screenshots

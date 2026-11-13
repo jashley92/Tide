@@ -278,11 +278,11 @@ public class DetectionServiceTests : IDisposable
         var spider = await _db.Adversaries().SaveAsync(new AdversaryForm { Name = "Scattered Spider" });
         var article = await Briefed("Help desk calls", "T1621", "T1078");
         await _db.Adversaries().TagArticleAsync(article, spider);
-        var plain = JsonDocument.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!).RootElement;
+        var plain = JsonElement.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!);
         plain.GetProperty("techniques").EnumerateArray().Select(t => t.TryGetProperty("color", out var c)).Should().OnlyContain(has => !has);
 
         await Detections().ImportAsync(DetectionSource.Csv, "rules.csv", Csv("Valid accounts,T1078,yes,a"));
-        var layer = JsonDocument.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!).RootElement;
+        var layer = JsonElement.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!);
 
         var colours = layer.GetProperty("techniques").EnumerateArray().ToDictionary(t => t.GetProperty("techniqueID").GetString()!, t => (t.GetProperty("color").GetString(), t.GetProperty("comment").GetString()));
         colours["T1078"].Should().Be(("#8fd19e", "1 article; 1 rule tagged"));
@@ -291,7 +291,7 @@ public class DetectionServiceTests : IDisposable
 
         // Someone who reads the team edition but not the rules gets the layer without coverage.
         _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
-        var owners = JsonDocument.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!).RootElement;
+        var owners = JsonElement.Parse((await _db.Adversaries().NavigatorLayerAsync(spider))!);
         owners.GetProperty("techniques").EnumerateArray().Select(t => t.TryGetProperty("color", out _)).Should().OnlyContain(has => !has);
         owners.GetProperty("techniques").EnumerateArray().Select(t => t.GetProperty("comment").GetString()).Should().OnlyContain(c => !c!.Contains("rule"));
         owners.GetProperty("legendItems").GetArrayLength().Should().Be(0);

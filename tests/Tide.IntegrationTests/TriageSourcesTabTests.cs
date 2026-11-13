@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Intake;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -24,7 +25,7 @@ public sealed class PullApp : TideApp
 }
 
 /// <summary>Triage's Sources tab as the page draws it: the polled sources, the failing count, and Pull now.</summary>
-public class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
+public partial class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
 {
     private static readonly ComponentHarness.SignIn Analyst = new("dev:analyst", "Analyst", "Analyst");
 
@@ -162,8 +163,11 @@ public class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
     // The New tab's count, as the tab bar shows it.
     private static int NewCount(string html)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(html, "<span>New</span>\\s*<span class=\"tide-tabbar-count[^\"]*\">(\\d+)</span>");
+        var m = NewTabCount().Match(html);
         m.Success.Should().BeTrue();
         return int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    [GeneratedRegex("<span>New</span>\\s*<span class=\"tide-tabbar-count[^\"]*\">(\\d+)</span>")]
+    private static partial Regex NewTabCount();
 }

@@ -70,7 +70,7 @@ public class ToastUndoKeyTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+                var said = System.Text.Json.JsonElement.Parse(stdout);
                 (int Clicked, bool Taken) Key(string name) => (said.GetProperty(name).GetProperty("clicked").GetInt32(), said.GetProperty(name).GetProperty("taken").GetBoolean());
                 Key("altZ").Should().Be((1, true), "Alt+Z presses the newest Undo, and the browser doesn't also act on it");
                 Key("optionZ").Should().Be((1, true), "Option+Z on a Mac types another character, and is the same key");

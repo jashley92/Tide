@@ -109,7 +109,7 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
         await FirstArticle(pat);
         var iocs = Iocs(await pat.Html());
         iocs.Should().Contain("Indicators (12)").And.Contain("2 more</button>");
-        Regex.Count(iocs, "class=\"tide-slide-ioc\"").Should().Be(10);
+        iocs.Should().Contain("class=\"tide-slide-ioc\"", Exactly.Times(10));
         await Do(pat, p => p.ShowIndicators(s.WithIocs));
         (await pat.Html()).Should().Contain("present-iocs-title").And.Contain("more10-73[.]example[.]org", "the card has them all");
         await Do(pat, p => p.OnPresentKey("close"));

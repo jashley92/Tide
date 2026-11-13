@@ -15,7 +15,7 @@ namespace Tide.IntegrationTests;
 /// with "1–20 of 34", the page in the address, a filter starting again from the first page, and a delete that takes a
 /// page away showing the last.
 /// </summary>
-public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
+public partial class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
@@ -93,7 +93,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         r.Component.Page.Should().Be(2);
         var two = WebUtility.HtmlDecode(await r.Html());
         two.Should().Contain("21–25 of 25 saved queries");
-        Regex.Matches(two, "<span class=\"tide-library-row-meta\">([^<]*)</span>").Select(m => m.Groups[1].Value).Should()
+        RowMeta().Matches(two).Select(m => m.Groups[1].Value).Should()
             .HaveCount(5).And.OnlyContain(meta => meta == "Falcon · Not used yet", "each row says its language, on whichever page it is");
 
         // The language filter starts from the first page too.
@@ -124,7 +124,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnChangedElsewhere([]));
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("21–40 of 50 saved queries");
-        Regex.Matches(html, "<span class=\"tide-library-row-meta\">([^<]*)</span>").Select(m => m.Groups[1].Value).Should()
+        RowMeta().Matches(html).Select(m => m.Groups[1].Value).Should()
             .HaveCount(20).And.OnlyContain(meta => meta.StartsWith("KQL · ", StringComparison.Ordinal), "KQL runs on from page 1, and each row says so");
         html.Should().Contain("Microsoft Sentinel / Defender (KQL)</span>", "the query shown in full names its language whole");
     }
@@ -180,4 +180,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         r.Component.Page.Should().Be(1, "retiring five took page 2 away");
         r.Component.OnPage.Should().HaveCount(20);
     }
+
+    [GeneratedRegex("<span class=\"tide-library-row-meta\">([^<]*)</span>")]
+    private static partial Regex RowMeta();
 }

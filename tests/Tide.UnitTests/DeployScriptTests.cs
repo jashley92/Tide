@@ -267,7 +267,7 @@ public partial class DeployScriptPowerShellTests
             var stdout = p.StandardOutput.ReadToEnd();
             p.WaitForExit(120_000).Should().BeTrue("PowerShell finishes");
             p.ExitCode.Should().Be(0, "the script ran: {0}", stderr.Result);
-            return JsonDocument.Parse(stdout).RootElement.Clone();
+            return JsonElement.Parse(stdout);
         }
         finally { File.Delete(file); }
     }

@@ -17,7 +17,7 @@ namespace Tide.IntegrationTests;
 /// reader hears), its parts' remediation timeline, and Record an update (one history line, the reply kept as a comment,
 /// the status and due date moved by the rules, a team's limit, and who may).
 /// </summary>
-public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
+public partial class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:ep88-owner", "Owner", "ActionOwner");
 
@@ -80,9 +80,9 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         return (parent, overdue, tracking, done, article);
     }
 
-    private static string Flow(string html) => Regex.Match(html, "<section class=\"tide-card tide-lineage\".*?</section>", RegexOptions.Singleline).Value;
+    private static string Flow(string html) => LineageSection().Match(html).Value;
 
-    private static string Timeline(string html) => Regex.Match(html, "<section class=\"tide-card tide-remtl\".*?</section>", RegexOptions.Singleline).Value;
+    private static string Timeline(string html) => TimelineSection().Match(html).Value;
 
     [Fact]
     public async Task AParent_ShowsItsArticle_ItselfAndEachPart_ColouredByState_EachLinked()
@@ -94,13 +94,13 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         flow.Should().Contain($"href=\"articles/{article}\"").And.Contain("EP88a edge VPN zero-day").And.Contain("CVE-2026-1111, CVE-2026-2222");
         flow.Should().Contain($"href=\"actions/{parent}\" aria-current=\"page\"", "the parent is the page you're on")
             .And.Contain("EP88a Security Operations").And.Contain("1 of 3 done · 1 overdue");
-        Regex.Matches(flow, "data-part=\"(\\d+)\" data-state=\"(\\w+)\"").Select(m => (int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[2].Value))
+        PartState().Matches(flow).Select(m => (int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[2].Value))
             .Should().Equal((overdue, "Overdue"), (tracking, "Tracking"), (done, "Done"));
         flow.Should().Contain($"href=\"actions/{overdue}\"").And.Contain($"href=\"actions/{tracking}\"").And.Contain($"href=\"actions/{done}\"");
         flow.Should().Contain("3 days late").And.Contain("Closed " + Today.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture));
         Regex.Match(flow, $"data-part=\"{tracking}\".*?</li>", RegexOptions.Singleline).Value.Should().Contain("tide-badge-purple").And.Contain(">external<");
         flow.Should().Contain("tide-badge-danger").And.Contain("tide-badge-info");
-        Regex.Matches(flow, "<li><span class=\"tide-badge (tide-badge-\\w+)\"").Select(m => m.Groups[1].Value)
+        LineageBadge().Matches(flow).Select(m => m.Groups[1].Value)
             .Should().Equal(["tide-badge-info", "tide-badge-ok", "tide-badge-warn", "tide-badge-danger", "tide-badge-purple"], "the legend lists every state in the SLA badge's tones");
         // On the parent the lineage is the Parts card: its controls are here, and the parts aren't listed a second time.
         flow.Should().Contain($"actions?view=open&layout=board&parent={parent}\">Open its 3 actions on the board").And.Contain("Split off a part for a team");
@@ -114,8 +114,8 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(parent);
         var flow = WebUtility.HtmlDecode(Flow(await page.Html()));
         flow.Should().Contain("<ol class=\"tide-lin-flow\"").And.Contain("<ul class=\"tide-lin-parts\">");
-        var said = Regex.Replace(Regex.Replace(flow, "<[^>]*aria-hidden=\"true\"[^>]*>[^<]*</[^>]+>", ""), "<[^>]+>", " ");
-        said = Regex.Replace(said, "\\s+", " ");
+        var said = AnyTag().Replace(HiddenFromReaders().Replace(flow, ""), " ");
+        said = Whitespace().Replace(said, " ");
         said.Should().ContainAll("Raised from the article:", "Then the action:", "Split into 3 parts:", "Overdue", "Tracking", "Done or closed", "external");
         said.IndexOf("Raised from the article", StringComparison.Ordinal).Should().BeLessThan(said.IndexOf("Then the action", StringComparison.Ordinal));
         said.IndexOf("Then the action", StringComparison.Ordinal).Should().BeLessThan(said.IndexOf("Split into", StringComparison.Ordinal));
@@ -162,7 +162,7 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
 
         html.Should().Contain($"data-today-at=\"{timeline.Today.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}\"");
         html.Should().Contain($"class=\"tide-remtl-grid\" style=\"--at: {timeline.Today.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%\"", "each track draws today's line from it");
-        Regex.Matches(html, "<li class=\"tide-remtl-row (tide-badge-\\w+)\" data-part=\"(\\d+)\"").Select(m => (int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[1].Value))
+        TimelineRow().Matches(html).Select(m => (int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[1].Value))
             .Should().Equal((overdue, "tide-badge-danger"), (tracking, "tide-badge-purple"), (done, "tide-badge-info"));
         var short_ = (DateOnly x) => x.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture);
         Regex.Match(html, $"data-part=\"{overdue}\".*?</li>", RegexOptions.Singleline).Value.Should().Contain("tide-remtl-over").And.Contain("3 days late");
@@ -298,4 +298,28 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         d.Action.Comments.Should().ContainSingle().Which.Text.Should().EndWith("> Still on it, next week.");
         d.Action.Events[0].Text.Should().Be("Update from EP88j refusing team: Back with us. Their reply is kept as a comment.");
     }
+
+    [GeneratedRegex("<[^>]+>")]
+    private static partial Regex AnyTag();
+
+    [GeneratedRegex("<[^>]*aria-hidden=\"true\"[^>]*>[^<]*</[^>]+>")]
+    private static partial Regex HiddenFromReaders();
+
+    [GeneratedRegex("<li><span class=\"tide-badge (tide-badge-\\w+)\"")]
+    private static partial Regex LineageBadge();
+
+    [GeneratedRegex("<section class=\"tide-card tide-lineage\".*?</section>", RegexOptions.Singleline)]
+    private static partial Regex LineageSection();
+
+    [GeneratedRegex("data-part=\"(\\d+)\" data-state=\"(\\w+)\"")]
+    private static partial Regex PartState();
+
+    [GeneratedRegex("<li class=\"tide-remtl-row (tide-badge-\\w+)\" data-part=\"(\\d+)\"")]
+    private static partial Regex TimelineRow();
+
+    [GeneratedRegex("<section class=\"tide-card tide-remtl\".*?</section>", RegexOptions.Singleline)]
+    private static partial Regex TimelineSection();
+
+    [GeneratedRegex("\\s+")]
+    private static partial Regex Whitespace();
 }

@@ -56,7 +56,7 @@ public partial class LibrarySearchTests(TideApp app) : IClassFixture<TideApp>
         // open tab lists them.
         var html = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/library/templates?q={tag}"));
         html.Should().MatchRegex($"<input id=\"library-find\" type=\"search\"[^>]*value=\"{tag}\"", "the words come back from the address");
-        var bar = Regex.Match(html, "<nav class=\"tide-tabbar tide-tabbar-page\" aria-label=\"Library\">(.*?)</nav>", RegexOptions.Singleline).Groups[1].Value;
+        var bar = LibraryTabBar().Match(html).Groups[1].Value;
         var links = bar.Split("<a ").Skip(1).ToList();
         links.Should().HaveCount(4);
         foreach (var key in new[] { "queries", "templates", "playbooks", "board-rules" })
@@ -82,10 +82,10 @@ public partial class LibrarySearchTests(TideApp app) : IClassFixture<TideApp>
     public async Task ThePage_HasOneHeader_WithTheTabsNewButton_AndOneSearchOnTheTabRow()
     {
         var html = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync("/library/queries"));
-        var head = Regex.Match(html, "<div class=\"tide-page-head\">.*?</h1>(.*?)<nav class=\"tide-tabbar", RegexOptions.Singleline).Groups[1].Value;
+        var head = PageHeadSub().Match(html).Groups[1].Value;
         head.Should().Contain("New saved query</button>", "the open tab's New button is in the page's header");
-        var sub = Regex.Match(head, "<div class=\"tide-sub\">(.*?)</div>", RegexOptions.Singleline).Groups[1].Value;
-        Regex.Replace(sub, "<[^>]+>", "").Trim().Length.Should().BeInRange(1, 120, "one line about the tab");
+        var sub = TabSub().Match(head).Groups[1].Value;
+        AnyTag().Replace(sub, "").Trim().Length.Should().BeInRange(1, 120, "one line about the tab");
         html.Should().MatchRegex("<div class=\"tide-library-tabrow\">\\s*<nav class=\"tide-tabbar tide-tabbar-page\" aria-label=\"Library\">.*?</nav>\\s*<form [^>]*role=\"search\"",
             "the one search is on the tab row");
         html.Should().Contain("placeholder=\"Search the whole library\"");
@@ -140,4 +140,16 @@ public partial class LibrarySearchTests(TideApp app) : IClassFixture<TideApp>
         (await More(viewer)).Should().BeEmpty("someone who only reads actions can neither retire nor delete");
         (await viewer.Html()).Should().NotContain("aria-haspopup=\"menu\"");
     }
+
+    [GeneratedRegex("<[^>]+>")]
+    private static partial Regex AnyTag();
+
+    [GeneratedRegex("<nav class=\"tide-tabbar tide-tabbar-page\" aria-label=\"Library\">(.*?)</nav>", RegexOptions.Singleline)]
+    private static partial Regex LibraryTabBar();
+
+    [GeneratedRegex("<div class=\"tide-page-head\">.*?</h1>(.*?)<nav class=\"tide-tabbar", RegexOptions.Singleline)]
+    private static partial Regex PageHeadSub();
+
+    [GeneratedRegex("<div class=\"tide-sub\">(.*?)</div>", RegexOptions.Singleline)]
+    private static partial Regex TabSub();
 }

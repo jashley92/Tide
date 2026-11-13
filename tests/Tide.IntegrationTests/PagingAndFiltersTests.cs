@@ -22,7 +22,7 @@ namespace Tide.IntegrationTests;
 /// the board's closed columns reach a week (or a month when asked), and the new filters: the actions' words, priority,
 /// due date and status, and Triage's CVEs, KEV and what we run.
 /// </summary>
-public class PagingAndFiltersServiceTests : IDisposable
+public partial class PagingAndFiltersServiceTests : IDisposable
 {
     private TestDb _db = new();
 
@@ -348,8 +348,8 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         html.Should().Contain("<a class=\"btn btn-primary btn-sm\" href=\"triage?tab=new&page=6\" aria-current=\"page\" aria-label=\"Page 6, this page\">6</a>");
         html.Should().Contain("href=\"triage?tab=new&page=5\" aria-label=\"Page 5\"").And.Contain("href=\"triage?tab=new&page=12\" aria-label=\"Page 12\"");
         html.Should().Contain("href=\"triage?tab=new&page=5\" rel=\"prev\"").And.Contain("href=\"triage?tab=new&page=7\" rel=\"next\"");
-        Regex.Count(html, "tide-pager-gap").Should().Be(2, "1 … 5 6 7 … 12");
-        Regex.Count(html, "aria-current=").Should().Be(1);
+        html.Should().Contain("tide-pager-gap", Exactly.Times(2), "1 … 5 6 7 … 12");
+        html.Should().Contain("aria-current=", Exactly.Once());
         html.Should().NotContain("<button", "links, so a middle-click opens a page in a new tab");
 
         await using var first = await ComponentHarness.RenderAsync<Pager>(app, "/triage", new()
@@ -385,7 +385,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         return (source.Id, items.Select(i => i.Id).ToList());
     }
 
-    private static int Rows(string html) => Regex.Count(html, "<li class=\"tide-triage-row");
+    private static int Rows(string html) => TriageRow().Count(html);
 
     [Fact]
     public async Task Triage_ReadsItsPageFromTheAddress_AndItsLinksKeepTheFilters()
@@ -505,7 +505,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         return end < 0 ? html[at..] : html[at..end];
     }
 
-    private static int Cards(string column) => Regex.Count(column, "<article ");
+    private static int Cards(string column) => Article().Count(column);
 
     [Fact]
     public async Task TheBoard_ShowsEachColumnsFirst20_ThenTwentyMoreAtATime()
@@ -591,4 +591,10 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         FilterBarHtml.Pressed(html, "Blocked").Should().BeTrue();
         FilterBarHtml.Pressed(html, "Tracking").Should().BeFalse();
     }
+
+    [GeneratedRegex("<article ")]
+    private static partial Regex Article();
+
+    [GeneratedRegex("<li class=\"tide-triage-row")]
+    private static partial Regex TriageRow();
 }

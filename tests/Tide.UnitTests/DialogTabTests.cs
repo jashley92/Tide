@@ -102,7 +102,7 @@ public class DialogTabTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+                var said = System.Text.Json.JsonElement.Parse(stdout);
                 string At(string name) => said.GetProperty(name).GetString()!;
                 At("tabFromApply").Should().Be("box", "Tab from the last control that can take focus goes round to the first, not out of the dialog");
                 At("shiftTabFromBox").Should().Be("apply", "Shift+Tab from the first goes round to the last, not to a folded cell");

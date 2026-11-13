@@ -11,8 +11,9 @@
 (function (root) {
     'use strict';
 
-    // A list line: indent, marker ("-", "*", "+", "1." or "1)"), the space after it, and the item's text.
-    var LIST = /^( *)([-*+]|\d{1,9}[.)])( +|$)(.*)$/;
+    // A list line: indent, marker ("-", "*", "+", "1." or "1)"), the space after it, and the item's text. The text can't
+    // start with a space (the gap takes them all), so the two never compete for the same spaces: the match is linear.
+    var LIST = /^( *)([-*+]|\d{1,9}[.)])( +|$)([^ \r\n\u2028\u2029].*|)$/;
     var FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
     function parse(line) {
@@ -22,7 +23,7 @@
         var ordered = /\d/.test(m[2]);
         return {
             indent: m[1].length, marker: m[2], gap: m[3], content: m[4], ordered: ordered,
-            num: ordered ? parseInt(m[2], 10) : 0, delim: ordered ? m[2].slice(-1) : '',
+            num: ordered ? Number.parseInt(m[2], 10) : 0, delim: ordered ? m[2].slice(-1) : '',
             col: m[1].length + m[2].length + (m[3].length || 1)   // where the item's text starts: a child's indent
         };
     }
@@ -149,7 +150,7 @@
         var sel = t.slice(s, e);
         if (sel.indexOf('\n') >= 0) return wrapLines(state, mark);
         // A double-click takes the space after a word: it stays outside the marks.
-        var lead = sel.length - sel.replace(/^\s+/, '').length, trail = sel.length - sel.replace(/\s+$/, '').length;
+        var lead = sel.length - sel.trimStart().length, trail = sel.length - sel.trimEnd().length;
         if (lead === sel.length) return null;
         s += lead; e -= trail; sel = t.slice(s, e);
         var n = mark.length;
@@ -186,7 +187,7 @@
             if (fence[i] || blank(lines[i])) continue;
             var p = parse(lines[i]);
             var head = p ? lines[i].length - p.content.length : indentOf(lines[i]);
-            var body = lines[i].slice(head).replace(/\s+$/, '');
+            var body = lines[i].slice(head).trimEnd();
             if (body) rows.push({ i: i, head: head, body: body });
         }
         var all = rows.length > 0 && rows.every(function (r) { return wrappedBy(r.body, mark); });
@@ -203,7 +204,7 @@
         var t = state.text, s = state.start, e = state.end, sel = t.slice(s, e);
         if (sel.indexOf('\n') >= 0) return null;
         // A double-click takes the space after a word: it stays outside the link, as it does outside bold.
-        var lead = sel.length - sel.replace(/^\s+/, '').length, trail = sel.length - sel.replace(/\s+$/, '').length;
+        var lead = sel.length - sel.trimStart().length, trail = sel.length - sel.trimEnd().length;
         if (lead < sel.length) { s += lead; e -= trail; } else s = e;
         sel = t.slice(s, e);
         if (/^(https?:\/\/|mailto:)\S+$/i.test(sel)) {
@@ -359,7 +360,7 @@
             var to = gapped ? i + 1 : i;
             return { text: lines.join('\n'), start: starts[to], end: starts[to] };
         }
-        var before = lines[i].slice(0, col).replace(/\s+$/, ''), after = lines[i].slice(col).replace(/^\s+/, '');
+        var before = lines[i].slice(0, col).trimEnd(), after = lines[i].slice(col).trimStart();
         var marker = p.ordered ? (p.num + 1) + p.delim : p.marker;
         lines.splice(i, 1, before, ' '.repeat(p.indent) + marker + ' ' + after);
         var touched = {}; touched[i + 1] = 'keep';

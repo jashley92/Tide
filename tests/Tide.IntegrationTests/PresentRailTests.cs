@@ -308,7 +308,7 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.StartMeeting());
         await pat.Click(p => p.OnPresentKey("last"));
         var rail = RailOf(await pat.Html());
-        System.Text.RegularExpressions.Regex.Matches(rail, "End the meeting</button>").Count.Should().Be(1);
+        rail.Should().Contain("End the meeting</button>", Exactly.Once());
         EndMeeting(app, day);
     }
 

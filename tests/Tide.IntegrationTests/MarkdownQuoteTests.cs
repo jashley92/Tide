@@ -9,7 +9,7 @@ namespace Tide.IntegrationTests;
 /// A quote in rendered Markdown reads as a quote: a team's reply recorded on an action (and any "&gt; " line someone
 /// writes) is a blockquote, and the app's stylesheet sets it apart, as the email templates already do.
 /// </summary>
-public class MarkdownQuoteTests(TideApp app) : IClassFixture<TideApp>
+public partial class MarkdownQuoteTests(TideApp app) : IClassFixture<TideApp>
 {
     [Fact]
     public void ATeamsRecordedReply_RendersAsAQuote()
@@ -24,9 +24,12 @@ public class MarkdownQuoteTests(TideApp app) : IClassFixture<TideApp>
     {
         var css = await app.CreateClient().GetStringAsync("/app.css");
 
-        var rule = Regex.Match(css, @"\.tide-md blockquote\s*\{(?<body>[^}]*)\}");
+        var rule = BlockquoteRule().Match(css);
         rule.Success.Should().BeTrue("rendered Markdown's quotes need a style of their own: Bootstrap's reboot gives a bare blockquote only a margin");
         rule.Groups["body"].Value.Should().Contain("border-left").And.Contain("var(--tide-")
             .And.MatchRegex(@"padding(-left|-inline-start)?\s*:");
     }
+
+    [GeneratedRegex(@"\.tide-md blockquote\s*\{(?<body>[^}]*)\}")]
+    private static partial Regex BlockquoteRule();
 }

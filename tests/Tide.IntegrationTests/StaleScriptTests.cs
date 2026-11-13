@@ -8,8 +8,6 @@ using Microsoft.JSInterop;
 using Tide.Domain.Entities;
 using Tide.Web.Components.Shared;
 
-#pragma warning disable BL0006 // a renderer of our own, to see what an after-render call throws
-
 namespace Tide.IntegrationTests;
 
 /// <summary>

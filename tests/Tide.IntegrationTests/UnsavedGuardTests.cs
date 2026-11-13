@@ -92,10 +92,13 @@ public class UnsavedGuardTests(TideApp app) : IClassFixture<TideApp>
             second = r.Component.ConfirmLeave(ctx);   // another guard on the page, handed the same navigation
         });
         await r.HtmlOnce("Leave with unsaved changes?");
+        first!.IsCompleted.Should().BeFalse("the first is asking");
+        second!.IsCompleted.Should().BeFalse("the second waits for the first's answer rather than asking alongside it");
         await r.Renderer.Dispatcher.InvokeAsync(() => r.Component.Leave.Stay());
-        await first!;
+        await first;
         // The second didn't open a question of its own to wait on: it heard the first's Stay.
-        await second!.WaitAsync(TimeSpan.FromSeconds(10));
+        Func<Task> heard = () => second.WaitAsync(TimeSpan.FromSeconds(10));
+        await heard.Should().NotThrowAsync("Stay for one guard is Stay for the others asking about the same navigation");
     }
 
     [Fact]

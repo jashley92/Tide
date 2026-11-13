@@ -244,7 +244,7 @@ public sealed class HostedShutdownTests
         var app = new HangingFeedApp(server.Port);
         _ = app.Services;   // starts the host, and with it the background jobs
 
-        (await Task.WhenAny(server.Connected.Task, Task.Delay(TimeSpan.FromSeconds(30)))).Should().Be(server.Connected.Task,
+        await server.Connected.Should().CompleteWithinAsync(TimeSpan.FromSeconds(30),
             "the CVE refresh should have started its KEV request");
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         await app.DisposeAsync();

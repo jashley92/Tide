@@ -66,7 +66,7 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
     [GeneratedRegex("<[^>]+>")]
     private static partial Regex Tags();
 
-    private static string Words(string html) => Regex.Replace(WebUtility.HtmlDecode(Tags().Replace(html, " ")), @"\s+", " ").Trim();
+    private static string Words(string html) => Whitespace().Replace(WebUtility.HtmlDecode(Tags().Replace(html, " ")), " ").Trim();
 
     [Theory]
     [InlineData("Analyst")]
@@ -231,4 +231,7 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
             (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(number))!.Action.AssigneeId.Should().Be(SignIn.Analyst.UserId);
         Split(await r.Html()).Rail.Should().NotContain("tide-lookup-take", "the page has read it again: it's someone's now");
     }
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 }

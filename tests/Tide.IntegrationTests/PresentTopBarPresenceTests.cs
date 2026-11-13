@@ -151,7 +151,7 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         {
             await Do(pat, p => p.Follow());
             var people = People(await pat.Html());
-            System.Text.RegularExpressions.Regex.Count(people, "class=\"tide-presence-dot ").Should().Be(6, "five people and \"+3\"");
+            people.Should().Contain("class=\"tide-presence-dot ", Exactly.Times(6), "five people and \"+3\"");
             people.Should().Contain(">&#x2B;3</span>").And.Contain("8 here").And.Contain("Person 7.");
         }
         finally

@@ -66,6 +66,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
                         side ??= Normalise(Side(html), app.Services.GetRequiredService<OrgClock>().Zone);
                         if (draw == 0) outOfRail.AddRange(InPage(html, writes: who.Roles[0] is "Analyst").Select(card => $"{key}: {card}"));
                     }
+                    ArgumentNullException.ThrowIfNull(side);
                     golden.Append("=== ").Append(key).Append(" (").Append(reads).Append(" commands)\n");
                     if (seen.TryGetValue(side, out var same)) golden.Append("same as ").Append(same).Append('\n');
                     else

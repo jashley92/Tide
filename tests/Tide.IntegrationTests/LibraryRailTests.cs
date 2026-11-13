@@ -2,6 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
@@ -21,7 +22,7 @@ namespace Tide.IntegrationTests;
 /// and where it was used. Nothing becomes more visible: the rail lists only actions the person may read, offers only
 /// those they work, previews without writing, and adds only through the action page's own checked step.
 /// </summary>
-public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
+public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Viewer = new("dev:librail-viewer", "Lib Viewer", "Viewer");
     private static readonly SignIn Owner = new("dev:librail-owner", "Lib Owner", "ActionOwner");
@@ -364,7 +365,7 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
 
         await using var rail = await RailFor(LibraryKind.OutreachTemplate, template, "Rail copy ask");
         var html = WebUtility.HtmlDecode(await rail.Html());
-        var copied = System.Text.RegularExpressions.Regex.Match(html, "<pre id=\"lib-try-text\"[^>]*>(.*?)</pre>", System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+        var copied = TryText().Match(html).Groups[1].Value;
         copied.Should().StartWith($"Subject: Asking about A-{number}\n\n").And.Contain("Are you affected?");
         html.Should().Contain("data-copy-target=\"lib-try-text\"");
     }
@@ -446,8 +447,8 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
 
         // The rows are drawn as every list's: one selected, aria-current, the list's one tab stop.
         var html = await r.Html();
-        System.Text.RegularExpressions.Regex.Matches(html, "aria-current=\"true\"").Count.Should().Be(1);
-        System.Text.RegularExpressions.Regex.Matches(html, "class=\"tide-library-row selected\"[^>]*tabindex=\"0\"").Count.Should().Be(1);
+        html.Should().Contain("aria-current=\"true\"", Exactly.Once());
+        SelectedRowTabStop().Count(html).Should().Be(1);
     }
 
     [Fact]
@@ -601,4 +602,10 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         }, who))
             (await retired.Html()).Should().NotContain("Try it on an open action").And.NotContain(note);
     }
+
+    [GeneratedRegex("class=\"tide-library-row selected\"[^>]*tabindex=\"0\"")]
+    private static partial Regex SelectedRowTabStop();
+
+    [GeneratedRegex("<pre id=\"lib-try-text\"[^>]*>(.*?)</pre>", RegexOptions.Singleline)]
+    private static partial Regex TryText();
 }

@@ -69,7 +69,7 @@ public class PresentRailKeysTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = JsonDocument.Parse(stdout).RootElement;
+                var said = JsonElement.Parse(stdout);
                 string At(string name) => said.GetProperty(name).GetString()!;
                 At("escape").Should().Be("rail!", "Escape closes the rail open over the slide");
                 At("bracket").Should().Be("rail!", "and so does ]");

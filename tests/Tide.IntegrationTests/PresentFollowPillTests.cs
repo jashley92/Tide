@@ -10,7 +10,7 @@ using static Tide.IntegrationTests.PresentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>Whom a page follows in a live meeting: a pill among the present header's tools, never a bar of its own.</summary>
-public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<MeetingClockApp>
+public partial class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<MeetingClockApp>
 {
     private static readonly SignIn Owner = new("dev:pill-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:pill-robin", "Robin Analyst", "Analyst");
@@ -28,13 +28,13 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
     }
 
     /// <summary>What the pill says on screen (the screen-reader-only words left out), on one line.</summary>
-    internal static string Shown(string html) => Words(Regex.Replace(Markup(html), "<span class=\"visually-hidden\">[^<]*</span>", ""));
+    internal static string Shown(string html) => Words(VisuallyHidden().Replace(Markup(html), ""));
 
     /// <summary>What a screen reader hears of it.</summary>
     internal static string Heard(string html) => Words(Markup(html));
 
     private static string Words(string markup) =>
-        Regex.Replace(WebUtility.HtmlDecode(Regex.Replace(markup, "<[^>]+>", " ")), @"\s+", " ").Trim();
+        Whitespace().Replace(WebUtility.HtmlDecode(AnyTag().Replace(markup, " ")), " ").Trim();
 
     [Fact]
     public async Task ALateJoiner_Follows_ThenBrowsesAway_AndIsBroughtBack()
@@ -147,4 +147,13 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
         }
         EndMeeting(app, day);
     }
+
+    [GeneratedRegex("<[^>]+>")]
+    private static partial Regex AnyTag();
+
+    [GeneratedRegex("<span class=\"visually-hidden\">[^<]*</span>")]
+    private static partial Regex VisuallyHidden();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 }

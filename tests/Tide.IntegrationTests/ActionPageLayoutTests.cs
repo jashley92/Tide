@@ -106,7 +106,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         badges.IndexOf("overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
         head.Should().Contain("<span>Layout header team</span> · <span>Unassigned</span>");
 
-        Regex.Matches(head, "btn btn-primary").Should().HaveCount(1, "one primary button");
+        head.Should().Contain("btn btn-primary", Exactly.Once(), "one primary button");
         head.Should().Contain("data-primary=\"TakeIt\"").And.Contain("Take it</button>");
         page.Component.Primary.Should().Be(ActionFlow.TakeIt, "open and nobody has it");
     }

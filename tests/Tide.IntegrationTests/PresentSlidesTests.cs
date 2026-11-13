@@ -178,7 +178,7 @@ public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
             (await scope.ServiceProvider.GetRequiredService<MetricsService>().GetDayAsync(day)).Missing.Should().NotContain(m => m.Id == missing);
         html = await pat.Html();
         html.Should().NotContain(PresenterTools).And.NotContain("number missing");
-        Regex.IsMatch(html, ">12<").Should().BeTrue("the slide shows it");
+        html.Should().Contain(">12<", "the slide shows it");
 
         EndMeeting(app, day);
     }

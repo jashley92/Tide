@@ -93,7 +93,7 @@ public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
 
         await using var page = await Open(number);
         var (_, rail) = Split(await page.Html());
-        System.Text.RegularExpressions.Regex.Matches(rail, "No due date").Should().HaveCount(1, "the value says it; no badge says it again");
+        rail.Should().Contain("No due date", Exactly.Once(), "the value says it; no badge says it again");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using System.Text.RegularExpressions;
 using Tide.Application.Operations;
 using Tide.Application.Security;
 using Tide.Domain.Enums;
@@ -7,7 +8,7 @@ namespace Tide.UnitTests;
 
 /// <summary>Each page's guide: for whoever can use its page, a full walk through a page work is done on, three to five
 /// steps on the others, none on a control they can't use.</summary>
-public class PageGuidesTests
+public partial class PageGuidesTests
 {
     private static Func<Permission, bool> Can(params AppRole[] roles) => RoleDefinitions.PermissionsFor(roles).Contains;
 
@@ -207,7 +208,7 @@ public class PageGuidesTests
     public void NoStepsTitle_IsNumbered_AndEachSavingStepRingsItsOwnButton()
     {
         foreach (var g in Guides.For(Can(AppRole.Admin)))
-            g.Steps.Should().OnlyContain(s => !System.Text.RegularExpressions.Regex.IsMatch(s.Title, @"^\d+\."), g.Key);
+            g.Steps.Should().OnlyContain(s => !NumberedTitle().IsMatch(s.Title), g.Key);
         var day = Guides.Find(Guides.Day, Can(AppRole.Admin))!.Steps;
         day.Single(s => s.Key == "briefready").Target.Should().StartWith("[data-guide=\"brief-mark-ready\"]", "Mark ready in the page head");
         day.Single(s => s.Key == Guides.Presenting).Target.Should().Be("[data-guide=\"brief-present\"]", "Present in the page head");
@@ -234,4 +235,7 @@ public class PageGuidesTests
         steps.Single(s => s.Key == "read").Text.Should().Contain("nothing is fetched by itself");
         steps.Single(s => s.Key == "sources").Text.Should().Contain("nothing is pulled unless you ask");
     }
+
+    [GeneratedRegex(@"^\d+\.")]
+    private static partial Regex NumberedTitle();
 }

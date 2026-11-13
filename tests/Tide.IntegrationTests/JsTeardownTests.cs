@@ -7,7 +7,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>A component's disposal that throws ends the whole circuit, so a teardown call to the page's script must never
 /// throw when the call can't happen.</summary>
-public class JsTeardownTests
+public partial class JsTeardownTests
 {
     [Theory]
     [InlineData(typeof(JSDisconnectedException))]
@@ -38,7 +38,7 @@ public class JsTeardownTests
         foreach (var file in Directory.EnumerateFiles(Path.Combine(dir, "src", "Tide.Web", "Components"), "*.razor", SearchOption.AllDirectories))
         {
             var text = File.ReadAllText(file);
-            var dispose = Regex.Match(text, @"ValueTask DisposeAsync\(\)\s*\{(?<body>(?:[^{}]|\{(?<d>)|\}(?<-d>))*)\}");
+            var dispose = DisposeAsyncBody().Match(text);
             if (dispose.Success && dispose.Groups["body"].Value.Contains("JS.Invoke")) offenders.Add(Path.GetFileName(file));
         }
         offenders.Should().BeEmpty("a disposal's script call goes through JsTeardown.StopAsync, which can't end the circuit");
@@ -57,4 +57,7 @@ public class JsTeardownTests
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
             InvokeAsync<TValue>(identifier, args);
     }
+
+    [GeneratedRegex(@"ValueTask DisposeAsync\(\)\s*\{(?<body>(?:[^{}]|\{(?<d>)|\}(?<-d>))*)\}")]
+    private static partial Regex DisposeAsyncBody();
 }

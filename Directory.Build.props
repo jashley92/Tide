@@ -10,8 +10,9 @@
          opening a connection and throws CultureNotFoundException under globalization-invariant mode.
          Dev/SQLite doesn't hit this, so invariant mode was silently fine locally but broke on SQL Server. -->
     <InvariantGlobalization>false</InvariantGlobalization>
-    <!-- Security-conscious defaults -->
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Security-conscious defaults. The analysis level is pinned to a release ("latest" would move with each SDK and add
+         rules unasked); CI fails on any warning, so raising it is a change of its own (docs/development/testing.md). -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <!-- Suppress low-value style/perf/naming analyzer noise so the meaningful warnings (CS nullability,
          CA1416 platform, CA1305 culture) stay visible on publish. These are non-correctness suggestions:

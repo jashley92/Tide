@@ -107,7 +107,7 @@ public class FilterMenuKeysTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+                var said = System.Text.Json.JsonElement.Parse(stdout);
                 int Clicks(string name) => said.GetProperty(name).GetInt32();
                 Clicks("tabFromMonthToDay").Should().Be(0, "Tab inside a date box steps from its month to its day");
                 Clicks("shiftTabFromDayToMonth").Should().Be(0, "and Shift+Tab from its day back to its month, the box being the form's first stop");
