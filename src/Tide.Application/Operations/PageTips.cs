@@ -25,7 +25,7 @@ public sealed record PageTip(string Key, ReleaseVersion Version, Permission Need
 public static class PageTips
 {
     private static readonly ReleaseVersion V1_13 = new(1, 13, 0);
-    private const string Rail = "#tide-rail-toggle";
+    private const string Rail = "#tide-rail || #tide-rail-toggle";
 
     public static readonly IReadOnlyList<PageTip> All =
     [
@@ -40,7 +40,7 @@ public static class PageTips
             "Select a row with J and K, or a click. The context rail shows it; Enter opens it. No owner finds work nobody has."),
         new("action", V1_13, Permission.ReadActions, Rail, "Facts and files in the rail",
             "An action's facts, its source article and its files are in the context rail. Press ] to show or hide it."),
-        new("search", V1_13, Permission.ReadTeamEdition, "", "Answers first",
+        new("search", V1_13, Permission.ReadTeamEdition, "#main-content form[role=\"search\"]", "Answers first",
             "A lookup answers in its first line. The hunt query, the sweeps and the export are in the context rail."),
         new("library", V1_13, Permission.ReadActions, Rail, "One Library",
             "Saved queries, outreach templates, playbooks and board rules are one Library: four tabs and one search."),

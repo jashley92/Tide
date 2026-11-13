@@ -1927,6 +1927,43 @@ const inWindow = selector => holds(`wholly in the window: ${selector}`, selector
       ? [`${selector} #${i + 1} ("${(e.getAttribute('aria-label') ?? e.textContent).trim().slice(0, 30)}") is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${innerWidth}px window`] : [];
   }), selector);
 
+/**
+ * A step's or tip's `card` points at its control (`.tide-tip-target`): it sits next to the control, within 24px, on the
+ * side its `data-side` names; its arrow is on the side facing the control and lines up with it; and the ring
+ * (`.tide-tip-ring`) surrounds the control, just outside it.
+ */
+const pointsAtTarget = card => holds(`points at its control: ${card}`, card => {
+  const shownOne = sel => [...document.querySelectorAll(sel)].find(e => !e.hidden && e.getBoundingClientRect().width > 0);
+  const c = shownOne(card), t = document.querySelector('.tide-tip-target'), a = shownOne('.tide-tip-arrow');
+  if (!c || !t) return [`nothing shown matches ${!c ? card : '.tide-tip-target'}`];
+  if (!a) return [`${card} has no arrow`];
+  const cr = c.getBoundingClientRect(), tr = t.getBoundingClientRect(), ar = a.getBoundingClientRect();
+  const side = c.dataset.side, ax = ar.left + ar.width / 2, ay = ar.top + ar.height / 2, out = [];
+  const px = n => `${Math.round(n)}px`;
+  // A card is kept clear of the top bar, and off a rail it would cover: next to its control, then, is next to the bar
+  // or the rail's edge when that's what's between them.
+  const bar = document.querySelector('.top-row, .tide-present-top')?.getBoundingClientRect().bottom ?? 0;
+  const rail = shownOne('#tide-rail, #present-rail')?.getBoundingClientRect();
+  const inRail = rail && tr.left >= rail.left - 1 && tr.top >= rail.top - 1;
+  if (side === 'below' || side === 'above') {
+    if (ax < tr.left - 2 || ax > tr.right + 2) out.push(`its arrow (at ${px(ax)}) isn't over the control (${px(tr.left)}–${px(tr.right)})`);
+    const gap = side === 'below' ? cr.top - Math.max(tr.bottom, bar) : tr.top - cr.bottom;
+    if (gap < 0 || gap > 24) out.push(`it's ${px(gap)} ${side} the control, not next to it`);
+    if (Math.abs((side === 'below' ? cr.top : cr.bottom) - ay) > 2) out.push(`its arrow isn't on the side facing the control`);
+  } else if (side === 'left' || side === 'right') {
+    if (ay < tr.top - 2 || ay > tr.bottom + 2) out.push(`its arrow (at ${px(ay)}) isn't beside the control (${px(tr.top)}–${px(tr.bottom)})`);
+    const gap = side === 'left' ? (inRail ? rail.left : tr.left) - cr.right : cr.left - tr.right;
+    if (gap < 0 || gap > 24) out.push(`it's ${px(gap)} ${side} of the control, not next to it`);
+    if (Math.abs((side === 'left' ? cr.right : cr.left) - ax) > 2) out.push(`its arrow isn't on the side facing the control`);
+  } else out.push(`it isn't placed beside its control (data-side "${side}")`);
+  const ring = shownOne('.tide-tip-ring')?.getBoundingClientRect();
+  if (!ring) out.push('its control isn\'t ringed');
+  else if (ring.left > tr.left || ring.top > tr.top || ring.right < tr.right || ring.bottom < tr.bottom
+    || ring.left < tr.left - 8 || ring.top < tr.top - 8 || ring.right > tr.right + 8 || ring.bottom > tr.bottom + 8)
+    out.push(`the ring (${px(ring.left)}–${px(ring.right)}, ${px(ring.top)}–${px(ring.bottom)}) isn't just round the control (${px(tr.left)}–${px(tr.right)}, ${px(tr.top)}–${px(tr.bottom)})`);
+  return out;
+}, card);
+
 /** Each shown match of `selector` lies within the page's own width, left of any scrollbar, its border included. */
 const inClient = selector => holds(`within the page's width: ${selector}`, selector =>
   [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0).flatMap((e, i) => {
@@ -3630,7 +3667,8 @@ const whatsNewRules = [noSidewaysScroll, visible('.tide-whatsnew'), inWindow('.t
 
 /** A tour step: a dialog shown whole in the window, its parts within it, focus on Next, nothing else offered with it. */
 const tourRules = [noSidewaysScroll, visible('.tide-tour'), inWindow('.tide-tour'), fits('.tide-tour'), fits('.tide-tour .tide-modal-actions'),
-  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour'), belowTopBar('.tide-tour')];
+  focusOn('.tide-tour .btn-primary'), hidden('.tide-whatsnew'), hidden('.tide-tip'), visible('.tide-tour-scrim'), inClient('.tide-tour'), belowTopBar('.tide-tour'),
+  pointsAtTarget('.tide-tour')];
 
 /** A step of Learn to present, in rehearsal: a tour step's rules, the rehearsal said in the top bar, no Start the
  *  meeting, the top bar within the window, and the step's control ringed. */
@@ -3652,7 +3690,7 @@ const stillAt = path => holds(`still at ${path}`, path => new URL(document.baseU
 
 /** A page's tip: shown whole in the window, its parts within it, ringing what it's about, with no dialog left open. */
 const tipRules = [noSidewaysScroll, visible('.tide-tip'), inWindow('.tide-tip'), fits('.tide-tip'), visible('.tide-tip-target'),
-  hidden('.tide-whatsnew'), inClient('.tide-tip'), [1500, allBesides('.tide-tip', '#tide-rail')]];
+  hidden('.tide-whatsnew'), inClient('.tide-tip'), [1500, allBesides('.tide-tip', '#tide-rail')], pointsAtTarget('.tide-tip')];
 
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
@@ -4349,7 +4387,7 @@ const pages = [
   { name: 'tour-dark', route: '/help', context: { theme: 'dark' }, setup: tourAs({ 1920: 'Xan', 1440: 'Xia', 780: 'Xu&roles=Viewer' }),
     widths: [1920, 1440, 780], rules: tourRules },
   { name: 'tour-step-two', route: '/help', setup: tourAs({ 1920: 'Yan', 1440: 'Yul', 780: 'Yve&roles=Viewer' }, 'Enter'),
-    widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail-toggle.tide-tip-target')] },
+    widths: [1920, 1440, 780], rules: [...tourRules, visible('#tide-rail.tide-tip-target, #tide-rail-toggle.tide-tip-target')] },
   // What's new's Take the tour: What's new goes, and the tour's first step is up on Today, focus on Next.
   { name: 'tour-from-whatsnew', route: '/help', setup: tourFromWhatsNew({ 1920: 'Abe', 1440: 'Ada', 780: 'Ari&roles=Viewer' }), widths: [1920, 1440, 780],
     rules: [...tourRules, stillAt('/')] },
@@ -4358,7 +4396,16 @@ const pages = [
     widths: [1440], rules: [hidden('.tide-tour'), focusOn('main h1')] },
   // The tour's last step is on Help, ringing its Guides (or Take the tour, for someone with none).
   { name: 'tour-last-step', route: '/help', setup: tourToLast({ 1920: 'Lia', 1440: 'Lou', 780: 'Lyn' }), widths: [1920, 1440, 780],
-    rules: [...tourRules, stillAt('/help'), visible('#help-guides.tide-tip-target, #help-take-tour.tide-tip-target')] },
+    rules: [...tourRules, stillAt('/help'), visible('#help-guides-title.tide-tip-target, #help-take-tour.tide-tip-target')] },
+  // The tour's steps on Today and Administration point at their own controls: Present in Today's head, the meeting
+  // (Join on the live banner, or the meeting card, or the rail's button where it's shut), and the sidebar's Administration.
+  { name: 'tour-present-step', route: '/help', setup: tourAs({ 1920: 'Pru', 1440: 'Pam', 780: 'Pol' }, ...Array(6).fill('Enter')), widths: [1920, 1440, 780],
+    rules: [...tourRules, visible('.tide-tour-count:text("Step 7 of")'), visible('.tide-page-head a[href^="present/"].tide-tip-target, #meeting-h.tide-tip-target, #tide-rail-toggle.tide-tip-target')] },
+  { name: 'tour-meeting-step', route: '/help', setup: tourAs({ 1920: 'Mel&roles=Viewer', 1440: 'Mo&roles=Viewer', 780: 'Mia&roles=Viewer' }, ...Array(4).fill('Enter')), widths: [1920, 1440, 780],
+    rules: [...tourRules, visible('.tide-tour-count:text("Step 5 of")'), holds('rings the meeting: Join, its card, or the rail button', () => { const t = document.querySelector('.tide-tip-target'); return t?.matches('.tide-live-banner a, #meeting-h, #tide-rail-toggle') ? [] : [`it rings ${t ? t.outerHTML.slice(0, 80) : 'nothing'}`]; })] },
+  { name: 'tour-admin-step', route: '/help', setup: tourAs({ 1920: 'Adi', 1440: 'Ade', 780: 'Ali' }, ...Array(7).fill('Enter')), widths: [1920, 1440, 780],
+    rules: [...tourRules, stillAt('/admin'), visible('.sidebar a[href="admin"].tide-tip-target, .tide-admin-name.tide-tip-target')] },
+  { name: 'tour-present-step-dark', route: '/help', context: { theme: 'dark' }, setup: tourAs({ 1440: 'Pix' }, ...Array(6).fill('Enter')), widths: [1440], rules: tourRules },
   // A click on the page under a step (the sidebar's Actions) does nothing: the scrim takes it, and the tour stays put.
   { name: 'tour-click-page', route: '/help', setup: tourClick({ 1440: 'Zed' }, '.sidebar a[href="actions"]'), widths: [1440],
     rules: [visible('.tide-tour'), stillAt('/'), visible('.tide-tour-count:text("Step 1 of")'), focusOn('.tide-tour .btn-primary')] },
@@ -4373,7 +4420,7 @@ const pages = [
     rules: [visible('.tide-tip'), visible('#tide-rail'), allBesides('.tide-tip', '#tide-rail'), inClient('.tide-tip')] },
   // Search's tip keeps off the page's own search box and its description.
   { name: 'tip-search', route: '/help', setup: tipOn('/search', { 1920: 'Pia', 1440: 'Pat', 780: 'Pip&roles=Viewer' }), widths: [1920, 1440, 780],
-    rules: [visible('.tide-tip'), noOverlap('.tide-tip, form[role="search"], .tide-page-head .tide-sub'), inClient('.tide-tip')] },
+    rules: [visible('.tide-tip'), noOverlap('.tide-tip, form[role="search"], .tide-page-head .tide-sub'), inClient('.tide-tip'), pointsAtTarget('.tide-tip')] },
   // Triage's tip is beside the reading pane, and not shown where there's none beside the list.
   { name: 'tip-triage', route: '/help', setup: tipOn('/triage', { 1920: 'Quin' }), widths: [1920],
     rules: [visible('.tide-tip'), visible('.tide-reading.tide-tip-target'), inClient('.tide-tip')] },

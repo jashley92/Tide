@@ -1,18 +1,22 @@
-// A page's tip, or a step of the tour or a guide (GuideStepDialog): set beside the control it's about, which is marked,
-// or in the bottom corner when it has none, that control isn't shown or there's no room beside it. Never over the
-// context rail or the presenter's rail, docked or open over the page: it moves left of it. A tip that needs its control
-// (needsTarget) isn't shown without it. A tip isn't modal: this never takes a key from it, and moves focus only to give
-// it back to the page's heading when Got it took it away. A step is a dialog (options.dialog): focus that lands outside
-// it (a new page focuses its heading as it opens) goes back to its main button. A step's control may be drawn after the
-// step (a page still loading, a guide started from Help): it's looked for again as the page changes, and scrolled into
-// view once found. A selector can name fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail
-// button). CSP-safe (an external file).
+// A page's tip, or a step of the tour or a guide (GuideStepDialog): set next to the control it's about, with a small
+// arrow on the side facing it, and the control ringed (a pulsing ring that settles; steady under reduced motion). Below
+// the control, else above it, else beside it; in the bottom corner only when its control isn't on the page. Never over
+// the sticky top bar, nor over the context rail or the presenter's rail, docked or open over the page: it moves left of
+// it, and points at a control in it from there. A tip that needs its control (needsTarget) isn't shown without it. A tip
+// isn't modal: this never takes a key from it, and moves focus only to give it back to the page's heading when Got it
+// took it away. A step is a dialog (options.dialog): focus that lands outside it (a new page focuses its heading as it
+// opens) goes back to its main button. A step's control may be drawn after the step (a page still loading, a guide
+// started from Help): it's looked for again as the page changes, and scrolled into view once found. A selector can name
+// fallbacks, "a || b": the first that's shown (the presenter's rail, else its Rail button). CSP-safe (an external file).
 window.tideTips = (function () {
-    var card = null, target = null, looking = null, opener = null, size = null, frame = 0, needsTarget = false, dialog = false, inside = false;
-    var GAP = 10, EDGE = 8;
+    var card = null, ring = null, arrow = null, target = null, looking = null, opener = null, size = null, frame = 0;
+    var needsTarget = false, dialog = false, inside = false;
+    var GAP = 12, EDGE = 8, ARROW = 16, RING = 4;
     var root = document.documentElement;
 
     function shown(el) { return !!el && el.isConnected && el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'); }
+
+    function clamp(n, lo, hi) { return Math.max(lo, Math.min(n, hi)); }
 
     // The first of the selector's choices that's shown, else the first that's there at all.
     function pick(selector) {
@@ -26,7 +30,7 @@ window.tideTips = (function () {
         return found;
     }
 
-    // A step's control, again, when it isn't shown: drawn since, or drawn anew. Ringed and scrolled into view once found.
+    // A step's control, again, when it isn't shown: drawn since, or drawn anew. Marked and scrolled into view once found.
     function find() {
         if (!looking || shown(target)) return;
         var now = pick(looking);
@@ -35,9 +39,10 @@ window.tideTips = (function () {
         target = now;
         if (!shown(target)) return;
         // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top. (Read
-        // before the ring is written, so this costs no extra layout.)
+        // before the mark is written, so this costs no extra layout.)
         var tall = target.getBoundingClientRect().height > innerHeight * 0.6;
         target.classList.add('tide-tip-target');
+        sizeWatch.observe(target);
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
@@ -57,28 +62,96 @@ window.tideTips = (function () {
     // border in view.
     function width() { return Math.min(root.clientWidth, document.body.clientWidth); }
 
-    // Below the control, else above it, never over the sticky top bar; across, centred on it but inside the page. In the
-    // bottom corner when it has no control or neither fits. Then left of the rail, if it would be over it. Everything is read before anything is
-    // written, so a move costs one layout.
+    // Where the card goes for a control at `r`: below it, else above it (across, centred on it but inside the page), else
+    // beside it (right, then left), from the top of what shows of it. Null when none fits.
+    function beside(r, w, high) {
+        var h = size.height, cw = size.width, below = Math.max(high, r.bottom + GAP);
+        var across = clamp(r.left + r.width / 2 - cw / 2, EDGE, w - cw - EDGE);
+        if (below + h <= innerHeight - EDGE) return { side: 'below', top: below, left: across };
+        if (r.top - GAP - h >= high) return { side: 'above', top: r.top - GAP - h, left: across };
+        var top = clamp(Math.max(r.top, high), high, innerHeight - h - EDGE);
+        if (r.right + GAP + cw <= w - EDGE) return { side: 'right', top: top, left: r.right + GAP };
+        if (r.left - GAP - cw >= EDGE) return { side: 'left', top: top, left: r.left - GAP - cw };
+        return null;
+    }
+
+    // The card next to its control, its arrow facing it, and the ring round the control; in the bottom corner, with no
+    // arrow or ring, when its control isn't shown. Then left of the rail if it would be over it: a control in the rail is
+    // pointed at from there. Everything is read before anything is written, so a move costs one layout.
     function place() {
         frame = 0;
         if (!card) return;
         find();
         var hasTarget = shown(target);
-        if (needsTarget && !hasTarget) { card.hidden = true; return; }
+        if (needsTarget && !hasTarget) { card.hidden = true; ringAt(null); return; }
         var r = hasTarget ? target.getBoundingClientRect() : null, w = width(), rail = railBox(), high = clear();
-        var below = r ? Math.max(high, r.bottom + GAP) : 0;
-        var top = !r ? null : below + size.height <= innerHeight - EDGE ? below
-            : r.top - GAP - size.height >= high ? r.top - GAP - size.height : null;
-        var left = top === null ? w - size.width - EDGE
-            : Math.min(Math.max(EDGE, r.left + r.width / 2 - size.width / 2), w - size.width - EDGE);
-        if (top === null) top = Math.max(high, innerHeight - size.height - EDGE);
-        if (rail && left + size.width > rail.left && left < rail.right && top < rail.bottom && top + size.height > rail.top)
-            left = Math.max(EDGE, rail.left - GAP - size.width);
+        var at = r && beside(r, w, high)
+            || { side: 'none', top: Math.max(high, innerHeight - size.height - EDGE), left: w - size.width - EDGE };
+        if (rail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top) {
+            at.left = Math.max(EDGE, rail.left - GAP - size.width);
+            // A control in the rail: the card is now left of it.
+            if (r && r.left >= rail.left - 1 && r.top >= rail.top - 1) {
+                at.side = 'left';
+                at.top = clamp(Math.max(r.top, high), high, innerHeight - size.height - EDGE);
+            }
+        }
+        // Where the arrow sits along the card's facing edge: opposite the control's middle, inside the card's corners.
+        var along = !r ? 0 : at.side === 'below' || at.side === 'above'
+            ? clamp(r.left + r.width / 2 - at.left, ARROW, size.width - ARROW)
+            : clamp((Math.max(r.top, high) + Math.min(r.bottom, innerHeight)) / 2 - at.top, ARROW, size.height - ARROW);
         card.hidden = false;
-        card.style.top = top + 'px';
-        card.style.left = left + 'px';
+        card.style.top = at.top + 'px';
+        card.style.left = at.left + 'px';
+        card.dataset.side = r ? at.side : 'none';
         card.classList.add('is-placed');
+        // Marked again if a redraw took the mark off (a NavLink rewriting its class as the page changes).
+        if (r) target.classList.add('tide-tip-target');
+        ringAt(r);
+        arrowAt(r ? at : null, along);
+    }
+
+    // The card's arrow, on the side facing its control and `along` it: its own element over the card's edge (so it's
+    // no part of the card's box), turned to face the control.
+    function arrowAt(at, along) {
+        if (!at || at.side === 'none') { if (arrow) arrow.hidden = true; return; }
+        var home = document.fullscreenElement || document.body;
+        if (!arrow || arrow.parentNode !== home) {
+            if (arrow) arrow.remove();
+            arrow = document.createElement('div');
+            arrow.className = 'tide-tip-arrow';
+            arrow.setAttribute('aria-hidden', 'true');
+            home.appendChild(arrow);
+        }
+        var half = 7, x, y;
+        if (at.side === 'below') { x = at.left + along; y = at.top; }
+        else if (at.side === 'above') { x = at.left + along; y = at.top + size.height; }
+        else if (at.side === 'left') { x = at.left + size.width; y = at.top + along; }
+        else { x = at.left; y = at.top + along; }
+        arrow.hidden = false;
+        arrow.dataset.side = at.side;
+        arrow.classList.toggle('is-step', dialog);
+        arrow.style.left = (x - half) + 'px';
+        arrow.style.top = (y - half) + 'px';
+    }
+
+    // The ring round the control: drawn over the page (and a step's scrim), never over the control itself; following it
+    // as the page scrolls or resizes, and gone with the card. At the end of the page, or of what's full screen (present
+    // mode), outside anything Blazor draws.
+    function ringAt(r) {
+        if (!r || !card) { if (ring) ring.hidden = true; return; }
+        var home = document.fullscreenElement || document.body;
+        if (!ring || ring.parentNode !== home) {
+            if (ring) ring.remove();
+            ring = document.createElement('div');
+            ring.className = 'tide-tip-ring';
+            ring.setAttribute('aria-hidden', 'true');
+            home.appendChild(ring);
+        }
+        ring.hidden = false;
+        ring.style.top = (r.top - RING) + 'px';
+        ring.style.left = (r.left - RING) + 'px';
+        ring.style.width = (r.width + 2 * RING) + 'px';
+        ring.style.height = (r.height + 2 * RING) + 'px';
     }
 
     // At most once a frame, however many scrolls, resizes or rail changes come in it.
@@ -90,11 +163,12 @@ window.tideTips = (function () {
     // The sticky top bar growing or shrinking: the card is placed again, clear of it.
     var barWatch = new ResizeObserver(soon);
 
-    // A step's control not found yet, or gone: the page changing may draw it. Read without a layout (find, in the next
-    // frame, checks it's shown).
-    var pageWatch = new MutationObserver(function () {
-        if (!target || !target.isConnected || !target.classList.contains('tide-tip-target')) soon();
-    });
+    // A step's control not found yet, or gone, or the page moving under it: the page changing (a stylesheet added
+    // included) may draw it or move it. Read without a layout (place, in the next frame, measures).
+    var pageWatch = new MutationObserver(soon);
+
+    // The control or the page changing size (letters widening, a list growing) moves the card, its arrow and the ring.
+    var sizeWatch = new ResizeObserver(soon);
 
     // The card growing or shrinking (a longer step, wider letters) is measured again and placed again, so it stays in
     // view.
@@ -136,11 +210,13 @@ window.tideTips = (function () {
                 // A step looks for its control (find, from place) now and again as the page changes; a tip shows beside
                 // what's there as it opens.
                 looking = selector;
-                pageWatch.observe(document.body, { childList: true, subtree: true });
             } else {
                 target = selector ? pick(selector) : null;
-                if (shown(target)) target.classList.add('tide-tip-target');
+                if (shown(target)) { target.classList.add('tide-tip-target'); sizeWatch.observe(target); }
             }
+            // The page changing (a step's control drawn, a list growing above a tip's control) places it again.
+            pageWatch.observe(root, { childList: true, subtree: true });
+            sizeWatch.observe(document.body);
             // Measured where it starts, and again if its size changes (cardWatch).
             var box = card.getBoundingClientRect();
             size = { width: box.width, height: box.height };
@@ -158,6 +234,8 @@ window.tideTips = (function () {
         hide: function () {
             if (target) target.classList.remove('tide-tip-target');
             if (frame) cancelAnimationFrame(frame);
+            if (ring) { ring.remove(); ring = null; }
+            if (arrow) { arrow.remove(); arrow = null; }
             var lost = inside && !dialog && (!document.activeElement || document.activeElement === document.body);
             card = target = size = looking = null;
             frame = 0;
@@ -165,6 +243,7 @@ window.tideTips = (function () {
             railWatch.disconnect();
             barWatch.disconnect();
             pageWatch.disconnect();
+            sizeWatch.disconnect();
             cardWatch.disconnect();
             removeEventListener('resize', soon, { passive: true });
             removeEventListener('scroll', soon, { capture: true, passive: true });

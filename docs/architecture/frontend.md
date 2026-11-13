@@ -242,9 +242,12 @@ person's first visit to it after the release it belongs to.
   needs the page's permission), so it isn't shown again; a later release's tip for the page would be. Help's **Show tips
   again** clears them, for the pages the person can use. A tip is shown only to someone who can use its page.
 - **Not modal.** The card (`.tide-tip`) has no scrim and leaves the page live: it never takes focus or a key, so `]` and
-  every shortcut still work. `tips.js` (`tideTips`) sets it beside the control it's about and rings that control
-  (`.tide-tip-target`), or puts it in the bottom corner when it has none (Search's, which would otherwise sit over the
-  page's own search box), the control isn't shown or there's no room. It never sits over the context rail, docked or
+  every shortcut still work. `tips.js` (`tideTips`) sets it next to the control it's about (below it, else above, else
+  beside it), with a small arrow on the side facing it that flips with the placement, and rings the control
+  (`.tide-tip-ring`, just outside it: two soft pulses that settle to a steady ring, steady from the start under reduced
+  motion) as tour and guide steps are. The ring and arrow follow the control as the page scrolls, resizes or redraws,
+  and go with the card. Every tip, tour step and guide step names a control (a test holds this); the card goes to the
+  bottom corner only when that control isn't on the page at all. It never sits over the context rail, docked or
   open over the page: it moves left of it, and moves again when the rail opens or closes. It keeps within the page's
   width, left of the scrollbar. A tip that needs its control (Triage's, beside the reading pane) isn't shown where the
   control isn't, nor announced. A polite live region announces a tip once it's shown. **Got it** from the keyboard
