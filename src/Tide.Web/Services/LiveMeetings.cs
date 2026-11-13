@@ -282,12 +282,13 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// <summary>
     /// A circuit's connection dropped (a closed lid, lost Wi-Fi) or came back. While it's down its seats are away: not
     /// shown, not presenting, so a presenter's drop starts the grace period at once rather than when the circuit is given
-    /// up on, minutes later.
+    /// up on, minutes later. Told to every page, the circuit's own included: back, it may have missed what changed while
+    /// it was away (someone took over from it), so it reads the meeting again.
     /// </summary>
     public void SetConnected(string circuitId, bool connected)
     {
         if (circuitId.Length == 0) return;
-        var changed = new List<(DateOnly, Guid)>();
+        var changed = new List<DateOnly>();
         lock (_gate)
         {
             var now = _time.GetUtcNow();
@@ -298,10 +299,10 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 foreach (var s in seats) (s.Down, s.DownSinceUtc) = (!connected, connected ? null : now);
                 if (!connected && Here(m).All(s => s.UserId != seats[0].UserId)) m.Hands.Remove(seats[0].UserId);
                 Settle(m, seats[0].UserId, now);
-                changed.Add((m.Day, seats[0].Origin));
+                changed.Add(m.Day);
             }
         }
-        foreach (var (day, origin) in changed) Notify(day, origin);
+        foreach (var day in changed) Notify(day, Guid.Empty);
     }
 
     /// <summary>

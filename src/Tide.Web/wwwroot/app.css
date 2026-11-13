@@ -376,7 +376,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-chip-remove { display: inline-flex; padding: 0 var(--tide-space-1); margin-right: calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
-.tide-dt-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+/* A table that scrolls inside its card. Positioned, so a visually hidden header label in it (absolutely placed) is
+   clipped with the rest of the table rather than widening the page. */
+.tide-dt-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; position: relative;
     background: linear-gradient(to right, var(--tide-surface) 30%, transparent) left center / 2rem 100% no-repeat local,
         linear-gradient(to left, var(--tide-surface) 30%, transparent) right center / 2rem 100% no-repeat local,
         radial-gradient(farthest-side at 0 50%, var(--tide-shadow), transparent) left center / .75rem 100% no-repeat scroll,
@@ -2822,6 +2824,13 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-board > .tide-kanban { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 .tide-board .tide-kcol { display: flex; flex-direction: column; min-height: 0; }
 .tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; }
+/* A narrow window (700px and less), where the head above takes much of the height: each row of lanes keeps room to read
+   a card (12.5rem, about 9rem of cards under its head), and the board grows past the first screen, the page scrolling,
+   rather than squeezing them. */
+@media (max-width: 700px) {
+    .tide-board > .tide-kanban { grid-auto-rows: minmax(12.5rem, 1fr); min-height: auto; }
+    .content > .tide-board { min-height: auto; }
+}
 .tide-kcol-drop { flex: 1 0 3.5rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); }
 .tide-kstrip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); padding: var(--tide-space-3) var(--tide-space-4);
     background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); }
