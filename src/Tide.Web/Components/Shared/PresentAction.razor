@@ -1,6 +1,7 @@
 @* An action opened over a slide in present mode, as the presenter shows it to the room: its facts, details, checklist,
    comments and history. Whoever may work it can move its status and tick its checklist here; everything else is on
-   the action's page. Team edition only (ADR 0005): Present draws it only there. *@
+   the action's page. Team edition only (ADR 0005): Present draws it only there. Read-only in a rehearsal: no status,
+   and the checklist can't be ticked, so nothing here calls a service that saves. *@
 @inject ActionService ActionSvc
 @inject OrgClock Clock
 
@@ -28,7 +29,7 @@
         }
         else
         {
-            @if (Detail.CanWork)
+            @if (CanWork)
             {
                 <ActionStatusControl @key="(a.Id, Version)" Action="a" Changed="OnChanged" Stale="OnChanged" />
             }
@@ -60,7 +61,7 @@
                         <div class="tide-slide-section">Checklist <span class="tide-present-help">@a.Checklist.Count(i => i.IsDone) of @a.Checklist.Count done</span></div>
                         @if (Links)
                         {
-                            <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                            <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="CanWork" Compact="true" OnChanged="OnChanged" />
                         }
                         else
                         {
@@ -144,6 +145,13 @@
 
     /// <summary>After a status move or a tick here: the page re-reads the action.</summary>
     [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Read-only (present mode in rehearsal, ReadOnlyCascade): nothing on the card works the action, whoever
+    /// opens it.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
+
+    // Whether the card offers its status and its checklist: to whoever may work the action, outside a rehearsal.
+    private bool CanWork => Detail.CanWork && !ReadOnly;
 
     private ElementReference _close;
     private int? _focused;

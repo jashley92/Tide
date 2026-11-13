@@ -277,6 +277,12 @@ Each of the presenter's steps checks it where it's handled, not only by what's d
 meeting (or, with no meeting, be someone who could present). A follower's `D`, or any of the rail's steps sent by hand,
 changes nothing.
 
+**Rehearsing.** Help's **Learn to present**, for whoever can present, opens present mode on today's brief in
+rehearsal: no meeting starts, nobody follows, nothing is shared or saved, and a short guide steps through the title
+slide, the rail and `]`, raising an action (pointed at, not done), an action's card, Actions that need review, the
+wrap-up and ending the meeting. The rail's controls are there but disabled. It isn't offered, and refuses, while the
+day's meeting is live. See [rehearsal](../architecture/frontend.md#rehearsal).
+
 **An action beside the slide.** An action opened in the meeting (its title or number on a slide) opens over the slide.
 With **In a meeting, an action opens beside the slide** ticked in Organization settings (`Org:ActionBesideSlide`, off
 by default, to be turned on after a rehearsal in the meeting room), it opens beside the slide instead, and the slide

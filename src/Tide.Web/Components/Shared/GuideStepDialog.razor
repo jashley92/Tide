@@ -1,0 +1,146 @@
+@* One step of the tour or of a guide: a dialog over a light scrim, so the page under it can't be clicked (a click on the
+   scrim does nothing and leaves focus in the step). tips.js sets it beside the control it points at and rings that
+   control, finding it once it's drawn and scrolling it into view; focus goes to Next as it opens and stays in it
+   (dialog.js, and tips.js when a new page focuses its heading). Escape, the close button or the end button ends it; as
+   it goes, focus goes back to the control that had it as the first step opened (Help's Take the tour or Start, the
+   page's Show me around) when that's still on the page, else to the page's heading (tips.js). OnboardingHost draws it for the tour and
+   a page's guide; present mode draws it only in rehearsal, for Learn to present. *@
+@implements IAsyncDisposable
+@using Tide.Application.Operations
+@inject IJSRuntime JS
+
+<div class="tide-tour-scrim" aria-hidden="true" @onmousedown:preventDefault="true"></div>
+<div class="tide-modal tide-tour" @ref="_card" tabindex="-1" role="dialog" aria-modal="true" data-keeps-popouts data-guide-card data-step-target="@Step.Target" data-step-leaps="@(Step.Leaps ? "true" : null)"
+     aria-labelledby="tide-tour-title" aria-describedby="tide-tour-text" @onkeydown="OnKey">
+    <div class="tide-tour-head">
+        <h2 class="tide-modal-title" id="tide-tour-title">
+            @if (Parts is { Count: > 0 } parts)
+            {
+                @* A long guide counts within its part; the whole count is secondary, under the parts. *@
+                <span class="tide-tour-count">@(Name is null ? "" : Name + " · ")@parts[PartAt] · @(PartIndex + 1) of @PartCount</span>
+            }
+            else
+            {
+                <span class="tide-tour-count">@(Name is null ? "" : Name + " · ")Step @(Index + 1) of @Count</span>
+            }
+            @* The parts on a line of their own, between the count and the title, wrapping as they need. *@
+            @if (Parts is { Count: > 0 } all)
+            {
+                <span class="tide-tour-parts">
+                    @for (var i = 0; i < all.Count; i++)
+                    {
+                        @if (i > 0) { <span aria-hidden="true"> · </span> }
+                        @if (i == PartAt) { <strong aria-current="step">@all[i]</strong> } else { <span>@all[i]</span> }
+                    }
+                    <span class="tide-tour-total"> &middot; step @(Index + 1) of @Count</span>
+                </span>
+            }
+            <span class="tide-tour-title">@Step.Title</span>
+        </h2>
+        <button type="button" class="btn-close" aria-label="@EndLabel" @onclick="OnEnd"></button>
+    </div>
+    <p class="tide-tour-text" id="tide-tour-text">@Step.Text</p>
+    <div class="tide-modal-actions">
+        <button type="button" class="btn btn-link btn-sm me-auto" @onclick="OnEnd">@EndLabel</button>
+        @if (Index == Count - 1 && AlsoLabel is not null)
+        {
+            <button type="button" id="tide-tour-also" class="btn btn-outline-secondary btn-sm" @onclick="OnAlso">@AlsoLabel</button>
+        }
+        @if (Index > 0)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OnBack">Back</button>
+        }
+        @if (Skips)
+        {
+            @* Beside Next: on into the next part without this page's details. *@
+            <button type="button" id="tide-tour-skip" class="btn btn-secondary btn-sm" @onclick="OnSkip">Skip the details</button>
+        }
+        <button type="button" class="btn btn-primary btn-sm" @ref="_next" @onclick="OnNext">@(Index == Count - 1 ? "Done" : "Next")</button>
+    </div>
+</div>
+
+@code {
+    private ElementReference _card, _next;
+    private TourStep? _placed;
+
+    /// <summary>The step shown.</summary>
+    [Parameter, EditorRequired] public TourStep Step { get; set; } = default!;
+
+    /// <summary>Its place, from 0, among <see cref="Count"/>.</summary>
+    [Parameter] public int Index { get; set; }
+
+    /// <summary>How many steps there are.</summary>
+    [Parameter] public int Count { get; set; }
+
+    /// <summary>The guide's name, before its step count; none for the tour.</summary>
+    [Parameter] public string? Name { get; set; }
+
+    // What ends it: Skip tour for the tour, End guide for a guide.
+    private string EndLabel => Name is null ? "Skip tour" : "End guide";
+
+    /// <summary>What a live region says as a step shows: "Step 2 of 5: Title. Text".</summary>
+    public static string Said(TourStep step, int index, int count) => $"Step {index + 1} of {count}: {step.Title}. {step.Text}";
+
+    /// <summary>The tour's way on to the whole-day guide, and What's new's.</summary>
+    public const string SeeTheWholeDay = "See the whole day";
+
+    /// <summary>A long guide's parts, in order (An analyst's day: Today, Triage, Writing…): its header counts within the
+    /// part the step is in (<see cref="PartAt"/>, <see cref="PartIndex"/> of <see cref="PartCount"/>), the whole count
+    /// secondary under them. None for a guide counted as a whole.</summary>
+    [Parameter] public IReadOnlyList<string>? Parts { get; set; }
+
+    /// <summary>The part the step is in, among <see cref="Parts"/>.</summary>
+    [Parameter] public int PartAt { get; set; }
+
+    /// <summary>The step's place, from 0, in its part.</summary>
+    [Parameter] public int PartIndex { get; set; }
+
+    /// <summary>How many steps its part has.</summary>
+    [Parameter] public int PartCount { get; set; }
+
+    /// <summary>Whether this step starts a page's guide inside a longer one (An analyst's day), with Skip the details to go
+    /// on past it.</summary>
+    [Parameter] public bool Skips { get; set; }
+
+    /// <summary>Skip the details.</summary>
+    [Parameter] public EventCallback OnSkip { get; set; }
+
+    /// <summary>On the last step, a second way on beside Done (the tour's See the whole day); none without it.</summary>
+    [Parameter] public string? AlsoLabel { get; set; }
+
+    /// <summary>What <see cref="AlsoLabel"/> does.</summary>
+    [Parameter] public EventCallback OnAlso { get; set; }
+
+    /// <summary>Next, or Done on the last step.</summary>
+    [Parameter] public EventCallback OnNext { get; set; }
+
+    /// <summary>Back.</summary>
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    /// <summary>Escape, the close button or the end button.</summary>
+    [Parameter] public EventCallback OnEnd { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ReferenceEquals(Step, _placed)) return;
+        var first = _placed is null;
+        _placed = Step;
+        try
+        {
+            await JS.InvokeVoidAsync("tideTips.show", _card, Step.Target, new { dialog = true, first, opens = Step.Opens, closes = Step.Closes });
+            // The dialog takes focus as it opens; each step after puts it on Next.
+            if (first) await JS.InvokeVoidAsync("tideDialog.open", _next);
+            else await _next.FocusAsync();
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? OnEnd.InvokeAsync() : Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_placed is null) return;   // never shown in a browser
+        await JS.StopAsync("tideTips.hide");
+        await JS.StopAsync("tideTips.end");
+    }
+}

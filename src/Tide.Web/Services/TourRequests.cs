@@ -2,7 +2,8 @@ using System.Collections.Concurrent;
 
 namespace Tide.Web.Services;
 
-/// <summary>Help's Take the tour, to the layout's OnboardingHost in the same circuit (one per circuit).</summary>
+/// <summary>Help's Take the tour and its guides, and a page's Show me around, to the layout's OnboardingHost in the same
+/// circuit (one per circuit).</summary>
 public sealed class TourRequests
 {
     /// <summary>Raised with whether it was asked from Help.</summary>
@@ -10,6 +11,12 @@ public sealed class TourRequests
 
     /// <summary>Starts the tour; <paramref name="fromHelp"/> when Help's button asks, so focus can go back to it.</summary>
     public void Ask(bool fromHelp = false) => Asked?.Invoke(fromHelp);
+
+    /// <summary>Raised with a guide's key, and whether it was asked from Help rather than its page's Show me around.</summary>
+    public event Action<string, bool>? GuideAsked;
+
+    /// <summary>Starts the guide <paramref name="key"/>: on its page, which Help's opens first.</summary>
+    public void AskGuide(string key, bool fromHelp = false) => GuideAsked?.Invoke(key, fromHelp);
 }
 
 /// <summary>

@@ -242,9 +242,12 @@ person's first visit to it after the release it belongs to.
   needs the page's permission), so it isn't shown again; a later release's tip for the page would be. Help's **Show tips
   again** clears them, for the pages the person can use. A tip is shown only to someone who can use its page.
 - **Not modal.** The card (`.tide-tip`) has no scrim and leaves the page live: it never takes focus or a key, so `]` and
-  every shortcut still work. `tips.js` (`tideTips`) sets it beside the control it's about and rings that control
-  (`.tide-tip-target`), or puts it in the bottom corner when it has none (Search's, which would otherwise sit over the
-  page's own search box), the control isn't shown or there's no room. It never sits over the context rail, docked or
+  every shortcut still work. `tips.js` (`tideTips`) sets it next to the control it's about (below it, else above, else
+  beside it), with a small arrow on the side facing it that flips with the placement, and rings the control
+  (`.tide-tip-ring`, just outside it: two soft pulses that settle to a steady ring, steady from the start under reduced
+  motion) as tour and guide steps are. The ring and arrow follow the control as the page scrolls, resizes or redraws,
+  and go with the card. Every tip, tour step and guide step names a control (a test holds this); the card goes to the
+  bottom corner only when that control isn't on the page at all. It never sits over the context rail, docked or
   open over the page: it moves left of it, and moves again when the rail opens or closes. It keeps within the page's
   width, left of the scrollbar. A tip that needs its control (Triage's, beside the reading pane) isn't shown where the
   control isn't, nor announced. A polite live region announces a tip once it's shown. **Got it** from the keyboard
@@ -258,7 +261,8 @@ uses, before anything else.
   instead. It stays `due` until the tour ends (Done, Skip tour, Escape, or leaving the page another way), so a reload
   mid-tour starts it again. Then it's `done`, and What's new and the what-changed tips up to the release running are
   marked seen (`TourService.FinishedAsync`): someone shown round doesn't need them. A second tab of the same person's
-  doesn't start another tour while one shows it (`TourClaims`, in memory).
+  doesn't start another first tour while one shows it (`TourClaims`, in memory); a tour or guide that's asked for starts
+  whatever another tab shows.
 - **The steps.** `Tours` (`Tide.Application/Operations/Tours.cs`) lists each step's page, the permission it needs, the
   control it points at and what it says, and which steps each role group's tour has. A step the person can't use is
   left out; a Reader or a Visitor has no tour. No step is in present mode.
@@ -272,6 +276,69 @@ uses, before anything else.
   from Help, the first step shows on Help until Next, and ending it there puts focus back on Take the tour.
 - **On the demo.** `?onboarding=on` offers everything, the tour included for a new name; `?onboarding=returning` signs
   in as someone who used TIDE before, so What's new and the tips show rather than the tour.
+- **From What's new.** Its footer says "Want a walkthrough? Take the tour, or pick a guide in Help." and **Take the
+  tour** sits beside **Got it**, which stays the main button and takes focus. Take the tour closes What's new, marks it
+  seen as closing does, and starts the tour; the page's tip, which Got it would bring, waits. Readers and Visitors get
+  neither, and present mode never shows it.
+
+**Guides.** A guide is a walk through one page's controls (Today, Triage, the article editor, Actions and an action's
+page in full, in the page's order; the reference pages in three to five steps), drawn with the tour's step dialog
+(`GuideStepDialog`: the scrim, focus kept in it, Escape ends it, and focus back on the control that had it as the first
+step opened, when that's still on the page, else on the heading) and placed by
+`tideTips`. `Guides` (`Tide.Application/Operations/Guides.cs`) lists each guide's page, the permission that page needs,
+and its steps, each with the permission its control needs: a person sees only the guides for pages they can use, and no
+step for a control they can't.
+
+- **Only when asked.** Help's **Guides** lists them, each with **Start**, which opens the page and starts it there; the
+  top bar's **?** menu has **Show me around this page** on every page with a guide; and for a while a page has **Show me
+  around** under its title (`GuideLink`), which starts it in place and gets focus back as it ends. All ask
+  `TourRequests.AskGuide`; nothing starts a guide by itself.
+- **The link under the title is for a while** (`GuideLinkService`, in the person's preferences): within
+  `Org:GuideLinkDays` (Organization settings, default 5) of their first sign-in, which the user mirror records, or of
+  the day they saw What's new for a release whose highlights changed the page (it has a tip in that release), until they've run
+  the page's guide (to the end or part way) or closed the link with its ×. Help's **Show page guide links** turns them
+  all on, whatever the window, or off.
+- **Only pointing.** A guide never presses a control for you. A step whose control is in a shut tab, section, menu or
+  picker opens it first (its `Opens`: the rail's Actions tab, Draft from the sources, Browse all tags, the ATT&CK picker,
+  Triage's promote form, Actions' Filter and a card's Move, an action's status and More) and points inside it; what the
+  guide opened it closes again when a step leaves it or the guide ends (by the step's `Closes`, such as the picker's
+  Close, else by its opener), choosing nothing, so the article stays exactly as it was. Escape closes it with the guide.
+  Nothing that fetches, drafts, pulls or sends is ever pressed. Walking a guide to Done, or leaving it with
+  Escape, writes nothing and makes no outgoing call (`GuideWalkTests`).
+- **Where it starts.** From Help, `GuideStarts` opens its page: the newest article for the editor's, the open action due
+  first for an action's. Search's looks something up itself, the normal way (`search?q=`): the first CVE, else the first
+  indicator, on the newest article the person can read within the team edition's TLP ceiling, through the article
+  service's own checks; none, and it opens Search empty. A lookup reads TIDE's own data only (no NVD, EPSS, feed or
+  enrichment call) and writes nothing.
+- **Finding the control.** A step names its control by a CSS selector, with fallbacks (`a || b`: the first shown).
+  `tideTips` looks for it again as the page draws (a guide started from Help opens a page still loading) and scrolls it
+  into view once found. It keeps off the context rail, docked or over the page, as a tip does.
+- **The rail, opened for its steps.** A step about something in a rail (its selector names the rail's button) keeps
+  that rail open, over the page or docked as the window allows (never remembered), whether it was shut as the step
+  started or shut during it (the window crossing 1500, `]`, its Close); it rings the section in it, never the button,
+  and shuts it again when a step leaves it or the guide ends; the card narrows to fit beside it.
+- **In the page's order, big enough to see.** A page's steps follow its markup; one out of that order on purpose (the
+  top bar, a rail, what a step opens: `TourStep.Leaps`) says so, and the layout walk fails any other. A control under
+  16px either way (a radio hidden in a button group) is ringed by its group or label.
+- **An analyst's day counts by its parts**: "An analyst's day · Writing · 4 of 31", the parts and the whole count in a
+  line under the title, and **Skip the details** beside Next on each page guide's first step.
+- **Never in a corner.** Once the page has settled, `tideTips.present` says which steps have their control (shown, in
+  the shut rail with the rail's button as a fallback, or in a tab the step opens); the others are left out, so "Step 2
+  of 7" counts what's shown and every step points at something. A step whose control is still being drawn waits in the
+  middle, with no arrow.
+- **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked, with each page's
+  own guide inline (Triage's, the editor's, Actions'; **Skip the details** on a section's first step goes past it):
+  Today's strip, triage, writing the newest draft, Save, Ask for review, Mark ready, Add to today's brief, the running
+  order, a row's Set to AMBER, the edition check, Mark ready in the page head, Present, which opens present mode in
+  rehearsal (`?rehearse=1&guide=day`) where Learn to present's steps run as the day's and come back to Today at Send
+  (`Present.BackToTheDayFrom`; refused while the meeting is live, with a note), then Actions, an action, and Search on a
+  sample lookup. A page's steps are checked as the guide opens it, so the count is of the steps shown. **Following the brief** is the shorter one for whoever can't write (Today, the
+  meeting, their actions, Search). A cross-page guide (`Guide.Travels`) opens each step's page as it's reached
+  (`GuideStarts.RoutesAsync`); a step whose control a page may not draw falls back to one that's always there, such as
+  the page's heading. Help, What's
+  new's **See the whole day** and the tour's last step start it; no page's Show me around does.
+- **Learn to present** is the one guide that isn't a page's. For whoever can present (`PresentBriefs`), Help links to
+  present mode in rehearsal (`/present/{day}?rehearse=1`, today's brief). See [rehearsal](#rehearsal).
 
 **The Administration frame.** `AdminLayout.Groups` lists every admin page with its group, icon, address and a one-line
 description; the Overview page (`/admin`) reads the same list for its index. The current group is the one holding the
@@ -578,6 +645,43 @@ same way, so the room's screen matches the presenter's.
 - **What it shows** is the same component and the same read as the card over the slide. An action raised from an
   article above the meeting's ceiling is named and nothing more (`ActionService.MeetingViewAsync` returns
   `ActionDetail.Withheld`), beside or over.
+
+### Rehearsal
+
+Present mode can be opened with no meeting by anyone who can present, but that page is the real one: its rail saves
+(Raise, Mark discussed, End the meeting), it joins the brief's presence, and Start the meeting is a click away. Help's
+**Learn to present** opens it in rehearsal instead (`?rehearse=1`), and nothing else links there. Any `rehearse` in the
+address, whatever its value, is a rehearsal, so a mistyped one fails safe. A rehearsal is never seated in, counted in
+or recorded as attending a meeting, even one that starts while it's open, and leaving it never asks to discard
+anything: nothing there can be saved.
+
+- **Nothing shared or saved.** The top bar says "Rehearsal: nothing here is shared or saved". Start the meeting and
+  Copy link are shown disabled (for the guide to point at); there's no End the meeting or Notes, no presence, and the
+  tag editor isn't offered. The presenter's rail is
+  drawn, its controls disabled (a `fieldset`), so the guide can point at them. Behind that, `InCharge` is false and
+  `Run` runs nothing in a rehearsal, so every step that saves is a no-op wherever it's sent from; the page never takes a
+  seat, starts, joins or ends a meeting, and publishes no change. Moving between slides and opening a card are this
+  screen's alone, as there's no meeting to show them to.
+- **Read only all the way down.** In a rehearsal present mode cascades `ReadOnlyCascade` to everything it draws. Each
+  component that saves takes it and saves nothing under it: an action's card over or beside a slide (from its number,
+  or Actions that need review) shows no status control and no checklist to tick, and the status control, the
+  checklist, the tag editor and presence refuse where they save. Products', indicators' and CVEs' cards save nothing
+  anyway. A test walks every component present mode can draw and fails on one that injects a saving service without
+  taking the cascade.
+- **Only today's brief, never during the meeting.** A rehearsal is only of today's brief: another day's says "Only
+  today's brief can be rehearsed.", so none runs beside some other day's live meeting. With today's meeting live, the
+  page says "The meeting is live, so it can't be rehearsed now." and draws no slides, rail or guide; a meeting that
+  starts meanwhile ends the rehearsal the same way. Help says so too, instead of offering Start.
+- **Never a follower's.** Someone who can't present (a Viewer, an action owner, a Visitor) asking for it is told
+  "Rehearsal is for whoever presents the brief.", and nothing is read or joined. A live page, the presenter's included,
+  never draws the guide, so nothing of it reaches the room's screen.
+- **The guide's steps** are on their slides (`Guide` step routes: `title`, `metrics`, `open`, `article`, and
+  `article:indicators`, `article:raised` or `article:card` for the first article that has one, then `wrap`): the title
+  slide and moving between slides; going live (Start the meeting and Copy link, shown disabled in a rehearsal, and
+  refused there however pressed); who's here; the presenter's rail and `]`; the numbers; Actions that need review; an
+  article's slide, its indicators and the action a line became; raising (pointed at, not done), quick add, your note and
+  Mark discussed; an action's card; the wrap-up's three lists, attendance and ending the meeting. A step about a slide
+  the brief hasn't is left out (`Present.GuideSlide`). At a width that shuts the rail, its steps point at **Rail**.
 
 ## Design tokens
 

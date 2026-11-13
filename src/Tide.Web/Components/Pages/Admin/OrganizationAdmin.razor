@@ -69,6 +69,17 @@
             <div class="form-text" id="org-stale-blocked-help">The same for a Blocked action, which usually waits on someone else. Weekends and
                 the holidays below don't count. 1 to 30.</div>
         </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-guide-link-days">Show me around links show for</label>
+            <div class="input-group input-group-sm tide-maxw-xs">
+                <input id="org-guide-link-days" type="number" class="form-control" min="@OrgOptions.MinGuideLinkDays" max="@OrgOptions.MaxGuideLinkDays" step="1"
+                       @bind="GuideLinkDays" aria-describedby="org-guide-link-days-help" />
+                <span class="input-group-text">days</span>
+            </div>
+            <div class="form-text" id="org-guide-link-days-help">A page's Show me around link, under its title, shows for this long after
+                someone's first sign-in, and after a release changes the page, until they run its guide or close the link. The ? menu
+                always has it. 1 to 90.</div>
+        </div>
     </div>
     <button type="button" class="btn btn-primary btn-sm mt-3" disabled="@_busy" @onclick="Save">Save</button>
 </section>
@@ -150,6 +161,9 @@
     // test can set them). As typed, so the save refuses 2.5 rather than a number box reading it as 2.
     internal string StaleOpen { get; set; } = "";
     internal string StaleBlocked { get; set; } = "";
+
+    // The days a page's Show me around link shows (internal so a test can set it), as typed.
+    internal string GuideLinkDays { get; set; } = "";
     private bool _busy;
 
     // The holidays from this year on, how many are older, and the latest year to copy to the next (when that's empty).
@@ -229,6 +243,7 @@
         _meeting = Clock.MeetingTime;
         ActionBeside = Clock.ActionBesideSlide;
         (StaleOpen, StaleBlocked) = (Clock.StaleLimits.OpenDays.ToString(System.Globalization.CultureInfo.InvariantCulture), Clock.StaleLimits.BlockedDays.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        GuideLinkDays = Clock.GuideLinkDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _zones = OperationalSettings.TimeZoneChoices(Zone);
         // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
@@ -254,6 +269,7 @@
                 [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
                 [OperationalSettings.StaleOpenDays] = StaleOpen,
                 [OperationalSettings.StaleBlockedDays] = StaleBlocked,
+                [OperationalSettings.GuideLinkDays] = GuideLinkDays,
             });
             Load();
             Toasts.Show("Saved.");

@@ -7,9 +7,20 @@ namespace Tide.Application.Operations;
 /// <summary>
 /// One step of the first-sign-in tour: a page (<paramref name="Route"/>, as a link from the app's root has it: "" for
 /// Today), the permission that page or control needs, the control it points at (a CSS selector; none for the page as a
-/// whole), and what to say.
+/// whole), and what to say. <paramref name="Opens"/>: a tab, section, menu or picker to open first when the control is
+/// inside it and shut (opening it only shows it), and <paramref name="Closes"/>, what closes it again without keeping
+/// anything chosen in it, when it has a close of its own. <paramref name="Section"/>: in a guide across pages, the page's
+/// own guide a step is part of (Skip the details on its first step goes on past it); <paramref name="Part"/>, the part of
+/// the day it's in, which its header counts by. <paramref name="Moves"/>: the step's control is out of the page's reading
+/// order on purpose (the top bar's brief chip); one in a rail, or in what it opens, is too (<see cref="Leaps"/>).
 /// </summary>
-public sealed record TourStep(string Key, string Route, Permission Needs, string? Target, string Title, string Text);
+public sealed record TourStep(string Key, string Route, Permission Needs, string? Target, string Title, string Text, string? Opens = null,
+    string? Closes = null, string? Section = null, string? Part = null, bool Moves = false)
+{
+    /// <summary>Whether its control may come before the last step's in the page's order: one in the top bar, in a rail
+    /// (it falls back to the rail's button), or in a tab, section, menu or picker it opens.</summary>
+    public bool Leaps => Moves || Opens is not null || (Target?.Contains("-rail-toggle", StringComparison.Ordinal) ?? false);
+}
 
 /// <summary>The tour each role takes: the main pages and controls they'll use, and only those.</summary>
 public static class Tours
@@ -18,24 +29,24 @@ public static class Tours
     [
         new("today", "", Permission.ReadTeamEdition, ".tide-page-head h1", "Today",
             "Today is the day's brief: what's on it, how far it's got and the actions that are yours. Every page has it in the sidebar."),
-        new("rail", "", Permission.ReadTeamEdition, "#tide-rail-toggle", "The context rail",
-            "What TIDE already knows about what you select is in the context rail on the right. After the tour, ] shows or hides it, as does the rail button ringed here."),
-        new("triage", "triage", Permission.WriteArticles, null, "Triage",
+        new("rail", "", Permission.ReadTeamEdition, "#tide-rail || #tide-rail-toggle", "The context rail",
+            "What TIDE already knows about what you select is in the context rail on the right. After the tour, ] shows or hides it, as does the rail button in the top bar."),
+        new("triage", "triage", Permission.WriteArticles, "ol.tide-triage || .tide-tabbar[aria-label=\"Inbox\"]", "Triage",
             "New items from the feeds wait here. J and K move, V reads one in the reading pane, P promotes it to an article. Nothing is fetched until you ask."),
-        new("articles", "articles", Permission.WriteArticles, null, "Articles",
+        new("articles", "articles", Permission.WriteArticles, ".tide-page-head .btn-primary || #main-content .tide-dt-scroll", "Articles",
             "Articles are written here and put on a brief. The editor is one column, in the order the brief reads, and saves itself after a pause."),
-        new("actions", "actions", Permission.ReadActions, null, "Actions",
+        new("actions", "actions", Permission.ReadActions, ".tide-actions-views", "Actions",
             "What the brief asks teams to do. Each tab shows its count; J and K select a row, the rail shows it, and Enter opens it."),
         new("search", "search", Permission.ReadTeamEdition, ".tide-top-find", "Search",
             "Search finds articles, and looks up an indicator or a CVE: the answer comes first, with a hunt query in the rail."),
-        new("present", "", Permission.PresentBriefs, null, "Presenting",
+        new("present", "", Permission.PresentBriefs, ".tide-page-head a[href^=\"present/\"] || #meeting-h || #tide-rail-toggle", "Presenting",
             "When the brief meets, Present on Today runs the meeting. Your controls are in the presenter's rail, never on a follower's screen."),
-        new("meeting", "", Permission.JoinMeetings, null, "The meeting",
+        new("meeting", "", Permission.JoinMeetings, ".tide-live-banner a[href^=\"present/\"] || #meeting-h || #tide-rail-toggle", "The meeting",
             "When the brief meeting is live, a banner across every page says so. Join follows the presenter's slides, and you can raise a hand."),
-        new("admin", "admin", Permission.Administer, null, "Administration",
+        new("admin", "admin", Permission.Administer, ".sidebar a[href=\"admin\"] || .tide-admin-name", "Administration",
             "Sources, teams, roles and the organization's settings are in Administration."),
-        new("help", "", Permission.ReadTeamEdition, ".tide-profile-btn", "Help",
-            "Help and what's new is in the account menu: every release's notes, Show tips again, and this tour, whenever you want it again."),
+        new("help", "help", Permission.ReadTeamEdition, "#help-guides-title || #help-take-tour", "Help",
+            "This is Help, in the account menu: every release's notes, Show tips again, and this tour whenever you want it. There's a guide for each page in Help."),
     ];
 
     // Which steps each group's tour has; a person with several groups takes each step once, in the order above.

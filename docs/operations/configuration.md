@@ -190,6 +190,7 @@ seed accepts them.
 | `Org:ActionBesideSlide` | `false` | `true`: an action opened in a meeting shows beside the slide, which narrows for it, rather than over it. Turn it on after a rehearsal in the meeting room. | In app: **Organization settings** | At once |
 | `Org:StaleOpenDays` | `2` | Whole number, 1 to 30. Business days an Open or In progress action may go without an update by a person before the meeting's **Actions that need review** slide lists it. | In app: **Organization settings** | At once |
 | `Org:StaleBlockedDays` | `5` | Whole number, 1 to 30. The same for a Blocked action. | In app: **Organization settings** | At once |
+| `Org:GuideLinkDays` | `5` | Whole number, 1 to 90. How many days a page's **Show me around** link, under its title, shows after someone's first sign-in, and after a release whose highlights changed that page. It goes once they've run that page's guide or closed the link; the **?** menu always has it, and Help's **Show page guide links** turns the links on or off for each person. | In app: **Organization settings** | At once |
 
 A server `Org:TimeZone` that isn't a known zone stops start-up (HTTP 500.30). A saved one can't be invalid: the page
 checks it.

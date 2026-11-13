@@ -62,6 +62,7 @@ else
                 <StatusBadge Status="@_article.Status.ToString()" />
                 <ClassBadge Classification="_form.Classification" Priority="_form.Priority" />
                 <TlpBadge Level="_form.Tlp" />
+                <GuideLink />
             </div>
             @if (_canWrite)
             {
@@ -103,7 +104,7 @@ else
                 <div class="tide-assess-row">
                     <div class="tide-assess-class">
                         <span class="tide-field-label">Classification</span>
-                        <div class="btn-group" role="group" aria-label="Classification">
+                        <div class="btn-group" role="group" aria-label="Classification" data-guide="classification">
                             <input type="radio" class="btn-check" name="cls" id="cls-threat" checked="@(_form.Classification == Classification.Threat)"
                                    disabled="@(!_canWrite)" @onchange="() => SetClass(Classification.Threat)" />
                             <label class="btn btn-outline-secondary btn-sm" for="cls-threat"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Threat</label>
@@ -127,7 +128,7 @@ else
                     }
                     <div>
                         <label class="tide-field-label">Article TLP</label>
-                        <TlpSelect Value="_form.Tlp" ValueChanged="SetTlp" Label="The article's TLP" Disabled="@(!_canWrite)" />
+                        <TlpSelect Id="f-tlp" Value="_form.Tlp" ValueChanged="SetTlp" Label="The article's TLP" Disabled="@(!_canWrite)" />
                     </div>
                 </div>
                 <div class="form-text mt-0 mb-2">Threat: something should be done. Informational: worth knowing, no action expected. Bullets and screenshots can be marked higher than the article, never lower.</div>
@@ -192,7 +193,7 @@ else
                             }
                             else
                             {
-                                <button type="button" class="btn btn-link btn-sm p-0" @ref="_addLinkButton" @onclick="OpenAddLink"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a report link</button>
+                                <button type="button" id="add-link" class="btn btn-link btn-sm p-0" @ref="_addLinkButton" @onclick="OpenAddLink"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a report link</button>
                             }
                         }
                     </div>
@@ -415,7 +416,7 @@ else
                 @if (_canWrite)
                 {
                     <div>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
+                        <button type="button" id="f-techniques" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
                             <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
                         </button>
                     </div>
@@ -447,10 +448,10 @@ else
                     {
                         <span class="tide-saved @(_autosavedAt is null ? null : "tide-autosave")" role="status" tabindex="-1" @ref="_savedNote"><span class="bi bi-check2" aria-hidden="true"></span> @(_autosavedAt is { } at ? $"Saved at {Ui.Time(Clock, at)}" : "All changes saved")</span>
                     }
-                    <button type="button" class="btn btn-primary" disabled="@(_busy || !_dirty)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
+                    <button type="button" class="btn btn-primary" data-guide="save" disabled="@(_busy || !_dirty)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
                     @if (_article.Status == ArticleStatus.Draft)
                     {
-                        <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="MarkReady">Save and mark ready</button>
+                        <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@_busy" @onclick="MarkReady">Save and mark ready</button>
                     }
                     else if (_article.Status == ArticleStatus.Ready)
                     {
@@ -462,7 +463,7 @@ else
                     }
                     else
                     {
-                        <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="AddToTodaysBrief"><span class="bi bi-journal-plus" aria-hidden="true"></span> Add to today's brief</button>
+                        <button type="button" class="btn btn-outline-secondary" data-guide="add-to-brief" disabled="@_busy" @onclick="AddToTodaysBrief"><span class="bi bi-journal-plus" aria-hidden="true"></span> Add to today's brief</button>
                     }
                     @if (_article.Status == ArticleStatus.Draft && _briefDates.Count == 0)
                     {

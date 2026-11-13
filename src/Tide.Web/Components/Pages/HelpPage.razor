@@ -10,9 +10,12 @@
 @inject IMarkdownService Markdown
 @inject NavigationManager Nav
 @inject ICurrentUser CurrentUser
+@inject LiveMeetings Meetings
+@inject OrgClock Clock
+@inject GuideLinkService GuideLinks
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, Show tips
-   again and Take the tour. An administrator also gets every release's full notes, as its GitHub page has them:
+   again, Take the tour, and the guides (Guides) the person can use. An administrator also gets every release's full notes, as its GitHub page has them:
    they're the operators' (upgrade steps, migrations, settings). ?release=1.13.0 opens that release's full notes
    ("See all changes"). *@
 
@@ -30,6 +33,13 @@
         <h2 id="help-tips">Tips</h2>
         <p>A page that changed shows a tip on your first visit to it, until you press <strong>Got it</strong>.</p>
         <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ShowTipsAgainAsync">Show tips again</button>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="help-guide-links" checked="@_guideLinks" @onchange="SwitchGuideLinksAsync"
+                   aria-describedby="help-guide-links-help" />
+            <label class="form-check-label" for="help-guide-links">Show page guide links</label>
+        </div>
+        <p class="form-text mb-0" id="help-guide-links-help">Show me around, under a page's title, for a while after you start and after a
+            release changes the page. On shows it on every page with a guide until you close it there; the <kbd>?</kbd> menu always has it.</p>
     </section>
     @if (Tour.Steps.Count > 0)
     {
@@ -37,6 +47,38 @@
             <h2 id="help-tour">The tour</h2>
             <p>A few steps through the pages and controls you'll use most, as on your first sign-in. Skip it at any step.</p>
             <button type="button" id="help-take-tour" class="btn btn-outline-secondary btn-sm" @onclick="() => TourAsked.Ask(fromHelp: true)">Take the tour</button>
+        </section>
+    }
+    @if (MyGuides.Count > 0)
+    {
+        <section class="tide-card" id="help-guides" aria-labelledby="help-guides-title">
+            <h2 id="help-guides-title">Guides</h2>
+            <p>A walk through one page's controls, on that page, or through the whole day across pages. End one at any step. A page with a guide has <strong>Show me around</strong> in its header too.</p>
+            <ul class="tide-help-guides">
+                @foreach (var guide in MyGuides)
+                {
+                    <li>
+                        <div class="tide-help-guide-text">
+                            <strong>@guide.Title</strong>
+                            <span class="tide-muted">@guide.Description</span>
+                        </div>
+                        @if (!guide.Rehearsal)
+                        {
+                            <button type="button" id="help-guide-@guide.Key" class="btn btn-outline-secondary btn-sm" aria-label="Start the guide: @guide.Title"
+                                    @onclick="() => TourAsked.AskGuide(guide.Key, fromHelp: true)">Start</button>
+                        }
+                        else if (Meetings.Get(Clock.CurrentBriefDate) is not null)
+                        {
+                            <span class="tide-muted small" id="help-guide-present">The meeting is live: rehearse once it's over.</span>
+                        }
+                        else
+                        {
+                            <a id="help-guide-present" class="btn btn-outline-secondary btn-sm" href="@Present.RehearsalHref(Clock.CurrentBriefDate)"
+                               aria-label="Start Learn to present, a rehearsal on today's brief">Start</a>
+                        }
+                    </li>
+                }
+            </ul>
         </section>
     }
     <section class="tide-card" aria-labelledby="help-whatsnew">
@@ -77,6 +119,10 @@
 </div>
 
 @code {
+    // The guides for the pages the person can use, and Learn to present for whoever can present.
+    private IReadOnlyList<Guide> MyGuides => _guides ??= Guides.For(CurrentUser.Has);
+    private IReadOnlyList<Guide>? _guides;
+
     // The full notes, and the releases with nothing for the person's roles, are an administrator's.
     private bool Operator => CurrentUser.Has(Permission.Administer);
 
@@ -94,6 +140,24 @@
 
     private MarkupString NotesHtml(ReleaseVersion version, string notes) =>
         Rendered.GetOrAdd((Nav.BaseUri, version), key => new MarkupString(Markdown.ToHtml(notes, LinkRoot.FromBaseUri(key.BaseUri))));
+
+    // Help's "Show page guide links" (GuideLinkService).
+    private bool _guideLinks = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        try { _guideLinks = await GuideLinks.SwitchedOnAsync(); }
+        catch (ForbiddenException) { _guideLinks = false; }
+    }
+
+    /// <summary>Show page guide links, on or off.</summary>
+    public async Task SwitchGuideLinksAsync(ChangeEventArgs e)
+    {
+        _guideLinks = e.Value is true;
+        await GuideLinks.SwitchAsync(_guideLinks);
+        Toasts.Show(_guideLinks ? "Each page with a guide shows Show me around again." : "Show me around is in the ? menu only.");
+    }
 
     /// <summary>Show tips again: each changed page's tip shows on the person's next visit to it.</summary>
     public async Task ShowTipsAgainAsync()

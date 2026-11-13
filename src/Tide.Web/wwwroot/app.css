@@ -1822,6 +1822,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-whatsnew-head .tide-modal-title { margin: 0; }
 .tide-whatsnew-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--tide-space-5) var(--tide-space-3); }
 .tide-whatsnew > .tide-modal-actions { flex-wrap: wrap; padding: var(--tide-space-3) var(--tide-space-5); border-top: 1px solid var(--tide-border); }
+/* What's new's pointer to the tour and Help's guides: before the buttons, or a line of its own above them when narrow. */
+.tide-whatsnew-more { flex: 1 1 16rem; align-self: center; margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+/* A button that reads as a link inside a sentence (What's new's see the whole day): the text's own size and line. */
+.tide-inline-link { padding: 0; border: 0; font-size: inherit; line-height: inherit; vertical-align: baseline; }
 .tide-whatsnew-intro, .tide-help-intro { color: var(--tide-text-muted); margin: 0 0 var(--tide-space-2); }
 .tide-whatsnew-release { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-4) 0 var(--tide-space-1); }
 .tide-whatsnew-group-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
@@ -1834,9 +1838,33 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
 .tide-help-notes > summary { color: var(--tide-accent); cursor: pointer; }
 .tide-help-notes[open] > summary { margin-bottom: var(--tide-space-2); }
-/* A page's tip (OnboardingHost): a small card in the bottom corner, or beside the control it's about when tips.js finds
-   room (is-placed, with top and left set); that control is ringed. Not modal: no scrim, nothing under it is inert.
-   Under a dialog (3500), over the page and its rail. */
+/* Help's guides: each one's name and what it shows, with Start at the end of its row (under it when narrow). */
+.tide-help-guides { list-style: none; margin: 0; padding: 0; }
+.tide-help-guides > li { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-3); flex-wrap: wrap;
+    padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
+.tide-help-guides > li:first-child { border-top: 0; }
+.tide-help-guide-text { display: flex; flex-direction: column; flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
+/* A page's Show me around, in its header: a quiet link-styled button that starts the page's guide. */
+.tide-guide-link { padding: 0 var(--tide-space-1); white-space: nowrap; }
+/* Its ×, which puts the link away on this page (GuideLink). */
+.tide-guide-link-wrap { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; }
+.tide-guide-link-hide { padding: 0 var(--tide-space-1); color: var(--tide-text-muted); line-height: 1; }
+/* A long guide's parts, on a line of their own between its count and its step's title, the one it's in strong, the whole
+   count after them (GuideStepDialog). */
+.tide-tour-parts { display: block; margin: 0; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular);
+    line-height: 1.4; color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-tour-parts strong { color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
+/* The ? overlay's Show me around this page (ShortcutsOverlay). */
+.tide-shortcuts-guide { margin: 0 0 var(--tide-space-3); }
+/* Present mode in rehearsal: says so in the top bar; the presenter's rail is shown with its controls disabled. */
+.tide-rehearsal { display: inline-flex; align-items: center; gap: .45em; padding: .2em .75em; border: 1px solid var(--tide-slide-warn);
+    border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .8em;
+    line-height: 1.3; overflow-wrap: anywhere; }
+.tide-rehearsal .bi { color: var(--tide-slide-warn); }
+.tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
+/* A page's tip (OnboardingHost): a small card beside the control it's about, once tips.js places it (is-placed, with
+   top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
+   it is inert. Under a dialog (3500), over the page and its rail. */
 .tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3000;
     width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
@@ -1846,9 +1874,32 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-tip-title { font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold); margin: 0; color: var(--tide-text); }
 .tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
-.tide-tip-target { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
-/* A tour step (OnboardingHost): a dialog without a scrim, so the control it's about shows; in the bottom corner, or
-   beside that control when tips.js finds room (is-placed), as a tip is. */
+/* The control a tip or step is about: scrolled into view clear of the sticky top bar, with room under it for the card. */
+.tide-tip-target { scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
+/* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
+   click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
+   motion. */
+.tide-tip-ring { position: fixed; z-index: 3395; pointer-events: none; border: 2px solid var(--tide-focus-ring);
+    border-radius: var(--tide-radius-lg); box-shadow: 0 0 0 3px var(--tide-accent-soft);
+    animation: tide-ring-pulse 1.1s ease-out 2; }
+@keyframes tide-ring-pulse {
+    0% { box-shadow: 0 0 0 0 var(--tide-focus-ring); }
+    70% { box-shadow: 0 0 0 10px transparent; }
+    100% { box-shadow: 0 0 0 3px var(--tide-accent-soft); }
+}
+@media (prefers-reduced-motion: reduce) { .tide-tip-ring { animation: none; } }
+/* The card's arrow (tips.js): a square turned on its corner, centred on the card's edge facing its control
+   (data-side: where the card is, from the control), in the card's own surface and border so it reads as part of it.
+   Over a tip, or over a step (is-step). */
+.tide-tip-arrow { position: fixed; z-index: 3001; width: 14px; height: 14px; background: var(--tide-surface);
+    border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
+.tide-tip-arrow.is-step { z-index: 3401; }
+.tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }
+.tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
+.tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
+.tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
+/* A tour step (OnboardingHost): a dialog over a light scrim, so the control it's about shows; beside that control once
+   tips.js places it (is-placed), as a tip is. */
 .tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;
     width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
 /* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.

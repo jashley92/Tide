@@ -48,6 +48,20 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     /// <summary>
+    /// The first CVE, else the first indicator, on the newest of the <paramref name="newest"/> articles at or under
+    /// <paramref name="ceiling"/> that has one; null when none has. One query; nothing above the ceiling is read.
+    /// </summary>
+    public async Task<string?> FirstLookupAsync(TlpLevel ceiling, int newest, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        var values = await Matching(db, null, null).Where(a => a.Tlp <= ceiling).OrderByDescending(a => a.CreatedAtUtc).Take(newest)
+            .Select(a => a.Cves.Select(c => c.CveId).FirstOrDefault() ?? a.Indicators.Select(i => i.Value).FirstOrDefault())
+            .ToListAsync(ct);
+        return values.FirstOrDefault(v => v is not null);
+    }
+
+    /// <summary>
     /// The first <paramref name="take"/> articles matching <paramref name="search"/> and <paramref name="status"/> in
     /// <paramref name="sort"/>'s order, and how many match in all.
     /// </summary>

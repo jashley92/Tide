@@ -17,12 +17,13 @@
     <div>
         <h1>Search</h1>
         <div class="tide-sub">Articles, actions and stories. Paste an IP, domain, URL, hash, email address or CVE to find every mention.</div>
+        <GuideLink />
     </div>
 </div>
 
 <div class="tide-card">
     <form class="d-flex gap-2 flex-wrap" role="search" @onsubmit="Go" @onsubmit:preventDefault="true">
-        <input class="tide-maxw-2xl form-control" type="search" maxlength="500" aria-label="Search"
+        <input id="search-q" class="tide-maxw-2xl form-control" type="search" maxlength="500" aria-label="Search"
                placeholder='Words, "a phrase", A-12, an indicator or a CVE' @bind="_text" />
         <button class="btn btn-primary" type="submit"><span class="bi bi-search" aria-hidden="true"></span> Search</button>
     </form>
@@ -383,10 +384,6 @@ else if (_results is { Terms.Count: > 0 } r)
         <ExportIndicators Scope="ExportScope.Lookup" Key="@ExportService.LookupKey(_results.Query)" Inline="true" />
     </section>;
 
-    // The address that looks a value up: the value encoded, and quoted when it has a space so it stays one term.
-    private static string LookupUrl(string value) =>
-        "search?q=" + Uri.EscapeDataString(value.Any(char.IsWhiteSpace) && !value.Contains('"') ? $"\"{value}\"" : value);
-
     // The lookup's first line: is it known, was it briefed, is anyone on it, did a hunt come back, and (for someone who
     // triages) is it in Triage's inbox. "Not seen before" only when nothing in TIDE has it (LookupSummary.Unseen).
     private RenderFragment SummaryLine(LookupSummary s, bool unseen, bool moreActions, string value) => @<p id="lookup-summary" class="tide-lookup-summary">
@@ -428,15 +425,15 @@ else if (_results is { Terms.Count: > 0 } r)
         <span class="tide-seen-with-label">Seen with</span>
         @foreach (var i in seen.Indicators)
         {
-            <a class="tide-chip tide-seen" href="@LookupUrl(i.Value)" title="Look up this @Ui.IndicatorLabel(i.Type).ToLowerInvariant()"><span class="tide-muted">@Ui.IndicatorLabel(i.Type)</span> <span class="tide-ioc">@IocObservable.Defang(i.Type, i.Value)</span></a>
+            <a class="tide-chip tide-seen" href="@Ui.LookupUrl(i.Value)" title="Look up this @Ui.IndicatorLabel(i.Type).ToLowerInvariant()"><span class="tide-muted">@Ui.IndicatorLabel(i.Type)</span> <span class="tide-ioc">@IocObservable.Defang(i.Type, i.Value)</span></a>
         }
         @foreach (var c in seen.Cves)
         {
-            <a class="tide-chip tide-seen tide-data" href="@LookupUrl(c)" title="Look up this CVE">@c</a>
+            <a class="tide-chip tide-seen tide-data" href="@Ui.LookupUrl(c)" title="Look up this CVE">@c</a>
         }
         @foreach (var t in seen.Techniques)
         {
-            <a class="tide-chip tide-seen" href="@LookupUrl(t)" title="Search for this technique"><span class="tide-data">@t</span> @AttackCatalog.Find(t)?.Name</a>
+            <a class="tide-chip tide-seen" href="@Ui.LookupUrl(t)" title="Search for this technique"><span class="tide-data">@t</span> @AttackCatalog.Find(t)?.Name</a>
         }
         @foreach (var story in seen.Stories)
         {

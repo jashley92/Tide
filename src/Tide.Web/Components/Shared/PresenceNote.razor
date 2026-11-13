@@ -32,6 +32,9 @@
 }
 
 @code {
+    /// <summary>Drawn read-only (present mode in rehearsal, ReadOnlyCascade): nothing here saves.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
+
     /// <summary>The place, e.g. "brief:2026-10-22" or "article:{id}".</summary>
     [Parameter, EditorRequired] public string Place { get; set; } = "";
 
@@ -59,7 +62,7 @@
             _visit?.Dispose();
             _visit = null;
             _joined = Place;
-            if (Join) _visit = Together.Join(Place, CurrentUser.UserId, CurrentUser.DisplayName, Circuit.CircuitId);
+            if (Join && !ReadOnly) _visit = Together.Join(Place, CurrentUser.UserId, CurrentUser.DisplayName, Circuit.CircuitId);
             _others = Together.Others(Place, CurrentUser.UserId);
         }
         _visit?.SetEditing(Editing);

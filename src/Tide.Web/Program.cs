@@ -139,6 +139,8 @@ builder.Services.AddScoped<BriefChipSource>();
 builder.Services.AddSingleton<OnboardingGate>();
 // Help's Take the tour, to the layout's OnboardingHost in the same circuit.
 builder.Services.AddScoped<TourRequests>();
+// Where a guide started from Help opens: a real article or action for those pages.
+builder.Services.AddScoped<GuideStarts>();
 // Which circuit shows each person their tour, so a second tab doesn't start a second one.
 builder.Services.AddSingleton<TourClaims>();
 // The Library's one search, over the tabs the person may open.
