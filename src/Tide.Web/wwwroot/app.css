@@ -1545,7 +1545,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present-rail-sub { margin-top: .3em; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .06em; font-size: .85em; }
 .tide-present-rail-action { display: grid; gap: .3em; }
 /* An action on the article: its title line, then its due date and who has it side by side (and Take it). */
-.tide-present-rail .tide-action-assign { margin: 0; display: grid; grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr) auto; gap: .4em; }
+.tide-present-rail .tide-action-assign { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4em; }
+.tide-present-rail .tide-action-assign > input { flex: 0 1 9.5em; min-width: 8.5em; }
+/* The holder whole: beside the date where it fits, else on a row of its own. */
+.tide-present-rail .tide-action-assign > select { flex: 1 1 8em; min-width: max-content; }
 /* A recommended line with its one Raise beside it; under it, what it'll be raised as, a chip that opens its lists. */
 .tide-present-rail-raise { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25em .5em; align-items: start; }
 .tide-present-rail-raise-line { overflow-wrap: anywhere; }
@@ -1584,7 +1587,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* Its lists take the rail's width, each on a line of its own, so a long team or kind shows whole: an action's assignee
    keeps its row beside the due date. */
 .tide-present-rail :is(.tide-present-rail-raise, .tide-quick-add) > select { grid-column: 1 / -1; }
-.tide-present-rail .tide-action-assign > .tide-assign-none { grid-column: 1 / -1; }
+.tide-present-rail .tide-action-assign > .tide-assign-none { flex-basis: 100%; }
 
 /* An action opened in a meeting, beside the slide where the organization has chosen that (Org:ActionBesideSlide): from
    1200px wide, a column of the page between the slide and the presenter's rail. It's as wide for the presenter as for
