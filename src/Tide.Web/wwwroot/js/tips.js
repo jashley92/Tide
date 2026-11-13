@@ -11,7 +11,8 @@
 window.tideTips = (function () {
     var card = null, ring = null, arrow = null, target = null, looking = null, opener = null, size = null, frame = 0;
     var needsTarget = false, dialog = false, inside = false;
-    var GAP = 12, EDGE = 8, ARROW = 16, RING = 4;
+    // ARROW_HALF is half the arrow's 14px square (app.css); ARROW keeps it off the card's rounded corners.
+    var GAP = 12, EDGE = 8, ARROW = 16, ARROW_HALF = 7, RING = 4;
     var root = document.documentElement;
 
     function shown(el) { return !!el && el.isConnected && el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'); }
@@ -35,7 +36,7 @@ window.tideTips = (function () {
         if (!looking || shown(target)) return;
         var now = pick(looking);
         if (now === target) return;
-        if (target) target.classList.remove('tide-tip-target');
+        if (target) { target.classList.remove('tide-tip-target'); sizeWatch.unobserve(target); }
         target = now;
         if (!shown(target)) return;
         // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top. (Read
@@ -62,6 +63,9 @@ window.tideTips = (function () {
     // border in view.
     function width() { return Math.min(root.clientWidth, document.body.clientWidth); }
 
+    // How far down a card beside a control at `r` starts: level with what shows of it, inside the window.
+    function sideTop(r, high) { return clamp(r.top, high, innerHeight - size.height - EDGE); }
+
     // Where the card goes for a control at `r`: below it, else above it (across, centred on it but inside the page), else
     // beside it (right, then left), from the top of what shows of it. Null when none fits.
     function beside(r, w, high) {
@@ -69,7 +73,7 @@ window.tideTips = (function () {
         var across = clamp(r.left + r.width / 2 - cw / 2, EDGE, w - cw - EDGE);
         if (below + h <= innerHeight - EDGE) return { side: 'below', top: below, left: across };
         if (r.top - GAP - h >= high) return { side: 'above', top: r.top - GAP - h, left: across };
-        var top = clamp(Math.max(r.top, high), high, innerHeight - h - EDGE);
+        var top = sideTop(r, high);
         if (r.right + GAP + cw <= w - EDGE) return { side: 'right', top: top, left: r.right + GAP };
         if (r.left - GAP - cw >= EDGE) return { side: 'left', top: top, left: r.left - GAP - cw };
         return null;
@@ -83,7 +87,7 @@ window.tideTips = (function () {
         if (!card) return;
         find();
         var hasTarget = shown(target);
-        if (needsTarget && !hasTarget) { card.hidden = true; ringAt(null); return; }
+        if (needsTarget && !hasTarget) { card.hidden = true; ringAt(null); arrowAt(null); return; }
         var r = hasTarget ? target.getBoundingClientRect() : null, w = width(), rail = railBox(), high = clear();
         var at = r && beside(r, w, high)
             || { side: 'none', top: Math.max(high, innerHeight - size.height - EDGE), left: w - size.width - EDGE };
@@ -92,37 +96,43 @@ window.tideTips = (function () {
             // A control in the rail: the card is now left of it.
             if (r && r.left >= rail.left - 1 && r.top >= rail.top - 1) {
                 at.side = 'left';
-                at.top = clamp(Math.max(r.top, high), high, innerHeight - size.height - EDGE);
+                at.top = sideTop(r, high);
             }
         }
-        // Where the arrow sits along the card's facing edge: opposite the control's middle, inside the card's corners.
-        var along = !r ? 0 : at.side === 'below' || at.side === 'above'
-            ? clamp(r.left + r.width / 2 - at.left, ARROW, size.width - ARROW)
-            : clamp((Math.max(r.top, high) + Math.min(r.bottom, innerHeight)) / 2 - at.top, ARROW, size.height - ARROW);
         card.hidden = false;
         card.style.top = at.top + 'px';
         card.style.left = at.left + 'px';
-        card.dataset.side = r ? at.side : 'none';
+        card.dataset.side = at.side;
         card.classList.add('is-placed');
         // Marked again if a redraw took the mark off (a NavLink rewriting its class as the page changes).
         if (r) target.classList.add('tide-tip-target');
         ringAt(r);
-        arrowAt(r ? at : null, along);
+        arrowAt(r && at, r, high);
     }
 
-    // The card's arrow, on the side facing its control and `along` it: its own element over the card's edge (so it's
-    // no part of the card's box), turned to face the control.
-    function arrowAt(at, along) {
-        if (!at || at.side === 'none') { if (arrow) arrow.hidden = true; return; }
+    // An element of tips.js's own drawn over the page (the ring, the arrow): at the end of the page, or of what's full
+    // screen (present mode), outside anything Blazor draws; made again when that changes.
+    function overlay(el, cls) {
         var home = document.fullscreenElement || document.body;
-        if (!arrow || arrow.parentNode !== home) {
-            if (arrow) arrow.remove();
-            arrow = document.createElement('div');
-            arrow.className = 'tide-tip-arrow';
-            arrow.setAttribute('aria-hidden', 'true');
-            home.appendChild(arrow);
-        }
-        var half = 7, x, y;
+        if (el && el.parentNode === home) return el;
+        if (el) el.remove();
+        el = document.createElement('div');
+        el.className = cls;
+        el.setAttribute('aria-hidden', 'true');
+        home.appendChild(el);
+        pageWatch.takeRecords();   // its own insert isn't the page changing
+        return el;
+    }
+
+    // The card's arrow, on the side facing its control (at `r`) and opposite its middle, inside the card's corners: its
+    // own element over the card's edge (so it's no part of the card's box), turned to face the control.
+    function arrowAt(at, r, high) {
+        if (!at || at.side === 'none') { if (arrow) arrow.hidden = true; return; }
+        arrow = overlay(arrow, 'tide-tip-arrow');
+        var along = at.side === 'below' || at.side === 'above'
+            ? clamp(r.left + r.width / 2 - at.left, ARROW, size.width - ARROW)
+            : clamp((Math.max(r.top, high) + Math.min(r.bottom, innerHeight)) / 2 - at.top, ARROW, size.height - ARROW);
+        var x, y;
         if (at.side === 'below') { x = at.left + along; y = at.top; }
         else if (at.side === 'above') { x = at.left + along; y = at.top + size.height; }
         else if (at.side === 'left') { x = at.left + size.width; y = at.top + along; }
@@ -130,23 +140,15 @@ window.tideTips = (function () {
         arrow.hidden = false;
         arrow.dataset.side = at.side;
         arrow.classList.toggle('is-step', dialog);
-        arrow.style.left = (x - half) + 'px';
-        arrow.style.top = (y - half) + 'px';
+        arrow.style.left = (x - ARROW_HALF) + 'px';
+        arrow.style.top = (y - ARROW_HALF) + 'px';
     }
 
     // The ring round the control: drawn over the page (and a step's scrim), never over the control itself; following it
-    // as the page scrolls or resizes, and gone with the card. At the end of the page, or of what's full screen (present
-    // mode), outside anything Blazor draws.
+    // as the page scrolls or resizes, and gone with the card.
     function ringAt(r) {
-        if (!r || !card) { if (ring) ring.hidden = true; return; }
-        var home = document.fullscreenElement || document.body;
-        if (!ring || ring.parentNode !== home) {
-            if (ring) ring.remove();
-            ring = document.createElement('div');
-            ring.className = 'tide-tip-ring';
-            ring.setAttribute('aria-hidden', 'true');
-            home.appendChild(ring);
-        }
+        if (!r) { if (ring) ring.hidden = true; return; }
+        ring = overlay(ring, 'tide-tip-ring');
         ring.hidden = false;
         ring.style.top = (r.top - RING) + 'px';
         ring.style.left = (r.left - RING) + 'px';
@@ -212,7 +214,7 @@ window.tideTips = (function () {
                 looking = selector;
             } else {
                 target = selector ? pick(selector) : null;
-                if (shown(target)) { target.classList.add('tide-tip-target'); sizeWatch.observe(target); }
+                if (shown(target)) sizeWatch.observe(target);
             }
             // The page changing (a step's control drawn, a list growing above a tip's control) places it again.
             pageWatch.observe(root, { childList: true, subtree: true });
