@@ -31,3 +31,16 @@ the platform receiving it shouldn't end up with duplicates.
 - Re-importing a later export updates objects in place; an indicator dropped from an article simply stops appearing,
   and TIDE doesn't send revocations.
 - Pushing to TAXII or a platform API, if wanted, would be a separate decision, along with handling credentials.
+
+## Amended 2026-11-12: the marking is part of an object's id
+
+An indicator, CVE or technique kept one id across exports even when its marking differed: on CLEAR in one export and
+AMBER in another (another ceiling, or another set of articles). A platform importing both then held two versions of one
+object that disagreed about how it may be shared, and which won depended on import order.
+- **An indicator's, CVE's or technique's id is a UUIDv5 (STIX namespace) of `type|value|tlp`**: the value is the STIX
+  pattern, the CVE id or the technique id, and the TLP is the object's marking in that export, by its key (`clear`,
+  `green`, `amber`, `amber-strict`, `red`).
+- The same object at the same TLP still has the same id in every export, so re-imports still merge. The same object at
+  another TLP is another object.
+- A report's id is unchanged (its article's), as is the team identity's.
+- Consumers see new ids for these objects from v1.13.0; UPGRADE.md says so.

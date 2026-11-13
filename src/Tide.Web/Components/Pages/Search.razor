@@ -341,19 +341,14 @@ else if (_results is { Terms.Count: > 0 } r)
         return _results?.Indicator is { } ind ? BuildQuery(ind) : Task.CompletedTask;
     }
 
-    // Which of the rail's sweeps the reader may take on: nobody has it, and the reader may work its team's actions (the
-    // action page's rule, ActionRow.TakeableBy). None for someone who works no actions, so nothing is read for them.
+    // Which of the rail's sweeps the reader may take on: nobody has it, and the reader is on its team (the action page's
+    // rule, ActionWorkers.CanTake). None for someone who works no actions, so nothing is read for them.
     private async Task ReadTakeable(string? q)
     {
         var open = Sweeps.Where(a => a.IsOpen && a.AssigneeName is null).Select(a => a.Id).ToList();
         if (open.Count == 0 || !CurrentUser.Has(Permission.WorkActions)) { _takeable = new HashSet<Guid>(); return; }
-        var takeable = new HashSet<Guid>();
-        var teams = new Dictionary<Guid, bool>();
-        foreach (var row in await ActionSvc.ListByIdAsync(open))
-        {
-            if (!teams.TryGetValue(row.TeamId, out var works)) teams[row.TeamId] = works = await ActionSvc.CanWorkAsync(row.TeamId);
-            if (row.TakeableBy(works)) takeable.Add(row.Id);
-        }
+        var workers = await ActionSvc.WorkersAsync();
+        var takeable = (await ActionSvc.ListByIdAsync(open)).Where(workers.CanTake).Select(r => r.Id).ToHashSet();
         if (q == Q) _takeable = takeable;
     }
 

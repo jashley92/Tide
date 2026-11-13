@@ -247,7 +247,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
     public async Task AfterTakeIt_FocusGoesToTheNextRow_ThePreviousOne_OrTheHeadingWhenTheListIsEmpty()
     {
         var token = $"alfocus{Guid.NewGuid():N}"[..15];
-        var team = await Team("AL focus");
+        var team = await Team("AL focus", SignIn.Analyst);   // only a member takes them on
         var first = await Raise(team, $"{token} first");
         var second = await Raise(team, $"{token} second");
         var third = await Raise(team, $"{token} third");

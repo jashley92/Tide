@@ -111,6 +111,43 @@ public class BriefProgressTests
     }
 
     [Fact]
+    public void OneEditionOfTwoSent_IsPartlySent_UntilTheOtherGoesOrHasNothingInIt()
+    {
+        var brief = BriefWith(BriefStatus.Sent, Ready("a"));
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2)]).Should().Be(Edition.Public);
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Team, SendStatus.Sent, 4)]).Should().Be(Edition.Public, "the same edition twice is still one");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Failed, 4)])
+            .Should().Be(Edition.Public, "a failed send of the other edition didn't go");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3, test: true)])
+            .Should().Be(Edition.Public, "a test copy isn't the edition going out");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3)]).Should().BeNull("both went");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2)], [Edition.Public]).Should().BeNull("the other edition has nothing to send");
+        BriefSteps.PartlySent([]).Should().BeNull("nothing went");
+        BriefSteps.PartlySent(null).Should().BeNull("the log isn't known");
+
+        // The strip's Send step says the same words.
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2)]).Detail.Should().Be(BriefSteps.PartlySentLabel);
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Failed, 4)])
+            .Should().Match<BriefStep>(st => st.Detail == "Last send failed" && st.PartlySent, "the step still knows one edition went");
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3)]).PartlySent.Should().BeFalse();
+        BriefSteps.PartlySentLabel.Should().Be("1 of 2 sent");
+    }
+
+    [Fact]
+    public void APartlySentBrief_IsLabelled1Of2Sent_AndItsNextStepIsStillSend()
+    {
+        // The brief is Sent once one edition goes, but the header says "Sent" only once both have.
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, false, partlySent: true).Should().Be("1 of 2 sent");
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, true, partlySent: true)
+            .Should().Be("1 of 2 sent", "the SharePoint copy waits for the brief to go out, which it hasn't wholly");
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, false).Should().Be("Sent");
+
+        BriefSteps.Next(BriefStatus.Sent, 1, partlySent: true).Should().Be(BriefNext.Send);
+        BriefSteps.Next(BriefStatus.Sent, 1, sharePointDue: true, partlySent: true).Should().Be(BriefNext.Send);
+        BriefSteps.Next(BriefStatus.Sent, 1).Should().Be(BriefNext.ViewAsSent);
+    }
+
+    [Fact]
     public void AGapNoticedAfterMarkingReady_NeedsAttention()
     {
         Step(BriefSteps.For(BriefWith(BriefStatus.Ready, NoBluf("b")), 0, 0, "9:00 AM"), BriefStepKind.Write)
