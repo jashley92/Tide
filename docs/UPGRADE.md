@@ -206,6 +206,14 @@ the right, so you leave the page less. Every route, key and name that worked bef
   two conflicting versions of one. A platform that imported earlier exports sees these objects once more under new ids
   on the first import after upgrading; retire the old ones there if it doesn't. From then on, the same object at the
   same TLP keeps its id across exports and re-imports merge as before. Report ids don't change.
+- **An action's assignee is a member of its team, in the editor too.** The action editor offers only the team's
+  members and the server refuses anyone else, as the meeting already did. An action raised from the meeting goes to
+  whoever raises it only when they're on the team; otherwise it's the team's. Actions whose holder isn't on the team
+  keep them, and editing such an action without changing the holder still saves. Moving an action to another team
+  keeps its holder only if they're on that team, as before.
+- **Today says *1 of 2 sent*** in its header, its step strip and the top bar's brief chip while one of the day's two
+  editions has gone and the other hasn't. It says *Sent* once both have (or the one that went is the only one with
+  anything in it).
 
 **New settings** (all unchanged until set)
 - `Org:ActionBesideSlide`: `false`. *In a meeting, an action opens beside the slide* (Organization settings). Turn it

@@ -6,7 +6,6 @@
 @inject HandoffService HandoffSvc
 @inject TeamService TeamSvc
 @inject ArticleService ArticleSvc
-@inject IUserDirectory Users
 @inject ICurrentUser CurrentUser
 @inject NavigationManager Nav
 @inject ToastService Toasts
@@ -46,7 +45,7 @@
     else if (_loaded)
     {
         <div class="tide-card-form tide-card">
-            <ActionEditor @key="_form" Form="_form" Teams="_teams" People="_people" IsNew="true" ParentDue="_parent?.DueDate" />
+            <ActionEditor @key="_form" Form="_form" Teams="_teams" IsNew="true" ParentDue="_parent?.DueDate" />
             <div class="mt-3">
                 <span class="tide-field-label">Files <span class="fw-normal">(optional)</span></span>
                 <FilePicker Files="_newFiles" ZoneId="new-files-zone" InputId="new-files-input" Label="Files for the new action" PickLabel="Attach files" Changed="StateHasChanged" />
@@ -143,7 +142,7 @@ else
         {
             <div class="tide-card">
                 <h2>Edit</h2>
-                <ActionEditor Form="_editing" Teams="_teams" People="@(CurrentUser.Has(Permission.WriteArticles) ? _people : null)" RemindersOff="a.NoReminders" />
+                <ActionEditor Form="_editing" Teams="_teams" RemindersOff="a.NoReminders" />
                 <div class="d-flex gap-2 mt-3">
                     <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveEdit">Save</button>
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
@@ -459,7 +458,6 @@ else
     private bool _loaded, _busy;
     private ActionDetail? _detail;
     private IReadOnlyList<Team> _teams = [];
-    private IReadOnlyList<AppUser>? _people;
     private ActionForm _form = new();
     private ActionForm? _editing;
     private ActionRow? _parent;
@@ -500,7 +498,6 @@ else
         else _loaded = false;
         if (adopted && current) return;
         _teams = await TeamSvc.ListAsync(includeRetired: true);
-        if (CurrentUser.Has(Permission.WriteArticles)) _people = await Users.ListAsync();
         // A new action's form is kept as the prerender left it: built again, the editor would start over in front of them.
         if (Number is null)
         {
@@ -532,10 +529,10 @@ else
     public string? PrerenderedState { get; set; }
 
     // Takes what the prerendered page read: the action, or the new one's form and where it's from, and the teams and
-    // people its editor offers.
+    // their members, whom its editor offers.
     private void Adopt(ActionPage p)
     {
-        (_teams, _people, _detail, _topic, _shownNumber) = (p._teams, p._people, p._detail, p._topic, p._shownNumber);
+        (_teams, _detail, _topic, _shownNumber) = (p._teams, p._detail, p._topic, p._shownNumber);
         Derive();
         (_form, _parent, _articleTitle, _product) = (p._form, p._parent, p._articleTitle, p._product);
         _loaded = true;

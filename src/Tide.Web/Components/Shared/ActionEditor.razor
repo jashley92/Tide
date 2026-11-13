@@ -84,21 +84,16 @@
         <select id="a-assignee" class="form-select form-select-sm" disabled="@External" aria-describedby="@(External ? "a-assignee-help" : null)"
                 @bind="Form.AssigneeId" @bind:after="AssigneeChanged">
             <option value="">@(External ? "None: an external team" : "Unassigned (the team's)")</option>
-            @if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
+            @* Whoever holds it now, when they aren't on the team (given it before holders had to be), is still shown, so
+               saving without touching this keeps them. Only the team's members are offered (ActionService.HolderAsync). *@
+            @if (!string.IsNullOrEmpty(Form.AssigneeId) && Members.All(c => c.Id != Form.AssigneeId))
             {
                 <option value="@Form.AssigneeId">@Form.AssigneeName</option>
             }
-            @* The chosen team's members first; anyone else an analyst may assign after them. *@
             @if (Members.Any())
             {
                 <optgroup label="@($"{TeamName} members")">
                     @foreach (var c in Members) { <option value="@c.Id">@c.Name</option> }
-                </optgroup>
-            }
-            @if (!External && Others.Any())
-            {
-                <optgroup label="@(Members.Any() ? "Everyone else" : "People")">
-                    @foreach (var c in Others) { <option value="@c.Id">@c.Name</option> }
                 </optgroup>
             }
         </select>
@@ -152,8 +147,6 @@
     [Parameter, EditorRequired] public ActionForm Form { get; set; } = default!;
     [Parameter, EditorRequired] public IReadOnlyList<Team> Teams { get; set; } = [];
 
-    /// <summary>Everyone known (for an analyst, who may assign anyone); null limits the choice to the team's members.</summary>
-    [Parameter] public IReadOnlyList<AppUser>? People { get; set; }
     [Parameter] public bool IsNew { get; set; }
 
     /// <summary>A part's parent's due date: a later one is warned about (it's allowed).</summary>
@@ -168,15 +161,10 @@
 
     private bool _dueTouched;
 
-    private IEnumerable<(string Id, string Name)> Candidates => Members.Concat(Others);
-
     private string TeamName => Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.Name ?? "Team";
 
     private IEnumerable<(string Id, string Name)> Members =>
         (Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.Members.Select(m => (Id: m.UserId, Name: m.DisplayName)) ?? []).OrderBy(x => x.Name);
-
-    private IEnumerable<(string Id, string Name)> Others =>
-        (People?.Select(p => (Id: p.Sid, Name: p.DisplayName)) ?? []).Where(p => Members.All(m => m.Id != p.Id)).OrderBy(x => x.Name);
 
     private IReadOnlyList<ActionRow> _duplicates = [];
 
@@ -249,9 +237,8 @@
 
     private void TeamChanged()
     {
-        if (External) (Form.AssigneeId, Form.AssigneeName) = (null, null);
-        // An assignee who isn't on the new team (and isn't offered otherwise) is cleared.
-        if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
+        // An assignee who isn't on the new team is cleared, as saving would (an external team has no members).
+        if (!string.IsNullOrEmpty(Form.AssigneeId) && Members.All(c => c.Id != Form.AssigneeId))
         {
             Form.AssigneeId = null;
             Form.AssigneeName = null;
@@ -259,5 +246,5 @@
     }
 
     private void AssigneeChanged() =>
-        Form.AssigneeName = string.IsNullOrEmpty(Form.AssigneeId) ? null : Candidates.FirstOrDefault(c => c.Id == Form.AssigneeId).Name ?? Form.AssigneeName;
+        Form.AssigneeName = string.IsNullOrEmpty(Form.AssigneeId) ? null : Members.FirstOrDefault(c => c.Id == Form.AssigneeId).Name ?? Form.AssigneeName;
 }

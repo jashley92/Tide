@@ -41,7 +41,7 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
     // Midday on a day, in the organization's zone.
     private DateTimeOffset Noon(DateOnly day) => Clock.StartOfDay(day).AddHours(12);
 
-    // A past brief's day with one CLEAR article in it, and a team (no members: an action someone holds is still theirs).
+    // A past brief's day with one CLEAR article in it, and a team with the tester on it (who holds its actions).
     private async Task<(DateOnly Day, Guid Article, Guid Team)> Brief(int daysBack, string titled)
     {
         var day = Back(Clock.CurrentBriefDate, daysBack);
@@ -51,7 +51,9 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
         var brief = await briefs.GetOrStartAsync(day);
         var article = await articles.CreateAsync($"{titled} {daysBack}", "Vendor", null, TlpLevel.Clear);
         await briefs.AddArticleAsync(brief.Id, article);
-        var team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync($"Review team {daysBack}", null, null);
+        var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+        var team = await teams.AddAsync($"Review team {daysBack}", null, null);
+        await teams.AddMemberAsync(team, "dev:tester", "Tester");
         return (day, article, team);
     }
 

@@ -47,3 +47,15 @@ The workflow review found that action owners on other teams need to ask question
 - **Editing and deleting a comment** stay with its author, on whichever team, and administrators.
 - **Files on a comment** (screenshots and evidence) stay with whoever works the action: the owning team and analysts.
 - Status, outcome, assignee, due date, ticket, checklist and hunts are unchanged: the owning team and analysts only.
+
+## Amended 2026-11-12: an assignee is a member of the action's team
+
+The meeting's assign already required a member of the action's team, but the action editor offered, and saved, anyone.
+An action then sat with someone its team didn't know, outside the team's lists and reminders.
+- **An assignee is a member of the owning team**, whichever way it's given: the editor (create and save), the
+  meeting's assign, and the meeting's quick add (whoever raises it holds it only when they're on the team). The service
+  checks it; the editor offers only the team's members. An external team has no members, so its actions are nobody's.
+- **What's there stays.** An action whose holder isn't on its team (given it before this, or an analyst who took it on)
+  still shows them, and an edit that leaves the holder alone saves. Only a change of holder is checked.
+- **A move to another team** keeps the holder only if they're on the new team; otherwise the action is the new team's.
+- Taking an action on (*Take it*) is unchanged: an analyst may still take any action they can work.

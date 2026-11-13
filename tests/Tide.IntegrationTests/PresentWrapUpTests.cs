@@ -47,7 +47,9 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
         var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
         var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
         var teamName = $"Wrap team {daysBack}";
-        var team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync(teamName, null, null);
+        var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+        var team = await teams.AddAsync(teamName, null, null);
+        await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);   // so the action they raise is theirs
 
         async Task<Guid> Article(string title, TlpLevel tlp, string? recommended)
         {
@@ -161,10 +163,12 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
             var n = await actions.CreateAsync(new ActionForm { Title = title, Kind = ActionKind.IocSweep, Priority = Priority.P1, TeamId = team, DueDate = day.AddDays(-3) });
             id = (await actions.GetAsync(n))!.Action.Id;
             // Held by someone not on its team (it has no members): theirs all the same, as the action page says.
+            // Given before holders had to be members, so written to the database as it stands.
             var heldNumber = await actions.CreateAsync(new ActionForm { Title = "Wrap held sweep", Kind = ActionKind.IocSweep, Priority = Priority.P1, TeamId = team,
-                AssigneeId = "dev:tester", AssigneeName = "Tester", DueDate = day.AddDays(-2) });
+                DueDate = day.AddDays(-2) });
             var heldDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await heldDb.Actions.Where(a => a.Number == heldNumber).ExecuteUpdateAsync(u => u.SetProperty(a => a.Status, ActionStatus.Blocked));
+            await heldDb.Actions.Where(a => a.Number == heldNumber).ExecuteUpdateAsync(u => u.SetProperty(a => a.Status, ActionStatus.Blocked)
+                .SetProperty(a => a.AssigneeId, "dev:tester").SetProperty(a => a.AssigneeName, "Tester"));
             // Overdue on a RED article, above the team edition's ceiling: neither shown nor counted.
             var red = await articles.CreateAsync("Wrap RED partner report", "Partner", null, TlpLevel.Red);
             await actions.CreateAsync(new ActionForm { Title = "Wrap red rotation", TeamId = team, ArticleId = red, DueDate = day.AddDays(-4) });

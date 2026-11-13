@@ -74,11 +74,13 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
-            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            var team = await teams.AddAsync("Recommended lines team", null, null);
+            await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
             number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
             var made = (await actions.GetAsync(number))!.Action;
             made.Priority.Should().Be(Priority.P1, "the article's priority");
-            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
+            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting, on its team, holds it");
         }
         await using var again = await PresentHarness.Open(app, day);
         await again.Click(p => p.OnPresentKey("last"));

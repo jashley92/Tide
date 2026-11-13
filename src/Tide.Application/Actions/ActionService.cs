@@ -1439,7 +1439,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
-    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. Internal teams only: an external
+    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it when they're on the team (an analyst who
+    /// isn't leaves it the team's). Internal teams only: an external
     /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA
     /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
@@ -1448,18 +1449,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
+        bool member;
         await using (var db = await dbs.CreateAsync(ct))
         {
             if (await db.Teams.AsNoTracking().AnyAsync(t => t.Id == teamId && t.IsExternal, ct))
                 throw new ArgumentException("An external team's work is split off an action as a part. Raise it for one of your teams, then split it.");
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
+            member = await db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == user.UserId, ct);
         }
         return await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
             RaisedOn = raisedOn, OverLimitReason = overLimitReason, RecommendationLine = recommendation,
-            // Whoever raises it in the meeting holds it, so it's on someone's list from the start; they can hand it on.
-            AssigneeId = user.UserId, AssigneeName = user.DisplayName,
+            // Whoever raises it in the meeting holds it when they're on the team, so it's on someone's list from the start;
+            // they can hand it on. Otherwise it's the team's, as a holder is always one of its members.
+            AssigneeId = member ? user.UserId : null,
         }, ct);
     }
 
@@ -1621,13 +1625,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await WorkableAsync(db, id, ct);
         if (keepAssignee) assigneeId = a.AssigneeId;
         // A new assignee must be on the team. The one it has already keeps it, team or not (an analyst who took it on).
-        var name = a.AssigneeName;
-        if (assigneeId is null) name = null;
-        else if (assigneeId != a.AssigneeId)
-        {
-            name = await db.TeamMembers.Where(m => m.TeamId == a.TeamId && m.UserId == assigneeId).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
-                   ?? throw new ArgumentException("That person isn't on the action's team.");
-        }
+        (assigneeId, var name) = await HolderAsync(db, a, a.TeamId, assigneeId, ct);
         if (due != a.DueDate) CheckDue(due);
         var changes = new List<string>();
         if (a.AssigneeId != assigneeId) changes.Add($"assignee: {a.AssigneeName ?? "nobody"} → {name ?? "nobody"}");
@@ -2502,19 +2500,39 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ParentId == a.Id, ct))
                 throw new ArgumentException("Actions split one level deep: this one already has parts, so it can't become a part.");
         }
+        var (holder, holderName) = await HolderAsync(db, a, team.Id, form.AssigneeId, ct);
         a.Title = title;
         a.Description = ArticleService.CleanOrNull(form.Description, 8000, multiline: true);
         a.Kind = form.Kind;
         a.Priority = form.Priority;
         a.TeamId = team.Id;
-        a.AssigneeId = string.IsNullOrWhiteSpace(form.AssigneeId) ? null : form.AssigneeId.Trim();
-        a.AssigneeName = a.AssigneeId is null ? null : ArticleService.Clean(form.AssigneeName ?? form.AssigneeId, 256);
+        (a.AssigneeId, a.AssigneeName) = (holder, holderName);
         a.DueDate = form.DueDate;
         a.TicketRef = ArticleService.CleanOrNull(form.TicketRef, 100);
         a.TicketUrl = ArticleService.CheckUrl(form.TicketUrl, "The ticket link");
         a.ArticleId = form.ArticleId;
         a.ParentId = form.ParentId;
     }
+
+    /// <summary>
+    /// Who holds <paramref name="a"/> once it's on <paramref name="teamId"/> and given to <paramref name="assigneeId"/>
+    /// (nobody when blank), and their name. A holder is a member of the team, under the name the team has for them, so
+    /// an external team's action (no members) is nobody's. Whoever holds it already keeps it while it stays on its team,
+    /// member or not (one given it before the rule, or an analyst who took it on): only a change of holder is checked.
+    /// </summary>
+    private static async Task<(string? Id, string? Name)> HolderAsync(IAppDbContext db, ActionItem a, Guid teamId, string? assigneeId,
+        CancellationToken ct)
+    {
+        var id = string.IsNullOrWhiteSpace(assigneeId) ? null : assigneeId.Trim();
+        if (id is null) return (null, null);
+        if (id == a.AssigneeId && teamId == a.TeamId) return (id, a.AssigneeName);
+        return (id, await MemberNameAsync(db, teamId, id, ct));
+    }
+
+    // The name a team has for its member, or refused when they aren't one.
+    private static async Task<string> MemberNameAsync(IAppDbContext db, Guid teamId, string userId, CancellationToken ct) =>
+        await db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == userId).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
+        ?? throw new ArgumentException("That person isn't on the action's team.");
 
     /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a
     /// member of the team with WorkActions.</summary>
