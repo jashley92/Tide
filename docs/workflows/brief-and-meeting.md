@@ -193,11 +193,11 @@ lands on the same one however many slides their page has loaded:
 
 | Slide | Key | Shows |
 |---|---|---|
-| Title | `title` | The date, the presenter, the title slide line if the edition carries it, the articles in order (number, kind, priority, KEV where an article names a KEV-listed CVE), and what comes first ("First: the opening note, the numbers and 4 actions that need review.") |
+| Title | `title` | The date, the presenter, the title slide line if the edition carries it, the articles in order (number, kind, priority, KEV where an article names a KEV-listed CVE), what comes first ("First: the opening note and the numbers.") and what comes after the articles ("After the articles: 4 actions that need review.") |
 | Opening note | `note` | The team's opening note. Team edition only, and only when it isn't blank. |
 | Metrics | `metrics:{group key}` | One slide per metric group: tiles and the group's chart. Team edition only. |
-| Actions that need review | `open` | The open actions the room should look at, from any brief (below). Team edition only, and only when there are any. |
 | One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Its indicators as defanged chips (the first 10, then "+N more"; a chip opens the larger card), on the team edition only, and its CVEs. Each recommended line shows the action it became ("✓ A-2 · In progress · holder"); the article's other actions are listed below. |
+| Actions that need review | `open` | The open actions the room should look at, from any brief (below), after the articles and just before the wrap-up. Team edition only, and only when there are any. |
 | Wrap-up | `wrap` | Three lists, side by side from 1400px: the recommended lines no action has been raised from yet; who has what, the brief's actions by team and holder, with each team's unheld ones ("nobody yet") last; and the articles not marked discussed. Built from the edition, so nothing above its ceiling is named. |
 
 **Actions that need review** (`ActionService.MeetingActionsAsync`) lists every open action the edition may show that is
@@ -231,8 +231,8 @@ The team email's "Still open from earlier briefs" keeps to the overdue and escal
 
 *Actions that need review: each row's reasons under Waited, its last update, and the one thing the room can do.*
 
-The footer names each slide under its bar (Title, Opening note, each group of numbers, Actions that need review,
-"1 · Edge VPN", Wrap-up), shortened to fit; the whole title is in its tooltip and what a screen reader hears. Who is
+The footer names each slide under its bar (Title, Opening note, each group of numbers, "1 · Edge VPN", Actions that
+need review, Wrap-up), shortened to fit; the whole title is in its tooltip and what a screen reader hears. Who is
 here and whose hands are up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same
 slide") and the raised hands in the order they went up. A follower raises and lowers their own hand there.
 
@@ -259,16 +259,20 @@ focus back on **Rail**. It holds, for the slide on screen:
 | Title | Ready to present? (the articles, an opening note not updated with Still current, a number missing with Enter, which goes to its box), and what comes first. |
 | Opening note | The note's Edit, and Still current while it's carried over from the last brief. |
 | Numbers | A box for each number not entered yet (nothing, once none is missing). |
-| An article | Its actions (Take it, holder, due date; the holder offered as on the action page: the team's members, then, for an analyst, everyone else), its recommended lines to raise (kind, team, Raise), the quick add, a meeting note on it, and Mark discussed. |
+| An article | Its actions, each its title and then its due date and holder side by side, with Take it (the holder offered as on the action page: the team's members, then, for an analyst, everyone else); its recommended lines, each with one Raise beside it and its kind and team as a chip ("Threat hunt · Identity & Access") that opens their two lists in place; the quick add, collapsed to *Another action* until it's opened (then its title, and a row of its kind and team chip, due date and Add); a meeting note on it, one line until it's written in, with Add note beside it; and Up next, a line at the foot. |
 | Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
-| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock everyone to my slide, hand off: choose who, then **Hand off**). |
+| Any slide, in a meeting | At the foot, the hands (lower one, or clear them all) and everyone's view (bring everyone here, hand off: choose who, then **Hand off**). |
+
+A bar is pinned at the top of the rail, under its head, and never scrolls away: **Mark discussed** with its `D` and
+the slide's state ("Discussed" once it is) on an article's slide, and in a meeting **Lock to me** (on or off) and the
+count of hands up, which opens the list of hands. The rest of the rail scrolls under it.
 
 ![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
 
 1. The article's actions, each with its due date, holder and *Take it*.
-2. A recommended line no action has been raised from yet: its kind and team, and *Raise*.
-3. The quick add, for an action the article doesn't recommend.
-4. Your note on the article (Ctrl+Enter adds it). *Mark discussed* (D) is under it.
+2. A recommended line no action has been raised from yet: *Raise*, and its kind and team as a chip.
+3. The quick add, *Another action*, for an action the article doesn't recommend.
+4. Your note on the article (Ctrl+Enter adds it). *Mark discussed* (D) is pinned at the top of the rail.
 
 The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
 follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
@@ -279,8 +283,8 @@ changes nothing.
 
 **Rehearsing.** Help's **Learn to present**, for whoever can present, opens present mode on today's brief in
 rehearsal: no meeting starts, nobody follows, nothing is shared or saved, and a short guide steps through the title
-slide, the rail and `]`, raising an action (pointed at, not done), an action's card, Actions that need review, the
-wrap-up and ending the meeting. The rail's controls are there but disabled. It isn't offered, and refuses, while the
+slide, the rail and `]`, raising an action (pointed at, not done), an action's card, Actions that need review (after
+the articles), the wrap-up and ending the meeting. The rail's controls are there but disabled. It isn't offered, and refuses, while the
 day's meeting is live. See [rehearsal](../architecture/frontend.md#rehearsal).
 
 **An action beside the slide.** An action opened in the meeting (its title or number on a slide) opens over the slide.

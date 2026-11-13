@@ -116,11 +116,11 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
 
     private const string Table = "<table class=\"tide-slide-open\"";
 
-    /// <summary>The title slide and the five after it, the HTML of each, stepping through them as the presenter.</summary>
+    /// <summary>Every slide from the title to the wrap-up, the HTML of each, stepping through them as the presenter.</summary>
     private static async Task<List<string>> LeadSlides(Rendered<Present> r)
     {
         List<string> slides = [await r.Html()];
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 12 && !slides[^1].Contains("<h2>That's the brief</h2>", StringComparison.Ordinal); i++)
         {
             await r.Click(p => p.OnPresentKey("next"));
             slides.Add(await r.Html());
@@ -132,7 +132,7 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
     private static async Task<string> ToSlide(Rendered<Present> r)
     {
         var html = await r.Html();
-        for (var i = 0; i < 6 && !html.Contains(Table, StringComparison.Ordinal); i++)
+        for (var i = 0; i < 12 && !html.Contains(Table, StringComparison.Ordinal); i++)
         {
             await r.Click(p => p.OnPresentKey("next"));
             html = await r.Html();
@@ -176,12 +176,18 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
             await Action(team, "Quiet but tracked", ActionStatus.Tracking, Back(day, 10));
 
             await using var pat = await Open(app, day);
-            (await pat.Html()).Should().Contain("6 actions that need review", "the title slide says what comes first");
+            var title = await pat.Html();
+            title.Should().Contain("After the articles: 6 actions that need review.", "the title slide says what comes after the articles")
+                .And.NotContain("First: 6 actions");
+            // The progress bar, in order: the articles, then the review, then the wrap-up.
+            var bar = title[title.IndexOf("class=\"tide-progress\"", StringComparison.Ordinal)..];
+            bar.IndexOf("Review order 70", StringComparison.Ordinal).Should().BeLessThan(bar.IndexOf("title=\"Actions that need review\"", StringComparison.Ordinal));
+            bar.IndexOf("title=\"Actions that need review\"", StringComparison.Ordinal).Should().BeLessThan(bar.IndexOf("title=\"Wrap-up\"", StringComparison.Ordinal));
             var slides = await LeadSlides(pat);
             slides.Count(h => h.Contains(Table, StringComparison.Ordinal)).Should().Be(1, "one slide, not two");
             var at = slides.FindIndex(h => h.Contains(Table, StringComparison.Ordinal));
-            at.Should().BeGreaterThan(0, "after the title slide");
-            slides[at + 1].Should().Contain("Review order 70", "before the brief's articles");
+            slides[at - 1].Should().Contain("<h2", "after the brief's articles").And.Contain("Review order 70");
+            slides[at + 1].Should().Contain("That's the brief", "just before the wrap-up");
 
             var slide = Slide(slides[at]);
             string[] order = ["Review escalated", "Review P1 overdue", "Review blocked vendor", "Review other overdue", "Review late and quiet", "Review quiet sweep"];
@@ -379,7 +385,7 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
             for (var i = 1; i <= 9; i++) await Action(team, $"Review last {i:00}", ActionStatus.Open, day, due: Back(day, i), comment: i == 1);
             await Action(team, "Review last escalated", ActionStatus.Open, day, due: day.AddDays(3), escalated: true);
             await using var pat = await Open(app, day);
-            (await pat.Html()).Should().Contain("10 actions that need review", "all that qualify, not the 8 shown");
+            (await pat.Html()).Should().Contain("After the articles: 10 actions that need review.", "all that qualify, not the 8 shown");
             var html = await ToSlide(pat);
             var slide = Slide(html);
             var rows = slide.Split("<tr").Skip(2).Select(r => r[..r.IndexOf("</tr>", StringComparison.Ordinal)]).ToList();

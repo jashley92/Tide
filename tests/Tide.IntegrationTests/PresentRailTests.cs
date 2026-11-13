@@ -12,6 +12,7 @@ using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
 using Tide.Web.Components.Pages.Admin;
+using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
 using static Tide.IntegrationTests.PresentHarness;
 
@@ -30,8 +31,8 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     /// <summary>What's only in the rail, by the words or names it uses.</summary>
     private static readonly string[] RailOnly =
     [
-        "present-rail", "Mark discussed", "Bring everyone here", "Lock to me", "Hand presenting to", "aria-label=\"Kind for:",
-        "aria-label=\"New action title\"", "Still current", "number missing", "Not raised yet", "Your note", "Clear all", "Take it",
+        "present-rail", "Mark discussed", "Bring everyone here", "Lock to me", "Hand presenting to", "Change the kind and team",
+        "Another action", "tide-present-rail-bar", "Still current", "number missing", "Not raised yet", "Your note", "Clear all", "Take it",
     ];
 
     private async Task<DateOnly> Day(int daysBack)
@@ -125,16 +126,14 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         WithoutRail(html).Should().Contain("Rail numbers").And.NotContain("aria-label=\"Phish reported for");
 
         // An article: its actions and the lines to raise, the hands, a note, everyone's view, Mark discussed.
-        await pat.Click(p => p.OnPresentKey("last"));
-        await pat.Click(p => p.OnPresentKey("prev"));
-        await pat.Click(p => p.OnPresentKey("prev"));
+        await FirstArticle(pat);
         html = await pat.Html();
         rail = RailOf(html);
-        rail.Should().Contain("Actions on this article").And.Contain("aria-label=\"Kind for: Patch the gateways\"").And.Contain("aria-label=\"New action title\"")
+        rail.Should().Contain("Actions on this article").And.Contain("aria-label=\"Change the kind and team for: Patch the gateways\"").And.Contain("Another action")
             .And.Contain("Hands").And.Contain("Your note").And.Contain("Everyone").And.Contain("Lock to me").And.Contain("Mark discussed");
         var slide = WithoutRail(html);
         slide.Should().Contain("Patch the gateways", "the room still reads the recommendations").And.NotContain("Mark discussed")
-            .And.NotContain("aria-label=\"Kind for:").And.NotContain("Lock to me").And.NotContain("aria-label=\"New action title\"");
+            .And.NotContain("Change the kind and team").And.NotContain("Lock to me").And.NotContain("Another action");
 
         // The wrap-up: what's left before ending, and End.
         await pat.Click(p => p.OnPresentKey("last"));
@@ -148,6 +147,77 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task OnAnArticle_TheRailIsCompact_UnderABarPinnedAtItsTop_AndEachControlStillSaves()
+    {
+        var day = await Day(215);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await using var owner = await Open(app, day, Owner);
+        await Do(owner, p => p.JoinIfLive());
+        await Do(owner, p => p.ToggleHand());
+        await FirstArticle(pat);
+        var article = (await ArticleIds(day))[0];
+
+        // The bar, first in the rail: Mark discussed with its D, Lock to me (off), the hands' count.
+        var rail = RailOf(await pat.Html());
+        var bar = rail[rail.IndexOf("class=\"tide-present-rail-bar\"", StringComparison.Ordinal)..rail.IndexOf("Actions on this article", StringComparison.Ordinal)];
+        bar.Should().Contain("Mark discussed").And.Contain("<span class=\"tide-kbd\">D</span>").And.Contain("id=\"present-rail-lock\"")
+            .And.Contain("Lock to me").And.Contain("aria-label=\"Hands up: 1\"");
+        bar.Should().NotContain("Bring everyone here", "everyone's view stays at the bottom");
+
+        // Each recommendation: its line, one Raise, and its kind and team as a chip; the lists only once the chip is pressed.
+        rail.Should().Contain("aria-label=\"Change the kind and team for: Patch the gateways\"").And.NotContain("aria-label=\"Kind for: Patch the gateways\"");
+        await Do(pat, p => p.EditRaiseChip(article, "Patch the gateways"));
+        rail = RailOf(await pat.Html());
+        rail.Should().Contain("aria-label=\"Kind for: Patch the gateways\"").And.Contain("aria-label=\"Team for: Patch the gateways\"");
+        await Do(pat, p => p.Raise(article, "Patch the gateways"));
+
+        // The quick add: Another action, which opens to its title, then its chip, due date and Add.
+        rail = RailOf(await pat.Html());
+        rail.Should().Contain("Another action</button>").And.NotContain("aria-label=\"New action title\"");
+        await Do(pat, p => p.OpenQuickAdd(article));
+        rail = RailOf(await pat.Html());
+        rail.Should().Contain("aria-label=\"New action title\"").And.Contain("aria-label=\"Change the kind and team for the new action\"");
+        await Do(pat, p => { p.TypeQuickAddTitle(article, "Sweep the proxy logs"); return p.QuickAdd(article); });
+
+        // Both saved through the service, and listed above with their due date and assignee.
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var titles = (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter())).Select(a => a.Title).ToList();
+            titles.Should().Contain("Patch the gateways").And.Contain("Sweep the proxy logs");
+        }
+        rail = RailOf(await pat.Html());
+        rail.Should().Contain("aria-label=\"Due date for A-").And.Contain("aria-label=\"Assign A-");
+
+        // The note: one line until it's written in, with Add note beside it.
+        rail.Should().Contain("rows=\"1\"").And.Contain("tide-autogrow").And.Contain("class=\"tide-present-rail-note\"");
+
+        // The bar's D, lock and hands still do what they did.
+        await pat.Click(p => p.OnPresentKey("discussed"));
+        RailOf(await pat.Html()).Should().Contain("aria-pressed=\"true\"").And.Contain("Discussed <span class=\"tide-kbd\">D</span>");
+        await Do(pat, p => p.ToggleLock());
+        Meetings.Get(day)!.Locked.Should().BeTrue();
+        RailOf(await pat.Html()).Should().Contain("id=\"present-rail-lock\"").And.Contain(">On</span>");
+        await Do(pat, p => p.ToggleHandsList());
+        (await pat.Html()).Should().Contain("id=\"present-hands\"");
+
+        // Up next: one line at the foot.
+        RailOf(await pat.Html()).Should().Contain("class=\"tide-present-rail-next\"");
+        // None of it on a follower's page.
+        await Do(owner, p => p.Follow());
+        (await owner.Html()).Should().NotContain("tide-present-rail-bar").And.NotContain("present-rail-lock").And.NotContain("Another action");
+        EndMeeting(app, day);
+    }
+
+    private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
+
+    private async Task<List<Guid>> ArticleIds(DateOnly day)
+    {
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        return (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.Items.OrderBy(i => i.SortOrder).Select(i => i.ArticleId).ToList();
+    }
+
+    [Fact]
     public async Task WithNoMeeting_TheRailIsTheirsWhoCanPresent_AndNotAnActionOwners()
     {
         var day = await Day(213);
@@ -158,12 +228,13 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         (await owner.Html()).Should().NotContain("present-rail");
     }
 
-    // The first article's slide: the one before the second's, which is before the wrap-up.
+    // The first article's slide: from the title, the first slide that's an article's (the actions that need review, when
+    // the app has any by now, come after the articles).
     private static async Task FirstArticle(Rendered<Present> r)
     {
-        await r.Click(p => p.OnPresentKey("last"));
-        await r.Click(p => p.OnPresentKey("prev"));
-        await r.Click(p => p.OnPresentKey("prev"));
+        await r.Click(p => p.OnPresentKey("first"));
+        for (var i = 0; i < 8 && !(await r.Html()).Contains("data-slide-key=\"article:", StringComparison.Ordinal); i++)
+            await r.Click(p => p.OnPresentKey("next"));
     }
 
     [Fact]

@@ -1211,12 +1211,103 @@ const missingNumberEntered = async page => {
 /** Setup: wider letters, on the first article's slide; with `open`, the presenter's rail opened by its key (`]`). */
 const presenterRail = (open = false) => async page => {
   await wideFont(page);
+  await page.keyboard.press('Home');   // a live meeting left on a later slide (the wrap-up) by the page before: from the title
+  await idle(page);
   await toArticleSlide(page);
   if (open) {
     await page.keyboard.press(']');
     await page.locator('#present-rail').waitFor();
   }
   await idle(page);
+};
+
+/** Setup: wider letters; this page starts today's meeting (or takes it up again), on the first article's slide, with the
+ *  rail open (by its key where it isn't docked). With `full`, the article shown has two actions and two lines still to
+ *  raise, its quick add and a line's chip opened: the rail as full as an article's gets. */
+const railInMeeting = (full = false) => async (page, demo) => {
+  await wideFont(page);
+  await startOrTakeUp(page);
+  await page.keyboard.press('Home');   // the meeting may be on a later slide: from the title
+  await idle(page);
+  await toArticleSlide(page);
+  if (full) {
+    // The first article whose rail has two lines to raise and two actions; else the first article.
+    for (let i = 0; i < 12; i++) {
+      if (!(await page.locator('[data-slide-key^="article:"]').count())) break;
+      if (!(await page.locator('#present-rail').count())) { await page.keyboard.press(']'); await page.locator('#present-rail').waitFor(); }
+      const lines = await page.locator('#present-rail .tide-present-rail-raise').count();
+      const actions = await page.locator('#present-rail .tide-present-rail-action').count();
+      if (lines >= 2 && actions >= 2) break;
+      if (await page.locator('#present-rail[aria-modal="true"]').count()) { await page.keyboard.press(']'); await idle(page); }
+      await page.keyboard.press('ArrowRight');
+      await idle(page);
+    }
+  }
+  if (!(await page.locator('#present-rail').count())) {
+    await page.keyboard.press(']');
+    await page.locator('#present-rail').waitFor();
+  }
+  if (full) {
+    await page.locator('#present-rail').getByRole('button', { name: 'Another action' }).click();
+    await page.locator('#present-rail .tide-present-rail-raise .tide-present-rail-chip').first().click();
+  }
+  await idle(page);
+};
+
+/** The pinned bar on every slide, the title to the wrap-up: Lock to me, and on an article's slide Mark discussed, each
+ *  in the window and in the rail's view with the rail scrolled to its foot. Over the slide, the rail is shut to move
+ *  (its slide keys aren't heard while it's open) and opened again. */
+const barPinnedOnEverySlide = {
+  name: 'Mark discussed and Lock to me are in view on every slide, the rail scrolled to its foot',
+  check: async page => {
+    const problems = [];
+    const over = async () => (await page.locator('#present-rail[aria-modal="true"]').count()) > 0;
+    const move = async key => {
+      const shut = await over();
+      if (shut) { await page.keyboard.press(']'); await idle(page); }
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press(key);
+      await idle(page);
+      if (shut) { await page.keyboard.press(']'); await page.locator('#present-rail').waitFor(); await idle(page); }
+    };
+    await move('Home');
+    for (let i = 0; i < 25; i++) {
+      const key = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+      problems.push(...await page.evaluate(key => {
+        const rail = document.querySelector('#present-rail');
+        if (!rail) return [`${key}: the rail isn't open`];
+        rail.scrollTop = rail.scrollHeight;
+        const box = rail.getBoundingClientRect();
+        const want = ['#present-rail-lock', ...(key.startsWith('article:') ? ['#present-rail .tide-present-rail-discussed'] : [])];
+        return want.flatMap(sel => {
+          const e = document.querySelector(sel);
+          if (!e) return [`${key}: nothing matches ${sel}`];
+          const r = e.getBoundingClientRect();
+          const top = Math.max(box.top, 0), bottom = Math.min(box.bottom, innerHeight);
+          return r.width === 0 || r.top < top - 1 || r.bottom > bottom + 1
+            ? [`${key}: ${sel} is at ${Math.round(r.top)}–${Math.round(r.bottom)}px, the rail shows ${Math.round(top)}–${Math.round(bottom)}px`] : [];
+        });
+      }, key));
+      if (key === 'wrap') break;
+      await move('ArrowRight');
+    }
+    return problems;
+  },
+};
+
+/** The rail's own controls (the bar, the actions, the lines to raise, the quick add, the note) all fit in it unscrolled:
+ *  the rail at its top, each one's bottom within the rail's view. */
+const railControlsUnscrolled = {
+  name: 'the rail\'s controls fit without scrolling',
+  check: page => page.evaluate(() => {
+    const rail = document.querySelector('#present-rail');
+    if (!rail) return ['the rail isn\'t open'];
+    rail.scrollTop = 0;
+    const bottom = Math.min(rail.getBoundingClientRect().bottom, innerHeight);
+    const parts = ['.tide-present-rail-bar', '.tide-present-rail-action', '.tide-present-rail-raise', '.tide-quick-add', '.tide-present-rail-note'];
+    return parts.flatMap(sel => [...rail.querySelectorAll(sel)].filter(e => e.getBoundingClientRect().width > 0)
+      .flatMap((e, i) => e.getBoundingClientRect().bottom > bottom + 1 ? [`${sel} #${i + 1} ends at ${Math.round(e.getBoundingClientRect().bottom)}px, past the rail's ${Math.round(bottom)}px`] : []));
+  }),
 };
 
 /** This page starts today's meeting, or takes it up again (the dev analyst presented it last), and waits for it. */
@@ -1424,6 +1515,8 @@ async function overLimitCancelled(page, demo) {
   await idle(page);
   await presenterRail(true)(page, demo);
   const rail = page.locator('#present-rail');
+  await rail.getByRole('button', { name: 'Another action' }).click();
+  await rail.getByRole('button', { name: 'Change the kind and team for the new action' }).click();
   await rail.locator('.tide-quick-add select[aria-label="Team"]').selectOption({ label: team });
   await rail.getByRole('textbox', { name: 'New action title' }).fill('Over the limit, then cancelled');
   await idle(page);
@@ -4654,6 +4747,17 @@ const pages = [
       oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, widerThan('#present-root > .tide-slide', 559)] },
   { name: 'present-beside-narrow', route: '/present/{today}', setup: actionBeside('presenter'), widths: [1100, 780],
     rules: [noSidewaysScroll, actionOver, slideFits] },
+  // The presenter's rail in a live meeting: its bar (Mark discussed, Lock to me, the hands) pinned at its top, in view on
+  // every slide with the rail scrolled to its foot, docked (1920, 1600) and over the slide (1440, 1100). It starts
+  // today's meeting.
+  { name: 'present-rail-bar', route: '/present/{today}', setup: railInMeeting(), widths: [[1920, 1080], [1600, 900], [1440, 900], [1100, 900]],
+    rules: [noSidewaysScroll, fits('#present-rail .tide-present-rail-bar'), inWindow('#present-rail .tide-present-rail-bar .btn'), barPinnedOnEverySlide] },
+  // An article's rail as full as it gets (two actions, two lines to raise, a chip and the quick add open, the note):
+  // compact enough that every control fits without scrolling at 1920×1080, each row whole.
+  { name: 'present-rail-compact', route: '/present/{today}', setup: railInMeeting(true), widths: [[1920, 1080]],
+    rules: [noSidewaysScroll, railControlsUnscrolled, fits('#present-rail'), fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
+      oneRow('#present-rail .tide-quick-add-row'), oneRow('#present-rail .tide-present-rail-bar'), oneRow('#present-rail .tide-present-rail-note'),
+      railSelectsWhole, railPlaceholdersReadable, visible('#present-rail .tide-present-rail-chip-edit select')] },
   // The rail's Add over a team's limit, the question that asks why cancelled: focus is back on Add, not on the page.
   // Last of all: it leaves the first team at its limit, which would ask on every later page that adds to it.
   { name: 'present-rail-over-limit-cancel', route: '/present/{today}', setup: overLimitCancelled, widths: [1440],

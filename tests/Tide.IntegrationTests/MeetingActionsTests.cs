@@ -66,9 +66,12 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OnPresentKey("prev"));
         var slide = await r.Html();
-        slide.Should().Contain("class=\"tide-reco\"").And.Contain("aria-label=\"Kind for: Patch GitLab to 17.3.2\" value=\"PatchRemediate\"")
-            .And.Contain("aria-label=\"Kind for: Notify the service desk\" value=\"Awareness\"").And.Contain("Raise</button>")
-            .And.Contain("Another action: what needs doing", "the free-text add stays for anything else");
+        // Each line's guessed kind, on its chip in the rail.
+        string Chip(string line) => slide[slide.IndexOf($"aria-label=\"Change the kind and team for: {line}\"", StringComparison.Ordinal)..][..300];
+        Chip("Patch GitLab to 17.3.2").Should().Contain($"<span>{ActionService.KindName(ActionKind.PatchRemediate)} &#xB7;");
+        Chip("Notify the service desk").Should().Contain($"<span>{ActionService.KindName(ActionKind.Awareness)} &#xB7;");
+        slide.Should().Contain("class=\"tide-reco\"").And.Contain("Raise</button>")
+            .And.Contain("Another action</button>", "the free-text add stays for anything else");
 
         int number;
         await using (var scope = SignedIn(app, SignIn.Analyst))
@@ -87,7 +90,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await again.Click(p => p.OnPresentKey("prev"));
         var raised = await again.Html();
         raised.Should().Contain($"<button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\" data-card-opener=\"action:{number}\">A-{number}</button> &#xB7; Open &#xB7; Tester")
-            .And.NotContain("aria-label=\"Kind for: Patch GitLab to 17.3.2\"");
+            .And.NotContain("Change the kind and team for: Patch GitLab to 17.3.2");
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
             .And.Contain("<li>Notify the service desk</li>");

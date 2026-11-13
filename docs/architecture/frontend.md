@@ -587,9 +587,11 @@ whose hand is up (in the top bar). What only the presenter does is in the presen
 
 **Presenter-only content.** The presenter's rail (`<aside id="present-rail">`, "Presenter's controls") holds the
 controls for the slide on screen: Ready to present? on the title slide, Still current and Edit for an opening note
-carried over, a box for each number not entered yet, an article's actions with Take it, its recommended lines to raise,
-the quick add, Your note and Mark discussed, the wrap-up's Before you end, and in a meeting the hands and Everyone's
-view (Bring everyone here, Lock to me, Hand off).
+carried over, a box for each number not entered yet, an article's actions with Take it, its recommended lines to raise
+(each a Raise and a kind and team chip), Another action (the quick add) and Your note, the wrap-up's Before you end,
+and in a meeting the hands and Everyone's view (Bring everyone here, Hand off). A bar pinned at its top
+(`.tide-present-rail-pin`, sticky in the rail's scroll) holds Mark discussed (D), and in a meeting Lock to me and the
+count of hands, which opens their list.
 
 - **Who gets it.** It's drawn only `@if (Rail)`, and `Rail` is `InCharge`: the page presenting the live meeting, or
   with no meeting someone who could present. `InCharge` reads the live meeting (`LiveMeetings`), not the page's own
@@ -669,12 +671,12 @@ anything: nothing there can be saved.
 - **Never a follower's.** Someone who can't present (a Viewer, an action owner, a Visitor) asking for it is told
   "Rehearsal is for whoever presents the brief.", and nothing is read or joined. A live page, the presenter's included,
   never draws the guide, so nothing of it reaches the room's screen.
-- **The guide's steps** are on their slides (`Guide` step routes: `title`, `metrics`, `open`, `article`, and
-  `article:indicators`, `article:raised` or `article:card` for the first article that has one, then `wrap`): the title
+- **The guide's steps** are on their slides (`Guide` step routes: `title`, `metrics`, `article`, and
+  `article:indicators`, `article:raised` or `article:card` for the first article that has one, then `open` and `wrap`): the title
   slide and moving between slides; going live (Start the meeting and Copy link, shown disabled in a rehearsal, and
-  refused there however pressed); who's here; the presenter's rail and `]`; the numbers; Actions that need review; an
-  article's slide, its indicators and the action a line became; raising (pointed at, not done), quick add, your note and
-  Mark discussed; an action's card; the wrap-up's three lists, attendance and ending the meeting. A step about a slide
+  refused there however pressed); who's here; the presenter's rail and `]`; the numbers; an article's slide, its
+  indicators and the action a line became; raising (pointed at, not done), quick add, your note and Mark discussed; an
+  action's card; Actions that need review; the wrap-up's three lists, attendance and ending the meeting. A step about a slide
   the brief hasn't is left out (`Present.GuideSlide`). At a width that shuts the rail, its steps point at **Rail**.
 
 ## Design tokens

@@ -21,9 +21,9 @@ public class GuidesTests
         var present = For(role).Single(g => g.Key == Guides.Present);
         present.Title.Should().Be("Learn to present");
         present.Rehearsal.Should().BeTrue();
-        present.Steps.Select(s => s.Key).Should().Equal("title", "start", "invite", "people", "rail", "numbers", "open", "article", "indicators", "raised", "raise",
-            "quick", "note", "discussed", "card", "wrap", "attendance", "end");
-        present.Steps.Select(s => s.Route).Distinct().Should().Equal("title", "metrics", "open", "article", "article:indicators", "article:raised", "article:card", "wrap");
+        present.Steps.Select(s => s.Key).Should().Equal("title", "start", "invite", "people", "rail", "numbers", "article", "indicators", "raised", "raise",
+            "quick", "note", "discussed", "card", "open", "wrap", "attendance", "end");
+        present.Steps.Select(s => s.Route).Distinct().Should().Equal("title", "metrics", "article", "article:indicators", "article:raised", "article:card", "open", "wrap");
     }
 
     [Theory]
