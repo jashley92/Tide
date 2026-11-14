@@ -429,7 +429,7 @@ app.MapGet("/reports/teams/export.csv", async (int? days, bool? parts, bool? ext
 app.MapGet("/reports/timeliness/export.csv", async (string? by, string? who, BriefTimelinessService timeliness, OrgClock clock, CancellationToken ct) =>
 {
     var report = await timeliness.BuildAsync(BriefTimelinessService.ParseBy(by), who, ct);   // someone else's days: refused, a 403
-    return CsvFile(BriefTimelinessService.ToCsv(report, clock.Zone), $"tide-brief-timeliness-{report.To:yyyy-MM-dd}-{(report.By == PeriodKind.Week ? "weeks" : "months")}.csv");
+    return CsvFile(BriefTimelinessService.ToCsv(report, clock), $"tide-brief-timeliness-{report.To:yyyy-MM-dd}-{(report.By == PeriodKind.Week ? "weeks" : "months")}.csv");
 }).AsExport(Policies.BriefTimeliness, AuditedWhen.Always);
 
 // The articles one trend line (?line=, default all) counted in period ?p=, for writing the report, as CSV. ?subs=true

@@ -283,16 +283,14 @@
     private static string? TimeProblem(TimeBox? box, string label, string example) =>
         box is { Whole: false } ? $"{label} is a 24-hour time such as {example}." : null;
 
-    private static string Hm(TimeOnly t) => t.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-
     // Changing the time zone asks first: brief dates and reminder times follow it.
     internal async Task Save()
     {
         if (_busy) return;
         // A cleared box would otherwise save the last whole time, under "Saved.", as if it were what's shown.
         _meetingProblem = TimeProblem(MeetingBox, "The brief meets at", "10:30");
-        _sentByProblem = TimeProblem(SentByBox, "The sent-by time", "11:30");
-        _postedByProblem = TimeProblem(PostedByBox, "The posted-by time", "12:00");
+        _sentByProblem = TimeProblem(SentByBox, "The sent-by time", TimeBox.Format(OrgOptions.DefaultSentBy));
+        _postedByProblem = TimeProblem(PostedByBox, "The posted-by time", TimeBox.Format(OrgOptions.DefaultPostedBy));
         StateHasChanged();
         if ((_meetingProblem ?? _sentByProblem ?? _postedByProblem) is { } problem)
         {
@@ -311,9 +309,9 @@
             {
                 [OperationalSettings.TeamName] = _teamName,
                 [OperationalSettings.TimeZone] = Zone,
-                [OperationalSettings.MeetingTime] = Hm(_meeting),
-                [OperationalSettings.SentBy] = Hm(_sentBy),
-                [OperationalSettings.PostedBy] = Hm(_postedBy),
+                [OperationalSettings.MeetingTime] = TimeBox.Format(_meeting),
+                [OperationalSettings.SentBy] = TimeBox.Format(_sentBy),
+                [OperationalSettings.PostedBy] = TimeBox.Format(_postedBy),
                 [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
                 [OperationalSettings.StaleOpenDays] = StaleOpen,
                 [OperationalSettings.StaleBlockedDays] = StaleBlocked,

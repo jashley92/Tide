@@ -32,11 +32,14 @@ public sealed class OrgOptions
 
     /// <summary>When the day's brief is due out (both editions sent), in <see cref="TimeZone"/> ("11:30"): the Brief
     /// timeliness report judges each day's analyst by it.</summary>
-    public string SentBy { get; set; } = "11:30";
+    public string SentBy { get; set; } = DefaultSentBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>When the day's SharePoint copy is due confirmed posted, where one is required, in <see cref="TimeZone"/>
     /// ("12:00").</summary>
-    public string PostedBy { get; set; } = "12:00";
+    public string PostedBy { get; set; } = DefaultPostedBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>The default <see cref="SentBy"/> and <see cref="PostedBy"/>, and what a server value that isn't a time falls back to.</summary>
+    public static readonly TimeOnly DefaultSentBy = new(11, 30), DefaultPostedBy = new(12, 0);
 
     /// <summary>The least, default and most days for <see cref="GuideLinkDays"/>.</summary>
     public const int MinGuideLinkDays = 1, DefaultGuideLinkDays = 5, MaxGuideLinkDays = 90;
@@ -116,7 +119,7 @@ public sealed class OrgClock : IDisposable
         string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide,
         new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)),
         Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays),
-        TimeOr(o.SentBy, new TimeOnly(11, 30)), TimeOr(o.PostedBy, new TimeOnly(12, 0)));
+        TimeOr(o.SentBy, OrgOptions.DefaultSentBy), TimeOr(o.PostedBy, OrgOptions.DefaultPostedBy));
 
     // A server's time as given, or the default when it isn't one (a saved one always is: the page checks it).
     private static TimeOnly TimeOr(string? value, TimeOnly fallback) =>

@@ -204,7 +204,7 @@ public class BriefTimelinessTests : IDisposable
 
         var asked = () => Report(who: Robin);
         await asked.Should().ThrowAsync<ForbiddenException>();
-        var csv = BriefTimelinessService.ToCsv(mine, _db.Clock.Zone);
+        var csv = BriefTimelinessService.ToCsv(mine, _db.Clock);
         csv.Should().NotContain("Robin");
     }
 
@@ -257,7 +257,7 @@ public class BriefTimelinessTests : IDisposable
         day.Counts.Should().BeFalse();
         day.Excuse!.ExcusedByName.Should().Be("Lee");
         (await Report()).People.Single().Total.Should().Be(new Tally(0, 0, 0, 1, 0));
-        BriefTimelinessService.ToCsv(await Report(), _db.Clock.Zone).Should().Contain(",yes,Told me at 9:00: the relay was down.,Lee");
+        BriefTimelinessService.ToCsv(await Report(), _db.Clock).Should().Contain(",yes,Told me at 9:00: the relay was down.,Lee");
         await using var c = _db.Context();
         (await c.AuditLog.AnyAsync(e => e.EntityType == nameof(BriefExcuse) && e.Action == "Added" && e.UserName == "Lee")).Should().BeTrue();
     }

@@ -51,9 +51,6 @@ public sealed record TimelinessDay(DateOnly Date, string AnalystId, string Analy
     /// <summary>Whether it's in the on-time rate: judged, and not excused.</summary>
     public bool Counts => Verdict != DayVerdict.Pending && !Excused;
 
-    /// <summary>Whether it went out by its deadlines and isn't excused (an excused day is neither on time nor late).</summary>
-    public bool OnTime => Verdict == DayVerdict.OnTime;
-
     /// <summary>The SharePoint copy is required and hasn't been confirmed, with its deadline passed.</summary>
     public bool NotPosted => Verdict == DayVerdict.Missed && SentAtUtc is not null;
 }
@@ -66,7 +63,7 @@ public sealed record Tally(int OnTime, int Late, int Missed, int Excused, int Pe
 
     public int Counted => OnTime + Late + Missed;
 
-    public double? Rate => Counted == 0 ? null : Math.Round(100.0 * OnTime / Counted, 1);
+    public double? Rate => TeamScore.Share(OnTime, Late + Missed);
 
     public static Tally Of(IEnumerable<TimelinessDay> days)
     {
@@ -243,10 +240,10 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
     /// <summary>The report's days as CSV, a row per day, newest first: what the reader sees, nothing more. <c>excused</c> is
     /// "yes" for a late or missed day excused, "not needed" for an excused day that turned out on time (or still to
     /// come), "no" otherwise.</summary>
-    public static string ToCsv(TimelinessReport report, TimeZoneInfo zone)
+    public static string ToCsv(TimelinessReport report, OrgClock clock)
     {
         var sb = new StringBuilder("date,analyst,sent_by,sent_at,posted_by,posted_at,verdict,minutes_late,excused,excuse,excused_by\n");
-        string Local(DateTimeOffset? t) => t is { } v ? TimeZoneInfo.ConvertTime(v, zone).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "";
+        string Local(DateTimeOffset? t) => t is { } v ? clock.ToLocal(v).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "";
         foreach (var d in report.Days)
             sb.AppendJoin(',', [
                 d.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Csv.Cell(d.AnalystName), Local(d.SendBy), Local(d.SentAtUtc),
@@ -270,7 +267,7 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
     private string? Whose(string? analystId)
     {
         if (SeesEveryone) return string.IsNullOrWhiteSpace(analystId) ? null : analystId.Trim();
-        if (!user.Has(Permission.PresentBriefs)) throw new ForbiddenException("You don't have access to brief timeliness.");
+        if (!CanRead) throw new ForbiddenException("You don't have access to brief timeliness.");
         if (!string.IsNullOrWhiteSpace(analystId) && analystId.Trim() != user.UserId)
             throw new ForbiddenException("You can see only your own brief timeliness.");
         return user.UserId;
@@ -293,7 +290,10 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
         if (from < first) from = first;
         if (from > to) return [];
 
-        var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= from && b.BriefDate <= to).ToDictionaryAsync(b => b.BriefDate, ct);
+        var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= from && b.BriefDate <= to)
+            .Select(b => new BriefRow(b.Id, b.BriefDate, b.AnalystId, b.AnalystName, b.Status, b.DistributedAtUtc, b.NotSentAtUtc,
+                b.SharePointPostedAtUtc, b.SharePointRequired))
+            .ToDictionaryAsync(b => b.BriefDate, ct);
         var ids = briefs.Values.Select(b => b.Id).ToList();
         var went = (await db.BriefSends.AsNoTracking()
                 .Where(s => ids.Contains(s.BriefId) && !s.IsTest && s.Status == SendStatus.Sent)
@@ -334,11 +334,15 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
     // What a day is judged on. The SharePoint copy counts where it's required now and was when the brief went (a brief not
     // gone yet would be held to it; one finished as not sent had nothing to post), and the company-wide edition has
     // anything in it to post.
-    private static DayFacts Facts(Brief brief, IEnumerable<(Edition, DateTimeOffset)> went, IReadOnlyCollection<Edition> nothingIn, bool requireSharePoint)
+    private static DayFacts Facts(BriefRow brief, IEnumerable<(Edition, DateTimeOffset)> went, IReadOnlyCollection<Edition> nothingIn, bool requireSharePoint)
     {
         var sentAt = BriefDeadlines.SentAt(went, nothingIn, brief.DistributedAtUtc);
         var gone = brief.Status == BriefStatus.Sent;
         var postRequired = requireSharePoint && (!gone || brief.SharePointRequired) && !nothingIn.Contains(Edition.Public);
         return new DayFacts(sentAt, brief.SharePointPostedAtUtc, postRequired);
     }
+
+    // Only what a brief day is judged on, not the brief's text.
+    private sealed record BriefRow(Guid Id, DateOnly BriefDate, string AnalystId, string AnalystName, BriefStatus Status,
+        DateTimeOffset? DistributedAtUtc, DateTimeOffset? NotSentAtUtc, DateTimeOffset? SharePointPostedAtUtc, bool SharePointRequired);
 }

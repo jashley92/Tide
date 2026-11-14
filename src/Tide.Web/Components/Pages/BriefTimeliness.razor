@@ -35,7 +35,7 @@
     <div class="d-flex gap-3 flex-wrap align-items-center">
         <SegmentedButtons T="PeriodKind" Label="Show by" Items="@Kinds" Selected="@_by" OnPick="k => Go(k, _who)"
                           Text="@(k => k == PeriodKind.Week ? "By week" : "By month")" />
-        @if (TimelinessSvc.SeesEveryone && _report is { } r)
+        @if (_report is { Everyone: true } r)
         {
             <div class="d-flex gap-2 align-items-center">
                 <label class="tide-field-label mb-0" for="tl-who">Analyst</label>
@@ -283,9 +283,9 @@ else
     private static string Hm(TimeOnly t) => t.ToString("h:mm tt", CultureInfo.InvariantCulture);
 
     private static string Range(TimelinessReport r) =>
-        $"{r.From.ToString("MMM d", CultureInfo.InvariantCulture)} to {r.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
+        $"{Words.MonthDay(r.From)} to {r.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
 
-    private static string PeriodLabel(Period p) => p.Kind == PeriodKind.Week ? p.Start.ToString("MMM d", CultureInfo.InvariantCulture) : p.Label;
+    private static string PeriodLabel(Period p) => p.Kind == PeriodKind.Week ? Words.MonthDay(p.Start) : p.Label;
 
     // When something happened, as the day's time, or with its date when it was another day; "—" when it hasn't.
     private string At(DateOnly day, DateTimeOffset? utc) =>
@@ -295,15 +295,11 @@ else
 
     private static string Share(Tally t) => t.Counted == 0 ? "No days counted" : $"{t.OnTime} of {t.Counted} on time";
 
+    // The CSV's word for the day, capitalised, with how late a late one went.
     private static string Verdict(TimelinessDay d)
     {
-        var said = d.Verdict switch
-        {
-            DayVerdict.OnTime => "On time",
-            DayVerdict.Late => "Late by " + PullTimes.Wait(d.LateBy!.Value),
-            DayVerdict.Missed => d.NotPosted ? "Not posted" : "Not sent",
-            _ => "To come",
-        };
+        var word = BriefTimelinessService.Verdict(d);
+        var said = d.Verdict == DayVerdict.Late ? "Late by " + PullTimes.Wait(d.LateBy!.Value) : char.ToUpperInvariant(word[0]) + word[1..];
         return d.Excused ? said + " · excused" : said;
     }
 

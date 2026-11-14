@@ -9,12 +9,12 @@
    manages people sees every person's line and the actions nobody held; anyone else who reads actions sees only their
    own. The window (?days=) and the parts filter (?parts=true) follow the scorecard's. *@
 
-<PageTitle>@(_people?.Team.Team.Name ?? "Team") commitments · TIDE</PageTitle>
+<PageTitle>@TeamName commitments · TIDE</PageTitle>
 
 <div class="tide-page-head">
     <div>
-        <Breadcrumbs Items="@([new("Team commitments", TeamCommitments.Href(_days, _parts, false)), new(_people?.Team.Team.Name ?? "Team")])" />
-        <h1>@(_people?.Team.Team.Name ?? "Team") by person</h1>
+        <Breadcrumbs Items="@([new("Team commitments", TeamCommitments.Href(_days, _parts, false)), new(TeamName)])" />
+        <h1>@TeamName by person</h1>
         <div class="tide-sub">Each action counts for whoever held it on its due date.</div>
     </div>
 </div>
@@ -58,21 +58,13 @@ else
                 <tbody>
                     <tr>
                         <th scope="row">@p.Team.Team.Name (the team)</th>
-                        <td class="tide-table-num">@p.Team.Parts</td>
-                        <td class="tide-table-num @(p.Team.OnTimePercent < 100 ? "tide-report-bad" : "")">@Share(p.Team.OnTimePercent, p.Team.OnTime, p.Team.Late)</td>
-                        <td class="tide-table-num">@Days(p.Team.AverageDaysLate)</td>
-                        <td class="tide-table-num">@p.Team.OpenNow</td>
-                        <td class="tide-table-num @(p.Team.OverdueNow > 0 ? "tide-report-bad" : "")">@p.Team.OverdueNow</td>
+                        @Cells(p.Team.Parts, p.Team.OnTimePercent, p.Team.OnTime, p.Team.Late, p.Team.AverageDaysLate, p.Team.OpenNow, p.Team.OverdueNow)
                     </tr>
                     @foreach (var r in p.People)
                     {
                         <tr @key="r.PersonId">
                             <th scope="row">@r.PersonName</th>
-                            <td class="tide-table-num">@r.Parts</td>
-                            <td class="tide-table-num @(r.OnTimePercent < 100 ? "tide-report-bad" : "")">@Share(r.OnTimePercent, r.OnTime, r.Late)</td>
-                            <td class="tide-table-num">@Days(r.AverageDaysLate)</td>
-                            <td class="tide-table-num">@r.OpenNow</td>
-                            <td class="tide-table-num @(r.OverdueNow > 0 ? "tide-report-bad" : "")">@r.OverdueNow</td>
+                            @Cells(r.Parts, r.OnTimePercent, r.OnTime, r.Late, r.AverageDaysLate, r.OpenNow, r.OverdueNow)
                         </tr>
                     }
                 </tbody>
@@ -122,7 +114,15 @@ else
     /// <summary>A team's by-person address for a window and the parts filter: only what isn't the default is in it.</summary>
     internal static string Href(Guid teamId, int days, bool parts) => $"reports/teams/{teamId}" + TeamCommitments.Query(days, parts, false);
 
-    private static string Days(double? late) => late is { } d ? Words.Days(d) : "—";
+    private string TeamName => _people?.Team.Team.Name ?? "Team";
 
-    private static string Share(double? percent, int onTime, int late) => TeamCommitments.Share(percent, onTime, late);
+    // A line's figures, the team's and each person's alike.
+    private static RenderFragment Cells(int parts, double? percent, int onTime, int late, double? daysLate, int open, int overdue) => __builder =>
+    {
+        <td class="tide-table-num">@parts</td>
+        <td class="tide-table-num @(percent < 100 ? "tide-report-bad" : "")">@TeamCommitments.Share(percent, onTime, late)</td>
+        <td class="tide-table-num">@(daysLate is { } d ? Words.Days(d) : "—")</td>
+        <td class="tide-table-num">@open</td>
+        <td class="tide-table-num @(overdue > 0 ? "tide-report-bad" : "")">@overdue</td>
+    };
 }
