@@ -782,6 +782,17 @@ vulnerability being exploited, or an actor followed over weeks. An article joins
 the story of a related article. A story's page updates in place when a colleague links an article to it or takes one
 off, or changes one of its articles; changes to other articles don't touch it. The edit form keeps what's typed in it.
 
+An analyst can also add articles from the story's page (a Viewer sees neither button):
+
+- **New article on this story** asks for a title and a TLP, and says what the article will start with: the CVEs,
+  scorecard tags and products we run that the story's articles **at or below that TLP** name. What only an article
+  above it names is left out (the form says how many such articles there are), so raising the TLP brings it in.
+  Threat actors and ATT&CK techniques aren't copied, and retired tags and products aren't. *Create and edit* starts a
+  draft on the story and opens it in the editor. It isn't put on a brief: that's the editor's choice.
+- **Add an existing article** searches the articles not on this story by title, bottom line or CVE, newest first, a
+  few at a time. Each shows its TLP, status and when it was written, and the story it's on now, if any (adding it
+  moves it here). Picking one adds it; the search stays open for another.
+
 ## Our stack
 
 **Routes:** `/stack`, `/stack/{id}` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)
