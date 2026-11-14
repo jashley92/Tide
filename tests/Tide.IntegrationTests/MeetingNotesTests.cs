@@ -2,6 +2,8 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Briefs;
 using Tide.Application.Org;
+using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 using Tide.Web.Components.Shared;
 using static Tide.IntegrationTests.ComponentHarness;
 
@@ -60,4 +62,30 @@ public class MeetingNotesTests(TideApp app) : IClassFixture<TideApp>
         var bare = await BriefWithNotes(44);
         (await app.CreateClient().GetStringAsync(Ui.BriefUrl(bare))).Should().NotContain("Meeting notes</h3>").And.NotContain("Attended</h3>");
     }
+
+    // An older version let a meeting start before its brief's day and then refused to end it, which left people recorded
+    // as attending a meeting that hadn't been held. Until it's held (or running now), nobody has attended it.
+    [Fact]
+    public async Task ABriefWhoseMeetingHasntBeenHeld_ShowsNobodyAsAttended_UntilItIs()
+    {
+        var day = Today;
+        for (var i = 0; i < 30; i++) day = WorkingDays.Weekdays.Next(day);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var brief = await scope.ServiceProvider.GetRequiredService<BriefService>().GetOrStartAsync(day);
+            var meetings = scope.ServiceProvider.GetRequiredService<MeetingService>();
+            await meetings.JoinedAsync(brief.Id);
+            await meetings.AddAttendeeAsync(brief.Id, "Early Bird");
+        }
+        (await app.CreateClient().GetStringAsync(Ui.BriefUrl(day))).Should().NotContain("Attended</h3>").And.NotContain("Early Bird");
+    }
+
+    [Theory]
+    [InlineData(BriefStatus.Draft, false, false)]
+    [InlineData(BriefStatus.Ready, false, false)]
+    [InlineData(BriefStatus.Ready, true, true)]
+    [InlineData(BriefStatus.Presented, false, true)]
+    [InlineData(BriefStatus.Sent, false, true)]
+    public void AMeetingIsHeld_OnceItsRecordedAsHeldOrTheBriefWasPresentedOrSent(BriefStatus status, bool heldAt, bool held) =>
+        BriefService.MeetingHeld(new Brief { Status = status, MeetingHeldAtUtc = heldAt ? DateTimeOffset.UtcNow : null }).Should().Be(held);
 }

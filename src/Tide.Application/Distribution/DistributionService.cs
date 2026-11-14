@@ -203,8 +203,7 @@ public sealed class DistributionService(
     {
         if (clock.Today < day)
             return $"The brief for {day.ToString("ddd MMM d", CultureInfo.InvariantCulture)} can be sent from that day. Prepare it now and send it after the meeting.";
-        var held = brief.MeetingHeldAtUtc is not null || brief.PresentedAtUtc is not null || brief.Status == BriefStatus.Sent;
-        if (held) return null;
+        if (BriefService.MeetingHeld(brief)) return null;
         // There is a meeting: it's running in present mode. Sent "without" one, the brief would record no meeting time.
         if (withoutMeeting && MeetingLive(brief.Id)) return BriefService.MeetingLive;
         return withoutMeeting ? null : "End the meeting first, or tick \"Sent without a meeting\" if there wasn't one.";

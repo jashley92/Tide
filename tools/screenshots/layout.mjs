@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
+import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
@@ -919,10 +919,11 @@ const tourFromHelp = people => async page => {
   await idle(page);
 };
 
-/** Setup: as tipAs, then `route` loaded afresh (What's new is seen by then), so that page's tip shows. */
-const tipOn = (route, people) => async page => {
+/** Setup: as tipAs, then `route` (filled from the demo, as a page's is) loaded afresh (What's new is seen by then), so
+ *  that page's tip shows. */
+const tipOn = (route, people) => async (page, demo) => {
   await tipAs(people)(page);
-  await page.goto(new URL(`.${route}`, page.url()).href, { waitUntil: 'load' });
+  await page.goto(new URL(`.${fill(route, demo)}`, page.url()).href, { waitUntil: 'load' });
   await idle(page);
   await wideFont(page);
 };
@@ -4724,6 +4725,12 @@ const pages = [
   // Every step of it, to Done, whatever slides the brief has: a step about one it hasn't is left out.
   { name: 'rehearsal-walk', route: '/help', setup: rehearsal(), widths: [1920, 1440, 780], rules: [walksGuide(rehearsalRules)] },
   { name: 'rehearsal-walk-dark', route: '/help', context: { theme: 'dark' }, setup: rehearsal(), widths: [1440, 780], rules: [walksGuide(rehearsalRules)] },
+  // Its first step says the arrows move the slides: they do with the step up and focus in it, which keeps focus.
+  { name: 'rehearsal-arrows', route: '/help', setup: rehearsal('ArrowRight', 'ArrowRight', 'ArrowLeft'), widths: [1440],
+    rules: [visible('.tide-tour'), focusOn('.tide-tour .btn-primary'), holds('→, →, ← moved the slides to the second', () => {
+      const at = document.querySelector('.tide-slide')?.getAttribute('aria-label') ?? 'no slide';
+      return at.startsWith('Slide 2 of ') ? [] : [`it's on "${at}"`];
+    })] },
   { name: 'rehearsal-escape', route: '/help', setup: rehearsal('Escape'), widths: [1440],
     rules: [hidden('.tide-tour'), hidden('.tide-tour-scrim'), focusOn('h1'), visible('.tide-rehearsal')] },
   // Each page's Show me around, in its header, at three widths.
@@ -4866,6 +4873,10 @@ const pages = [
   // Search's tip keeps off the page's own search box and its description.
   { name: 'tip-search', route: '/help', setup: tipOn('/search', { 1920: 'Pia', 1440: 'Pat', 780: 'Pip&roles=Viewer' }), widths: [1920, 1440, 780],
     rules: [visible('.tide-tip'), noOverlap('.tide-tip, form[role="search"], .tide-page-head .tide-sub'), inClient('.tide-tip'), pointsAtTarget('.tide-tip')] },
+  // An action's tip points at the rail without covering the action's own buttons (Take it, More), the rail docked or not.
+  { name: 'tip-action', route: '/help', setup: tipOn('/actions/{huntAction}', { 1920: 'Tilda', 1440: 'Tobin', 1100: 'Tamsin', 780: 'Tully' }),
+    widths: [1920, 1440, 1100, 780],
+    rules: [visible('.tide-tip'), visible('.tide-action-do .btn'), noOverlap('.tide-tip, .tide-action-do .btn'), inClient('.tide-tip'), inWindow('.tide-tip')] },
   // Triage's tip is beside the reading pane, and not shown where there's none beside the list.
   { name: 'tip-triage', route: '/help', setup: tipOn('/triage', { 1920: 'Quin' }), widths: [1920],
     rules: [visible('.tide-tip'), visible('.tide-reading.tide-tip-target'), inClient('.tide-tip')] },

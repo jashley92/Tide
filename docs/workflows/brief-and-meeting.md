@@ -424,7 +424,11 @@ A `DbUpdateException` (a colleague editing, starting or sending the next brief a
 read again and redone, up to three attempts, so the meeting never ends with its carry lost.
 
 Then present mode ends the live meeting (`LiveMeetings.End`), everyone in it lands on the wrap-up, and `LeftAsync`
-records when each person left. The brief page keeps who attended and the notes, by article.
+records when each person left. The brief page keeps who attended and the notes, by article. It says who attended once
+the meeting has been held (`BriefService.MeetingHeld`), while it runs, or once the brief's day has gone (a meeting
+that ran and was never ended, as after a restart, still had who it had); never before, so people recorded at a meeting
+started ahead of its day and never ended (a version before 1.13 allowed that start) aren't shown as having attended
+one that hasn't happened. Their rows are kept.
 
 Before it marks anything, present mode reads the saved brief again. If it was put back to ready, or marked presented,
 a moment ago from the brief page, it shows the wrap-up as it is now and asks to end again, rather than leave a reopened

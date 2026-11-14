@@ -54,6 +54,11 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// presenter's seat, else (presented without a live meeting, or not yet) the presenter it was given.</summary>
     public static string PresentedBy(Brief brief) => brief.PresentedByName ?? brief.AnalystName;
 
+    /// <summary>Whether <paramref name="brief"/>'s meeting has been held: recorded as held or ended, or the brief presented
+    /// or sent. Back to ready (<see cref="ReopenAsync"/>) makes it not held again.</summary>
+    public static bool MeetingHeld(Brief brief) =>
+        brief.MeetingHeldAtUtc is not null || brief.PresentedAtUtc is not null || brief.Status is BriefStatus.Presented or BriefStatus.Sent;
+
     // "Pat", "Pat and Sam", "Pat, Sam and Robin".
     private static string Names(IReadOnlyList<string> names) =>
         names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];

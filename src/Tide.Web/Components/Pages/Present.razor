@@ -1209,7 +1209,7 @@ else
         @* A meeting note typed and not added: leaving present mode asks first. *@
         <UnsavedGuard Dirty="AsksBeforeLeaving" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
         @* Learn to present, only in rehearsal: no meeting, nobody following, so nobody else ever sees it. Inside the slides'
-           root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
+           root, so it shows in full screen too; present.js leaves the keys to it while it's up, but for those that move the slides. *@
         @if (Rehearsing && GuideStep is { } guideStep)
         {
             <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName"
