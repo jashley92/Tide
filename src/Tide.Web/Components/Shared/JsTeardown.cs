@@ -18,4 +18,14 @@ public static class JsTeardown
         catch (OperationCanceledException) { /* the circuit cancelled it on its way down */ }
         catch (InvalidOperationException) { /* not rendered interactively */ }
     }
+
+    /// <summary>
+    /// A call nothing waits on (a nudge to the page's script): nothing when it can't happen, as <see cref="StopAsync"/>
+    /// (the browser not answering in time included: its connection dropping), nor when the script refuses it.
+    /// </summary>
+    public static async ValueTask BestEffortAsync(this IJSRuntime js, string identifier, params object?[]? args)
+    {
+        try { await js.StopAsync(identifier, args); }
+        catch (JSException) { /* the script refused it: nothing depends on it */ }
+    }
 }

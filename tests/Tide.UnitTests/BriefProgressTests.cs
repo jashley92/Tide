@@ -11,7 +11,7 @@ public class BriefProgressTests
 {
     private static Article Ready(string title, TlpLevel tlp = TlpLevel.Clear)
     {
-        var a = new Article { Title = title, Tlp = tlp, Bluf = "x", Classification = Classification.Informational };
+        var a = new Article { Title = title, Tlp = tlp, Bluf = "x", Classification = Classification.Informational, Status = ArticleStatus.Ready };
         a.Bullets.Add(new ArticleBullet { Text = "a bullet", Tlp = tlp });
         return a;
     }
@@ -58,6 +58,17 @@ public class BriefProgressTests
         Step(ready, BriefStepKind.Triage).Should().Be((StepState.Todo, "Sorting the feed"), "someone who doesn't triage gets no count");
         Step(ready, BriefStepKind.Order).Should().Be((StepState.Attention, "Marked ready · 1 number missing"));
         Step(ready, BriefStepKind.Present).State.Should().Be(StepState.Current);
+    }
+
+    [Fact]
+    public void ADraftThatPassesItsChecks_IsntCountedReady()
+    {
+        var draft = Ready("c");
+        draft.Status = ArticleStatus.Draft;
+        Step(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b"), draft), 0, 0, "9:00 AM"), BriefStepKind.Write)
+            .Should().Be((StepState.Current, "2 of 3 ready"));
+        Step(BriefSteps.For(BriefWith(BriefStatus.Ready, Ready("a"), Ready("b"), draft), 0, 0, "9:00 AM"), BriefStepKind.Write)
+            .Should().Be((StepState.Attention, "2 of 3 ready"), "marked ready with a draft in it");
     }
 
     [Fact]

@@ -18,6 +18,10 @@ public interface IMeetingsInProgress
     /// connection up): each one's day and brief, and what its presenter has open over the slide.
     /// </summary>
     IReadOnlyList<SeatedMeeting> SeatedIn(string userId) => [];
+
+    /// <summary>Who has presented the brief <paramref name="briefId"/>'s live meeting so far, by name, in the order they
+    /// took it; none when it isn't live.</summary>
+    IReadOnlyList<string> PresentersOf(Guid briefId) => [];
 }
 
 /// <summary>A live meeting someone is seated in: its day and brief, and the action (its number) or the card the

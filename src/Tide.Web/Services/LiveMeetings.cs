@@ -112,6 +112,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.Any(m => m.BriefId == briefId);
     }
 
+    public IReadOnlyList<string> PresentersOf(Guid briefId)
+    {
+        lock (_gate) return _meetings.Values.FirstOrDefault(m => m.BriefId == briefId)?.Presenters.ToList() ?? [];
+    }
+
     /// <summary>
     /// The meetings <paramref name="userId"/> is in now: a seat of theirs whose connection is up. A seat whose page left, or
     /// whose meeting ended, is gone at once, so a Visitor's reads through it stop with it (MeetingAccess).
@@ -408,6 +413,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
         (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Card) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
+        if (!m.Presenters.Contains(to.Name)) m.Presenters.Add(to.Name);
         m.Scroll = 0;   // a new slide starts at its top
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
@@ -529,6 +535,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         public DateTimeOffset StartedAtUtc { get; } = startedAtUtc;
         public string PresenterId { get; set; } = presenterId;
         public string PresenterName { get; set; } = presenterName;
+
+        /// <summary>Everyone who has presented it, by name, in the order they took it.</summary>
+        public List<string> Presenters { get; } = [presenterName];
         public int Slide { get; set; }
         public string? SlideKey { get; set; }
         public int Summons { get; set; }

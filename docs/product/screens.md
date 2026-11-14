@@ -671,8 +671,10 @@ side by side, and *Take it*), its recommended lines to raise (each in one click,
 its wording suggests and for the team that last took that kind, shown as a chip that opens both to change first),
 *Another action* (the quick add, opened when wanted) and your note (one line, Ctrl+Enter adds it); and on the
 wrap-up, *Before you end*: what's not raised, the articles not discussed (tick to carry each to the next brief),
-attendance and *End the meeting*. A bar pinned at its top never scrolls away: *Mark discussed* (D) with the slide's
-state, and in a meeting *Lock to me* (on or off) and the count of hands up, which opens their list. At its foot, in a
+attendance and *End the meeting*. Once the brief has been presented, with no meeting live, the title slide's rail
+says the meeting is over and the wrap-up's, *After the meeting*, holds only attendance to correct; a page that followed
+the meeting to its end stays a follower's, with no rail. A bar pinned at its top never scrolls away: *Mark discussed*
+(D) with the slide's state (D, the arrows, Home and End still work with the rail open over the slide), and in a meeting *Lock to me* (on or off) and the count of hands up, which opens their list. At its foot, in a
 meeting, the hands (lower one, or clear all) and everyone's view: bring everyone here, and hand presenting to another
 analyst. If the presenter drops out,
 another analyst can take over. Ending the meeting asks first.

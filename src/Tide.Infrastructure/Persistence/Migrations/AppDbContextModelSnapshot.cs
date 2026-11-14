@@ -1348,6 +1348,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<long?>("PresentedAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("SharePointPostedAtUtc")
                         .HasColumnType("INTEGER");
 

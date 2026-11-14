@@ -156,4 +156,48 @@ public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.RemoveAttendee(sam));
         (await Attendees(brief)).Select(a => a.Name).Should().Equal("Kim from IT");
     }
+
+    private static readonly SignIn Robin = new("dev:attend-robin", "Robin Analyst", "Analyst");
+
+    [Fact]
+    public async Task AfterTheMeeting_WhoeverPresentsCorrectsWhoAttended_AndAFollowersPageStaysAFollowers()
+    {
+        var day = await TwoArticleBrief(app, 405, "Attendance");
+        var brief = await BriefOf(day);
+        await using var pat = await Open(app, day);
+        await using var val = await Open(app, day, Viewer);
+        await using var robin = await Open(app, day, Robin);
+        await ToWrapUp(pat, val, robin);
+        await Do(val, p => p.AddAttendeeName = "Late Person");
+        await Do(val, p => p.AddAttendee());
+        await Do(pat, p => p.EndMeeting());
+        Meetings.Get(day).Should().BeNull();
+
+        // Robin, an analyst who followed it to the end: still a follower's page, with nothing to correct from here.
+        await Do(robin, p => p.Follow());
+        var followed = await robin.HtmlOnce("Late Person");
+        followed.Should().NotContain("id=\"present-rail\"").And.NotContain("id=\"present-rail-toggle\"").And.NotContain("Before you end")
+            .And.NotContain(Box).And.NotContain("Remove Late Person");
+        followed.Should().Contain("Attended (").And.Contain("Late Person", "who attended is still shown");
+
+        // The presenter, opening it again: the rail says the meeting is over, and only what's left to do is offered.
+        await using var again = await Open(app, day);
+        var title = await again.Html();
+        title.Should().Contain("after the meeting").And.Contain("The meeting is over").And.NotContain("Ready to present?");
+        await again.Click(p => p.OnPresentKey("last"));
+        var wrap = await again.Html();
+        wrap.Should().Contain("After the meeting").And.NotContain("Before you end").And.NotContain("Raise as").And.NotContain("End the meeting");
+        wrap.Should().Contain("placeholder=\"Someone in the room\"").And.Contain("aria-label=\"Remove Late Person\"")
+            .And.Contain("aria-label=\"Remove Robin Analyst\"", "the record is theirs to correct: anyone, joined or added");
+        var late = (await Attendees(brief)).Single(a => a.Name == "Late Person");
+        await Do(again, p => p.RemoveAttendee(late));
+        await Do(again, p => p.AddAttendeeName = "Kim from IT");
+        await Do(again, p => p.AddAttendee());
+        (await Attendees(brief)).Select(a => a.Name).Should().Contain("Kim from IT").And.NotContain("Late Person");
+
+        // A follower who reopens it after the meeting adds and removes nothing (a Viewer doesn't correct the record).
+        await using var valAgain = await Open(app, day, Viewer);
+        await valAgain.Click(p => p.OnPresentKey("last"));
+        (await valAgain.Html()).Should().NotContain(Box).And.NotContain("Remove Kim from IT");
+    }
 }

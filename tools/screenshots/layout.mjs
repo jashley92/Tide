@@ -865,8 +865,15 @@ const onboardingAs = (how, people, ...keys) => async page => {
 /** Setup: What's new over Today, as someone who used TIDE before. */
 const whatsNewAs = (people, ...keys) => onboardingAs('returning', people, ...keys);
 
-/** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
-const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
+/** Setup: as whatsNewAs, with What's new closed (Escape) and Today opened again, so its tip shows (a tip waits for the
+ *  next page after What's new closes); then `keys`; wider letters. */
+const tipAs = (people, ...keys) => async page => {
+  await whatsNewAs(people, 'Escape')(page);
+  await page.reload({ waitUntil: 'load' });
+  await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
+  await wideFont(page);
+};
 
 /** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
 const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
@@ -2138,16 +2145,32 @@ const railSelectsWhole = holds('the rail\'s lists show their longest choice whol
     return needs > has + 1 ? [`${el.getAttribute('aria-label')}: ${Math.round(has)}px wide, its longest choice needs ${Math.round(needs)}px`] : [];
   }));
 
-/** While the rail is open over the slide, the slide's keys aren't heard: an arrow doesn't move the slide. */
-const slideKeysHeld = {
-  name: 'the slide stays put while the rail is open over it',
+/** While the rail is open over the slide, the slide's own keys still work, as its D hint says: → moves the slide under
+ *  it, and focus stays in the rail. Typed in the rail's note, the same key moves nothing. Last: it moves the slide (and
+ *  back). */
+const slideKeysUnderRail = {
+  name: 'the slide\'s keys work while the rail is open over it, and focus stays in the rail',
   check: async page => {
-    const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    await page.evaluate(() => document.activeElement?.blur());
+    const key = () => page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    const before = await key();
+    const out = [];
+    const note = page.locator('#present-rail textarea').first();
+    if (await note.count()) {
+      await note.focus();
+      await page.keyboard.press('ArrowRight');
+      await idle(page);
+      if (await key() !== before) out.push('an arrow typed in the rail\'s note moved the slide');
+    }
+    await page.locator('#present-rail').focus();
     await page.keyboard.press('ArrowRight');
     await idle(page);
-    const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    return before === after ? [] : [`the slide moved from ${before} to ${after}`];
+    const after = await key();
+    if (after === before) out.push(`→ with the rail open over it didn't move the slide from ${before}`);
+    if (!(await page.evaluate(() => !!document.activeElement?.closest('#present-rail')))) out.push('focus left the rail');
+    if (!(await page.locator('#present-rail[aria-modal="true"]').count())) out.push('the rail closed');
+    await page.keyboard.press('ArrowLeft');
+    await idle(page);
+    return out;
   },
 };
 
@@ -4747,7 +4770,7 @@ const pages = [
       buttonsNamed('Take it', 'Take A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
     rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
-      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysHeld] },
+      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysUnderRail] },
   // A click on the scrim beside the rail open over the slide closes it, and focus goes back to Rail.
   { name: 'present-rail-scrim', route: '/present/{today}', setup: railScrimClicked, widths: [1440],
     rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },

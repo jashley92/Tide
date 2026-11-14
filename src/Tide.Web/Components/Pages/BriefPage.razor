@@ -920,7 +920,7 @@ else
     // was recorded as over, if that's another day) or when it meets.
     private IEnumerable<string> MeetingLine()
     {
-        if (_brief is not null) yield return $"Presented by {_brief.AnalystName}";
+        if (_brief is not null) yield return $"Presented by {BriefService.PresentedBy(_brief)}";
         if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
         {
             yield return $"met {Ui.When(Clock, held)}";

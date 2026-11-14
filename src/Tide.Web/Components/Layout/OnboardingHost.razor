@@ -29,7 +29,7 @@
 @inject IJSRuntime JS
 @inject ILogger<OnboardingHost> Log
 
-<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
+<WhatsNewDialog @ref="WhatsNew" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
 
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)

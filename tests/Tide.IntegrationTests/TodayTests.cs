@@ -50,7 +50,7 @@ public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheStepStrip_CountsTheFeedAndTheRunningOrder()
     {
-        int newItems, onBrief, needWork;
+        int newItems, onBrief, needWork, ready;
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -58,6 +58,7 @@ public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
             var brief = await Tide.Application.Briefs.BriefService.Load(db.Briefs.AsNoTracking()).SingleAsync(b => b.BriefDate == Today);
             onBrief = brief.Items.Count;
             needWork = brief.Items.Count(i => Tide.Application.Articles.ArticleChecks.For(i.Article!).Any(c => c.Blocking));
+            ready = brief.Items.Count(i => i.Article!.Status != ArticleStatus.Draft && !Tide.Application.Articles.ArticleChecks.For(i.Article!).Any(c => c.Blocking));
         }
         newItems.Should().BePositive();
 
@@ -65,7 +66,7 @@ public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
 
         var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
         strip.Should().Contain($"{newItems} new in the feed").And.Contain("href=\"triage\"");
-        strip.Should().Contain(needWork > 0 ? $"{needWork} of {onBrief} need work" : $"{onBrief} of {onBrief} ready");
+        strip.Should().Contain(needWork > 0 ? $"{needWork} of {onBrief} need work" : $"{ready} of {onBrief} ready");
         strip.Should().Contain("Not marked ready").And.Contain("Meets ").And.Contain("2 editions");
         strip.Should().Contain("Mark the brief ready", "Order is the button that marks it ready");
     }

@@ -93,14 +93,10 @@
         StateHasChanged();
     }
 
-    /// <summary>What to do once it's closed (OnboardingHost: the page's tip).</summary>
-    [Parameter] public EventCallback Closed { get; set; }
-
     /// <summary>Closes it (Got it, Escape, the close button, a click outside, See all changes) and marks what it showed
-    /// seen: a reload while it's up shows it again.</summary>
-    public Task CloseAsync() => CloseAsync(thenTip: true);
-
-    private async Task CloseAsync(bool thenTip)
+    /// seen: a reload while it's up shows it again. A page's tip waits for the next page (OnboardingHost), so one
+    /// dialog isn't replaced by another at once.</summary>
+    public async Task CloseAsync()
     {
         if (!IsOpen) return;
         _due = [];
@@ -110,7 +106,6 @@
         {
             Log.LogWarning(ex, "Couldn't save that the signed-in person saw what's new; it shows again next time.");
         }
-        if (thenTip) await Closed.InvokeAsync();
     }
 
     /// <summary>What's new's Take the tour (OnboardingHost: the tour for the person's role).</summary>
@@ -119,8 +114,8 @@
     // Offered to whoever has a tour (a Reader or a Visitor gets neither it nor What's new).
     private bool OffersTour => Tour.Steps.Count > 0;
 
-    /// <summary>Take the tour: What's new closes, marked seen as closing does, and the tour starts. The page's tip, which
-    /// Got it would bring, waits.</summary>
+    /// <summary>Take the tour: What's new closes, marked seen as closing does, and the tour starts. The page's tip
+    /// waits.</summary>
     public Task TakeTourAsync() => CloseThenAsync(TakeTour);
 
     /// <summary>What's new's See the whole day (OnboardingHost: An analyst's day, or Following the brief).</summary>
@@ -129,11 +124,11 @@
     /// <summary>See the whole day: What's new closes, marked seen as closing does, and the whole-day guide starts.</summary>
     public Task SeeTheDayAsync() => CloseThenAsync(SeeTheDay);
 
-    // What's new closes, marked seen as closing does, without the page's tip, and `next` starts.
+    // What's new closes, marked seen as closing does, and `next` starts.
     private async Task CloseThenAsync(EventCallback next)
     {
         if (!IsOpen) return;
-        await CloseAsync(thenTip: false);
+        await CloseAsync();
         await next.InvokeAsync();
     }
 

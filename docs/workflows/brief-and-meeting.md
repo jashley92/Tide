@@ -93,6 +93,7 @@ it when an analyst first opens it:
 |---|---|
 | `BriefDate` | The day. Refused on a weekend or holiday (`OrgClock.Days.DayOffReason`, ADR [0018](../decisions/0018-holidays-are-days-off-like-weekends.md)). |
 | `AnalystId`, `AnalystName` | Who the rotation names for that day (`IPresenterLookup`), else the analyst starting it. A past day's brief is presented by whoever starts it. |
+| `PresentedByName` | Set as the live meeting ends: whoever held its presenter's seat ("Pat", or "Pat and Sam" when it changed hands). The brief page and the editions say "Presented by" this, else `AnalystName` (presented without a live meeting). Back to ready clears it. |
 | `TeamNote` | The latest earlier brief's note, so standing items roll forward. A note cleared on that brief stays cleared. |
 | `Status` | Draft. |
 
