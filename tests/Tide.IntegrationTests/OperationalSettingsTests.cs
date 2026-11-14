@@ -336,7 +336,9 @@ public class IntakeHostedServiceSettingsTests
         await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
         await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
         jobs.Get(JobMonitor.Prune).LastSucceeded.Should().BeTrue("the pass went on while the refresh waits on KEV");
-        // Diagnostics and the Sources card say it's under way, with its own limit before it's called hung.
+        // Diagnostics and the Sources card say it's under way, with its own limit before it's called hung. The refresh
+        // runs beside the passes, so it says so once it has started: waited for, not assumed.
+        (await Tide.TestSupport.Poll.Until(() => jobs.Get(JobMonitor.CveRefresh).Running)).Should().BeTrue("the refresh has started");
         jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => s.Running && s.LastStartedUtc != null && s.LastFinishedUtc == null
             && s.Job.Timeout == CveService.LongestRun(o));
         var cves = rig.Get<CveRunLog>();
