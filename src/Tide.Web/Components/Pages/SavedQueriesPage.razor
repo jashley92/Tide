@@ -212,8 +212,8 @@ else
                 </div>
                 <div class="col-12">
                     <label class="tide-field-label" for="sq-f-text">Query</label>
-                    <textarea id="sq-f-text" class="tide-query tide-autogrow" maxlength="@(SavedQuery.MaxText + 1)" spellcheck="false" aria-describedby="sq-f-text-help" @bind="f.Text"></textarea>
-                    <LengthNote Value="@f.Text" Max="SavedQuery.MaxText" />
+                    <textarea id="sq-f-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false" aria-describedby="sq-f-text-help" @bind="f.Text"></textarea>
+                    <LengthNote Value="@f.Text" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
                     <SavedQueryHelp Id="sq-f-text-help" />
                 </div>
             </div>

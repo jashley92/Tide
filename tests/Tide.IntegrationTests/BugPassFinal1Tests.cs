@@ -166,6 +166,12 @@ public partial class BugPassFinal1PageTests(TideApp app) : IClassFixture<TideApp
         await r.Click(c => { c.FindIn(new string('x', ArticleService.MaxPaste + 1)); return Task.CompletedTask; });
         var html = await r.Html();
         html.Should().NotContain("Nothing new found.").And.Contain($"{ArticleService.MaxPaste:N0} characters");
+
+        // A paste the box cut at its limit, with nothing in the part kept: Find says how far it looked.
+        await r.Click(c => { c.FindIn(new string('x', ArticleService.MaxPaste)); return Task.CompletedTask; });
+        (await r.Html()).Should().Contain($"Nothing new found in the first {ArticleService.MaxPaste:N0} characters.");
+        await r.Click(c => { c.FindIn("nothing to find here"); return Task.CompletedTask; });
+        (await r.Html()).Should().Contain("Nothing new found.").And.NotContain("in the first");
     }
 
     [Fact]
@@ -181,7 +187,21 @@ public partial class BugPassFinal1PageTests(TideApp app) : IClassFixture<TideApp
         (await full.Html()).Should().Contain("600 of 600 characters").And.Contain("anything longer was cut");
 
         await using var over = await RenderAsync<LengthNote>(app, "/", new() { ["Value"] = new string('a', 601), ["Max"] = 600 });
-        (await over.Html()).Should().Contain("601 of 600 characters").And.Contain("too long to save");
+        (await over.Html()).Should().Contain("601 of 600 characters").And.Contain("too long to save").And.NotContain("was cut");
+
+        // A box that takes more than can be saved (a saved query's), filled to its cap by a paste: too long, and cut.
+        await using var cut = await RenderAsync<LengthNote>(app, "/", new() { ["Value"] = new string('a', 2000), ["Max"] = 600, ["Cap"] = 2000 });
+        (await cut.Html()).Should().Contain("2,000 of 600 characters").And.Contain("too long to save, and anything past 2,000 characters was cut");
+    }
+
+    [Fact]
+    public void ASavedQuerysBox_TakesAWholePaste_SoALongOneIsRefusedRatherThanCutToNearlyFit()
+    {
+        // Cut at just past what can be saved, deleting a character would save a query cut short without a word.
+        var root = EditorRailLayoutTests.WebRoot();
+        foreach (var file in new[] { "Pages/SavedQueriesPage.razor", "Shared/HuntPanel.razor" })
+            File.ReadAllText(Path.Combine(root, "Components", file)).Should()
+                .Contain("maxlength=\"@ArticleService.MaxPaste\"").And.Contain("Max=\"SavedQuery.MaxText\" Cap=\"ArticleService.MaxPaste\"");
     }
 
     private async Task<(Guid Article, Guid Product)> ProductAndArticle(string name)

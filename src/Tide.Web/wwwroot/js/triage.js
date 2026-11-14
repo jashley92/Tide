@@ -12,7 +12,7 @@
 // foot, one Tab from the selected row (hop, below).
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0, room = null, tellRoom = null;
+    let started = 0, room = null, tellRoom = null, narrow = null;
 
     // While the promote form is open, only Esc is the page's.
     function held(e) {
@@ -54,6 +54,14 @@ window.tideTriage = (function () {
     function open(row) {
         const link = row && row.querySelector('a.tide-triage-link');
         if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
+    }
+
+    // On a narrow window the pane sits over the list (app.css), so the row kept in view after V can leave it above the
+    // window: once V has opened or read into it, its head is brought into view (focus stays on the row, for J and K).
+    function showPane(actions) {
+        if (!narrow || !narrow.matches || !actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
+        const pane = document.querySelector('.tide-reading');
+        if (pane && pane.getClientRects().length > 0) pane.scrollIntoView({ block: 'start' });
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
@@ -114,17 +122,18 @@ window.tideTriage = (function () {
             tellRoom = function () { dotnetRef.invokeMethodAsync('OnReadingRoom', room.matches).catch(function () { }); };
             room.addEventListener('change', tellRoom);
             tellRoom();
+            narrow = window.matchMedia('(max-width: 1000px)');
             document.addEventListener('keydown', hop);
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
                 follow: ['toggle', 'expand', 'collapse', 'read', 'toggle-reading', 'close-reading', 'cancel'],
-                held: held, key: actionFor, open: open
+                held: held, key: actionFor, open: open, after: showPane
             });
         },
         stop: function () {
             if (room) room.removeEventListener('change', tellRoom);
-            room = tellRoom = null;
+            room = tellRoom = narrow = null;
             document.removeEventListener('keydown', hop);
             rows.stop(started);
         }

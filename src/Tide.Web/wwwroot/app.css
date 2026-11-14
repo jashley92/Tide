@@ -318,7 +318,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 
 /* ---- Page parts ---- */
 .tide-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
-.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; }
+/* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
+   widening the page. */
+.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
 /* Breadcrumbs: "Actions › A-12". */
@@ -2312,6 +2314,8 @@ a.tide-werun-chip:hover { text-decoration: underline; }
   .tide-reading { position: static; max-height: none; order: -1; }
   /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
   .tide-reading-head { flex-wrap: wrap; }
+  /* Brought into view after V (triage.js), it stops below the top bar, which sticks. */
+  .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
 }
 @media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
 

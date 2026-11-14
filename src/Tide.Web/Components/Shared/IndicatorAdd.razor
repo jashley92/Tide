@@ -35,7 +35,8 @@
     {
         @if (_found.Indicators.Count == 0 && _found.Cves.Count == 0)
         {
-            <p class="tide-muted small mt-2 mb-0">Nothing new found.</p>
+            @* A paste cut at the box's limit was searched only as far as the cut: said so, not "nothing" for all of it. *@
+            <p class="tide-muted small mt-2 mb-0">@(_extractText?.Length >= ArticleService.MaxPaste ? $"Nothing new found in the first {ArticleService.MaxPaste:N0} characters." : "Nothing new found.")</p>
         }
         else
         {

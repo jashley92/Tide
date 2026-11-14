@@ -256,8 +256,8 @@
     </div>
     <div class="mt-2">
         <label class="tide-field-label" for="hunt-s-text">Query</label>
-        <textarea id="hunt-s-text" class="tide-query tide-autogrow" maxlength="@(SavedQuery.MaxText + 1)" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
-        <LengthNote Value="@_saveText" Max="SavedQuery.MaxText" />
+        <textarea id="hunt-s-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
+        <LengthNote Value="@_saveText" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
         <SavedQueryHelp Id="hunt-s-text-help" />
     </div>
 </ConfirmDialog>

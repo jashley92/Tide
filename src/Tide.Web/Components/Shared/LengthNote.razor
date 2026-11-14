@@ -1,13 +1,21 @@
 @* How long a limited box's text is, under the box, once it's near the limit: "550 of 600 characters". A box's maxlength
-   cuts a longer paste without a word, so at the limit it says so; a box whose limit is one past what can be saved (so a
-   longer paste is refused rather than cut to fit) says the text is too long to save. Quiet until it's worth reading; the
-   status region announces only the limit reached or passed, not each keystroke. *@
+   (Cap) cuts a longer paste without a word, so at the cap it says the paste was cut; a box that takes more than can be
+   saved (a paste box over a saved query, so a long paste is refused rather than cut to fit) says the text is too long
+   to save, and that it was cut too when it reached the cap. Quiet until it's worth reading; the status region
+   announces only the limit reached or passed, not each keystroke. *@
 
-@{ var length = Value?.Length ?? 0; }
+@{
+    var length = Value?.Length ?? 0;
+    var cap = Cap > 0 ? Cap : Max;
+    var cut = length == cap;   // the box took all it takes: a longer paste stopped there
+    var said = length > Max
+        ? cut ? $": too long to save, and anything past {cap:N0} characters was cut. Shorten it to {Max:N0} or fewer." : $": too long to save. Shorten it to {Max:N0} or fewer."
+        : cut ? ": anything longer was cut." : "";
+}
 @if (length >= Max * 9 / 10)
 {
     <div class="form-text @(length > Max ? "text-danger" : null)">
-        @length.ToString("N0") of @Max.ToString("N0") characters<span role="status">@(length > Max ? $": too long to save. Shorten it to {Max:N0} or fewer." : length == Max ? ": anything longer was cut." : "")</span>
+        @length.ToString("N0") of @Max.ToString("N0") characters<span role="status">@said</span>
     </div>
 }
 
@@ -17,4 +25,7 @@
 
     /// <summary>The most that's kept.</summary>
     [Parameter, EditorRequired] public int Max { get; set; }
+
+    /// <summary>The box's maxlength, when it takes more than <see cref="Max"/> (the most a paste box takes).</summary>
+    [Parameter] public int Cap { get; set; }
 }
