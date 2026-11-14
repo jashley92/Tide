@@ -73,7 +73,8 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
 
         var o = _options.CurrentValue;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(o.TimeoutSeconds, 5, 120)));
+        var limit = request?.Timeout ?? TimeSpan.FromSeconds(Math.Clamp(o.TimeoutSeconds, 5, 120));
+        timeout.CancelAfter(limit);
         try
         {
             using var response = await SendFollowingRedirectsAsync(uri, request, timeout.Token);
@@ -89,9 +90,12 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             }
             if (!response.IsSuccessStatusCode)
             {
-                if ((int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests) _circuit.Failed(target);
+                var busy = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests;
+                if (busy) _circuit.Failed(target);
                 else _circuit.Succeeded(target);
-                return new HttpFetch(FetchStatus.Failed, Error: $"The server answered HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
+                var wait = response.Headers.RetryAfter is { } after ? after.Delta ?? after.Date - DateTimeOffset.UtcNow : null;
+                return new HttpFetch(FetchStatus.Failed, Error: $"The server answered HTTP {(int)response.StatusCode} {response.ReasonPhrase}.",
+                    Retryable: busy, RetryAfter: busy ? wait : null);
             }
             var max = Math.Max(64, o.MaxResponseKB) * 1024L;
             if (response.Content.Headers.ContentLength is > 0 and var length && length > max)
@@ -127,7 +131,7 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _circuit.Failed(target);
-            return new HttpFetch(FetchStatus.Failed, Error: $"{uri.Host} didn't answer within {o.TimeoutSeconds} seconds.");
+            return new HttpFetch(FetchStatus.Failed, Error: $"{uri.Host} didn't answer within {limit.TotalSeconds:0} seconds.", Retryable: true);
         }
         catch (SocketException ex)
         {

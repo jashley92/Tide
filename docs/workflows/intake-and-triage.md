@@ -249,7 +249,7 @@ Which CVEs it looks at: every CVE on an article, and every CVE on a feed item fr
 |---|---|---|
 | 1. KEV | `Cve:KevUrl` | The whole catalog, every run. A CVE on it is `IsKev`; one no longer on it is cleared. |
 | 2. EPSS | `Cve:EpssUrl` | 100 CVEs a request, for those not checked within `RefreshHours`. |
-| 3. NVD | `Cve:NvdUrl` | One CVE a request, missing ones first and then the stalest (older than 7 days), at most `Cve:MaxNvdPerRun` (40). Paced at 6.5 s without an API key, 0.7 s with one (`Cve:NvdApiKey`). |
+| 3. NVD | `Cve:NvdUrl` | One CVE a request, missing ones first and then the stalest (older than 7 days), at most `Cve:MaxNvdPerRun` (40). Paced at 6.5 s without an API key, 0.7 s with one (`Cve:NvdApiKey`). Each request may take `Cve:NvdTimeoutSeconds` (60); one that times out or is answered 5xx or 429 is tried twice more (after 10 s, then 30 s) before the NVD part stops for the run. |
 
 An NVD answer for one CVE that can't be read is set aside and marked checked once the next reads fine, so it can't
 block the queue. Two unreadable answers in a row, or one that isn't JSON at all (a proxy's error page), stop the run.
