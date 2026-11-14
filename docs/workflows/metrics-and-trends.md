@@ -232,7 +232,7 @@ so it can't disagree with Trends or Metrics. `GET /reports/export.csv?p=` downlo
 
 ### Team commitments
 
-Team commitments (`/reports/teams`, `TeamScorecardService.BuildAsync`), linked from Reports and Workload, is how each
+Team commitments (`/reports/teams`, `TeamScorecardService.BuildAsync`), a tab of Reports linked from Workload, is how each
 team does against the due dates on the actions it owns: a row per team, internal and external (marked External), over
 the last 30, 90 (the default), 180 or 365 days, today included. The rules are
 [A20](../reference/business-rules.md#actions-and-sla).
@@ -284,8 +284,10 @@ before this was kept start from the date they had at the upgrade, with no moves.
 | Activity | Needs |
 |---|---|
 | Enter or clear the day's numbers | `EnterMetrics` (Analyst, Admin); on a sent day, `Administer` |
-| See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics and Reports only for those who also write articles; the pages stay open) |
-| Team commitments and its CSV | `ReadActions` (it's reached from Reports and Workload) |
+| See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics only for those who write articles, and Reports for them and for managers; the pages stay open) |
+| Team commitments and its CSV | `ReadActions` (a tab of Reports, and linked from Workload) |
+| Brief timeliness and its CSV | `PresentBriefs` for one's own days, `ManagePeople` (Manager, Admin) for everyone's (`Policies.BriefTimeliness`, then `BriefTimelinessService`) |
+| Excuse a late brief day, or undo that | `ManagePeople` |
 | Define groups and metrics, the example set | `Administer` |
 | Upload a CSV, see the imports, change the drop folder settings | `Administer` |
 | Read the drop folder | the background service only (a signed-in caller is refused) |

@@ -1,0 +1,318 @@
+@page "/reports/timeliness"
+@attribute [Authorize(Policy = Policies.BriefTimeliness)]
+@using System.Globalization
+@using Tide.Application.Intake
+@inject BriefTimelinessService TimelinessSvc
+@inject OrgClock Clock
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+@* Brief timeliness (Reports): each business day's brief owner against the day's deadlines, both editions sent by the
+   sent-by time and, where required, the SharePoint copy posted by the posted-by time. An analyst sees their own days;
+   whoever manages people sees everyone's, the team summary, and excuses a day the analyst warned of (or undoes that).
+   The service decides whose days come back: asking for someone else's (?who=) as an analyst is refused, never shown.
+   ?by=week|month (month by default) and ?who= (a manager's one analyst) are in the address. *@
+
+<PageTitle>Brief timeliness · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Brief timeliness</h1>
+        <div class="tide-sub">Each business day's brief: both editions sent by @Hm(Clock.SentBy)@(_posting ? $", its SharePoint copy posted by {Hm(Clock.PostedBy)}" : ""),
+            in @Clock.Zone.Id.Replace('_', ' '). Test copies don't count, and an excused day doesn't count against anyone.</div>
+    </div>
+    @if (_report is not null)
+    {
+        <div class="d-flex gap-2 flex-wrap tide-noprint">
+            <a class="btn btn-outline-secondary" href="@CsvHref" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
+        </div>
+    }
+</div>
+
+<ReportsTabBar Active="@ReportsTabs.Timeliness" />
+
+<div class="tide-card tide-noprint">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+        <SegmentedButtons T="PeriodKind" Label="Show by" Items="@Kinds" Selected="@_by" OnPick="k => Go(k, _who)"
+                          Text="@(k => k == PeriodKind.Week ? "By week" : "By month")" />
+        @if (TimelinessSvc.SeesEveryone && _report is { } r)
+        {
+            <div class="d-flex gap-2 align-items-center">
+                <label class="tide-field-label mb-0" for="tl-who">Analyst</label>
+                <select id="tl-who" class="form-select form-select-sm tide-maxw-sm" value="@(_who ?? "")" @onchange="e => Go(_by, e.Value as string)">
+                    <option value="">Everyone</option>
+                    @foreach (var (id, name) in r.Analysts)
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+            </div>
+        }
+        <span class="small tide-muted">@(_by == PeriodKind.Week ? $"The last {BriefTimelinessService.Weeks} weeks" : $"The last {BriefTimelinessService.Months} months"), to today.</span>
+    </div>
+</div>
+
+@if (_refused is { } refused)
+{
+    <div class="tide-card"><EmptyState Icon="bi-lock" Title="@refused" /></div>
+}
+else if (_failed)
+{
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load brief timeliness" /></div>
+}
+else if (_report is not { } report)
+{
+    <LoadingBlock />
+}
+else if (report.Days.Count == 0)
+{
+    <div class="tide-card">
+        <EmptyState Icon="bi-alarm" Title="@(report.Everyone ? "No brief days yet" : "None of your brief days yet")" Compact="true">
+            A day counts once someone has the brief for it: its presenter, or the rotation's analyst.
+        </EmptyState>
+    </div>
+}
+else
+{
+    @if (report.Team is { } team)
+    {
+        <section class="tide-card" aria-labelledby="tl-team">
+            <h2 id="tl-team">Team summary <span class="small tide-muted fw-normal ms-auto">@Range(report)</span></h2>
+            <div class="table-responsive">
+                <table class="tide-table tide-report-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Analyst</th>
+                            <th scope="col" class="tide-table-num">On-time rate</th>
+                            <th scope="col" class="tide-table-num">On time</th>
+                            <th scope="col" class="tide-table-num">Late</th>
+                            <th scope="col" class="tide-table-num" title="A deadline passed with the brief not sent, or its SharePoint copy not posted">Not sent or posted</th>
+                            <th scope="col" class="tide-table-num" title="Late or missed, but the analyst warned in advance">Excused</th>
+                            <th scope="col" class="tide-table-num" title="Of the days that went late">Average lateness</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in report.People)
+                        {
+                            <tr @key="p.AnalystId">
+                                <th scope="row"><a href="@Href(_by, p.AnalystId)">@p.AnalystName</a></th>
+                                @TallyCells(p.Total)
+                                <td class="tide-table-num">@(p.AverageLate is { } avg ? PullTimes.Wait(avg) : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr><th scope="row">Team</th>@TallyCells(team)<td class="tide-table-num"></td></tr>
+                    </tfoot>
+                </table>
+            </div>
+        </section>
+    }
+
+    <section class="tide-card" aria-labelledby="tl-over-time">
+        <h2 id="tl-over-time">On-time rate by @Unit</h2>
+        <div class="table-responsive">
+            <table class="tide-table tide-report-table">
+                <caption class="visually-hidden">Each analyst's share of brief days on time, @Unit by @Unit</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Analyst</th>
+                        @foreach (var period in report.Periods)
+                        {
+                            <th scope="col" class="tide-table-num">@PeriodLabel(period)</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in report.People)
+                    {
+                        <tr @key="p.AnalystId">
+                            <th scope="row">@p.AnalystName</th>
+                            @foreach (var (period, tally) in p.ByPeriod)
+                            {
+                                <td class="tide-table-num @(tally.Rate < 100 ? "tide-report-bad" : "")" title="@Share(tally)">@Rate(tally)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="small tide-muted mt-2 mb-0">The share of days on time, of those on time, late or missed. Excused days and today, before its
+            deadlines, aren't counted.</p>
+    </section>
+
+    <section class="tide-card" aria-labelledby="tl-days">
+        <h2 id="tl-days">Day by day <span class="tide-count tide-muted fw-normal">(@Words.Plural(report.Days.Count, "day"))</span></h2>
+        <div class="table-responsive">
+            <table class="tide-table tide-report-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Day</th>
+                        @if (report.Everyone) { <th scope="col">Analyst</th> }
+                        <th scope="col">Sent</th>
+                        <th scope="col">Posted</th>
+                        <th scope="col">How it went</th>
+                        <th scope="col">Excuse</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in report.Days)
+                    {
+                        <tr @key="d.Date">
+                            <th scope="row"><a href="@Ui.BriefUrl(d.Date)">@Ui.ShortDay(d.Date)</a></th>
+                            @if (report.Everyone) { <td>@d.AnalystName</td> }
+                            <td>@At(d.Date, d.SentAtUtc)</td>
+                            <td>@(d.PostBy is null ? "Not required" : At(d.Date, d.PostedAtUtc))</td>
+                            <td>@Verdict(d)</td>
+                            <td>
+                                @if (d.Excuse is { } x)
+                                {
+                                    <div>@x.Reason</div>
+                                    <div class="small tide-muted">@x.ExcusedByName, @Ui.When(Clock, x.ExcusedAtUtc)</div>
+                                    @if (report.Everyone)
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Undo(d.Date, x.EditVersion)">Undo the excuse</button>
+                                    }
+                                }
+                                else if (report.Everyone && _excusing == d.Date)
+                                {
+                                    <form class="d-flex gap-2 flex-wrap align-items-center" @onsubmit="() => Excuse(d.Date)" @onsubmit:preventDefault="true">
+                                        <label class="visually-hidden" for="tl-reason">What they told you, and when</label>
+                                        <input id="tl-reason" class="form-control form-control-sm tide-maxw-sm" maxlength="@BriefExcuse.MaxReason" required
+                                               placeholder="What they told you, and when" @bind="_reason" />
+                                        <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy">Excuse</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _excusing = null">Cancel</button>
+                                    </form>
+                                }
+                                else if (report.Everyone && d.Verdict != DayVerdict.OnTime)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => StartExcuse(d.Date)"
+                                            aria-label="@($"Mark {Ui.ShortDay(d.Date)} as proactively notified of late")">Notified of late…</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    // Text, parsed here, so a value that isn't one (?by=fortnight) is the default rather than a failed page.
+    [SupplyParameterFromQuery(Name = "by")] public string? ByParam { get; set; }
+    [SupplyParameterFromQuery(Name = "who")] public string? WhoParam { get; set; }
+
+    private static readonly PeriodKind[] Kinds = [PeriodKind.Week, PeriodKind.Month];
+
+    private PeriodKind _by = PeriodKind.Month;
+    private string? _who;
+    private TimelinessReport? _report;
+    private string? _refused;
+    private bool _failed, _busy, _posting;
+    private DateOnly? _excusing;
+    private string _reason = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _by = BriefTimelinessService.ParseBy(ByParam);
+        _who = string.IsNullOrWhiteSpace(WhoParam) ? null : WhoParam.Trim();
+        _report = null;
+        await Load();
+    }
+
+    // Reads the report. After an excuse or its undo the one on screen stays until the new one is in, so nothing jumps.
+    private async Task Load()
+    {
+        (_refused, _failed) = (null, false);
+        try
+        {
+            _report = await TimelinessSvc.BuildAsync(_by, _who);
+            _posting = _report.Days.Any(d => d.PostBy is not null);
+        }
+        catch (ForbiddenException ex) { _refused = ex.Message; }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>This page's address for a view: only what isn't the default is in it.</summary>
+    internal static string Href(PeriodKind by, string? who) => "reports/timeliness" + Query(by, who);
+
+    private static string Query(PeriodKind by, string? who)
+    {
+        var q = new List<string>();
+        if (by == PeriodKind.Week) q.Add("by=week");
+        if (!string.IsNullOrEmpty(who)) q.Add("who=" + Uri.EscapeDataString(who));
+        return q.Count == 0 ? "" : "?" + string.Join("&", q);
+    }
+
+    private string CsvHref => "reports/timeliness/export.csv" + Query(_by, _who);
+
+    private string Unit => _by == PeriodKind.Week ? "week" : "month";
+
+    private void Go(PeriodKind by, string? who) => Nav.NavigateTo(Href(by, who));
+
+    private void StartExcuse(DateOnly date) => (_excusing, _reason) = (date, "");
+
+    private Task Excuse(DateOnly date) => Change(async () =>
+    {
+        await TimelinessSvc.ExcuseAsync(date, _reason);
+        _excusing = null;
+        Toasts.Show($"{Ui.ShortDay(date)} is excused: it no longer counts against them.");
+    });
+
+    private Task Undo(DateOnly date, Guid version) => Change(async () =>
+    {
+        await TimelinessSvc.UndoExcuseAsync(date, version);
+        Toasts.Show($"The excuse for {Ui.ShortDay(date)} is undone.");
+    });
+
+    private async Task Change(Func<Task> change)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await change(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        await Load();
+    }
+
+    private static string Hm(TimeOnly t) => t.ToString("h:mm tt", CultureInfo.InvariantCulture);
+
+    private static string Range(TimelinessReport r) =>
+        $"{r.From.ToString("MMM d", CultureInfo.InvariantCulture)} to {r.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
+
+    private static string PeriodLabel(Period p) => p.Kind == PeriodKind.Week ? p.Start.ToString("MMM d", CultureInfo.InvariantCulture) : p.Label;
+
+    // When something happened, as the day's time, or with its date when it was another day; "—" when it hasn't.
+    private string At(DateOnly day, DateTimeOffset? utc) =>
+        utc is not { } t ? "—" : Clock.DayOf(t) == day ? Ui.Time(Clock, t) : Ui.When(Clock, t);
+
+    private static string Rate(Tally t) => t.Rate is { } r ? Words.Num(r) + "%" : "—";
+
+    private static string Share(Tally t) => t.Counted == 0 ? "No days counted" : $"{t.OnTime} of {t.Counted} on time";
+
+    private static string Verdict(TimelinessDay d)
+    {
+        var said = d.Verdict switch
+        {
+            DayVerdict.OnTime => "On time",
+            DayVerdict.Late => "Late by " + PullTimes.Wait(d.LateBy!.Value),
+            DayVerdict.Missed => d.NotPosted ? "Not posted" : "Not sent",
+            _ => "To come",
+        };
+        return d.Excused ? said + " · excused" : said;
+    }
+
+    private RenderFragment TallyCells(Tally t) => __builder =>
+    {
+        <td class="tide-table-num @(t.Rate < 100 ? "tide-report-bad" : "")">@Rate(t)</td>
+        <td class="tide-table-num">@t.OnTime</td>
+        <td class="tide-table-num">@t.Late</td>
+        <td class="tide-table-num">@t.Missed</td>
+        <td class="tide-table-num">@t.Excused</td>
+    };
+}

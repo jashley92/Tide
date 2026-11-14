@@ -424,6 +424,14 @@ app.MapGet("/reports/teams/export.csv", async (int? days, bool? parts, bool? ext
     return CsvFile(TeamScorecardService.ToCsv(card), $"tide-team-commitments-{card.To:yyyy-MM-dd}-{card.Days}d{stem}.csv");
 }).AsExport(Policies.ReadActions);
 
+// Brief timeliness (Reports > Brief timeliness), ?by=week|month, ?who= one analyst, as CSV: the days the service lets the
+// reader see (an analyst their own, and asking for anyone else's is refused; a manager or administrator anyone's).
+app.MapGet("/reports/timeliness/export.csv", async (string? by, string? who, BriefTimelinessService timeliness, OrgClock clock, CancellationToken ct) =>
+{
+    var report = await timeliness.BuildAsync(BriefTimelinessService.ParseBy(by), who, ct);   // someone else's days: refused, a 403
+    return CsvFile(BriefTimelinessService.ToCsv(report, clock.Zone), $"tide-brief-timeliness-{report.To:yyyy-MM-dd}-{(report.By == PeriodKind.Week ? "weeks" : "months")}.csv");
+}).AsExport(Policies.BriefTimeliness, AuditedWhen.Always);
+
 // The articles one trend line (?line=, default all) counted in period ?p=, for writing the report, as CSV. ?subs=true
 // counts sub-techniques separately, as Trends does with it, so a technique line is the one the page showed.
 app.MapGet("/trends/articles.csv", async (string? p, string? line, bool? subs, TrendsService trends, IOptions<AppOptions> appOptions, CancellationToken ct) =>

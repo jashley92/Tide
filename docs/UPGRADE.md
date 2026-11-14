@@ -191,6 +191,9 @@ the earlier ones change. On a DbaApplies install, the DBA applies it first.
   confirmed posted by **12:00**, in the organization's time zone. Holidays don't count; test copies don't count.
   Every brief already sent is judged from the send log and the SharePoint records, so the history is there after the
   upgrade. An analyst sees only their own days; Managers and administrators see everyone's.
+- **Reports has tabs**: Monthly report, Team commitments and Brief timeliness, each at the address it had
+  (`/reports`, `/reports/teams`) or its own (`/reports/timeliness`, with a CSV). They replace the Team commitments
+  link in the report's subtitle. Reports is now in the sidebar for Managers too.
 
 **New settings**
 - `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every

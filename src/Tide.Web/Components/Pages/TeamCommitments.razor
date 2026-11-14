@@ -13,7 +13,6 @@
 
 <div class="tide-page-head">
     <div>
-        <Breadcrumbs Items="@([new("Reports", "reports"), new("Team commitments")])" />
         <h1>Team commitments</h1>
         <div class="tide-sub">How each team does against the due dates on its actions, counted by when they were due.</div>
     </div>
@@ -24,6 +23,8 @@
         </div>
     }
 </div>
+
+<ReportsTabBar Active="@ReportsTabs.Teams" />
 
 <div class="tide-card tide-noprint">
     <div class="d-flex gap-3 flex-wrap align-items-center">

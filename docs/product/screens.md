@@ -21,7 +21,8 @@ Every route, its component and the permission it needs are in the [route table](
 - Intelligence: [Threat stories](#threat-stories) · [Our stack](#our-stack) ·
   [Adversary profiles](#adversary-profiles) · [Detection coverage](#detection-coverage) ·
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
-  [Reports](#reports) · [Team commitments](#team-commitments) · [Opening metrics](#opening-metrics)
+  [Reports](#reports) · [Team commitments](#team-commitments) · [Brief timeliness](#brief-timeliness) ·
+  [Opening metrics](#opening-metrics)
 - Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Library](#library)
   ([Saved queries](#saved-queries) · [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) ·
   [Board rules](#board-rules)) · [External teams](#external-teams) · [My notifications](#my-notifications)
@@ -911,6 +912,10 @@ their tags and techniques, downloads as CSV. The page keeps its state in the add
 
 **Route:** `/reports` · **Workflow:** [metrics and trends](../workflows/metrics-and-trends.md)
 
+Reports has three tabs, each keeping its own address: **Monthly report** (`/reports`), **Team commitments**
+(`/reports/teams`) and **Brief timeliness** (`/reports/timeliness`). Each reader gets the tabs their role opens. Reports
+is in the sidebar for analysts, administrators and managers.
+
 The report a team lead owes for a week, a month or a quarter (the last full month by default), from the same counts
 as Trends and Metrics, marked AMBER:
 
@@ -928,7 +933,7 @@ report without the app's frame. A period still under way is marked "(to date)".
 **Route:** `/reports/teams` · **Workflow:** [metrics and trends](../workflows/metrics-and-trends.md#team-commitments)
 
 How each team does against the due dates on the actions it owns, over the last 30, 90, 180 or 365 days (90 by
-default). Linked from Reports and Workload, and open to everyone who reads actions. A row per team, external teams
+default). A tab of Reports, linked from Workload, and open to everyone who reads actions. A row per team, external teams
 marked:
 
 - **Actions due** in the window (one with no due date made no commitment, so isn't counted);
@@ -942,6 +947,32 @@ marked:
 *Parts of splits only* counts only the parts a split made; *External teams only* lists only the external teams. A
 team's name and its open count open its actions on the Actions list; its overdue count opens the Overdue view. The
 table downloads as CSV, with the window and filters chosen.
+
+## Brief timeliness
+
+**Route:** `/reports/timeliness` · Analysts (their own days), Managers and administrators (everyone's)
+
+Each business day's brief against its deadlines: both editions sent by the *sent by* time (11:30 unless an
+administrator changes it on Organization settings) and, where posting to SharePoint is required, the copy confirmed
+posted by the *posted by* time (12:00), in the organization's time zone. Holidays don't count, test copies don't count,
+and an edition with nothing in it isn't waited for. The day belongs to its brief's presenter (the rotation's analyst,
+or whoever it was handed or covered to); with no brief, to the rotation's analyst. Every brief already sent is in it,
+judged from the send log.
+
+*By week* or *By month* covers the last 12 weeks or 6 months:
+
+- **Team summary** (Managers and administrators): each analyst's on-time rate, days on time, late, not sent or not
+  posted, excused, and average lateness, with the team's line under them. A name narrows the page to that analyst
+  (`?who=`), as the *Analyst* list does.
+- **On-time rate by week (or month)**: a row per analyst, a column per period.
+- **Day by day**: each day's sent and posted times, how it went ("Late by 25 min", "Not posted", "To come" before
+  today's deadlines) and any excuse, with who gave it and when.
+
+A Manager or an administrator marks a late or missed day *Notified of late…* with what the analyst told them and when.
+It no longer counts against the analyst, who sees the reason on their own days. *Undo the excuse* takes it back. Both
+are in the audit log. An analyst sees only their own days: asking for anyone else's, by the address or the CSV, is
+refused. Viewers, Action owners, Readers and Visitors don't get the tab or the page. The days download as CSV,
+as the page shows them.
 
 ## Opening metrics
 

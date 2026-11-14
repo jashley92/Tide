@@ -129,6 +129,11 @@ public static class Policies
         [BriefTimeliness] = [Permission.PresentBriefs, Permission.ManagePeople],
     };
 
+    /// <summary>The permissions any one of which meets <paramref name="policy"/>: its one (<see cref="Required"/>), or its
+    /// several (<see cref="AnyOf"/>).</summary>
+    public static IReadOnlyList<Permission> Meeting(string policy) =>
+        AnyOf.TryGetValue(policy, out var any) ? any : [Required[policy]];
+
     /// <summary>What a person without the permission is told it allows.</summary>
     public static string Describe(Permission p) => p switch
     {

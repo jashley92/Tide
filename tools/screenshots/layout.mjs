@@ -4097,7 +4097,7 @@ const pages = [
   // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
   // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
   ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
-    '/reports', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
+    '/reports', '/reports/timeliness', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
     .map(route => ({ name: `narrow ${route}`, route, setup: wideFont, widths: [700, 641], rules: [noSidewaysScroll] })),
   // Each step's detail stays within two lines at every width (the strip compact where it's narrow), and Triage's KEV
   // flag sits on the line of its words where there's room.
@@ -4702,6 +4702,16 @@ const pages = [
   // every detail stays readable (stacked under its check at a narrow width, not crushed to a few letters a line).
   { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
     rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)'), everyAtLeast('.tide-diag-checks td:last-child', 120)] },
+  // Reports' tabs (Monthly report, Team commitments, Brief timeliness) on one row under each page's header (wrapping only
+  // where it's narrow), wider letters
+  // too; and Brief timeliness for a manager (the team summary, the rate by week, every day with its excuse button) and an
+  // analyst (their own days), each table in its card, never a sideways scroll.
+  ...['/reports', '/reports/teams', '/reports/timeliness'].map(route => ({ name: `reports-tabs ${route}`, route, setup: wideFont, widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, visible('nav[aria-label="Reports"]'), [1100, oneRow('nav[aria-label="Reports"]')], fits('.tide-card')] })),
+  { name: 'timeliness-manager', route: '/reports/timeliness?by=week&as=Lee&roles=Manager', setup: wideFont, widths: [1920, 1440, 1100, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-team'), visible('#tl-over-time'), visible('#tl-days')] },
+  { name: 'timeliness-analyst', route: '/reports/timeliness?roles=Analyst', setup: wideFont, widths: [1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-days'), hidden('#tl-team')] },
   // The organization's settings: the two business-day limits for Actions that need review, each box with its unit, and
   // the brief's sent-by and posted-by times, with wider letters too.
   { name: 'admin-organization', route: '/admin/organization', setup: wideFont, widths: [1920, 1440, 1100, 780],
