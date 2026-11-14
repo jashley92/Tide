@@ -15,13 +15,12 @@
 
 @* Our stack (EP-25): the products the organization runs, kept by analysts. The list puts the products that need a look
    first (StackRow.NeedsLook) and says why: "Right now" has the CVEs on the last week's briefs' articles about the
-   product (held to the team edition's ceiling: one seen only above it is counted, not named) and, for those who
-   triage, how many new items name it; an old or missing check is flagged. A filter box, quick filters with counts and
-   a team narrow it; Add a product opens the add form. A product's page has its other names, versions and notes, and its history:
-   the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
-   can be tagged with any number of them from the editor. A product's articles are held to the team edition's TLP
-   ceiling: those above it are counted but not named. Its actions are all named, one raised from an article above the
-   ceiling too, as the Actions list and the action page name them. A colleague's change to a product
+   product and, for those who triage, how many new items name it; an old or missing check is flagged. A filter box,
+   quick filters with counts and a team narrow it; Add a product opens the add form. A product's page has its other
+   names, versions and notes, and its history: the articles tagged with it or naming it, and their actions. Triage lifts
+   items that name a product, and an article can be tagged with any number of them from the editor. Its articles, CVEs
+   and actions are all named, whatever their TLP, as the article pages and the Actions list name them to the team
+   edition's readers (a ceiling governs what leaves the app). A colleague's change to a product
    re-reads the page in place; the edit form keeps what's typed in it. *@
 
 <PageTitle>@(_detail?.Product.Name ?? "Our stack") · TIDE</PageTitle>
@@ -120,7 +119,6 @@
                                     <td class="tide-stack-now" data-label="Right now">
                                         @foreach (var c in r.Now.Cves.Take(CvesShown)) { <CveChip CveId="@c.Id" Record="c.Record" /> }
                                         @if (r.Now.Cves.Count > CvesShown) { <a class="small" href="@($"stack/{r.Product.Id}")">+@(r.Now.Cves.Count - CvesShown) more</a> }
-                                        @if (r.Now.CvesAbove > 0) { <div class="small tide-muted">@AboveLine(r.Now.CvesAbove, "CVE", _ceiling)</div> }
                                         @if (r.Now.TriageItems is > 0 || r.Now.BriefedToday)
                                         {
                                             <div class="small">@if (r.Now.TriageItems is > 0 and var n) { <a href="triage?named=true">@n new in triage</a> }@Said(r.Now)</div>
@@ -218,8 +216,8 @@ else
         </div>
         <div>
             <section class="tide-card" aria-labelledby="stack-articles-h">
-                <h2 id="stack-articles-h">Articles <span class="tide-count">(@(_detail.Articles.Count + _detail.ArticlesAbove))</span></h2>
-                @if (_detail.Articles.Count == 0 && _detail.ArticlesAbove == 0) { <div class="small tide-muted">No articles yet.</div> }
+                <h2 id="stack-articles-h">Articles <span class="tide-count">(@_detail.Articles.Count)</span></h2>
+                @if (_detail.Articles.Count == 0) { <div class="small tide-muted">No articles yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Articles)
                     {
@@ -227,7 +225,6 @@ else
                             <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
                     }
                 </ul>
-                @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
             </section>
             <section class="tide-card" aria-labelledby="stack-actions-h">
                 <h2 id="stack-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
@@ -270,7 +267,6 @@ else
         new("noteam", "No owning team", "In use, with no team that owns it", r => r.NoTeam),
     ];
 
-    private TlpLevel _ceiling;
     private string _words = "";
     private string? _team;
     private readonly HashSet<string> _quick = [];
@@ -335,10 +331,6 @@ else
         if (Id is null) _selected = RowSelection.From(RowParam);
         await Load();
     }
-
-    /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
-    internal static string AboveLine(int count, string noun, TlpLevel ceiling) =>
-        $"{count} {noun}{(count == 1 ? "" : "s")} above {Tlp.Label(ceiling)}";
 
     // After the triage count: whether it's on today's brief, or the news about it isn't written up yet.
     private static string Said(StackNow now)
@@ -444,8 +436,7 @@ else
     private async Task ReadList()
     {
         var was = _list is null ? null : SelectedRow?.Product.Id;
-        var list = await Stack.OverviewAsync(_showRetired);
-        (_list, _ceiling) = (list.Rows, list.Ceiling);
+        _list = await Stack.OverviewAsync(_showRetired);
         if (was is { } id && Shown.ToList().FindIndex(r => r.Product.Id == id) is >= 0 and var at) _selected = at;
     }
 
