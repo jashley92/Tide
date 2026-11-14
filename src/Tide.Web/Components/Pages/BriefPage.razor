@@ -341,7 +341,6 @@ else
 
     private int Count(Classification c) => _brief?.Items.Count(i => i.Article?.Classification == c) ?? 0;
 
-    private int ReadyCount => Ordered().Count(i => !Blocked(i.ArticleId));
     /// <summary>
     /// What "Add article" says its picker offers, as the picker shows it at first: articles still to be briefed
     /// (<see cref="BriefCandidate.Available"/>), not ones already presented, ready ones and drafts said apart ("(1 ready,
@@ -933,7 +932,7 @@ else
     // was recorded as over, if that's another day) or when it meets.
     private IEnumerable<string> MeetingLine()
     {
-        if (_brief is not null) yield return $"Presented by {_brief.AnalystName}";
+        if (_brief is not null) yield return $"Presented by {BriefService.PresentedBy(_brief)}";
         if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
         {
             yield return $"met {Ui.When(Clock, held)}";
@@ -1016,7 +1015,7 @@ else
                             </button>
                             <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }
-                        @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
+                        @if (_canWrite) { <span class="small tide-muted ms-auto">@BriefSteps.Written(Ordered(), a => Blocked(a.Id)).Said</span> }
                     </div>
                 </section>
                 @TeamNoteCard()

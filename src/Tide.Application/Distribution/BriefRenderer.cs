@@ -125,7 +125,7 @@ public sealed class BriefRenderer(IMarkdownService markdown)
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
                 <td valign="top" style="color:{Palette.HeaderText};font-family:{FontStack};">
                   <div style="font-size:19px;font-weight:700;">{Esc(ctx.TeamName)} daily brief</div>
-                  <div style="font-size:13px;color:{Palette.HeaderMuted};margin-top:3px;">{Esc(DayText(brief.BriefDate))} &middot; presented by {Esc(brief.AnalystName)}</div>
+                  <div style="font-size:13px;color:{Palette.HeaderMuted};margin-top:3px;">{Esc(DayText(brief.BriefDate))} &middot; presented by {Esc(BriefService.PresentedBy(brief))}</div>
                 </td>
                 <td valign="top" align="right" style="font-family:{FontStack};">
                   {TlpLabel(edition.Marking, 13)}
@@ -371,7 +371,7 @@ public sealed class BriefRenderer(IMarkdownService markdown)
         var brief = edition.Brief;
         var sb = new StringBuilder();
         sb.Append(Invariant, $"<h1>{Esc(ctx.TeamName)} daily brief: {Esc(DayText(brief.BriefDate))}</h1>\n");
-        sb.Append(Invariant, $"<p><strong>{Esc(Tlp.Label(edition.Marking))}</strong> {Esc(Tlp.Meaning(edition.Marking))} Presented by {Esc(brief.AnalystName)}.</p>\n");
+        sb.Append(Invariant, $"<p><strong>{Esc(Tlp.Label(edition.Marking))}</strong> {Esc(Tlp.Meaning(edition.Marking))} Presented by {Esc(BriefService.PresentedBy(brief))}.</p>\n");
         // An h3, not an h2: an h2 starts an article's section when a correction reads the frozen copy back (SentSections).
         if (edition.TeamNote is { } note) sb.Append(Invariant, $"<h3>{TeamNoteHeading}</h3>\n").Append(Plain(markdown.ToHtml(note, ctx.Links)));
         if (edition.ShowIntro) sb.Append(Plain(markdown.ToHtml(brief.Intro, ctx.Links)));

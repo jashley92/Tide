@@ -1353,6 +1353,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("PresentedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<DateTimeOffset?>("SharePointPostedAtUtc")
                         .HasColumnType("datetimeoffset");
 

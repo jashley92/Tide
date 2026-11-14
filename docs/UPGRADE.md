@@ -178,11 +178,14 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
 
 ### v1.13.0
 
-Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds three migrations: `ActionStatusChangedAt` (which fills
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds seven migrations: `ActionStatusChangedAt` (which fills
 when each action entered its status, from its close time, its latest status line or when it was raised),
-`WhyItMattersKept` (five nullable columns on `Articles`, filled with nothing) and `ActionRecommendationLine` (which
-links each existing action to the recommended line its title matches on its article, once). None of the earlier ones
-change. On a DbaApplies install, the DBA applies them first, as for any release that carries one.
+`WhyItMattersKept` (five nullable columns on `Articles`, filled with nothing), `ActionRecommendationLine` (which
+links each existing action to the recommended line its title matches on its article, once), `JobProcesses` (a table
+of the TIDE processes running on the database, for the second-process alarm), `MeetingAttendeeAddedBy` (who added a
+name to a meeting's attendance; empty for names already there), `StoryEditVersion` (an edit version on each story, so
+a stale save is refused) and `BriefPresentedBy` (who actually presented a brief; empty for briefs already presented,
+which keep showing the rotation's presenter). None of the earlier ones change. On a DbaApplies install, the DBA applies them first, as for any release that carries one.
 
 Most pages are laid out afresh around one idea: what you select shows what TIDE already knows about it, in a column on
 the right, so you leave the page less. Every route, key and name that worked before still works.
@@ -218,6 +221,24 @@ the right, so you leave the page less. Every route, key and name that worked bef
 - **Today says *1 of 2 sent*** in its header, its step strip and the top bar's brief chip while one of the day's two
   editions has gone and the other hasn't. It says *Sent* once both have (or the one that went is the only one with
   anything in it).
+- **Signed-in Viewers see TLP:RED and AMBER+STRICT titles on Today and Our stack**, as they already did elsewhere in
+  the app (*Recently presented*, a product's articles and its rail). Readers and Visitors are unchanged, and nothing
+  that leaves the app changes: the editions, emails, the SharePoint copy and exports keep their ceilings. Present
+  mode's product card keeps the team edition's ceiling, as Visitors may share that screen.
+- **An action is held only by a team member who can work actions.** Readers, Viewers and Visitors on a team stay
+  members but aren't offered, or accepted, as an action's holder. Someone holding an action from before keeps it until
+  it changes hands.
+- **A closed action takes no new hunt query or indicator** (Reopen it first), and a threat hunt closes as *No hits*
+  only once a query was kept, run and found nothing, whichever way it's closed. An external team's hunts are exempt.
+- **Team names are unique**, ignoring case and spacing. Existing duplicates keep working; rename one of them.
+- **A meeting starts on its brief's day.** On a weekend Today shows Monday's brief, and Present says when its meeting
+  can start instead of starting it; a rehearsal still runs.
+- **Everyone in a live meeting can add to who attended** (never a Visitor), and remove a name they added; the
+  presenter can remove anyone, and after the meeting whoever presents can still correct the record. The brief says
+  who actually presented ("Robin and Sam" when it changed hands).
+- **Two people editing a story:** the second save is refused with a message, as for articles.
+- **Text boxes have length limits**, and a paste over a limit is cut with a note rather than lost. The server takes
+  messages up to 1 MB from a browser (was 256 KB).
 
 **New settings** (all unchanged until set)
 - `Org:ActionBesideSlide`: `false`. *In a meeting, an action opens beside the slide* (Organization settings). Turn it

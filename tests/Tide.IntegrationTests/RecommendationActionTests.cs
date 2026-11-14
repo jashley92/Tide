@@ -44,13 +44,13 @@ public class RecommendationLinkServiceTests : IDisposable
     {
         var (article, team) = await Article();
         var actions = _db.Actions();
-        var n = await actions.QuickAddAsync(article, "Patch both gateways", ActionKind.PatchRemediate, team, null,
-            recommendation: "apply the vendor  hotfix to both gateways");
+        var n = (await actions.QuickAddAsync(article, "Patch both gateways", ActionKind.PatchRemediate, team, null,
+            recommendation: "apply the vendor  hotfix to both gateways")).Number;
         var a = (await actions.GetAsync(n))!.Action;
         a.RecommendationLine.Should().Be("Apply the vendor hotfix to both gateways", "the line as the article has it");
         a.Title.Should().Be("Patch both gateways");
 
-        var byHand = await actions.QuickAddAsync(article, "Brief the service desk", ActionKind.Awareness, team, null);
+        var byHand = (await actions.QuickAddAsync(article, "Brief the service desk", ActionKind.Awareness, team, null)).Number;
         (await actions.GetAsync(byHand))!.Action.RecommendationLine.Should().BeNull("raised by hand");
     }
 
@@ -60,14 +60,14 @@ public class RecommendationLinkServiceTests : IDisposable
         var (article, team) = await Article();
         var actions = _db.Actions();
         var raise = () => actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: "Hunt for the indicators in VPN logs");
-        var first = await raise();
+        var first = (await raise()).Number;
         await raise.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*A-{first}*");
         await actions.Awaiting(s => s.QuickAddAsync(article, "Block it", ActionKind.Block, team, null, recommendation: "Block the C2"))
             .Should().ThrowAsync<ArgumentException>();
 
         // Deleted (or cancelled), the line is free again.
         await actions.DeleteAsync((await actions.GetAsync(first))!.Action.Id, "A duplicate.");
-        (await raise()).Should().BeGreaterThan(first);
+        (await raise()).Number.Should().BeGreaterThan(first);
     }
 
     [Fact]
@@ -89,10 +89,10 @@ public class RecommendationLinkServiceTests : IDisposable
         var (article, team) = await Article();
         var actions = _db.Actions();
         const string line = "Hunt for the indicators in VPN logs";
-        var first = await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line);
+        var first = (await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line)).Number;
         var a = (await actions.GetAsync(first))!.Action;
         await actions.SetStatusAsync(a.Id, ActionStatus.Cancelled, ActionOutcome.None, "Raised too early.");
-        var second = await actions.QuickAddAsync(article, "Hunt again", ActionKind.ThreatHunt, team, null, recommendation: line);
+        var second = (await actions.QuickAddAsync(article, "Hunt again", ActionKind.ThreatHunt, team, null, recommendation: line)).Number;
 
         await actions.SetStatusAsync(a.Id, ActionStatus.Open, ActionOutcome.None, null);
         var reopened = (await actions.GetAsync(first))!;
@@ -102,7 +102,7 @@ public class RecommendationLinkServiceTests : IDisposable
 
         // Reopened while no other action holds its line, it keeps it.
         await actions.SetStatusAsync((await actions.GetAsync(second))!.Action.Id, ActionStatus.Cancelled, ActionOutcome.None, "Duplicate.");
-        var third = await actions.QuickAddAsync(article, "Patch", ActionKind.PatchRemediate, team, null, recommendation: "Apply the vendor hotfix to both gateways");
+        var third = (await actions.QuickAddAsync(article, "Patch", ActionKind.PatchRemediate, team, null, recommendation: "Apply the vendor hotfix to both gateways")).Number;
         var patch = (await actions.GetAsync(third))!.Action;
         await actions.SetStatusAsync(patch.Id, ActionStatus.Cancelled, ActionOutcome.None, "Wrong team.");
         await actions.SetStatusAsync(patch.Id, ActionStatus.Open, ActionOutcome.None, null);
@@ -115,8 +115,8 @@ public class RecommendationLinkServiceTests : IDisposable
         var (article, team) = await Article();
         var actions = _db.Actions();
         const string line = "Hunt for the indicators in VPN logs";
-        var first = await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line);
-        var second = await actions.QuickAddAsync(article, "Hunt as well", ActionKind.ThreatHunt, team, null);
+        var first = (await actions.QuickAddAsync(article, "Hunt", ActionKind.ThreatHunt, team, null, recommendation: line)).Number;
+        var second = (await actions.QuickAddAsync(article, "Hunt as well", ActionKind.ThreatHunt, team, null)).Number;
         await using (var db = _db.Context())   // two raised at the same moment, both standing on the line
         {
             var other = db.Actions.Single(x => x.Number == second);
@@ -222,7 +222,7 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
     private async Task<int> Raise(Guid article, Guid team, string title, string? line, SignIn? who = null)
     {
         await using var scope = SignedIn(app, who ?? SignIn.Analyst);
-        return await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, title, ActionKind.Other, team, null, recommendation: line);
+        return (await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, title, ActionKind.Other, team, null, recommendation: line)).Number;
     }
 
     /// <summary>The slide's recommended lines and its other actions, as markup.</summary>

@@ -39,7 +39,7 @@ public class CapabilitiesTests : IDisposable
             try { await db.Meetings().AddAttendeeAsync(s.Brief, "Someone in the room"); }
             finally { db.Live = null; }
         },
-        ["With no meeting live, correct who attended (add, or take off anyone added)"] = (db, s) => db.Meetings().AddAttendeeAsync(s.Brief, "Someone afterwards"),
+        ["With no meeting live, correct who attended (add, or take off anyone)"] = (db, s) => db.Meetings().AddAttendeeAsync(s.Brief, "Someone afterwards"),
         ["Present, start and end a meeting"] = (db, s) => db.Meetings().LeftAsync(s.Brief, new Dictionary<string, DateTimeOffset> { ["S-1-5-21-OTHER"] = DateTimeOffset.UtcNow }),
         ["Build a brief (its articles, order, team note)"] = (db, s) => db.Briefs().SetTeamNoteAsync(s.Brief, "Morning"),
         ["Reopen a brief"] = (db, s) => db.Briefs().ReopenAsync(s.Brief),

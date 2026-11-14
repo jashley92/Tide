@@ -129,6 +129,11 @@ public class WhatsNewTests
         c.Due(V("2.0.0"), null, analyst).Should().ContainSingle("someone who's seen none is shown the newest");
         c.Due(V("2.0.0"), V("2.0.0"), analyst).Should().BeEmpty("it's shown once");
         c.Due(V("1.0.0"), null, analyst).Should().BeEmpty("a release later than the one running isn't due");
+
+        // Whether any is built in for the groups at all, without listing them: as Due with nothing seen says.
+        c.AnyFor(V("2.0.0"), analyst).Should().BeTrue();
+        c.AnyFor(V("1.0.0"), analyst).Should().BeFalse();
+        c.AnyFor(V("2.0.0"), []).Should().BeFalse("no group, no highlights");
     }
 
     [Fact]

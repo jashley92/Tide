@@ -47,6 +47,10 @@ public class Brief : AuditableEntity
     /// <summary>When the meeting was recorded as over ("End the meeting"), by the clock.</summary>
     public DateTimeOffset? PresentedAtUtc { get; set; }
 
+    /// <summary>Who presented the live meeting, as said ("Pat" or "Pat and Sam" when it changed hands): whoever held the
+    /// presenter's seat. Null for a brief presented without a live meeting, which names <see cref="AnalystName"/>.</summary>
+    public string? PresentedByName { get; set; }
+
     /// <summary>When someone marked the brief distributed without email (email is off on the server), and who. Null for
     /// a brief that was emailed, or isn't finished.</summary>
     public DateTimeOffset? DistributedAtUtc { get; set; }

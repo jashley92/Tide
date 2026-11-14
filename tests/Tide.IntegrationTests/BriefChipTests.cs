@@ -100,7 +100,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var brief = await BriefService.Load(db.Briefs.AsNoTracking()).SingleAsync(b => b.BriefDate == BriefChipPage.Day(app));
-            needsWork = brief.Items.Any(i => ArticleChecks.For(i.Article!).Any(c => c.Blocking));
+            needsWork = brief.Items.Any(i => i.Article!.Status == ArticleStatus.Draft || ArticleChecks.For(i.Article!).Any(c => c.Blocking));
         }
         await BriefChipPage.Change(app, b => b.Status = BriefStatus.Draft);
 
@@ -254,8 +254,8 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 
         var today = await app.CreateClient().GetStringAsync("/");
         var current = CurrentStepLabel().Match(today).Groups[1].Value;
-        var step = current.Contains(">Write<", StringComparison.Ordinal) ? "step 2 of 5 · Write" : "step 3 of 5 · Order";
-        current.Should().MatchRegex(">(Write|Order)<", "a draft is on Write or Order");
+        var step = current.Contains("Write", StringComparison.Ordinal) ? "step 2 of 5 · Write" : "step 3 of 5 · Order";
+        current.Should().MatchRegex(">(Write|Order)(<|$)", "a draft is on Write or Order");
         BriefChipPage.In(today).Should().Contain(BriefChipPage.Full($"Brief {Meets} · {step}"));
     }
 

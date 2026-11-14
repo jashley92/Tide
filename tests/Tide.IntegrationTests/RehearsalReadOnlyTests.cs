@@ -38,7 +38,7 @@ public partial class RehearsalReadOnlyTests(WeekdayApp app) : IClassFixture<Week
         var brief = await sp.GetRequiredService<BriefService>().GetOrStartAsync(day);
         var article = await sp.GetRequiredService<ArticleService>().CreateAsync($"Rehearsed article {daysBack}", "Vendor", null, TlpLevel.Clear);
         await sp.GetRequiredService<BriefService>().AddArticleAsync(brief.Id, article);
-        var number = await sp.GetRequiredService<ActionService>().QuickAddAsync(article, $"Rehearsed sweep {daysBack}", ActionKind.IocSweep, team, null, day);
+        var number = (await sp.GetRequiredService<ActionService>().QuickAddAsync(article, $"Rehearsed sweep {daysBack}", ActionKind.IocSweep, team, null, day)).Number;
         return (day, number);
     }
 

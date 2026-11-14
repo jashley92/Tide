@@ -162,7 +162,7 @@ const lanesTallEnough = {
   check: page => page.evaluate(() => {
     const lanes = [...document.querySelectorAll('.tide-board .tide-kcol-cards')].filter(l => l.getClientRects().length);
     if (!lanes.length) return ['no lanes shown'];
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
     return lanes.flatMap(l => l.clientHeight >= 8 * rem - 1 ? []
       : [`the ${l.closest('.tide-kcol')?.dataset.status} lane shows ${l.clientHeight}px of its cards`]);
   }),
@@ -362,7 +362,7 @@ const kevPill = selector => ({
     const shown = els.filter(e => e.getBoundingClientRect().height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
     const cs = getComputedStyle(shown[0]);
-    return parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
+    return Number.parseFloat(cs.borderTopWidth) > 0 && Number.parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
   }, selector),
 });
 
@@ -609,7 +609,7 @@ const oneLine = (selector, most = 1) => ({
   check: page => page.$$eval(selector, (els, [selector, most]) => els.flatMap((el, i) => {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return [];
-    const s = getComputedStyle(el), line = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+    const s = getComputedStyle(el), line = Number.parseFloat(s.lineHeight) || Number.parseFloat(s.fontSize) * 1.5;
     return r.height < line * (most + .5) ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
   }), [selector, most]),
 });
@@ -619,7 +619,7 @@ const flat = selector => ({
   name: `flat: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
     const s = getComputedStyle(el);
-    const box = ['Left', 'Right', 'Bottom'].some(side => parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
+    const box = ['Left', 'Right', 'Bottom'].some(side => Number.parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
     return el.getBoundingClientRect().height > 0 && box ? [`${selector} #${i + 1} is drawn as a card (border or background)`] : [];
   }), selector),
 });
@@ -654,8 +654,8 @@ const ringOnFocus = selector => ({
         const s = getComputedStyle(e);
         // A shadow counts when it's drawn: a colour that isn't transparent, and a spread.
         const shadow = /^(rgba?\([^)]*\)) [\d.]+px [\d.]+px [\d.]+px ([\d.]+)px/.exec(s.boxShadow);
-        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0)
-          || (!!shadow && parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
+        return (s.outlineStyle !== 'none' && Number.parseFloat(s.outlineWidth) > 0)
+          || (!!shadow && Number.parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
       });
       if (!ring) found.push(`${selector}: no focus ring when focused from the keyboard`);
     }
@@ -876,8 +876,15 @@ const onboardingAs = (how, people, ...keys) => async page => {
 /** Setup: What's new over Today, as someone who used TIDE before. */
 const whatsNewAs = (people, ...keys) => onboardingAs('returning', people, ...keys);
 
-/** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
-const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
+/** Setup: as whatsNewAs, with What's new closed (Escape) and Today opened again, so its tip shows (a tip waits for the
+ *  next page after What's new closes); then `keys`; wider letters. */
+const tipAs = (people, ...keys) => async page => {
+  await whatsNewAs(people, 'Escape')(page);
+  await page.reload({ waitUntil: 'load' });
+  await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
+  await wideFont(page);
+};
 
 /** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
 const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
@@ -1969,7 +1976,7 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
   return rows.flatMap(r => [...r.children].flatMap((cell, i) => {
     const box = cell.getBoundingClientRect();
     if (box.width === 0) return [];
-    const start = box.left + parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
+    const start = box.left + Number.parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
     return start >= px ? [] : [`cell ${i + 1}'s text starts ${Math.round(start)}px from the row's edge, under its accent`];
   }));
 }, [row, px]);
@@ -2203,16 +2210,32 @@ const railSelectsWhole = holds('the rail\'s lists show their longest choice whol
     return needs > has + 1 ? [`${el.getAttribute('aria-label')}: ${Math.round(has)}px wide, its longest choice needs ${Math.round(needs)}px`] : [];
   }));
 
-/** While the rail is open over the slide, the slide's keys aren't heard: an arrow doesn't move the slide. */
-const slideKeysHeld = {
-  name: 'the slide stays put while the rail is open over it',
+/** While the rail is open over the slide, the slide's own keys still work, as its D hint says: → moves the slide under
+ *  it, and focus stays in the rail. Typed in the rail's note, the same key moves nothing. Last: it moves the slide (and
+ *  back). */
+const slideKeysUnderRail = {
+  name: 'the slide\'s keys work while the rail is open over it, and focus stays in the rail',
   check: async page => {
-    const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    await page.evaluate(() => document.activeElement?.blur());
+    const key = () => page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    const before = await key();
+    const out = [];
+    const note = page.locator('#present-rail textarea').first();
+    if (await note.count()) {
+      await note.focus();
+      await page.keyboard.press('ArrowRight');
+      await idle(page);
+      if (await key() !== before) out.push('an arrow typed in the rail\'s note moved the slide');
+    }
+    await page.locator('#present-rail').focus();
     await page.keyboard.press('ArrowRight');
     await idle(page);
-    const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    return before === after ? [] : [`the slide moved from ${before} to ${after}`];
+    const after = await key();
+    if (after === before) out.push(`→ with the rail open over it didn't move the slide from ${before}`);
+    if (!(await page.evaluate(() => !!document.activeElement?.closest('#present-rail')))) out.push('focus left the rail');
+    if (!(await page.locator('#present-rail[aria-modal="true"]').count())) out.push('the rail closed');
+    await page.keyboard.press('ArrowLeft');
+    await idle(page);
+    return out;
   },
 };
 
@@ -2245,7 +2268,7 @@ const titleTakesRoom = holds('the title is cut only when there\'s no room', () =
   if (!title || !people) return ['no title or people in the top bar'];
   if (title.scrollWidth <= title.clientWidth + 1) return [];
   const kids = [...people.children].filter(e => e.getBoundingClientRect().width > 0);
-  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
+  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + Number.parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
   const spare = people.getBoundingClientRect().width - used;
   return spare <= 2 ? [] : [`the title is cut by ${title.scrollWidth - title.clientWidth}px while who is here has ${Math.round(spare)}px to spare`];
 });
@@ -2272,7 +2295,7 @@ const shownCount = (selector, n) => holds(`${n} shown: ${selector}`, ([selector,
 const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
   const body = document.querySelector('[data-slide-body]');
   if (!body) return ['no slide body'];
-  const fit = parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
+  const fit = Number.parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
   const over = body.scrollHeight - body.clientHeight;
   if (fit < 0.799) return [`the slide is shrunk to ${fit}, below 80%`];
   return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
@@ -2386,7 +2409,7 @@ const besideGeometry = beside => {
   const range = body ? body.scrollHeight - body.clientHeight : 0;
   return {
     slide: slide && Math.round(slide.width), cardLeft: card && Math.round(card.left), card: card && Math.round(card.width),
-    fit: body ? parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1') : null,
+    fit: body ? Number.parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1') : null,
     // A few pixels of range is the fit's rounding (present.js stops within half a percent), not a slide that scrolls.
     scrolls: range > 8, at: range > 8 ? body.scrollTop / range : 0,
   };
@@ -2476,7 +2499,7 @@ const matchesPresenter = {
 /** Each of the action's facts beside the slide has room for its words (Due, Assignee, Team...): none narrower than 7em. */
 const besideFactsRoomy = holds('the action facts beside the slide have room', beside =>
   [...document.querySelectorAll(`${beside} .tide-fact`)].flatMap((el, i) => {
-    const w = el.getBoundingClientRect().width, em = parseFloat(getComputedStyle(el).fontSize);
+    const w = el.getBoundingClientRect().width, em = Number.parseFloat(getComputedStyle(el).fontSize);
     return w > 0 && w < 7 * em ? [`fact #${i + 1} ("${el.querySelector('dt')?.textContent}") is ${Math.round(w)}px wide`] : [];
   }), BESIDE);
 
@@ -2644,10 +2667,10 @@ const weRunBesideTheCves = holds('the We run chip is on the CVEs\' line where th
     // What ends the CVEs' line: the rightmost of what comes before the flags on it.
     const before = kids.slice(0, kids.indexOf(box)).map(e => e.getBoundingClientRect())
       .filter(r => r.height > 0 && r.top < cve.bottom && r.bottom > cve.top);
-    const room = meta.getBoundingClientRect().right - Math.max(...before.map(r => r.right)) - (parseFloat(getComputedStyle(meta).columnGap) || 0);
+    const room = meta.getBoundingClientRect().right - Math.max(...before.map(r => r.right)) - (Number.parseFloat(getComputedStyle(meta).columnGap) || 0);
     // The chips' own width (with the gaps between them), not their box's, which may hold more.
     const chips = [...box.querySelectorAll('.tide-werun-chip')];
-    const need = chips.reduce((w, c) => w + c.getBoundingClientRect().width, 0) + (chips.length - 1) * (parseFloat(getComputedStyle(box).columnGap) || 0);
+    const need = chips.reduce((w, c) => w + c.getBoundingClientRect().width, 0) + (chips.length - 1) * (Number.parseFloat(getComputedStyle(box).columnGap) || 0);
     return room >= need ? [`line #${i + 1}: We run is on a line of its own, with ${Math.round(room)}px free beside the CVEs for its ${Math.round(need)}px`] : [];
   });
 });
@@ -2738,7 +2761,7 @@ const excerptMeasure = lines => holds(`the selected row's excerpt is at most 80c
   const measure = probe.getBoundingClientRect().width;
   probe.remove();
   const style = getComputedStyle(ex), r = ex.getBoundingClientRect();
-  const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+  const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
   const problems = [];
   if (r.width > measure + 2) problems.push(`the excerpt is ${Math.round(r.width)}px wide, more than 80ch (${Math.round(measure)}px)`);
   if (r.height > lines * line + 2) problems.push(`the excerpt is ${Math.round(r.height)}px tall, more than ${lines} lines of ${Math.round(line)}px`);
@@ -3520,7 +3543,7 @@ const bulletGrows = {
     await page.mouse.up();
     const measure = async text => {
       await box.fill(text);
-      return box.evaluate(e => ({ inline: e.style.height, client: e.clientHeight, scroll: e.scrollHeight, line: parseFloat(getComputedStyle(e).lineHeight) }));
+      return box.evaluate(e => ({ inline: e.style.height, client: e.clientHeight, scroll: e.scrollHeight, line: Number.parseFloat(getComputedStyle(e).lineHeight) }));
     };
     const short = await measure('Short.'), long = await measure('A bullet long enough to take several lines of its box. '.repeat(8));
     await box.fill(was);
@@ -4880,7 +4903,7 @@ const pages = [
       buttonsNamed('Take it', 'Take A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
     rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
-      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysHeld] },
+      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysUnderRail] },
   // A click on the scrim beside the rail open over the slide closes it, and focus goes back to Rail.
   { name: 'present-rail-scrim', route: '/present/{today}', setup: railScrimClicked, widths: [1440],
     rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
