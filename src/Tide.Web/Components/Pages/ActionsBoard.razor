@@ -452,7 +452,10 @@ else
         if (_applied == query) return;
         var was = _applied;
         _applied = query;
-        _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? OpeningView();
+        _view = ViewFrom(ViewParam) ?? OpeningView();
+        // A view named otherwise than the tabs write it ("all", or one it doesn't know) has the address put right below,
+        // so it says what's shown.
+        var misnamed = !string.IsNullOrEmpty(ViewParam) && !string.Equals(ViewParam, _view.ToString(), StringComparison.OrdinalIgnoreCase);
         _groupByKind = string.Equals(GroupParam, "kind", StringComparison.OrdinalIgnoreCase);
         // No layout in the address: the person's own. A link to a view the board doesn't have (Overdue, Recently
         // closed) or to the list grouped by kind asks for the list, so it opens as the list.
@@ -483,12 +486,23 @@ else
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || heldToMine || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         // The address then says what's shown, in place (a prerender shows it, and the circuit that follows writes it).
-        if (heldToMine && RendererInfo.IsInteractive) Remember();
+        if ((heldToMine || misnamed) && RendererInfo.IsInteractive) Remember();
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
         FocusIfArrived();
     }
+
+    /// <summary>The view an address's <c>?view=</c> names: as the tabs write it (mine, myteams, open, overdue, closed), in
+    /// any case, or as a link may say it (all or all-open for All open, my-teams, recently-closed); null for none, or a
+    /// name it doesn't know.</summary>
+    internal static ActionView? ViewFrom(string? text) => text is null ? null : new string([.. text.Where(char.IsLetter)]).ToLowerInvariant() switch
+    {
+        "" => null,
+        "all" or "allopen" => ActionView.Open,
+        "recentlyclosed" => ActionView.Closed,
+        var name => EnumNames.OrNull<ActionView>(name, ignoreCase: true),
+    };
 
     private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
     {

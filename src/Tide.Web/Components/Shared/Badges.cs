@@ -61,13 +61,34 @@ public sealed class TlpBadge : ComponentBase
 {
     [Parameter, EditorRequired] public TlpLevel Level { get; set; }
 
+    /// <summary>Said before the marking's meaning on hover ("Raised from a TLP:RED article."), if anything.</summary>
+    [Parameter] public string? Lead { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "span");
         b.AddAttribute(1, "class", "tide-tlp tide-tlp-" + Level.ToString().ToLowerInvariant());
-        b.AddAttribute(2, "title", Tlp.Meaning(Level));
+        b.AddAttribute(2, "title", Lead is null ? Tlp.Meaning(Level) : Lead + " " + Tlp.Meaning(Level));
         b.AddContent(3, Tlp.Label(Level));
         b.CloseElement();
+    }
+}
+
+/// <summary>
+/// The marking of the article an action was raised from, beside the action's title on its page and its list row: AMBER
+/// and above only (CLEAR and GREEN go without saying). Shown only: who sees the action doesn't follow it.
+/// </summary>
+public sealed class SourceTlpBadge : ComponentBase
+{
+    [Parameter] public TlpLevel? Level { get; set; }
+
+    protected override void BuildRenderTree(RenderTreeBuilder b)
+    {
+        if (Level is not { } level || level < TlpLevel.Amber) return;
+        b.OpenComponent<TlpBadge>(0);
+        b.AddComponentParameter(1, nameof(TlpBadge.Level), level);
+        b.AddComponentParameter(2, nameof(TlpBadge.Lead), $"Raised from a {Tlp.Label(level)} article.");
+        b.CloseComponent();
     }
 }
 

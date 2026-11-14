@@ -1316,8 +1316,8 @@ else
         var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
         var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
         // Internal teams only: the meeting raises work for the security team's own teams, and an external team's part is
-        // split off an action afterwards (QuickAddAsync refuses one).
-        var teams = _readsTeam ? (await TeamSvc.ListAsync()).Where(t => !t.IsExternal).ToList() : [];
+        // split off an action afterwards (QuickAddAsync refuses one). Their members are those an action may be given to.
+        var teams = _readsTeam ? (await TeamSvc.ListAsync(holdersOnly: true)).Where(t => !t.IsExternal).ToList() : [];
         var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
         var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
         var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
