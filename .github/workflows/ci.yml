@@ -3,8 +3,9 @@ name: CI
 # Skip runs for documentation-only changes to conserve Actions minutes.
 on:
   push:
-    # ux/option-e is a long-running integration branch, analysed in SonarQube Cloud as a branch of its own.
-    branches: [ main, ux/option-e ]
+    # Only main: this SonarQube Cloud plan analyses main and pull requests, not other branches, so an integration
+    # branch is analysed through its pull request into main.
+    branches: [ main ]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
