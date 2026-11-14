@@ -84,6 +84,30 @@ public class ActionsAdminFinalPassPageTests(TideApp app) : IClassFixture<TideApp
     }
 
     [Fact]
+    public async Task ARefusal_StaysOnScreen_WhenTheColleaguesChangeIsHeardAfterIt()
+    {
+        int number;
+        Guid id;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync(Unique("Late hearers"), null, null);
+            var actions = sp.GetRequiredService<ActionService>();
+            number = await actions.CreateAsync(new ActionForm { Title = "Hunt the loader", Kind = ActionKind.ThreatHunt, TeamId = team });
+            id = (await actions.GetAsync(number))!.Action.Id;
+        }
+        await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number });
+        var toasts = page.Scope.ServiceProvider.GetRequiredService<ToastService>();
+        var said = $"A-{number} is closed. Reopen it to add to it.";
+        toasts.Error(said);   // as the hunt card says it, refused because a colleague closed the action
+
+        await page.Click(p => p.OnChangedElsewhere([new Tide.Application.Abstractions.Change(Tide.Application.Abstractions.ChangeFeed.Action(id), "dev:robin", "Robin", Guid.NewGuid())]));
+
+        toasts.Toasts.Should().Contain(t => t.IsError && t.Message == said, "news of the colleague's change doesn't clear the refusal")
+            .And.Contain(t => !t.IsError && t.Message == "Robin updated this action.");
+    }
+
+    [Fact]
     public async Task AnActionsHeader_CarriesItsArticlesMarking_FromAmberUp()
     {
         int red, clear;

@@ -830,13 +830,15 @@ else
         if (_detail is not null && ((_editing is not null && _detail.Action.EditVersion != _editing.EditVersion) || (_prompting && _detail.Action.Status != status)))
             _changedBy = who;
         else if (editing is not null && _editingComment is null)
-            Toasts.Show($"{who} deleted the comment you were editing.");
+            Toasts.Tell($"{who} deleted the comment you were editing.");
         else if (edited is not null && edited.EditVersion != _commentEditVersion)
         {
             ShowTheirs(edited);
-            Toasts.Show($"{who} changed the comment you're editing. Their text is shown above yours.");
+            Toasts.Tell($"{who} changed the comment you're editing. Their text is shown above yours.");
         }
-        else Toasts.Show($"{who} updated this action.");
+        // Told, not confirmed: news of a colleague's change leaves a refusal of this person's own attempt on screen (an
+        // add to the action the colleague closed meanwhile).
+        else Toasts.Tell($"{who} updated this action.");
         StateHasChanged();
     }
 
