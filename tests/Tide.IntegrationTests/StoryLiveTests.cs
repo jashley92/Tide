@@ -50,7 +50,7 @@ public class StoryTopicTests : IDisposable
         await _db.Stories().LinkAsync(article, second);
         Heard().Should().Contain([ChangeFeed.Story(first), ChangeFeed.Story(second)], "the story it left and the one it joined");
 
-        await _db.Stories().UpdateAsync(second, "Ransomware wave, autumn", null, StoryStatus.Active);
+        await _db.Stories().UpdateAsync(second, "Ransomware wave, autumn", null, StoryStatus.Active, (await _db.Stories().GetAsync(second))!.Story.EditVersion);
         Heard().Should().Contain(ChangeFeed.Story(second)).And.Contain(ChangeFeed.Stories);
 
         await _db.Stories().LinkAsync(article, null);

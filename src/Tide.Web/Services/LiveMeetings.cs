@@ -86,9 +86,13 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     // of those days' meetings.
     private readonly Dictionary<(string Circuit, DateOnly Day), int> _watching = [];
 
-    public LiveMeetings(TimeProvider time)
+    // The organization's day, for the rule that a meeting isn't held before its brief's day (MeetingDay); none in tests
+    // that don't need it.
+    private readonly Tide.Application.Org.OrgClock? _clock;
+
+    public LiveMeetings(TimeProvider time, Tide.Application.Org.OrgClock? clock = null)
     {
-        _time = time;
+        (_time, _clock) = (time, clock);
         _sweeper = time.CreateTimer(_ => Sweep(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
@@ -169,9 +173,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.OrderBy(m => m.StartedAtUtc).Select(View).ToList();
     }
 
-    /// <summary>Starts <paramref name="day"/>'s meeting with me presenting. Refused when it's already going.</summary>
+    /// <summary>Starts <paramref name="day"/>'s meeting with me presenting. Refused when it's already going, and before
+    /// the brief's day (<see cref="MeetingDay"/>): ending it would be refused, so it would stay live until then.</summary>
     public IMeetingSeat Start(DateOnly day, Guid briefId, string userId, string name, string circuitId, Guid origin, int slide)
     {
+        if (TooEarly(day, _time.GetUtcNow())) throw new ArgumentException(MeetingDay.TooEarly);
         Seat seat;
         lock (_gate)
         {
@@ -368,7 +374,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
 
     /// <summary>
     /// Says so when a presenter's grace period runs out (the others can take over), and drops meetings nobody has been in
-    /// for <see cref="Abandoned"/>. Runs every few seconds.
+    /// for <see cref="Abandoned"/>, and any whose brief's day hasn't come (the organization's time zone moved under it):
+    /// it couldn't be ended until then. Runs every few seconds.
     /// </summary>
     public void Sweep()
     {
@@ -378,7 +385,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             var now = _time.GetUtcNow();
             foreach (var m in _meetings.Values.ToList())
             {
-                if (!Here(m).Any() && m.EmptySinceUtc is { } empty && now - empty >= Abandoned)
+                if (TooEarly(m.Day, now) || !Here(m).Any() && m.EmptySinceUtc is { } empty && now - empty >= Abandoned)
                 {
                     _meetings.Remove(m.Day);
                     changed.Add(m.Day);
@@ -392,6 +399,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         }
         foreach (var day in changed) Notify(day, Guid.Empty);
     }
+
+    private bool TooEarly(DateOnly day, DateTimeOffset nowUtc) => _clock is not null && MeetingDay.Before(_clock, day, nowUtc);
 
     // One change by someone seated (the presenter, when it's theirs to make), under the lock; said if it changed anything.
     private bool Change(IMeetingSeat seat, Func<Meeting, Seat, bool> change) => Change(seat, presenter: false, change);

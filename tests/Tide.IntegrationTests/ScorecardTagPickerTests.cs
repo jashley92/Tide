@@ -82,7 +82,7 @@ public class ScorecardTagPickerTests(TideApp app) : IClassFixture<TideApp>
         list.Should().Contain("<span class=\"tide-tagpick-group\" aria-hidden=\"true\">Cloud</span>", "a category matched by name lists all its tags")
             .And.Contain("<span class=\"tide-tagpick-group\" aria-hidden=\"true\">Impact</span>").And.Contain("Token theft<span class=\"visually-hidden\">, Cloud</span>");
         list.IndexOf(">Cloud<", StringComparison.Ordinal).Should().BeLessThan(list.IndexOf(">Impact<", StringComparison.Ordinal), "a name starting with it comes first");
-        html.Should().Contain("3 tags found").And.Contain("aria-expanded=\"true\"").And.Contain("aria-activedescendant=\"pick-search-opt-0\"");
+        html.Should().Contain("3 tags found").And.Contain("aria-expanded=\"true\"").And.NotContain("aria-activedescendant", "nothing is highlighted until an arrow moves to it");
 
         await r.Click(c => { c.Search("PHISH"); return Task.CompletedTask; });
         r.Component._found.Select(h => h.Tag.Name).Should().Equal(["Spear phishing"], "the chosen one is left out");

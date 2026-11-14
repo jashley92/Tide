@@ -54,6 +54,20 @@ public sealed record MeetingCard(MeetingCardKind Kind, Guid Id)
     public static MeetingCard ForCves(Guid articleId) => new(MeetingCardKind.Cves, articleId);
 }
 
+/// <summary>
+/// When a brief's meeting may be held: on the brief's day or later, in the organization's zone. Starting it in present
+/// mode and marking it presented (<see cref="BriefService.MarkPresentedAsync"/>) keep to this one rule, so a meeting that
+/// could start can always be ended.
+/// </summary>
+public static class MeetingDay
+{
+    /// <summary>Why a meeting before its brief's day is refused.</summary>
+    public const string TooEarly = "The meeting can't be held before the brief's day.";
+
+    /// <summary>Whether <paramref name="atUtc"/> falls before <paramref name="day"/> in the organization's zone.</summary>
+    public static bool Before(Org.OrgClock clock, DateOnly day, DateTimeOffset atUtc) => clock.DayOf(atUtc) < day;
+}
+
 /// <summary>No meeting is ever running: where present mode isn't (a test, a tool).</summary>
 public sealed class NoMeetingsInProgress : IMeetingsInProgress
 {

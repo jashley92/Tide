@@ -11,7 +11,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261114020859_BriefPresentedBy")]
+    [Migration("20261114071938_BriefPresentedBy")]
     partial class BriefPresentedBy
     {
         /// <inheritdoc />
@@ -3316,6 +3316,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("ModifiedAtUtc")

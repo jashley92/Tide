@@ -84,15 +84,22 @@
     // session: the counts are a hint, and the next navigation reads them again.
     // A failure is logged once a streak (the first of a run of failures), so a lasting fault is seen without a line per
     // navigation.
+    // A read under way when the menu goes (a quick navigation away, a closed tab) is cancelled, and its failure isn't one:
+    // the circuit's services may already be gone (ObjectDisposedException), and nothing is left to show the counts.
     private bool _countsFailing;
+    private readonly CancellationTokenSource _gone = new();
 
     internal async Task LoadCountsAsync()
     {
         try
         {
-            _newItems = CurrentUser.Has(Permission.WriteArticles) ? await Intake.NewCountAsync() : 0;
-            _myOverdue = CurrentUser.Has(Permission.WorkActions) ? await Actions.MyOverdueCountAsync() : 0;
+            _newItems = CurrentUser.Has(Permission.WriteArticles) ? await Intake.NewCountAsync(_gone.Token) : 0;
+            _myOverdue = CurrentUser.Has(Permission.WorkActions) ? await Actions.MyOverdueCountAsync(_gone.Token) : 0;
             _countsFailing = false;
+        }
+        catch (Exception ex) when (_gone.IsCancellationRequested || ex is ObjectDisposedException)
+        {
+            // The menu or its circuit has gone: nothing to show, and nothing went wrong.
         }
         catch (Exception ex)
         {
@@ -135,5 +142,7 @@
     {
         Nav.LocationChanged -= OnLocationChanged;
         _polled?.Dispose();
+        _gone.Cancel();
+        _gone.Dispose();
     }
 }

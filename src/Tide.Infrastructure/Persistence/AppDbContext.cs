@@ -803,6 +803,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Summary).HasMaxLength(4000);
             e.HasIndex(x => x.Status);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
         });
 

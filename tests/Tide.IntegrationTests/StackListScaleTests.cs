@@ -73,10 +73,10 @@ public class StackListScaleTests(ITestOutputHelper output)
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         await SeedAsync(db, products);
         var stack = db.Stack();
-        (await stack.OverviewAsync()).Rows.Should().HaveCount(products);   // warm: the model and the queries are compiled
+        (await stack.OverviewAsync()).Should().HaveCount(products);   // warm: the model and the queries are compiled
 
         db.Commands.Reset();
-        var rows = (await stack.OverviewAsync()).Rows;
+        var rows = (await stack.OverviewAsync());
         var commands = db.Commands.Count;
         rows.Sum(r => r.Articles).Should().BeGreaterThan(0, "the seed's articles name its products");
 

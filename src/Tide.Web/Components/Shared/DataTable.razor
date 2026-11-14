@@ -95,7 +95,8 @@
                                     @g.Name <span class="tide-count">@g.Total</span>
                                     @if (GroupNote?.Invoke(g.Name) is { } note)
                                     {
-                                        <span class="tide-dt-group-note">@note</span>
+                                        @* The stop is heard, not seen: "Overdue 3. 3 have no owner", never "Overdue 33 have no owner". *@
+                                        <span class="tide-dt-group-note"><span class="visually-hidden">. </span>@note</span>
                                     }
                                     @if (g.Hidden > 0)
                                     {

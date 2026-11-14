@@ -345,7 +345,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         brief.Status = BriefStatus.Presented;
         var now = clock.Now.ToUniversalTime();
         var held = heldAtUtc?.ToUniversalTime() ?? (IsPast(brief.BriefDate) ? clock.MeetingStart(brief.BriefDate).ToUniversalTime() : now);
-        if (DateOnly.FromDateTime(clock.ToLocal(held).DateTime) < brief.BriefDate) throw new ArgumentException("The meeting can't be held before the brief's day.");
+        if (MeetingDay.Before(clock, brief.BriefDate, held)) throw new ArgumentException(MeetingDay.TooEarly);
         if (held > now.AddMinutes(5)) throw new ArgumentException("The meeting can't be in the future.");
         // Ended already (from present mode, as the brief page's End was clicked): an article that end carried to a later
         // brief is that brief's to present, so it keeps its status.

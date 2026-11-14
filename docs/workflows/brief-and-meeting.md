@@ -314,7 +314,10 @@ narrows for it, so the room reads the two together:
 ## The live meeting
 
 **Start the meeting** makes it live for the team: a banner on every page and a Join button on the brief invite anyone
-on the team edition in, or they paste the copied link.
+on the team edition in, or they paste the copied link. It can't start before the brief's day (`MeetingDay`): on a weekend
+or holiday, when Today shows the next working day's brief, present mode shows Start the meeting disabled, with "The
+meeting can start on Mon Nov 16, the brief's day." beside it and in the wrap-up's place for End the meeting. The brief
+can still be prepared and rehearsed.
 
 `LiveMeetings` (a singleton in `Tide.Web`, implementing `IMeetingsInProgress`) holds one live meeting per brief day, in
 memory (ADR [0001](../decisions/0001-blazor-server-on-prem.md)): who presents, their slide and its key, how far they've
