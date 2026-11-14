@@ -115,7 +115,7 @@ All of these run in the one TIDE process ([known-issues.md](known-issues.md#scal
 | Job | Interval | Bounds | Where |
 |---|---|---|---|
 | Intake pass (feeds, CVE, prune) | Every minute | Each source on its own interval (`Source.PollMinutes`, 60 by default, never under `Intake:MinPollMinutes`, 15 by default, and never under 5), doubled for each failure in a row, up to 16 times. Sources are polled one after another. | `IntakeHostedService.PollInterval`, `IntakeService.Interval` |
-| CVE refresh | Every `Cve:RefreshHours` (24) | At most 40 NVD lookups a run (`Cve:MaxNvdPerRun`, held to 500), 6.5 s apart without an NVD key, 0.7 s with one; a record rechecked at NVD after 7 days | `CveService` |
+| CVE refresh | Every `Cve:RefreshHours` (24) | At most 40 NVD lookups a run (`Cve:MaxNvdPerRun`, held to 500), 6.5 s apart without an NVD key, 0.7 s with one; a record rechecked at NVD after 7 days; each NVD request may take 60 s (`Cve:NvdTimeoutSeconds`) and is tried up to 3 times, so a run can take many minutes, beside the feed polling | `CveService` |
 | Prune | Daily | Feed items after `Intake:RetentionDays` (90); kept article text after `Intake:ReadingDays` (7) | `IntakeService.PruneAsync`, `ReadingService.PruneAsync` |
 | Reminders and digests | Every 5 minutes | Each kind at its time of day, once (marks) | `ReminderHostedService.PollInterval` |
 | Webhooks | Every minute | At most 100 posts a hook a run; events at least 30 s old | `WebhookHostedService.PollInterval`, `WebhookService.MaxPerRun`, `SettleDelay` |

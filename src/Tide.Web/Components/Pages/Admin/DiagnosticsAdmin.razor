@@ -185,7 +185,11 @@ else
                                     <div class="small tide-muted text-wrap">@finding.Text</div>
                                 }
                                 else if (report.JobHealth.StandingBy) { <Badge>Standing by</Badge> }
-                                else if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
+                                else if (j.Running)
+                                {
+                                    <Badge Tone="BadgeTone.Info">Running</Badge>
+                                    @if (j.LastStartedUtc is { } since) { <div class="small tide-muted text-wrap">since @Ui.When(Clock, since)</div> }
+                                }
                                 else if (!j.Enabled) { <Badge>Off</Badge> }
                                 else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }
                                 else if (j.LastSucceeded == true) { <CheckBadge Level="CheckLevel.Ok" /> }

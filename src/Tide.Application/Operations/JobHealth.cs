@@ -24,7 +24,7 @@ public sealed record JobFinding(JobState State, JobProblem Problem, JobHealthLev
 /// so none is counted).</summary>
 public sealed record JobHealthReport(JobHealthLevel Level, IReadOnlyList<JobFinding> Findings, bool StandingBy)
 {
-    public JobFinding? For(JobDefinition job) => Findings.FirstOrDefault(f => f.State.Job == job);
+    public JobFinding? For(JobDefinition job) => Findings.FirstOrDefault(f => f.State.Job.Key == job.Key);   // by key: a job's limit can be set by its settings
 
     /// <summary>Another TIDE process is running on the database (<see cref="LeaseStatus.Alarm"/>): at least Degraded.</summary>
     public string? Alarm { get; init; }

@@ -337,7 +337,8 @@ jobs. Run it there." on such a server.
 
 - **Cause:** `Cve:Enabled` is off; the run hasn't come due (`Cve:RefreshHours`); NVD is slow without a key (one lookup
   per 6.5 seconds, `MaxNvdPerRun` a run, so a large backlog takes several runs); or a service failed. KEV, EPSS and NVD
-  fail independently and the run keeps what it got.
+  fail independently and the run keeps what it got. An NVD request that times out (`Cve:NvdTimeoutSeconds`, 60) or is
+  answered 5xx or 429 is tried twice more before the run stops asking NVD; the error then ends "(3 tries)".
 - **Where to look:** **Sources** shows the last run: counts "KEV n, EPSS n, NVD n" and the first error ("KEV: …",
   "EPSS: …", "NVD (CVE-…): …"). Diagnostics' "Refreshing the CVE data" job; the log's "Refreshing the CVE data
   failed".

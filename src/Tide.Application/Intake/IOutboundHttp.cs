@@ -114,13 +114,17 @@ public enum FetchStatus
     Failed = 2,
 }
 
-/// <summary>A GET's extras: validators for a conditional fetch, headers (an API key), and the User-Agent to send instead
-/// of the global one (a source's own choice, <see cref="UserAgents.For"/>; one that can't be sent is ignored).</summary>
+/// <summary>A GET's extras: validators for a conditional fetch, headers (an API key), the User-Agent to send instead
+/// of the global one (a source's own choice, <see cref="UserAgents.For"/>; one that can't be sent is ignored), and a time
+/// limit of its own instead of <see cref="IntakeOptions.TimeoutSeconds"/> (a slow service's, <see cref="CveOptions.NvdTimeout"/>).</summary>
 public sealed record OutboundRequest(string? ETag = null, string? LastModified = null, IReadOnlyDictionary<string, string>? Headers = null,
-    string? UserAgent = null);
+    string? UserAgent = null, TimeSpan? Timeout = null);
 
-/// <summary>What a GET returned. <see cref="Error"/> is safe to show an administrator.</summary>
-public sealed record HttpFetch(FetchStatus Status, byte[]? Content = null, string? ETag = null, string? LastModified = null, string? Error = null);
+/// <summary>What a GET returned. <see cref="Error"/> is safe to show an administrator. <see cref="Retryable"/>: the server
+/// was slow or busy (a timeout, a 5xx or a 429), so the same request may well work shortly, after <see cref="RetryAfter"/>
+/// when the server said how long.</summary>
+public sealed record HttpFetch(FetchStatus Status, byte[]? Content = null, string? ETag = null, string? LastModified = null, string? Error = null,
+    bool Retryable = false, TimeSpan? RetryAfter = null);
 
 /// <summary>
 /// Outbound GETs to configured addresses only (sources an administrator added, the CVE data services): with a time

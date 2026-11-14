@@ -197,7 +197,7 @@ Triage's reading pane and the editor's "Draft from the sources" read an article'
 |---|---|
 | **Direction** | Outbound. |
 | **Protocol** | HTTPS GET through the outbound client. |
-| **Config** | `Cve:Enabled`, `Cve:RefreshHours` (in app on **Sources**); `Cve:KevUrl`, `EpssUrl`, `NvdUrl`, `NvdApiKey`, `MaxNvdPerRun`, `NvdDelayMs` (server). The URLs can point at an internal mirror. |
+| **Config** | `Cve:Enabled`, `Cve:RefreshHours` (in app on **Sources**); `Cve:KevUrl`, `EpssUrl`, `NvdUrl`, `NvdApiKey`, `MaxNvdPerRun`, `NvdDelayMs`, `NvdTimeoutSeconds` (server). The URLs can point at an internal mirror. |
 | **What leaves** | KEV: a GET for the whole catalog. EPSS: CVE ids, up to 100 per request (`?cve=CVE-…,CVE-…`). NVD: one CVE id per request (`?cveId=`), with the `apiKey` header when a key is set. Nothing else. |
 
 Which CVEs: those on articles, and those on feed items fetched in the last 14 days. KEV is read whole every run; EPSS

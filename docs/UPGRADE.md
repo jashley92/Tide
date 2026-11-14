@@ -186,6 +186,11 @@ DbaApplies install, the DBA applies it first.
 - **The user agent names the release.** Outbound requests (feeds, reading articles, CVE and KEV data, adversaries, the
   update check, the assistant's fetches) now send `TIDE/<release> (+https://github.com/jashley92/Tide)`, such as
   `TIDE/1.15.0`, instead of `TIDE/1.0`. A development build sends `TIDE/dev+<commit>`. Webhooks are unchanged.
+- **NVD is given longer, and a second and third try.** NVD requests have their own time limit, `Cve:NvdTimeoutSeconds`
+  (60, held to 10 to 180), instead of the feeds' `Intake:TimeoutSeconds`. One that times out or is answered 5xx or 429
+  is tried again after 10 s and 30 s (or NVD's `Retry-After`, up to 2 minutes) before the run stops asking NVD. The
+  CVE refresh now runs beside the feed polling rather than holding it up; Diagnostics shows it running (since when),
+  and the Sources card says "Refreshing now". It's called hung only past the longest a run can take on its settings.
 
 **New**
 - **User agent settings** (Administration › Sources, the *User agent* card): TIDE's own (the default), a current
