@@ -208,7 +208,7 @@ else
                                 and this one is retired, pointing at it.</p>
                             <div class="d-flex gap-2 flex-wrap">
                                 <label class="visually-hidden" for="merge-into">Merge into</label>
-                                <select id="merge-into" class="form-select form-select-sm w-auto tide-maxw-fill" @bind="_mergeInto">
+                                <select id="merge-into" class="form-select form-select-sm w-auto mw-100" @bind="_mergeInto">
                                     <option value="">Choose a profile…</option>
                                     @foreach (var o in _others) { <option value="@o.Adversary.Id">@o.Adversary.Name</option> }
                                 </select>

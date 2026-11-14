@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
-using Tide.Application.Adversaries;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
 using Tide.Application.Stack;
@@ -193,17 +192,24 @@ public partial class BugPassFinal1PageTests(TideApp app) : IClassFixture<TideApp
         return (article, product);
     }
 
+    // The article's We run card, with words typed in its picker.
+    private async Task<Rendered<ArticleStackCard>> CardTyped(Guid article, string text)
+    {
+        var r = await RenderAsync<ArticleStackCard>(app, $"/articles/{article}", new()
+        {
+            ["ArticleId"] = article, ["CanWrite"] = true,
+            ["OnMention"] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<string>(this, _ => { }),
+        });
+        await r.Click(c => { c._combo!._focused = true; c._text = text; return c.Find(); });
+        return r;
+    }
+
     [Fact]
     public async Task ThePicker_HighlightsNothingUntilAnArrow_SoDownThenEnterTagsTheFirstMatch_NotANewProduct()
     {
         var name = "bpf1-" + Guid.NewGuid().ToString("N")[..6];
         var (article, product) = await ProductAndArticle(name);
-        await using var r = await RenderAsync<ArticleStackCard>(app, $"/articles/{article}", new()
-        {
-            ["ArticleId"] = article, ["CanWrite"] = true,
-            ["OnMention"] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<string>(this, _ => { }),
-        });
-        await r.Click(c => { c._combo!._focused = true; c._text = name; return c.Find(); });
+        await using var r = await CardTyped(article, name);
         var html = await r.Html();
         html.Should().Contain($"Add “{name}” to Our stack").And.NotContain("aria-activedescendant", "nothing is chosen until an arrow chooses it");
 
@@ -221,12 +227,7 @@ public partial class BugPassFinal1PageTests(TideApp app) : IClassFixture<TideApp
     {
         var name = "bpf1-none-" + Guid.NewGuid().ToString("N")[..6];
         var (article, _) = await ProductAndArticle("bpf1-other-" + Guid.NewGuid().ToString("N")[..6]);
-        await using var r = await RenderAsync<ArticleStackCard>(app, $"/articles/{article}", new()
-        {
-            ["ArticleId"] = article, ["CanWrite"] = true,
-            ["OnMention"] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<string>(this, _ => { }),
-        });
-        await r.Click(c => { c._combo!._focused = true; c._text = name; return c.Find(); });
+        await using var r = await CardTyped(article, name);
         r.Component.Listed.Should().BeEmpty();
 
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "Enter" }));

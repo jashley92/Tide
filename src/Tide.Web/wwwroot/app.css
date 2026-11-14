@@ -1974,8 +1974,6 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-maxw-md { max-width: var(--tide-width-md); }
 .tide-maxw-lg { max-width: var(--tide-width-lg); }
 .tide-maxw-xl { max-width: var(--tide-width-xl); }
-/* No wider than its row: a select as wide as its longest option (w-auto) stops at the edge. */
-.tide-maxw-fill { max-width: 100%; }
 .tide-maxw-2xl { max-width: var(--tide-width-2xl); }
 .tide-card-narrow { max-width: var(--tide-width-narrow); }
 .tide-card-form { max-width: var(--tide-width-form); }
