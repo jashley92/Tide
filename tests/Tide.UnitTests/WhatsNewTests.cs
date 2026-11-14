@@ -233,7 +233,16 @@ public class WhatsNewTests
         v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("New article on this story").And.Contain("Brief timeliness");
         v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Manager").And.Contain("Role mappings");
         v.Highlights.Sections[RoleGroup.ViewersAndActionOwners].Should().Contain("By person");
-        ReleaseNotesCatalog.Embedded.Newest.Should().Be(V("1.14.0"));
+    }
+
+    [Fact]
+    public void TheBuiltInCatalog_HasV115sHighlights_ForAdministratorsOnly()
+    {
+        var v = ReleaseNotesCatalog.Embedded.Releases.Single(r => r.Version == V("1.15.0"));
+        v.Notes.Should().Contain("SourceUserAgent").And.Contain("Cve:NvdTimeoutSeconds");
+        v.Highlights!.Sections.Keys.Should().Equal(RoleGroup.Administrators);
+        v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("User agent").And.Contain("NVD");
+        ReleaseNotesCatalog.Embedded.Newest.Should().Be(V("1.15.0"));
     }
 
     [Fact]

@@ -176,13 +176,13 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
-### Unreleased
+### v1.15.0
 
-Upgrade as usual. It adds one migration, `SourceUserAgent` (two columns on `Sources`: each source's user agent
-choice, which starts as *the global setting*, and its custom string). None of the earlier ones change. On a
-DbaApplies install, the DBA applies it first.
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `SourceUserAgent` (two columns on
+`Sources`: each source's user agent choice, which starts as *the global setting*, and its custom string). None of the
+earlier ones change. On a DbaApplies install, the DBA applies it first.
 
-**Changed**
+**Changes**
 - **The user agent names the release.** Outbound requests (feeds, reading articles, CVE and KEV data, adversaries, the
   update check, the assistant's fetches) now send `TIDE/<release> (+https://github.com/jashley92/Tide)`, such as
   `TIDE/1.15.0`, instead of `TIDE/1.0`. A development build sends `TIDE/dev+<commit>`. Webhooks are unchanged.
@@ -200,6 +200,13 @@ DbaApplies install, the DBA applies it first.
 - **Per source.** A source's form can override the global choice for that source: the global setting (the default
   for every existing source), TIDE's own, the browser, or custom. It's sent when the feed is pulled and when its
   articles are read in triage, and travels in configuration bundles.
+
+**Fixes**
+- **Editing a source brings its form into view.** *Edit* on a source in Administration › Sources scrolls to the form
+  and puts the cursor in its name, rather than leaving the form above the fold. The sources table scrolls within
+  itself on a narrow window instead of widening the page.
+- **A guide step's ring follows its control.** A step of a page's guide rings the control it names at the size it
+  ends up, so a heading that shrinks to fit no longer leaves the ring on a sliver of it.
 
 ### v1.14.0
 
