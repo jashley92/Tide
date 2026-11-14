@@ -141,9 +141,10 @@ jobs:
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
 
   # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there), in four slices side by
-  # side, each on its own fresh demo; the layout job below passes when all four do.
+  # side, each on its own fresh demo, at the default letter spacing and again with wider letters (LETTER_SPACING=.12em,
+  # for pages that widen them); the layout job below passes when all eight do.
   layout-shard:
-    name: layout (${{ matrix.shard }}/4)
+    name: layout (${{ matrix.shard }}/4${{ matrix.spacing != '.07em' && format(', {0}', matrix.spacing) || '' }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -151,6 +152,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+        spacing: ['.07em', '.12em']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -186,6 +188,7 @@ jobs:
         run: node tools/screenshots/layout.mjs
         env:
           SHARD: ${{ matrix.shard }}/4
+          LETTER_SPACING: ${{ matrix.spacing }}
 
       - name: TIDE's log (on failure)
         if: failure()
