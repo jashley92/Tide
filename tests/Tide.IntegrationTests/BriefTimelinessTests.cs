@@ -312,6 +312,20 @@ public class BriefTimelinessTests : IDisposable
     }
 
     [Fact]
+    public async Task ABriefSentWithNothingInTheLog_IsntJudged()
+    {
+        As(Me, "Test Analyst", AppRole.Analyst);
+        var brief = await Brief(Mon, Me, "Test Analyst");
+        await using (var c = _db.Context())
+        {
+            (await c.Briefs.SingleAsync(x => x.Id == brief.Id)).Status = BriefStatus.Sent;
+            await c.SaveChangesAsync();
+        }
+
+        (await Report()).Days.Should().BeEmpty("there's no time to judge it by");
+    }
+
+    [Fact]
     public async Task ADistributedBrief_WithEmailOff_WentWhenItWasMarked()
     {
         As(Me, "Test Analyst", AppRole.Analyst);
