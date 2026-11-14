@@ -59,8 +59,11 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("Raise hand").And.Contain("aria-pressed=\"false\"").And.Contain("3 here");
         FooterHasNoneOfIt(html);
 
-        // Olive, then Robin, raise a hand.
+        // Olive, then Robin, raise a hand. The presenter's page hears each change on its own; it has heard Olive's before
+        // Robin's hand goes up (on a loaded machine it could hear both at once, and say both names).
         await Do(owner, p => p.ToggleHand());
+        People(await pat.HtmlOnce("role=\"status\">Olive Owner raised a hand.</span>"))
+            .Should().Contain("role=\"status\">Olive Owner raised a hand.</span>");
         await Do(robin, p => p.ToggleHand());
         Meetings.Get(day)!.Hands.Select(h => h.Name).Should().Equal("Olive Owner", "Robin Analyst");
 
