@@ -948,6 +948,13 @@ marked:
 team's name and its open count open its actions on the Actions list; its overdue count opens the Overdue view. The
 table downloads as CSV, with the window and filters chosen.
 
+**By person** beside a team opens `/reports/teams/{team}`: the team's line as above, then a line per person. Each action
+due in the window counts for whoever held it at the end of its due date, read back from its history, so a hand-off or a
+reassignment before the due date moves it and one after doesn't. Each line shows actions due, on time, average days
+late, and the team's open and overdue actions the person holds now. Managers and administrators see every person's
+line, and *Nobody (the team's)* for actions no one held. Anyone else who reads actions sees only their own line. Team
+lines are the same for everyone.
+
 ## Brief timeliness
 
 **Route:** `/reports/timeliness` · Analysts (their own days), Managers and administrators (everyone's)

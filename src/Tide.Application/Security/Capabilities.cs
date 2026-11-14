@@ -113,6 +113,8 @@ public static class Capabilities
 
         new(Reports, "Reports, trends and exports", "Policies.ReadTeamEdition; ExportService", [G(Permission.ReadTeamEdition)]),
         new(Reports, "Team commitments scorecard and its CSV", "Policies.ReadActions; TeamScorecardService.BuildAsync", [G(Permission.ReadActions)]),
+        new(Reports, "Team commitments by person (who held each action on its due date)", "TeamScorecardService.PeopleAsync",
+            [G(Permission.ReadActions, Permission.ManagePeople), Q("own line only", Permission.ReadActions)]),
         new(Reports, "Brief timeliness: every analyst's days and the team summary, and the CSV", "BriefTimelinessService.BuildAsync",
             [G(Permission.ManagePeople), Q("own days only", Permission.PresentBriefs)]),
         new(Reports, "Excuse a late brief day the analyst warned of, or undo that", "BriefTimelinessService.ExcuseAsync", [G(Permission.ManagePeople)]),
