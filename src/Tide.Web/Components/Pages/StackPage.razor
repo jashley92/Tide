@@ -436,8 +436,7 @@ else
     private async Task ReadList()
     {
         var was = _list is null ? null : SelectedRow?.Product.Id;
-        var list = await Stack.OverviewAsync(_showRetired);
-        _list = list.Rows;
+        _list = await Stack.OverviewAsync(_showRetired);
         if (was is { } id && Shown.ToList().FindIndex(r => r.Product.Id == id) is >= 0 and var at) _selected = at;
     }
 

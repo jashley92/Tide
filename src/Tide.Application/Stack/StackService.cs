@@ -112,9 +112,6 @@ public sealed record StackRow(StackProduct Product, string? TeamName, int Articl
 /// </summary>
 public enum StackUrgency { Kev, Cve, Triage, Housekeeping, Nothing }
 
-/// <summary>The Our stack list: its rows, those that need a look first.</summary>
-public sealed record StackList(IReadOnlyList<StackRow> Rows);
-
 /// <summary>A CVE in a product's "Right now", with what's known about it (null until it's enriched).</summary>
 public sealed record StackCve(string Id, CveRecord? Record);
 
@@ -283,10 +280,10 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     /// against every name in one pass (<see cref="StackNames"/>), and the new triage items once, as triage matches
     /// them. The triage count is only for those who triage.
     /// </summary>
-    public async Task<StackList> OverviewAsync(bool includeRetired = false, CancellationToken ct = default)
+    public async Task<IReadOnlyList<StackRow>> OverviewAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();
-        return new StackList(MostPressingFirst(await RowsAsync(includeRetired, rightNow: true, ct)));
+        return MostPressingFirst(await RowsAsync(includeRetired, rightNow: true, ct));
     }
 
     /// <summary>
@@ -333,8 +330,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             var from = today.AddDays(-RecentBriefDays);
             var recent = db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate >= from)).Select(i => i.ArticleId);
             // Today's brief's articles, and the articles written lately.
-            briefedToday = (await db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == today)).Select(i => i.ArticleId).ToListAsync(ct))
-                .ToHashSet();
+            briefedToday = [.. await db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == today)).Select(i => i.ArticleId).ToListAsync(ct)];
             var lately = DateTimeOffset.UtcNow.AddDays(-RecentBriefDays);
             written = articles.Where(a => a.CreatedAtUtc >= lately).Select(a => a.Id).ToHashSet();
             sightings = (await (from c in db.ArticleCves.AsNoTracking()

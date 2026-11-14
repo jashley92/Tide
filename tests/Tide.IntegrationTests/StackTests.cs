@@ -267,20 +267,20 @@ public class StackServiceTests : IDisposable
 
         var list = await stack.OverviewAsync(includeRetired: true);
 
-        list.Rows.Select(r => r.Product.Name).Should().Equal(["GitLab", "Aardvark Mail", "Okta", "Pillow", "Zebra Proxy", "Beta Old"],
+        list.Select(r => r.Product.Name).Should().Equal(["GitLab", "Aardvark Mail", "Okta", "Pillow", "Zebra Proxy", "Beta Old"],
             "the product with a CVE on KEV, then the one new in triage, then the housekeeping by name; the retired one is last");
-        var row = list.Rows.Single(r => r.Product.Id == gitlab);
+        var row = list.Single(r => r.Product.Id == gitlab);
         row.Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0003", "CVE-2026-0002", "CVE-2026-0001"], "this week's, each once, the worst first; not last quarter's");
         (row.Now.Cves[0].Record!.IsKev, row.Now.Cves[1].Record!.CvssScore, row.Now.Cves[2].Record).Should().Be((true, 9.8m, null));
         (row.Now.TriageItems, row.Articles, row.CheckOld, row.NeedsLook).Should().Be((2, 3, false, true));
-        list.Rows.Single(r => r.Product.Name == "Aardvark Mail").Now.TriageItems.Should().Be(1, "an item goes to the first product it names, as its We run mark in triage says");
-        list.Rows.Where(r => r.CheckOld).Select(r => r.Product.Name).Should().Equal("Okta", "Zebra Proxy");
-        list.Rows.Where(r => r.NoTeam).Select(r => r.Product.Name).Should().Equal("Pillow");
-        list.Rows[^1].Should().Match<StackRow>(r => !r.NeedsLook && !r.CheckOld && !r.NoTeam && !r.Now.Any, "a retired product asks for nothing");
+        list.Single(r => r.Product.Name == "Aardvark Mail").Now.TriageItems.Should().Be(1, "an item goes to the first product it names, as its We run mark in triage says");
+        list.Where(r => r.CheckOld).Select(r => r.Product.Name).Should().Equal("Okta", "Zebra Proxy");
+        list.Where(r => r.NoTeam).Select(r => r.Product.Name).Should().Equal("Pillow");
+        list[^1].Should().Match<StackRow>(r => !r.NeedsLook && !r.CheckOld && !r.NoTeam && !r.Now.Any, "a retired product asks for nothing");
 
         // Once triage is cleared, the one product that's owned, checked and quiet drops below the rest.
         await using (var ctx = _db.Context()) await ctx.FeedItems.ExecuteUpdateAsync(s => s.SetProperty(i => i.Status, FeedItemStatus.Dismissed));
-        var after = (await stack.OverviewAsync()).Rows;
+        var after = (await stack.OverviewAsync());
         after.Select(r => r.Product.Name).Should().Equal("GitLab", "Okta", "Pillow", "Zebra Proxy", "Aardvark Mail");
         after.Where(r => r.NeedsLook).Should().HaveCount(4).And.BeEquivalentTo(after.Take(4), "the filter's count and the order read one rule");
 
@@ -305,14 +305,14 @@ public class StackServiceTests : IDisposable
         await BriefAsync(await articles.CreateAsync("Halo Keep breach at a partner", "Vendor", null, TlpLevel.Red), 0);
         await NewItemsAsync("Halo Router advisory", "Halo Quiet patch out");
 
-        var rows = (await stack.OverviewAsync()).Rows.ToDictionary(r => r.Product.Name, r => r.Now);
+        var rows = (await stack.OverviewAsync()).ToDictionary(r => r.Product.Name, r => r.Now);
         (rows["Halo Router"].BriefedToday, rows["Halo Router"].NotWrittenUp).Should().Be((true, false), "an article on today's brief names it");
         rows["Halo Keep"].BriefedToday.Should().BeTrue("its article on today's brief is RED, which the team edition's readers see in the app");
         (rows["Halo Quiet"].BriefedToday, rows["Halo Quiet"].NotWrittenUp).Should().Be((false, true), "triage names it and no article does");
         (rows["Halo Idle"].BriefedToday, rows["Halo Idle"].NotWrittenUp).Should().Be((false, false), "nothing is happening to it");
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
-        (await stack.OverviewAsync()).Rows.Should().OnlyContain(r => !r.Now.NotWrittenUp, "the triage count, and what it says, is only for those who triage");
+        (await stack.OverviewAsync()).Should().OnlyContain(r => !r.Now.NotWrittenUp, "the triage count, and what it says, is only for those who triage");
     }
 
     [Fact]
@@ -333,7 +333,7 @@ public class StackServiceTests : IDisposable
         }
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
-        (await stack.OverviewAsync()).Rows.Single().Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0666", "CVE-2026-0001"],
+        (await stack.OverviewAsync()).Single().Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0666", "CVE-2026-0001"],
             "the RED article's CVE is named, worst first, as its article is to a Viewer everywhere in the app");
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
@@ -350,12 +350,12 @@ public class StackServiceTests : IDisposable
         await stack.SaveAsync(new StackForm { Name = "GitLab", TeamId = team, CheckedOn = _db.Clock.Today });
         await NewItemsAsync("new GitLab advisory");
 
-        (await stack.OverviewAsync()).Rows.Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal(("GitLab", 1, true), ("Aardvark Mail", 0, false));
+        (await stack.OverviewAsync()).Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal(("GitLab", 1, true), ("Aardvark Mail", 0, false));
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
         _db.Commands.Record = true;
         _db.Commands.Reset();
-        (await stack.OverviewAsync()).Rows.Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal([("Aardvark Mail", null, false), ("GitLab", null, false)],
+        (await stack.OverviewAsync()).Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal([("Aardvark Mail", null, false), ("GitLab", null, false)],
             "an action owner doesn't see triage, so nothing on the list may tell them what's in it");
         _db.Commands.Sql.Should().NotContain(s => s.Contains("FeedItems", StringComparison.Ordinal), "the items aren't read for them at all");
     }
