@@ -121,11 +121,12 @@ public sealed class BriefChipSource : IDisposable
         try { return await kept.Reading; }
         catch (Exception ex)
         {
-            if (ReferenceEquals(_kept, kept))
-            {
-                _kept = null;
+            if (!ReferenceEquals(_kept, kept)) return null;
+            _kept = null;
+            // A read the circuit didn't outlive (a quick navigation away, a closed tab: its services were disposed under
+            // it) isn't a fault: nothing is left to show the chip.
+            if (!_disposed && ex is not ObjectDisposedException)
                 _log.LogWarning(ex, "The top bar's brief chip couldn't be read; it's left out until a read works.");
-            }
             return null;
         }
     }
@@ -168,5 +169,11 @@ public sealed class BriefChipSource : IDisposable
     /// can land.</summary>
     internal Func<Task>? AfterBriefRead { get; set; }
 
-    public void Dispose() => _feed.Changed -= OnChanged;
+    private volatile bool _disposed;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _feed.Changed -= OnChanged;
+    }
 }

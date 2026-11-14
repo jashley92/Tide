@@ -295,10 +295,10 @@ else
     private IReadOnlyList<ArticleSummary> _recent = [];
 
     // The latest articles presented, beside Today's brief, for someone who doesn't write it (whoever does has Not on a
-    // brief yet): at or below the team edition's TLP ceiling, so not a draft's title, nor one marked above what the team
-    // edition carries.
+    // brief yet), never a draft's title. Every marking, as Today's brief beside it names them: the page is the team
+    // edition's readers', who read every article in the app (a ceiling governs what leaves it).
     private async Task<IReadOnlyList<ArticleSummary>> RecentAsync() =>
-        [.. (await ArticleSvc.ListAsync(status: ArticleStatus.Presented, take: 40)).Where(a => a.Tlp <= _teamMax).Take(8)];
+        await ArticleSvc.ListAsync(status: ArticleStatus.Presented, take: 8);
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;

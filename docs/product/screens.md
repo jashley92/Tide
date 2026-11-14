@@ -112,8 +112,8 @@ The brief takes the page:
 - **Not on a brief yet**: what hasn't been on any brief, Ready articles (anyone's) first, then your own drafts, newest
   first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
   rest are under *Add article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't
-  write the brief sees **Recently presented** there instead: only articles that have been presented, at or below the
-  team edition's TLP ceiling, so never a draft's title or one marked above what the team edition carries;
+  write the brief sees **Recently presented** there instead: only articles that have been presented, so never a
+  draft's title; every marking, as the brief beside it names them;
 - **today's numbers**, each box with the value it's compared with.
 
 Beside the brief, in the context rail:
@@ -795,8 +795,6 @@ now** column, its check is old or missing, or no team owns it.
   number of new triage items that name it, linked to Triage's **We run it** filter. It adds "briefed today" when an
   article about it is on today's brief, and for analysts "not written up" when new triage items name it and no
   article about it was written in the last seven days. It says "Nothing new" otherwise.
-  A CVE seen only on an article above the team edition's TLP ceiling is counted ("1 CVE above TLP:AMBER+STRICT") and
-  not named.
 - **Checked** flags a date more than 90 days old, and a product never checked. A date from another year shows its year.
 - A filter box narrows the list by product, other name or version. The quick filters **Needs a look**, **Check is
   old** and **No owning team** each show how many products they match, and **+ Filter** keeps one owning team's products.
@@ -805,14 +803,13 @@ now** column, its check is old or missing, or no team owns it.
 - **The selected product.** A row is selected (a click, `J` and `K` or the arrows, the address's `?row=`; `Enter`
   opens the product), and the context rail shows it: its versions, team, last check and contact; *Edit*, *Start an
   outreach* (a new Outreach action titled "Ask {contact} about {product}", or "Reach out about {product}" with no
-  contact) and *Mark checked*, for analysts; what's in triage for it now; its articles (those above the team edition's
-  TLP ceiling counted, not named); its open actions; and its notes.
+  contact) and *Mark checked*, for analysts; what's in triage for it now; its articles; its open actions; and its notes.
 
 The list also shows each product's versions, team, and how many articles and open actions it has. A product's page has its other names, versions and notes (AMBER), a vendor contact for
 outreach emails, and its history: the articles tagged with it or naming it, and their actions. Triage lifts items
 that name a product, and an article is tagged with any number of them from the editor's **We run**. A product's
-history is held to the team edition's TLP ceiling: articles above it, and actions raised from them, are counted but
-not named. A colleague's change re-reads the page in place; the edit form keeps what's typed in it.
+history names every article and action, whatever its TLP, as the rest of the app does for the team edition's readers;
+present mode's product card stays held to the team edition's ceiling. A colleague's change re-reads the page in place; the edit form keeps what's typed in it.
 
 ## Adversary profiles
 

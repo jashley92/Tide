@@ -85,18 +85,22 @@ public class TodayNotYetBriefedTests(TideApp app) : IClassFixture<TideApp>
             .Should().BeTrue("Add started today's brief, with the article on it");
     }
 
-    [Fact]
-    public async Task AReader_GetsOnlyWhatsBeenPresented_AtOrBelowTheTeamEditionsTlp()
+    [Theory]
+    [InlineData("ActionOwner")]
+    [InlineData("Viewer")]
+    public async Task SomeoneWhoDoesntWriteTheBrief_GetsWhatsBeenPresented_AtEveryMarking_ButNoDraft(string role)
     {
         await Article("NYB presented to all", Analyst, ArticleStatus.Presented);
-        await Article("NYB presented, red", Analyst, ArticleStatus.Presented, TlpLevel.Red);
+        await Article($"NYB presented, red, for {role}", Analyst, ArticleStatus.Presented, TlpLevel.Red);
+        await Article($"NYB presented, strict, for {role}", Analyst, ArticleStatus.Presented, TlpLevel.AmberStrict);
         await Article("NYB a draft readers can't see", Analyst);
 
-        await using var r = await RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true }, new SignIn("dev:nyb-reader", "Reader", "ActionOwner"));
+        await using var r = await RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true }, new SignIn($"dev:nyb-{role}", "Robin", role));
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().NotContain("Not on a brief yet", "they don't write the brief").And.Contain("Recently presented")
             .And.Contain("NYB presented to all")
-            .And.NotContain("NYB presented, red", "above the team edition's ceiling")
+            .And.Contain($"NYB presented, red, for {role}", "a team edition's reader reads every marking in the app, as Today's brief beside it names them")
+            .And.Contain($"NYB presented, strict, for {role}")
             .And.NotContain("NYB a draft readers can't see", "a draft's title isn't theirs to see");
     }
 }
