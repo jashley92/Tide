@@ -82,7 +82,8 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
     }
 
     // How each dev-only choice (?as=, ?roles=, ?onboarding=) is kept for the browser. Secure=true is safe even though dev
-    // runs over http://localhost: browsers treat localhost as a secure context and still send the cookie.
+    // runs over http://localhost: browsers treat localhost as a secure context and still send the cookie. This handler is
+    // dev-only (Production forbids it), so it never sees a non-localhost HTTP origin.
     private CookieOptions DevCookie() => new()
     {
         HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true,
@@ -112,11 +113,7 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         asName = new string(asName.Where(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '_' or '.' or '\'').ToArray());
         if (asName.Length > MaxAsNameLength) asName = asName[..MaxAsNameLength];
         if (!string.IsNullOrWhiteSpace(asName))
-            // Secure=true is safe even though dev runs over http://localhost: browsers treat localhost as
-            // a secure context and still send the cookie. This handler is dev-only (Production forbids it),
-            // so it never sees a non-localhost HTTP origin.
-            Context.Response.Cookies.Append(cookieName, asName.Trim(),
-                DevCookie());
+            Context.Response.Cookies.Append(cookieName, asName.Trim(), DevCookie());
         else
             asName = Context.Request.Cookies[cookieName] ?? "";
 
