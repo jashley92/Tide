@@ -134,7 +134,7 @@ else
                 @if (_rotaDay is { AnalystId: { } rotaId } && _brief is not null && rotaId != _brief.AnalystId)
                 {
                     <div class="mt-1">
-                        The brief rotation has @_rotaDay.AnalystName for this day, but @_brief.AnalystName presented it.
+                        @BriefService.OffTheRota(_rotaDay.AnalystName, _brief)
                         @if (_canWrite && (CurrentUser.UserId == rotaId || CurrentUser.UserId == _brief.AnalystId || CurrentUser.Has(Permission.Administer)))
                         {
                             <button class="btn btn-sm btn-outline-secondary ms-1" disabled="@_busy" @onclick="RecordCover">Record @_brief.AnalystName as cover</button>
@@ -267,7 +267,7 @@ else
 <UnsavedGuard Dirty="Unsaved" Message="@UnsavedMessage" Save="SaveUnsaved" Discard="DiscardUnsaved" />
 @* The Send step: the test copy and each edition's confirmation, in a dialog; only the send log for someone who can't send. *@
 <ConfirmDialog @ref="_send" CloseOnly="true" Wide="true" Title="@SendTitle">
-    <DistributePanel Date="_date" Sent="Load" Correct="_correct" MeetingHeld="@((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is not null || _brief?.Status == BriefStatus.Sent)"
+    <DistributePanel Date="_date" Sent="Load" Correct="_correct" MeetingHeld="@(_brief is { } held && BriefService.MeetingHeld(held))"
                      BriefId="_brief?.Id" Ended="Load" Brief="_brief" />
 </ConfirmDialog>
 
@@ -1109,12 +1109,15 @@ else
         </section>
     };
 
+    // Who attended, said once the meeting has been held, while it runs, or once its day has gone.
+    private bool AttendanceShown => _brief is { } b && BriefService.AttendanceShown(b, _past, Meetings.IsLive(b.Id));
+
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
-                     @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails"
+                     @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" ShowAttendance="AttendanceShown" Busy="_busy" OnSave="SaveDetails"
                      OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs" />
     };
 

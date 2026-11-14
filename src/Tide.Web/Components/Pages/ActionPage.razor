@@ -114,7 +114,8 @@ else
         </div>
         @if (primary != ActionFlow.None || more.Count > 0)
         {
-            <div class="tide-action-do">
+            @* A page's tip keeps clear of these (tips.js). *@
+            <div class="tide-action-do" data-tip-clear>
                 @if (primary != ActionFlow.None)
                 {
                     <button type="button" class="btn btn-primary" data-primary="@primary" disabled="@_busy" @onclick="RunPrimary"><span class="bi @ActionGuide.Icon(primary)" aria-hidden="true"></span> @ActionGuide.Label(primary)</button>

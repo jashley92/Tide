@@ -29,7 +29,7 @@ public class RotaLockTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    // Sam's week: Monday presented, Tuesday sent, Wednesday held and put back to ready (an attendee), Thursday a draft.
+    // Sam's week: Monday presented, Tuesday sent, Wednesday held and put back to ready, Thursday a draft.
     private async Task<List<DateOnly>> SamsWeekPartlyPresented()
     {
         var r = _db.Rotation();
@@ -42,7 +42,12 @@ public class RotaLockTests : IDisposable
         await using var ctx = _db.Context();
         (await ctx.Briefs.SingleAsync(b => b.Id == ids[0])).Status = BriefStatus.Presented;
         (await ctx.Briefs.SingleAsync(b => b.Id == ids[1])).Status = BriefStatus.Sent;
+        // Held and put back to ready: ended (its audit trail says so), then its times cleared; who attended kept.
+        var reopened = await ctx.Briefs.SingleAsync(b => b.Id == ids[2]);
+        reopened.PresentedAtUtc = DateTimeOffset.UtcNow;
         ctx.MeetingAttendees.Add(new MeetingAttendee { BriefId = ids[2], Name = "In the room" });
+        await ctx.SaveChangesAsync();
+        reopened.PresentedAtUtc = null;
         await ctx.SaveChangesAsync();
         return days;
     }
@@ -93,6 +98,38 @@ public class RotaLockTests : IDisposable
         var entry = await ctx.AuditLog.SingleAsync(e => e.EntityType == nameof(RotationWeek) && e.ChangesJson!.Contains("Correction"));
         entry.ChangesJson.Should().Contain("Presented days corrected").And.Contain(days[0].ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture));
         entry.UserName.Should().Be(_db.User.DisplayName);
+    }
+
+    // An older version let a meeting start before its brief's day and refused to end it, leaving people recorded as
+    // attending (and notes) on a brief whose meeting hadn't been held. That isn't a meeting held: the day still follows
+    // the rota. A past day's are: its meeting ran, ended or not.
+    [Fact]
+    public async Task AttendanceFromAMeetingStartedBeforeItsDay_DoesntKeepTheDay_ButAPastDaysDoes()
+    {
+        var r = _db.Rotation();
+        await r.AddMemberAsync(Robin, "Robin");
+        await r.AddMemberAsync(Sam, "Sam");
+        var past = RotationService.WeekStart(_db.Clock.Today).AddDays(-14);
+        await r.SetWeekAsync(_week, Sam);
+        await r.SetWeekAsync(past, Sam);
+        var early = (await _db.Briefs().GetOrStartAsync(_week)).Id;
+        var ran = (await _db.Briefs().GetOrStartAsync(past)).Id;
+        // A past day's whose only join was ahead of its day (MeetingService.JoinedBefore): its meeting never ran.
+        var neverRan = (await _db.Briefs().GetOrStartAsync(past.AddDays(1))).Id;
+        await using (var ctx = _db.Context())
+        {
+            foreach (var id in new[] { early, ran })
+            {
+                ctx.MeetingAttendees.Add(new MeetingAttendee { BriefId = id, UserId = Sam, Name = "Sam", JoinedAtUtc = DateTimeOffset.UtcNow });
+                ctx.MeetingNotes.Add(new MeetingNote { BriefId = id, AuthorId = Sam, AuthorName = "Sam", AtUtc = DateTimeOffset.UtcNow, Text = "Started early" });
+            }
+            ctx.MeetingAttendees.Add(new MeetingAttendee { BriefId = neverRan, UserId = Sam, Name = "Sam", JoinedAtUtc = _db.Clock.MeetingStart(past).AddDays(-2) });
+            await ctx.SaveChangesAsync();
+        }
+
+        (await r.SetWeekAsync(_week, Robin)).Kept.Should().BeEmpty("a meeting started before its day and never ended wasn't held");
+        (await _db.Briefs().GetAsync(_week))!.AnalystName.Should().Be("Robin", "its brief follows the rota until its meeting");
+        (await r.SetWeekAsync(past, Robin)).Kept.Should().Equal((past, "Sam"));
     }
 
     [Fact]

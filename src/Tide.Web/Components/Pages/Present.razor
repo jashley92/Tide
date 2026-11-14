@@ -704,7 +704,7 @@ else
                         </div>
                         @* Who attended, during the meeting and after it (the presenter corrects it from the rail then); in a
                            rehearsal, where it'll be, for Learn to present to show. *@
-                        @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0 || Rehearsing))
+                        @if (TeamEdition && (_view is not null || Recorded.Count > 0 || Rehearsing))
                         {
                             <div class="tide-slide-text text-start mx-auto tide-slide-actions" id="wrap-attendance">
                                 @{ var attendance = Attendance; }
@@ -1022,7 +1022,7 @@ else
                             }
                         }
                         @* Who attended: corrected here during the meeting, and after it by whoever presents (MeetingService.CorrectsRecord). *@
-                        @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0 || MeetingOver))
+                        @if (TeamEdition && (_view is not null || Recorded.Count > 0 || MeetingOver))
                         {
                             <div class="tide-present-rail-sub">Attendance</div>
                             @foreach (var at in Attendance)
@@ -1209,7 +1209,7 @@ else
         @* A meeting note typed and not added: leaving present mode asks first. *@
         <UnsavedGuard Dirty="AsksBeforeLeaving" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
         @* Learn to present, only in rehearsal: no meeting, nobody following, so nobody else ever sees it. Inside the slides'
-           root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
+           root, so it shows in full screen too; present.js leaves the keys to it while it's up, but for those that move the slides. *@
         @if (Rehearsing && GuideStep is { } guideStep)
         {
             <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName"
@@ -3554,6 +3554,11 @@ else
     /// <summary>Someone who attended, as the record has them (<see cref="Row"/>), and whether they're here now.</summary>
     private sealed record Attendee(string Key, string Name, bool Here, MeetingAttendee Row);
 
+    // The record's attendance, once the brief's meeting has been held, while it's live (the live meeting's), or on a
+    // past day; none before (BriefService.AttendanceShown), in a rehearsal too.
+    private IReadOnlyList<MeetingAttendee> Recorded =>
+        _brief is { } b && BriefService.AttendanceShown(b, _past, _view is not null) ? _record.Attendees : [];
+
     // Who attended is the record, on every page alike: joining records someone at once, and someone taken off it while
     // still in the room isn't listed (nor recorded again as the meeting ends) unless they join again.
     private List<Attendee> Attendance
@@ -3561,7 +3566,7 @@ else
         get
         {
             var here = (_view?.People ?? []).Select(p => p.UserId).ToHashSet(StringComparer.Ordinal);
-            return _record.Attendees
+            return Recorded
                 .Select(a => new Attendee(a.UserId.Length > 0 ? a.UserId : a.Name, a.Name, a.UserId.Length > 0 && here.Contains(a.UserId), a))
                 .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }

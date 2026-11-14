@@ -477,7 +477,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 
-    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live);
+    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live, Clock);
 
     public RotationService Rotation(OrgClock? clock = null) =>
         new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates, Boundary);
