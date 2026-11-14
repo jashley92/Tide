@@ -198,7 +198,9 @@ no top bar, so none there.
   brief, each article on it; a send publishes as its brief), from any circuit including its own, or when the day
   turns. The chip then reads again after `LiveChanges`' pause, and checks on each navigation (free unless something
   changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
-- **Width.** In full from 1200px; "10:30 AM · 3/5" below that; under 1000px the team's name gives way to it; under
+- **Width.** In full from 1200px; "10:30 AM · 3/5" below that ("Mon · 3/5" on a day off, the day rather than the time,
+  so it's never longer than a working day's); where the bar is still too tight the chip is cut short, its title and name
+  keeping the whole wording, rather than squeezing the search box or Go to; under 1000px the team's name gives way to it; under
   740px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
