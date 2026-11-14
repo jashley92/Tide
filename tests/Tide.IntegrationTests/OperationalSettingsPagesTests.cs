@@ -169,6 +169,20 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task Sources_ARefreshUnderWay_SaysSo()
+    {
+        var log = app.Services.GetRequiredService<CveRunLog>();
+        var at = DateTimeOffset.UtcNow.AddMinutes(-16);
+        log.TryStart(at).Should().BeTrue();
+        try
+        {
+            await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");
+            (await r.Html()).Should().Contain($"Refreshing now (started {Tide.Web.Components.Shared.Ui.When(app.Services.GetRequiredService<OrgClock>(), at)}).");
+        }
+        finally { log.Finished(); }
+    }
+
+    [Fact]
     public async Task Sources_TheStarterList_TicksTheRecommended_AndAddsThemPaused()
     {
         await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");

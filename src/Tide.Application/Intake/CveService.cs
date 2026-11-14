@@ -54,11 +54,23 @@ public sealed class CveRunLog
 
     public CveRun? Last { get; set; }
 
+    /// <summary>When the run under way started; null when none is.</summary>
+    public DateTimeOffset? StartedAtUtc { get; private set; }
+
     /// <summary>Starts a run unless one is under way: a refresh by hand and the scheduled one at the same moment each
     /// added the same new CVEs, and the second save failed on their keys. One process (ADR 0001), so held in memory.</summary>
-    public bool TryStart() => Interlocked.CompareExchange(ref _running, 1, 0) == 0;
+    public bool TryStart(DateTimeOffset startedAtUtc)
+    {
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0) return false;
+        StartedAtUtc = startedAtUtc;
+        return true;
+    }
 
-    public void Finished() => Volatile.Write(ref _running, 0);
+    public void Finished()
+    {
+        StartedAtUtc = null;
+        Volatile.Write(ref _running, 0);
+    }
 }
 
 /// <summary>
@@ -75,6 +87,9 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
     public const decimal HighEpss = 0.5m;
 
     public CveRun? LastRun => log.Last;
+
+    /// <summary>When the refresh under way (scheduled or by hand) started; null when none is.</summary>
+    public DateTimeOffset? RunningSince => log.StartedAtUtc;
 
     public CveOptions Options => options.CurrentValue;
 
@@ -144,8 +159,23 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
         title.Contains("exploit", StringComparison.OrdinalIgnoreCase)
         && !NotExploited.Any(n => title.Contains(n, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Runs enrichment if it's on and due. Returns the run, or null when nothing ran.</summary>
-    public async Task<CveRun?> EnrichDueAsync(CancellationToken ct = default)
+    /// <summary>
+    /// The longest a scheduled run can take before it's called hung: KEV and EPSS, then <see cref="CveOptions.MaxNvdPerRun"/>
+    /// NVD lookups that each take every try to the full <see cref="CveOptions.NvdTimeout"/>, with the waits between tries
+    /// and between lookups; never under two hours.
+    /// </summary>
+    public static TimeSpan LongestRun(CveOptions o)
+    {
+        var tries = NvdRetryWaits.Count + 1;
+        var pause = TimeSpan.FromMilliseconds(o.NvdDelayMs ?? 6500);
+        var lookup = o.NvdTimeout * tries + NvdRetryWaits.Aggregate(TimeSpan.Zero, (a, b) => a + b) + pause;
+        var longest = TimeSpan.FromMinutes(10) + lookup * Math.Clamp(o.MaxNvdPerRun, 0, 500);
+        return longest > TimeSpan.FromHours(2) ? longest : TimeSpan.FromHours(2);
+    }
+
+    /// <summary>Runs enrichment if it's on and due. Returns the run, or null when nothing ran. <paramref name="started"/>
+    /// is told when a run starts.</summary>
+    public async Task<CveRun?> EnrichDueAsync(Action<DateTimeOffset>? started = null, CancellationToken ct = default)
     {
         var o = options.CurrentValue;
         if (!o.Enabled) return null;
@@ -156,7 +186,7 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
                 && time.GetUtcNow() - at < TimeSpan.FromHours(Math.Max(1, o.RefreshHours)))
                 return null;
         }
-        return await EnrichAsync(ct);
+        return await EnrichAsync(ct, started: started);
     }
 
     /// <summary>The most NVD lookups a refresh started by hand makes, so the page isn't held for minutes.</summary>
@@ -173,9 +203,11 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
     }
 
     // One run at a time: one asked for meanwhile (by hand, or the schedule's) doesn't run, and is null.
-    private async Task<CveRun?> EnrichAsync(CancellationToken ct, int? nvdCap = null)
+    private async Task<CveRun?> EnrichAsync(CancellationToken ct, int? nvdCap = null, Action<DateTimeOffset>? started = null)
     {
-        if (!log.TryStart()) return null;
+        var at = time.GetUtcNow();
+        if (!log.TryStart(at)) return null;
+        started?.Invoke(at);
         try { return await RunAsync(nvdCap, ct); }
         finally { log.Finished(); }
     }

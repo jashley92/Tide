@@ -1267,7 +1267,7 @@ public class CveAndStoryTests : IDisposable
         await cts.CancelAsync();
 
         await FluentActions.Awaiting(() => run).Should().ThrowAsync<OperationCanceledException>();
-        _db.CveLog.TryStart().Should().BeTrue("a cancelled run doesn't hold the next one off");
+        _db.CveLog.TryStart(DateTimeOffset.UtcNow).Should().BeTrue("a cancelled run doesn't hold the next one off");
     }
 
     [Fact]

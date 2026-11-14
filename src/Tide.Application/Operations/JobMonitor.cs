@@ -77,12 +77,14 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
     public JobState Get(JobDefinition job) => _states[job.Key];
 
     /// <summary>Whether the job is on, when it's next due (null: not scheduled), and how often it runs when that's a
-    /// setting (null: as before).</summary>
-    public void Scheduled(JobDefinition job, bool enabled, DateTimeOffset? nextDueUtc = null, TimeSpan? interval = null)
+    /// setting (null: as before), and how long a run may take before it's called hung when that depends on settings (null:
+    /// as before).</summary>
+    public void Scheduled(JobDefinition job, bool enabled, DateTimeOffset? nextDueUtc = null, TimeSpan? interval = null, TimeSpan? timeout = null)
     {
         var now = time.GetUtcNow();
         Update(job, s => s with
         {
+            Job = timeout is { } limit ? s.Job with { Timeout = limit } : s.Job,
             Enabled = enabled, NextDueUtc = nextDueUtc, Interval = interval ?? s.Interval,
             EnabledSinceUtc = !enabled ? null : s.Enabled && s.EnabledSinceUtc is { } since ? since : now,
         });
@@ -124,8 +126,15 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         Queue(new FinishedRun(job.Key, startedUtc, now, true, detail, null));
     }
 
+    /// <summary>A run made outside <see cref="RunAsync"/> started (a job that only sometimes has work, and says so once it
+    /// does): it shows as running until <see cref="Succeeded"/> or <see cref="Failed(JobDefinition, DateTimeOffset, string)"/>.</summary>
+    public void Started(JobDefinition job, DateTimeOffset startedUtc) => Update(job, s => s with { LastStartedUtc = startedUtc, Running = true });
+
     /// <summary>Records a run that finished without an exception but didn't work (the update check couldn't reach GitHub).</summary>
     public void Failed(JobDefinition job, string why) => Fail(job, time.GetUtcNow(), why, null);
+
+    /// <summary>As <see cref="Failed(JobDefinition, string)"/>, for a run that started at <paramref name="startedUtc"/>.</summary>
+    public void Failed(JobDefinition job, DateTimeOffset startedUtc, string why) => Fail(job, startedUtc, why, null);
 
     /// <summary>Records a run whose exception was caught outside <see cref="RunAsync"/>, logged with it.</summary>
     public void Failed(JobDefinition job, Exception exception) => Fail(job, time.GetUtcNow(), Describe(exception), exception);

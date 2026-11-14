@@ -336,10 +336,17 @@ public class IntakeHostedServiceSettingsTests
         await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
         await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
         jobs.Get(JobMonitor.Prune).LastSucceeded.Should().BeTrue("the pass went on while the refresh waits on KEV");
-        jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc.Should().BeNull();
+        // Diagnostics and the Sources card say it's under way, with its own limit before it's called hung.
+        jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => s.Running && s.LastStartedUtc != null && s.LastFinishedUtc == null
+            && s.Job.Timeout == CveService.LongestRun(o));
+        var cves = rig.Get<CveRunLog>();
+        cves.StartedAtUtc.Should().Be(jobs.Get(JobMonitor.CveRefresh).LastStartedUtc);
 
         slow.SetResult();
         (await Tide.TestSupport.Poll.Until(() => jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc is not null)).Should().BeTrue();
         rig.Db.Http.Requests.Count(r => r.Url.StartsWith(o.KevUrl, StringComparison.Ordinal)).Should().Be(1, "one refresh at a time");
+        jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => !s.Running && s.LastSucceeded != null);
+        cves.StartedAtUtc.Should().BeNull();
+        cves.Last.Should().NotBeNull();
     }
 }

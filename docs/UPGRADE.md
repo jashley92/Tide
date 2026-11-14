@@ -184,7 +184,8 @@ Upgrade as usual; no migration.
 - **NVD is given longer, and a second and third try.** NVD requests have their own time limit, `Cve:NvdTimeoutSeconds`
   (60, held to 10 to 180), instead of the feeds' `Intake:TimeoutSeconds`. One that times out or is answered 5xx or 429
   is tried again after 10 s and 30 s (or NVD's `Retry-After`, up to 2 minutes) before the run stops asking NVD. The
-  CVE refresh now runs beside the feed polling rather than holding it up.
+  CVE refresh now runs beside the feed polling rather than holding it up; Diagnostics shows it running (since when),
+  and the Sources card says "Refreshing now". It's called hung only past the longest a run can take on its settings.
 
 ### v1.14.0
 

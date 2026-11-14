@@ -47,7 +47,9 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         var enriching = cve.CurrentValue.Enabled;
         // Each part's on/off is known before any of them runs, so a slow first pass doesn't show the later ones as off.
         jobs.Scheduled(JobMonitor.FeedPoll, polling, polling ? now + PollInterval : null);
-        jobs.Scheduled(JobMonitor.CveRefresh, enriching, enriching ? jobs.Get(JobMonitor.CveRefresh).NextDueUtc ?? now : null, CveInterval(cve.CurrentValue));
+        // A run with NVD slow can take hours at worst: it's called hung only past the longest it can take on these settings.
+        jobs.Scheduled(JobMonitor.CveRefresh, enriching, enriching ? jobs.Get(JobMonitor.CveRefresh).NextDueUtc ?? now : null, CveInterval(cve.CurrentValue),
+            CveService.LongestRun(cve.CurrentValue));
         jobs.Scheduled(JobMonitor.Prune, true, _lastPrune == DateTimeOffset.MinValue ? now : _lastPrune + TimeSpan.FromDays(1));
         await Step("Polling the sources", JobMonitor.FeedPoll, async sp =>
         {
@@ -70,7 +72,8 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         jobs.Scheduled(JobMonitor.Prune, true, now - _lastPrune > TimeSpan.FromDays(1) ? now + PollInterval : _lastPrune + TimeSpan.FromDays(1));
     }
 
-    // The CVE refresh is asked every pass but runs only when it's due, so only a pass that ran is recorded.
+    // The CVE refresh is asked every pass but runs only when it's due, so only a pass that ran is recorded: it shows as
+    // running from the moment the run starts.
     private async Task CveStep(CancellationToken ct)
     {
         var o = cve.CurrentValue;
@@ -78,8 +81,12 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         try
         {
             await using var scope = scopes.CreateAsyncScope();
-            var run = await scope.ServiceProvider.GetRequiredService<CveService>().EnrichDueAsync(ct);
-            if (run is { Error: { } error }) jobs.Failed(JobMonitor.CveRefresh, error);
+            var run = await scope.ServiceProvider.GetRequiredService<CveService>().EnrichDueAsync(at =>
+            {
+                started = at;
+                jobs.Started(JobMonitor.CveRefresh, at);
+            }, ct);
+            if (run is { Error: { } error }) jobs.Failed(JobMonitor.CveRefresh, started, error);
             else if (run is not null) jobs.Succeeded(JobMonitor.CveRefresh, started, $"KEV {run.Kev}, EPSS {run.Epss}, NVD {run.Nvd}");
             var last = jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc;
             jobs.Scheduled(JobMonitor.CveRefresh, o.Enabled, o.Enabled ? (last ?? started) + CveInterval(o) : null, CveInterval(o));
