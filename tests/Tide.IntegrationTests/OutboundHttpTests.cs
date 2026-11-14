@@ -167,6 +167,14 @@ public sealed class OutboundHttpTests : IAsyncDisposable
         missing.Should().Match<HttpFetch>(f => f.Status == FetchStatus.Failed && !f.Retryable && f.RetryAfter == null);
     }
 
+    // NVD's tries for one CVE (CveService.NvdRetryWaits) all go out: the circuit backs a host off only on the failure
+    // that ends them.
+    [Fact]
+    public void NvdsTries_AreNoMoreThanTheCircuitAllows()
+    {
+        (CveService.NvdRetryWaits.Count + 1).Should().BeLessThanOrEqualTo(OutboundCircuit.FailuresToOpen);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();

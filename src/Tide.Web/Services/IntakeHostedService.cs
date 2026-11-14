@@ -24,20 +24,17 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
+        while (!stoppingToken.IsCancellationRequested)
         {
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                // A setting the server's file has that won't bind (Intake:Enabled "yes", hand-edited while TIDE runs) throws
-                // as the pass reads it; it's logged and read again next pass, rather than stopping the app.
-                try { await PassAsync(stoppingToken); }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-                catch (Exception ex) { log.LogError(ex, "An intake pass failed before it ran (check the Intake and Cve settings); it's tried again in a minute."); }
-                try { await Task.Delay(PollInterval, stoppingToken); }
-                catch (OperationCanceledException) { return; }
-            }
+            // A setting the server's file has that won't bind (Intake:Enabled "yes", hand-edited while TIDE runs) throws
+            // as the pass reads it; it's logged and read again next pass, rather than stopping the app.
+            try { await PassAsync(stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex) { log.LogError(ex, "An intake pass failed before it ran (check the Intake and Cve settings); it's tried again in a minute."); }
+            try { await Task.Delay(PollInterval, stoppingToken); }
+            catch (OperationCanceledException) { break; }
         }
-        finally { await _cve; }   // cancelled with the rest at shutdown
+        await _cve;   // cancelled with the rest at shutdown
     }
 
     /// <summary>One pass. Whether polling and enrichment are on is read afresh each time (saved on Sources, else the

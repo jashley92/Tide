@@ -6,6 +6,7 @@ using Tide.Application.Intake;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.TestSupport;
 
 namespace Tide.IntegrationTests;
 
@@ -1178,7 +1179,7 @@ public class CveAndStoryTests : IDisposable
         await ArticleWithCve("CVE-2026-0007");
         var o = NvdOnly();
         _db.Http.Then(o.NvdUrl, Busy(), TimedOut, Ok(NvdAnswer));
-        var clock = new Tide.TestSupport.InstantClock();
+        var clock = new InstantClock();
 
         var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
 
@@ -1198,7 +1199,7 @@ public class CveAndStoryTests : IDisposable
         _db.Http.Then(o.NvdUrl, Busy(), Busy(), Busy());
         _db.Http.Set(o.NvdUrl, NvdAnswer);
 
-        var run = (await _db.Cves(o, new Tide.TestSupport.InstantClock()).EnrichNowAsync())!;
+        var run = (await _db.Cves(o, new InstantClock()).EnrichNowAsync())!;
 
         run.Error.Should().StartWith("NVD: The server answered HTTP 503").And.Contain("3 tries");
         run.Nvd.Should().Be(0);
@@ -1212,7 +1213,7 @@ public class CveAndStoryTests : IDisposable
         await ArticleWithCve("CVE-2026-0007");
         var o = NvdOnly();
         _db.Http.Then(o.NvdUrl, Busy(TimeSpan.FromSeconds(45)), Busy(TimeSpan.FromHours(1)), Ok(NvdAnswer));
-        var clock = new Tide.TestSupport.InstantClock();
+        var clock = new InstantClock();
 
         var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
 
@@ -1226,7 +1227,7 @@ public class CveAndStoryTests : IDisposable
         await ArticleWithCve("CVE-2026-0007");
         var o = NvdOnly();
         _db.Http.Then(o.NvdUrl, new HttpFetch(FetchStatus.Failed, Error: "The server answered HTTP 404 Not Found."));
-        var clock = new Tide.TestSupport.InstantClock();
+        var clock = new InstantClock();
 
         var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
 
@@ -1258,11 +1259,11 @@ public class CveAndStoryTests : IDisposable
         await ArticleWithCve("CVE-2026-0007");
         var o = NvdOnly();
         _db.Http.Then(o.NvdUrl, Busy());
-        var clock = new Tide.TestSupport.ManualClock();
+        var clock = new ManualClock();
         using var cts = new CancellationTokenSource();
 
         var run = _db.Cves(o, clock).EnrichNowAsync(cts.Token);
-        (await Tide.TestSupport.Poll.Until(() => clock.Pending > 0)).Should().BeTrue("it waits to try again");
+        (await Poll.Until(() => clock.Pending > 0)).Should().BeTrue("it waits to try again");
         await cts.CancelAsync();
 
         await FluentActions.Awaiting(() => run).Should().ThrowAsync<OperationCanceledException>();

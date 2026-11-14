@@ -93,9 +93,8 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
                 var busy = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests;
                 if (busy) _circuit.Failed(target);
                 else _circuit.Succeeded(target);
-                var wait = response.Headers.RetryAfter is { } after ? after.Delta ?? after.Date - DateTimeOffset.UtcNow : null;
                 return new HttpFetch(FetchStatus.Failed, Error: $"The server answered HTTP {(int)response.StatusCode} {response.ReasonPhrase}.",
-                    Retryable: busy, RetryAfter: busy ? wait : null);
+                    Retryable: busy, RetryAfter: busy && response.Headers.RetryAfter is { } after ? after.Delta ?? after.Date - DateTimeOffset.UtcNow : null);
             }
             var max = Math.Max(64, o.MaxResponseKB) * 1024L;
             if (response.Content.Headers.ContentLength is > 0 and var length && length > max)
