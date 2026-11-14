@@ -14,7 +14,8 @@ namespace Tide.Application.Intake;
 public sealed record StoryPrefill(IReadOnlyList<string> Cves, IReadOnlyList<Guid> TagIds, IReadOnlyList<Guid> ProductIds, int LeftOut);
 
 /// <summary>An article a story's page offers to add to it: one not on that story, and the story it's on now, if any.</summary>
-public sealed record StoryCandidate(Guid Id, string Title, TlpLevel Tlp, ArticleStatus Status, DateTimeOffset CreatedAtUtc, string? OnStory);
+public sealed record StoryCandidate(Guid Id, string Title, TlpLevel Tlp, ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc,
+    string? OnStory);
 
 /// <summary>
 /// A story's page's two ways to add an article: start a new one on the story, prefilled from what its articles share, or
@@ -81,7 +82,7 @@ public sealed class StoryArticleService(IAppDbContextFactory dbs, ICurrentUser u
         await using var db = await dbs.CreateAsync(ct);
         var q = ArticleService.Matching(db, words, null).Where(a => a.StoryId != storyId);
         return await q.OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(StoryService.PickLimit)
-            .Select(a => new StoryCandidate(a.Id, a.Title, a.Tlp, a.Status, a.CreatedAtUtc,
+            .Select(a => new StoryCandidate(a.Id, a.Title, a.Tlp, a.Status, a.AuthorName, a.CreatedAtUtc,
                 db.Stories.Where(s => s.Id == a.StoryId).Select(s => s.Name).FirstOrDefault()))
             .ToListAsync(ct);
     }

@@ -1,6 +1,7 @@
 using System.Reflection;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
@@ -11,6 +12,7 @@ using Tide.Application.Stack;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
+using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
 
 namespace Tide.IntegrationTests;
@@ -218,6 +220,49 @@ public class StoryArticleTests : IDisposable
 
         (await _db.StoryArticles().CandidatesAsync(story, "report")).Should().HaveCount(StoryService.PickLimit);
     }
+
+    [Fact]
+    public async Task CandidatesAsync_NamesEachArticlesAuthor_SoSameTitlesCanBeToldApart()
+    {
+        var story = await _db.Stories().CreateAsync("Edge VPN campaign", null);
+        await _db.Articles().CreateAsync("Same title", "Vendor", null, TlpLevel.Clear);
+
+        (await _db.StoryArticles().CandidatesAsync(story, "same")).Single().AuthorName.Should().Be(_db.User.DisplayName);
+    }
+
+    [Fact]
+    public async Task LinkAsync_SaysWhichStoryTheArticleMovedFrom_AndNothingForAPlainAttach()
+    {
+        var first = await _db.Stories().CreateAsync("Edge VPN campaign", null);
+        var second = await _db.Stories().CreateAsync("Ransomware wave", null);
+        var article = await _db.Articles().CreateAsync("Edge VPN exploited", "Vendor", null, TlpLevel.Clear);
+
+        (await _db.Stories().LinkAsync(article, first)).Should().BeNull();
+        (await _db.Stories().LinkAsync(article, first)).Should().BeNull("it was already on this one");
+        (await _db.Stories().LinkAsync(article, second)).Should().Be("Edge VPN campaign");
+    }
+
+    [Fact]
+    public async Task AStoryChange_IsInTheArticlesHistory_AndTheAuditLog_ByTheStoriesNames()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var first = await _db.Stories().CreateAsync("Edge VPN campaign", null);
+        var second = await _db.Stories().CreateAsync("Ransomware wave", null);
+        var article = await _db.Articles().CreateAsync("Edge VPN exploited", "Vendor", null, TlpLevel.Clear);
+
+        await _db.Stories().LinkAsync(article, first);
+        await _db.Stories().LinkAsync(article, second);
+        await _db.Stories().LinkAsync(article, null);
+
+        var history = await new Tide.Application.History.HistoryService(_db, _db.User).ArticleAsync(article);
+        var story = history.Entries.SelectMany(e => e.Changes).Where(c => c.Field == "Story").Select(c => (c.Before, c.After)).ToList();
+        story.Should().BeEquivalentTo(new (string?, string?)[] { (null, "Edge VPN campaign"), ("Edge VPN campaign", "Ransomware wave"), ("Ransomware wave", null) });
+
+        var audit = await new Tide.Application.History.AuditLogService(_db, _db.User, _db.Clock)
+            .PageAsync(new Tide.Application.History.AuditFilter { Kind = nameof(Article), Key = article.ToString() });
+        audit.Rows.SelectMany(r => r.Changes).Where(c => c.Field == "Story").Select(c => (c.Before, c.After))
+            .Should().ContainEquivalentOf(("Edge VPN campaign", "Ransomware wave"));
+    }
 }
 
 /// <summary>The story page's two actions: shown to analysts, hidden from Viewers; each adds through the story's services.</summary>
@@ -313,5 +358,77 @@ public class StoryArticlePageTests(TideApp app) : IClassFixture<TideApp>
         await Do(page, p => p.Attach(page.Component.Candidates[0]));
 
         page.Component.Detail!.Articles.Select(a => a.Id).Should().BeEquivalentTo([on, loose]);
+    }
+
+    private static readonly SignIn Colleague = new("dev:story-add-robin", "Robin", "Analyst");
+
+    private static List<string> Toasts(Rendered<Stories> page) =>
+        page.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Select(t => t.Message).ToList();
+
+    private async Task<(Guid Story, Guid Other, Guid Article, string Tag)> StoryOtherAndLooseArticle(string name)
+    {
+        var story = await StoryAsync(name);
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var other = await scope.ServiceProvider.GetRequiredService<StoryService>().CreateAsync($"Other {tag}", null);
+        var article = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync($"Picked {tag}", "Vendor", null, TlpLevel.Clear);
+        return (story, other, article, tag);
+    }
+
+    [Fact]
+    public async Task ThePicker_HearsAColleagueMoveAnArticle_AndThePickSaysWhichStoryItLeft()
+    {
+        var (story, other, article, tag) = await StoryOtherAndLooseArticle("Picker live");
+        await using var page = await Open(story);
+        await Do(page, p => p.StartAttach());
+        await Do(page, p => p.FindCandidates($"picked {tag}"));
+        page.Component.Candidates.Single().OnStory.Should().BeNull();
+        page.Component.Wanted(new Change(ChangeFeed.Articles, Colleague.UserId, Colleague.Name, Guid.NewGuid())).Should().BeTrue("the open picker hears any article");
+
+        // Robin puts it on another story, through the page's own origin, which the feed skips: the page hears it when handed over.
+        await using (var robin = SignedIn(app, Colleague))
+            await ActivatorUtilities.CreateInstance<StoryService>(robin.ServiceProvider, page.Scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>())
+                .LinkAsync(article, other);
+        await page.Click(p => p.OnChangedElsewhere([new Change(ChangeFeed.Articles, Colleague.UserId, Colleague.Name, Guid.NewGuid())]));
+        page.Component.Candidates.Single().OnStory.Should().Be($"Other {tag}");
+
+        await Do(page, p => p.Attach(page.Component.Candidates.Single()));
+        Toasts(page).Should().Contain($"Moved Picked {tag} from Other {tag} to this story.");
+
+        await Do(page, p => { p.CloseAdding(); return Task.CompletedTask; });
+        page.Component.Wanted(new Change(ChangeFeed.Articles, Colleague.UserId, Colleague.Name, Guid.NewGuid())).Should().BeFalse("closed, it's back to its own articles");
+    }
+
+    [Fact]
+    public async Task Escape_ClosesTheOpenPanel()
+    {
+        var story = await StoryAsync("Escape");
+        await using var page = await Open(story);
+
+        await Do(page, p => p.StartNew());
+        (await page.Html()).Should().Contain("tide-story-new");
+        await Do(page, p => { p.PanelKey(new KeyboardEventArgs { Key = "Escape" }); return Task.CompletedTask; });
+        (await page.Html()).Should().NotContain("tide-story-new");
+
+        await Do(page, p => p.StartAttach());
+        await Do(page, p => { p.PanelKey(new KeyboardEventArgs { Key = "Escape" }); return Task.CompletedTask; });
+        (await page.Html()).Should().NotContain("tide-story-attach");
+    }
+
+    [Fact]
+    public async Task AViewer_CallingThePagesStepsAnyway_IsRefusedByTheServer_AndNothingChanges()
+    {
+        var (story, _, article, _) = await StoryOtherAndLooseArticle("Viewer refused");
+        await using var page = await Open(story, Viewer);
+
+        await Do(page, p => { p.NewTitle = "Not a Viewer's to write"; return p.CreateNew(); });
+        await Do(page, p => p.Attach(new StoryCandidate(article, "Picked", TlpLevel.Clear, ArticleStatus.Draft, "Tester", DateTimeOffset.UtcNow, null)));
+        await Do(page, p => p.StartNew());
+
+        Toasts(page).Should().NotBeEmpty("each refusal is shown");
+        await using var check = SignedIn(app, SignIn.Analyst);
+        var detail = await check.ServiceProvider.GetRequiredService<StoryService>().GetAsync(story);
+        detail!.Articles.Should().BeEmpty("neither a new article nor the existing one was put on the story");
+        (await check.ServiceProvider.GetRequiredService<ArticleService>().ListAsync("Not a Viewer's")).Should().BeEmpty();
     }
 }

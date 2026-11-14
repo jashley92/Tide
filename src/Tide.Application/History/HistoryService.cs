@@ -82,13 +82,15 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
 
     /// <summary>
     /// The names of the scorecard tags, threat actors (adversary profiles) and products that <paramref name="rows"/> add
-    /// to an article or remove, by id: one query for each kind on the page.
+    /// to an article or remove, and of the stories an article moved between, by id: one query for each kind on the page.
     /// </summary>
     internal static async Task<Func<Guid, string?>> TagNamesAsync(IAppDbContext db, List<AuditLogEntry> rows, CancellationToken ct)
     {
         List<Guid> Ids(string type) => rows.Where(r => r.EntityType == type).Select(r => Guid.TryParse(HistoryFormatter.Part(r.EntityKey), out var g) ? g : Guid.Empty)
             .Where(g => g != Guid.Empty).Distinct().ToList();
         var names = new Dictionary<Guid, string>();
+        if (HistoryFormatter.StoryIds(rows) is { Count: > 0 } stories)
+            foreach (var s in await db.Stories.AsNoTracking().Where(s => stories.Contains(s.Id)).Select(s => new { s.Id, s.Name }).ToListAsync(ct)) names[s.Id] = s.Name;
         if (Ids(nameof(ArticleTag)) is { Count: > 0 } tags)
             foreach (var t in await db.ScorecardTags.AsNoTracking().Where(t => tags.Contains(t.Id)).Select(t => new { t.Id, t.Name }).ToListAsync(ct)) names[t.Id] = t.Name;
         if (Ids(nameof(ArticleAdversary)) is { Count: > 0 } actors)
@@ -248,7 +250,7 @@ public static class HistoryFormatter
             var what = row.Action == "Deleted" ? $"Removed a {part}" : $"Added a {part}";
             return new HistoryEntry(row.Id, row.AtUtc, row.UserName, what, [new HistoryChange(Capital(part), null, value)]);
         }
-        var changes = Changes(row.ChangesJson);
+        var changes = Changes(row.ChangesJson, HistoryNoise, null, tagName);
         if (row.Action == "Modified" && changes.Count == 0) return null;
         // "Keep it" changes nothing anyone wrote, so the entry says what it kept: "Kept “Why it matters” at TLP:CLEAR".
         if (row.Action == "Modified" && changes is [{ After: { } kept } only] && only.Field == Label(nameof(Article.WhyItMattersKeptTlp)))
@@ -282,7 +284,21 @@ public static class HistoryFormatter
     public static IReadOnlyList<HistoryChange> AuditChanges(AuditLogEntry row, Func<Guid, string?>? tagName = null)
     {
         if (Parts.ContainsKey(row.EntityType)) return Entry(row, tagName)?.Changes ?? [];
-        return Changes(row.ChangesJson, AuditNoise, Mask(row));
+        return Changes(row.ChangesJson, AuditNoise, Mask(row), tagName);
+    }
+
+    /// <summary>The stories that <paramref name="rows"/> move an article between (both sides of each Story change), for
+    /// <see cref="HistoryService.TagNamesAsync"/> to name.</summary>
+    public static List<Guid> StoryIds(IEnumerable<AuditLogEntry> rows) =>
+        rows.Where(r => r.EntityType == nameof(Article) && r.ChangesJson?.Contains(nameof(Article.StoryId), StringComparison.Ordinal) == true)
+            .SelectMany(r => Raw(r.ChangesJson)?.GetValueOrDefault(nameof(Article.StoryId)) ?? [])
+            .Select(v => Guid.TryParse(v, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).Distinct().ToList();
+
+    private static Dictionary<string, string?[]>? Raw(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<Dictionary<string, string?[]>>(json); }
+        catch (JsonException) { return null; }
     }
 
     // How a row's values may be shown: a secret setting's as set or changed; an address or an error scrubbed. Null: as
@@ -309,19 +325,17 @@ public static class HistoryFormatter
 
     private static string? Scrubbed(string? value) => string.IsNullOrEmpty(value) ? value : SecretMask.Scrub(value);
 
-    private static IReadOnlyList<HistoryChange> Changes(string? json, HashSet<string> noise, Func<string, string?, string?, (string?, string?)>? mask)
+    // name: what a record kept by id is called (a story an article moved between), when the caller read the names.
+    private static IReadOnlyList<HistoryChange> Changes(string? json, HashSet<string> noise, Func<string, string?, string?, (string?, string?)>? mask,
+        Func<Guid, string?>? name = null)
     {
-        if (string.IsNullOrWhiteSpace(json)) return [];
-        Dictionary<string, string?[]>? raw;
-        try { raw = JsonSerializer.Deserialize<Dictionary<string, string?[]>>(json); }
-        catch (JsonException) { return []; }
-        if (raw is null) return [];
+        if (Raw(json) is not { } raw) return [];
         return raw.Where(kv => !noise.Contains(kv.Key) && !IsUserId(kv.Key) && kv.Value is { Length: 2 })
             .OrderBy(kv => Order.TryGetValue(kv.Key, out var i) ? i : int.MaxValue).ThenBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv =>
             {
                 var (before, after) = mask is null ? (kv.Value[0], kv.Value[1]) : mask(kv.Key, kv.Value[0], kv.Value[1]);
-                return new HistoryChange(Label(kv.Key), Value(kv.Key, before), Value(kv.Key, after));
+                return new HistoryChange(Label(kv.Key), Value(kv.Key, before, name), Value(kv.Key, after, name));
             })
             .Where(c => c.Before != c.After)
             .ToList();
@@ -349,10 +363,12 @@ public static class HistoryFormatter
         return words.ToString();
     }
 
-    /// <summary>A stored value as the app writes it: a TLP as its marking, a time in UTC to the minute, a blank as none.</summary>
-    public static string? Value(string field, string? value)
+    /// <summary>A stored value as the app writes it: a TLP as its marking, a time in UTC to the minute, a blank as none, and
+    /// an article's story by its name when <paramref name="name"/> reads names (one deleted since says so).</summary>
+    public static string? Value(string field, string? value, Func<Guid, string?>? name = null)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
+        if (name is not null && field == nameof(Article.StoryId) && Guid.TryParse(value, out var story)) return name(story) ?? "a story since deleted";
         if (field.EndsWith(nameof(Article.Tlp), StringComparison.Ordinal) && EnumNames.OrNull<TlpLevel>(value) is { } tlp) return Tlp.Label(tlp);
         if (field.EndsWith("Utc", StringComparison.Ordinal)
             && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var at))

@@ -67,8 +67,8 @@ else
             }
             @if (_canWrite && !_editing)
             {
-                <button class="btn btn-primary" aria-expanded="@Ui.Aria(_adding == Adding.New)" @onclick="StartNew"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article on this story</button>
-                <button class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_adding == Adding.Existing)" @onclick="StartAttach"><span class="bi bi-link-45deg" aria-hidden="true"></span> Add an existing article</button>
+                <button @ref="_newToggle" class="btn btn-primary" aria-expanded="@Ui.Aria(_adding == Adding.New)" aria-controls="story-new" @onclick="StartNew"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article on this story</button>
+                <button @ref="_attachToggle" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_adding == Adding.Existing)" aria-controls="story-attach" @onclick="StartAttach"><span class="bi bi-link-45deg" aria-hidden="true"></span> Add an existing article</button>
                 <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
             }
         </div>
@@ -104,30 +104,30 @@ else
             }
             @if (_adding == Adding.New)
             {
-                <div class="tide-card tide-story-new" data-submit-scope>
+                <form id="story-new" class="tide-card tide-story-new" data-submit-scope @onsubmit="CreateNew" @onsubmit:preventDefault="true" @onkeydown="PanelKey">
                     <h2>New article on this story</h2>
                     <div class="row g-2">
-                        <div class="col-md-9">
+                        <div class="col-12 col-sm">
                             <label class="tide-field-label" for="sn-title">Title</label>
-                            <input id="sn-title" class="form-control form-control-sm" maxlength="300" placeholder="What happened, in a headline" @bind="NewTitle" />
+                            <input @ref="_newTitleBox" id="sn-title" class="form-control form-control-sm" maxlength="300" placeholder="What happened, in a headline" @bind="NewTitle" />
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-12 col-sm-auto">
                             <label class="tide-field-label" for="sn-tlp">TLP</label>
                             <TlpSelect Id="sn-tlp" Value="_newTlp" ValueChanged="NewTlpChanged" Label="The new article's TLP" DescribedBy="sn-copies" />
                         </div>
                     </div>
                     <div id="sn-copies" class="form-text">@Copies</div>
                     <div class="d-flex gap-2 mt-2">
-                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="CreateNew">Create and edit</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="StopAdding">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy" data-submit>Create and edit</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseAdding">Cancel</button>
                     </div>
-                </div>
+                </form>
             }
             else if (_adding == Adding.Existing)
             {
-                <div class="tide-card tide-story-attach">
+                <div id="story-attach" class="tide-card tide-story-attach" @onkeydown="PanelKey">
                     <h2><label for="sa-find">Add an existing article</label></h2>
-                    <SearchCombobox TItem="StoryCandidate" Id="sa-find" Type="search" Open="true" Placeholder="Titles, sources, CVEs, indicators" ListLabel="Articles"
+                    <SearchCombobox @ref="_findBox" TItem="StoryCandidate" Id="sa-find" Type="search" Open="true" Placeholder="Titles, sources, CVEs, indicators" ListLabel="Articles"
                                     Help="Articles not on this story are listed below. Choose one to add it." Disabled="_busy"
                                     @bind-Text="_find" @bind-Text:after="Typed" Items="Candidates" Key="c => c.Id" OnPick="Attach" Empty="@NoCandidates">
                         <ItemTemplate Context="c">
@@ -135,7 +135,7 @@ else
                             <span class="tide-story-result-meta">@CandidateMeta(c)</span>
                         </ItemTemplate>
                     </SearchCombobox>
-                    <button class="btn btn-outline-secondary btn-sm mt-2" @onclick="StopAdding">Done</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="CloseAdding">Done</button>
                 </div>
             }
             <div class="tide-card">
@@ -220,26 +220,40 @@ else
     // Re-read in place when a colleague changes what's shown. The list: any story, or any article (its counts). A story's
     // page: the story itself, an article linked to it, taken off it or saved while on it (Story), or its articles' CVEs,
     // techniques and threat actors (ArticleSummary); their bullets, screenshots, indicators and links, which it doesn't
-    // show, and other articles stay silent. An open Edit form keeps what's typed in it.
+    // show, and other articles stay silent. An open Edit form keeps what's typed in it. While Add an existing article is
+    // open, any article's change (Articles) reads its list again too, quietly, so the story each is on stays true.
     private LiveChanges? _live;
 
-    // The shown story's topic, set with Id, and its articles' summary topics, swapped whole when the story is read: the
-    // feed's filter reads them on the publisher's thread.
+    // The shown story's topic, set with Id, and its articles' summary topics, swapped whole when the story is read, and
+    // whether the picker is open: the feed's filter reads them on the publisher's thread.
     private volatile string? _storyTopic;
     private volatile IReadOnlySet<string> _articleTopics = new HashSet<string>();
+    private volatile bool _picking;
 
     protected override void OnInitialized() =>
         _live = new LiveChanges(Feed, Origin, Wanted, InvokeAsync, OnChangedElsewhere);
 
     internal bool Wanted(Change c) => _storyTopic is { } story
-        ? c.Topic == story || _articleTopics.Contains(c.Topic)
+        ? c.Topic == story || _articleTopics.Contains(c.Topic) || (_picking && c.Topic == ChangeFeed.Articles)
         : c.Topic == ChangeFeed.Stories || c.Topic == ChangeFeed.Articles;
 
     internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
     {
         if (_busy || !_loaded) return;   // a read or a step is under way, and it will show theirs
+        // Only another article changed: the picker's list is read again, and the story, which it doesn't touch, isn't.
+        if (Id is not null && heard.All(c => c.Topic == ChangeFeed.Articles))
+        {
+            if (_adding == Adding.Existing)
+            {
+                try { await Find(); }
+                catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+                StateHasChanged();
+            }
+            return;
+        }
         try
         {
+            if (_adding == Adding.Existing && Id is not null) await Find();
             if (Id is null) _list = await StorySvc.ListAsync();
             else
             {
@@ -361,12 +375,42 @@ else
 
     private static readonly RenderFragment NoCandidates = @<text>No other articles match.</text>;
 
-    private void StopAdding() => (_adding, NewTitle, _newTlp, _prefill, _find, Candidates) = (Adding.None, null, TlpLevel.Clear, null, null, []);
+    // Focus follows the panels: into one as it opens (its Title box, its search box), back to its button as it closes.
+    private ElementReference _newToggle, _attachToggle, _newTitleBox;
+    private SearchCombobox<StoryCandidate>? _findBox;
+    private Func<Task>? _focusNext;
+
+    private void StopAdding()
+    {
+        (_adding, NewTitle, _newTlp, _prefill, _find, Candidates) = (Adding.None, null, TlpLevel.Clear, null, null, []);
+        _picking = false;
+    }
+
+    /// <summary>Cancel, Done or Escape: the panel closes and focus goes back to the button that opened it.</summary>
+    internal void CloseAdding()
+    {
+        var toggle = _adding == Adding.Existing ? _attachToggle : _newToggle;
+        if (_adding != Adding.None) _focusNext = () => toggle.TryFocusAsync();
+        StopAdding();
+    }
+
+    internal void PanelKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseAdding();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusNext is not { } focus) return;
+        _focusNext = null;
+        await focus();
+    }
 
     internal Task StartNew() => Run(async () =>
     {
         StopAdding();
         _adding = Adding.New;
+        _focusNext = () => _newTitleBox.TryFocusAsync();
         _prefill = await StoryArticles.PrefillAsync(Id!.Value, _newTlp);
     });
 
@@ -407,7 +451,8 @@ else
     internal Task StartAttach() => Run(async () =>
     {
         StopAdding();
-        _adding = Adding.Existing;
+        (_adding, _picking) = (Adding.Existing, true);
+        _focusNext = () => _findBox?.FocusAsync() ?? Task.CompletedTask;
         await Find();
     });
 
@@ -434,15 +479,16 @@ else
     }
 
     private string CandidateMeta(StoryCandidate c) =>
-        $"{Tlp.Label(c.Tlp)} · {c.Status} · {Ui.When(Clock, c.CreatedAtUtc)}" + (c.OnStory is { } other ? $" · on {other}, moves here" : "");
+        $"{Tlp.Label(c.Tlp)} · {c.Status} · by {c.AuthorName} · {Ui.When(Clock, c.CreatedAtUtc)}" + (c.OnStory is { } other ? $" · on {other}, moves here" : "");
 
-    // Adds the article picked; the search stays open for another.
+    // Adds the article picked, saying the story it left if it was on one as it was added (whatever the list showed); the
+    // search stays open for another.
     internal Task Attach(StoryCandidate c) => Run(async () =>
     {
-        await StorySvc.LinkAsync(c.Id, Id!.Value);
+        var left = await StorySvc.LinkAsync(c.Id, Id!.Value);
         await LoadStory();
         await Find();
-        Toasts.Show($"Added {Ui.Clip(c.Title)} to the story.");
+        Toasts.Show(left is null ? $"Added {Ui.Clip(c.Title)} to the story." : $"Moved {Ui.Clip(c.Title)} from {Ui.Clip(left)} to this story.");
     });
 
     // One step at a time: a second click while one runs does nothing (the buttons are disabled meanwhile).
