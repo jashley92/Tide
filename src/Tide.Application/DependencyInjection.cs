@@ -128,6 +128,7 @@ public static class DependencyInjection
         services.AddScoped<ReadingService>();
         services.AddScoped<CveService>();
         services.AddScoped<StoryService>();
+        services.AddScoped<StoryArticleService>();
         services.AddScoped<RotationService>();
         services.AddScoped<IPresenterLookup>(sp => sp.GetRequiredService<RotationService>());
         services.AddScoped<SearchService>();

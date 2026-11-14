@@ -176,6 +176,15 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### Unreleased
+
+No migrations.
+
+- **Add an article from a story.** A story's page has *New article on this story*, which starts a draft on the story
+  with the CVEs, scorecard tags and products we run that its articles at or below the new article's TLP name (never
+  threat actors or techniques, and never what only a more restricted article says), and *Add an existing article*, a
+  search over the articles not on the story. Analysts only; a new article isn't put on a brief by itself.
+
 ### v1.13.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds seven migrations: `ActionStatusChangedAt` (which fills

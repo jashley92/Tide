@@ -115,17 +115,21 @@ public sealed class StoryService(IAppDbContextFactory dbs, ICurrentUser user)
     private static string Stale(Story s) =>
         $"Someone else saved {s.Name} since you opened it. Reload to see their changes, then make yours again.";
 
-    /// <summary>Links an article to a story, or (null) takes it off its story.</summary>
-    public Task LinkAsync(Guid articleId, Guid? storyId, CancellationToken ct = default)
+    /// <summary>Links an article to a story, or (null) takes it off its story. Returns the name of the other story it was
+    /// on until now, if any, as read in the same transaction (what a picker showed may be out of date).</summary>
+    public async Task<string?> LinkAsync(Guid articleId, Guid? storyId, CancellationToken ct = default)
     {
         RequireWrite();
-        return Serialized(async db =>
+        string? left = null;
+        await Serialized(async db =>
         {
             var article = await db.Articles.FirstOrDefaultAsync(a => a.Id == articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
             if (storyId is { } sid && !await db.Stories.AnyAsync(s => s.Id == sid, ct)) throw new KeyNotFoundException("That story no longer exists.");
+            left = article.StoryId is { } was && was != storyId ? await db.Stories.Where(s => s.Id == was).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
             // A link isn't an edit of the article's content, so an editor open on it doesn't go stale.
             article.StoryId = storyId;
         }, ct);
+        return left;
     }
 
     /// <summary>Deletes a story with no articles (one with articles is closed instead).</summary>

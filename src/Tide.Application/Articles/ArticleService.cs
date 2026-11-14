@@ -164,7 +164,7 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         return q;
     }
 
-    private static IQueryable<Article> Matching(IAppDbContext db, string? search, ArticleStatus? status)
+    internal static IQueryable<Article> Matching(IAppDbContext db, string? search, ArticleStatus? status)
     {
         var q = db.Articles.AsNoTracking();
         if (status is { } s) q = q.Where(a => a.Status == s);

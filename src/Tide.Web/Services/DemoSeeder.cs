@@ -185,7 +185,7 @@ public static class DemoSeeder
     /// browser in as (<c>?as=</c>) to follow a live meeting.
     /// <para><paramref name="FeedsDue"/>: Today says the feeds aren't pulled (<c>Demo:StaleFeeds</c>, on a working day).</para></summary>
     public sealed record Seeded(string Today, string Sent, int HuntAction, int DetailAction, string VpnArticle, string SentArticle,
-        string StackProduct, string Follower, string Adversary, bool FeedsDue = false);
+        string StackProduct, string Follower, string Adversary, string Story, bool FeedsDue = false);
 
     // One seeding pass. Everything random comes from one fixed seed.
     private sealed class Run(IServiceProvider sp, IAppDbContextFactory dbs, OrgClock clock, DevAuthOptions dev)
@@ -242,7 +242,7 @@ public static class DemoSeeder
             await db.SaveChangesAsync(ct);
             await CreatedWhenRaisedAsync(db, ct);
             return new Seeded(Iso(_today), Iso(Sent), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
-                edgeVpn.Id.ToString(), Follower, adversaries[0].Id.ToString());
+                edgeVpn.Id.ToString(), Follower, adversaries[0].Id.ToString(), vpn.StoryId?.ToString() ?? "");
         }
 
         // A seeded action is made now with its past written in (saving it dates it now): it was created when that past
