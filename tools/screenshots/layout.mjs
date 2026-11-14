@@ -4948,6 +4948,13 @@ const pages = [
   { name: 'tip-triage', route: '/help', setup: tipOn('/triage', { 1920: 'Quin' }), widths: [1920],
     rules: [visible('.tide-tip'), visible('.tide-reading.tide-tip-target'), inClient('.tide-tip')] },
   { name: 'tip-triage-narrow', route: '/help', setup: tipOn('/triage', { 780: 'Quill' }), widths: [780], rules: [hidden('.tide-tip')] },
+  // A story's tip rings New article on this story, and Reports' its tabs: each in the window, pointing at its control.
+  { name: 'tip-story', route: '/help', setup: tipOn('/stories/{story}', { 1920: 'Stellan', 1440: 'Stanford', 780: 'Sidonie' }),
+    widths: [1920, 1440, 780],
+    rules: [visible('.tide-tip'), visible('[aria-controls="story-new"].tide-tip-target'), inClient('.tide-tip'), inWindow('.tide-tip'), pointsAtTarget('.tide-tip')] },
+  { name: 'tip-reports', route: '/help', setup: tipOn('/reports', { 1920: 'Raffaela', 1440: 'Rexford', 780: 'Rosalind&roles=Viewer' }),
+    widths: [1920, 1440, 780],
+    rules: [visible('.tide-tip'), visible('nav[aria-label="Reports"].tide-tip-target'), inClient('.tide-tip'), inWindow('.tide-tip'), pointsAtTarget('.tide-tip')] },
   // Got it from the keyboard: the tip goes, and focus is on the page's heading, not lost.
   { name: 'tip-got-it', route: '/help', setup: tipGotIt({ 1440: 'Rio' }), widths: [1440], rules: [hidden('.tide-tip'), focusOn('main h1')] },
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },

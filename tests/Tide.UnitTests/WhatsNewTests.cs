@@ -162,6 +162,51 @@ public class WhatsNewTests
     }
 
     [Fact]
+    public void SomeoneWhoHasSeenNone_GetsEveryReleaseSinceTheVersionTheServerRanBefore()
+    {
+        var c = Catalog("2.1.0", "2.0.0", "1.0.0");
+        var analyst = new[] { RoleGroup.Analysts };
+        c.Due(V("2.1.0"), null, analyst, upgradedFrom: V("1.0.0")).Select(h => h.Version).Should().Equal([V("2.1.0"), V("2.0.0")],
+            "the server ran 1.0.0 before: what came after it, newest first");
+        c.Due(V("2.1.0"), null, analyst, upgradedFrom: ReleaseHistory.BeforeRecorded).Select(h => h.Version)
+            .Should().Equal([V("2.1.0"), V("2.0.0"), V("1.0.0")], "a server from before the version was recorded: every release");
+        c.Due(V("2.1.0"), null, analyst, upgradedFrom: null).Select(h => h.Version).Should().Equal([V("2.1.0")],
+            "not known (a new install): only the newest");
+        c.Due(V("2.1.0"), null, analyst, upgradedFrom: V("2.1.0")).Select(h => h.Version).Should().Equal([V("2.1.0")],
+            "nothing after it (a downgrade, say): the newest, never nothing");
+        c.Due(V("2.1.0"), null, [], upgradedFrom: V("1.0.0")).Should().BeEmpty("a Reader or a Visitor reads no highlights");
+    }
+
+    [Fact]
+    public void SomeoneWhoHasSeenSome_GetsEverythingAfterIt_WhateverTheServerRanBefore()
+    {
+        var c = Catalog("2.1.0", "2.0.0", "1.0.0");
+        c.Due(V("2.1.0"), V("2.0.0"), [RoleGroup.Analysts], upgradedFrom: V("1.0.0")).Select(h => h.Version).Should().Equal(V("2.1.0"));
+        c.Due(V("2.1.0"), V("0.9.0"), [RoleGroup.Analysts], upgradedFrom: V("2.0.0")).Should().HaveCount(3);
+        c.Due(V("2.1.0"), V("2.1.0"), [RoleGroup.Analysts], upgradedFrom: ReleaseHistory.BeforeRecorded).Should().BeEmpty();
+    }
+
+    [Theory]
+    // A new install: nothing recorded, nobody signed in yet. Not known.
+    [InlineData(null, null, false, "", true)]
+    // An existing install from before the version was recorded: earlier than any recorded.
+    [InlineData(null, null, true, "0.0.0", true)]
+    // A restart on the same version keeps what it was upgraded from, and writes nothing.
+    [InlineData("2.0.0", "1.0.0", true, "1.0.0", false)]
+    [InlineData("2.0.0", "", true, "", false)]
+    // An upgrade: from the version recorded.
+    [InlineData("1.0.0", "0.0.0", true, "1.0.0", true)]
+    [InlineData("1.0.0", "", false, "1.0.0", true)]
+    // A record that isn't a version: not known.
+    [InlineData("garbage", "1.0.0", true, "", true)]
+    public void TheVersionUpgradedFrom_IsReadFromTheRecordBeforeItsUpdated(string? version, string? from, bool hadUsers, string expected, bool writes)
+    {
+        var (upgradedFrom, write) = ReleaseHistory.Decide(V("2.0.0"), version, from, hadUsers);
+        (upgradedFrom?.ToString() ?? "").Should().Be(expected);
+        write.Should().Be(writes);
+    }
+
+    [Fact]
     public void TheBuiltInCatalog_HasThisReleasesHighlightsForEveryGroup_AndItsFullNotes()
     {
         var v = ReleaseNotesCatalog.Embedded.Releases.Single(r => r.Version == V("1.13.0"));
@@ -176,6 +221,19 @@ public class WhatsNewTests
         v.Highlights.Sections[RoleGroup.Presenters].Should().NotContain("Organization", "only administrators read about their settings");
         ReleaseNotesCatalog.Embedded.Releases.Should().Contain(r => r.Version == V("1.0.0") && r.Notes != null,
             "the full notes of every release are built in");
+    }
+
+    [Fact]
+    public void TheBuiltInCatalog_HasV114sHighlights_ForEveryGroup_AndItsFullNotes()
+    {
+        var v = ReleaseNotesCatalog.Embedded.Releases.Single(r => r.Version == V("1.14.0"));
+        v.Notes.Should().Contain("BriefExcuses").And.Contain("Upgrade-Tide.ps1 -Version latest");
+        v.Highlights.Should().NotBeNull();
+        v.Highlights!.Sections.Keys.Should().BeEquivalentTo(RoleGroups.Headings.Select(h => h.Group));
+        v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("New article on this story").And.Contain("Brief timeliness");
+        v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Manager").And.Contain("Role mappings");
+        v.Highlights.Sections[RoleGroup.ViewersAndActionOwners].Should().Contain("By person");
+        ReleaseNotesCatalog.Embedded.Newest.Should().Be(V("1.14.0"));
     }
 
     [Fact]

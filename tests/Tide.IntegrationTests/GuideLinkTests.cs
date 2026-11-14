@@ -98,10 +98,18 @@ public class GuideLinkTests(TideApp app) : IClassFixture<TideApp>
     public async Task AReleaseThatChangedThePage_BringsItBack_ForTheWindow()
     {
         var running = app.Services.GetRequiredService<ReleaseNotesCatalog>().Running(AppVersionInfo.Current)!;
-        var changed = PageTips.All.First(t => t.Version == running && Guides.ForPage(PagePath(t), _ => true) is not null);
-        var page = PagePath(changed);
-        var key = Guides.ForPage(page, _ => true)!.Key;
+        var guided = PageTips.All.Select(t => (Tip: t, Page: PagePath(t))).Where(g => g.Page is { } p && Guides.ForPage(p, _ => true) is not null).ToList();
         var who = Person("Analyst");
+        if (guided.FirstOrDefault(g => g.Tip.Version == running).Page is not { } page)
+        {
+            // This release changed no page that has a guide (its tips are on pages without one): seeing its What's new
+            // brings back no page's Show me around.
+            var earlier = guided[0].Page!;
+            await As(who, async sp => { await sp.GetRequiredService<WhatsNewService>().MarkSeenAsync(); return 0; });
+            (await Shows(who, Guides.ForPage(earlier, _ => true)!.Key, earlier)).Should().BeFalse("an earlier release's page isn't this one's");
+            return;
+        }
+        var key = Guides.ForPage(page, _ => true)!.Key;
         (await Shows(who, key, page)).Should().BeFalse("not before the release's What's new");
         await As(who, async sp => { await sp.GetRequiredService<WhatsNewService>().MarkSeenAsync(); return 0; });
         (await Shows(who, key, page)).Should().BeTrue("seeing the release's What's new starts the window");
@@ -114,9 +122,9 @@ public class GuideLinkTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // The page a tip is on, as a guide names pages.
-    private static string PagePath(PageTip tip) =>
+    private static string? PagePath(PageTip tip) =>
         Guides.OnPages.Select(g => g.Page.Replace("{n}", "1", StringComparison.Ordinal).Replace("{id}", Guid.Empty.ToString(), StringComparison.Ordinal))
-            .First(p => PageTips.For(p)?.Key == tip.Key);
+            .FirstOrDefault(p => PageTips.For(p)?.Key == tip.Key);
 
     [Fact]
     public async Task TheAdministratorsSetting_ChangesTheWindow_AtOnce_AndIsAudited()

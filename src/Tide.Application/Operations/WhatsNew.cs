@@ -164,13 +164,17 @@ public sealed class ReleaseNotesCatalog
     /// <summary>
     /// The releases whose highlights are due for someone who reads <paramref name="groups"/>, running
     /// <paramref name="current"/>, who last saw <paramref name="seen"/>'s: each release after it, up to the one running,
-    /// with highlights for them, newest first. Someone who has seen none is shown only the newest, not every release
-    /// before it. Empty when there's nothing new for them: a patch or an operator-only release has no highlights.
+    /// with highlights for them, newest first. Someone who has seen none is shown each release after the one the server
+    /// ran before this upgrade (<paramref name="upgradedFrom"/>, <see cref="ReleaseHistory"/>), so an upgrade straight
+    /// past a release still shows it; when that isn't known (a new install), or nothing after it has any, only the newest.
+    /// Empty when there's nothing new for them: a patch or an operator-only release has no highlights.
     /// </summary>
-    public IReadOnlyList<ReleaseHighlights> Due(ReleaseVersion current, ReleaseVersion? seen, IReadOnlyCollection<RoleGroup> groups)
+    public IReadOnlyList<ReleaseHighlights> Due(ReleaseVersion current, ReleaseVersion? seen, IReadOnlyCollection<RoleGroup> groups,
+        ReleaseVersion? upgradedFrom = null)
     {
-        var due = Unseen(current, seen, groups);
-        return seen is null ? due.Take(1).ToList() : due.ToList();
+        if (seen is not null) return Unseen(current, seen, groups).ToList();
+        List<ReleaseHighlights> since = upgradedFrom is null ? [] : [.. Unseen(current, upgradedFrom, groups)];
+        return since.Count > 0 ? since : Unseen(current, null, groups).Take(1).ToList();
     }
 
     /// <summary>Whether any release up to <paramref name="current"/> has highlights for <paramref name="groups"/>: whether
@@ -193,7 +197,7 @@ public sealed class ReleaseNotesCatalog
 /// which one they last saw (the <see cref="Preferences.UserPreferences.WhatsNewSeen"/> preference, saved as any other).
 /// </summary>
 public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abstractions.ICurrentUser user, ReleaseNotesCatalog catalog,
-    Org.OrgClock clock)
+    Org.OrgClock clock, ReleaseHistory history)
 {
     /// <summary>The release running (<see cref="ReleaseNotesCatalog.Running"/>).</summary>
     public ReleaseVersion? Running => catalog.Running(AppVersionInfo.Current);
@@ -211,7 +215,7 @@ public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abs
         // No highlights built in for this person's groups (a Reader, a Visitor): no need to ask what they've seen.
         if (Running is not { } running || !catalog.AnyFor(running, groups)) return [];
         var seen = ReleaseVersion.Parse(await prefs.GetAsync(Preferences.UserPreferences.WhatsNewSeen, ct));
-        return catalog.Due(running, seen, groups);
+        return catalog.Due(running, seen, groups, history.UpgradedFrom);
     }
 
     /// <summary>Records that the person has seen what's new up to the release running, so it isn't shown again; and

@@ -59,12 +59,13 @@ Every route, its component and the permission it needs are in the [route table](
   light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
   **Help and what's new**, and About.
 - **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
-  their role: analysts, presenters, administrators, or viewers and action owners. It shows once, never in present
+  their role: analysts, presenters, administrators, or viewers and action owners, for every release since the one the
+  server ran before (only the newest on a new install). It shows once, never in present
   mode and never to a Reader or a Visitor. **See all changes** opens **Help** (`/help`, also linked from the `?`
   overlay), which lists each release's highlights for your role; an administrator also gets
   every release's full notes.
 - **Tips.** Each page that changed (Today, Triage, the article editor, Actions, an action, Search, the Library and Our
-  stack) shows a small tip on your first visit to it, pointing at what changed: Today's at the rail button and `]`. It
+  stack in v1.13.0; a story's page and Reports in v1.14.0) shows a small tip on your first visit to it, pointing at what changed: Today's at the rail button and `]`. It
   doesn't block the page or its keys. **Got it** puts it away for good; Help's **Show tips again** brings them back.
 - **The tour.** On your first-ever sign-in, a short tour steps through the pages and controls your role uses: Today,
   the context rail and `]`, then Triage, Articles, Actions, Search, presenting or the meeting, and Administration, as

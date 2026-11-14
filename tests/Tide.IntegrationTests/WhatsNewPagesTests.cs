@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Tide.Application.Operations;
 using Tide.Application.Preferences;
 using Tide.Web.Components.Layout;
 using Tide.Web.Components.Pages;
@@ -37,20 +38,30 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
             (await r.Html()).Should().NotContain("tide-whatsnew", "nothing is drawn before it's checked");
             await r.Click(c => c.CheckAsync());
             var html = await r.Html();
-            html.Should().Contain("What&#x27;s new in TIDE 1.13.0").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
+            html.Should().Contain("What&#x27;s new in TIDE 1.14.0").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
             html.Should().Contain("For analysts").And.Contain("For presenters").And.NotContain("For administrators")
                 .And.NotContain("For viewers and action owners");
-            html.Should().Contain("href=\"help?release=1.13.0#v1-13-0\"").And.Contain("See all changes");
+            html.Should().Contain("href=\"help?release=1.14.0#v1-14-0\"").And.Contain("See all changes");
             r.Component.IsOpen.Should().BeTrue();
             (await Seen(who)).Should().BeEmpty("it's marked seen as it's closed, so a reload while it's up shows it again");
             await r.Click(c => c.CloseAsync());
             (await r.Html()).Should().NotContain("tide-whatsnew");
         }
-        (await Seen(who)).Should().Be("1.13.0", "it's marked seen as it closes");
+        (await Seen(who)).Should().Be("1.14.0", "it's marked seen as it closes");
 
         await using var again = await RenderAsync<WhatsNewDialog>(app, "/triage", @as: who);
         await again.Click(c => c.CheckAsync());
         again.Component.IsOpen.Should().BeFalse("it's shown once per person");
+    }
+
+    [Fact]
+    public async Task OnANewInstall_SomeoneWhoHasSeenNone_GetsOnlyTheNewestRelease()
+    {
+        // Nobody had signed in when it first started: no version it was upgraded from, so no stack of old releases.
+        app.Services.GetRequiredService<ReleaseHistory>().UpgradedFrom.Should().BeNull();
+        await using var scope = SignedIn(app, Person("Analyst"));
+        var due = await scope.ServiceProvider.GetRequiredService<WhatsNewService>().DueAsync();
+        due.Select(h => h.Version.ToString()).Should().Equal("1.14.0");
     }
 
     [Fact]
@@ -170,7 +181,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
             await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person(role));
             await r.Click(c => c.CheckAsync());
             var html = await r.Html();
-            html.Should().Contain("class=\"tide-whatsnew-intro\"").And.Contain("<strong>context rail</strong>")
+            html.Should().Contain("class=\"tide-whatsnew-intro\"").And.Contain("<strong>Reports</strong>")
                 .And.NotContain("**", $"the pop-up's intro and highlights are rendered for an {role}");
             await using var help = await RenderAsync<HelpPage>(app, "/help?release=1.13.0", @as: Person(role));
             var page = await help.Html();
@@ -211,7 +222,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain("Step 1 of");
         html.Should().NotContain("class=\"tide-tip\"", "a page's tip waits while the tour runs");
-        (await Seen(who)).Should().Be("1.13.0");
+        (await Seen(who)).Should().Be("1.14.0");
     }
 
     [Fact]
@@ -239,7 +250,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, c => c.WhatsNew!.SeeTheDayAsync());
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("1 of");
-        (await Seen(who)).Should().Be("1.13.0");
+        (await Seen(who)).Should().Be("1.14.0");
     }
 
     [Fact]

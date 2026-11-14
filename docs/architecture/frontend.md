@@ -224,7 +224,15 @@ person, the first time they open TIDE on a release with highlights for them.
   none, so nothing is ever shown to them.
 - **When.** The release running is `AppVersionInfo.Current` (a development build counts as the newest release with
   notes). `ReleaseNotesCatalog.Due` lists the releases after the one the person last saw, up to the one running, that
-  have highlights for their groups; someone who has seen none is shown only the newest. The release last seen is the
+  have highlights for their groups. Someone who has seen none is shown every such release after the one the server ran
+  before this upgrade, newest first, so an upgrade straight past a release still shows it: `ReleaseHistory`
+  (`Operations/ReleaseHistory.cs`) keeps that for the process. At start-up, before the samples add anyone,
+  `DatabaseInitializer` has it read two settings rows, `App:Version` (the release last run) and `App:UpgradedFrom` (the
+  one before), and move them on when the release has changed; a restart on the same release keeps them. No rows on a
+  database somebody has signed in to is an upgrade from before the record (v1.13.0 or earlier), read as earlier than
+  any release; no rows on an unused database is a new install, whose upgraded-from isn't known. When it isn't known, or
+  nothing after it has highlights for them, they're shown only the newest; a newcomer gets the tour, which marks What's
+  new seen up to the release running. A development build records the release it runs as. The release last seen is the
   person's `whatsnew.seen` preference (`UserPreferenceService`, which checks the permission and a second tab's save),
   set as the dialog closes (Got it, Escape, a click outside, See all changes), so a reload while it's up shows it again.
 - **Where never.** `BlankLayout` doesn't draw it, so present mode never shows it, to the presenter or a follower, and
@@ -239,8 +247,8 @@ person, the first time they open TIDE on a release with highlights for them.
 What's new first; once that's closed, or on a page without it, the page's tip. A tip says what changed on a page, on the
 person's first visit to it after the release it belongs to.
 
-- **Which pages.** `PageTips` (`Tide.Application/Operations/PageTips.cs`) holds one tip per changed page (Today, Triage,
-  the article editor, Actions, an action, Search, the Library, Our stack), each with the release it's about, the
+- **Which pages.** `PageTips` (`Tide.Application/Operations/PageTips.cs`) holds one tip per changed page (v1.13.0's: Today, Triage,
+  the article editor, Actions, an action, Search, the Library, Our stack; v1.14.0's: a story and Reports), each with the release it's about, the
   permission its page needs and the control it points at. `PageTips.For` maps an address to its page's tip; present
   mode has none.
 - **Once.** "Got it" keeps the tip's release in the person's `tip.<page>` preference (`UserPreferenceService`, which
