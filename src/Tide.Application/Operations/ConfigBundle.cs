@@ -17,14 +17,17 @@ public sealed record BundleRoleMapping(string AdGroup, string Role);
 /// <summary>A source. <see cref="UrlHidden"/>: its address carried a key or a password, so <see cref="Url"/> has it hidden.
 /// <see cref="ArticleFetch"/> and <see cref="ArticleBodySelector"/> are absent from bundles made before drafting help (the
 /// source is then fetched by TIDE only, its body found automatically), and <see cref="ArticleRemoveSelector"/> from those
-/// made before it was kept (nothing more is taken out).</summary>
+/// made before it was kept (nothing more is taken out). <see cref="UserAgent"/> (with <see cref="CustomUserAgent"/> when
+/// it's Custom) is absent when the source inherits the global user agent, as every source did before it could choose.</summary>
 public sealed record BundleSource(
     string Name, string Kind, string Url, string DefaultTlp, string Reliability, string? LicenseNote, int PollMinutes, bool Enabled,
     bool IsRetired, string? OnlyCategories, string? SkipCategories, string? OnlyTitleWords, string? SkipTitleWords,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool UrlHidden = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ArticleFetch = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ArticleBodySelector = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ArticleRemoveSelector = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ArticleRemoveSelector = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UserAgent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CustomUserAgent = null);
 
 public sealed record BundleScorecardTag(string Key, string Name, string? Description, int SortOrder, bool IsRetired);
 

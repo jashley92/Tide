@@ -5,6 +5,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Distribution;
+using Tide.Application.Intake;
 using Tide.Application.Security;
 using Tide.Application.Settings;
 using Tide.Domain.Common;
@@ -57,7 +58,8 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             var hidden = SecretMask.UrlHasSecret(s.Url);
             return new BundleSource(s.Name, s.Kind.ToString(), hidden ? SecretMask.Url(s.Url) : s.Url, s.DefaultTlp.ToString(), s.Reliability.ToString(),
                 s.LicenseNote, s.PollMinutes, s.Enabled, s.IsRetired, s.OnlyCategories, s.SkipCategories, s.OnlyTitleWords, s.SkipTitleWords, hidden,
-                s.ArticleFetch.ToString(), s.ArticleBodySelector, s.ArticleRemoveSelector);
+                s.ArticleFetch.ToString(), s.ArticleBodySelector, s.ArticleRemoveSelector,
+                s.UserAgent == UserAgentChoice.Inherit ? null : s.UserAgent.ToString(), s.CustomUserAgent);
         }).ToList();
         var categories = (await db.ScorecardCategories.AsNoTracking().Include(c => c.Tags).ToListAsync(ct))
             .OrderBy(c => c.SortOrder).ThenBy(c => c.Key, StringComparer.Ordinal)
@@ -338,7 +340,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         foreach (var b in bundle.Sources.DistinctBy(s => (s.Name ?? "").Trim(), StringComparer.OrdinalIgnoreCase))
         {
             var name = (b.Name ?? "").Trim();
-            if (SourceProblem(b, out var kind, out var tlp, out var reliability, out var fetch) is { } problem)
+            if (SourceProblem(b, out var kind, out var tlp, out var reliability, out var fetch, out var agent, out var customAgent) is { } problem)
             {
                 changes.Add(new(SourcesArea, name.Length == 0 ? "(no name)" : name, BundleChangeKind.Skipped, problem));
                 continue;
@@ -351,7 +353,8 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 && row.LicenseNote == b.LicenseNote && row.PollMinutes == b.PollMinutes && row.Enabled == enabled && row.IsRetired == b.IsRetired
                 && row.OnlyCategories == b.OnlyCategories && row.SkipCategories == b.SkipCategories
                 && row.OnlyTitleWords == b.OnlyTitleWords && row.SkipTitleWords == b.SkipTitleWords
-                && row.ArticleFetch == fetch && row.ArticleBodySelector == b.ArticleBodySelector && row.ArticleRemoveSelector == b.ArticleRemoveSelector)
+                && row.ArticleFetch == fetch && row.ArticleBodySelector == b.ArticleBodySelector && row.ArticleRemoveSelector == b.ArticleRemoveSelector
+                && row.UserAgent == agent && row.CustomUserAgent == customAgent)
             {
                 changes.Add(new(SourcesArea, name, BundleChangeKind.Unchanged));
                 continue;
@@ -384,19 +387,30 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             row.ArticleFetch = fetch;
             row.ArticleBodySelector = b.ArticleBodySelector;
             row.ArticleRemoveSelector = b.ArticleRemoveSelector;
+            row.UserAgent = agent;
+            row.CustomUserAgent = customAgent;
             row.EditVersion = Guid.NewGuid();   // a source form opened before the import can't save its old settings back
         }
     }
 
-    private static string? SourceProblem(BundleSource b, out SourceKind kind, out TlpLevel tlp, out SourceReliability reliability, out ArticleFetch fetch)
+    private static string? SourceProblem(BundleSource b, out SourceKind kind, out TlpLevel tlp, out SourceReliability reliability, out ArticleFetch fetch,
+        out UserAgentChoice agent, out string? customAgent)
     {
         tlp = default;
         reliability = default;
         fetch = ArticleFetch.TideOnly;
+        agent = UserAgentChoice.Inherit;
+        customAgent = null;
         if (!Enum.TryParse(b.Kind, true, out kind) || !Enum.IsDefined(kind)) return "not a kind of source";
         if (b.ArticleFetch is not null && !EnumNames.TryParse(b.ArticleFetch, out fetch, ignoreCase: true)) return "not a way of fetching articles";
         if ((b.ArticleBodySelector?.Length ?? 0) > Source.MaxBodySelector) return "its article body selector is too long";
         if ((b.ArticleRemoveSelector?.Length ?? 0) > Source.MaxRemoveSelector) return "its remove selector is too long";
+        if (b.UserAgent is not null && !EnumNames.TryParse(b.UserAgent, out agent, ignoreCase: true)) return "not a user agent choice";
+        if (agent == UserAgentChoice.Custom)
+        {
+            customAgent = UserAgents.Valid(b.CustomUserAgent);
+            if (customAgent is null) return "its user agent: " + UserAgents.Problem(b.CustomUserAgent);
+        }
         if (!Enum.TryParse(b.DefaultTlp, true, out tlp) || !Enum.IsDefined(tlp)) return "not a TLP level";
         if (!Enum.TryParse(b.Reliability, true, out reliability) || !Enum.IsDefined(reliability)) return "not a reliability (A to F)";
         var name = (b.Name ?? "").Trim();

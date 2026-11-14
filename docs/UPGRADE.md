@@ -178,14 +178,28 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
 
 ### Unreleased
 
-Upgrade as usual; no migration.
+Upgrade as usual. It adds one migration, `SourceUserAgent` (two columns on `Sources`: each source's user agent
+choice, which starts as *the global setting*, and its custom string). None of the earlier ones change. On a
+DbaApplies install, the DBA applies it first.
 
 **Changed**
+- **The user agent names the release.** Outbound requests (feeds, reading articles, CVE and KEV data, adversaries, the
+  update check, the assistant's fetches) now send `TIDE/<release> (+https://github.com/jashley92/Tide)`, such as
+  `TIDE/1.15.0`, instead of `TIDE/1.0`. A development build sends `TIDE/dev+<commit>`. Webhooks are unchanged.
 - **NVD is given longer, and a second and third try.** NVD requests have their own time limit, `Cve:NvdTimeoutSeconds`
   (60, held to 10 to 180), instead of the feeds' `Intake:TimeoutSeconds`. One that times out or is answered 5xx or 429
   is tried again after 10 s and 30 s (or NVD's `Retry-After`, up to 2 minutes) before the run stops asking NVD. The
   CVE refresh now runs beside the feed polling rather than holding it up; Diagnostics shows it running (since when),
   and the Sources card says "Refreshing now". It's called hung only past the longest a run can take on its settings.
+
+**New**
+- **User agent settings** (Administration › Sources, the *User agent* card): TIDE's own (the default), a current
+  desktop browser (a recent Chrome on Windows, refreshed with TIDE's releases), or a custom string (printable ASCII,
+  at most 256 characters). Settings `Intake:UserAgent` (`Tide`, `Browser` or `Custom`) and `Intake:CustomUserAgent`.
+  A change applies to the next request and is audited.
+- **Per source.** A source's form can override the global choice for that source: the global setting (the default
+  for every existing source), TIDE's own, the browser, or custom. It's sent when the feed is pulled and when its
+  articles are read in triage, and travels in configuration bundles.
 
 ### v1.14.0
 

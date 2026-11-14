@@ -175,6 +175,15 @@ that only look sponsored. Both lists are edited on Sources, with a Test box that
 be skipped and by which marker. A skipped item counts toward the source's "filtered out" figure, which says which
 markers matched.
 
+Sources also sets the **user agent** TIDE's outbound requests send. Globally (its own card): **TIDE's own**, the
+default, which names the running release and the project (`TIDE/1.14.0 (+https://github.com/jashley92/Tide)`; a
+development build sends `TIDE/dev+<commit>`); **a current desktop browser**, a recent Chrome on Windows for sites
+that turn other clients away; or **custom**, printable ASCII up to 256 characters, with no line breaks. The card shows
+what's sent. Each source's form can override it for that source: **the global setting** (the default), TIDE's own,
+the browser, or custom. A source's choice is sent when its feed is pulled, when its articles are read in triage, and
+by the form's Test; CVE and KEV data, adversaries, the update check and the assistant use the global one. Both are
+audited, and a change applies to the next request.
+
 ![Triage inbox](../screenshots/triage-inbox.png)
 
 ### Deciding on an item
@@ -1216,7 +1225,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota (a week's days already presented keep their presenter unless *Correct past days* is ticked), and who's told about swaps and cover. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
 | Actions | Deleted actions | `/admin/deleted-actions` | The actions deleted as a mistake or a duplicate, the latest first: each one's team and status, who deleted it, when and why, and *Restore* (a part after its parent). Updates live as actions are deleted or restored. |
-| Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
+| Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, the user agent outbound requests send, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
 | Intelligence | Scorecard tags | `/admin/scorecard` | The categories and tags articles are counted by on the board scorecard. |
 | Intelligence | Detection rules | `/admin/detections` | The SOC's rules, from Sentinel, Sigma, a CSV or the API, for Coverage. |

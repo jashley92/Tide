@@ -46,6 +46,10 @@ public sealed class SourceForm
     /// <summary>What else to take out of its article pages (see <see cref="Source.ArticleRemoveSelector"/>).</summary>
     public string? ArticleRemoveSelector { get; set; }
 
+    /// <summary>The User-Agent for its feed and articles, and the string when it's Custom (see <see cref="Source.UserAgent"/>).</summary>
+    public UserAgentChoice UserAgent { get; set; } = UserAgentChoice.Inherit;
+    public string? CustomUserAgent { get; set; }
+
     public static SourceForm From(Source s) => new()
     {
         Id = s.Id, EditVersion = s.EditVersion, Name = s.Name, Kind = s.Kind, Url = s.Url, DefaultTlp = s.DefaultTlp, Reliability = s.Reliability, LicenseNote = s.LicenseNote,
@@ -53,6 +57,7 @@ public sealed class SourceForm
         OnlyCategories = CategoryFilter.Show(s.OnlyCategories), SkipCategories = CategoryFilter.Show(s.SkipCategories),
         OnlyTitleWords = CategoryFilter.Show(s.OnlyTitleWords), SkipTitleWords = CategoryFilter.Show(s.SkipTitleWords),
         ArticleFetch = s.ArticleFetch, ArticleBodySelector = s.ArticleBodySelector, ArticleRemoveSelector = s.ArticleRemoveSelector,
+        UserAgent = s.UserAgent, CustomUserAgent = s.CustomUserAgent,
     };
 }
 
@@ -196,6 +201,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             : Assist.ArticleText.IsSelector(clean) ? clean : throw new ArgumentException($"“{clean}” isn't a CSS selector TIDE can use.");
         var selector = Selector(form.ArticleBodySelector, Source.MaxBodySelector);
         var remove = Selector(form.ArticleRemoveSelector, Source.MaxRemoveSelector);
+        if (!Enum.IsDefined(form.UserAgent)) throw new ArgumentException("Choose the user agent it's fetched with.");
+        var agent = form.UserAgent == UserAgentChoice.Custom
+            ? UserAgents.Valid(form.CustomUserAgent) ?? throw new ArgumentException(UserAgents.Problem(form.CustomUserAgent))
+            : null;
         var min = MinPollMinutes;
         if (form.PollMinutes < min || form.PollMinutes > 7 * 24 * 60) throw new ArgumentException($"Poll every {min} minutes to once a week.");
         await using var db = await dbs.CreateAsync(ct);
@@ -234,6 +243,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         source.ArticleFetch = form.ArticleFetch;
         source.ArticleBodySelector = selector;
         source.ArticleRemoveSelector = remove;
+        source.UserAgent = form.UserAgent;
+        source.CustomUserAgent = agent;
         source.EditVersion = Guid.NewGuid();
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new StaleEditException(StaleSource(source)); }
@@ -524,7 +535,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sourceId, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
         var now = time.GetUtcNow();
         source.LastPolledAtUtc = now;
-        var fetch = await http.GetAsync(source.Url, new OutboundRequest(source.ETag, source.LastModified), ct);
+        var fetch = await http.GetAsync(source.Url, new OutboundRequest(source.ETag, source.LastModified, UserAgent: UserAgents.For(source)), ct);
         PollResult result;
         if (fetch.Status == FetchStatus.NotModified)
         {

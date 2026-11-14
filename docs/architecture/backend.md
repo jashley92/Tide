@@ -320,7 +320,7 @@ one client TIDE uses to fetch from other hosts: feeds (`IntakeService`), article
 
 | Behavior | Detail |
 |---|---|
-| Connections | One long-lived `SocketsHttpHandler`, connections recycled every 5 minutes (so DNS changes are seen), 10-second connect time-out, automatic decompression. User agent `TIDE/1.0 (+https://github.com/jashley92/Tide)`. |
+| Connections | One long-lived `SocketsHttpHandler`, connections recycled every 5 minutes (so DNS changes are seen), 10-second connect time-out, automatic decompression. The User-Agent is set on each request, one value replacing any a caller's headers carry: the source's own choice for its feed and its articles in triage, else `Intake:UserAgent` as it is now (`UserAgents`: TIDE's own, `TIDE/<release> (+https://github.com/jashley92/Tide)`, by default). |
 | Time limit | `Intake:TimeoutSeconds` (20, held to 5 to 120) per request, the whole body included. |
 | Size limit | `Intake:MaxResponseKB` (8,192, at least 64), by `Content-Length` and while reading. |
 | Redirects | Followed by the client itself, at most 5, never from https to http, each hop's host checked first. A caller's own headers (an API key) go only to the address it asked for. |

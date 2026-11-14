@@ -3118,6 +3118,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CustomUserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("DefaultTlp")
                         .HasColumnType("INTEGER");
 
@@ -3204,6 +3208,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("UserAgent")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

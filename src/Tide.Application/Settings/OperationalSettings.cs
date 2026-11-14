@@ -87,6 +87,11 @@ public static class OperationalSettings
     public const string AdSelectors = "Intake:AdSelectors";
     public const string AdLabels = "Intake:AdLabels";
 
+    /// <summary>The User-Agent outbound requests send (<see cref="UserAgents"/>): Tide (the default), Browser or Custom,
+    /// and the custom string. A source can choose its own.</summary>
+    public const string UserAgent = "Intake:UserAgent";
+    public const string CustomUserAgent = "Intake:CustomUserAgent";
+
     /// <summary>Triage's suggested groups (EP-84): how far apart two reports of one event can be, in hours, and the
     /// words that don't count besides the built-in ones.</summary>
     public const string GroupWindowHours = "Intake:GroupWindowHours";
@@ -165,6 +170,8 @@ public static class OperationalSettings
         [ReadSeconds] = Number("The time allowed to read an article", 2, 60),
         [AdSelectors] = Assist.ArticleCleanup.NormalizeSelectors,
         [AdLabels] = Assist.ArticleCleanup.NormalizeLabels,
+        [UserAgent] = GlobalUserAgent,
+        [CustomUserAgent] = UserAgents.Normalize,
         [GroupWindowHours] = Number("How far apart two reports of one event can be", TriageGroups.MinWindowHours, TriageGroups.MaxWindowHours),
         [GroupIgnoredWords] = TriageGroups.NormalizeWords,
         [CveEnabled] = Switch,
@@ -273,6 +280,8 @@ public static class OperationalSettings
         s.Use(ReadSeconds, v => o.ReadSeconds = int.Parse(v, Invariant));
         s.Use(AdSelectors, v => o.AdSelectors = v);
         s.Use(AdLabels, v => o.AdLabels = v);
+        s.Use(UserAgent, v => o.UserAgent = Enum.Parse<Domain.Enums.UserAgentChoice>(v));
+        s.Use(CustomUserAgent, v => o.CustomUserAgent = v);
         s.Use(GroupWindowHours, v => o.GroupWindowHours = int.Parse(v, Invariant));
         s.Use(GroupIgnoredWords, v => o.GroupIgnoredWords = v);
     }
@@ -326,6 +335,14 @@ public static class OperationalSettings
         !int.TryParse(v, out _) && Enum.TryParse<T>(v, ignoreCase: true, out var value) && Enum.IsDefined(value)
             ? value.ToString()
             : throw new ArgumentException(message);
+
+    // Inheriting is a source's choice; the global one is what it inherits.
+    private static string GlobalUserAgent(string v)
+    {
+        const string message = "The user agent is Tide, Browser or Custom.";
+        var choice = EnumValue<Domain.Enums.UserAgentChoice>(message)(v);
+        return choice != nameof(Domain.Enums.UserAgentChoice.Inherit) ? choice : throw new ArgumentException(message);
+    }
 
     private static string Name(string v) => v.Length is > 0 and <= MaxTeamName
         ? v

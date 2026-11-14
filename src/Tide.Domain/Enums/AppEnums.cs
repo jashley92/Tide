@@ -341,6 +341,25 @@ public enum ArticleFetch
     Never = 2,
 }
 
+/// <summary>
+/// The User-Agent outbound requests send: the global setting (Tide, Browser or Custom), or a source's own choice, which
+/// can also inherit the global one. Stored; append, never renumber.
+/// </summary>
+public enum UserAgentChoice
+{
+    /// <summary>A source's default: whatever the global setting is.</summary>
+    Inherit = 0,
+
+    /// <summary>TIDE's own, naming the running release and the project: the global default.</summary>
+    Tide = 1,
+
+    /// <summary>A current desktop browser's (Chrome on Windows), for a site that turns other clients away.</summary>
+    Browser = 2,
+
+    /// <summary>A string the administrator typed.</summary>
+    Custom = 3,
+}
+
 /// <summary>How a source is read. Stored; append, never renumber.</summary>
 public enum SourceKind
 {

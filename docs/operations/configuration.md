@@ -290,6 +290,8 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Intake:ReadingDays` | `7` | 1 to 30. How long an article's text read in triage is kept. | Server | Next prune |
 | `Intake:AdSelectors` | `ArticleCleanup.DefaultSelectors` | CSS selectors separated by `;`, removed from a page before its text is found. Not in `appsettings.json`. | In app: **Sources** | At once |
 | `Intake:AdLabels` | `ArticleCleanup.DefaultLabels` | Lines that only label an advert, separated by `;` (a trailing `*` matches a prefix). Not in `appsettings.json`. | In app: **Sources** | At once |
+| `Intake:UserAgent` | `Tide` | The User-Agent every outbound request sends (not webhooks): `Tide` (`TIDE/<release> (+https://github.com/jashley92/Tide)`, `TIDE/dev+<commit>` for a development build), `Browser` (a current desktop Chrome on Windows, `UserAgents.Browser`) or `Custom`. A source can choose its own for its feed and its articles in triage. | In app: **Sources** | Next request |
+| `Intake:CustomUserAgent` | blank | The string sent when `Intake:UserAgent` is `Custom`: printable ASCII, 1 to 256 characters, no line breaks or other control characters. While blank, TIDE's own is sent. | In app: **Sources** | Next request |
 | `Intake:GroupWindowHours` | `48` | 12 to 96. How far apart two reports can be for triage to group them. | In app: **Sources** | At once |
 | `Intake:GroupIgnoredWords` | none | Words separated by `;` that grouping ignores besides the built-in ones. Mentioned in the `appsettings.json` comment, not set there. | In app: **Sources** | At once |
 

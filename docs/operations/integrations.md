@@ -100,7 +100,7 @@ Feeds, article pages, the CVE services, MITRE's TAXII server and the update chec
 | Redirects | Followed by TIDE, at most five, never from https to http. A caller's own headers (an API key) go only to the address it asked for. |
 | Limits | `Intake:TimeoutSeconds` (5 to 120) per request, `Intake:MaxResponseKB` per response, 10-second connect timeout. |
 | Back-off | `OutboundCircuit` per host: three failures (timeout, unreachable, HTTP 5xx or 429) within two minutes back the host off for 1 minute, doubling to at most 10. Meanwhile requests fail fast with "hasn't been answering; it's tried again in N minute(s)". One probe goes through when the back-off ends. A refused address isn't counted. |
-| Identity | User-Agent `TIDE/1.0 (+https://github.com/jashley92/Tide)`. No cookies, no credentials except the proxy's. |
+| Identity | User-Agent `TIDE/<release> (+https://github.com/jashley92/Tide)` by default; an administrator can send a current desktop browser's or a custom one instead, globally or per source (`Intake:UserAgent`, on Sources). No cookies, no credentials except the proxy's. |
 | Logging | Warnings name the host and the error kind, never the URL's query or the response. |
 
 ## Active Directory

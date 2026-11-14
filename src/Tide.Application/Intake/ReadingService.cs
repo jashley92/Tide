@@ -62,7 +62,7 @@ public sealed partial class ReadingService(IAppDbContextFactory dbs, ICurrentUse
         if (Articles.ArticleService.SafeUrl(item.Url) is not { } address)
             return ReadingText.Failed(itemId, "The item has no http or https link to read.");
 
-        var got = await http.GetAsync(address, ct: ct);
+        var got = await http.GetAsync(address, new OutboundRequest(UserAgent: UserAgents.For(item.Source)), ct);
         var found = got.Status == FetchStatus.Ok && got.Content is { } bytes ? await ArticleText.ExtractAsync(bytes, item.Source?.ArticleBodySelector, options.CurrentValue.ReadBudget, ArticleCleanup.For(options.CurrentValue, item.Source), ct) : null;
         if (found is not { Usable: true })
             return ReadingText.Failed(itemId, (found?.Problem ?? got.Error ?? "The page couldn't be read.") + " Open the site instead.");
