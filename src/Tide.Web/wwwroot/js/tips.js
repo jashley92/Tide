@@ -15,6 +15,8 @@
 // leaves the page as it was. CSP-safe (an external file).
 window.tideTips = (function () {
     var card = null, ring = null, arrow = null, target = null, looking = null, opener = null, size = null, frame = 0;
+    // The control a step's selector found (target is it, or the group it's ringed by when it's too small: grown).
+    var picked = null;
     // What the guide opened for its steps (a section, a menu, a picker), to close as they leave it: { opens, closes }.
     var popout = null;
     // The heading of the page a guide is leaving for its own (leaving): its steps are looked for once it's gone.
@@ -48,22 +50,41 @@ window.tideTips = (function () {
     }
 
     // A step's control, again, when it isn't shown: drawn since, or drawn anew. Marked and scrolled into view once found.
+    // Once found, what's ringed follows the control's size: a control that shrinks below MIN after it was found (a
+    // slide fitted to the window once it's drawn, its heading's type made smaller) is ringed by its group from then
+    // on, and one that grows back is ringed itself again.
     function find() {
-        if (!looking || shown(target)) return;
+        if (!looking) return;
+        if (shown(target)) {
+            var fitted = shown(picked) ? grown(picked) : target;
+            if (fitted !== target) ringed(fitted);
+            return;
+        }
         var now = pick(looking);
         if (now === target) return;
-        if (target) { target.classList.remove('tide-tip-target'); sizeWatch.unobserve(target); }
-        target = now && grown(now);
-        if (!shown(target)) return;
+        if (picked && picked !== target) sizeWatch.unobserve(picked);
+        picked = now;
+        var found = now && grown(now);
+        if (!shown(found)) { ringed(found); return; }
         // Its scroll margin keeps it clear of the top bar; one taller than most of the window shows from its top. (Read
         // before the mark is written, so this costs no extra layout.)
-        var tall = target.getBoundingClientRect().height > innerHeight * TALL;
+        var tall = found.getBoundingClientRect().height > innerHeight * TALL;
         brought = false;
         nudged = false;
+        ringed(found);
+        target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
+    }
+
+    // The step's mark moved to `el`: off what had it, on `el` when it's shown, and its size and the page round it watched.
+    // The control it stands for (picked) is watched for its size too, so a change to it alone is seen.
+    function ringed(el) {
+        if (target) { target.classList.remove('tide-tip-target'); sizeWatch.unobserve(target); }
+        target = el;
+        if (!shown(target)) return;
         target.classList.add('tide-tip-target');
         sizeWatch.observe(target);
+        if (shown(picked) && picked !== target) sizeWatch.observe(picked);
         watchPage();
-        target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
     // A control too small to ring well (a radio hidden in a button group, an icon) is ringed by the group or label it's
@@ -446,7 +467,7 @@ window.tideTips = (function () {
             if (ring) { ring.remove(); ring = null; }
             if (arrow) { arrow.remove(); arrow = null; }
             var lost = inside && !dialog && (!document.activeElement || document.activeElement === document.body);
-            card = target = size = looking = null;
+            card = target = picked = size = looking = null;
             frame = 0;
             inside = dialog = false;
             railWatch.disconnect();
