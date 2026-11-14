@@ -24,6 +24,8 @@ window.tidePresent = (function () {
         ']': 'rail',
         Escape: 'close'
     };
+    // The slide's keys heard while the presenter's rail is open over it (onKey).
+    const railKeys = { ArrowRight: 'next', ArrowLeft: 'prev', Home: 'first', End: 'last', d: 'discussed', D: 'discussed' };
 
     // Whether the window has room to dock the presenter's rail beside the slide (.NET draws it there, or over the slide).
     const railRoom = window.matchMedia('(min-width: 1500px)');
@@ -314,14 +316,20 @@ window.tidePresent = (function () {
 
     function onKey(e) {
         // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
-        // and Escape close it (not while typing), and the slide's other keys aren't heard; Tab is dialog.js's. A dialog open
-        // over it (a confirmation from Raise or Add) has the keys: its Escape cancels it alone.
-        if (ref && document.querySelector('#present-rail[aria-modal="true"]')) {
+        // and Escape close it (not while typing). The slide's keys that press nothing in the rail still work, as its D
+        // hint says: D ticks the article, the arrows, Home and End move the slide under it, and focus stays in the rail.
+        // Enter, Space and Backspace are the rail's own; Tab is dialog.js's. A dialog open over it (a confirmation from
+        // Raise or Add) has the keys: its Escape cancels it alone.
+        const rail = ref && document.querySelector('#present-rail[aria-modal="true"]');
+        if (rail) {
             if (document.querySelector('.tide-modal')) return;
-            if (!e.defaultPrevented && (e.key === ']' || e.key === 'Escape') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
-                e.preventDefault();
-                ref.invokeMethodAsync('OnPresentKey', 'rail').catch(function () { });
-            }
+            if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+            const action = e.key === ']' || e.key === 'Escape' ? 'rail' : railKeys[e.key];
+            if (!action || action === 'discussed' && !window.tideShortcuts.on()) return;
+            e.preventDefault();
+            ref.invokeMethodAsync('OnPresentKey', action).then(function () {
+                if (action !== 'rail' && rail.isConnected && !rail.contains(document.activeElement)) rail.focus();
+            }).catch(function () { });
             return;
         }
         if (!ref || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || inMenu(e.target)) return;

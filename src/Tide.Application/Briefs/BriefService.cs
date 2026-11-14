@@ -9,7 +9,7 @@ using Tide.Domain.Enums;
 namespace Tide.Application.Briefs;
 
 /// <summary>A row on the brief list.</summary>
-public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string AnalystName, BriefStatus Status, int Articles,
+public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string PresentedBy, BriefStatus Status, int Articles,
     int Threats, DateTimeOffset? PresentedAtUtc, DateTimeOffset? DistributedAtUtc = null, DateTimeOffset? SharePointPostedAtUtc = null,
     bool SharePointRequired = false, bool Emailed = false, DateTimeOffset? NotSentAtUtc = null, string? NotSentByName = null,
     string? NotSentReason = null);
@@ -47,14 +47,26 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>The longest the team's opening note can be.</summary>
     public const int TeamNoteMax = 4000;
 
+    /// <summary>The longest <see cref="Brief.PresentedByName"/> kept.</summary>
+    public const int PresentedByMax = 512;
+
+    /// <summary>Who presented <paramref name="brief"/>, as its pages and editions say: whoever held the live meeting's
+    /// presenter's seat, else (presented without a live meeting, or not yet) the presenter it was given.</summary>
+    public static string PresentedBy(Brief brief) => brief.PresentedByName ?? brief.AnalystName;
+
+    // "Pat", "Pat and Sam", "Pat, Sam and Robin".
+    private static string Names(IReadOnlyList<string> names) =>
+        names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
+
     /// <summary>The newest <paramref name="take"/> briefs, or every one (the archive: a row a day stays small).</summary>
     public async Task<IReadOnlyList<BriefSummary>> ListAsync(int? take = 60, CancellationToken ct = default)
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var q = db.Briefs.AsNoTracking().OrderByDescending(b => b.BriefDate);
+        // The presenter shown is BriefService.PresentedBy, written out so the query can run it.
         return await (take is { } n ? q.Take(n) : q)
-            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.AnalystName, b.Status, b.Items.Count,
+            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.PresentedByName ?? b.AnalystName, b.Status, b.Items.Count,
                 b.Items.Count(i => i.Article!.Classification == Classification.Threat), b.PresentedAtUtc, b.DistributedAtUtc, b.SharePointPostedAtUtc, b.SharePointRequired,
                 db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent),
                 b.NotSentAtUtc, b.NotSentByName, b.NotSentReason))
@@ -340,6 +352,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         HashSet<Guid> onLater = brief.PresentedAtUtc is null ? [] : await LaterBriefedAsync(db, brief, ct);
         brief.MeetingHeldAtUtc ??= held;
         brief.PresentedAtUtc ??= now;
+        // Ended from its live meeting: whoever presented it there, which may not be the presenter it was given.
+        if (_meetings.PresentersOf(briefId) is { Count: > 0 } presentedBy) brief.PresentedByName = ArticleService.Clean(Names(presentedBy), PresentedByMax);
         // An article carried to the next brief wasn't presented; it keeps its status for that meeting. What each article
         // was before this meeting marked it is kept on its item, so reopening the meeting can put it back.
         foreach (var item in brief.Items.Where(i => !carried.Contains(i.ArticleId) && !onLater.Contains(i.ArticleId)))
@@ -446,6 +460,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         brief.Status = BriefStatus.Ready;
         brief.MeetingHeldAtUtc = null;
         brief.PresentedAtUtc = null;
+        brief.PresentedByName = null;
         Touch(brief);
         await db.SaveChangesAsync(ct);
         return plan;

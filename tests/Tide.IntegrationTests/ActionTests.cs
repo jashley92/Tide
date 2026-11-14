@@ -340,7 +340,7 @@ public class ActionServiceTests : IDisposable
         var pastDay = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(today));
         var plain = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Now", Kind = ActionKind.Block, Priority = Priority.P2, TeamId = team })))!.Action;
 
-        var n = await svc.QuickAddAsync(await ArticleWithIndicators(), "Block the C2", ActionKind.Block, team, null, raisedOn: pastDay);
+        var n = (await svc.QuickAddAsync(await ArticleWithIndicators(), "Block the C2", ActionKind.Block, team, null, raisedOn: pastDay)).Number;
 
         var a = (await svc.GetAsync(n))!.Action;
         a.RaisedOn.Should().Be(pastDay);
@@ -737,19 +737,19 @@ public class ActionServiceTests : IDisposable
         var p1 = await ArticleAt(Priority.P1);
         var info = await ArticleAt(null);
 
-        var patch = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Patch GitLab", ActionKind.PatchRemediate, team, null)))!.Action;
+        var patch = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Patch GitLab", ActionKind.PatchRemediate, team, null)).Number))!.Action;
         patch.Priority.Should().Be(Priority.P1);
         patch.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 1));
 
-        var notice = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Tell the service desk", ActionKind.Awareness, team, null)))!.Action;
+        var notice = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Tell the service desk", ActionKind.Awareness, team, null)).Number))!.Action;
         notice.Priority.Should().Be(Priority.P2, "telling people is never above P2");
         notice.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 3));
 
-        var sweep = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Sweep for the IOCs", ActionKind.IocSweep, team, null)))!.Action;
+        var sweep = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Sweep for the IOCs", ActionKind.IocSweep, team, null)).Number))!.Action;
         sweep.Priority.Should().Be(Priority.P1);
         sweep.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 5), "a kind's own SLA target still wins (ADR 0008)");
 
-        var fromInfo = (await svc.GetAsync(await svc.QuickAddAsync(info, "Block the domain", ActionKind.Block, team, null)))!.Action;
+        var fromInfo = (await svc.GetAsync((await svc.QuickAddAsync(info, "Block the domain", ActionKind.Block, team, null)).Number))!.Action;
         fromInfo.Priority.Should().Be(Priority.P2, "an informational article has no priority, so the kind's stands");
     }
 

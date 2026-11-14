@@ -86,6 +86,9 @@ public sealed class Presence
     }
 
     /// <summary>How many circuits are away (for tests: a closed one isn't kept).</summary>
+    /// <summary>Whether the circuit's browser has gone for now (its connection down, the circuit kept).</summary>
+    public bool IsAway(string circuitId) => _away.ContainsKey(circuitId);
+
     internal int AwayCount => _away.Count;
 
     /// <summary>How many places have someone at them (for tests: a place everyone left isn't kept).</summary>
@@ -121,7 +124,8 @@ public sealed class Presence
 
 /// <summary>
 /// The circuit a page belongs to, so its presence can be cleared when the tab closes or drops without the page being
-/// disposed, along with a card it was dragging on the board and its seat in a live meeting. One per circuit (scoped), and the circuit's handler.
+/// disposed, along with a card it was dragging on the board, its seat in a live meeting. One
+/// per circuit (scoped), and the circuit's handler.
 /// It also keeps the transport the circuit's connection is on, for Diagnostics' "Your connection".
 /// </summary>
 public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null, LiveMeetings? meetings = null) : CircuitHandler

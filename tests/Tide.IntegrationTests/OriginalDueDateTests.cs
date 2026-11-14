@@ -108,7 +108,7 @@ public class OriginalDueDateTests
         (own.OriginalDueDate, own.DueDateMoves).Should().Be((today.AddDays(12), 0));
 
         var article = await db.Articles().CreateAsync("Edge VPN zero-day", "Vendor", null, TlpLevel.Clear);
-        var quick = await svc.QuickAddAsync(article, "Block the C2 domains", ActionKind.Block, team, today.AddDays(2));
+        var quick = (await svc.QuickAddAsync(article, "Block the C2 domains", ActionKind.Block, team, today.AddDays(2))).Number;
         var q = await Read(db, quick);
         (q.OriginalDueDate, q.DueDateMoves).Should().Be((today.AddDays(2), 0));
     }

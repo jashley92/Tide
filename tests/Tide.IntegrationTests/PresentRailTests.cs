@@ -185,6 +185,12 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         {
             var titles = (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter())).Select(a => a.Title).ToList();
             titles.Should().Contain("Patch the gateways").And.Contain("Sweep the proxy logs");
+            // The toast says what happened: given to the presenter when they're on the team, otherwise left with it.
+            var swept = (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter())).Single(a => a.Title == "Sweep the proxy logs");
+            var said = pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts[^1].Message;
+            said.Should().StartWith($"A-{swept.Number} added and ");
+            if (swept.AssigneeId == SignIn.Analyst.UserId) said.Should().EndWith("assigned to you.");
+            else said.Should().EndWith("to assign: you're not on it.").And.NotContain("assigned to you");
         }
         rail = RailOf(await pat.Html());
         rail.Should().Contain("aria-label=\"Due date for A-").And.Contain("aria-label=\"Assign A-");
@@ -278,8 +284,8 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
             var empty = await teams.AddAsync("Rail empty team", null, null);
             var first = (await sp.GetRequiredService<BriefService>().GetAsync(day))!.Items.OrderBy(i => i.SortOrder).First().ArticleId;
             var actions = sp.GetRequiredService<ActionService>();
-            withMembers = await actions.QuickAddAsync(first, "Rail assign staffed", ActionKind.IocSweep, staffed, null, day);
-            without = await actions.QuickAddAsync(first, "Rail assign empty", ActionKind.IocSweep, empty, null, day);
+            withMembers = (await actions.QuickAddAsync(first, "Rail assign staffed", ActionKind.IocSweep, staffed, null, day)).Number;
+            without = (await actions.QuickAddAsync(first, "Rail assign empty", ActionKind.IocSweep, empty, null, day)).Number;
         }
         await using var pat = await Open(app, day);
         await FirstArticle(pat);

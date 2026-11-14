@@ -54,6 +54,25 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task EveryRendering_NamesWhoPresentedTheLiveMeeting_ElseThePresenterItWasGiven()
+    {
+        var renderer = app.Services.GetRequiredService<BriefRenderer>();
+        var context = new BriefRenderContext("CTI", null, "https://tide.example.org", img => "cid:" + img.ContentId);
+        foreach (var (presentedBy, said) in new[] { ((string?)"Robin and Sam", "Robin and Sam"), (null, "Dev Analyst") })
+        {
+            var brief = new Brief { BriefDate = new DateOnly(2026, 10, 29), AnalystName = "Dev Analyst", PresentedByName = presentedBy };
+            foreach (var edition in new[] { BriefEditions.Build(brief, Edition.Public, TlpLevel.Green), BriefEditions.Build(brief, Edition.Team, TlpLevel.AmberStrict) })
+            {
+                var sent = renderer.Render(edition, context);
+                sent.EmailHtml.Should().Contain("presented by " + said);
+                sent.WebHtml.Should().Contain("Presented by " + said);
+                await using var r = await ComponentHarness.RenderAsync<EditionView>(app, "/", new() { ["Edition"] = edition });
+                (await r.Html()).Should().Contain("presented by " + said, "the send dialog's preview says what goes out");
+            }
+        }
+    }
+
+    [Fact]
     public async Task TheTeamEdition_IsShownFirst_WithEverythingUpToItsCeiling()
     {
         var body = await Preview(await Save(NewArticle()));

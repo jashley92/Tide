@@ -95,6 +95,33 @@ public class TourPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task ATabWhoseBrowserWent_LetsANewTabShowTheTour_WhileALiveOneKeepsIt()
+    {
+        var who = Person("Analyst");
+        await FirstSignIn(who);
+        var id = "tour-" + Guid.NewGuid().ToString("N");
+        await using var closed = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        var circuit = closed.Scope.ServiceProvider.GetRequiredService<PresenceCircuit>();
+        circuit.Opened(id);
+        await Do(closed, c => c.CheckAsync());
+        (await closed.Html()).Should().Contain("tide-tour");
+
+        // Still connected: a second tab doesn't start it.
+        await using (var second = await RenderAsync<OnboardingHost>(app, "/", @as: who))
+        {
+            await Do(second, c => c.CheckAsync());
+            (await second.Html()).Should().NotContain("tide-tour");
+        }
+
+        // The tab closed: its circuit lingers, but its browser has gone, so a new tab gets the tour that's still due.
+        circuit.Down(id);
+        await using var fresh = await RenderAsync<OnboardingHost>(app, "/", @as: who);
+        await Do(fresh, c => c.CheckAsync());
+        (await fresh.Html()).Should().Contain("tide-tour");
+        await Do(fresh, c => c.EndTourAsync());
+    }
+
+    [Fact]
     public async Task LeavingThePageAnotherWay_EndsTheTour_AsSkipped()
     {
         var who = Person("Viewer");

@@ -166,6 +166,50 @@ public class SecondProcessTests
     }
 
     [Fact]
+    public async Task AHeartbeatThatFails_NeverStopsTheLease_KeepsTheOthersLastSeen_AndWarnsOnceUntilItRecovers()
+    {
+        using var db = new TestDb();
+        var clock = new TestClock(Start);
+        await using var provider = new ServiceCollection().AddSingleton<IAppDbContextFactory>(db).BuildServiceProvider();
+        var log = new ListLogger<BackgroundJobLease>();
+        var a = new BackgroundJobLease(provider.GetRequiredService<IServiceScopeFactory>(), clock, log, "WEB01/100/aaaa");
+        var (b, pb) = Lease(db, clock, "WEB02/200/bbbb");
+        await using var _ = pb;
+        (await a.HoldAsync()).Should().BeTrue();
+        (await b.HoldAsync()).Should().BeFalse();
+        clock.Now = Start + BackgroundJobLease.RenewAfter;
+        (await a.HoldAsync()).Should().BeTrue();
+        a.Status.Others.Should().Equal("WEB02/200/bbbb");
+
+        async Task Sql(string sql)
+        {
+            await using var ctx = db.Context();
+            await ctx.Database.ExecuteSqlRawAsync(sql);
+        }
+
+        // The heartbeat's table is gone (a deadlock or a missing table would do the same): the lease is renewed all the same.
+        await Sql("ALTER TABLE JobProcesses RENAME TO JobProcessesAside");
+        for (var pass = 2; pass <= 4; pass++)
+        {
+            clock.Now = Start + pass * BackgroundJobLease.RenewAfter;
+            (await a.HoldAsync()).Should().BeTrue("a heartbeat that fails never stops the background jobs");
+            a.Status.Should().Match<LeaseStatus>(s => s.State == LeaseState.Held && s.ExpiresAtUtc == clock.Now + BackgroundJobLease.Expiry);
+            a.Status.Others.Should().Equal(["WEB02/200/bbbb"], "the others last seen are kept");
+        }
+        log.Warnings.Should().ContainSingle("once until it recovers, not every pass").Which.Should().Contain("heartbeat");
+
+        // Back, and failing again later: warned again.
+        await Sql("ALTER TABLE JobProcessesAside RENAME TO JobProcesses");
+        clock.Now = Start + 5 * BackgroundJobLease.RenewAfter;
+        (await a.HoldAsync()).Should().BeTrue();
+        await Sql("ALTER TABLE JobProcesses RENAME TO JobProcessesAside");
+        clock.Now = Start + 6 * BackgroundJobLease.RenewAfter;
+        (await a.HoldAsync()).Should().BeTrue();
+        log.Warnings.Should().HaveCount(2);
+        await Sql("ALTER TABLE JobProcessesAside RENAME TO JobProcesses");
+    }
+
+    [Fact]
     public async Task AHeartbeatFromADeadProcessOnThisMachine_IsntAnAlarm()
     {
         using var db = new TestDb();

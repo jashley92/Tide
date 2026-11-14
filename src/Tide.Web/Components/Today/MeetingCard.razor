@@ -11,7 +11,7 @@
     @* Facts, each label above its value: when and who side by side, the title slide line under them. *@
     <dl class="tide-facts tide-facts-side tide-meeting-facts">
         <div class="tide-fact"><dt>When</dt><dd>@($"{Ui.ShortDay(Day)} · {MeetsAt} {Zone}".TrimEnd())</dd></div>
-        <div class="tide-fact"><dt>Presenter</dt><dd>@Brief.AnalystName</dd></div>
+        <div class="tide-fact"><dt>Presenter</dt><dd>@BriefService.PresentedBy(Brief)</dd></div>
         <div class="tide-fact tide-fact-wide">
             <dt>Title slide line</dt>
             <dd>

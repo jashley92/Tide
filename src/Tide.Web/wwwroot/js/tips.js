@@ -59,6 +59,7 @@ window.tideTips = (function () {
         brought = false;
         target.classList.add('tide-tip-target');
         sizeWatch.observe(target);
+        watchPage();
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
@@ -306,12 +307,29 @@ window.tideTips = (function () {
     var barWatch = new ResizeObserver(soon);
 
     // A step's control not found yet, or gone, or the page moving under it: the page changing (a stylesheet added
-    // included) may draw it or move it. Read without a layout (place, in the next frame, measures). A text, style or
-    // class change moves it too, with no node added and no size changed (a count growing beside it, a popout placed
-    // against its button again): the ring follows. Not this script's own placing of the card, its arrow and ring.
+    // included) may draw it or move it. Read without a layout (place, in the next frame, measures). A style or class
+    // change to the control or anything it's in moves it too, with no node added and no size changed (a popout placed
+    // against its button again), and so does text changing beside it (a count growing): the ring follows. Only those
+    // are watched for (watchPage), not every style and text change on the page. Not this script's own placing of the
+    // card, its arrow and ring.
     var pageWatch = new MutationObserver(function (records) {
         if (records.some(function (m) { return m.type !== 'attributes' || [card, ring, arrow].indexOf(m.target) < 0; })) soon();
     });
+    var MOVES = ['style', 'class', 'hidden'];
+
+    // What pageWatch watches: nodes added or removed anywhere; and, once the control is found, style, class and hidden on
+    // it and on each element it's in, and text in what holds it. Again whenever the control is found anew.
+    function watchPage() {
+        pageWatch.disconnect();
+        pageWatch.observe(root, { childList: true, subtree: true });
+        if (!shown(target)) return;
+        var holder = target.parentElement;
+        for (var el = target; el && el !== root; el = el.parentElement) {
+            pageWatch.observe(el, el === holder
+                ? { attributes: true, attributeFilter: MOVES, characterData: true, subtree: true }
+                : { attributes: true, attributeFilter: MOVES });
+        }
+    }
 
     // The control or the page changing size (letters widening, a list growing) moves the card, its arrow and the ring.
     var sizeWatch = new ResizeObserver(soon);
@@ -371,7 +389,7 @@ window.tideTips = (function () {
                 if (shown(target)) sizeWatch.observe(target);
             }
             // The page changing (a step's control drawn, a list growing above a tip's control) places it again.
-            pageWatch.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+            watchPage();
             sizeWatch.observe(document.body);
             // Measured where it starts, and again if its size changes (cardWatch).
             var box = card.getBoundingClientRect();

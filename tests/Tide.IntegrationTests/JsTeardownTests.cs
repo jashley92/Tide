@@ -21,6 +21,18 @@ public partial class JsTeardownTests
         js.Called.Should().Be("tideOrder.stop");
     }
 
+    [Theory]
+    [InlineData(typeof(JSDisconnectedException))]
+    [InlineData(typeof(TaskCanceledException))]   // the browser not answering in time (present mode's share of its place)
+    [InlineData(typeof(InvalidOperationException))]
+    [InlineData(typeof(JSException))]
+    public async Task BestEffortAsync_SwallowsEveryFailure(Type failure)
+    {
+        var js = new FailingJs((Exception)Activator.CreateInstance(failure, "gone")!);
+        await FluentActions.Awaiting(async () => await js.BestEffortAsync("tidePresent.share")).Should().NotThrowAsync();
+        js.Called.Should().Be("tidePresent.share");
+    }
+
     [Fact]
     public async Task StopAsync_StillRaisesAScriptError()
     {

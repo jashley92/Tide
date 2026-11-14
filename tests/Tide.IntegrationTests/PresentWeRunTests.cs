@@ -248,8 +248,8 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
-                .QuickAddAsync(s.First, "Check the gateway's logs", ActionKind.PatchRemediate, team, null, s.Day);
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(s.First, "Check the gateway's logs", ActionKind.PatchRemediate, team, null, s.Day)).Number;
         }
         await Do(pat, p => p.ShowAction(number));
         await Do(projector, p => p.Follow());
@@ -274,8 +274,8 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
-                .QuickAddAsync(s.First, "Patch the gateway", ActionKind.PatchRemediate, team, null, s.Day);
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(s.First, "Patch the gateway", ActionKind.PatchRemediate, team, null, s.Day)).Number;
         }
         await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
