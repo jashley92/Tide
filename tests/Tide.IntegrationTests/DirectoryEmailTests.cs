@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Options;
+using Tide.Application.Operations;
+using Tide.Application.Org;
 using System.Security.Claims;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components.Server;
@@ -282,7 +285,7 @@ public class DirectoryEmailTests
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => db.Context());
-        return new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        return new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, new OrgClock(Options.Create(new OrgOptions())));
     }
 
     [Fact]
@@ -308,5 +311,23 @@ public class DirectoryEmailTests
             row.Email.Should().Be("jordan.rivera@contoso.com");
             row.DisplayName.Should().Be("jdoe");
         }
+    }
+
+    // 8:30 PM in New York is already the next day in UTC: a first sign-in then starts the Show me around window on the
+    // organization's day, the one the window is counted in, not a day late.
+    [Fact]
+    public async Task AFirstSignIn_InAUsEvening_StartsTheGuideLinkWindowOnTheOrganizationsDay()
+    {
+        using var db = new TestDb();
+        var evening = new TestClock(new DateTimeOffset(2026, 11, 14, 1, 30, 0, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddScoped(_ => db.Context());
+        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), evening,
+            new OrgClock(Options.Create(new OrgOptions { TimeZone = "America/New_York" }), evening));
+
+        await mirror.TouchAsync("S-1-5-21-1-2-3-501", "Jordan Rivera", null, null, "Viewer");
+
+        await using var ctx = db.Context();
+        (await ctx.UserPreferences.SingleAsync(p => p.Name == GuideLinkService.Since)).Value.Should().Be("2026-11-13");
     }
 }

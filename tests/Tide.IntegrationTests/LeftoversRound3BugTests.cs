@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using Tide.Application.Org;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -144,7 +146,7 @@ public class LeftoversRound3BugTests(TideApp app) : IClassFixture<TideApp>
         using var db = new TestDb();
         var services = new ServiceCollection();
         services.AddScoped(_ => db.Context());
-        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, new OrgClock(Options.Create(new OrgOptions())));
         const string sid = "S-1-5-21-1-2-3-501";
 
         // A first visit with AD slow: the username is all there is.
