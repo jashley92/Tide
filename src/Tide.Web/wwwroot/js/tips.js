@@ -245,7 +245,7 @@ window.tideTips = (function () {
         card.dataset.side = at.side;
         card.classList.add('is-placed');
         // Marked again if a redraw took the mark off (a NavLink rewriting its class as the page changes).
-        if (r) target.classList.add('tide-tip-target');
+        if (r && !target.classList.contains('tide-tip-target')) target.classList.add('tide-tip-target');
         ringAt(at.side === 'none' ? null : r);
         arrowAt(r && at, r, high);
     }
@@ -306,8 +306,12 @@ window.tideTips = (function () {
     var barWatch = new ResizeObserver(soon);
 
     // A step's control not found yet, or gone, or the page moving under it: the page changing (a stylesheet added
-    // included) may draw it or move it. Read without a layout (place, in the next frame, measures).
-    var pageWatch = new MutationObserver(soon);
+    // included) may draw it or move it. Read without a layout (place, in the next frame, measures). A text, style or
+    // class change moves it too, with no node added and no size changed (a count growing beside it, a popout placed
+    // against its button again): the ring follows. Not this script's own placing of the card, its arrow and ring.
+    var pageWatch = new MutationObserver(function (records) {
+        if (records.some(function (m) { return m.type !== 'attributes' || [card, ring, arrow].indexOf(m.target) < 0; })) soon();
+    });
 
     // The control or the page changing size (letters widening, a list growing) moves the card, its arrow and the ring.
     var sizeWatch = new ResizeObserver(soon);
@@ -367,7 +371,7 @@ window.tideTips = (function () {
                 if (shown(target)) sizeWatch.observe(target);
             }
             // The page changing (a step's control drawn, a list growing above a tip's control) places it again.
-            pageWatch.observe(root, { childList: true, subtree: true });
+            pageWatch.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
             sizeWatch.observe(document.body);
             // Measured where it starts, and again if its size changes (cardWatch).
             var box = card.getBoundingClientRect();
