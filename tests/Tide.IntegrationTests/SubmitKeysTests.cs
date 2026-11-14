@@ -19,7 +19,7 @@ public partial class SubmitKeysTests(TideApp app) : IClassFixture<TideApp>
         { "Pages/Present.razor", 2 },
         { "Pages/OutreachTemplatesPage.razor", 1 },
         { "Pages/SavedQueriesPage.razor", 1 },
-        { "Pages/Stories.razor", 1 },
+        { "Pages/Stories.razor", 2 },
         { "Pages/AdversariesPage.razor", 1 },
         { "Pages/StackPage.razor", 1 },
         { "Pages/BriefPage.razor", 1 },
