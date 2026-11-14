@@ -309,9 +309,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     private DbContextOptionsBuilder<AppDbContext> Configure(DbContextOptionsBuilder<AppDbContext> b, bool retrying)
     {
-        // A First or FirstOrDefault with neither a filter nor an order picks any row (SQL Server promises none): EF only
-        // warns of it, in the server's log, so a test that reads one fails instead.
-        b.ConfigureWarnings(w => w.Throw(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.FirstWithoutOrderByAndFilterWarning));
+        // A First or FirstOrDefault with neither a filter nor an order, or a Skip or Take with no order, picks any rows (SQL
+        // Server promises none): EF only warns of them, in the server's log, so a test that reads one fails instead.
+        b.ConfigureWarnings(w => w.Throw(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.FirstWithoutOrderByAndFilterWarning,
+            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.RowLimitingOperationWithoutOrderByWarning));
         if (_sqlServer is { } sql)
             return b.UseSqlServer(sql, o => { if (retrying) o.ExecutionStrategy(d => new RetryingStrategy(d)); });
         return _perContext is { } cs

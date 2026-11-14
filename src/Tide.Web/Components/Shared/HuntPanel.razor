@@ -829,6 +829,8 @@
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
+            // Closed meanwhile (this card hadn't heard): the action is read again, so the card says so and offers no more.
+            if (ex is ActionClosedException) await Changed.InvokeAsync();
             return false;
         }
         finally { _busy = false; }

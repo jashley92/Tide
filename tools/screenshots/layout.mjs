@@ -78,6 +78,17 @@ const widerThan = (selector, px) => ({
   }, [selector, px]),
 });
 
+/** Every shown match of `selector` is at least `px` wide: a column of text that stays readable rather than crushed to a
+ *  few letters a line. */
+const everyAtLeast = (selector, px) => ({
+  name: `each at least ${px}px wide: ${selector}`,
+  check: page => page.$$eval(selector, (els, [selector, px]) => {
+    const widths = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0).map(r => Math.round(r.width));
+    if (!widths.length) return [`nothing shown matches ${selector}`];
+    return widths.flatMap((w, i) => w >= px ? [] : [`${selector} #${i + 1} is ${w}px wide, under ${px}px`]);
+  }, [selector, px]),
+});
+
 /** While a match of `beside` is shown, the first match of `selector` is at least `px` wide: what `beside` adds to a
  *  row mustn't squeeze what matters more (the brief chip and the search box). Holds when `beside` isn't shown. */
 const roomBeside = (selector, px, beside) => ({
@@ -4568,9 +4579,10 @@ const pages = [
   // An action opened from its row and closed with Escape: focus is back on that row's title.
   { name: 'slide-open-actions-closed', route: '/present/{today}', setup: reviewActionClosed, widths: [1920],
     rules: [hidden('#present-action-title'), focusOn('.tide-slide-open tbody tr:first-child .tide-slide-row-open')] },
-  // Diagnostics: a health check's long detail (a server's folder path) wraps within its card, as the sidebar's open.
+  // Diagnostics: a health check's long detail (a server's folder path) wraps within its card, as the sidebar's open, and
+  // every detail stays readable (stacked under its check at a narrow width, not crushed to a few letters a line).
   { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
-    rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)')] },
+    rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)'), everyAtLeast('.tide-diag-checks td:last-child', 120)] },
   // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
   { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),

@@ -1012,7 +1012,7 @@ else
                         @if (_canWrite && _brief.Status != BriefStatus.Sent)
                         {
                             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskAdd">
-                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add article@AvailableLabel(_candidates)
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> @("Add article" + AvailableLabel(_candidates))
                             </button>
                             <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }

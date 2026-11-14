@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Org;
+using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages.Admin;
 using Tide.Web.Components.Shared;
@@ -39,6 +40,47 @@ public class ActionsAdminFinalPassPageTests(TideApp app) : IClassFixture<TideApp
         await r.Click(c => c.Save());
         (await r.Html()).Should().NotContain("id=\"org-meeting-error\"");
         toasts.Toasts.Should().Contain(t => !t.IsError && t.Message == "Saved.");
+    }
+
+    [Fact]
+    public async Task TodaysAddArticle_SaysWhatItOffers_InWords()
+    {
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync(Unique("A fresh draft"), "Vendor");
+
+        var today = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync("/"));
+        today.Should().NotContain("AvailableLabel", "the label is worked out, not written out")
+            .And.MatchRegex(@"Add article \((\d+ ready, )?\d+ drafts?\)", "a new draft is on offer");
+    }
+
+    [Fact]
+    public async Task AHuntCardThatHasntHeardItsActionClosed_SaysWhyEachAddIsRefused()
+    {
+        int number;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync(Unique("Stale hunters"), null, null);
+            var actions = sp.GetRequiredService<ActionService>();
+            number = await actions.CreateAsync(new ActionForm { Title = "Sweep the proxy", Kind = ActionKind.IocSweep, TeamId = team });
+            await actions.AddIndicatorsAsync((await actions.GetAsync(number))!.Action.Id, [new IndicatorForm { Type = IndicatorType.IpAddress, Value = "203.0.113.41" }]);
+        }
+        ActionItem open;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            open = (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(number))!.Action;
+        await using var r = await ComponentHarness.RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = open, ["CanWork"] = true });
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<ToastService>();
+        (await r.Html()).Should().Contain("Keep this query", "the open sweep's preview is shown");
+
+        // Closed by a colleague; this card hasn't heard.
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<ActionService>().SetStatusAsync(open.Id, ActionStatus.Cancelled, ActionOutcome.None, null);
+
+        var said = $"A-{number} is closed. Reopen it to add to it.";
+        await r.Click(c => c.KeepPreview());
+        toasts.Toasts.Should().Contain(t => t.IsError && t.Message == said, "Keep this query says why nothing was kept");
+        await r.Click(async c => await c.AddIndicators(new IndicatorAdd.Addition([new IndicatorForm { Type = IndicatorType.IpAddress, Value = "203.0.113.42" }], [], false)));
+        toasts.Toasts.Count(t => t.IsError && t.Message == said).Should().Be(2, "adding an indicator says so too");
     }
 
     [Fact]
