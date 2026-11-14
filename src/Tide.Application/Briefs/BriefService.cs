@@ -64,6 +64,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var q = db.Briefs.AsNoTracking().OrderByDescending(b => b.BriefDate);
+        // The presenter shown is BriefService.PresentedBy, written out so the query can run it.
         return await (take is { } n ? q.Take(n) : q)
             .Select(b => new BriefSummary(b.Id, b.BriefDate, b.PresentedByName ?? b.AnalystName, b.Status, b.Items.Count,
                 b.Items.Count(i => i.Article!.Classification == Classification.Threat), b.PresentedAtUtc, b.DistributedAtUtc, b.SharePointPostedAtUtc, b.SharePointRequired,

@@ -1002,7 +1002,7 @@ else
                             </button>
                             <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }
-                        @if (_canWrite) { <span class="small tide-muted ms-auto">@BriefSteps.Written(Ordered()).Said</span> }
+                        @if (_canWrite) { <span class="small tide-muted ms-auto">@BriefSteps.Written(Ordered(), a => Blocked(a.Id)).Said</span> }
                     </div>
                 </section>
                 @TeamNoteCard()
