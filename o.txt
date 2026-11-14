@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/" />
+    <script src="js/theme-init.js?v=20261109-rail"></script>
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css?v=5.3.3">
+    <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.min.css?v=1.11.3">
+    <link rel="stylesheet" href="app.css?v=20261114-wide-letters">
+    <link rel="stylesheet" href="palette.css?v=20261112-help-link">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <!--Blazor:{"type":"server","prerenderId":"0a6e4913bd7d40c191224cb632a9b28d","key":{"locationHash":"77D12F14A8105320B1AAED6AE7E689DA0EC4483270A645E84079EAA0FFDF550D:8","formattedComponentKey":""},"sequence":0,"descriptor":"CfDJ8J9aPwBFsrhBmo9bzdLXK0XvJGa7t4g/DV/B7vi84AEMKCVWQvuTDipFARTDbOxd\u002B2jEif8mwSftnMapgWIutKRBPBgpNb4gfEM1K8Eb4iwTysnSgmMgOkOSwB60anL5v/APpPrw/fCHp7BaGxxRcpA8Nnl3b9iTfe6cgWWsfUyUfNglVywKCNAp9pBs0E\u002BDlwFqEu/aH/VrgYcVgocQs30nhZjIl8e7km0SQy92Cvg7KVU2G1NsvfztATttZvxK\u002B1tkdeHfSF7/Sen\u002BYd8dIWZ8MH4/9pZo/h3ghfiahrR0HDLTV0Vb7\u002Br53YzzUNNr4HmcSbISQhYIoyrxttgTjbrIAVdgOFsK9i0ZmWUlTwz8H\u002BGKM0gxjfQXvUobW4l7Sv\u002BOpV4ff6MwMCt2PQSEuGwc5CmNggflC2PfSPSRFqpAB0JF7SHMZZgBrfx8sD5PbBwqyMwJkaRD4eIZneOomzl52hwpKWRiSi4aVTV9sR/7OJot3gilpNpuOZ1dLwyDqumNbM1w2xXQfXRJOaU30r1sr3jdQY358PUJ9L0QNoKYFH9\u002BuEjuBhv77zph3Duk\u002BmW7tuMbrWZqO28YRk4d\u002BAU="}--><title>Team commitments · TIDE</title><!--Blazor:{"prerenderId":"0a6e4913bd7d40c191224cb632a9b28d"}--></head>
+
+<body><!--Blazor:{"type":"server","prerenderId":"85ff8ef5ffbc47b7bf81910c60a03176","key":{"locationHash":"63C3CF084A551F6192CCA1AC41AEA6EB08B3CBB72714AA48A484A18AF0915B41:11","formattedComponentKey":""},"sequence":1,"descriptor":"CfDJ8J9aPwBFsrhBmo9bzdLXK0UvTyaDUgJ5sMKllpfAVMSKZcdAtwMm82lrj\u002BRzEwchv/wjC4x0sqQfAn5wk\u002BszrS\u002BCbD4kFuLY9XhqKkBF1HJ9iMLpUnsSLBBbpI9MBdPsrmAkyp9Vp1A/b3LVYD81HkSt2SAsAWJzWvqWX38q5I0MMiuA9XT0gRz92I4cI2NJV/HIBOeHlHxTsk5PinfB/lE4pgwAS0vhf0qfZqDr4QtLFO3ppVqJFOSCyOV9Gwnd3qGmjXRcFCIqKOr0r\u002B8Eog\u002BxELpUzJEcmFDeAdzWz5hRk80AVGCt73Jou/x8Bl46h9N2VhNb7dV5hEpkNnvlW/KXY0Q8gCxusxkj16bOAVWHNTkHG\u002BkA1hKRRMtHESHyTA\u002Btjc6Y8APQSkWn4REK\u002BqrnppAbvk6iGugJeBRTBt88WU4NGpO/6/GWLXACDniEpt51Dt8lcOjE\u002B/pPbX8dsGpuV6MTxk05gCVPt3gzpz4JhBScGMW8GGapKOyni\u002B6ykty1ZJ513JkU0EawvKUmA1k="}--><a class="tide-skip-link" href="#main-content">Skip to content</a>
+
+<div class="page"><div class="sidebar"><div class="tide-side-head"><a class="tide-brand" href><span class="tide-brand-mark" aria-hidden="true">T</span>
+        <span class="tide-brand-text"><span class="tide-brand-name">TIDE</span>
+            <span class="tide-brand-sub">Threat Intelligence Daily Exchange</span></span></a>
+    <button type="button" id="nav-collapse-toggle" class="tide-side-collapse" aria-controls="tide-nav-links" aria-expanded="true" title="Collapse the sidebar" aria-label="Collapse or expand the sidebar"><span class="bi bi-chevron-double-left" aria-hidden="true"></span></button>
+    <button type="button" id="nav-menu-toggle" class="tide-menu-btn" aria-controls="tide-nav-links" aria-expanded="false" aria-label="Menu"><span class="bi bi-list" aria-hidden="true"></span></button></div>
+
+<nav aria-label="Main" id="tide-nav-links"><ul class="tide-nav"><li class="tide-nav-group"><span class="tide-nav-group-label" id="nav-group-today">Daily</span>
+                <ul aria-labelledby="nav-group-today"><li><a href="" title="Today"><span class="bi bi-sunrise" aria-hidden="true"></span><span class="tide-nav-label">Today</span></a></li><li><a href="triage" title="Triage, 8 new" aria-label="Triage, 8 new"><span class="bi bi-inbox" aria-hidden="true"></span><span class="tide-nav-label">Triage</span><span class="tide-nav-count" aria-hidden="true">8</span>
+</a></li><li><a href="articles" title="Articles"><span class="bi bi-newspaper" aria-hidden="true"></span><span class="tide-nav-label">Articles</span></a></li><li><a href="actions" title="Actions" aria-label="Actions"><span class="bi bi-list-check" aria-hidden="true"></span><span class="tide-nav-label">Actions</span></a></li><li><a href="search" title="Search"><span class="bi bi-search" aria-hidden="true"></span><span class="tide-nav-label">Search</span></a></li></ul></li><li class="tide-nav-group"><span class="tide-nav-group-label" id="nav-group-stories">Intelligence</span>
+                <ul aria-labelledby="nav-group-stories"><li><a href="stories" title="Stories"><span class="bi bi-bezier2" aria-hidden="true"></span><span class="tide-nav-label">Stories</span></a></li><li><a href="briefs" title="Brief archive"><span class="bi bi-archive" aria-hidden="true"></span><span class="tide-nav-label">Brief archive</span></a></li><li><a href="stack" title="Our stack"><span class="bi bi-hdd-stack" aria-hidden="true"></span><span class="tide-nav-label">Our stack</span></a></li><li><a href="adversaries" title="Adversaries"><span class="bi bi-incognito" aria-hidden="true"></span><span class="tide-nav-label">Adversaries</span></a></li></ul></li><li class="tide-nav-group"><span class="tide-nav-group-label" id="nav-group-trends">Insight</span>
+                <ul aria-labelledby="nav-group-trends"><li><a href="trends" title="Trends"><span class="bi bi-bar-chart-line" aria-hidden="true"></span><span class="tide-nav-label">Trends</span></a></li><li><a href="metrics" title="Metrics"><span class="bi bi-graph-up" aria-hidden="true"></span><span class="tide-nav-label">Metrics</span></a></li><li><a href="coverage" title="Coverage"><span class="bi bi-shield-check" aria-hidden="true"></span><span class="tide-nav-label">Coverage</span></a></li><li><a href="reports" title="Reports" class="active" aria-current="page"><span class="bi bi-file-earmark-bar-graph" aria-hidden="true"></span><span class="tide-nav-label">Reports</span></a></li></ul></li><li class="tide-nav-group"><span class="tide-nav-group-label" id="nav-group-rotation">Team</span>
+                <ul aria-labelledby="nav-group-rotation"><li><a href="rotation" title="Brief rotation"><span class="bi bi-calendar3" aria-hidden="true"></span><span class="tide-nav-label">Brief rotation</span></a></li><li><a href="workload" title="Workload"><span class="bi bi-people" aria-hidden="true"></span><span class="tide-nav-label">Workload</span></a></li><li><a href="library" title="Library"><span class="bi bi-collection" aria-hidden="true"></span><span class="tide-nav-label">Library</span></a></li></ul></li><li class="tide-nav-group"><span class="tide-nav-group-label" id="nav-group-published">Company-wide</span>
+                <ul aria-labelledby="nav-group-published"><li><a href="published" title="Published briefs"><span class="bi bi-megaphone" aria-hidden="true"></span><span class="tide-nav-label">Published briefs</span></a></li></ul></li></ul></nav></div>
+
+    <main><div class="top-row"><span class="tide-muted small">Cyber Threat Intelligence</span>
+            <div class="tide-top-find"><form class="tide-top-search" role="search" __internal_preventDefault_onsubmit action="/reports/teams/00000000-0000-0000-0000-000000000000?as=Robin&amp;roles=Analyst"><span class="bi bi-search" aria-hidden="true"></span>
+    <input type="search" class="form-control form-control-sm" maxlength="500" aria-label="Search TIDE" placeholder="Search, or look up an indicator or CVE" /></form>
+                <button type="button" class="tide-palette-btn" aria-haspopup="dialog" aria-keyshortcuts="Control&#x2B;K Meta&#x2B;K" title="Go to a page, article or action (Ctrl&#x2B;K)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span>
+        <span class="tide-palette-btn-label">Go to</span>
+        <kbd class="tide-palette-kbd" aria-hidden="true">Ctrl K</kbd></button></div>
+            <div class="tide-top-end"><a class="tide-brief-chip" href aria-label="Brief at Mon 10:30 AM, step 2 of 5, Write" title="Brief at Mon 10:30 AM, step 2 of 5, Write. Open Today"><span class="bi bi-journal-text" aria-hidden="true"></span>
+            <span class="tide-brief-chip-full">Brief Mon 10:30 AM &#xB7; step 2 of 5 &#xB7; Write</span>
+            <span class="tide-brief-chip-short">Mon &#xB7; 2/5</span></a>
+                        
+                        <button type="button" class="tide-shortcuts-btn" aria-haspopup="dialog" aria-keyshortcuts="Shift&#x2B;?" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><span class="bi bi-question-circle" aria-hidden="true"></span></button>
+                        <div class="tide-profile"><button type="button" class="tide-profile-btn" title="Robin" aria-haspopup="true" aria-expanded="false" aria-label="Account menu"><span class="tide-avatar" aria-hidden="true">R</span></button></div></div></div>
+
+        <article id="main-content" tabindex="-1" class="content">
+            
+            
+
+<div class="tide-page-head"><div><nav class="tide-crumbs" aria-label="Breadcrumb"><ol><li><a href="reports/teams">Team commitments</a></li><li><span aria-current="page">Team</span></li></ol></nav>
+        <h1>Team by person</h1>
+        <div class="tide-sub">Each action counts for whoever held it on its due date.</div></div></div>
+
+<nav class="tide-tabbar tide-tabbar-page tide-noprint" aria-label="Reports"><a class="tide-tabbar-item " href="reports"><span class="bi bi-file-earmark-bar-graph" aria-hidden="true"></span><span>Monthly report</span></a><a class="tide-tabbar-item active" href="reports/teams" aria-current="page"><span class="bi bi-people" aria-hidden="true"></span><span>Team commitments</span></a><a class="tide-tabbar-item " href="reports/timeliness"><span class="bi bi-alarm" aria-hidden="true"></span><span>Brief timeliness</span></a></nav>
+
+<div class="tide-card tide-noprint"><div class="btn-group" role="group" aria-label="Window"><button type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false">30 days</button><button type="button" class="btn btn-sm btn-primary" aria-pressed="true">90 days</button><button type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false">180 days</button><button type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false">365 days</button></div></div><div class="tide-card"><div class="tide-empty-state  "><span class="bi bi-people tide-empty-state-icon" aria-hidden="true"></span>
+    <div class="tide-empty-state-title">That team isn&#x27;t on the scorecard</div></div></div></article>
+        </main></div>
+
+<div class="tide-toasts"><div role="status" aria-live="polite"></div>
+    <div role="alert" aria-live="assertive"></div></div>
+
+
+
+<div class="visually-hidden" role="status" aria-live="polite"></div>
+
+<div id="blazor-error-ui">
+    Something went wrong. Reload the page to continue.
+    <a href class="reload">Reload</a>
+    <button type="button" class="dismiss" aria-label="Dismiss">&times;</button></div>
+        <!--Blazor:{"prerenderId":"85ff8ef5ffbc47b7bf81910c60a03176"}-->
+
+    <div id="components-reconnect-modal" class="reconnect-modal"><div class="reconnect-card" role="alertdialog" aria-live="assertive" aria-label="Connection to the server"><div class="reconnect-body reconnect-when-show"><h2 id="reconnect-title" class="reconnect-title">Reconnecting&hellip;</h2>
+                <p>The connection to the server was lost. Trying again
+                    (attempt <span id="components-reconnect-current-attempt"></span> of <span id="components-reconnect-max-retries"></span>)&hellip;</p></div>
+            <div class="reconnect-body reconnect-when-failed"><h2 class="reconnect-title">Can&rsquo;t reach the server</h2>
+                <p>Check your network connection, then try again.</p>
+                <button type="button" id="components-reconnect-retry" class="btn btn-primary btn-sm">Try again</button></div>
+            <div class="reconnect-body reconnect-when-rejected"><h2 class="reconnect-title">Session expired</h2>
+                <p>The server is back, but this session was lost. Reload to continue; an unsaved edit may need redoing.</p>
+                <button type="button" id="components-reconnect-reload" class="btn btn-primary btn-sm">Reload the page</button></div></div></div>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/theme.js?v=20261130-guides3"></script>
+    <script src="js/paste-drop.js?v=20261127-page-paste"></script>
+    <script src="js/present.js?v=20261128-rail-slide-keys"></script>
+    <script src="js/clipboard.js?v=20261110-lf"></script>
+    <script src="js/rows.js?v=20261114-after"></script>
+    <script src="js/triage.js?v=20261114-pane-narrow2"></script>
+    <script src="js/dialog.js?v=20261127-top-modal"></script>
+    <script src="js/chart.js?v=20261029-chartall4"></script>
+    <script src="js/board.js?v=20261113-reveal"></script>
+    <script src="js/brief-order.js?v=20261110-focus-title"></script>
+    <script src="js/tabs.js?v=20261111-pointer"></script>
+    <script src="js/pager.js?v=20261106-links"></script>
+    <script src="js/autogrow.js?v=20261107-refit"></script>
+    <script src="js/markdown-toolbar.js?v=20261113-linear"></script>
+    <script src="js/palette.js?v=20261104-simplify"></script>
+    <script src="js/editor.js?v=20261113-editor-rail"></script>
+    <script src="js/combo.js?v=20261105-reveal"></script>
+    <script src="js/popout.js?v=20261130-guides1"></script>
+    <script src="js/filters.js?v=20261128-profile-arrows"></script>
+    <script src="js/submitkeys.js?v=20261107-ep90"></script>
+    <script src="js/toasts.js?v=20261109-undo-key"></script>
+    <script src="js/tips.js?v=20261114-wide-letters-2"></script></body></html><!--Blazor-Server-Component-State:CfDJ8J9aPwBFsrhBmo9bzdLXK0W6RIOLydSH9OVljmSZ1NAmzVU78Z9ljMqWWsY4ekjJfS8xjC4zMboy66/ElKdarmy4SC95aO2FQeZnYgHlrbYGSpbMjgYM0aBTnpewRWvLK6vrnN+7HStThmj9J0Lppe9EP0r0zSNTcm/JrMSZ3uUZboW8xPZdgnf/kCw4+0yZh8bR94s5/edWGBRLXcuPS36AdBUbh34wO2j5OPj1iAc4XILV2imuuLD5sjdNcTXGBJlJzv0f7yu0zCx/n/ss8pKmtRvwLZlGlO9XKV+l5CFrhN6taLScThrH85Z56VaxEUifJPJ80RDbj9/7kEhfhlHTOGjfhnDgUuGf6nyLLNHIH2XimIJwHl0+HpBtF2JrJakx+YfkquDdewH5Dv1hUQo0FO3hJfsq7FFBjWmR83QwkYICaAKcOawvht7KKEKzsjh+0h8RGbwCAObomqNgkJAJnbZF7nEZvwBrwztls4apGo0vhYNf2OMP2cU/XxywSHO3+PV/ST1gojA7uoC9qXtlXC9P/3Poi79AwLYH7HsO1dbK2p2ROT2ybk+s3tjEZQFLMzoPHD7WWY7fLRmWU25mitipUMh5M+Nl1FOu6vwfEiVHlxu2LjGPXgZ7KIs4caZWuEU6gj+UWhbkxLJOUasxqyX/RjVglsHE9Fv+hqifh8U12VkvJ8fo1/vJKutngUp7fqwJkYf5sEgav19IuW8lKp+eQcu4fPcF2M2e2duftasLF97Cj9tteP6ClmnLURiDaNqweox+rCuvj+6skEj5E4AXcyyEoHYS08ScS48jDNvR1egOjVOTu8tFniCeVHwdwSc84iiSpie7pANq3+LKBDPXrhwlR/EF9ympJACErkrwmK1Dm8NBTdH+B/NA7TYhwx0R+KA/pWaWdaoKtT2crRDBbZkhByWejfROJqv3IT0pObfSsgEoAk8RGoWxfsxKKGApViSd6AgQnej0EvPiDgbCoIA6tuoZyRNW/O9IesYh97fnD0C4yzA7DKJ6AwG8ekpYgS6ZkH3ja7H4EQqzZ839a8o0L//u83dczsXtGJaU3K7h8Q+zG168Q0jWI/1R5RPGQFdYz3cI/rKRe0WfCKqlBSann6mopL+2d6piOz3J3c/MzlzVJvinrLKnKO00eQFwueU2GF1+Cd9HHYvsSTefSX4KgjYPYEO09s3WZ49CQjtknv9W4rxnnmaypQ==-->

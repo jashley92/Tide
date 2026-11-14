@@ -240,7 +240,9 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
 
     private const string ExcuseChanged = "Someone else changed that excuse just now. Check it again.";
 
-    /// <summary>The report's days as CSV, a row per day, newest first: what the reader sees, nothing more.</summary>
+    /// <summary>The report's days as CSV, a row per day, newest first: what the reader sees, nothing more. <c>excused</c> is
+    /// "yes" for a late or missed day excused, "not needed" for an excused day that turned out on time (or still to
+    /// come), "no" otherwise.</summary>
     public static string ToCsv(TimelinessReport report, TimeZoneInfo zone)
     {
         var sb = new StringBuilder("date,analyst,sent_by,sent_at,posted_by,posted_at,verdict,minutes_late,excused,excuse,excused_by\n");
@@ -250,7 +252,7 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
                 d.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Csv.Cell(d.AnalystName), Local(d.SendBy), Local(d.SentAtUtc),
                 Local(d.PostBy), Local(d.PostedAtUtc), Verdict(d),
                 d.LateBy is { } l ? ((int)Math.Ceiling(l.TotalMinutes)).ToString(CultureInfo.InvariantCulture) : "",
-                d.Excused ? "yes" : "no", Csv.Cell(d.Excuse?.Reason ?? ""), Csv.Cell(d.Excuse?.ExcusedByName ?? ""),
+                d.Excused ? "yes" : d.Excuse is null ? "no" : "not needed", Csv.Cell(d.Excuse?.Reason ?? ""), Csv.Cell(d.Excuse?.ExcusedByName ?? ""),
             ]).Append('\n');
         return sb.ToString();
     }
