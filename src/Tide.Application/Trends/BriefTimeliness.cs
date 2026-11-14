@@ -311,6 +311,9 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
             var day = rota.GetValueOrDefault(date);
             var (ownerId, ownerName) = brief is not null ? (brief.AnalystId, brief.AnalystName) : (day?.AnalystId, day?.AnalystName);
             if (string.IsNullOrEmpty(ownerId)) continue;
+            // A brief recorded as sent with nothing in the send log to say when (an imported or seeded one): there's no
+            // time to judge it by, so it isn't held against anyone. A real send, a distribution or "Not sent" always says.
+            if (brief is { Status: BriefStatus.Sent, DistributedAtUtc: null, NotSentAtUtc: null } && !went[brief.Id].Any()) continue;
 
             var facts = brief is null ? new DayFacts(null, null, requireSharePoint)
                 : Facts(brief, went[brief.Id], BriefSteps.NothingToSend(lowest.GetValueOrDefault(brief.Id), teamMax, publicMax), requireSharePoint);
