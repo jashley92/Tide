@@ -575,6 +575,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public StoryService Stories() => new(this, User);
 
+    public StoryArticleService StoryArticles() => new(this, User, Articles(), Stories(), Stack());
+
     public Tide.Application.Search.SearchService Search() => new(this, User);
 
     public Tide.Application.Trends.TrendsService Trends() => new(this, User, Clock);

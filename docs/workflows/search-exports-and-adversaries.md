@@ -181,6 +181,14 @@ Articles point at it (`Article.StoryId`). `StoryService`:
 - **Joining.** The editor's story picker offers at most eight: with nothing typed, the open stories that had an
   article most recently; with words, every story whose name holds them, open ones first (`StoryService` pick list).
   Similar articles suggests the story of a related article.
+- **Adding from the story** (`StoryArticleService`, analysts only). *New article on this story* creates a draft
+  (`ArticleService.CreateAsync`), links it (`StoryService.LinkAsync`), saves the prefill through the editor's own save
+  (`ArticleService.SaveAsync`) and tags its products (`StackService.TagArticleAsync`), so every step is checked and
+  audited as it is elsewhere. The prefill is the CVEs, live scorecard tags and products in use named by the story's
+  articles **at or below the new article's TLP**; what only a more restricted article names is never copied, so the
+  draft can't carry more than its own marking allows. Threat actors and techniques aren't copied. *Add an existing
+  article* lists, at most eight at a time, articles not on the story (an article on another story moves) and links
+  the one picked.
 - **Deleting** a story is allowed only with no articles (one with articles is closed instead). Linking and deleting
   run in a serializable transaction, so an article linked as its story is deleted is refused rather than silently
   unlinked.

@@ -1839,6 +1839,26 @@ const openFirst = (opener, panel) => async page => {
   await page.locator(panel).first().waitFor({ timeout: 5000 });
 };
 
+/** Every shown <select> matching `selector` is wide enough for its longest option's text in its own font, between its
+ *  padding (the right padding holds the arrow): a choice is never cut to "TLP:CLEA…". */
+const selectShowsOptions = selector => ({
+  name: `select shows its options whole: ${selector}`,
+  check: page => page.$$eval(selector, (selects, selector) => {
+    const shown = selects.filter(s => s.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    return shown.flatMap((s, i) => {
+      const css = getComputedStyle(s);
+      const probe = document.createElement('span');
+      Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre', font: css.font, letterSpacing: css.letterSpacing });
+      document.body.append(probe);
+      const widest = Math.max(...[...s.options].map(o => { probe.textContent = o.text; return probe.getBoundingClientRect().width; }));
+      probe.remove();
+      const room = s.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+      return widest <= room + 0.5 ? [] : [`${selector} #${i + 1}: its longest option needs ${Math.ceil(widest)}px and has ${Math.floor(room)}px`];
+    });
+  }, selector),
+});
+
 /** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
  * beside it (from where <main> starts). */
 const insidePage = selector => ({
@@ -3850,6 +3870,14 @@ const everyIndicatorSweep = async page => {
   await page.locator('#lib-try-text').waitFor({ timeout: 5000 }).catch(() => { });
 };
 
+/** Setup: wider letters (LETTER_SPACING), then a story page's `button` pressed (New article on this story, or Add an
+ *  existing article), waiting for `ready`: what its card draws once read. */
+const storyAdding = (button, ready) => async page => {
+  await wideFont(page);
+  await page.getByRole('button', { name: button, exact: true }).click();
+  await page.locator(ready).first().waitFor();
+};
+
 /** Setup: that entry, then the rail opened where it's an overlay (the Context button). */
 const libraryOverlay = async page => {
   await everyIndicatorSweep(page);
@@ -4589,6 +4617,22 @@ const pages = [
   { name: 'adversary-long-name', route: '/adversaries/{adversary}', widths: [1440, 780, 400],
     setup: async page => { await longWord('.tide-page-head h1')(page); await longWord('.tide-crumbs', { last: true, prefix: ' › ' })(page); },
     rules: [noSidewaysScroll, fits('.tide-page-head'), fits('.tide-crumbs')] },
+  // A story's page for an analyst: New article on this story and Add an existing article beside Export and Edit in its
+  // header, wrapping within the page rather than pushing it sideways. A Viewer sees neither.
+  { name: 'story-actions', route: '/stories/{story}', setup: wideFont, widths: [1920, 1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-page-head .btn-primary'), insidePage('.tide-page-head .btn')] },
+  { name: 'story-actions-viewer', route: `/stories/{story}?as=StoryViewer${run}&roles=Viewer`, setup: wideFont, widths: [1440, 400],
+    rules: [noSidewaysScroll, hidden('.tide-page-head .btn-primary')] },
+  // New article on this story: the title and its TLP side by side where there's room, what it copies under them, and
+  // Create and edit beside Cancel.
+  { name: 'story-new-article', route: '/stories/{story}', setup: storyAdding('New article on this story', '#sn-copies'), widths: [1920, 1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-story-new'), visible('#sn-copies'), [780, sameLine('#sn-title', '#sn-tlp')], oneRow('.tide-story-new .d-flex'),
+      selectShowsOptions('#sn-tlp')] },
+  // Add an existing article: the search and the articles it lists stay within the card, each one's marking, status and
+  // story wrapping inside it.
+  { name: 'story-add-existing', route: '/stories/{story}', setup: storyAdding('Add an existing article', '.tide-story-attach .tide-story-results li'), widths: [1920, 1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-story-attach'), fits('.tide-story-attach .tide-story-results'), visible('.tide-story-attach .tide-story-result-meta'),
+      insidePage('.tide-story-attach .tide-story-results li')] },
   { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },
   { name: 'reader-long-bottom-line', route: '/articles/{vpnArticle}', setup: longWord('#tide-rail .tide-edition-article .tide-bluf'), widths: [1600],
     rules: [noSidewaysScroll, fits('#tide-rail .tide-reader'), fits('.tide-rail-body')] },

@@ -197,6 +197,10 @@ the earlier ones change. On a DbaApplies install, the DBA applies it first.
 - **Team commitments by person.** *By person* beside a team splits its actions by who held each on its due date, from
   the actions' history (a hand-off before the due date moves it). Managers and administrators see everyone's lines;
   anyone else who reads actions sees only their own. Team lines are unchanged.
+- **Add an article from a story.** A story's page has *New article on this story*, which starts a draft on the story
+  with the CVEs, scorecard tags and products we run that its articles at or below the new article's TLP name (never
+  threat actors or techniques, and never what only a more restricted article says), and *Add an existing article*, a
+  search over the articles not on the story. Analysts only; a new article isn't put on a brief by itself.
 
 **New settings**
 - `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every

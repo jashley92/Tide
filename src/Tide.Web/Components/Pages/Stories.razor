@@ -2,6 +2,7 @@
 @page "/stories/{Id:guid}"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @inject StoryService StorySvc
+@inject StoryArticleService StoryArticles
 @inject CveService Cves
 @inject ActionService ActionSvc
 @inject ICurrentUser CurrentUser
@@ -66,6 +67,8 @@ else
             }
             @if (_canWrite && !_editing)
             {
+                <button @ref="_newToggle" class="btn btn-primary" aria-expanded="@Ui.Aria(_adding == Adding.New)" aria-controls="story-new" @onclick="StartNew"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article on this story</button>
+                <button @ref="_attachToggle" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_adding == Adding.Existing)" aria-controls="story-attach" @onclick="StartAttach"><span class="bi bi-link-45deg" aria-hidden="true"></span> Add an existing article</button>
                 <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
             }
         </div>
@@ -99,9 +102,45 @@ else
             {
                 <div class="tide-card"><Md Text="@s.Summary" /></div>
             }
+            @if (_adding == Adding.New)
+            {
+                <form id="story-new" class="tide-card tide-story-new" data-submit-scope @onsubmit="CreateNew" @onsubmit:preventDefault="true" @onkeydown="PanelKey">
+                    <h2>New article on this story</h2>
+                    <div class="row g-2">
+                        <div class="col-12 col-sm">
+                            <label class="tide-field-label" for="sn-title">Title</label>
+                            <input @ref="_newTitleBox" id="sn-title" class="form-control form-control-sm" maxlength="300" placeholder="What happened, in a headline" @bind="NewTitle" />
+                        </div>
+                        <div class="col-12 col-sm-auto">
+                            <label class="tide-field-label" for="sn-tlp">TLP</label>
+                            <TlpSelect Id="sn-tlp" Value="_newTlp" ValueChanged="NewTlpChanged" Label="The new article's TLP" DescribedBy="sn-copies" />
+                        </div>
+                    </div>
+                    <div id="sn-copies" class="form-text">@Copies</div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy" data-submit>Create and edit</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseAdding">Cancel</button>
+                    </div>
+                </form>
+            }
+            else if (_adding == Adding.Existing)
+            {
+                <div id="story-attach" class="tide-card tide-story-attach" @onkeydown="PanelKey">
+                    <h2><label for="sa-find">Add an existing article</label></h2>
+                    <SearchCombobox @ref="_findBox" TItem="StoryCandidate" Id="sa-find" Type="search" Open="true" Placeholder="Titles, sources, CVEs, indicators" ListLabel="Articles"
+                                    Help="Articles not on this story are listed below. Choose one to add it." Disabled="_busy"
+                                    @bind-Text="_find" @bind-Text:after="Typed" Items="Candidates" Key="c => c.Id" OnPick="Attach" Empty="@NoCandidates">
+                        <ItemTemplate Context="c">
+                            <span class="tide-story-result-name">@c.Title</span>
+                            <span class="tide-story-result-meta">@CandidateMeta(c)</span>
+                        </ItemTemplate>
+                    </SearchCombobox>
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="CloseAdding">Done</button>
+                </div>
+            }
             <div class="tide-card">
                 <h2>Timeline</h2>
-                @if (_detail.Articles.Count == 0) { <EmptyState Icon="bi-journal-text" Title="No articles yet." Compact="true">Link one from the article's page.</EmptyState> }
+                @if (_detail.Articles.Count == 0) { <EmptyState Icon="bi-journal-text" Title="No articles yet." Compact="true">@(_canWrite ? "Start a new article on it, or add an existing one." : "None is linked to it yet.")</EmptyState> }
                 <ol class="tide-story-timeline">
                     @foreach (var a in _detail.Articles)
                     {
@@ -181,26 +220,40 @@ else
     // Re-read in place when a colleague changes what's shown. The list: any story, or any article (its counts). A story's
     // page: the story itself, an article linked to it, taken off it or saved while on it (Story), or its articles' CVEs,
     // techniques and threat actors (ArticleSummary); their bullets, screenshots, indicators and links, which it doesn't
-    // show, and other articles stay silent. An open Edit form keeps what's typed in it.
+    // show, and other articles stay silent. An open Edit form keeps what's typed in it. While Add an existing article is
+    // open, any article's change (Articles) reads its list again too, quietly, so the story each is on stays true.
     private LiveChanges? _live;
 
-    // The shown story's topic, set with Id, and its articles' summary topics, swapped whole when the story is read: the
-    // feed's filter reads them on the publisher's thread.
+    // The shown story's topic, set with Id, and its articles' summary topics, swapped whole when the story is read, and
+    // whether the picker is open: the feed's filter reads them on the publisher's thread.
     private volatile string? _storyTopic;
     private volatile IReadOnlySet<string> _articleTopics = new HashSet<string>();
+    private volatile bool _picking;
 
     protected override void OnInitialized() =>
         _live = new LiveChanges(Feed, Origin, Wanted, InvokeAsync, OnChangedElsewhere);
 
     internal bool Wanted(Change c) => _storyTopic is { } story
-        ? c.Topic == story || _articleTopics.Contains(c.Topic)
+        ? c.Topic == story || _articleTopics.Contains(c.Topic) || (_picking && c.Topic == ChangeFeed.Articles)
         : c.Topic == ChangeFeed.Stories || c.Topic == ChangeFeed.Articles;
 
     internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
     {
         if (_busy || !_loaded) return;   // a read or a step is under way, and it will show theirs
+        // Only another article changed: the picker's list is read again, and the story, which it doesn't touch, isn't.
+        if (Id is not null && heard.All(c => c.Topic == ChangeFeed.Articles))
+        {
+            if (_adding == Adding.Existing)
+            {
+                try { await Find(); }
+                catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+                StateHasChanged();
+            }
+            return;
+        }
         try
         {
+            if (_adding == Adding.Existing && Id is not null) await Find();
             if (Id is null) _list = await StorySvc.ListAsync();
             else
             {
@@ -226,6 +279,7 @@ else
         if (_shownId != Id)
         {
             (_shownId, _editing, _name, _summary, _changedBy) = (Id, false, null, null, null);
+            StopAdding();
             _detail = null;
             _storyTopic = Id is { } shown ? ChangeFeed.Story(shown) : null;
             _articleTopics = new HashSet<string>();
@@ -262,6 +316,7 @@ else
 
     internal void StartEdit()
     {
+        StopAdding();
         _editing = true;
         _name = _detail!.Story.Name;
         _summary = _detail.Story.Summary;
@@ -306,6 +361,135 @@ else
             Nav.NavigateTo("stories");
         });
     }
+
+    // Adding an article: New article on this story (a title and a marking, and what it will copy at that marking), or
+    // Add an existing article (a search over the articles not on the story). One at a time, and never beside Edit.
+    private enum Adding { None, New, Existing }
+    private Adding _adding;
+    internal string? NewTitle { get; set; }
+    private TlpLevel _newTlp = TlpLevel.Clear;
+    private StoryPrefill? _prefill;
+    private string? _find;
+    internal IReadOnlyList<StoryCandidate> Candidates { get; private set; } = [];
+    private readonly TypingPause _pause = new();
+
+    private static readonly RenderFragment NoCandidates = @<text>No other articles match.</text>;
+
+    // Focus follows the panels: into one as it opens (its Title box, its search box), back to its button as it closes.
+    private ElementReference _newToggle, _attachToggle, _newTitleBox;
+    private SearchCombobox<StoryCandidate>? _findBox;
+    private Func<Task>? _focusNext;
+
+    private void StopAdding()
+    {
+        (_adding, NewTitle, _newTlp, _prefill, _find, Candidates) = (Adding.None, null, TlpLevel.Clear, null, null, []);
+        _picking = false;
+    }
+
+    /// <summary>Cancel, Done or Escape: the panel closes and focus goes back to the button that opened it.</summary>
+    internal void CloseAdding()
+    {
+        var toggle = _adding == Adding.Existing ? _attachToggle : _newToggle;
+        if (_adding != Adding.None) _focusNext = () => toggle.TryFocusAsync();
+        StopAdding();
+    }
+
+    internal void PanelKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseAdding();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusNext is not { } focus) return;
+        _focusNext = null;
+        await focus();
+    }
+
+    internal Task StartNew() => Run(async () =>
+    {
+        StopAdding();
+        _adding = Adding.New;
+        _focusNext = () => _newTitleBox.TryFocusAsync();
+        _prefill = await StoryArticles.PrefillAsync(Id!.Value, _newTlp);
+    });
+
+    // Another marking: what the article would copy is read again for it.
+    internal Task NewTlpChanged(TlpLevel tlp) => Run(async () =>
+    {
+        _newTlp = tlp;
+        _prefill = await StoryArticles.PrefillAsync(Id!.Value, tlp);
+    });
+
+    // What the new article starts with at the marking chosen, and what's left out above it.
+    private string Copies
+    {
+        get
+        {
+            if (_prefill is not { } p) return "";
+            var at = Tlp.Label(_newTlp);
+            var parts = new List<string>();
+            if (p.Cves.Count > 0) parts.Add(p.Cves.Count <= 4 ? string.Join(", ", p.Cves) : $"{string.Join(", ", p.Cves.Take(3))} and {p.Cves.Count - 3} more CVEs");
+            if (p.TagIds.Count > 0) parts.Add(Ui.Plural(p.TagIds.Count, "scorecard tag"));
+            if (p.ProductIds.Count > 0) parts.Add(Ui.Plural(p.ProductIds.Count, "product we run", "products we run"));
+            var copies = parts.Count == 0
+                ? $"Starts empty: the story's articles at or below {at} name no CVEs, scorecard tags or products we run."
+                : $"Starts with {string.Join("; ", parts)}, from the story's articles at or below {at}. Threat actors and techniques aren't copied.";
+            return p.LeftOut == 0 ? copies
+                : $"{copies} {Ui.Plural(p.LeftOut, "article")} above {at} {(p.LeftOut == 1 ? "is" : "are")} left out: raise the TLP to bring in what {(p.LeftOut == 1 ? "it names" : "they name")}.";
+        }
+    }
+
+    // Starts the draft on the story and opens it in the editor; putting it on a brief stays the editor's choice.
+    internal Task CreateNew() => Run(async () =>
+    {
+        var id = await StoryArticles.NewArticleAsync(Id!.Value, NewTitle ?? "", _newTlp);
+        StopAdding();
+        Nav.NavigateTo($"articles/{id}");
+    });
+
+    internal Task StartAttach() => Run(async () =>
+    {
+        StopAdding();
+        (_adding, _picking) = (Adding.Existing, true);
+        _focusNext = () => _findBox?.FocusAsync() ?? Task.CompletedTask;
+        await Find();
+    });
+
+    // Typed in the search: it runs once typing pauses, as the other pickers' do.
+    private async Task Typed()
+    {
+        if (await _pause.Settled()) await Find();
+    }
+
+    /// <summary>The search for <paramref name="text"/>, as typing it would run.</summary>
+    internal Task FindCandidates(string? text)
+    {
+        _find = text;
+        return Find();
+    }
+
+    // The articles for what's typed now; a slower answer for words typed before, or for another story, is dropped.
+    private async Task Find()
+    {
+        var mine = _pause.Now();
+        var id = Id!.Value;
+        var found = await StoryArticles.CandidatesAsync(id, _find);
+        if (_pause.IsLatest(mine) && Id == id) Candidates = found;
+    }
+
+    private string CandidateMeta(StoryCandidate c) =>
+        $"{Tlp.Label(c.Tlp)} · {c.Status} · by {c.AuthorName} · {Ui.When(Clock, c.CreatedAtUtc)}" + (c.OnStory is { } other ? $" · on {other}, moves here" : "");
+
+    // Adds the article picked, saying the story it left if it was on one as it was added (whatever the list showed); the
+    // search stays open for another.
+    internal Task Attach(StoryCandidate c) => Run(async () =>
+    {
+        var left = await StorySvc.LinkAsync(c.Id, Id!.Value);
+        await LoadStory();
+        await Find();
+        Toasts.Show(left is null ? $"Added {Ui.Clip(c.Title)} to the story." : $"Moved {Ui.Clip(c.Title)} from {Ui.Clip(left)} to this story.");
+    });
 
     // One step at a time: a second click while one runs does nothing (the buttons are disabled meanwhile).
     private async Task Run(Func<Task> step)
