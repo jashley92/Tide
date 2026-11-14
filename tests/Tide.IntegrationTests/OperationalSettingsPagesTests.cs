@@ -153,6 +153,35 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         (await Saved(OperationalSettings.CveRefreshHours)).Should().Be("24");
     }
 
+    // The last run's error read as part of its summary: "2 from NVD.NVD: services.nvd.nist.gov didn't answer…".
+    [Fact]
+    public async Task Sources_TheLastCveRun_SetsItsErrorApartFromItsSummary()
+    {
+        var log = app.Services.GetRequiredService<CveRunLog>();
+        var before = log.Last;
+        log.Last = new CveRun(DateTimeOffset.UtcNow, 1781, 0, 2, "NVD: services.nvd.nist.gov didn't answer within 60 seconds.");
+        try
+        {
+            await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");
+            (await r.Html()).Should().Contain("2 from NVD. <span class=\"text-danger\">NVD: services.nvd.nist.gov");
+        }
+        finally { log.Last = before; }
+    }
+
+    [Fact]
+    public async Task Sources_ARefreshUnderWay_SaysSo()
+    {
+        var log = app.Services.GetRequiredService<CveRunLog>();
+        var at = DateTimeOffset.UtcNow.AddMinutes(-16);
+        log.TryStart(at).Should().BeTrue();
+        try
+        {
+            await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");
+            (await r.Html()).Should().Contain($"Refreshing now (started {Tide.Web.Components.Shared.Ui.When(app.Services.GetRequiredService<OrgClock>(), at)}).");
+        }
+        finally { log.Finished(); }
+    }
+
     [Fact]
     public async Task Sources_TheStarterList_TicksTheRecommended_AndAddsThemPaused()
     {

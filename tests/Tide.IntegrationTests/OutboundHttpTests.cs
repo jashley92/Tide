@@ -41,8 +41,10 @@ public sealed class OutboundHttpTests : IAsyncDisposable
                 var path = (await reader.ReadLineAsync())?.Split(' ')[1] ?? "/";
                 while (!string.IsNullOrEmpty(await reader.ReadLineAsync())) { }
                 lock (_paths) _paths.Add(path);
+                if (path == "/slow") await Task.Delay(Timeout.Infinite, _stop.Token);   // never answers
                 var response = path switch
                 {
+                    "/busy" => "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 7\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                     "/feed" => "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
                     "/to-internal" => $"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.2:{Port}/feed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                     "/relative" => "HTTP/1.1 301 Moved\r\nLocation: /feed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -136,6 +138,41 @@ public sealed class OutboundHttpTests : IAsyncDisposable
 
         fetch.Status.Should().Be(FetchStatus.Failed);
         fetch.Error.Should().Contain("no-such-host.tide-test.invalid");
+    }
+
+    [Fact]
+    public async Task Get_ARequestsOwnTimeLimit_IsUsed_AndATimeoutIsWorthTryingAgain()
+    {
+        using var http = Client(TestRule);
+
+        var fetch = await http.GetAsync($"http://127.0.0.1:{Port}/slow", new OutboundRequest(Timeout: TimeSpan.FromSeconds(1)));
+
+        fetch.Status.Should().Be(FetchStatus.Failed);
+        fetch.Error.Should().Be("127.0.0.1 didn't answer within 1 seconds.");
+        fetch.Retryable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Get_AServerTooBusy_IsWorthTryingAgain_AfterItsRetryAfter_AndTwoDontBackItOff()
+    {
+        using var http = Client(TestRule);
+
+        var busy = await http.GetAsync($"http://127.0.0.1:{Port}/busy");
+        busy.Should().Match<HttpFetch>(f => f.Status == FetchStatus.Failed && f.Retryable && f.RetryAfter == TimeSpan.FromSeconds(7));
+        await http.GetAsync($"http://127.0.0.1:{Port}/busy");
+        var third = await http.GetAsync($"http://127.0.0.1:{Port}/feed");
+
+        third.Status.Should().Be(FetchStatus.Ok, "two failures in a row don't back the host off: a third try still goes out");
+        var missing = await http.GetAsync($"http://127.0.0.1:{Port}/missing");
+        missing.Should().Match<HttpFetch>(f => f.Status == FetchStatus.Failed && !f.Retryable && f.RetryAfter == null);
+    }
+
+    // NVD's tries for one CVE (CveService.NvdRetryWaits) all go out: the circuit backs a host off only on the failure
+    // that ends them.
+    [Fact]
+    public void NvdsTries_AreNoMoreThanTheCircuitAllows()
+    {
+        (CveService.NvdRetryWaits.Count + 1).Should().BeLessThanOrEqualTo(OutboundCircuit.FailuresToOpen);
     }
 
     public async ValueTask DisposeAsync()

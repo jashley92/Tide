@@ -393,9 +393,13 @@
             <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveCve">Save CVE enrichment</button>
         </div>
     </div>
+    @if (Cves.RunningSince is { } since)
+    {
+        <p class="small">Refreshing now (started @Ui.When(Clock, since)).</p>
+    }
     @if (Cves.LastRun is { } run)
     {
-        <p class="small">Last run @Ui.When(Clock, run.AtUtc): @run.Kev on KEV, @run.Epss EPSS scores, @run.Nvd from NVD.@if (run.Error is not null) { <span class="text-danger"> @run.Error</span> }</p>
+        <p class="small">Last run @Ui.When(Clock, run.AtUtc): @run.Kev on KEV, @run.Epss EPSS scores, @run.Nvd from NVD.@if (run.Error is not null) { @(" ")<span class="text-danger">@run.Error</span> }</p>
     }
     <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="Refresh"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Refresh now</button>
 </section>

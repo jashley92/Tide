@@ -31,6 +31,13 @@ public sealed class CveOptions
 
     /// <summary>Milliseconds between NVD requests; blank uses NVD's published limits (6,500 without a key, 700 with).</summary>
     public int? NvdDelayMs { get; set; }
+
+    /// <summary>How long one NVD request may take, in seconds (10 to 180). NVD's API often takes 10 seconds or more to
+    /// answer, so its requests have this limit rather than the feeds' <c>Intake:TimeoutSeconds</c>.</summary>
+    public int NvdTimeoutSeconds { get; set; } = 60;
+
+    /// <summary><see cref="NvdTimeoutSeconds"/>, held to 10 to 180 seconds.</summary>
+    public TimeSpan NvdTimeout => TimeSpan.FromSeconds(Math.Clamp(NvdTimeoutSeconds, 10, 180));
 }
 
 /// <summary>What one enrichment run updated, and the first thing that went wrong.</summary>
@@ -47,11 +54,23 @@ public sealed class CveRunLog
 
     public CveRun? Last { get; set; }
 
+    /// <summary>When the run under way started; null when none is.</summary>
+    public DateTimeOffset? StartedAtUtc { get; private set; }
+
     /// <summary>Starts a run unless one is under way: a refresh by hand and the scheduled one at the same moment each
     /// added the same new CVEs, and the second save failed on their keys. One process (ADR 0001), so held in memory.</summary>
-    public bool TryStart() => Interlocked.CompareExchange(ref _running, 1, 0) == 0;
+    public bool TryStart(DateTimeOffset startedAtUtc)
+    {
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0) return false;
+        StartedAtUtc = startedAtUtc;
+        return true;
+    }
 
-    public void Finished() => Volatile.Write(ref _running, 0);
+    public void Finished()
+    {
+        StartedAtUtc = null;
+        Volatile.Write(ref _running, 0);
+    }
 }
 
 /// <summary>
@@ -68,6 +87,9 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
     public const decimal HighEpss = 0.5m;
 
     public CveRun? LastRun => log.Last;
+
+    /// <summary>When the refresh under way (scheduled or by hand) started; null when none is.</summary>
+    public DateTimeOffset? RunningSince => log.StartedAtUtc;
 
     public CveOptions Options => options.CurrentValue;
 
@@ -137,8 +159,23 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
         title.Contains("exploit", StringComparison.OrdinalIgnoreCase)
         && !NotExploited.Any(n => title.Contains(n, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Runs enrichment if it's on and due. Returns the run, or null when nothing ran.</summary>
-    public async Task<CveRun?> EnrichDueAsync(CancellationToken ct = default)
+    /// <summary>
+    /// The longest a scheduled run can take before it's called hung: KEV and EPSS, then <see cref="CveOptions.MaxNvdPerRun"/>
+    /// NVD lookups that each take every try to the full <see cref="CveOptions.NvdTimeout"/>, with the waits between tries
+    /// and between lookups; never under two hours.
+    /// </summary>
+    public static TimeSpan LongestRun(CveOptions o)
+    {
+        var tries = NvdRetryWaits.Count + 1;
+        var pause = TimeSpan.FromMilliseconds(o.NvdDelayMs ?? 6500);
+        var lookup = o.NvdTimeout * tries + NvdRetryWaits.Aggregate(TimeSpan.Zero, (a, b) => a + b) + pause;
+        var longest = TimeSpan.FromMinutes(10) + lookup * Math.Clamp(o.MaxNvdPerRun, 0, 500);
+        return longest > TimeSpan.FromHours(2) ? longest : TimeSpan.FromHours(2);
+    }
+
+    /// <summary>Runs enrichment if it's on and due. Returns the run, or null when nothing ran. <paramref name="started"/>
+    /// is told when a run starts.</summary>
+    public async Task<CveRun?> EnrichDueAsync(Action<DateTimeOffset>? started = null, CancellationToken ct = default)
     {
         var o = options.CurrentValue;
         if (!o.Enabled) return null;
@@ -149,7 +186,7 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
                 && time.GetUtcNow() - at < TimeSpan.FromHours(Math.Max(1, o.RefreshHours)))
                 return null;
         }
-        return await EnrichAsync(ct);
+        return await EnrichAsync(ct, started: started);
     }
 
     /// <summary>The most NVD lookups a refresh started by hand makes, so the page isn't held for minutes.</summary>
@@ -166,9 +203,11 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
     }
 
     // One run at a time: one asked for meanwhile (by hand, or the schedule's) doesn't run, and is null.
-    private async Task<CveRun?> EnrichAsync(CancellationToken ct, int? nvdCap = null)
+    private async Task<CveRun?> EnrichAsync(CancellationToken ct, int? nvdCap = null, Action<DateTimeOffset>? started = null)
     {
-        if (!log.TryStart()) return null;
+        var at = time.GetUtcNow();
+        if (!log.TryStart(at)) return null;
+        started?.Invoke(at);
         try { return await RunAsync(nvdCap, ct); }
         finally { log.Finished(); }
     }
@@ -252,6 +291,7 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
             .OrderBy(id => Record(id).NvdCheckedAtUtc ?? DateTimeOffset.MinValue).Take(Math.Min(nvdCap ?? int.MaxValue, Math.Clamp(o.MaxNvdPerRun, 0, 500))).ToList();
         var headers = string.IsNullOrWhiteSpace(o.NvdApiKey) ? null : new Dictionary<string, string> { ["apiKey"] = o.NvdApiKey.Trim() };
         var pause = TimeSpan.FromMilliseconds(o.NvdDelayMs ?? (headers is null ? 6500 : 700));
+        var nvdRequest = new OutboundRequest(Headers: headers, Timeout: o.NvdTimeout);
         // An answer about one CVE that can't be read is set aside, and marked checked (tried again in a week like any
         // other) once the next CVE reads fine, so it can't sit first in the queue and hold up the rest. Two in a row, or
         // an answer that isn't JSON at all (a proxy's or a rate limit's page), stop the run with nothing marked.
@@ -260,10 +300,10 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
         {
             if (i > 0 && pause > TimeSpan.Zero) await Task.Delay(pause, time, ct);
             var id = nvdDue[i];
-            var fetch = await http.GetAsync($"{o.NvdUrl}?cveId={id}", new OutboundRequest(Headers: headers), ct);
+            var (fetch, tries) = await FetchNvdAsync($"{o.NvdUrl}?cveId={id}", nvdRequest, ct);
             if (fetch is not { Status: FetchStatus.Ok, Content: { } bytes })
             {
-                error ??= "NVD: " + (fetch.Error ?? "not fetched");
+                error ??= "NVD: " + (fetch.Error ?? "not fetched") + (tries > 1 ? $" ({tries} tries)" : "");
                 break;
             }
             try
@@ -299,6 +339,29 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
         key.UpdatedBy = "system";
         await db.SaveChangesAsync(ct);
         return log.Last = new CveRun(now, kev, epss, nvd, error is null ? null : Trim(error, 300));
+    }
+
+    /// <summary>The waits before NVD is asked again for a CVE after a timeout, a 5xx or a 429: its API is slow and now and
+    /// then answers 503 for a moment. Only when the last try fails too does the NVD part stop for the run. Three failures
+    /// within two minutes back the host off (<c>OutboundCircuit</c>), so the first two never keep a retry from going out;
+    /// fast 503s back it off only on the third, the last try, once the run has stopped asking anyway.</summary>
+    public static readonly IReadOnlyList<TimeSpan> NvdRetryWaits = [TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
+
+    /// <summary>The longest a Retry-After from NVD is waited, so one answer can't stall a run.</summary>
+    public static readonly TimeSpan MaxNvdRetryAfter = TimeSpan.FromMinutes(2);
+
+    // One CVE from NVD, tried again after NvdRetryWaits (or NVD's own Retry-After) while it fails in a way that passes.
+    private async Task<(HttpFetch Fetch, int Tries)> FetchNvdAsync(string url, OutboundRequest request, CancellationToken ct)
+    {
+        for (var tries = 1; ; tries++)
+        {
+            var fetch = await http.GetAsync(url, request, ct);
+            if (!fetch.Retryable || tries > NvdRetryWaits.Count) return (fetch, tries);
+            var wait = fetch.RetryAfter is { } asked
+                ? TimeSpan.FromTicks(Math.Clamp(asked.Ticks, TimeSpan.TicksPerSecond, MaxNvdRetryAfter.Ticks))
+                : NvdRetryWaits[tries - 1];
+            await Task.Delay(wait, time, ct);
+        }
     }
 
     private static bool LooksLikeJson(byte[] body) =>

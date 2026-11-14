@@ -107,11 +107,16 @@ public enum FetchStatus
     Failed = 2,
 }
 
-/// <summary>A GET's extras: validators for a conditional fetch, and headers (an API key).</summary>
-public sealed record OutboundRequest(string? ETag = null, string? LastModified = null, IReadOnlyDictionary<string, string>? Headers = null);
+/// <summary>A GET's extras: validators for a conditional fetch, headers (an API key), and a time limit of its own instead
+/// of <see cref="IntakeOptions.TimeoutSeconds"/> (a slow service's, <see cref="CveOptions.NvdTimeout"/>).</summary>
+public sealed record OutboundRequest(string? ETag = null, string? LastModified = null, IReadOnlyDictionary<string, string>? Headers = null,
+    TimeSpan? Timeout = null);
 
-/// <summary>What a GET returned. <see cref="Error"/> is safe to show an administrator.</summary>
-public sealed record HttpFetch(FetchStatus Status, byte[]? Content = null, string? ETag = null, string? LastModified = null, string? Error = null);
+/// <summary>What a GET returned. <see cref="Error"/> is safe to show an administrator. <see cref="Retryable"/>: the server
+/// was slow or busy (a timeout, a 5xx or a 429), so the same request may well work shortly, after <see cref="RetryAfter"/>
+/// when the server said how long.</summary>
+public sealed record HttpFetch(FetchStatus Status, byte[]? Content = null, string? ETag = null, string? LastModified = null, string? Error = null,
+    bool Retryable = false, TimeSpan? RetryAfter = null);
 
 /// <summary>
 /// Outbound GETs to configured addresses only (sources an administrator added, the CVE data services): with a time

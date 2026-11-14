@@ -221,4 +221,40 @@ public class JobMonitorHistoryTests
         jobs.Restore(JobMonitor.Webhooks, latest with { Job = "webhooks" }, null, null, 9);
         jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => s.LastDetail == "mine" && s.FailuresInARow == 0);
     }
+
+    // The CVE refresh runs beside the intake passes and only sometimes has work: it says when one starts, so Diagnostics
+    // shows it running, and its limit is as long as a slow NVD run can take, so a normal long one isn't called hung.
+    [Fact]
+    public void ARunStartedOutsideRunAsync_ShowsRunning_AndIsHungOnlyPastTheLimitItWasScheduledWith()
+    {
+        var clock = new TestClock(new DateTimeOffset(2026, 11, 9, 9, 0, 0, TimeSpan.Zero));
+        var Start = clock.Now;
+        var jobs = new JobMonitor(clock);
+        var held = new LeaseStatus(LeaseState.Held, "WEB01/42/abc", Start.AddMinutes(3), Start, Start, null);
+        JobHealthReport Evaluate() => JobHealth.Evaluate(jobs.States, held, clock.Now);
+        var limit = Tide.Application.Intake.CveService.LongestRun(new Tide.Application.Intake.CveOptions());
+        jobs.Scheduled(JobMonitor.CveRefresh, true, clock.Now, TimeSpan.FromHours(24), limit);
+        jobs.Started(JobMonitor.CveRefresh, clock.Now);
+        jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => s.Running && s.LastStartedUtc == Start && s.Job.Timeout == limit);
+
+        clock.Now = Start + limit - TimeSpan.FromMinutes(1);
+        Evaluate().Findings.Should().BeEmpty("a long NVD run is still within its limit");
+        clock.Now = Start + limit + TimeSpan.FromMinutes(1);
+        Evaluate().For(JobMonitor.CveRefresh)!.Problem.Should().Be(JobProblem.Hung);
+
+        jobs.Failed(JobMonitor.CveRefresh, Start, "NVD: down");
+        jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => !s.Running && s.LastStartedUtc == Start && s.LastSucceeded == false);
+        jobs.TakeFinished().Single().StartedUtc.Should().Be(Start, "the run is recorded from when it started");
+    }
+
+    [Fact]
+    public void TheCveRefreshesLimit_ScalesWithTheNvdLookupsAndTheirTimeLimit_NeverUnderTwoHours()
+    {
+        var o = new Tide.Application.Intake.CveOptions();
+        var normal = Tide.Application.Intake.CveService.LongestRun(o);
+        normal.Should().BeGreaterThan(TimeSpan.FromHours(2), "40 lookups of up to 3 tries of 60 seconds, with the waits between");
+        Tide.Application.Intake.CveService.LongestRun(new() { MaxNvdPerRun = 80 }).Should().BeGreaterThan(normal);
+        Tide.Application.Intake.CveService.LongestRun(new() { NvdTimeoutSeconds = 120 }).Should().BeGreaterThan(normal);
+        Tide.Application.Intake.CveService.LongestRun(new() { MaxNvdPerRun = 0 }).Should().Be(TimeSpan.FromHours(2));
+    }
 }

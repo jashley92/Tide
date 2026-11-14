@@ -308,6 +308,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Cve:KevUrl` | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | As above. | Server | Next run |
 | `Cve:MaxNvdPerRun` | `40` | Clamped to 0 to 500. NVD lookups in one scheduled run. A refresh by hand makes fewer. | Server | Next run |
 | `Cve:NvdDelayMs` | blank | Milliseconds between NVD requests. Blank uses 6,500 without a key, 700 with one. Not in `appsettings.json`. | Server | Next run |
+| `Cve:NvdTimeoutSeconds` | `60` | Clamped to 10 to 180. How long one NVD request may take; NVD's API is often slow, so it has this limit rather than `Intake:TimeoutSeconds`. A request that times out, or that NVD answers with a 5xx or 429, is tried twice more (after 10 s and 30 s, or NVD's `Retry-After` up to 2 minutes) before the run stops asking NVD. | Server | Next run |
 
 ### Metric imports
 
