@@ -121,7 +121,7 @@
             @if (_editingHunt == h.Id)
             {
                 <div data-submit-scope>
-                    <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
+                    <textarea class="tide-query tide-autogrow" maxlength="@HuntQuery.MaxText" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
                     <div class="d-flex gap-2 mt-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => SaveText(h)">Save query</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
@@ -256,7 +256,8 @@
     </div>
     <div class="mt-2">
         <label class="tide-field-label" for="hunt-s-text">Query</label>
-        <textarea id="hunt-s-text" class="tide-query tide-autogrow" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
+        <textarea id="hunt-s-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
+        <LengthNote Value="@_saveText" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
         <SavedQueryHelp Id="hunt-s-text-help" />
     </div>
 </ConfirmDialog>
@@ -322,7 +323,7 @@
         @if (_writing)
         {
             <div class="mb-3" data-submit-scope>
-                <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText" @bind:event="oninput"></textarea>
+                <textarea class="tide-query tide-autogrow" maxlength="@HuntQuery.MaxWritten" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText" @bind:event="oninput"></textarea>
                 <div class="d-flex gap-2 mt-2">
                     <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" data-submit @onclick="AddOwn">Add the query</button>
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => _adding = Adder.None">Cancel</button>
@@ -333,7 +334,7 @@
         {
             <div class="tide-hunt-picker mb-3" id="hunt-saved-picker">
                 <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-                    <input type="search" class="tide-maxw-md form-control form-control-sm" aria-label="Find a saved query" placeholder="Find a saved query"
+                    <input type="search" class="tide-maxw-md form-control form-control-sm" maxlength="200" aria-label="Find a saved query" placeholder="Find a saved query"
                            @bind="_pickWords" @bind:event="oninput" @bind:after="Offer" />
                     <div class="form-check mb-0">
                         <input class="form-check-input" type="checkbox" id="hunt-pick-all" @bind="_pickAll" @bind:after="Offer" />

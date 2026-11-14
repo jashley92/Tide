@@ -26,7 +26,7 @@ public class StorySearchTests : IDisposable
         var ids = new List<Guid>();
         for (var i = 0; i < StoryService.PickLimit + 4; i++) ids.Add(await stories.CreateAsync($"Campaign {i:00}", null));
         var closed = await stories.CreateAsync("Campaign closed", null);
-        await stories.UpdateAsync(closed, "Campaign closed", null, StoryStatus.Closed);
+        await stories.UpdateAsync(closed, "Campaign closed", null, StoryStatus.Closed, (await stories.GetAsync(closed))!.Story.EditVersion);
         var article = await _db.Articles().CreateAsync("Latest report");
         await stories.LinkAsync(article, ids[3]);
 
@@ -45,7 +45,7 @@ public class StorySearchTests : IDisposable
         var stories = _db.Stories();
         var open = await stories.CreateAsync("Ivanti Connect Secure exploitation", null);
         var closed = await stories.CreateAsync("Ivanti EPMM zero-day", null);
-        await stories.UpdateAsync(closed, "Ivanti EPMM zero-day", null, StoryStatus.Closed);
+        await stories.UpdateAsync(closed, "Ivanti EPMM zero-day", null, StoryStatus.Closed, (await stories.GetAsync(closed))!.Story.EditVersion);
         await stories.CreateAsync("100% Scattered Spider", null);
 
         (await stories.FindAsync("ivanti")).Select(r => r.Id).Should().Equal(open, closed);

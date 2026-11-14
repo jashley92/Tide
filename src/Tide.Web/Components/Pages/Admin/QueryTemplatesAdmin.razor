@@ -34,7 +34,7 @@
             </h2>
             @if (_editing == key)
             {
-                <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Template for @HuntValues.Label(row.Kind)" @bind="_text"></textarea>
+                <textarea class="tide-query tide-autogrow" maxlength="4000" spellcheck="false" aria-label="Template for @HuntValues.Label(row.Kind)" @bind="_text"></textarea>
                 <div class="form-text">Leave it empty to turn this kind off.</div>
                 <div class="d-flex gap-2 mt-2">
                     <button class="btn btn-primary btn-sm" data-submit @onclick="() => Save(row, _text)">Save</button>

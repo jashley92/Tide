@@ -207,8 +207,9 @@ else
 
             <section class="tide-card tide-section" aria-labelledby="sec-bluf">
                 <h2 id="sec-bluf" tabindex="-1" @ref="_heads[ArticlePart.BottomLine]">Bottom line</h2>
-                <textarea id="f-bluf" class="form-control tide-autogrow tide-grow-2" rows="2" maxlength="600" readonly="@(!_canWrite)" aria-label="Bottom line up front"
+                <textarea id="f-bluf" class="form-control tide-autogrow tide-grow-2" rows="2" maxlength="@ArticleService.MaxBluf" readonly="@(!_canWrite)" aria-label="Bottom line up front"
                           placeholder="One sentence: what happened and why it matters." @bind="_form.Bluf" @bind:event="oninput" @bind:after="Touch"></textarea>
+                @if (_canWrite) { <LengthNote Value="@_form.Bluf" Max="ArticleService.MaxBluf" /> }
                 @if (_excerpt is not null)
                 {
                     <div class="tide-source-excerpt mt-2">
@@ -249,8 +250,9 @@ else
                     @if (_showPasteBullets)
                     {
                         <div class="mt-2">
-                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
+                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" maxlength="@ArticleService.MaxPaste" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
                                       @bind="_pasteBullets" @bind:event="oninput"></textarea>
+                            <LengthNote Value="@_pasteBullets" Max="ArticleService.MaxPaste" />
                             <button type="button" class="btn btn-primary btn-sm mt-2" @onclick="AddPastedBullets">Add as bullets</button>
                         </div>
                     }
