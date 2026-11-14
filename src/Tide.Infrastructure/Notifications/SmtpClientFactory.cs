@@ -15,11 +15,13 @@ internal static class SmtpClientFactory
             var dir = Path.GetFullPath(o.PickupDirectory);
             Directory.CreateDirectory(dir);
             // Writes .eml files to a folder, never the network; SmtpClient refuses SSL with a pickup directory.
+#pragma warning disable S5332 // the analyzer reports it in the build despite NOSONAR
             return new SmtpClient { DeliveryMethod = SmtpDeliveryMethod.SpecifiedPickupDirectory, PickupDirectoryLocation = dir }; // NOSONAR S5332
         }
         SmtpClient client = new(o.SmtpHost, o.SmtpPort) // NOSONAR S5332: EnableSsl is on unless configured off, above
         {
             EnableSsl = o.EnableSsl,
+#pragma warning restore S5332
             Timeout = (int)o.Timeout.TotalMilliseconds,
             DeliveryMethod = SmtpDeliveryMethod.Network,
         };
