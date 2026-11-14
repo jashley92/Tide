@@ -142,17 +142,12 @@ jobs:
 
   # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there), in four slices side by
   # side, each on its own fresh demo, at the default letter spacing and again with wider letters (LETTER_SPACING=.12em,
-  # for pages that widen them); the layout job below passes when all eight do.
-  layout-shard:
-    name: layout (${{ matrix.shard }}/4${{ matrix.spacing != '.07em' && format(', {0}', matrix.spacing) || '' }})
+  # for pages that widen them); the layout job below passes when all eight do. TIDE is built once, by layout-build, and
+  # each slice starts that build.
+  layout-build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-        spacing: ['.07em', '.12em']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -167,6 +162,43 @@ jobs:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
           restore-keys: nuget-${{ runner.os }}-
+
+      # The Debug build layout.mjs builds for itself, published: the folder carries every static asset itself, where a
+      # build's would point at its obj folder and the NuGet cache, which the slices don't have.
+      - name: Build TIDE for the layout slices
+        run: dotnet publish src/Tide.Web -c Debug -o layout-app -nologo
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-app
+          path: layout-app
+          retention-days: 1
+          if-no-files-found: error
+
+  layout-shard:
+    name: layout (${{ matrix.shard }}/4${{ matrix.spacing != '.07em' && format(', {0}', matrix.spacing) || '' }})
+    needs: layout-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        spacing: ['.07em', '.12em']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The runtime to start the build with; nothing is restored or built here.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: layout-app
+          path: layout-app
 
       - name: Cache Playwright's browser
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -187,6 +219,7 @@ jobs:
       - name: Layout holds
         run: node tools/screenshots/layout.mjs
         env:
+          APP_DIR: layout-app
           SHARD: ${{ matrix.shard }}/4
           LETTER_SPACING: ${{ matrix.spacing }}
 

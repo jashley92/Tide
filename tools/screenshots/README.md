@@ -56,6 +56,7 @@ Options, as environment variables:
 | `BASE_URL=http://localhost:5112` | Use a TIDE that is already running on the demo database. It isn't built or started. |
 | `DEMO_DIR=path` | Keep the demo database, its files and `tide.log` there instead of `.demo`, so runs side by side don't share one. |
 | `NO_BUILD=1` | Start the last build instead of building first, for runs side by side that one build served. |
+| `APP_DIR=path` | Start the TIDE published there (`dotnet publish src/Tide.Web -c Debug -o path`) instead of building one, with that folder as its content root. CI publishes once and starts that in each layout slice. |
 
 The run exits non-zero if any shot fails. A shot fails when its page errors, or when a callout's selector matches nothing.
 In that case it prints `annotation target(s) not found` with the selectors, and that shot's image is left as it was.
@@ -141,7 +142,7 @@ check:
 its own fresh demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after
 them, so they stay together at the end of the last slice: put a new page that changes the demo there, and any other
 before the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR`
-with `NO_BUILD=1`.
+with `NO_BUILD=1` (or publish once and give each `APP_DIR`, as CI does).
 
 After a load, a click or a key, wait with `idle(page)` (tide.mjs), not a fixed pause: it waits until Blazor's circuit
 is up, the server has no event in hand (the Development-only `/demo/activity`, on with `Demo:Seed`), and nothing in the

@@ -194,23 +194,18 @@ export async function startTide(settings = []) {
   }
   if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
   mkdirSync(demoDir, { recursive: true });
-  // NO_BUILD=1 starts the last build, for runs side by side that one build served.
-  if (!process.env.NO_BUILD) console.log('Building TIDE...');
-  if (!process.env.NO_BUILD) execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
-  const binDir = path.join(web, 'bin', 'Debug');
-  const tfm = readdirSync(binDir).find(d => existsSync(path.join(binDir, d, 'Tide.Web.dll')));
-  if (!tfm) throw new Error('The build left no Tide.Web.dll under src/Tide.Web/bin/Debug.');
+  const { dll, cwd } = appToStart();
 
   console.log(`Starting TIDE on ${base} with the demo database (${process.env.REUSE ? 'reused' : 'fresh'})...`);
   const log = createWriteStream(path.join(demoDir, 'tide.log'));
-  const child = spawn(dotnet(), [path.join(binDir, tfm, 'Tide.Web.dll'),
+  const child = spawn(dotnet(), [dll,
     '--urls', base,
     '--Demo:Seed=true', `--Demo:InfoFile=${path.join(demoDir, 'demo.json')}`,
     `--ConnectionStrings:Default=Data Source=${path.join(demoDir, 'tide.db')}`,
     `--Files:RootPath=${path.join(demoDir, 'files')}`,
     `--Email:PickupDirectory=${path.join(demoDir, 'mail')}`,
     '--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Tide.Demo=Information', ...settings,
-  ], { cwd: web, env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { cwd, env:{ ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   let exited = null;
@@ -226,6 +221,27 @@ export async function startTide(settings = []) {
   }
   child.kill();
   throw new Error('TIDE did not answer within three minutes.');
+}
+
+/**
+ * The Tide.Web.dll to start and the folder to start it in (its content root). Usually a Debug build of src/Tide.Web,
+ * built first (NO_BUILD=1 starts the last build, for runs side by side that one build served), run from src/Tide.Web.
+ * APP_DIR names a folder holding a published TIDE instead (`dotnet publish src/Tide.Web -c Debug -o <folder>`, as CI
+ * publishes once for its layout slices): nothing is built, and TIDE runs from that folder, which carries every static
+ * asset itself rather than pointing at the build's obj folder and the NuGet cache.
+ */
+function appToStart() {
+  if (process.env.APP_DIR) {
+    const dir = path.resolve(process.env.APP_DIR);
+    if (!existsSync(path.join(dir, 'Tide.Web.dll'))) throw new Error(`APP_DIR=${dir} holds no Tide.Web.dll.`);
+    return { dll: path.join(dir, 'Tide.Web.dll'), cwd: dir };
+  }
+  if (!process.env.NO_BUILD) console.log('Building TIDE...');
+  if (!process.env.NO_BUILD) execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
+  const binDir = path.join(web, 'bin', 'Debug');
+  const tfm = readdirSync(binDir).find(d => existsSync(path.join(binDir, d, 'Tide.Web.dll')));
+  if (!tfm) throw new Error('The build left no Tide.Web.dll under src/Tide.Web/bin/Debug.');
+  return { dll: path.join(binDir, tfm, 'Tide.Web.dll'), cwd: web };
 }
 
 /**
