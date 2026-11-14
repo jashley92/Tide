@@ -126,6 +126,7 @@ brief's live meeting.
 | **Reports** | | | | | | | |
 | Reports, trends and exports | Yes | Yes | Yes | Yes | Yes | No | No |
 | Team commitments scorecard and its CSV | Yes | Yes | Yes | Yes | Yes | No | No |
+| Team commitments by person (who held each action on its due date) | Yes | own line only | Yes | own line only | own line only | No | No |
 | Brief timeliness: every analyst's days and the team summary, and the CSV | Yes | own days only | Yes | No | No | No | No |
 | Excuse a late brief day the analyst warned of, or undo that | Yes | No | Yes | No | No | No | No |
 | Coverage of detection rules | Yes | Yes | No | No | No | No | No |

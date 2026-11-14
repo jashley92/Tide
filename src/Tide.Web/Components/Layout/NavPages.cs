@@ -5,14 +5,15 @@ using Tide.Domain.Enums;
 namespace Tide.Web.Components.Layout;
 
 /// <summary>
-/// A page in the sidebar: its name, icon, link, the group it's listed under and the permissions it needs (all of them).
-/// <see cref="Keywords"/> are other words the command palette finds it by.
+/// A page in the sidebar: its name, icon, link, the group it's listed under and the permissions it needs (all of them,
+/// and, when <see cref="AnyOf"/> lists some, one of those too). <see cref="Keywords"/> are other words the command
+/// palette finds it by.
 /// </summary>
 public sealed record NavPage(
     string Key, string Label, string Icon, string Href, string Group, IReadOnlyList<Permission> Requires,
-    NavLinkMatch Match = NavLinkMatch.Prefix, string? Keywords = null)
+    NavLinkMatch Match = NavLinkMatch.Prefix, string? Keywords = null, IReadOnlyList<Permission>? AnyOf = null)
 {
-    public bool VisibleTo(ICurrentUser user) => Requires.All(user.Has);
+    public bool VisibleTo(ICurrentUser user) => Requires.All(user.Has) && (AnyOf is null || AnyOf.Any(user.Has));
 }
 
 /// <summary>
@@ -48,7 +49,10 @@ public static class NavPages
         new("trends", "Trends", "bi-bar-chart-line", "trends", Insight, [Permission.ReadTeamEdition]),
         new("metrics", "Metrics", "bi-graph-up", "metrics", Insight, [Permission.ReadTeamEdition, Permission.WriteArticles]),   // listed for those who make the brief; the page stays open to action owners
         new("coverage", "Coverage", "bi-shield-check", "coverage", Insight, [Permission.WriteArticles], Keywords: "detection rules gaps sigma sentinel attack"),
-        new("reports", "Reports", "bi-file-earmark-bar-graph", "reports", Insight, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "weekly monthly quarterly board report"),
+        // Listed for those who make the brief and for managers (Brief timeliness, commitments by person); the pages stay
+        // open to whoever their policies admit.
+        new("reports", "Reports", "bi-file-earmark-bar-graph", "reports", Insight, [Permission.ReadTeamEdition],
+            Keywords: "weekly monthly quarterly board report team commitments timeliness late", AnyOf: [Permission.WriteArticles, Permission.ManagePeople]),
         new("rotation", "Brief rotation", "bi-calendar3", "rotation", Team, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "rota schedule"),
         new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
         // One entry; the Library page's tabs reach its four parts, and the palette lists each by its own words (LibraryTabs).

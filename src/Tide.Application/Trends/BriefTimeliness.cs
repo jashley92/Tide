@@ -152,6 +152,9 @@ public sealed class BriefTimelinessService(IAppDbContextFactory dbs, ICurrentUse
     /// <summary>How many weeks, or months, the report covers, ending with the current one.</summary>
     public const int Weeks = 12, Months = 6;
 
+    /// <summary>The report's grouping as an address gives it (<c>?by=week</c>): by week, else by month.</summary>
+    public static PeriodKind ParseBy(string? by) => string.Equals(by?.Trim(), "week", StringComparison.OrdinalIgnoreCase) ? PeriodKind.Week : PeriodKind.Month;
+
     /// <summary>Whether the current user sees every analyst's days.</summary>
     public bool SeesEveryone => user.Has(Permission.ManagePeople);
 

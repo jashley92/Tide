@@ -17,8 +17,7 @@
 <div class="tide-page-head">
     <div>
         <h1>Reports</h1>
-        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.
-            <span class="tide-noprint"><a href="reports/teams">Team commitments</a>: each team against its due dates.</span></div>
+        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.</div>
     </div>
     @if (_report is not null)
     {
@@ -28,6 +27,8 @@
         </div>
     }
 </div>
+
+<ReportsTabBar Active="@ReportsTabs.Report" />
 
 <div class="tide-card tide-noprint">
     <div class="d-flex gap-3 flex-wrap align-items-center">
