@@ -2840,6 +2840,37 @@ async function selectReport(page) {
 }
 
 /**
+ * Setup: one long unbroken word (a hash list joined without spaces, a pasted blob) in place of the first match of
+ * `selector`'s text, as no seeded text has.
+ */
+const longWord = selector => async page => {
+  await page.locator(selector).first().waitFor();
+  await page.$eval(selector, el => { el.textContent = '9f86d081884c7d65'.repeat(18); });
+  await idle(page);
+};
+
+/** On a narrow window the reading pane is above the list and as wide as it, not a column beside it. */
+const paneOverList = holds('the reading pane over the list, as wide as it', () => {
+  const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+  const pane = box('.tide-triage-layout.reading > .tide-reading'), list = box('.tide-triage-layout.reading > .tide-card:first-child');
+  if (!pane || !list) return [`nothing visible: ${pane ? 'the list' : 'the reading pane'}`];
+  return [
+    ...pane.bottom > list.top + 1 ? [`the pane (to ${Math.round(pane.bottom)}px) isn't above the list (from ${Math.round(list.top)}px)`] : [],
+    ...Math.abs(pane.width - list.width) > 2 ? [`the pane is ${Math.round(pane.width)}px wide beside a list ${Math.round(list.width)}px wide`] : [],
+  ];
+});
+
+/** Setup: the profile's "Merge into another profile" open, offering a profile with a long name. */
+async function longMergeOption(page) {
+  await page.locator('#merge-into').waitFor({ state: 'attached' });
+  await page.$eval('#merge-into', select => {
+    select.closest('details').open = true;
+    select.add(new Option('A profile whose long name runs on and on '.repeat(4)));
+  });
+  await idle(page);
+}
+
+/**
  * Setup: a long kept text in the reading pane, as an article read in full leaves (the demo keeps only short ones): the
  * selected item's text is filled out to a few thousand words in the page. Letters spaced wider too.
  */
@@ -4304,7 +4335,14 @@ const pages = [
   { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440],
     rules: [hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-promote')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
-  { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
+  // On a narrow window the pane V opens is over the list, as wide as it, its title a readable line: not a column
+  // squeezed beside the list with its title a letter a line. Each width signs in as its own person, as the pane's state
+  // is kept.
+  ...[780, 400].map(w => ({ name: `triage-v-narrow-${w}`, route: `/triage?as=v3${w}${run}`, setup: pressV(1), widths: [w],
+    rules: [visible('.tide-reading'), paneOverList, widerThan('.tide-reading-title', 200), fits('.tide-reading-head'), noSidewaysScroll] })),
+  // A title of one long unbroken word wraps inside its row rather than widening the page.
+  { name: 'triage-long-title', route: '/triage', setup: longWord('.tide-triage-row .tide-triage-title'), widths: [1440, 400],
+    rules: [noSidewaysScroll, fits('.tide-triage-row')] },
   // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
@@ -4431,6 +4469,13 @@ const pages = [
       visible('#tide-rail a[href$="/navigator.json"]'), visible('.content #adv-timeline-h'), visible('.content #adv-about-h'), fits('.content .tide-adv-heat')] },
   { name: 'adversary-rail-over', route: '/adversaries/{adversary}', setup: toggleRail, widths: [1440],
     rules: adversaryRailOverHolds },
+  // Long unbroken text, and long names, stay inside the page: Merge into's choice of a profile with a long name, a
+  // search for a very long word, and a bottom line of one long word in what readers get.
+  { name: 'adversary-merge-long-name', route: '/adversaries/{adversary}', setup: longMergeOption, widths: [1440, 400],
+    rules: [noSidewaysScroll, insidePage('#merge-into')] },
+  { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },
+  { name: 'reader-long-bottom-line', route: '/articles/{vpnArticle}', setup: longWord('#tide-rail .tide-edition-article .tide-bluf'), widths: [1600],
+    rules: [noSidewaysScroll, fits('#tide-rail .tide-reader'), fits('.tide-rail-body')] },
   // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
   // tab by tab, for a search's words.
   { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],

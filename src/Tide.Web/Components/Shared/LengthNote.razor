@@ -1,0 +1,20 @@
+@* How long a limited box's text is, under the box, once it's near the limit: "550 of 600 characters". A box's maxlength
+   cuts a longer paste without a word, so at the limit it says so; a box whose limit is one past what can be saved (so a
+   longer paste is refused rather than cut to fit) says the text is too long to save. Quiet until it's worth reading; the
+   status region announces only the limit reached or passed, not each keystroke. *@
+
+@{ var length = Value?.Length ?? 0; }
+@if (length >= Max * 9 / 10)
+{
+    <div class="form-text @(length > Max ? "text-danger" : null)">
+        @length.ToString("N0") of @Max.ToString("N0") characters<span role="status">@(length > Max ? $": too long to save. Shorten it to {Max:N0} or fewer." : length == Max ? ": anything longer was cut." : "")</span>
+    </div>
+}
+
+@code {
+    /// <summary>The box's text.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>The most that's kept.</summary>
+    [Parameter, EditorRequired] public int Max { get; set; }
+}

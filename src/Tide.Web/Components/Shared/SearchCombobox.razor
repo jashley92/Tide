@@ -4,7 +4,8 @@
    focus on mouse-down), so another search can follow straight away. The parent searches (TextChanged, with
    @bind-Text:after) and hands over the results (Items); an optional last option (NewOption, OnNew) makes a new one from
    the words typed. Open shows the list all the time, under the box (the story picker); otherwise it drops down while
-   the box has focus. As the arrows move the highlight, the highlighted option is scrolled into view (js/combo.js), so a
+   the box has focus. Nothing is highlighted until an arrow moves to an option, so the new option is only ever an explicit
+   choice; Enter with nothing highlighted picks the first result, never the new option. As the arrows move the highlight, the highlighted option is scrolled into view (js/combo.js), so a
    long list never highlights one out of sight. *@
 @typeparam TItem
 @inject IJSRuntime JS
@@ -13,7 +14,7 @@
     <input @ref="_input" id="@Id" type="@Type" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false"
            maxlength="@MaxLength" placeholder="@Placeholder" aria-describedby="@(Id)-help"
            aria-expanded="@Ui.Aria(Expanded)" aria-controls="@(Id)-list" aria-autocomplete="list"
-           aria-activedescendant="@(Expanded && _active < Count ? OptionId(_active) : null)"
+           aria-activedescendant="@(Expanded && _active >= 0 && _active < Count ? OptionId(_active) : null)"
            @bind:get="_text" @bind:set="Typed" @bind:event="oninput" @onkeydown="OnKey" @onfocus="Opened" @onblur="Closed" />
     <div id="@(Id)-help" class="visually-hidden">@Help</div>
     @if (Shown)
@@ -117,7 +118,8 @@
     private string OptionId(int i) => $"{Id}-opt-{i}";
     private string Option(int i) => i == _active && Expanded ? "tide-story-result tide-combo-opt is-active" : "tide-story-result tide-combo-opt";
 
-    // A Text the parent changed goes in the box; new results put the highlight back on the first.
+    // A Text the parent changed goes in the box; new results take the highlight off (an arrow puts it on the first, or
+    // the last).
     protected override void OnParametersSet()
     {
         if (!_started || Text != _given)
@@ -128,7 +130,7 @@
         }
         if (ReferenceEquals(_seen, Items)) return;
         _seen = Items;
-        _active = 0;
+        _active = -1;
     }
 
     private async Task Typed(string? text)
@@ -147,13 +149,13 @@
         var count = Count;
         if (e.Key == "ArrowDown" && !Shown) _focused = true;
         else if (ComboKeys.Move(e, _active, count, typed: !string.IsNullOrEmpty(Text)) is { } to) (_active, _reveal) = (to, true);
-        else if (e.Key == "Enter" && Shown && _active < count) await Pick(_active);
+        else if (e.Key == "Enter" && Shown && _active < count) await Pick(_active >= 0 ? _active : Items.Count > 0 ? 0 : -1);
         else if (e.Key == "Escape") _focused = false;
     }
 
     internal async Task Pick(int at)
     {
-        if (Disabled) return;
+        if (Disabled || at < 0) return;
         if (at < Items.Count) await OnPick.InvokeAsync(Items[at]);
         else if (NewOption is not null) await OnNew.InvokeAsync();
     }
@@ -162,7 +164,7 @@
     {
         if (!_reveal) return;
         _reveal = false;
-        if (!Expanded || _active >= Count) return;
+        if (!Expanded || _active < 0 || _active >= Count) return;
         try { await JS.InvokeVoidAsync("tideCombo.reveal", OptionId(_active)); }
         catch (JSDisconnectedException) { /* the tab has gone */ }
     }

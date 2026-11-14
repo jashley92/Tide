@@ -55,11 +55,14 @@ builder.Services.AddSingleton(transportCounts);
 // so coming back to an article being edited picks up where it was, unsaved changes and all.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(20))
-    // A message from the browser over SignalR's 32 KB default drops the circuit; a long article field read back from the
-    // Markdown editor can pass that. Screenshots don't count: InputFile streams them.
+    // A message from the browser over this limit drops the circuit, and what it carried is lost without a word. A text box
+    // sends all its text in one message, so the limit is set by the longest box: every box has a maxlength, the longest
+    // 200,000 characters (a paste to search for indicators, a query TIDE wrote), and a character is sent in at most 3 bytes
+    // (UTF-8; a quote, backslash or line break escaped in JSON takes 2). 1 MB holds that with room; past a box's
+    // maxlength the browser cuts a paste, and the box says so (LengthNote). Screenshots don't count: InputFile streams them.
     .AddHubOptions(o =>
     {
-        o.MaximumReceiveMessageSize = 256 * 1024;
+        o.MaximumReceiveMessageSize = 1024 * 1024;
         // Which transport (WebSockets, or a fallback) each connection and circuit is on, for Diagnostics.
         o.AddFilter(new TransportHubFilter(transportCounts));
     });

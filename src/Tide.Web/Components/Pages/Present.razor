@@ -872,7 +872,7 @@ else
                                 var errorId = $"slide-number-error-{t.Metric.Id:N}";
                                 <div class="tide-slide-presenter-row" @key="t.Metric.Id">
                                     <span class="tide-slide-presenter-name">@t.Metric.Name</span>
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
+                                    <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" maxlength="32" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
                                            aria-invalid="@(refused is null ? null : "true")" aria-describedby="@(refused is null ? null : errorId)"
                                            value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @oninput="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty"
                                            @onkeydown="e => NumberKey(e, t.Metric.Id)" @ref="_numberBoxes[t.Metric.Id]" />

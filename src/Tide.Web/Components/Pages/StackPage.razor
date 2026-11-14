@@ -74,7 +74,7 @@
         <FilterBar Pills="Pills" Filters="Filters" Active="Narrowed" OnClear="ClearFilters" OnChanged="Refiltered"
                    Count="@($"{TableView.Count(1, shown.Count, shown.Count, _list.Count, Narrowed, "product", "products")} · most pressing first")">
             <Search>
-                <input id="stack-q" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Product, other name or version" aria-label="Filter products"
+                <input id="stack-q" type="search" class="tide-maxw-md form-control form-control-sm" maxlength="200" placeholder="Product, other name or version" aria-label="Filter products"
                        @bind:get="_words" @bind:set="SetWords" @bind:event="oninput" />
             </Search>
             <ChildContent>
