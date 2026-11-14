@@ -137,6 +137,8 @@ public static class SettingsCatalog
         new("Intake", "Time allowed to read an article (seconds)", OperationalSettings.ReadSeconds, EditedIn: SourcesPage),
         new("Intake", "Advert selectors", OperationalSettings.AdSelectors, EditedIn: SourcesPage),
         new("Intake", "Advert labels", OperationalSettings.AdLabels, EditedIn: SourcesPage),
+        new("Intake", "User agent", OperationalSettings.UserAgent, EditedIn: SourcesPage),
+        new("Intake", "Custom user agent", OperationalSettings.CustomUserAgent, EditedIn: SourcesPage),
         new("Intake", "How far apart two reports of one event can be (hours)", OperationalSettings.GroupWindowHours, EditedIn: SourcesPage),
         new("Intake", "Extra words triage grouping ignores", OperationalSettings.GroupIgnoredWords, EditedIn: SourcesPage),
 

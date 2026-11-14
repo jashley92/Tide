@@ -540,8 +540,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         new(this, User, Ai, Http, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Stack(), Scorecard(),
             new StaticOptionsMonitor<IntakeOptions>(new IntakeOptions()));
 
-    public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null) =>
-        new(this, User, Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),
+    public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null, IOutboundHttp? http = null) =>
+        new(this, User, http ?? Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),
             time ?? TimeProvider.System, polls: Polls);
 
     /// <summary>The sources being polled, shared by every <see cref="Intake"/> as the app's singleton is.</summary>
@@ -563,8 +563,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public ActionFileService ActionFiles(ZipDownloads zip = ZipDownloads.RiskyOnly) =>
         new(this, User, Store, new StaticOptionsMonitor<FileStoreOptions>(new FileStoreOptions { MaxImageMB = 1, MaxEvidenceMB = 2, ZipDownloads = zip }));
 
-    public ReadingService Reading(IntakeOptions? options = null, TimeProvider? time = null) =>
-        new(this, User, Http, new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions()), time ?? TimeProvider.System);
+    public ReadingService Reading(IntakeOptions? options = null, TimeProvider? time = null, IOutboundHttp? http = null) =>
+        new(this, User, http ?? Http, new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions()), time ?? TimeProvider.System);
 
     public CveService Cves(CveOptions? options = null, TimeProvider? time = null) =>
         new(this, User, Http, new StaticOptionsMonitor<CveOptions>(options ?? new CveOptions { Enabled = true, NvdDelayMs = 0 }),

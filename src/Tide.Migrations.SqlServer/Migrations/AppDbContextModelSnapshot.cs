@@ -3123,6 +3123,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("CustomUserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<int>("DefaultTlp")
                         .HasColumnType("int");
 
@@ -3209,6 +3213,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("UserAgent")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

@@ -863,6 +863,18 @@ const navigateToAdmin = async page => {
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
+/** Setup: on Sources, the user agent card set to Custom with a long string typed, and a new source's form with a custom
+ *  user agent of its own; wider letters. Nothing is saved. */
+const userAgentCustom = async page => {
+  await wideFont(page);
+  await page.locator('#agent-choice').selectOption('Custom');
+  await page.locator('#agent-custom').fill('Mozilla/5.0 (compatible; ExampleThreatIntelReader/2.4; +https://cti.example.org/reader-information-for-site-owners)');
+  await page.getByRole('button', { name: 'Add a source' }).click();
+  await page.locator('#s-ua').selectOption('Custom');
+  await page.locator('#s-ua-custom').fill('FeedReader/3.1 (+https://cti.example.org/feeds)');
+  await settle(page);
+};
+
 /** Setup: Today, signed in as `people[width]` (a name, and `&roles=…` when not the dev sign-in's) with what's new, tips
  *  and the tour asked for (`?onboarding=…`; off on the demo otherwise), then `keys`; wider letters. `how` is `on` (a new
  *  name takes the first-sign-in tour) or `returning` (someone who used TIDE before: what's new opens). */
@@ -4774,6 +4786,13 @@ const pages = [
   { name: 'admin-organization', route: '/admin/organization', setup: wideFont, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'), visible('#org-sent-by'), visible('#org-posted-by'),
       oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
+  // Sources: the user agent card with Custom chosen (the choice and the custom box side by side, stacking narrow) and what
+  // it sends wrapping within the card; and a new source's form with a custom user agent of its own. Wider letters too.
+  // The sources list's table is wider than the window from 1100px down, so the page's own sideways scroll is checked
+  // above that.
+  { name: 'admin-sources-user-agent', route: '/admin/sources', setup: userAgentCustom, widths: [1920, 1440, 1100, 780, 400],
+    rules: [[1440, noSidewaysScroll], fits('.tide-card-form'), fits('.tide-card:has(#agent-choice)'), visible('#agent-choice'), visible('#agent-custom'),
+      visible('#agent-sent'), visible('#s-ua'), visible('#s-ua-custom'), visible('#s-ua-help')] },
   // Help: each release's highlights for the reader's roles, the full notes folded under them, linked to as "See all
   // changes" (that release's notes open).
   { name: 'help', route: '/help?release=1.13.0', setup: wideFont, widths: [1920, 1440, 780],

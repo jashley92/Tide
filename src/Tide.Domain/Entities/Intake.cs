@@ -45,6 +45,15 @@ public class Source : AuditableEntity
     /// (".promo-inline, div[data-widget=newsletter]"). Null: nothing more.</summary>
     public string? ArticleRemoveSelector { get; set; }
 
+    public const int MaxUserAgent = 256;
+
+    /// <summary>The User-Agent sent when its feed is pulled and its articles are read in triage: the global setting
+    /// (<see cref="UserAgentChoice.Inherit"/>, the default), TIDE's own, a current browser's, or <see cref="CustomUserAgent"/>.</summary>
+    public UserAgentChoice UserAgent { get; set; } = UserAgentChoice.Inherit;
+
+    /// <summary>The string sent when <see cref="UserAgent"/> is Custom (printable ASCII); null otherwise.</summary>
+    public string? CustomUserAgent { get; set; }
+
     /// <summary>A feed's tag filter, one tag per line, matched against the item's own tags ignoring case. With
     /// <see cref="OnlyCategories"/>, only items carrying one of them are taken in; an item carrying one of
     /// <see cref="SkipCategories"/> never is. Null: no filter.</summary>
