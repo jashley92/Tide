@@ -42,6 +42,22 @@
             @if (_meetingProblem is { } problem) { <div class="invalid-feedback d-block" id="org-meeting-error">@problem</div> }
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
         </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-sent-by">The brief is due sent by</label>
+            <TimeBox @ref="SentByBox" Id="org-sent-by" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_sentBy" Invalid="@(_sentByProblem is not null)"
+                     DescribedBy="@(_sentByProblem is null ? "org-sent-by-help" : "org-sent-by-error org-sent-by-help")" />
+            @if (_sentByProblem is { } sentProblem) { <div class="invalid-feedback d-block" id="org-sent-by-error">@sentProblem</div> }
+            <div class="form-text" id="org-sent-by-help">Both editions out by this time on each business day, or the day's analyst is late
+                (Reports, Brief timeliness). A test copy doesn't count.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-posted-by">Its SharePoint copy is due posted by</label>
+            <TimeBox @ref="PostedByBox" Id="org-posted-by" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_postedBy" Invalid="@(_postedByProblem is not null)"
+                     DescribedBy="@(_postedByProblem is null ? "org-posted-by-help" : "org-posted-by-error org-posted-by-help")" />
+            @if (_postedByProblem is { } postedProblem) { <div class="invalid-feedback d-block" id="org-posted-by-error">@postedProblem</div> }
+            <div class="form-text" id="org-posted-by-help">Only where posting to SharePoint is required (Access &amp; distribution). Both times
+                judge every day in the report, earlier ones too.</div>
+        </div>
         <div class="col-12">
             <div class="form-check">
                 <input id="org-beside" type="checkbox" class="form-check-input" @bind="ActionBeside" aria-describedby="org-beside-help" />
@@ -161,6 +177,12 @@
     internal TimeBox? MeetingBox { get; private set; }
     private string? _meetingProblem;
 
+    // The brief's deadlines, as the meeting's time is kept (internal so a test can type into them).
+    private TimeOnly _sentBy, _postedBy;
+    internal TimeBox? SentByBox { get; private set; }
+    internal TimeBox? PostedByBox { get; private set; }
+    private string? _sentByProblem, _postedByProblem;
+
     // Whether a meeting's action opens beside the slide (internal so a test can tick it).
     internal bool ActionBeside { get; set; }
 
@@ -248,6 +270,7 @@
         _teamName = Clock.TeamName;
         Zone = Clock.Zone.Id;
         _meeting = Clock.MeetingTime;
+        (_sentBy, _postedBy) = (Clock.SentBy, Clock.PostedBy);
         ActionBeside = Clock.ActionBesideSlide;
         (StaleOpen, StaleBlocked) = (Clock.StaleLimits.OpenDays.ToString(System.Globalization.CultureInfo.InvariantCulture), Clock.StaleLimits.BlockedDays.ToString(System.Globalization.CultureInfo.InvariantCulture));
         GuideLinkDays = Clock.GuideLinkDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -256,16 +279,24 @@
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
     }
 
+    // What's wrong with a time box: cleared or half typed, it would otherwise save the last whole time it held.
+    private static string? TimeProblem(TimeBox? box, string label, string example) =>
+        box is { Whole: false } ? $"{label} is a 24-hour time such as {example}." : null;
+
+    private static string Hm(TimeOnly t) => t.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
     // Changing the time zone asks first: brief dates and reminder times follow it.
     internal async Task Save()
     {
         if (_busy) return;
         // A cleared box would otherwise save the last whole time, under "Saved.", as if it were what's shown.
-        _meetingProblem = MeetingBox is { Whole: false } ? "The brief meets at is a 24-hour time such as 10:30." : null;
+        _meetingProblem = TimeProblem(MeetingBox, "The brief meets at", "10:30");
+        _sentByProblem = TimeProblem(SentByBox, "The brief is due sent by", "11:30");
+        _postedByProblem = TimeProblem(PostedByBox, "Its SharePoint copy is due posted by", "12:00");
         StateHasChanged();
-        if (_meetingProblem is not null)
+        if ((_meetingProblem ?? _sentByProblem ?? _postedByProblem) is { } problem)
         {
-            Toasts.Error("The settings weren't saved: " + _meetingProblem);
+            Toasts.Error("The settings weren't saved: " + problem);
             return;
         }
         var zoneChanged = !string.Equals(Zone, Clock.Zone.Id, StringComparison.Ordinal)
@@ -280,7 +311,9 @@
             {
                 [OperationalSettings.TeamName] = _teamName,
                 [OperationalSettings.TimeZone] = Zone,
-                [OperationalSettings.MeetingTime] = _meeting.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.MeetingTime] = Hm(_meeting),
+                [OperationalSettings.SentBy] = Hm(_sentBy),
+                [OperationalSettings.PostedBy] = Hm(_postedBy),
                 [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
                 [OperationalSettings.StaleOpenDays] = StaleOpen,
                 [OperationalSettings.StaleBlockedDays] = StaleBlocked,

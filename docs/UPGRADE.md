@@ -176,6 +176,26 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### Unreleased
+
+Upgrade as usual. It adds one migration, `BriefExcuses` (a new, empty table of brief days excused as late). None of
+the earlier ones change. On a DbaApplies install, the DBA applies it first.
+
+**New**
+- **A Manager role.** Map an AD group to it on Role mappings (Administration › Access & distribution), as for Viewer
+  and Visitor, or name it in `RoleMapping:Groups:Manager` before the first start. A Manager reads what a Viewer reads,
+  sees every analyst's brief timeliness, and can mark a day *proactively notified of late*, with a reason, so it
+  doesn't count against the analyst. Administrators can too. In development, `?roles=Manager` signs in as one.
+- **Brief timeliness.** Each business day's brief owner (the rotation's analyst, or whoever the day was handed or
+  covered to) is due to have both editions sent by **11:30** and, where posting to SharePoint is required, the copy
+  confirmed posted by **12:00**, in the organization's time zone. Holidays don't count; test copies don't count.
+  Every brief already sent is judged from the send log and the SharePoint records, so the history is there after the
+  upgrade. An analyst sees only their own days; Managers and administrators see everyone's.
+
+**New settings**
+- `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every
+  day by the new time, past days too: nothing about a day's timeliness is stored but an excuse.
+
 ### v1.13.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds seven migrations: `ActionStatusChangedAt` (which fills

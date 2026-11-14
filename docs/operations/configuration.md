@@ -158,10 +158,9 @@ is one, else the code default). **Where** is "Server" (file or environment varia
 
 | Key | Default | Allowed values | Where | Effect |
 |---|---|---|---|---|
-| `RoleMapping:Groups:{Role}` | empty arrays | Role names `Analyst`, `ActionOwner`, `Reader`, `Admin`, `Viewer`, `Visitor`. Groups as `DOMAIN\Group`, a bare `Group` (this server's domain) or a SID. An unknown role name is logged and skipped. | Server, then **Administration › Access & distribution** | Seed: copied into the `RoleMappings` table at first start only (`DatabaseInitializer.SeedRoleMappingsAsync`). After that, edit mappings in the app. |
+| `RoleMapping:Groups:{Role}` | empty arrays | Role names `Analyst`, `ActionOwner`, `Reader`, `Admin`, `Viewer`, `Visitor`, `Manager`. Groups as `DOMAIN\Group`, a bare `Group` (this server's domain) or a SID. An unknown role name is logged and skipped. | Server, then **Administration › Access & distribution** | Seed: copied into the `RoleMappings` table at first start only (`DatabaseInitializer.SeedRoleMappingsAsync`). After that, edit mappings in the app. |
 
-The `appsettings.json` comment names only the first four roles. `AppRole` also has `Viewer` and `Visitor`, and the
-seed accepts them.
+The `appsettings.json` comment names every role, and the seed accepts each.
 
 ### Database
 
@@ -190,6 +189,8 @@ seed accepts them.
 | `Org:ActionBesideSlide` | `false` | `true`: an action opened in a meeting shows beside the slide, which narrows for it, rather than over it. Turn it on after a rehearsal in the meeting room. | In app: **Organization settings** | At once |
 | `Org:StaleOpenDays` | `2` | Whole number, 1 to 30. Business days an Open or In progress action may go without an update by a person before the meeting's **Actions that need review** slide lists it. | In app: **Organization settings** | At once |
 | `Org:StaleBlockedDays` | `5` | Whole number, 1 to 30. The same for a Blocked action. | In app: **Organization settings** | At once |
+| `Org:SentBy` | `11:30` | A 24-hour time (`HH:mm`). On each business day (holidays aside), the day's brief owner is due to have both editions sent by then, in `Org:TimeZone`: **Reports › Brief timeliness** judges each day by it, past days too. A test copy doesn't count. | In app: **Organization settings** | At once |
+| `Org:PostedBy` | `12:00` | A 24-hour time. Where posting the SharePoint copy is required (`Distribution:RequireSharePoint`), the day's brief owner is due to have it confirmed posted by then. Without the requirement only `Org:SentBy` counts. | In app: **Organization settings** | At once |
 | `Org:GuideLinkDays` | `5` | Whole number, 1 to 90. How many days a page's **Show me around** link, under its title, shows after someone's first sign-in, and after a release whose highlights changed that page. It goes once they've run that page's guide or closed the link; the **?** menu always has it, and Help's **Show page guide links** turns the links on or off for each person. | In app: **Organization settings** | At once |
 
 A server `Org:TimeZone` that isn't a known zone stops start-up (HTTP 500.30). A saved one can't be invalid: the page

@@ -198,9 +198,15 @@ public static class BriefSteps
     /// <summary>The editions with nothing in them to send: every article on <paramref name="brief"/> is above the
     /// edition's ceiling. None for a brief with no articles yet.</summary>
     public static IReadOnlyList<Edition> NothingToSend(Brief brief, TlpLevel teamMax, TlpLevel publicMax) =>
-        brief.Items.Count == 0 ? []
-        : new[] { (Edition.Team, teamMax), (Edition.Public, publicMax) }
-            .Where(e => BriefEditions.Build(brief, e.Item1, e.Item2).Articles.Count == 0).Select(e => e.Item1).ToList();
+        NothingToSend(brief.Items.Select(i => i.Article).OfType<Article>().Select(a => (TlpLevel?)a.Tlp).Min(), teamMax, publicMax);
+
+    /// <summary>As <see cref="NothingToSend(Brief, TlpLevel, TlpLevel)"/>, from the lowest marking of the brief's articles
+    /// (<paramref name="lowest"/>; null with none): an edition leaves out an article only when it's above the ceiling
+    /// (<see cref="BriefEditions.BuildArticle"/>), so it has nothing when even the lowest is.</summary>
+    public static IReadOnlyList<Edition> NothingToSend(TlpLevel? lowest, TlpLevel teamMax, TlpLevel publicMax) =>
+        lowest is not { } low ? []
+        : new[] { (Edition: Edition.Team, Max: teamMax), (Edition: Edition.Public, Max: publicMax) }
+            .Where(e => low > e.Max).Select(e => e.Edition).ToList();
 
     /// <summary>"1 number" or "3 numbers".</summary>
     public static string Numbers(int count) => count == 1 ? "1 number" : $"{count} numbers";

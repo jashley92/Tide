@@ -88,6 +88,8 @@ public class CapabilitiesTests : IDisposable
         ["Edit Our stack and adversaries"] = (db, _) => db.Stack().SaveAsync(new StackForm { Name = "Contoso " + Guid.NewGuid().ToString("N")[..6] }),
         ["Reports, trends and exports"] = (db, _) => db.Trends().ArticlesAsync([], new Dictionary<Guid, DateOnly>()),
         ["Team commitments scorecard and its CSV"] = (db, _) => db.TeamScorecard().BuildAsync(),
+        ["Brief timeliness: every analyst's days and the team summary, and the CSV"] = (db, _) => db.Timeliness().BuildAsync(),
+        ["Excuse a late brief day the analyst warned of, or undo that"] = (db, _) => db.Timeliness().ExcuseAsync(Day, "Warned at 9:00"),
     };
 
     // Each row a page's policy settles.
@@ -222,6 +224,12 @@ public class CapabilitiesTests : IDisposable
         Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Viewer).Should().Be("");
         Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Visitor).Should().BeNull();
         Cell("Join and follow a live meeting", AppRole.Reader).Should().BeNull();
+        Cell("Brief timeliness: every analyst's days and the team summary, and the CSV", AppRole.Analyst).Should().Be("own days only");
+        Cell("Brief timeliness: every analyst's days and the team summary, and the CSV", AppRole.Manager).Should().Be("");
+        Cell("Brief timeliness: every analyst's days and the team summary, and the CSV", AppRole.Viewer).Should().BeNull();
+        Cell("Excuse a late brief day the analyst warned of, or undo that", AppRole.Analyst).Should().BeNull();
+        Cell("Read actions: their pages, the board, Workload", AppRole.Manager).Should().Be("");
+        Cell("Write and edit articles and stories", AppRole.Manager).Should().BeNull();
         Capabilities.All.Should().OnlyContain(c => c.For(AppRole.Admin) == "", "an administrator holds every permission");
     }
 

@@ -34,6 +34,13 @@ public static class RoleDefinitions
         ],
         // The published archive, and a live meeting from a seat in it (MeetingAccess): nothing else of the team's.
         [AppRole.Visitor] = [Permission.ReadPublished, Permission.JoinMeetings],
+        // Reads what a Viewer reads, and sees every analyst's record (brief timeliness, commitments by person), excusing a
+        // late day the analyst warned of: ManagePeople. Writes nothing of the team's work.
+        [AppRole.Manager] =
+        [
+            Permission.ReadPublished, Permission.ReadTeamEdition, Permission.ReadActions, Permission.MeetingNotes, Permission.JoinMeetings,
+            Permission.ManagePeople,
+        ],
     };
 
     /// <summary>What each role is, in a line, wherever roles are listed (the Role mappings page, the docs).</summary>
@@ -45,6 +52,7 @@ public static class RoleDefinitions
         AppRole.Admin => "Administers TIDE: sources, taxonomy, role mappings and settings. Holds every permission.",
         AppRole.Viewer => "Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand, adds notes and adds who was there.",
         AppRole.Visitor => "A colleague from elsewhere: reads the published archive, and sees a live meeting only while they're in it.",
+        AppRole.Manager => "Leads the analysts: reads what a Viewer reads, sees everyone's brief timeliness and commitments, and excuses a late day.",
         _ => role.ToString(),
     };
 
@@ -87,6 +95,11 @@ public static class Policies
     public const string ReadActions = nameof(ReadActions);
     public const string MeetingNotes = nameof(MeetingNotes);
     public const string JoinMeetings = nameof(JoinMeetings);
+    public const string ManagePeople = nameof(ManagePeople);
+
+    /// <summary>The Brief timeliness report and its CSV: an analyst's own days (<see cref="Permission.PresentBriefs"/>) or
+    /// everyone's (<see cref="Permission.ManagePeople"/>). Held to either, <see cref="AnyOf"/>; the service decides whose.</summary>
+    public const string BriefTimeliness = nameof(BriefTimeliness);
 
     /// <summary>
     /// The permission each policy requires. The Web layer registers one policy per entry requiring the matching
@@ -104,6 +117,16 @@ public static class Policies
         [ReadActions] = Permission.ReadActions,
         [MeetingNotes] = Permission.MeetingNotes,
         [JoinMeetings] = Permission.JoinMeetings,
+        [ManagePeople] = Permission.ManagePeople,
+    };
+
+    /// <summary>
+    /// The policies met by any one of several permissions. The Web layer registers each as a policy requiring one of the
+    /// permission claims, so these too are never tied to a role.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, Permission[]> AnyOf = new Dictionary<string, Permission[]>
+    {
+        [BriefTimeliness] = [Permission.PresentBriefs, Permission.ManagePeople],
     };
 
     /// <summary>What a person without the permission is told it allows.</summary>
@@ -119,6 +142,7 @@ public static class Policies
         Permission.ReadActions => "read action items",
         Permission.MeetingNotes => "add notes at the brief meeting",
         Permission.JoinMeetings => "join the brief meeting",
+        Permission.ManagePeople => "see everyone's brief timeliness and commitments",
         _ => p.ToString(),
     };
 }

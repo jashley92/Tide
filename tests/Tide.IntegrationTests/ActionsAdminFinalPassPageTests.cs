@@ -43,6 +43,33 @@ public class ActionsAdminFinalPassPageTests(TideApp app) : IClassFixture<TideApp
     }
 
     [Fact]
+    public async Task TheBriefsDeadlines_AreSetOnOrganizationSettings_AndABlankOneIsRefused()
+    {
+        var clock = app.Services.GetRequiredService<OrgClock>();
+        var (sentBy, postedBy) = (clock.SentBy, clock.PostedBy);
+        await using var r = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+        try
+        {
+            await r.Click(c => c.SentByBox!.OnChange(new ChangeEventArgs { Value = "" }));
+            await r.Click(c => c.Save());
+            (await r.Html()).Should().Contain("id=\"org-sent-by-error\"");
+            clock.SentBy.Should().Be(sentBy);
+
+            await r.Click(c => c.SentByBox!.OnChange(new ChangeEventArgs { Value = TimeBox.Format(new TimeOnly(11, 15)) }));
+            await r.Click(c => c.PostedByBox!.OnChange(new ChangeEventArgs { Value = TimeBox.Format(new TimeOnly(12, 45)) }));
+            await r.Click(c => c.Save());
+
+            (clock.SentBy, clock.PostedBy).Should().Be((new TimeOnly(11, 15), new TimeOnly(12, 45)));
+        }
+        finally
+        {
+            await r.Click(c => c.SentByBox!.OnChange(new ChangeEventArgs { Value = TimeBox.Format(sentBy) }));
+            await r.Click(c => c.PostedByBox!.OnChange(new ChangeEventArgs { Value = TimeBox.Format(postedBy) }));
+            await r.Click(c => c.Save());
+        }
+    }
+
+    [Fact]
     public async Task TodaysAddArticle_SaysWhatItOffers_InWords()
     {
         await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))

@@ -23,6 +23,10 @@ public enum AppRole
     /// <summary>A colleague from elsewhere: reads the published archive, and joins a live meeting to see what the room sees
     /// while they're in it. Nothing of the team's outside the meeting.</summary>
     Visitor = 5,
+
+    /// <summary>Leads the analysts: reads what a Viewer reads, sees everyone's brief timeliness and commitments, and excuses
+    /// a late brief day the analyst warned of.</summary>
+    Manager = 6,
 }
 
 /// <summary>The permission atoms authorization runs on. Roles bundle them; policies require one each.</summary>
@@ -45,6 +49,10 @@ public enum Permission
     /// <summary>Join and follow a live meeting in present mode, and raise a hand. Without the team edition (a Visitor),
     /// the meeting's brief is readable only from a seat in it, while it runs.</summary>
     JoinMeetings = 9,
+
+    /// <summary>See every analyst's brief timeliness and each person's commitments, and excuse a late brief day (or undo
+    /// that). Without it, an analyst sees only their own.</summary>
+    ManagePeople = 10,
 }
 
 /// <summary>Whether an article asks something of the organization.</summary>

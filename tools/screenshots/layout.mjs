@@ -4702,9 +4702,10 @@ const pages = [
   // every detail stays readable (stacked under its check at a narrow width, not crushed to a few letters a line).
   { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
     rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)'), everyAtLeast('.tide-diag-checks td:last-child', 120)] },
-  // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
-  { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
-    rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),
+  // The organization's settings: the two business-day limits for Actions that need review, each box with its unit, and
+  // the brief's sent-by and posted-by times, with wider letters too.
+  { name: 'admin-organization', route: '/admin/organization', setup: wideFont, widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'), visible('#org-sent-by'), visible('#org-posted-by'),
       oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
   // Help: each release's highlights for the reader's roles, the full notes folded under them, linked to as "See all
   // changes" (that release's notes open).

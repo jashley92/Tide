@@ -95,7 +95,7 @@ Two query parameters change who you are, in this browser only:
   colleagues, so `?as=Robin` and `?as=Sam` are people the app already knows.
 - **`?roles=<role>`** (or a comma list, such as `?roles=Analyst,Viewer`) signs this browser in with those roles
   instead of `DevAuth:Roles`. Only TIDE's role names are taken: `Analyst`, `ActionOwner`, `Reader`, `Admin`,
-  `Viewer`, `Visitor` (case doesn't matter). `?roles=default` (or any value with no real role) goes back to the
+  `Viewer`, `Visitor`, `Manager` (case doesn't matter). `?roles=default` (or any value with no real role) goes back to the
   configured roles.
 
 Each is kept in an HTTP-only cookie (`dev_as`, `dev_roles`) because the Blazor circuit's WebSocket carries no query

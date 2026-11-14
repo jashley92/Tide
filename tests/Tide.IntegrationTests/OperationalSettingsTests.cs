@@ -150,12 +150,30 @@ public class OperationalSettingsTests
         clock.Now.Offset.Should().Be(TimeSpan.FromHours(9));
     }
 
+    [Fact]
+    public async Task TheBriefsDeadlines_DefaultTo1130And1200_AndFollowASavedValue()
+    {
+        using var rig = new SettingsRig(Server);
+        var clock = rig.Get<OrgClock>();
+        (clock.SentBy, clock.PostedBy).Should().Be((new TimeOnly(11, 30), new TimeOnly(12, 0)));
+
+        await rig.Get<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.SentBy] = "9:45",
+            [OperationalSettings.PostedBy] = "13:00",
+        });
+
+        (clock.SentBy, clock.PostedBy).Should().Be((new TimeOnly(9, 45), new TimeOnly(13, 0)));
+    }
+
     [Theory]
     [InlineData("Org:TimeZone", "Mars/Olympus_Mons")]
     [InlineData("Org:TimeZone", "Tokyo Standard Time")]
     [InlineData("Org:TimeZone", "")]
     [InlineData("Org:MeetingTime", "25:00")]
     [InlineData("Org:MeetingTime", "10.30")]
+    [InlineData("Org:SentBy", "11:75")]
+    [InlineData("Org:PostedBy", "noon")]
     [InlineData("Org:TeamName", "  ")]
     [InlineData("Notifications:ReminderTime", "8am")]
     [InlineData("Notifications:DueSoon:Enabled", "yes")]

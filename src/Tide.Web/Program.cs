@@ -120,6 +120,9 @@ builder.Services.AddAuthorization(options =>
 {
     foreach (var (policy, permission) in Policies.Required)
         options.AddPolicy(policy, p => p.RequireClaim(AppClaimTypes.Permission, permission.ToString()));
+    // A policy any one of several permissions meets: a claim with any of their values.
+    foreach (var (policy, permissions) in Policies.AnyOf)
+        options.AddPolicy(policy, p => p.RequireClaim(AppClaimTypes.Permission, permissions.Select(x => x.ToString())));
     // Everything requires a signed-in user unless it says otherwise.
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
 });

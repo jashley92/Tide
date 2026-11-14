@@ -48,8 +48,9 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
   | Admin | TIDE's administrators | Everything, including role mappings, scorecard tags and edition ceilings |
   | Viewer | Managers, auditors, anyone who should see the team's work without changing it | Read everything the team edition shows, every action included, and change nothing. Join meetings, raise a hand and add notes |
   | Visitor | Colleagues from elsewhere who sit in on the meeting | Read the published archive. In a live meeting, see what the room sees, team edition included, only while they're in it |
+  | Manager | Whoever leads the analysts | Read what a Viewer reads. See every analyst's brief timeliness and each person's commitments (an analyst sees only their own), and excuse a late brief day the analyst warned of |
 
-  The installer's answers file names groups for the first four; map Viewer and Visitor groups on the Role mappings
+  The installer's answers file names groups for the first four; map Viewer, Visitor and Manager groups on the Role mappings
   page (Administration > Access & distribution), or in a configuration bundle. See
   [what each role can do](#what-each-role-can-do).
 
@@ -70,70 +71,72 @@ the like mean the role gets it only there; a Visitor's team-edition access lasts
 brief's live meeting.
 
 <!-- capabilities:start (generated from Capabilities.Markdown(); CapabilitiesTests checks it) -->
-| Activity | Administrator | Analyst | Action owner | Viewer | Visitor | Reader |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Briefs and meetings** | | | | | | |
-| Read the company-wide archive (published briefs) | Yes | Yes | Yes | Yes | Yes | Yes |
-| Read the team edition: briefs, the brief archive, Today | Yes | Yes | Yes | Yes | only its live meeting, while in it | No |
-| Join and follow a live meeting | Yes | Yes | Yes | Yes | Yes | No |
-| Raise a hand in a meeting | Yes | Yes | Yes | Yes | Yes | No |
-| Add meeting notes | Yes | Yes | Yes | Yes | No | No |
-| In a live meeting, add someone who was there, and take off whom you added | Yes | Yes | Yes | Yes | No | No |
-| With no meeting live, correct who attended (add, or take off anyone) | Yes | Yes | No | No | No | No |
-| Present, start and end a meeting | Yes | Yes | No | No | No | No |
-| Build a brief (its articles, order, team note) | Yes | Yes | No | No | No | No |
-| Reopen a brief | Yes | Yes | No | No | No | No |
-| Send a brief, finish one not sent, mark it posted | Yes | Yes | No | No | No | No |
-| Read the brief rotation | Yes | Yes | Yes | Yes | No | No |
-| Ask for a rotation swap or cover | Yes | Yes | No | No | No | No |
-| **Articles and intake** | | | | | | |
-| Read articles, stories and search | Yes | Yes | Yes | Yes | No | No |
-| Triage the inbox | Yes | Yes | No | No | No | No |
-| Write and edit articles and stories | Yes | Yes | No | No | No | No |
-| Review articles | Yes | Yes | No | No | No | No |
-| **Actions** | | | | | | |
-| Read actions: their pages, the board, Workload | Yes | Yes | Yes | Yes | the one shown, in a live meeting | No |
-| Comment on actions | Yes | Yes | Yes | No | No | No |
-| Raise actions and edit every field | Yes | Yes | No | No | No | No |
-| Work actions: status, outcome, assignee, checklist, hunts | Yes | Yes | own team's | No | No | No |
-| Add and describe files | Yes | Yes | own team's | No | No | No |
-| Remove files | Yes | Yes | own files | No | No | No |
-| Restore removed files | Yes | No | No | No | No | No |
-| Add indicators for an action's hunts | Yes | Yes | own team's, with no article | No | No | No |
-| Hand an action off to another team | Yes | Yes | own team's | No | No | No |
-| Split an action to several teams | Yes | Yes | No | No | No | No |
-| Add, edit and retire external teams (teams that work outside TIDE) | Yes | Yes | Yes | No | No | No |
-| Set a team's active limit | Yes | No | No | No | No | No |
-| Read the saved hunt queries | Yes | Yes | Yes | Yes | No | No |
-| Save, edit, retire and restore saved hunt queries | Yes | Yes | Yes | No | No | No |
-| Delete saved hunt queries | Yes | own ones | own ones | No | No | No |
-| Write an Outreach action's email, mark it sent and record the reply | Yes | Yes | own team's | No | No | No |
-| Read the outreach templates | Yes | Yes | Yes | Yes | No | No |
-| Save, edit, retire and restore outreach templates | Yes | Yes | Yes | No | No | No |
-| Delete outreach templates | Yes | own ones | own ones | No | No | No |
-| Read the playbooks | Yes | Yes | Yes | Yes | No | No |
-| Add, edit, reorder, retire and restore playbooks | Yes | Yes | Yes | No | No | No |
-| Delete playbooks no action was started from | Yes | own ones | own ones | No | No | No |
-| Read the board rules (the card rules, read-only) | Yes | Yes | Yes | Yes | No | No |
-| Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | No | No |
-| **Numbers** | | | | | | |
-| Enter the day's numbers | Yes | Yes | No | No | No | No |
-| Read the metrics history | Yes | Yes | Yes | Yes | No | No |
-| **Our stack and adversaries** | | | | | | |
-| Read Our stack and adversaries | Yes | Yes | Yes | Yes | the card shown, in a live meeting | No |
-| Edit Our stack and adversaries | Yes | Yes | No | No | No | No |
-| **Reports** | | | | | | |
-| Reports, trends and exports | Yes | Yes | Yes | Yes | No | No |
-| Team commitments scorecard and its CSV | Yes | Yes | Yes | Yes | No | No |
-| Coverage of detection rules | Yes | Yes | No | No | No | No |
-| **Administration** | | | | | | |
-| Organization, holidays, teams and SLAs, rotation | Yes | No | No | No | No | No |
-| Card rules, query templates | Yes | No | No | No | No | No |
-| Sources, source health, scorecard tags, detection rules | Yes | No | No | No | No | No |
-| Opening metrics and metric imports | Yes | No | No | No | No | No |
-| Role mappings, edition ceilings, recipients, email templates | Yes | No | No | No | No | No |
-| API tokens and webhooks | Yes | No | No | No | No | No |
-| Diagnostics, configuration, audit log, updates | Yes | No | No | No | No | No |
+| Activity | Administrator | Analyst | Manager | Action owner | Viewer | Visitor | Reader |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Briefs and meetings** | | | | | | | |
+| Read the company-wide archive (published briefs) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Read the team edition: briefs, the brief archive, Today | Yes | Yes | Yes | Yes | Yes | only its live meeting, while in it | No |
+| Join and follow a live meeting | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| Raise a hand in a meeting | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| Add meeting notes | Yes | Yes | Yes | Yes | Yes | No | No |
+| In a live meeting, add someone who was there, and take off whom you added | Yes | Yes | Yes | Yes | Yes | No | No |
+| With no meeting live, correct who attended (add, or take off anyone) | Yes | Yes | No | No | No | No | No |
+| Present, start and end a meeting | Yes | Yes | No | No | No | No | No |
+| Build a brief (its articles, order, team note) | Yes | Yes | No | No | No | No | No |
+| Reopen a brief | Yes | Yes | No | No | No | No | No |
+| Send a brief, finish one not sent, mark it posted | Yes | Yes | No | No | No | No | No |
+| Read the brief rotation | Yes | Yes | Yes | Yes | Yes | No | No |
+| Ask for a rotation swap or cover | Yes | Yes | No | No | No | No | No |
+| **Articles and intake** | | | | | | | |
+| Read articles, stories and search | Yes | Yes | Yes | Yes | Yes | No | No |
+| Triage the inbox | Yes | Yes | No | No | No | No | No |
+| Write and edit articles and stories | Yes | Yes | No | No | No | No | No |
+| Review articles | Yes | Yes | No | No | No | No | No |
+| **Actions** | | | | | | | |
+| Read actions: their pages, the board, Workload | Yes | Yes | Yes | Yes | Yes | the one shown, in a live meeting | No |
+| Comment on actions | Yes | Yes | No | Yes | No | No | No |
+| Raise actions and edit every field | Yes | Yes | No | No | No | No | No |
+| Work actions: status, outcome, assignee, checklist, hunts | Yes | Yes | No | own team's | No | No | No |
+| Add and describe files | Yes | Yes | No | own team's | No | No | No |
+| Remove files | Yes | Yes | No | own files | No | No | No |
+| Restore removed files | Yes | No | No | No | No | No | No |
+| Add indicators for an action's hunts | Yes | Yes | No | own team's, with no article | No | No | No |
+| Hand an action off to another team | Yes | Yes | No | own team's | No | No | No |
+| Split an action to several teams | Yes | Yes | No | No | No | No | No |
+| Add, edit and retire external teams (teams that work outside TIDE) | Yes | Yes | No | Yes | No | No | No |
+| Set a team's active limit | Yes | No | No | No | No | No | No |
+| Read the saved hunt queries | Yes | Yes | Yes | Yes | Yes | No | No |
+| Save, edit, retire and restore saved hunt queries | Yes | Yes | No | Yes | No | No | No |
+| Delete saved hunt queries | Yes | own ones | No | own ones | No | No | No |
+| Write an Outreach action's email, mark it sent and record the reply | Yes | Yes | No | own team's | No | No | No |
+| Read the outreach templates | Yes | Yes | Yes | Yes | Yes | No | No |
+| Save, edit, retire and restore outreach templates | Yes | Yes | No | Yes | No | No | No |
+| Delete outreach templates | Yes | own ones | No | own ones | No | No | No |
+| Read the playbooks | Yes | Yes | Yes | Yes | Yes | No | No |
+| Add, edit, reorder, retire and restore playbooks | Yes | Yes | No | Yes | No | No | No |
+| Delete playbooks no action was started from | Yes | own ones | No | own ones | No | No | No |
+| Read the board rules (the card rules, read-only) | Yes | Yes | Yes | Yes | Yes | No | No |
+| Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | Yes | No | No |
+| **Numbers** | | | | | | | |
+| Enter the day's numbers | Yes | Yes | No | No | No | No | No |
+| Read the metrics history | Yes | Yes | Yes | Yes | Yes | No | No |
+| **Our stack and adversaries** | | | | | | | |
+| Read Our stack and adversaries | Yes | Yes | Yes | Yes | Yes | the card shown, in a live meeting | No |
+| Edit Our stack and adversaries | Yes | Yes | No | No | No | No | No |
+| **Reports** | | | | | | | |
+| Reports, trends and exports | Yes | Yes | Yes | Yes | Yes | No | No |
+| Team commitments scorecard and its CSV | Yes | Yes | Yes | Yes | Yes | No | No |
+| Brief timeliness: every analyst's days and the team summary, and the CSV | Yes | own days only | Yes | No | No | No | No |
+| Excuse a late brief day the analyst warned of, or undo that | Yes | No | Yes | No | No | No | No |
+| Coverage of detection rules | Yes | Yes | No | No | No | No | No |
+| **Administration** | | | | | | | |
+| Organization, holidays, teams and SLAs, rotation | Yes | No | No | No | No | No | No |
+| Card rules, query templates | Yes | No | No | No | No | No | No |
+| Sources, source health, scorecard tags, detection rules | Yes | No | No | No | No | No | No |
+| Opening metrics and metric imports | Yes | No | No | No | No | No | No |
+| Role mappings, edition ceilings, recipients, email templates | Yes | No | No | No | No | No | No |
+| API tokens and webhooks | Yes | No | No | No | No | No | No |
+| Diagnostics, configuration, audit log, updates | Yes | No | No | No | No | No | No |
 <!-- capabilities:end -->
 
 ## 2. The answers file

@@ -136,3 +136,30 @@ public class MeetingNote : Entity
     public DateTimeOffset? EditedAtUtc { get; set; }
     public string Text { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// A brief day a manager or administrator marked as one the analyst warned of in advance ("proactively notified of
+/// late"), with why: a day late or not sent that the Brief timeliness report then doesn't count against them. One per
+/// day. Undoing it deletes the row; the audit trail keeps both, and the analyst sees it on their own days.
+/// </summary>
+public class BriefExcuse : AuditableEntity
+{
+    public const int MaxReason = 300;
+
+    /// <summary>The brief day it excuses, in the organization's time zone.</summary>
+    public DateOnly BriefDate { get; set; }
+
+    /// <summary>Whose day it was when it was excused (the day's brief owner then).</summary>
+    public string AnalystId { get; set; } = string.Empty;
+    public string AnalystName { get; set; } = string.Empty;
+
+    /// <summary>Why, in a line: what the analyst said, and when.</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset ExcusedAtUtc { get; set; }
+    public string ExcusedById { get; set; } = string.Empty;
+    public string ExcusedByName { get; set; } = string.Empty;
+
+    /// <summary>Moves on every save, so an undo from a page that read an older excuse is refused.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+}

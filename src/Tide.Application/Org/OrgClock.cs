@@ -30,6 +30,14 @@ public sealed class OrgOptions
     /// page (1 to 90; <see cref="Operations.GuideLinkService"/>).</summary>
     public int GuideLinkDays { get; set; } = DefaultGuideLinkDays;
 
+    /// <summary>When the day's brief is due out (both editions sent), in <see cref="TimeZone"/> ("11:30"): the Brief
+    /// timeliness report judges each day's analyst by it.</summary>
+    public string SentBy { get; set; } = "11:30";
+
+    /// <summary>When the day's SharePoint copy is due confirmed posted, where one is required, in <see cref="TimeZone"/>
+    /// ("12:00").</summary>
+    public string PostedBy { get; set; } = "12:00";
+
     /// <summary>The least, default and most days for <see cref="GuideLinkDays"/>.</summary>
     public const int MinGuideLinkDays = 1, DefaultGuideLinkDays = 5, MaxGuideLinkDays = 90;
 }
@@ -43,7 +51,7 @@ public sealed class OrgOptions
 public sealed class OrgClock : IDisposable
 {
     private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide, Actions.StaleLimits Stale,
-        int GuideLinkDays);
+        int GuideLinkDays, TimeOnly SentBy, TimeOnly PostedBy);
 
     private readonly TimeProvider _time;
     private readonly IDisposable? _listening;
@@ -91,6 +99,11 @@ public sealed class OrgClock : IDisposable
     /// <summary>Days a page's "Show me around" link shows (<see cref="OrgOptions.GuideLinkDays"/>).</summary>
     public int GuideLinkDays => _now.GuideLinkDays;
 
+    /// <summary>When a day's brief is due sent, and its SharePoint copy due posted (<see cref="OrgOptions.SentBy"/>,
+    /// <see cref="OrgOptions.PostedBy"/>), as times of day in <see cref="Zone"/>.</summary>
+    public TimeOnly SentBy => _now.SentBy;
+    public TimeOnly PostedBy => _now.PostedBy;
+
     /// <summary>The working days, with the holidays as last loaded or saved.</summary>
     public WorkingDays Days => _days;
 
@@ -99,10 +112,15 @@ public sealed class OrgClock : IDisposable
 
     private static Snapshot Read(OrgOptions o) => new(
         FindZone(o.TimeZone),
-        TimeOnly.TryParse(o.MeetingTime, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : new TimeOnly(10, 30),
+        TimeOr(o.MeetingTime, new TimeOnly(10, 30)),
         string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide,
         new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)),
-        Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays));
+        Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays),
+        TimeOr(o.SentBy, new TimeOnly(11, 30)), TimeOr(o.PostedBy, new TimeOnly(12, 0)));
+
+    // A server's time as given, or the default when it isn't one (a saved one always is: the page checks it).
+    private static TimeOnly TimeOr(string? value, TimeOnly fallback) =>
+        TimeOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : fallback;
 
     // A server value out of range is held to it (a saved one can't be: the page checks it).
     private static int StaleDays(int days) => Math.Clamp(days, Actions.StaleLimits.MinDays, Actions.StaleLimits.MaxDays);

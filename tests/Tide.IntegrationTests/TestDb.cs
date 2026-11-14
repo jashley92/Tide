@@ -579,6 +579,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Tide.Application.Trends.TrendsService Trends() => new(this, User, Clock);
     public Tide.Application.Trends.TeamScorecardService TeamScorecard(OrgClock? clock = null) => new(this, User, clock ?? Clock);
+    public Tide.Application.Trends.BriefTimelinessService Timeliness(OrgClock? clock = null) =>
+        new(this, User, clock ?? Clock, Rotation(clock), Settings(), new StaticOptionsMonitor<DistributionOptions>(DistributionOptions));
 
     public Tide.Application.Exports.ExportService Exports() => new(this, User);
 

@@ -31,14 +31,14 @@ public static class RoleGroups
     /// The groups whose highlights a person with <paramref name="roles"/> reads, in the order they're shown. Analysts
     /// present the brief, so they read the presenters' highlights too; administrators hold every permission, so they read
     /// those and their own. Someone who works as an analyst doesn't also read the viewers' narrower version of the same
-    /// pages. Readers and Visitors read none: they see the published archive, or a meeting only from a seat in it.
+    /// pages; a Manager reads the viewers'. Readers and Visitors read none: they see the published archive, or a meeting only from a seat in it.
     /// </summary>
     public static IReadOnlyList<RoleGroup> For(IEnumerable<AppRole> roles)
     {
         var list = roles as ICollection<AppRole> ?? roles.ToList();
         return list.Contains(AppRole.Admin) ? [RoleGroup.Analysts, RoleGroup.Presenters, RoleGroup.Administrators]
             : list.Contains(AppRole.Analyst) ? [RoleGroup.Analysts, RoleGroup.Presenters]
-            : list.Any(r => r is AppRole.Viewer or AppRole.ActionOwner) ? [RoleGroup.ViewersAndActionOwners]
+            : list.Any(r => r is AppRole.Viewer or AppRole.ActionOwner or AppRole.Manager) ? [RoleGroup.ViewersAndActionOwners]
             : [];
     }
 }

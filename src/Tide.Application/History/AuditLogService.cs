@@ -176,6 +176,7 @@ public static class AuditKinds
         [nameof(RotationWeek)] = "Rotation week",
         [nameof(RotationChange)] = "Rotation change",
         [nameof(RotationOverride)] = "Rotation cover",
+        [nameof(BriefExcuse)] = "Late brief excused",
         [nameof(StoredFile)] = "File",
         [DownloadAudit.EntityType] = "Download",
     };
