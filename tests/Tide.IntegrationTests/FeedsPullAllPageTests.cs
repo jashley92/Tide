@@ -157,6 +157,19 @@ public class FeedsPullAllPageTests(FeedsApp app) : IClassFixture<FeedsApp>
         finally { guard.AllFinished(); }
     }
 
+    // Edit (or Add a source) opens the form above the list, which can be far up the page: the form's Name takes focus,
+    // and with it the view.
+    [Fact]
+    public async Task Sources_EditingASource_BringsItsFormIntoFocus()
+    {
+        await using var r = await RenderAsync<SourcesAdmin>(app, "/admin/sources", @as: Admin);
+        r.Component.FocusingForm.Should().BeFalse("nothing is open yet");
+        await r.Click(c => { c.Form = new SourceForm(); return Task.CompletedTask; });
+        r.Component.Form.Should().NotBeNull();
+        await r.Click(c => { c.Form = null; return Task.CompletedTask; });
+        r.Component.FocusingForm.Should().BeFalse("a closed form takes no focus");
+    }
+
     [Fact]
     public async Task Sources_AdministratorSetsWhenFeedsShouldBePulledBy()
     {
