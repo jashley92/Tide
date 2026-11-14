@@ -13,7 +13,7 @@ namespace Tide.Infrastructure.Security;
 /// Mirrors signed-in users into <see cref="AppUser"/>. A user is written at most once per <see cref="TouchEvery"/>
 /// (unless their name, email or roles changed), so calling this on every request is cheap.
 /// </summary>
-public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time) : IUserDirectory
+public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time, Application.Org.OrgClock clock) : IUserDirectory
 {
     public static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(30);
 
@@ -44,7 +44,8 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
                 if (!kept.Contains(name)) db.UserPreferences.Add(new UserPreference { UserId = userId, Name = name, Value = value, UpdatedAtUtc = now });
             }
             Start(tour, Application.Preferences.UserPreferences.TourDue);
-            Start(since, Application.Operations.GuideLinkService.Day(DateOnly.FromDateTime(now.UtcDateTime)));
+            // The organization's day, as the window is counted in (not UTC's, a day ahead in a US evening).
+            Start(since, Application.Operations.GuideLinkService.Day(clock.Today));
         }
         // A stand-in name (the bare username: AD didn't answer in time) keeps the real one recorded, as for the address.
         if (!nameIsStandIn || string.IsNullOrWhiteSpace(row.DisplayName)) row.DisplayName = Cut(displayName);

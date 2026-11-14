@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using Tide.Application.Org;
 using System.Security.Claims;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -104,7 +106,7 @@ public class FinalRound4BugTests : IDisposable
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => _db.Context());
-        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, new OrgClock(Options.Create(new OrgOptions())));
         using (var ctx = _db.Context())
         {
             ctx.Users.Add(new AppUser { Sid = "S-1-5-21-9-9-9-1001", DisplayName = "Jordan Rivera" });
@@ -124,7 +126,7 @@ public class FinalRound4BugTests : IDisposable
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => _db.Context());
-        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, new OrgClock(Options.Create(new OrgOptions())));
         const string sid = "S-1-5-21-9-9-9-2001";
         mirror.RecordedName(sid).Should().BeNull("no one by that id has signed in");
 

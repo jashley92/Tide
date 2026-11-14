@@ -30,7 +30,7 @@
                     @* Where the strip is compact and the detail may be cut short, Triage's KEV flag sits by its name. *@
                     @if (s.Kev > 0)
                     {
-                        <span class="tide-step-flag-compact" aria-hidden="true"><Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge></span>
+                        <span class="tide-step-flag-compact" aria-hidden="true">@KevFlag(s)</span>
                     }
                 </span>
                 @* The detail, on up to two lines (cut short beyond that, where the strip is narrow: the title has it whole,
@@ -39,7 +39,7 @@
                    reader. *@
                 <span class="tide-step-detail" id="@DetailId(s)" title="@Full(s)">@if (s.Kev > 0 && s.Detail.LastIndexOf(' ') is var cut and > 0)
                     {
-                        @s.Detail[..(cut + 1)]<span class="text-nowrap">@s.Detail[(cut + 1)..]<span class="tide-step-flag-wide" aria-hidden="true"><Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge></span></span><span class="visually-hidden">@($" · {s.Kev} on KEV")</span>
+                        @s.Detail[..(cut + 1)]<span class="text-nowrap">@s.Detail[(cut + 1)..]<span class="tide-step-flag-wide" aria-hidden="true">@KevFlag(s)</span></span><span class="visually-hidden">@($" · {s.Kev} on KEV")</span>
                     }
                     else
                     {
@@ -87,6 +87,9 @@
     private static string DetailId(BriefStep s) => $"step-{s.Kind.ToString().ToLowerInvariant()}-detail";
 
     private static string Full(BriefStep s) => s.Kev > 0 ? $"{s.Detail} · {s.Kev} on KEV" : s.Detail;
+
+    // Triage's KEV flag, drawn by its name or after the detail's last word, whichever the strip's width shows.
+    private static RenderFragment KevFlag(BriefStep s) => @<Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge>;
 
     private RenderFragment Label(BriefStep s) => s.Kind switch
     {
