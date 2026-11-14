@@ -73,6 +73,25 @@
             </div>
             <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input id="s-en" class="form-check-input" type="checkbox" @bind="_form.Enabled" /><label class="form-check-label" for="s-en">Poll it</label></div></div>
             <div class="col-12"><label class="tide-field-label" for="s-lic">License or handling note (optional)</label><input id="s-lic" class="form-control form-control-sm" maxlength="500" @bind="_form.LicenseNote" placeholder="Members only: don't forward outside the company" /></div>
+            <div class="col-md-4">
+                <label class="tide-field-label" for="s-ua">User agent</label>
+                <select id="s-ua" class="form-select form-select-sm" @bind="_form.UserAgent" aria-describedby="s-ua-help">
+                    <option value="@UserAgentChoice.Inherit">The global setting</option>
+                    <option value="@UserAgentChoice.Tide">TIDE's own</option>
+                    <option value="@UserAgentChoice.Browser">A current desktop browser</option>
+                    <option value="@UserAgentChoice.Custom">Custom</option>
+                </select>
+            </div>
+            @if (_form.UserAgent == UserAgentChoice.Custom)
+            {
+                <div class="col-md-8">
+                    <label class="tide-field-label" for="s-ua-custom">Custom user agent</label>
+                    <input id="s-ua-custom" class="form-control form-control-sm tide-data" maxlength="@Source.MaxUserAgent" @bind="_form.CustomUserAgent" @bind:event="oninput"
+                           placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)" aria-describedby="s-ua-help" />
+                </div>
+            }
+            <div class="col-12 form-text mt-1" id="s-ua-help">Sent when its feed is pulled and its articles are read in triage (and by Test below).
+                @(_form.UserAgent == UserAgentChoice.Inherit ? "Now: " : "Sends: ")<span class="tide-data text-break">@(SourceAgent(_form) ?? NoAgentYet)</span></div>
             @if (_form.Kind == SourceKind.Feed)
             {
                 <div class="col-12 mt-3">
@@ -269,6 +288,37 @@
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveIntake">Save polling</button>
 </section>
 
+<section class="tide-card" aria-labelledby="agent-title" data-submit-scope>
+    <h2 id="agent-title"><span class="bi bi-person-badge" aria-hidden="true"></span> User agent</h2>
+    <p class="small tide-muted">What TIDE's outbound requests call themselves: pulling feeds, reading articles, CVE and KEV data, adversaries, the update
+        check and the assistant's fetches. A source can choose its own on its form. A change applies to the next request.</p>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="tide-field-label" for="agent-choice">Send</label>
+            <select id="agent-choice" class="form-select form-select-sm" @bind="GlobalAgent" aria-describedby="agent-sent agent-help">
+                <option value="@UserAgentChoice.Tide">TIDE's own (names this release)</option>
+                <option value="@UserAgentChoice.Browser">A current desktop browser</option>
+                <option value="@UserAgentChoice.Custom">Custom</option>
+            </select>
+        </div>
+        @if (GlobalAgent == UserAgentChoice.Custom)
+        {
+            <div class="col-md-8">
+                <label class="tide-field-label" for="agent-custom">Custom user agent</label>
+                <input id="agent-custom" class="form-control form-control-sm tide-data @(_agentProblem is null ? "" : "is-invalid")" maxlength="@Source.MaxUserAgent"
+                       @bind="CustomAgent" @bind:event="oninput" placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)"
+                       aria-describedby="@(_agentProblem is null ? "agent-help" : "agent-error agent-help")" />
+                @if (_agentProblem is { } agentProblem) { <div class="invalid-feedback d-block" id="agent-error">@agentProblem</div> }
+            </div>
+        }
+    </div>
+    <div class="small mt-2" id="agent-sent" role="status">Sends: <span class="tide-data text-break">@(UserAgents.Choose(GlobalAgent, CustomAgent) ?? NoAgentYet)</span></div>
+    <div class="form-text" id="agent-help">TIDE's own is honest about what's asking, and names this release so a site can tell versions apart. Some sites turn
+        away anything that doesn't look like a browser: choose the browser for those, here or better on just those sources. The browser string is a
+        recent Chrome on Windows, kept current by TIDE's releases. A custom one is printable ASCII, at most @Source.MaxUserAgent characters.</div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveUserAgent">Save user agent</button>
+</section>
+
 <section class="tide-card" aria-labelledby="sponsored-title" data-submit-scope>
     <h2 id="sponsored-title"><span class="bi bi-megaphone" aria-hidden="true"></span> Sponsored items</h2>
     <p class="small tide-muted">A feed item that reads as sponsored isn't taken in, and counts as filtered out. A marker matches as whole words, ignoring
@@ -434,6 +484,15 @@
     internal TimeOnly PulledBy { get; set; }
     private (bool Enabled, int RefreshHours) _cve;
     private bool _skipSponsored;
+    // The global user agent as chosen, the custom string as typed, and why it was refused; internal for the render tests.
+    internal UserAgentChoice GlobalAgent { get; set; }
+    internal string CustomAgent { get; set; } = "";
+    private string? _agentProblem;
+    private const string NoAgentYet = "(type one: printable ASCII, no line breaks)";
+
+    // What a source's form sends: its own choice, or the global one it inherits.
+    private string? SourceAgent(SourceForm form) =>
+        form.UserAgent == UserAgentChoice.Inherit ? UserAgents.Global(IntakeOptionsMonitor.CurrentValue) : UserAgents.Choose(form.UserAgent, form.CustomUserAgent);
     // The sponsored lists as typed (one phrase per line), and the Test box's text; internal for the render tests.
     internal string Markers { get; set; } = "";
     internal string Exceptions { get; set; } = "";
@@ -462,6 +521,9 @@
         _intake = (i.Enabled, i.MinPollMinutes, i.RetentionDays, (int)i.ReadBudget.TotalSeconds, i.PullNowMinutes);   // as the reader takes it
         PulledBy = i.PulledByTime;
         _skipSponsored = i.SkipSponsored;
+        GlobalAgent = i.UserAgent == UserAgentChoice.Inherit ? UserAgentChoice.Tide : i.UserAgent;
+        CustomAgent = i.CustomUserAgent ?? "";
+        _agentProblem = null;
         Markers = Lines(i.SponsoredMarkers ?? SponsoredFilter.DefaultMarkers);
         Exceptions = Lines(i.SponsoredExceptions ?? SponsoredFilter.DefaultExceptions);
         _ageDays = i.AgeDays;
@@ -503,6 +565,26 @@
         ReadSettings();
         Toasts.Show(_intake.Enabled ? "Polling is on. Due sources are polled within a minute." : "Polling settings saved; polling is off.");
     });
+
+    internal Task SaveUserAgent()
+    {
+        _agentProblem = GlobalAgent == UserAgentChoice.Custom ? UserAgents.Problem(CustomAgent) : null;
+        StateHasChanged();
+        if (_agentProblem is not null)
+        {
+            Toasts.Error("The user agent wasn't saved: " + _agentProblem);
+            return Task.CompletedTask;
+        }
+        return Run(async () =>
+        {
+            var values = new Dictionary<string, string?> { [OperationalSettings.UserAgent] = GlobalAgent.ToString() };
+            // A custom string is kept for next time only as the custom choice saves it.
+            if (GlobalAgent == UserAgentChoice.Custom) values[OperationalSettings.CustomUserAgent] = CustomAgent;
+            await Settings.SaveAsync(values);
+            ReadSettings();
+            Toasts.Show("Saved. The next request sends " + UserAgents.Global(IntakeOptionsMonitor.CurrentValue));
+        });
+    }
 
     internal Task SaveSponsored() => Run(async () =>
     {
@@ -633,7 +715,7 @@
     {
         if (_form is null) return;
         _busy = true;
-        try { _tested = await Assist.TestFetchAsync(_testUrl, _form.ArticleBodySelector, _form.ArticleRemoveSelector); }
+        try { _tested = await Assist.TestFetchAsync(_testUrl, _form.ArticleBodySelector, _form.ArticleRemoveSelector, UserAgents.Choose(_form.UserAgent, _form.CustomUserAgent)); }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
     }

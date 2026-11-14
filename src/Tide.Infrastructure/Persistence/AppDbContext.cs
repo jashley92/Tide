@@ -754,6 +754,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.SkipTitleWords).HasMaxLength(2000);
             e.Property(x => x.ArticleBodySelector).HasMaxLength(Source.MaxBodySelector);
             e.Property(x => x.ArticleRemoveSelector).HasMaxLength(Source.MaxRemoveSelector);
+            e.Property(x => x.CustomUserAgent).HasMaxLength(Source.MaxUserAgent);
             e.Property(x => x.LastError).HasMaxLength(500);
             e.Property(x => x.ETag).HasMaxLength(200);
             e.Property(x => x.LastModified).HasMaxLength(100);

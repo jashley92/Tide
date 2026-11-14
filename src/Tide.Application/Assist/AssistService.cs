@@ -140,16 +140,17 @@ public sealed class AssistService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>
     /// What TIDE's own fetch finds at <paramref name="url"/> with <paramref name="selector"/> (or automatically) and
-    /// <paramref name="removeSelector"/> taken out besides the adverts: the Sources page's Test, for an administrator
-    /// setting a source's selectors. The provider isn't asked.
+    /// <paramref name="removeSelector"/> taken out besides the adverts, sent as <paramref name="userAgent"/> (the source's
+    /// choice as typed; null for the global one): the Sources page's Test, for an administrator setting a source's
+    /// selectors. The provider isn't asked.
     /// </summary>
-    public async Task<ExtractedText> TestFetchAsync(string? url, string? selector, string? removeSelector = null, CancellationToken ct = default)
+    public async Task<ExtractedText> TestFetchAsync(string? url, string? selector, string? removeSelector = null, string? userAgent = null, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change the sources.");
         var address = ArticleService.SafeUrl(url) ?? throw new ArgumentException("Enter an article's http or https address.");
         foreach (var s in new[] { selector, removeSelector })
             if (!string.IsNullOrWhiteSpace(s) && !ArticleText.IsSelector(s.Trim())) throw new ArgumentException($"“{s.Trim()}” isn't a CSS selector TIDE can use.");
-        var got = await http.GetAsync(address, ct: ct);
+        var got = await http.GetAsync(address, new OutboundRequest(UserAgent: userAgent), ct);
         return got.Status == FetchStatus.Ok && got.Content is { } bytes
             ? await ArticleText.ExtractAsync(bytes, selector, intake.CurrentValue.ReadBudget, ArticleCleanup.For(intake.CurrentValue, removeSelector), ct)
             : new ExtractedText("", "", got.Error ?? "The page couldn't be read.");

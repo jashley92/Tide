@@ -16,6 +16,13 @@ public sealed class IntakeOptions
     /// </summary>
     public bool AllowPrivateNetworks { get; set; }
 
+    /// <summary>The User-Agent requests send (<see cref="UserAgents"/>): TIDE's own (the default), a current browser's,
+    /// or <see cref="CustomUserAgent"/>. A source can choose its own for its feed and articles.</summary>
+    public Domain.Enums.UserAgentChoice UserAgent { get; set; } = Domain.Enums.UserAgentChoice.Tide;
+
+    /// <summary>The string sent when <see cref="UserAgent"/> is Custom; TIDE's own is sent while it's blank.</summary>
+    public string? CustomUserAgent { get; set; }
+
     /// <summary>How long one request may take, in seconds (5 to 120).</summary>
     public int TimeoutSeconds { get; set; } = 20;
 
@@ -107,8 +114,10 @@ public enum FetchStatus
     Failed = 2,
 }
 
-/// <summary>A GET's extras: validators for a conditional fetch, and headers (an API key).</summary>
-public sealed record OutboundRequest(string? ETag = null, string? LastModified = null, IReadOnlyDictionary<string, string>? Headers = null);
+/// <summary>A GET's extras: validators for a conditional fetch, headers (an API key), and the User-Agent to send instead
+/// of the global one (a source's own choice, <see cref="UserAgents.For"/>; one that can't be sent is ignored).</summary>
+public sealed record OutboundRequest(string? ETag = null, string? LastModified = null, IReadOnlyDictionary<string, string>? Headers = null,
+    string? UserAgent = null);
 
 /// <summary>What a GET returned. <see cref="Error"/> is safe to show an administrator.</summary>
 public sealed record HttpFetch(FetchStatus Status, byte[]? Content = null, string? ETag = null, string? LastModified = null, string? Error = null);

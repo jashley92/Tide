@@ -7,7 +7,8 @@ using Tide.Application.Intake;
 namespace Tide.Infrastructure.Notifications;
 
 /// <summary>
-/// The one outbound HTTP client (feeds, the CVE data services). One long-lived handler with pooled connections that
+/// The one outbound HTTP client (feeds, the CVE data services). Each request carries the User-Agent chosen for it
+/// (<see cref="UserAgents"/>), so a change of setting applies to the next one. One long-lived handler with pooled connections that
 /// are recycled, so DNS changes are seen; automatic decompression; at most five redirects, never from https to http; an
 /// optional proxy (<c>Intake:Proxy</c>, read at startup). Each request has a time limit and a size limit, and a host
 /// that keeps failing is backed off (<see cref="OutboundCircuit"/>) so a dead feed doesn't hold the poller.
@@ -60,7 +61,6 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
         }
         else handler.ConnectCallback = ConnectAsync;   // the system proxy, if any, still applies (see ConnectAsync)
         _client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("TIDE/1.0 (+https://github.com/jashley92/Tide)");
     }
 
     public async Task<HttpFetch> GetAsync(string url, OutboundRequest? request = null, CancellationToken ct = default)
@@ -160,9 +160,12 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
 
     // The response, following up to five redirects (each hop's host checked first, never https to http), or null when a
     // redirect isn't followed. The conditional headers go on every hop, as the handler would send them. The caller's own
-    // headers (an API key) go only to the address it asked for: a redirect to another host doesn't get them.
+    // headers (an API key) go only to the address it asked for: a redirect to another host doesn't get them. The User-Agent
+    // goes on every hop, one value, replacing any the caller's headers carry: the request's own (a source's choice) when it
+    // can be sent, else the global setting as it is now.
     private async Task<HttpResponseMessage?> SendFollowingRedirectsAsync(Uri uri, OutboundRequest? request, CancellationToken ct)
     {
+        var agent = UserAgents.Valid(request?.UserAgent) ?? UserAgents.Global(_options.CurrentValue);
         var current = uri;
         for (var hop = 0; ; hop++)
         {
@@ -172,6 +175,8 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             if (request?.LastModified is { Length: > 0 } since) message.Headers.TryAddWithoutValidation("If-Modified-Since", since);
             if (SameOrigin(uri, current))
                 foreach (var (name, value) in request?.Headers ?? new Dictionary<string, string>()) message.Headers.TryAddWithoutValidation(name, value);
+            message.Headers.Remove("User-Agent");
+            message.Headers.TryAddWithoutValidation("User-Agent", agent);
             var response = await _client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
             if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308) || response.Headers.Location is not { } location)
                 return response;
