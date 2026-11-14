@@ -8,7 +8,7 @@
     <div class="tide-edition-banner">
         <div>
             <div class="fw-semibold">@Clock.TeamName daily brief</div>
-            <div class="tide-muted small">@Ui.Day(Edition.Brief.BriefDate) &middot; presented by @Edition.Brief.AnalystName</div>
+            <div class="tide-muted small">@Ui.Day(Edition.Brief.BriefDate) &middot; presented by @BriefService.PresentedBy(Edition.Brief)</div>
         </div>
         <div class="text-end">
             <TlpBadge Level="Edition.Marking" />

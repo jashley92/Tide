@@ -26,6 +26,22 @@ public sealed record BriefStep(BriefStepKind Kind, string Label, string Detail, 
 public static class BriefSteps
 {
     /// <summary>
+    /// How far the running order's articles are written, as Today's strip and the running order's foot both say it: "No
+    /// articles yet", "2 of 3 need work" (a check blocks them), or "2 of 3 ready" (marked ready, or presented since: a draft
+    /// that passes its checks isn't ready). <c>Done</c> when every one is ready.
+    /// </summary>
+    public static (string Said, bool Done) Written(IEnumerable<BriefItem> items)
+    {
+        var articles = items.Select(i => i.Article).OfType<Article>().ToList();
+        var total = articles.Count;
+        var needWork = articles.Count(a => ArticleChecks.For(a).Any(c => c.Blocking));
+        var ready = articles.Count(a => a.Status != ArticleStatus.Draft);
+        return total == 0 ? ("No articles yet", false)
+            : needWork > 0 ? ($"{needWork} of {total} need work", false)
+            : ($"{ready} of {total} ready", ready == total);
+    }
+
+    /// <summary>
     /// The steps for <paramref name="brief"/> (its items and their articles loaded). <paramref name="newInFeed"/> is
     /// the feed's new items, or null for someone who doesn't triage; <paramref name="missingNumbers"/> the day's
     /// numbers not entered yet; <paramref name="meetsAt"/> the meeting time as people read it ("9:00 AM");
@@ -40,9 +56,7 @@ public static class BriefSteps
     {
         var articles = brief.Items.Where(i => i.Article is not null).ToList();
         var total = articles.Count;
-        var needWork = articles.Count(i => ArticleChecks.For(i.Article!).Any(c => c.Blocking));
-        // With none needing work, ready means marked ready (or presented since): not a draft that happens to pass its checks.
-        var ready = articles.Count(i => i.Article!.Status != ArticleStatus.Draft);
+        var written = Written(articles);
         var marked = brief.Status != BriefStatus.Draft;
         var met = brief.Status is BriefStatus.Presented or BriefStatus.Sent;
         var numbers = missingNumbers > 0 ? $" · {Numbers(missingNumbers)} missing" : "";
@@ -55,13 +69,8 @@ public static class BriefSteps
                 > 0 => new(BriefStepKind.Triage, "Triage", $"{newInFeed} new in the feed", StepState.Attention) { Kev = newOnKev },
                 _ => new(BriefStepKind.Triage, "Triage", "Feed clear", StepState.Done),
             },
-            (total, needWork) switch
-            {
-                (0, _) => new(BriefStepKind.Write, "Write", "No articles yet", StepState.Todo),
-                (_, > 0) => new(BriefStepKind.Write, "Write", $"{needWork} of {total} need work", marked ? StepState.Attention : StepState.Todo),
-                _ when ready < total => new(BriefStepKind.Write, "Write", $"{ready} of {total} ready", marked ? StepState.Attention : StepState.Todo),
-                _ => new(BriefStepKind.Write, "Write", $"{total} of {total} ready", StepState.Done),
-            },
+            new(BriefStepKind.Write, "Write", written.Said,
+                written.Done ? StepState.Done : total > 0 && marked ? StepState.Attention : StepState.Todo),
             marked
                 ? new(BriefStepKind.Order, "Order", "Marked ready" + numbers, missingNumbers > 0 && !met ? StepState.Attention : StepState.Done)
                 : new(BriefStepKind.Order, "Order", "Not marked ready" + numbers, StepState.Todo),

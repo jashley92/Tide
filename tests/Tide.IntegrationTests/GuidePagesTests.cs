@@ -121,7 +121,7 @@ public partial class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         {
             await using var r = await Rehearse(app, day, Person("Analyst"));
             var titles = (await Walk(r)).Select(s => s.Title).ToList();
-            titles.Should().NotContain("Going live", "Start the meeting isn't drawn once it's presented").And.NotContain("Ending the meeting");
+            titles.Should().NotContain("Going live", "Start the meeting isn't drawn once it's presented").And.NotContain("Inviting the room").And.NotContain("Ending the meeting");
             titles.Should().Contain("Who attended");
         }
         finally { await AsAnalyst(b => b.ReopenAsync(brief)); }

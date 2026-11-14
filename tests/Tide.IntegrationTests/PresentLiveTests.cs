@@ -259,7 +259,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         note.Should().Match<Tide.Domain.Entities.MeetingNote>(n => n.AuthorName == "Olive Owner" && n.ArticleId == first);
 
         await pat.Click(p => p.OnPresentKey("last"));
-        (await pat.Html()).Should().Contain("Attended (2)").And.Contain("Someone in the room");
+        (await pat.HtmlOnce("Attended (2)")).Should().Contain("Attended (2)", "who joined is listed once the record says so").And.Contain("Someone in the room");
         EndMeeting(app, day);
     }
 

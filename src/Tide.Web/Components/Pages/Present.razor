@@ -240,7 +240,7 @@ else
                     <div class="tide-slide-cover">
                         <div class="tide-slide-kicker justify-content-center">@Clock.TeamName</div>
                         <h2>Daily brief</h2>
-                        <div class="tide-cover-meta">@Ui.Day(_date) &middot; @_brief.AnalystName</div>
+                        <div class="tide-cover-meta">@Ui.Day(_date) &middot; @BriefService.PresentedBy(_brief)</div>
                         @if (edition.ShowIntro)
                         {
                             <div class="tide-slide-intro mt-2"><Md Text="@_brief.Intro" /></div>
@@ -712,9 +712,9 @@ else
                                             <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.Key)" aria-hidden="true">@MainLayout.Initials(p.Name)</span> @p.Name
                                             @if (p.Here) { <span class="tide-present-help">here</span> }
                                             @* Someone following takes off a name they added here; the presenter, anyone (joined too), from their rail. *@
-                                            @if (!Rail && p.Row is { } row && MayRemove(row))
+                                            @if (!Rail && MayRemove(p.Row))
                                             {
-                                                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                                                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(p.Row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
                                             }
                                         </li>
                                     }
@@ -1021,12 +1021,12 @@ else
                         @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0 || MeetingOver))
                         {
                             <div class="tide-present-rail-sub">Attendance</div>
-                            @foreach (var at in Attendance.Where(x => x.Row is not null))
+                            @foreach (var at in Attendance)
                             {
                                 <div class="tide-present-rail-row"><span class="tide-present-rail-grow">@at.Name</span>
-                                    @if (MayRemove(at.Row!))
+                                    @if (MayRemove(at.Row))
                                     {
-                                        <button class="btn btn-sm btn-link p-0" aria-label="Remove @at.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(at.Row!)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                                        <button class="btn btn-sm btn-link p-0" aria-label="Remove @at.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(at.Row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
                                     }
                                 </div>
                             }
@@ -2707,14 +2707,14 @@ else
 
     // Learn to present, once the rehearsal's brief is read: from its first step, on the title slide. A step about a slide
     // this brief hasn't (no numbers, nothing needing review, no article with indicators) is left out, so the count is of
-    // the steps shown and none points at nothing; so are Going live and Ending the meeting once the brief has been
-    // presented, as neither control is drawn then.
+    // the steps shown and none points at nothing; so are Going live, Inviting the room and Ending the meeting once
+    // the brief has been presented, as the meeting they lead to is over.
     private void StartGuide()
     {
         if (_guideStarted || !Rehearsing || _brief is null) return;
         _guideStarted = true;
         var learn = Guides.Find(Guides.Present, CurrentUser.Has);
-        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null && !(Presented && s.Key is "start" or "end")).ToList(),
+        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null && !(Presented && s.Key is "start" or "invite" or "end")).ToList(),
             ForTheDay ? Guides.Find(Guides.Day, CurrentUser.Has)?.Title + " · Presenting" : learn?.Title);
         GuideTo(0);
     }
@@ -3536,19 +3536,19 @@ else
 
     // --- attendance and notes -------------------------------------------------------------------------------------
 
-    /// <summary>Someone at the meeting: in the record (<see cref="Row"/>), here now, or both.</summary>
-    private sealed record Attendee(string Key, string Name, bool Here, MeetingAttendee? Row);
+    /// <summary>Someone who attended, as the record has them (<see cref="Row"/>), and whether they're here now.</summary>
+    private sealed record Attendee(string Key, string Name, bool Here, MeetingAttendee Row);
 
+    // Who attended is the record, on every page alike: joining records someone at once, and someone taken off it while
+    // still in the room isn't listed (nor recorded again as the meeting ends) unless they join again.
     private List<Attendee> Attendance
     {
         get
         {
-            var here = _view?.People ?? [];
-            var list = _record.Attendees
-                .Select(a => new Attendee(a.UserId.Length > 0 ? a.UserId : a.Name, a.Name, a.UserId.Length > 0 && here.Any(p => p.UserId == a.UserId), a))
-                .ToList();
-            list.AddRange(here.Where(p => _record.Attendees.All(a => a.UserId != p.UserId)).Select(p => new Attendee(p.UserId, p.Name, true, null)));
-            return list.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var here = (_view?.People ?? []).Select(p => p.UserId).ToHashSet(StringComparer.Ordinal);
+            return _record.Attendees
+                .Select(a => new Attendee(a.UserId.Length > 0 ? a.UserId : a.Name, a.Name, a.UserId.Length > 0 && here.Contains(a.UserId), a))
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
     }
 

@@ -9,7 +9,7 @@ using Tide.Domain.Enums;
 namespace Tide.Application.Briefs;
 
 /// <summary>A row on the brief list.</summary>
-public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string AnalystName, BriefStatus Status, int Articles,
+public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string PresentedBy, BriefStatus Status, int Articles,
     int Threats, DateTimeOffset? PresentedAtUtc, DateTimeOffset? DistributedAtUtc = null, DateTimeOffset? SharePointPostedAtUtc = null,
     bool SharePointRequired = false, bool Emailed = false, DateTimeOffset? NotSentAtUtc = null, string? NotSentByName = null,
     string? NotSentReason = null);
@@ -65,7 +65,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         await using var db = await dbs.CreateAsync(ct);
         var q = db.Briefs.AsNoTracking().OrderByDescending(b => b.BriefDate);
         return await (take is { } n ? q.Take(n) : q)
-            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.AnalystName, b.Status, b.Items.Count,
+            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.PresentedByName ?? b.AnalystName, b.Status, b.Items.Count,
                 b.Items.Count(i => i.Article!.Classification == Classification.Threat), b.PresentedAtUtc, b.DistributedAtUtc, b.SharePointPostedAtUtc, b.SharePointRequired,
                 db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent),
                 b.NotSentAtUtc, b.NotSentByName, b.NotSentReason))

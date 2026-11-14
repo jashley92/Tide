@@ -341,7 +341,6 @@ else
 
     private int Count(Classification c) => _brief?.Items.Count(i => i.Article?.Classification == c) ?? 0;
 
-    private int ReadyCount => Ordered().Count(i => !Blocked(i.ArticleId));
     // What "Add article (N available)" counts: articles still to be briefed, not ones already presented.
     private int Available => _candidates.Count(c => c.Available);
 
@@ -1003,7 +1002,7 @@ else
                             </button>
                             <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }
-                        @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
+                        @if (_canWrite) { <span class="small tide-muted ms-auto">@BriefSteps.Written(Ordered()).Said</span> }
                     </div>
                 </section>
                 @TeamNoteCard()

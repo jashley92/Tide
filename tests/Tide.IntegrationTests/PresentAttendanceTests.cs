@@ -200,4 +200,25 @@ public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
         await valAgain.Click(p => p.OnPresentKey("last"));
         (await valAgain.Html()).Should().NotContain(Box).And.NotContain("Remove Kim from IT");
     }
+
+    [Fact]
+    public async Task SomeoneTakenOffWhileStillInTheRoom_IsListedNowhere_AndNotRecordedAgainAtTheEnd()
+    {
+        var day = await TwoArticleBrief(app, 406, "Attendance");
+        var brief = await BriefOf(day);
+        await using var pat = await Open(app, day);
+        await using var val = await Open(app, day, Viewer);
+        await using var olive = await Open(app, day, Owner);
+        await ToWrapUp(pat, val, olive);
+        (await val.Until(p => p.AttendanceNames.Contains("Olive Owner"))).Should().BeTrue();
+
+        var row = (await Attendees(brief)).Single(a => a.Name == "Olive Owner");
+        await Do(pat, p => p.RemoveAttendee(row));
+        pat.Component.AttendanceNames.Should().NotContain("Olive Owner", "the presenter's page drops them");
+        (await val.Until(p => !p.AttendanceNames.Contains("Olive Owner"))).Should().BeTrue("a follower's wrap-up drops them too, though they're still here");
+        Meetings.Get(day)!.People.Should().Contain(p => p.Name == "Olive Owner", "still in the room");
+
+        await Do(pat, p => p.EndMeeting());
+        (await Attendees(brief)).Select(a => a.Name).Should().NotContain("Olive Owner", "the meeting's end doesn't record them again");
+    }
 }

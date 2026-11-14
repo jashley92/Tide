@@ -69,6 +69,8 @@ public class BriefProgressTests
             .Should().Be((StepState.Current, "2 of 3 ready"));
         Step(BriefSteps.For(BriefWith(BriefStatus.Ready, Ready("a"), Ready("b"), draft), 0, 0, "9:00 AM"), BriefStepKind.Write)
             .Should().Be((StepState.Attention, "2 of 3 ready"), "marked ready with a draft in it");
+        BriefSteps.Written(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b"), draft).Items).Should().Be(("2 of 3 ready", false),
+            "the running order's foot says what the strip says");
     }
 
     [Fact]
