@@ -4,12 +4,12 @@ using Tide.Domain.Entities;
 
 namespace Tide.UnitTests;
 
-/// <summary>The Our stack list's rules: which products need a look, when a check is old, and what "Right now" may name.</summary>
+/// <summary>The Our stack list's rules: which products need a look, when a check is old, and how "Right now" names its CVEs.</summary>
 public class StackAttentionTests
 {
     private static readonly DateOnly Today = new(2026, 11, 10);
     private static readonly Guid Team = Guid.NewGuid();
-    private static readonly StackNow Quiet = new([], 0, 0);
+    private static readonly StackNow Quiet = new([], 0);
 
     private static StackProduct Product(int? checkedDaysAgo = 1, bool owned = true, bool retired = false) => new()
     {
@@ -35,7 +35,6 @@ public class StackAttentionTests
         Row(Product(), Quiet with { TriageItems = null }).NeedsLook.Should().BeFalse("nor for someone who can't see triage");
 
         Row(Product(), Quiet with { Cves = [new StackCve("CVE-2026-1", null)] }).NeedsLook.Should().BeTrue("a CVE on a recent brief");
-        Row(Product(), Quiet with { CvesAbove = 1 }).NeedsLook.Should().BeTrue("a CVE that's counted and not named");
         Row(Product(), Quiet with { TriageItems = 2 }).NeedsLook.Should().BeTrue("new items in triage");
         Row(Product(checkedDaysAgo: StackService.CheckOldAfterDays + 1), Quiet).NeedsLook.Should().BeTrue("an old check");
         Row(Product(checkedDaysAgo: null), Quiet).NeedsLook.Should().BeTrue("never checked");
@@ -63,7 +62,6 @@ public class StackAttentionTests
             Row("C triage 1", Quiet with { TriageItems = 1 }),
             Row("D cve unscored", Quiet with { Cves = [Cve(null)] }),
             Row("E cve 9.8", Quiet with { Cves = [Cve(5m), Cve(9.8m)] }),
-            Row("F counted only", Quiet with { CvesAbove = 1 }),
             Row("G kev 7.5", Quiet with { Cves = [Cve(7.5m, kev: true)] }),
             Row("H no team", Quiet, owned: false),
             Row("I triage 3", Quiet with { TriageItems = 3 }),
@@ -75,7 +73,7 @@ public class StackAttentionTests
 
         StackService.MostPressingFirst(byName).Select(r => r.Product.Name).Should().Equal(
             "J kev 9.0 never checked", "G kev 7.5",                                        // on KEV, the worse score first
-            "K cve 9.8 and triage", "E cve 9.8", "D cve unscored", "F counted only",       // a CVE: worst score, then more in triage, then name
+            "K cve 9.8 and triage", "E cve 9.8", "D cve unscored",                         // a CVE: worst score, then more in triage, then name
             "I triage 3", "C triage 1",                                                    // new in triage, more first
             "A never checked", "H no team",                                                // housekeeping, by name
             "B quiet", "L quiet too", "M retired");                                        // nothing to do, by name; retired last
@@ -83,7 +81,7 @@ public class StackAttentionTests
         // Someone who can't triage has no counts, so triage plays no part in their order.
         var blind = byName.Select(r => r with { Now = r.Now with { TriageItems = null } }).ToList();
         StackService.MostPressingFirst(blind).Select(r => r.Product.Name).Should().Equal(
-            "J kev 9.0 never checked", "G kev 7.5", "E cve 9.8", "K cve 9.8 and triage", "D cve unscored", "F counted only",
+            "J kev 9.0 never checked", "G kev 7.5", "E cve 9.8", "K cve 9.8 and triage", "D cve unscored",
             "A never checked", "H no team", "B quiet", "C triage 1", "I triage 3", "L quiet too", "M retired");
     }
 
@@ -96,34 +94,16 @@ public class StackAttentionTests
 
         var now = StackService.RightNow(
         [
-            new("CVE-2026-0001", false, null), new("CVE-2026-0002", false, critical), new("CVE-2026-0003", false, kev),
-            new("CVE-2026-0004", false, likely), new("CVE-2026-0003", false, kev),
+            new("CVE-2026-0001", null), new("CVE-2026-0002", critical), new("CVE-2026-0003", kev),
+            new("CVE-2026-0004", likely), new("CVE-2026-0003", kev),
         ], triageItems: 3);
 
         now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0003", "CVE-2026-0004", "CVE-2026-0002", "CVE-2026-0001"],
             "on KEV first, then by CVSS, then by EPSS; one not enriched yet last");
         now.Cves[0].Record.Should().BeSameAs(kev);
-        (now.CvesAbove, now.TriageItems, now.Any).Should().Be((0, 3, true));
+        (now.TriageItems, now.Any).Should().Be((3, true));
         StackService.RightNow([], 0).Any.Should().BeFalse();
         StackService.RightNow([], null).Any.Should().BeFalse();
-    }
-
-    [Fact]
-    public void RightNow_CountsButNeverNamesACve_ThatComesOnlyFromAnArticleAboveTheCeiling()
-    {
-        var hidden = new CveRecord { CveId = "CVE-2026-0666", CvssScore = 10m, IsKev = true };
-        var both = new CveRecord { CveId = "CVE-2026-0002", CvssScore = 8m };
-
-        var now = StackService.RightNow(
-        [
-            new("CVE-2026-0666", true, hidden), new("CVE-2026-0666", true, hidden),   // two articles, both above the ceiling
-            new("CVE-2026-0002", true, both), new("CVE-2026-0002", false, both),      // one above it, one not: named
-        ], triageItems: null);
-
-        now.Cves.Select(c => c.Id).Should().Equal("CVE-2026-0002");
-        now.Cves.Should().NotContain(c => c.Record == hidden, "nothing about it is kept: not its id, score or KEV listing");
-        now.CvesAbove.Should().Be(1);
-        now.Any.Should().BeTrue();
     }
 
     [Fact]

@@ -494,7 +494,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public MetricsService Metrics() => new(this, User, meetings: Live);
 
-    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Settings(), Live);
+    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Live);
 
     public MetricImportService MetricImports(OrgClock? clock = null) => new(this, User, clock ?? Clock, TimeProvider.System);
 

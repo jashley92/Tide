@@ -583,7 +583,15 @@ public class SendFromTodayRealSendTests(TideApp app) : IClassFixture<TideApp>
             var html = await r.Html();
             html.Should().Contain("Sent to 2 recipients.").And.Contain("Already sent", "the team edition's confirmation now says it went");
             r.Component.Ticked(Edition.Team).Should().BeFalse("a send clears the tick");
-            TeamSend(html).Should().Contain(held);
+
+            // The edition that went offers neither its tick nor its send: the company-wide edition is the one ready to go,
+            // and sending the team edition again is a choice of its own, under its warning.
+            TeamSend(html).Should().NotContain("id=\"send-team-checked\"").And.NotContain("Send to 2</button>").And.Contain("id=\"send-team-again\"");
+            html.Should().Contain("id=\"send-public-checked\"").And.NotContain("id=\"send-public-again\"");
+            await r.Click(d => { d.SendAgain(Edition.Team); return Task.CompletedTask; });
+            var again = TeamSend(await r.Html());
+            again.Should().Contain("Already sent").And.Contain("Everyone on the list gets it again").And.Contain("id=\"send-team-checked\"")
+                .And.Contain(held, "chosen, it still waits for its tick").And.NotContain("id=\"send-team-again\"");
         }
 
         var page = await app.CreateClient().GetStringAsync($"/briefs/{today:yyyy-MM-dd}");

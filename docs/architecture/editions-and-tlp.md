@@ -234,8 +234,10 @@ CSV row its article's TLP, and the file name carries the ceiling (`tide-brief-20
 
 A ceiling governs what leaves the app, not what people see in it. Signed in, an Analyst, an Action owner or a Viewer
 (all `ReadTeamEdition`) sees articles, and the actions raised from them, at every marking: the article pages, search,
-the actions pages, History (analysts only) and reports don't filter by TLP. The team edition's ceiling applies to the
-edition as it's sent, previewed and presented, to API tokens and to webhooks.
+the actions pages, Today (its brief and "Recently presented"), Our stack (a product's page and context rail, the
+article editor's product card, and the list's "Right now" CVEs), History (analysts only) and reports don't filter by
+TLP. The team edition's ceiling applies to the edition as it's sent, previewed and presented, to API tokens and to
+webhooks. Readers and Visitors read none of those pages.
 
 That's deliberate (an owner decision on 2026-11-03): anyone mapped to the Action owner role is trusted with RED inside
 TIDE, so map only the teams that should be.
@@ -244,16 +246,11 @@ Two internal emails go to named people and are marked rather than cut: the remin
 digests) list action titles with each article's TLP beside it and the highest in the subject
 (`ReminderService.MarkingOf`).
 
-### The Our stack exception
-
-Our stack is the exception inside the app. A product's page (`StackService.GetAsync`) and present mode's product card
-(`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and count the rest ("2
-articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
-Actions are not held back: an action raised from an article above the ceiling is named on the product's page, the
-list's Open actions and the context rail, as the Actions list and the action page name it (owner decision 2026-11-11).
-The list's "Right now" column (`StackService.OverviewAsync`, `RightNow`) names a CVE only when an article at or below
-the ceiling carries it; one seen only above it is counted ("1 CVE above TLP:AMBER+STRICT") and its id, scores and KEV
-listing are not kept.
+Our stack follows the same rule (owner decision 2026-11-13; it used to name only the articles within the team ceiling
+and count the rest). Its pages (`StackService.GetAsync`, `DetailsAsync`, `OverviewAsync`) name every article and every
+CVE on one, as they name every action (owner decision 2026-11-11). Present mode's product card
+(`StackService.CardAsync`) is on the meeting's screen, which Visitors may share, so it stays held to the team edition's
+ceiling, as the slides are.
 
 ## Readiness checks
 
@@ -298,7 +295,7 @@ lists only the rows that aren't whole or carry a warning (`EditionChecks.Excepti
 | Webhooks hold to the team ceiling | `ApiTests.Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach holds to the template's ceiling | `tests/Tide.UnitTests/OutreachFillTests.cs` `AnArticleAboveTheCeiling_IsLeftOutWhole_IndicatorsWithIt_AndSaidSo`, `APartAboveTheCeiling_IsLeftOutAlone_ByItsOwnTlp_AsTheEditionsCutIt` |
 | Exports leave out articles above the ceiling | `tests/Tide.IntegrationTests/ExportTests.cs` `Brief_InRunningOrder_LeavesOutArticlesAboveTheCeiling` |
-| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest_ButNamesEveryAction`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling`; `StackAttentionTests.RightNow_CountsButNeverNamesACve_ThatComesOnlyFromAnArticleAboveTheCeiling` |
+| Present mode's product card names only articles within the team ceiling | `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `CommentsAndStackDecisionServiceTests.AProductsPage_NamesEveryArticleAndAction_ToTheTeamEditionsReaders_AndNoneToAReader` |
 | An undefined TLP is never stored | `ArticleAndBriefTests.Save_AnUndefinedTlp_IsRefused_NotStoredBelowEveryCeiling`; `DistributionTests.Ceilings_AnUndefinedTlp_IsRefused` |
 | The "why it matters" default | `tests/Tide.UnitTests/WhyItMattersDefaultTests.cs`; `IntakeTests.Promote_AsAThreat_StartsWhyItMattersAtAmber_OrTheArticlesTlp_AndInformationalKeepsClear` |
 
