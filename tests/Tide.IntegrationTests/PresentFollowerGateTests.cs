@@ -46,7 +46,7 @@ public class PresentFollowerGateTests(TideApp app) : IClassFixture<TideApp>
         await articles.SaveAsync(form);
         await briefs.AddArticleAsync(brief.Id, id);
         var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-        var number = await actions.QuickAddAsync(id, $"Gate action {daysBack}", ActionKind.IocSweep, team, null, day);
+        var number = (await actions.QuickAddAsync(id, $"Gate action {daysBack}", ActionKind.IocSweep, team, null, day)).Number;
         var a = (await actions.GetAsync(number))!.Action;
         await actions.AssignAsync(a.Id, null, null);
         a = (await actions.GetAsync(number))!.Action;

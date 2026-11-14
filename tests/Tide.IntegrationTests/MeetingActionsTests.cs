@@ -80,7 +80,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
             var team = await teams.AddAsync("Recommended lines team", null, null);
             await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
-            number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
+            number = (await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2")).Number;
             var made = (await actions.GetAsync(number))!.Action;
             made.Priority.Should().Be(Priority.P1, "the article's priority");
             (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting, on its team, holds it");
@@ -105,8 +105,8 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Take on the slide team", null, null);
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
-                .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2")).Number;
         }
         var take = $"aria-label=\"Take A-{number}\"";
 

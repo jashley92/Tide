@@ -706,7 +706,7 @@ else
                                             <li>
                                                 <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.Key)" aria-hidden="true">@MainLayout.Initials(p.Name)</span> @p.Name
                                                 @if (p.Here) { <span class="tide-present-help">here</span> }
-                                                @* Someone following takes off a name they added here; the presenter, any, from their rail. *@
+                                                @* Someone following takes off a name they added here; the presenter, anyone (joined too), from their rail. *@
                                                 @if (!Rail && p.Row is { } row && MayRemove(row))
                                                 {
                                                     <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
@@ -1252,6 +1252,7 @@ else
         _valid = Ui.TryParseDay(day, out var date);
         if (!_valid) { _loaded = true; return; }
         _date = date;
+        WatchDay();
         // A rehearsal asked for by someone who can't present, or of a day other than today's brief: refused before anything is
         // read or joined.
         if (RehearsalAsked && (!CanRehearse || !OfToday)) { _loaded = true; return; }
@@ -1419,8 +1420,21 @@ else
     internal async Task GoLive()
     {
         _interactive = true;
+        WatchDay();
         if (_visitor) await LoadDay();
         else await JoinIfLive();
+    }
+
+    // The live page says which day it's open on, so its circuit, back from a dropped connection, hears of that day's
+    // meeting (LiveMeetings.Watch) and joins it; a prerendered page says nothing.
+    private IDisposable? _watch;
+    private DateOnly? _watchedDay;
+
+    private void WatchDay()
+    {
+        if (!_interactive || _watchedDay == _date) return;
+        _watch?.Dispose();
+        (_watch, _watchedDay) = (Meetings.Watch(_date, Circuit.CircuitId), _date);
     }
 
     private string Elapsed => $"{(int)(DateTimeOffset.UtcNow - (_view?.StartedAtUtc ?? _startedAt)).TotalMinutes} min";
@@ -1863,9 +1877,10 @@ else
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
         if (!InCharge) return;
-        var number = 0;
+        var added = default(ActionService.QuickAdded);
+        var team = _qaTeam;
         if (!await _overLimit.RunAsync(async reason =>
-                number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason)))
+                added = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, team, _qaDue, RaisedFor, reason)))
         {
             _focusQuickAdd = true;   // the over-limit question cancelled: back to Add, which was disabled while it asked
             return;
@@ -1875,8 +1890,14 @@ else
         _qaChipOpen = false;
         _qaDue = null;
         await LoadActions();
-        Toasts.Show($"{Ui.ActionLabel(number)} added and assigned to you.");
+        Toasts.Show(AddedSaid(added, "added", team));
     });
+
+    // What a quick add or a raise did, as the service says: given to whoever raised it, or left with its team, whose
+    // member they aren't.
+    private string AddedSaid(ActionService.QuickAdded added, string verb, Guid team) =>
+        $"{Ui.ActionLabel(added.Number)} {verb} and "
+        + (added.Yours ? "assigned to you." : $"left with {_teams.FirstOrDefault(t => t.Id == team)?.Name ?? "its team"} to assign: you're not on it.");
 
     // --- the recommended lines, raised one at a time ------------------------------------------------------------
 
@@ -1931,11 +1952,11 @@ else
         _raising = true;
         try
         {
-            var number = 0;
+            var added = default(ActionService.QuickAdded);
             if (!await _overLimit.RunAsync(async reason =>
-                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason, recommendation: line))) return;
+                    added = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason, recommendation: line))) return;
             await LoadActions();
-            Toasts.Show($"{Ui.ActionLabel(number)} raised and assigned to you.");
+            Toasts.Show(AddedSaid(added, "raised", draft.Team));
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _raising = false; }
@@ -3541,7 +3562,7 @@ else
     /// <summary>Who the wrap-up lists as attending, by name.</summary>
     internal IReadOnlyList<string> AttendanceNames => Attendance.Select(a => a.Name).ToList();
 
-    // Whoever added a name, or the presenter: MeetingService checks again as it saves.
+    // The presenter, anyone; a follower, a name they added: MeetingService checks again as it saves.
     internal Task RemoveAttendee(MeetingAttendee row) => Run(async () =>
     {
         if (!MayRemove(row)) return;
@@ -3609,6 +3630,7 @@ else
         Meetings.Scrolled -= OnMeetingScrolled;
         Clock.Changed -= OnOrgChanged;
         LeaveMeeting();
+        _watch?.Dispose();
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();
         await JS.StopAsync("tidePresent.stop");

@@ -66,9 +66,9 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
         var brief = await briefs.GetOrStartAsync(day);
         foreach (var id in new[] { first, second, red }) await briefs.AddArticleAsync(brief.Id, id);
 
-        var held = await actions.QuickAddAsync(first, "Patch the gateways tonight", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch both gateways");
+        var held = (await actions.QuickAddAsync(first, "Patch the gateways tonight", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch both gateways")).Number;
         var nobodys = await actions.CreateAsync(new ActionForm { Title = "Brief the service desk", Kind = ActionKind.Awareness, TeamId = team, ArticleId = first });
-        var hidden = await actions.QuickAddAsync(red, "Rotate the secret keys", ActionKind.Other, team, null, day);
+        var hidden = (await actions.QuickAddAsync(red, "Rotate the secret keys", ActionKind.Other, team, null, day)).Number;
         return new(day, teamName, held, (await actions.GetAsync(nobodys))!.Action.Number, hidden);
     }
 

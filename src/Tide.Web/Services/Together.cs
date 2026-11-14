@@ -121,10 +121,11 @@ public sealed class Presence
 
 /// <summary>
 /// The circuit a page belongs to, so its presence can be cleared when the tab closes or drops without the page being
-/// disposed, along with a card it was dragging on the board and its seat in a live meeting. One per circuit (scoped), and the circuit's handler.
+/// disposed, along with a card it was dragging on the board, its seat in a live meeting and its claim on a first tour. One
+/// per circuit (scoped), and the circuit's handler.
 /// It also keeps the transport the circuit's connection is on, for Diagnostics' "Your connection".
 /// </summary>
-public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null, LiveMeetings? meetings = null) : CircuitHandler
+public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null, LiveMeetings? meetings = null, TourClaims? tours = null) : CircuitHandler
 {
     /// <summary>This circuit's id once it has opened; empty while prerendering.</summary>
     public string CircuitId { get; private set; } = "";
@@ -168,6 +169,7 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
     {
         presence.SetConnected(circuitId, false);
         meetings?.SetConnected(circuitId, false);
+        tours?.SetConnected(circuitId, false);
     }
 
     /// <summary>The circuit's browser is back.</summary>
@@ -175,6 +177,7 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
     {
         presence.SetConnected(circuitId, true);
         meetings?.SetConnected(circuitId, true);
+        tours?.SetConnected(circuitId, true);
     }
 
     public void Opened(string circuitId) => CircuitId = circuitId;
@@ -190,6 +193,7 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
         presence.RemoveCircuit(circuitId);
         drags?.RemoveCircuit(circuitId);
         meetings?.RemoveCircuit(circuitId);
+        tours?.RemoveCircuit(circuitId);
     }
 }
 

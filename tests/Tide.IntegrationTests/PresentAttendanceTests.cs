@@ -14,7 +14,8 @@ namespace Tide.IntegrationTests;
 
 /// <summary>
 /// Who attended, as everyone in the meeting adds to it: the presenter from their rail, anyone else on the team edition
-/// following from the wrap-up slide (never a Visitor), each taking off only the names they added, the presenter any.
+/// following from the wrap-up slide (never a Visitor), each taking off only the names they added, the presenter anyone,
+/// joined or added.
 /// Every page in the meeting sees the list change at once.
 /// </summary>
 public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
@@ -72,6 +73,9 @@ public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
         (await pat.HtmlOnce("Sam from the SOC")).Should().Contain("aria-label=\"Remove Sam from the SOC\"", "the presenter takes off anyone added");
         (await olive.HtmlOnce("Sam from the SOC")).Should().NotContain("Remove Sam from the SOC", "only whoever added it, or the presenter");
         (await vic.HtmlOnce("Sam from the SOC")).Should().NotContain("Remove Sam from the SOC");
+        // Someone who joined: the presenter can take them off (a mistaken join); a follower can't.
+        (await pat.Html()).Should().Contain("aria-label=\"Remove Olive Owner\"", "the presenter takes off anyone, joined too");
+        (await val.Html()).Should().NotContain("Remove Olive Owner", "a follower takes off only whom they added");
 
         // Olive's, forged, takes off nothing (the service refuses it too: MeetingServiceTests).
         var sam = (await Attendees(brief)).Single(a => a.Name == "Sam from the SOC");

@@ -659,7 +659,7 @@ up are in the top bar, for everyone: the presence dots, a count ("3 here · all 
 hands in order. People raise and lower their own hand there, and take notes (each person's own, against the article on
 screen as they began it). Attendance is recorded as people join. Anyone in the meeting on the team edition can add
 people who were there, from the box under *Attended* on the wrap-up (the presenter, from their rail), and take off
-whoever they added; the presenter can take off anyone added. With no meeting live, before or after it, whoever can
+whoever they added; the presenter can take off anyone, joined or added. With no meeting live, before or after it, whoever can
 present corrects the list from the rail. The brief's page keeps who attended and the notes, by article.
 
 

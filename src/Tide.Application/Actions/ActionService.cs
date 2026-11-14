@@ -1457,6 +1457,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }
     }
 
+    /// <summary>A quick action's number, and whether it went to whoever raised it (<see langword="false"/>: they aren't on
+    /// its team, so it's the team's to give out).</summary>
+    public readonly record struct QuickAdded(int Number, bool Yours);
+
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
     /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it when they're on the team (an analyst who
@@ -1465,7 +1469,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
-    public async Task<int> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
+    public async Task<QuickAdded> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
         string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
@@ -1479,7 +1483,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             member = team?.Member == true;
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
         }
-        return await CreateAsync(new ActionForm
+        var number = await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
             RaisedOn = raisedOn, OverLimitReason = overLimitReason, RecommendationLine = recommendation,
@@ -1487,6 +1491,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             // they can hand it on. Otherwise it's the team's, as a holder is always one of its members.
             AssigneeId = member ? user.UserId : null,
         }, ct);
+        return new QuickAdded(number, member);
     }
 
     /// <summary>
@@ -1605,11 +1610,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
-        var external = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct);
-        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external, OnTeam: true)))
-            throw new StaleEditException(external
+        var team = await db.Teams.Where(t => t.Id == a.TeamId)
+            .Select(t => new { t.IsExternal, t.Name, Member = t.Members.Any(m => m.UserId == user.UserId) }).FirstAsync(ct);
+        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, team.IsExternal, OnTeam: true)))
+            throw new StaleEditException(team.IsExternal
                 ? $"A-{a.Number} is with an external team now, so nobody here takes it on."
                 : $"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
+        // A holder is one of the team's members: an analyst who isn't on it, or someone whose team handed it on, is told
+        // so. Whoever holds it already (from before the rule) keeps it.
+        if (!team.Member && a.AssigneeId != user.UserId)
+            throw new StaleEditException($"You're not on {team.Name}, so you can't take A-{a.Number} on.");
         // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
         if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
             throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");

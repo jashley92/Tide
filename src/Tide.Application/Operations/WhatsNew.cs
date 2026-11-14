@@ -177,6 +177,11 @@ public sealed class ReleaseNotesCatalog
         return seen is null ? due.Take(1).ToList() : due;
     }
 
+    /// <summary>Whether any release up to <paramref name="current"/> has highlights for <paramref name="groups"/>: whether
+    /// <see cref="Due"/> could list anything for them, whatever they've seen.</summary>
+    public bool AnyFor(ReleaseVersion current, IReadOnlyCollection<RoleGroup> groups) =>
+        Releases.Any(r => r.Version <= current && r.Highlights is { } h && h.For(groups).Count > 0);
+
     /// <summary>The release this build is: the version it was released as, or, for a development build, the newest
     /// with notes (so what's new can be tried before a release).</summary>
     public ReleaseVersion? Running(ReleaseVersion? built) => built ?? Newest;
@@ -203,7 +208,7 @@ public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abs
     {
         var groups = Groups;
         // No highlights built in for this person's groups (a Reader, a Visitor): no need to ask what they've seen.
-        if (Running is not { } running || catalog.Due(running, null, groups).Count == 0) return [];
+        if (Running is not { } running || !catalog.AnyFor(running, groups)) return [];
         var seen = ReleaseVersion.Parse(await prefs.GetAsync(Preferences.UserPreferences.WhatsNewSeen, ct));
         return catalog.Due(running, seen, groups);
     }

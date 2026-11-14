@@ -49,7 +49,7 @@ public class PresentActionBesideTests(TideApp app) : IClassFixture<TideApp>
         var brief = await briefs.GetOrStartAsync(day);
         var first = await articles.CreateAsync($"Beside article {daysBack}", "Vendor", null, TlpLevel.Clear);
         await briefs.AddArticleAsync(brief.Id, first);
-        var number = await actions.QuickAddAsync(first, $"Sweep beside {daysBack}", ActionKind.IocSweep, team, null, day);
+        var number = (await actions.QuickAddAsync(first, $"Sweep beside {daysBack}", ActionKind.IocSweep, team, null, day)).Number;
         var red = await articles.CreateAsync($"Red article {daysBack}", "Vendor", null, TlpLevel.Red);
         var above = await actions.CreateAsync(new ActionForm
         {
