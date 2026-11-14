@@ -12,7 +12,7 @@
 // foot, one Tab from the selected row (hop, below).
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0, room = null, tellRoom = null, narrow = null;
+    let started = 0, room = null, tellRoom = null;
 
     // While the promote form is open, only Esc is the page's.
     function held(e) {
@@ -39,8 +39,7 @@ window.tideTriage = (function () {
         // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
         // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
         if (e.key === 'Escape' || action === 'read') {
-            const pane = document.querySelector('.tide-reading');
-            const shown = !!pane && pane.getClientRects().length > 0;
+            const shown = !!shownPane();
             if (e.key === 'Escape' && shown) return 'close-reading';
             if (action === 'read' && shown) return 'toggle-reading';
         }
@@ -56,12 +55,19 @@ window.tideTriage = (function () {
         if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
     }
 
-    // On a narrow window the pane sits over the list (app.css), so the row kept in view after V can leave it above the
-    // window: once V has opened or read into it, its head is brought into view (focus stays on the row, for J and K).
-    function showPane(actions) {
-        if (!narrow || !narrow.matches || !actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
+    // The reading pane, when it's shown (one open by itself is hidden on a narrow window); null otherwise.
+    function shownPane() {
         const pane = document.querySelector('.tide-reading');
-        if (pane && pane.getClientRects().length > 0) pane.scrollIntoView({ block: 'start' });
+        return pane && pane.getClientRects().length > 0 ? pane : null;
+    }
+
+    // Where the pane sits over the list (a narrow window), the row kept in view after V can leave the pane's head above
+    // the window, under the top bar: once V has opened or read into it, its head is brought into view (focus stays on
+    // the row, for J and K). Beside the list, it's in view already and nothing moves.
+    function showPane(actions) {
+        if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
+        const pane = shownPane(), bar = document.querySelector('.top-row');
+        if (pane && pane.getBoundingClientRect().top < (bar ? bar.getBoundingClientRect().bottom : 0)) pane.scrollIntoView({ block: 'start' });
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
@@ -122,7 +128,6 @@ window.tideTriage = (function () {
             tellRoom = function () { dotnetRef.invokeMethodAsync('OnReadingRoom', room.matches).catch(function () { }); };
             room.addEventListener('change', tellRoom);
             tellRoom();
-            narrow = window.matchMedia('(max-width: 1000px)');
             document.addEventListener('keydown', hop);
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
@@ -133,7 +138,7 @@ window.tideTriage = (function () {
         },
         stop: function () {
             if (room) room.removeEventListener('change', tellRoom);
-            room = tellRoom = narrow = null;
+            room = tellRoom = null;
             document.removeEventListener('keydown', hop);
             rows.stop(started);
         }

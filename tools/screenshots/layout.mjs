@@ -2863,10 +2863,7 @@ const paneOverList = holds('the reading pane over the list, as wide as it', () =
 /** Setup: the selection moved a dozen rows down the list with J, then V. */
 async function vFarDown(page) {
   await page.locator('.tide-triage-row.selected').focus();
-  for (let i = 0; i < 12; i++) {
-    await page.keyboard.press('j');
-    await idle(page);
-  }
+  for (let i = 0; i < 12; i++) await pressJ(page);
   await pressV(1)(page);
 }
 

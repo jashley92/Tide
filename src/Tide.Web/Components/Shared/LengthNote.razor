@@ -4,16 +4,13 @@
    to save, and that it was cut too when it reached the cap. Quiet until it's worth reading; the status region
    announces only the limit reached or passed, not each keystroke. *@
 
-@{
-    var length = Value?.Length ?? 0;
-    var cap = Cap > 0 ? Cap : Max;
-    var cut = length == cap;   // the box took all it takes: a longer paste stopped there
-    var said = length > Max
-        ? cut ? $": too long to save, and anything past {cap:N0} characters was cut. Shorten it to {Max:N0} or fewer." : $": too long to save. Shorten it to {Max:N0} or fewer."
-        : cut ? ": anything longer was cut." : "";
-}
+@{ var length = Value?.Length ?? 0; }
 @if (length >= Max * 9 / 10)
 {
+    var cap = Cap > 0 ? Cap : Max;
+    var cut = length == cap;   // the box took all it takes: a longer paste stopped there
+    var said = length > Max ? $": too long to save{(cut ? $", and anything past {cap:N0} characters was cut" : "")}. Shorten it to {Max:N0} or fewer."
+        : cut ? ": anything longer was cut." : "";
     <div class="form-text @(length > Max ? "text-danger" : null)">
         @length.ToString("N0") of @Max.ToString("N0") characters<span role="status">@said</span>
     </div>
