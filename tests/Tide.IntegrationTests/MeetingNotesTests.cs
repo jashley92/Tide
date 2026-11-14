@@ -80,6 +80,18 @@ public class MeetingNotesTests(TideApp app) : IClassFixture<TideApp>
         (await app.CreateClient().GetStringAsync(Ui.BriefUrl(day))).Should().NotContain("Attended</h3>").And.NotContain("Early Bird");
     }
 
+    // A past day's brief given to someone other than the rotation's analyst: who presented it once that's recorded (whoever
+    // ran its live meeting, else the analyst it names); before then, only whom it names.
+    [Fact]
+    public void ADayOffTheRota_SaysWhoPresented_OnlyOnceItWasPresented()
+    {
+        var brief = new Brief { AnalystName = "Dev Analyst", Status = BriefStatus.Ready };
+        BriefService.OffTheRota("Robin", brief).Should().Be("The brief rotation has Robin for this day, but the brief names Dev Analyst to present it.");
+        brief.Status = BriefStatus.Presented;
+        brief.PresentedByName = "Sam";
+        BriefService.OffTheRota("Robin", brief).Should().Be("The brief rotation has Robin for this day, but Sam presented it.");
+    }
+
     [Theory]
     [InlineData(BriefStatus.Draft, false, false)]
     [InlineData(BriefStatus.Ready, false, false)]

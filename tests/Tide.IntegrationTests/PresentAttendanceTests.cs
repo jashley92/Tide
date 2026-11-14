@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Briefs;
@@ -137,6 +138,30 @@ public class PresentAttendanceTests(TideApp app) : IClassFixture<TideApp>
         var sam = (await Attendees(brief)).Single(a => a.Name == "Sam from the SOC");
         await Do(pat, p => p.RemoveAttendee(sam));
         (await Attendees(brief)).Select(a => a.Name).Should().Equal("Sam from the SOC");
+    }
+
+    // Recorded before today's meeting has been held (an older version let one start ahead of its day): until it's held or
+    // live, nobody has attended it, on the wrap-up, the presenter's rail or a rehearsal.
+    [Fact]
+    public async Task BeforeTodaysMeetingIsHeld_NobodyIsListedAsAttending()
+    {
+        var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        await TwoArticleBrief(app, 0, "Attendance early");
+        var brief = await BriefOf(day);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<MeetingService>().AddAttendeeAsync(brief, "Early Name");
+        await using var pat = await Open(app, day);
+        await pat.Click(p => p.OnPresentKey("last"));
+        (await pat.Html()).Should().NotContain("Early Name").And.NotContain("Attended (1)");
+        await using var rehearsal = await Rehearse(app, day, SignIn.Analyst);
+        await rehearsal.Click(p => p.OnPresentKey("last"));
+        (await rehearsal.Html()).Should().NotContain("Early Name").And.Contain("Attended (0)");
+
+        // Today's brief is the rehearsal test's too: the name goes again.
+        await using var tidy = app.Services.CreateAsyncScope();
+        await using var db = await tidy.ServiceProvider.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
+        db.MeetingAttendees.Remove(await db.MeetingAttendees.SingleAsync(a => a.BriefId == brief && a.Name == "Early Name"));
+        await db.SaveChangesAsync();
     }
 
     [Fact]

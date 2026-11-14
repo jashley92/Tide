@@ -114,6 +114,8 @@ public class RotaLockTests : IDisposable
         await r.SetWeekAsync(past, Sam);
         var early = (await _db.Briefs().GetOrStartAsync(_week)).Id;
         var ran = (await _db.Briefs().GetOrStartAsync(past)).Id;
+        // A past day's whose only join was ahead of its day (MeetingService.JoinedBefore): its meeting never ran.
+        var neverRan = (await _db.Briefs().GetOrStartAsync(past.AddDays(1))).Id;
         await using (var ctx = _db.Context())
         {
             foreach (var id in new[] { early, ran })
@@ -121,6 +123,7 @@ public class RotaLockTests : IDisposable
                 ctx.MeetingAttendees.Add(new MeetingAttendee { BriefId = id, UserId = Sam, Name = "Sam", JoinedAtUtc = DateTimeOffset.UtcNow });
                 ctx.MeetingNotes.Add(new MeetingNote { BriefId = id, AuthorId = Sam, AuthorName = "Sam", AtUtc = DateTimeOffset.UtcNow, Text = "Started early" });
             }
+            ctx.MeetingAttendees.Add(new MeetingAttendee { BriefId = neverRan, UserId = Sam, Name = "Sam", JoinedAtUtc = _db.Clock.MeetingStart(past).AddDays(-2) });
             await ctx.SaveChangesAsync();
         }
 

@@ -134,7 +134,7 @@ else
                 @if (_rotaDay is { AnalystId: { } rotaId } && _brief is not null && rotaId != _brief.AnalystId)
                 {
                     <div class="mt-1">
-                        The brief rotation has @_rotaDay.AnalystName for this day, but @_brief.AnalystName presented it.
+                        @BriefService.OffTheRota(_rotaDay.AnalystName, _brief)
                         @if (_canWrite && (CurrentUser.UserId == rotaId || CurrentUser.UserId == _brief.AnalystId || CurrentUser.Has(Permission.Administer)))
                         {
                             <button class="btn btn-sm btn-outline-secondary ms-1" disabled="@_busy" @onclick="RecordCover">Record @_brief.AnalystName as cover</button>
@@ -1109,10 +1109,8 @@ else
         </section>
     };
 
-    // Who attended is said once the meeting has been held, while it runs, or once its day has gone (a meeting that ran and
-    // was never ended, as after a restart, still had who it had). Rows from a meeting started before the brief's day and
-    // never ended (an older version allowed the start) aren't attendance at a meeting that hasn't happened.
-    private bool AttendanceShown => _brief is { } b && (_past || BriefService.MeetingHeld(b) || Meetings.IsLive(b.Id));
+    // Who attended, said once the meeting has been held, while it runs, or once its day has gone.
+    private bool AttendanceShown => _brief is { } b && BriefService.AttendanceShown(b, _past, Meetings.IsLive(b.Id));
 
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>

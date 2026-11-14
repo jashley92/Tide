@@ -654,7 +654,10 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var ids = briefs.Where(b => !held.Contains(b.Id) && b.BriefDate < today).Select(b => b.Id).ToList();
         if (ids.Count > 0)
         {
-            held.UnionWith(await db.MeetingAttendees.Where(a => ids.Contains(a.BriefId)).Select(a => a.BriefId).Distinct().ToListAsync(ct));
+            // Not someone who joined only a meeting started ahead of its day (MeetingService.JoinedBefore).
+            var days = briefs.ToDictionary(b => b.Id, b => b.BriefDate);
+            held.UnionWith((await db.MeetingAttendees.Where(a => ids.Contains(a.BriefId)).Select(a => new { a.BriefId, a.JoinedAtUtc }).ToListAsync(ct))
+                .Where(a => !MeetingService.JoinedBefore(clock, a.JoinedAtUtc, days[a.BriefId])).Select(a => a.BriefId));
             held.UnionWith(await db.MeetingNotes.Where(n => ids.Contains(n.BriefId)).Select(n => n.BriefId).Distinct().ToListAsync(ct));
         }
         // The audit interceptor writes a Guid key in the "D" format.
