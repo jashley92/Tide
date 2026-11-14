@@ -237,7 +237,7 @@ public class OwnerDecisionsRotationTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task TheRotaMoving_KeepsAHeldMeetingsPresenter_AttendeesNotesOrItsTimesInTheTrail()
+    public async Task TheRotaMoving_KeepsAHeldMeetingsPresenter_ItsOldNotesOrItsTimesInTheTrail_NotAttendanceAheadOfItsDay()
     {
         var r = _db.Rotation();
         await r.AddMemberAsync(Me, "Test Analyst");
@@ -269,7 +269,10 @@ public class OwnerDecisionsRotationTests : IDisposable
 
         await r.SetWeekAsync(_week1, Robin);
 
-        foreach (var d in days.Take(4)) (await _db.Briefs().GetAsync(d))!.AnalystName.Should().Be("Sam", $"the meeting of {d} was held");
+        // Someone attending, or a note, on a day still to come isn't a meeting held: an older version let a meeting start
+        // before its day (RotaLockTests has a past day's, which is).
+        foreach (var d in days.Take(2)) (await _db.Briefs().GetAsync(d))!.AnalystName.Should().Be("Robin", $"the meeting of {d} hasn't been held");
+        foreach (var d in days.Skip(2).Take(2)) (await _db.Briefs().GetAsync(d))!.AnalystName.Should().Be("Sam", $"the meeting of {d} was held");
         (await _db.Briefs().GetAsync(days[4]))!.AnalystName.Should().Be("Robin", "no meeting was held, so it follows the rota");
     }
 }

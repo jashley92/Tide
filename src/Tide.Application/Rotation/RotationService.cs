@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
+using Tide.Application.Briefs;
 using Tide.Application.Distribution;
 using Tide.Application.Org;
 using Tide.Application.Preferences;
@@ -638,22 +639,26 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         return brief is not null && (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
     }
 
-    // The briefs among these whose meeting was held: presented or sent, or held though Back to ready
+    // The briefs among these whose meeting was held (BriefService.MeetingHeld), or held though Back to ready
     // (BriefService.ReopenAsync) took them back to Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen
-    // keeps says so: anyone recorded as attending, a meeting note (or the notes kept on the brief before they were per
-    // person), and, for a meeting ended with neither, the times in the brief's audit trail. A discussed tick isn't a
-    // sign: it can be set before the meeting.
-    private static async Task<HashSet<Guid>> HeldAsync(IAppDbContext db, IReadOnlyCollection<Brief> briefs, CancellationToken ct)
+    // keeps says so: the times in the brief's audit trail, the notes kept on the brief before they were per person; and,
+    // for a past day, anyone recorded as attending or a meeting note, as its brief page says who attended once its
+    // day has gone. Not today's or a later day's: an older version let a meeting start before its day and refused to end
+    // it, leaving those on a brief whose meeting hadn't been held. A discussed tick isn't a sign: it can be set before
+    // the meeting.
+    private async Task<HashSet<Guid>> HeldAsync(IAppDbContext db, IReadOnlyCollection<Brief> briefs, CancellationToken ct)
     {
-        var held = briefs.Where(b => b.Status is BriefStatus.Presented or BriefStatus.Sent
-                                     || b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
+        var today = clock.Today;
+        var held = briefs.Where(b => BriefService.MeetingHeld(b) || !string.IsNullOrWhiteSpace(b.MeetingNotes))
             .Select(b => b.Id).ToHashSet();
-        var ids = briefs.Select(b => b.Id).Where(id => !held.Contains(id)).ToList();
-        if (ids.Count == 0) return held;
-        held.UnionWith(await db.MeetingAttendees.Where(a => ids.Contains(a.BriefId)).Select(a => a.BriefId).Distinct().ToListAsync(ct));
-        held.UnionWith(await db.MeetingNotes.Where(n => ids.Contains(n.BriefId)).Select(n => n.BriefId).Distinct().ToListAsync(ct));
+        var ids = briefs.Where(b => !held.Contains(b.Id) && b.BriefDate < today).Select(b => b.Id).ToList();
+        if (ids.Count > 0)
+        {
+            held.UnionWith(await db.MeetingAttendees.Where(a => ids.Contains(a.BriefId)).Select(a => a.BriefId).Distinct().ToListAsync(ct));
+            held.UnionWith(await db.MeetingNotes.Where(n => ids.Contains(n.BriefId)).Select(n => n.BriefId).Distinct().ToListAsync(ct));
+        }
         // The audit interceptor writes a Guid key in the "D" format.
-        var keys = ids.Where(id => !held.Contains(id)).ToDictionary(id => id.ToString("D"));
+        var keys = briefs.Select(b => b.Id).Where(id => !held.Contains(id)).ToDictionary(id => id.ToString("D"));
         if (keys.Count == 0) return held;
         const string ended = "\"" + nameof(Brief.PresentedAtUtc) + "\"";
         var list = keys.Keys.ToList();
