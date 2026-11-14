@@ -63,6 +63,7 @@ public static class SettingsCatalog
         new("CVE enrichment", "NVD address", "Cve:NvdUrl", SettingKind.Url),
         new("CVE enrichment", "EPSS address", "Cve:EpssUrl", SettingKind.Url),
         new("CVE enrichment", "KEV address", "Cve:KevUrl", SettingKind.Url),
+        new("CVE enrichment", "NVD time limit per request (seconds)", "Cve:NvdTimeoutSeconds"),
 
         new("Updates", "Release repository", "Updates:Repository"),
 

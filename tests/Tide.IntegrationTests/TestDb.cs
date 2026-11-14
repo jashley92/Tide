@@ -100,6 +100,14 @@ public sealed class FakeHttp : IOutboundHttp
     /// <summary>Run once, while the next fetch is under way, for a test of something that happens meanwhile.</summary>
     public Func<Task>? During { get; set; }
 
+    /// <summary>Answers given in turn for an address (by prefix), before <see cref="Responses"/>: a server that fails, then answers.</summary>
+    public Dictionary<string, Queue<HttpFetch>> Sequences { get; } = [];
+
+    public void Then(string url, params HttpFetch[] answers) => Sequences[url] = new(answers);
+
+    /// <summary>Addresses (by prefix) whose fetch waits for the task first: a server that's slow to answer.</summary>
+    public Dictionary<string, Task> Holds { get; } = [];
+
     public Task<HttpFetch> GetAsync(string url, OutboundRequest? request = null, CancellationToken ct = default)
     {
         if (During is { } during)
@@ -107,10 +115,28 @@ public sealed class FakeHttp : IOutboundHttp
             During = null;
             return AfterAsync(during, url, request, ct);
         }
-        Requests.Add((url, request));
+        lock (Requests) Requests.Add((url, request));
         if (Throws.TryGetValue(url, out var fault)) throw fault;
+        if (Holds.Where(h => url.StartsWith(h.Key, StringComparison.Ordinal)).Select(h => h.Value).FirstOrDefault() is { } hold)
+            return HeldAsync(hold, url, ct);
+        return Task.FromResult(Answer(url));
+    }
+
+    private async Task<HttpFetch> HeldAsync(Task hold, string url, CancellationToken ct)
+    {
+        await hold.WaitAsync(ct);
+        return Answer(url);
+    }
+
+    private HttpFetch Answer(string url)
+    {
+        lock (Sequences)
+        {
+            var queue = Sequences.Where(s => url.StartsWith(s.Key, StringComparison.Ordinal) && s.Value.Count > 0).OrderByDescending(s => s.Key.Length).Select(s => s.Value).FirstOrDefault();
+            if (queue is not null) return queue.Dequeue();
+        }
         var hit = Responses.Where(r => url.StartsWith(r.Key, StringComparison.Ordinal)).OrderByDescending(r => r.Key.Length).Select(r => r.Value).FirstOrDefault();
-        return Task.FromResult(hit ?? new HttpFetch(FetchStatus.Failed, Error: "No canned response for " + url));
+        return hit ?? new HttpFetch(FetchStatus.Failed, Error: "No canned response for " + url);
     }
 
     private async Task<HttpFetch> AfterAsync(Func<Task> during, string url, OutboundRequest? request, CancellationToken ct)

@@ -176,6 +176,16 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### Unreleased
+
+Upgrade as usual; no migration.
+
+**Changed**
+- **NVD is given longer, and a second and third try.** NVD requests have their own time limit, `Cve:NvdTimeoutSeconds`
+  (60, held to 10 to 180), instead of the feeds' `Intake:TimeoutSeconds`. One that times out or is answered 5xx or 429
+  is tried again after 10 s and 30 s (or NVD's `Retry-After`, up to 2 minutes) before the run stops asking NVD. The
+  CVE refresh now runs beside the feed polling rather than holding it up.
+
 ### v1.14.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `BriefExcuses` (a new, empty table of

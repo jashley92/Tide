@@ -7,7 +7,7 @@ namespace Tide.Web.Services;
 
 /// <summary>
 /// Runs intake in the background: polls the sources that are due (when <c>Intake:Enabled</c>), refreshes the CVE data
-/// when it's due (when <c>Cve:Enabled</c>), and prunes old feed items once a day. Each setting is the one saved on
+/// when it's due (when <c>Cve:Enabled</c>; beside the passes, as it can take many minutes), and prunes old feed items once a day. Each setting is the one saved on
 /// Sources, else the server's, read on every pass. Each part's failure is logged and
 /// tried again at the next pass; it never stops the app. Each part's runs are reported to <see cref="JobMonitor"/> for
 /// Diagnostics. A process that doesn't hold the job lease skips its passes (another process runs them).
@@ -19,6 +19,9 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
 
     private DateTimeOffset _lastPrune = DateTimeOffset.MinValue;
 
+    // The CVE refresh under way, if any (it never throws: CveStep records its failures).
+    private Task _cve = Task.CompletedTask;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -26,11 +29,12 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
             // A setting the server's file has that won't bind (Intake:Enabled "yes", hand-edited while TIDE runs) throws
             // as the pass reads it; it's logged and read again next pass, rather than stopping the app.
             try { await PassAsync(stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { log.LogError(ex, "An intake pass failed before it ran (check the Intake and Cve settings); it's tried again in a minute."); }
             try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
+            catch (OperationCanceledException) { break; }
         }
+        await _cve;   // cancelled with the rest at shutdown
     }
 
     /// <summary>One pass. Whether polling and enrichment are on is read afresh each time (saved on Sources, else the
@@ -51,7 +55,9 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
             if (taken > 0) changes.Publish(ChangeFeed.Triage);
             return $"{taken} new item{(taken == 1 ? "" : "s")}";
         }, stoppingToken);
-        await CveStep(stoppingToken);
+        // The CVE refresh runs beside the passes, not in them: with NVD slow (and tried again) it can take many minutes,
+        // and the feeds are polled meanwhile. A pass while one is running doesn't start another.
+        if (_cve.IsCompleted) _cve = Task.Run(() => CveStep(stoppingToken), CancellationToken.None);
         // A prune that failed is tried again at the next pass, as the others are: it waited a day (Diagnostics said so).
         if (now - _lastPrune > TimeSpan.FromDays(1)
             && await Step("Pruning old feed items", JobMonitor.Prune, async sp =>

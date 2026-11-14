@@ -6,6 +6,7 @@ using Tide.Application.Intake;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.TestSupport;
 
 namespace Tide.IntegrationTests;
 
@@ -1149,6 +1150,124 @@ public class CveAndStoryTests : IDisposable
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         var analyst = () => _db.Cves(o).EnrichNowAsync();
         await analyst.Should().ThrowAsync<ForbiddenException>();
+    }
+
+    // NVD's API is slow (8 to 15 seconds a request) and now and then answers 503: a timeout, a 5xx or a 429 is tried
+    // again, twice, after 10 and then 30 seconds, before the NVD part stops for the run.
+    private const string NvdAnswer = """{"vulnerabilities":[{"cve":{"id":"CVE-2026-0007","descriptions":[{"lang":"en","value":"Slow."}]}}]}""";
+
+    private static HttpFetch Busy(TimeSpan? retryAfter = null) =>
+        new(FetchStatus.Failed, Error: "The server answered HTTP 503 Service Unavailable.", Retryable: true, RetryAfter: retryAfter);
+
+    private static readonly HttpFetch TimedOut = new(FetchStatus.Failed, Error: "services.nvd.nist.gov didn't answer within 60 seconds.", Retryable: true);
+
+    private static HttpFetch Ok(string body) => new(FetchStatus.Ok, System.Text.Encoding.UTF8.GetBytes(body));
+
+    private CveOptions NvdOnly()
+    {
+        var o = new CveOptions { Enabled = true, NvdDelayMs = 0 };
+        _db.Http.Set(o.KevUrl, """{"vulnerabilities":[]}""");
+        _db.Http.Set(o.EpssUrl, """{"data":[]}""");
+        return o;
+    }
+
+    private int NvdRequests(CveOptions o) => _db.Http.Requests.Count(r => r.Url.StartsWith(o.NvdUrl, StringComparison.Ordinal));
+
+    [Fact]
+    public async Task Enrich_NvdBusyThenSlow_IsTriedAgain_AndTheCveIsEnriched()
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        var o = NvdOnly();
+        _db.Http.Then(o.NvdUrl, Busy(), TimedOut, Ok(NvdAnswer));
+        var clock = new InstantClock();
+
+        var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
+
+        run.Error.Should().BeNull();
+        run.Nvd.Should().Be(1);
+        NvdRequests(o).Should().Be(3);
+        clock.Waits.Should().Equal(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30));
+        (await _db.Cves(o).GetAsync(["CVE-2026-0007"]))["CVE-2026-0007"].Description.Should().Be("Slow.");
+    }
+
+    [Fact]
+    public async Task Enrich_NvdFailingThreeTimesInARow_StopsTheNvdPart_WithTheError()
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        await ArticleWithCve("CVE-2026-0008");
+        var o = NvdOnly();
+        _db.Http.Then(o.NvdUrl, Busy(), Busy(), Busy());
+        _db.Http.Set(o.NvdUrl, NvdAnswer);
+
+        var run = (await _db.Cves(o, new InstantClock()).EnrichNowAsync())!;
+
+        run.Error.Should().StartWith("NVD: The server answered HTTP 503").And.Contain("3 tries");
+        run.Nvd.Should().Be(0);
+        NvdRequests(o).Should().Be(3, "the next CVE isn't asked for: the run stops rather than hammer a struggling service");
+        (await _db.Cves(o).GetAsync(["CVE-2026-0007", "CVE-2026-0008"])).Values.Should().OnlyContain(r => r.NvdCheckedAtUtc == null);
+    }
+
+    [Fact]
+    public async Task Enrich_NvdsRetryAfter_IsHonoured_UpToALimit()
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        var o = NvdOnly();
+        _db.Http.Then(o.NvdUrl, Busy(TimeSpan.FromSeconds(45)), Busy(TimeSpan.FromHours(1)), Ok(NvdAnswer));
+        var clock = new InstantClock();
+
+        var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
+
+        run.Nvd.Should().Be(1);
+        clock.Waits.Should().Equal([TimeSpan.FromSeconds(45), CveService.MaxNvdRetryAfter], "an hour is more than a run waits");
+    }
+
+    [Fact]
+    public async Task Enrich_AnNvdFailureThatWontPassWithTime_StopsAtOnce()
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        var o = NvdOnly();
+        _db.Http.Then(o.NvdUrl, new HttpFetch(FetchStatus.Failed, Error: "The server answered HTTP 404 Not Found."));
+        var clock = new InstantClock();
+
+        var run = (await _db.Cves(o, clock).EnrichNowAsync())!;
+
+        run.Error.Should().Be("NVD: The server answered HTTP 404 Not Found.");
+        NvdRequests(o).Should().Be(1);
+        clock.Waits.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null, 60)]
+    [InlineData(5, 10)]
+    [InlineData(500, 180)]
+    public async Task Enrich_NvdRequests_HaveTheirOwnTimeLimit_TheOthersTheFeeds(int? seconds, int expected)
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        var o = NvdOnly();
+        if (seconds is { } s) o.NvdTimeoutSeconds = s;
+        _db.Http.Set(o.NvdUrl, NvdAnswer);
+
+        await _db.Cves(o).EnrichNowAsync();
+
+        _db.Http.Requests.Single(r => r.Url.StartsWith(o.NvdUrl, StringComparison.Ordinal)).Request!.Timeout.Should().Be(TimeSpan.FromSeconds(expected));
+        _db.Http.Requests.Where(r => !r.Url.StartsWith(o.NvdUrl, StringComparison.Ordinal)).Should().OnlyContain(r => r.Request == null || r.Request.Timeout == null);
+    }
+
+    [Fact]
+    public async Task Enrich_WaitingToTryNvdAgain_StopsWhenCancelled()
+    {
+        await ArticleWithCve("CVE-2026-0007");
+        var o = NvdOnly();
+        _db.Http.Then(o.NvdUrl, Busy());
+        var clock = new ManualClock();
+        using var cts = new CancellationTokenSource();
+
+        var run = _db.Cves(o, clock).EnrichNowAsync(cts.Token);
+        (await Poll.Until(() => clock.Pending > 0)).Should().BeTrue("it waits to try again");
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => run).Should().ThrowAsync<OperationCanceledException>();
+        _db.CveLog.TryStart().Should().BeTrue("a cancelled run doesn't hold the next one off");
     }
 
     [Fact]

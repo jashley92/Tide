@@ -95,3 +95,18 @@ public sealed class ManualClock : TimeProvider
         }
     }
 }
+
+/// <summary>The system's time, with timers that fire at once: each wait the code asks for is recorded in <see cref="Waits"/>
+/// rather than waited out.</summary>
+public sealed class InstantClock : TimeProvider
+{
+    private readonly List<TimeSpan> _waits = [];
+
+    public IReadOnlyList<TimeSpan> Waits { get { lock (_waits) return [.. _waits]; } }
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        lock (_waits) _waits.Add(dueTime);
+        return System.CreateTimer(callback, state, TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+    }
+}

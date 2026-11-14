@@ -319,4 +319,27 @@ public class IntakeHostedServiceSettingsTests
         rig.Db.Http.Requests.Should().ContainSingle("the next pass reads the saved setting: polling is off");
         jobs.Get(JobMonitor.FeedPoll).Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null);
     }
+
+    // NVD can take minutes over a run (slow answers, tried again): the feeds are polled meanwhile, so Polling the sources
+    // isn't held up and called overdue, and the next pass doesn't start a second refresh.
+    [Fact]
+    public async Task ASlowCveRefresh_DoesntHoldUpThePasses()
+    {
+        using var rig = new SettingsRig(new() { ["Intake:Enabled"] = "false", ["Cve:Enabled"] = "true" });
+        var o = rig.Now<CveOptions>();
+        var slow = new TaskCompletionSource();
+        rig.Db.Http.Holds[o.KevUrl] = slow.Task;
+        var jobs = new JobMonitor(TimeProvider.System);
+        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, new HeldLease(), rig.Get<IOptionsMonitor<IntakeOptions>>(),
+            rig.Get<IOptionsMonitor<CveOptions>>(), TimeProvider.System, NullLogger<IntakeHostedService>.Instance);
+
+        await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
+        await hosted.PassAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
+        jobs.Get(JobMonitor.Prune).LastSucceeded.Should().BeTrue("the pass went on while the refresh waits on KEV");
+        jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc.Should().BeNull();
+
+        slow.SetResult();
+        (await Tide.TestSupport.Poll.Until(() => jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc is not null)).Should().BeTrue();
+        rig.Db.Http.Requests.Count(r => r.Url.StartsWith(o.KevUrl, StringComparison.Ordinal)).Should().Be(1, "one refresh at a time");
+    }
 }
