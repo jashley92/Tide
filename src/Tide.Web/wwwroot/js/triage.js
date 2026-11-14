@@ -62,12 +62,14 @@ window.tideTriage = (function () {
     }
 
     // Where the pane sits over the list (a narrow window), the row kept in view after V can leave the pane's head above
-    // the window, under the top bar: once V has opened or read into it, its head is brought into view (focus stays on
-    // the row, for J and K). Beside the list, it's in view already and nothing moves.
+    // the window, under the top bar: once V has opened or read into it, its head is brought into view below the bar
+    // (focus stays on the row, for J and K). At once, not smoothly: a smooth scroll still keeping the row in view would
+    // otherwise carry on past it. Beside the list, it's in view already and nothing moves.
     function showPane(actions) {
         if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
-        const pane = shownPane(), bar = document.querySelector('.top-row');
-        if (pane && pane.getBoundingClientRect().top < (bar ? bar.getBoundingClientRect().bottom : 0)) pane.scrollIntoView({ block: 'start' });
+        const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
+        if (pane && list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+            pane.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other

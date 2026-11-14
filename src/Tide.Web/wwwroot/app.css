@@ -323,10 +323,10 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
-/* Breadcrumbs: "Actions › A-12". */
-.tide-crumbs { margin: 0 0 .25rem; }
+/* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
+.tide-crumbs { margin: 0 0 .25rem; min-width: 0; overflow-wrap: anywhere; }
 .tide-crumbs ol { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: .85rem; }
-.tide-crumbs li { display: inline-flex; align-items: center; min-width: 0; }
+.tide-crumbs li { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
 .tide-crumbs li + li::before { content: "\203A"; color: var(--tide-text-muted); padding: 0 .5rem; }
 .tide-crumbs a { color: var(--tide-text-muted); text-decoration: none; }
 .tide-crumbs a:hover, .tide-crumbs a:focus-visible { color: var(--tide-accent-text); text-decoration: underline; }

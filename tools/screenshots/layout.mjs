@@ -2844,7 +2844,7 @@ async function selectReport(page) {
  * `selector`'s text, as no seeded text has.
  */
 const longWord = selector => async page => {
-  await page.locator(selector).first().waitFor();
+  await page.locator(selector).first().waitFor({ state: 'attached' });
   await page.$eval(selector, el => { el.textContent = '9f86d081884c7d65'.repeat(18); });
   await idle(page);
 };
@@ -2860,12 +2860,13 @@ const paneOverList = holds('the reading pane over the list, as wide as it', () =
   ];
 });
 
-/** Setup: the selection moved a dozen rows down the list with J, then V. */
-async function vFarDown(page) {
+/** Setup: the selection moved `times` rows down the list with J, then V. */
+const vAfterJ = times => async page => {
   await page.locator('.tide-triage-row.selected').focus();
-  for (let i = 0; i < 12; i++) await pressJ(page);
+  for (let i = 0; i < times; i++) await pressJ(page);
   await pressV(1)(page);
-}
+  await page.waitForTimeout(1000);   // any smooth scroll done
+};
 
 /** Setup: the profile's "Merge into another profile" open, offering a profile with a long name. */
 async function longMergeOption(page) {
@@ -4343,12 +4344,13 @@ const pages = [
     rules: [hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-promote')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   // On a narrow window the pane V opens is over the list, as wide as it, its title a readable line: not a column
-  // squeezed beside the list with its title a letter a line. Pressed on a row far down the list, V brings the pane's
-  // head into view below the top bar, rather than leaving it above the window. Each width signs in as its own person,
-  // as the pane's state is kept.
-  ...[780, 400].map(w => ({ name: `triage-v-narrow-${w}`, route: `/triage?as=v3${w}${run}`, setup: vFarDown, widths: [w],
+  // squeezed beside the list with its title a letter a line. Pressed on the first row, the second, or one far down the
+  // list, V brings the pane's head into view below the top bar, rather than leaving it above the window; with motion
+  // allowed, so the page's smooth scrolling is in play. Each signs in as its own person, as the pane's state is kept.
+  ...[780, 400].flatMap(w => [0, 1, 12].map(down => ({ name: `triage-v-narrow-${w}-row${down + 1}`, route: `/triage?as=v3${w}r${down}${run}`,
+    setup: vAfterJ(down), widths: [w], context: { reducedMotion: 'no-preference' },
     rules: [visible('.tide-reading'), paneOverList, oneLine('.tide-reading-title', 4), fits('.tide-reading-head'), noSidewaysScroll,
-      onFirstScreen('.tide-reading-head'), belowTopBar('.tide-reading-head')] })),
+      onFirstScreen('.tide-reading-head'), belowTopBar('.tide-reading-head')] }))),
   // A title of one long unbroken word wraps inside its row rather than widening the page.
   { name: 'triage-long-title', route: '/triage', setup: longWord('.tide-triage-row .tide-triage-title'), widths: [1440, 400],
     rules: [noSidewaysScroll, fits('.tide-triage-row')] },
@@ -4482,8 +4484,9 @@ const pages = [
   // search for a very long word, and a bottom line of one long word in what readers get.
   { name: 'adversary-merge-long-name', route: '/adversaries/{adversary}', setup: longMergeOption, widths: [1440, 400],
     rules: [noSidewaysScroll, insidePage('#merge-into')] },
-  { name: 'adversary-long-name', route: '/adversaries/{adversary}', setup: longWord('.tide-page-head h1'), widths: [1440, 400],
-    rules: [noSidewaysScroll, fits('.tide-page-head')] },
+  { name: 'adversary-long-name', route: '/adversaries/{adversary}', widths: [1440, 780, 400],
+    setup: async page => { await longWord('.tide-page-head h1')(page); await page.$eval('.tide-crumbs', nav => { nav.lastChild.textContent = ' › ' + '9f86d081884c7d65'.repeat(18); }); },
+    rules: [noSidewaysScroll, fits('.tide-page-head'), fits('.tide-crumbs')] },
   { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },
   { name: 'reader-long-bottom-line', route: '/articles/{vpnArticle}', setup: longWord('#tide-rail .tide-edition-article .tide-bluf'), widths: [1600],
     rules: [noSidewaysScroll, fits('#tide-rail .tide-reader'), fits('.tide-rail-body')] },
