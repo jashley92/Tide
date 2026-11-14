@@ -31,7 +31,10 @@ public sealed class CountingApp : WeekdayApp
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(s =>
         {
-            foreach (var job in s.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Namespace == typeof(LiveMeetings).Namespace).ToList())
+            // Every one of the app's own, wherever it lives: the webhook sender (in the API's namespace) reads the job lease
+            // and its due events once a minute, and on a loaded machine those reads landed inside a page's count.
+            foreach (var job in s.Where(d => d.ServiceType == typeof(IHostedService)
+                         && d.ImplementationType?.Assembly == typeof(LiveMeetings).Assembly).ToList())
                 s.Remove(job);
             s.ConfigureDbContext<AppDbContext>(o => o.AddInterceptors(Commands));
         });

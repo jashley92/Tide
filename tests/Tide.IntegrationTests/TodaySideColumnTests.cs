@@ -52,21 +52,14 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
                 foreach (var (route, day, asToday) in new[] { ("today", Today, true), ("day", Past, false) })
                 {
                     var key = $"{state} / {who.Roles[0]} {who.Name} / {route}";
-                    // Drawn twice, counting the fewer: on a busy machine a command that isn't the page's (the app's own
-                    // housekeeping) can land inside one draw.
-                    string? side = null;
-                    var reads = int.MaxValue;
-                    for (var draw = 0; draw < 2; draw++)
-                    {
-                        app.Commands.Reset();
-                        await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
-                            new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
-                        reads = Math.Min(reads, app.Commands.Count);
-                        var html = await r.Html();
-                        side ??= Normalise(Side(html), app.Services.GetRequiredService<OrgClock>().Zone);
-                        if (draw == 0) outOfRail.AddRange(InPage(html, writes: who.Roles[0] is "Analyst").Select(card => $"{key}: {card}"));
-                    }
-                    ArgumentNullException.ThrowIfNull(side);
+                    // Drawn once: the app's background jobs are off (CountingApp), so every command counted is the page's.
+                    app.Commands.Reset();
+                    await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
+                        new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
+                    var reads = app.Commands.Count;
+                    var html = await r.Html();
+                    var side = Normalise(Side(html), app.Services.GetRequiredService<OrgClock>().Zone);
+                    outOfRail.AddRange(InPage(html, writes: who.Roles[0] is "Analyst").Select(card => $"{key}: {card}"));
                     golden.Append("=== ").Append(key).Append(" (").Append(reads).Append(" commands)\n");
                     if (seen.TryGetValue(side, out var same)) golden.Append("same as ").Append(same).Append('\n');
                     else
