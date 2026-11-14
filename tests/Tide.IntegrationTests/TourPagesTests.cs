@@ -69,7 +69,7 @@ public class TourPagesTests(TideApp app) : IClassFixture<TideApp>
             await Do(r, c => c.EndTourAsync());
         }
         (await Pref(who, UserPreferences.TourState)).Should().Be(UserPreferences.TourDone, "Done or Skip settles it");
-        (await Pref(who, UserPreferences.WhatsNewSeen)).Should().Be("1.13.0", "the tour stands in for What's new");
+        (await Pref(who, UserPreferences.WhatsNewSeen)).Should().Be("1.14.0", "the tour stands in for What's new");
         await using var scope = SignedIn(app, who);
         (await scope.ServiceProvider.GetRequiredService<PageTipService>().DueAsync("triage")).Should().BeNull("nor do they need what-changed tips");
 

@@ -176,10 +176,11 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
-### Unreleased
+### v1.14.0
 
-Upgrade as usual. It adds one migration, `BriefExcuses` (a new, empty table of brief days excused as late). None of
-the earlier ones change. On a DbaApplies install, the DBA applies it first.
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `BriefExcuses` (a new, empty table of
+brief days excused as late). None of the earlier ones change. On a DbaApplies install, the DBA applies it first, as for
+any release that carries one.
 
 **New**
 - **A Manager role.** Map an AD group to it on Role mappings (Administration › Access & distribution), as for Viewer
@@ -205,6 +206,31 @@ the earlier ones change. On a DbaApplies install, the DBA applies it first.
 **New settings**
 - `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every
   day by the new time, past days too: nothing about a day's timeliness is stored but an excuse.
+
+**Changes**
+- **What's new catches up.** Someone who has never seen *What's new* now gets every release's highlights for their
+  role since the version this server ran before the upgrade, newest first, rather than only the newest. TIDE records
+  the version it runs in its settings (`App:Version`, and `App:UpgradedFrom`, the one before it) from this release on;
+  a server upgraded from v1.13.0 or earlier, which didn't record it, counts as coming from before v1.13.0, so people who
+  never opened TIDE on v1.13.0 see its highlights as well as this release's. Someone who has seen some still gets every
+  release after it. A new install, or a version not recorded, shows only the newest, and someone signing in for the
+  first time still gets the tour instead.
+- **Pages with a tip for this release:** a story's page (adding an article) and Reports (its tabs), on the first visit
+  after the upgrade, as for v1.13.0's.
+
+**Fixes**
+- **Who attended shows once the meeting has been held.** A brief shows its attendance once its meeting has been held,
+  while it runs, or once its day has gone; present mode's wrap-up and the presenter's rail follow the same rule, and a
+  rehearsal shows none. Someone who joined only a meeting started ahead of its brief's day (which versions before
+  v1.13.0 allowed) isn't counted as attending, on any page or by the rotation; their row is kept, never deleted, and a
+  name added by hand is kept as typed. Sending a brief and its send panel use the same rule.
+- **The rotation's "held" rule.** A meeting counts as held from the brief's own record, with attendance and notes taken
+  as a sign only for a past day, so rows left by a meeting started early no longer fix today's presenter early or put a
+  brief off the rota. A past day's brief off the rota names who presented it once that's recorded, else whom the brief
+  names.
+- **The action page's tip keeps clear of its buttons** (Take it and More), as other pages' tips do.
+- **Arrow keys in rehearsal.** While a step of *Learn to present* has focus, the arrows, Home and End move the slides,
+  as its first step says; Enter, Space, Escape and Tab stay the step's, and fields keep their keys.
 
 ### v1.13.0
 

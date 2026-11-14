@@ -24,7 +24,7 @@ public sealed record PageTip(string Key, ReleaseVersion Version, Permission Need
 /// <summary>Each changed page's tip, and which page an address is.</summary>
 public static class PageTips
 {
-    private static readonly ReleaseVersion V1_13 = new(1, 13, 0);
+    private static readonly ReleaseVersion V1_13 = new(1, 13, 0), V1_14 = new(1, 14, 0);
     private const string Rail = "#tide-rail || #tide-rail-toggle";
 
     public static readonly IReadOnlyList<PageTip> All =
@@ -46,6 +46,10 @@ public static class PageTips
             "Saved queries, outreach templates, playbooks and board rules are one Library: four tabs and one search."),
         new("stack", V1_13, Permission.ReadTeamEdition, Rail, "What needs a look",
             "Products that need a look come first. Select one to see it, and what to do, in the context rail."),
+        new("story", V1_14, Permission.WriteArticles, "[aria-controls=\"story-new\"]", "Add an article from here",
+            "New article on this story starts a draft with the story's CVEs, tags and products we run. Add an existing article puts one on the story."),
+        new("reports", V1_14, Permission.ReadTeamEdition, "#main-content nav[aria-label=\"Reports\"]", "Reports has tabs",
+            "Each report you can open is a tab here, and each keeps its own address."),
     ];
 
     /// <summary>The tip for the page at <paramref name="relativePath"/> (as <c>NavigationManager.ToBaseRelativePath</c>
@@ -64,6 +68,8 @@ public static class PageTips
             ["search"] => "search",
             ["library", ..] => "library",
             ["stack"] => "stack",
+            ["stories", var id] when Guid.TryParse(id, out _) => "story",
+            ["reports", ..] => "reports",
             _ => null,
         };
         return key is null ? null : All.First(t => t.Key == key);

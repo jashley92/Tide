@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
+using Tide.Application.Operations;
 using Tide.Application.Org;
 using Tide.Application.Scorecard;
 using Tide.Domain.Entities;
@@ -14,7 +15,8 @@ using Tide.Infrastructure.Security;
 namespace Tide.Infrastructure.Persistence;
 
 /// <summary>
-/// Run once at startup: applies migrations (unless a DBA applies the schema), seeds the AD-group→role mappings from
+/// Run once at startup: applies migrations (unless a DBA applies the schema), records the release running and the one
+/// before it (<see cref="ReleaseHistory"/>), seeds the AD-group→role mappings from
 /// configuration on first run, adds the scorecard starter set to an empty install and the starter saved queries, outreach
 /// templates and playbooks to an empty library (once each), and in Development adds a few sample articles and today's
 /// brief so there's something to look at.
@@ -27,6 +29,8 @@ public sealed class DatabaseInitializer(
     IHostEnvironment env,
     IConfiguration config,
     OrgClock clock,
+    ReleaseNotesCatalog catalog,
+    ReleaseHistory history,
     ILogger<DatabaseInitializer> log)
 {
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -44,6 +48,8 @@ public sealed class DatabaseInitializer(
                 "for this release (deploy/sql), or set Database:ApplyMigrations=true.");
         }
 
+        // Before anything adds a user (the samples do): an install nobody has used yet is a new one.
+        if (catalog.Running(AppVersionInfo.Current) is { } running) await history.RecordAsync(db, running, ct);
         await HolidayService.LoadAsync(db, clock, ct);
         await SeedRoleMappingsAsync(ct);
         roles.Invalidate();

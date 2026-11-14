@@ -88,6 +88,7 @@ public static class DependencyInjection
         services.AddScoped<HolidayService>();
         services.AddScoped<Preferences.UserPreferenceService>();
         services.AddSingleton(Operations.ReleaseNotesCatalog.Embedded);
+        services.AddSingleton<Operations.ReleaseHistory>();
         services.AddScoped<Operations.WhatsNewService>();
         services.AddScoped<Operations.PageTipService>();
         services.AddScoped<Operations.GuideLinkService>();

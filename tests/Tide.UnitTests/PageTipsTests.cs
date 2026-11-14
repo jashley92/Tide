@@ -25,6 +25,10 @@ public class PageTipsTests
     [InlineData("search?q=1.2.3.4", "search")]
     [InlineData("library/templates", "library")]
     [InlineData("stack", "stack")]
+    [InlineData("stories/0d6f5d38-7a2e-4b9f-9f6e-1d2c3b4a5e6f", "story")]
+    [InlineData("reports", "reports")]
+    [InlineData("reports/teams?by=person", "reports")]
+    [InlineData("reports/timeliness", "reports")]
     public void EachChangedPage_HasOneTip(string path, string key) =>
         PageTips.For(path)!.Key.Should().Be(key);
 
@@ -36,6 +40,8 @@ public class PageTipsTests
     [InlineData("help")]
     [InlineData("admin/organization")]
     [InlineData("triagex")]
+    [InlineData("stories")]
+    [InlineData("stories/new")]
     public void APageThatDidntChange_OrPresentMode_HasNone(string path) =>
         PageTips.For(path).Should().BeNull();
 
@@ -43,7 +49,10 @@ public class PageTipsTests
     public void EveryTip_SaysWhatChanged()
     {
         PageTips.All.Should().OnlyHaveUniqueItems(t => t.Key);
-        PageTips.All.Should().OnlyContain(t => t.Title.Length > 0 && t.Text.Length > 0 && t.Version == V("1.13.0"));
+        PageTips.All.Should().OnlyContain(t => t.Title.Length > 0 && t.Text.Length > 0);
+        // v1.14.0 changed a story's page (adding an article) and Reports (its tabs); the rest are v1.13.0's.
+        PageTips.All.Should().OnlyContain(t => t.Version == (t.Key == "story" || t.Key == "reports" ? V("1.14.0") : V("1.13.0")));
+        PageTips.All.Single(t => t.Key == "story").Needs.Should().Be(Permission.WriteArticles, "only analysts add an article");
         PageTips.For("")!.Text.Should().Contain("]", "Today's tip points at the context rail and its key");
     }
 

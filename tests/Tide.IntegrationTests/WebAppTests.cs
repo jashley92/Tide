@@ -26,6 +26,10 @@ public class TideApp : WebApplicationFactory<Program>
     /// <summary>The app's clock, when not the system's (see <see cref="WeekdayApp"/>).</summary>
     protected virtual TimeProvider? Time => null;
 
+    /// <summary>What the SQLite database already holds when the app first starts on it (an install being upgraded),
+    /// written to it migrated; null for a new install.</summary>
+    protected virtual Action<AppDbContext>? Existing => null;
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tide-tests-" + Guid.NewGuid().ToString("N"));
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -37,7 +41,18 @@ public class TideApp : WebApplicationFactory<Program>
             builder.UseSetting("Database:Provider", "SqlServer");
             builder.UseSetting("ConnectionStrings:Default", sql);
         }
-        else builder.UseSetting("ConnectionStrings:Default", $"Data Source={Path.Combine(_dir, "tide.db")};Pooling=False");
+        else
+        {
+            var sqlite = $"Data Source={Path.Combine(_dir, "tide.db")};Pooling=False";
+            builder.UseSetting("ConnectionStrings:Default", sqlite);
+            if (Existing is { } existing)
+            {
+                using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(sqlite).Options);
+                db.Database.Migrate();
+                existing(db);
+                db.SaveChanges();
+            }
+        }
         builder.UseSetting("Files:RootPath", Path.Combine(_dir, "files"));
         builder.UseSetting("Email:PickupDirectory", Path.Combine(_dir, "mail"));
         // The organization's boundary (the sending address's domain): the tests' own addresses are in example.org.
