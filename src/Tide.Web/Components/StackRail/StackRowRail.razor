@@ -57,11 +57,11 @@
 }
 
 <section class="tide-card" aria-labelledby="rail-articles-h">
-    <h2 id="rail-articles-h">Articles @Count(_detail is { } d ? d.Articles.Count + d.ArticlesAbove : null)</h2>
+    <h2 id="rail-articles-h">Articles @Count(_detail?.Articles.Count)</h2>
     @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (_detail.Articles.Count == 0 && _detail.ArticlesAbove == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
+        @if (_detail.Articles.Count == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
         <ul class="tide-rail-list">
             @foreach (var a in _detail.Articles.Take(Shown))
             {
@@ -70,7 +70,6 @@
             }
         </ul>
         @if (_detail.Articles.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"stack/{p.Id}")">and @(_detail.Articles.Count - Shown) more</a> }
-        @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
     }
 </section>
 

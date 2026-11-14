@@ -122,8 +122,8 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain($"href=\"actions/new?product={id}\"").And.Contain("Start an outreach").And.Contain(">Mark checked</button>");
         rail.Should().Contain("id=\"rail-triage-h\"").And.Contain("In triage now").And.Contain($"Gang exploits {name} in the wild").And.Contain("href=\"triage?at=")
             .And.Contain("KEV");
-        rail.Should().Contain("id=\"rail-articles-h\"").And.Contain($"{name} zero-day exploited").And.Contain("1 article above TLP:AMBER+STRICT")
-            .And.NotContain($"{name} breach at a partner", "an article above the team edition's ceiling is counted, not named");
+        rail.Should().Contain("id=\"rail-articles-h\"").And.Contain($"{name} zero-day exploited")
+            .And.Contain($"{name} breach at a partner", "a RED article is named, as it is everywhere in the app").And.NotContain(" above TLP:");
         rail.Should().Contain("id=\"rail-open-actions-h\"").And.Contain($"Sweep for {name} rail-open")
             .And.NotContain($"Patch {name} rail-closed", "a closed action isn't open");
         rail.Should().Contain("id=\"rail-notes-h\"").And.Contain("<strong>" + name + "</strong>");
@@ -144,7 +144,7 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain($"{name} zero-day exploited").And.Contain($"Sweep for {name} rail-open").And.Contain("id=\"rail-notes-h\"");
         rail.Should().NotContain("rail-triage-h", "triage is the analysts'").And.NotContain("Gang exploits").And.NotContain("href=\"triage");
         rail.Should().NotContain(">Edit</a>").And.NotContain("Start an outreach").And.NotContain("Mark checked");
-        rail.Should().NotContain($"{name} breach at a partner");
+        rail.Should().Contain($"{name} breach at a partner", "a RED article is theirs to read in the app, so it's named here too");
     }
 
     [Fact]
@@ -251,8 +251,8 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
     /// <summary>
     /// The row's Open actions and the rail's count the same actions, by the product page's rule: those raised from its
     /// articles and those whose title names it, an action with no article included. One raised from an article above the
-    /// team edition's ceiling is named like any other, as the Actions list and the action page name it; that article
-    /// itself stays counted, not named.
+    /// team edition's ceiling is named like any other, as the Actions list and the action page name it, and so is that
+    /// article.
     /// </summary>
     [Fact]
     public async Task TheRowsOpenActions_CountWhatTheRailNames_AnActionWithNoArticleAndOneAboveTheCeilingIncluded()
@@ -274,13 +274,12 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
         rail.Should().Contain("Open actions <span class=\"tide-count\">(3)</span>").And.Contain($"Block {name} at the proxy").And.Contain($"Sweep for {name} rail-open")
             .And.Contain("Contain the supplier's foothold", "an action is named wherever actions are shown")
             .And.NotContain("action from articles above").And.NotContain("actions from articles above");
-        rail.Should().Contain("2 articles above TLP:AMBER+STRICT", "the articles above the ceiling stay counted")
-            .And.NotContain($"{name} hit at a supplier", "and not named");
+        rail.Should().Contain($"{name} hit at a supplier", "its RED article is named too, as it is everywhere in the app").And.NotContain(" above TLP:");
 
         await using var page = await RenderAsync<StackPage>(app, $"/stack/{id}", new() { ["Id"] = (Guid?)id });
         var html = WebUtility.HtmlDecode(await page.Html());
         html.Should().Contain("Contain the supplier's foothold", "the product's page names it too").And.NotContain("from articles above")
-            .And.Contain("2 articles above TLP:AMBER+STRICT").And.NotContain($"{name} hit at a supplier");
+            .And.Contain($"{name} hit at a supplier").And.NotContain(" above TLP:");
     }
 
     [Fact]

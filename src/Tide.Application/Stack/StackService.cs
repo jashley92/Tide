@@ -101,37 +101,36 @@ public sealed record StackRow(StackProduct Product, string? TeamName, int Articl
     public StackUrgency Urgency =>
         !NeedsLook ? StackUrgency.Nothing
         : Now.Cves.Any(c => c.Record?.IsKev == true) ? StackUrgency.Kev
-        : Now.Cves.Count > 0 || Now.CvesAbove > 0 ? StackUrgency.Cve
+        : Now.Cves.Count > 0 ? StackUrgency.Cve
         : Now.TriageItems > 0 ? StackUrgency.Triage
         : StackUrgency.Housekeeping;
 }
 
 /// <summary>
-/// Why a product needs a look, the most pressing first: a CVE on KEV; any CVE, named or counted; new triage items; or
-/// only housekeeping (a check that's old or missing, no owning team). <see cref="Nothing"/> for one that needs none.
+/// Why a product needs a look, the most pressing first: a CVE on KEV; any CVE; new triage items; or only housekeeping (a
+/// check that's old or missing, no owning team). <see cref="Nothing"/> for one that needs none.
 /// </summary>
 public enum StackUrgency { Kev, Cve, Triage, Housekeeping, Nothing }
 
-/// <summary>The Our stack list: its rows, those that need a look first, and the team edition's ceiling "Right now" is held to.</summary>
-public sealed record StackList(IReadOnlyList<StackRow> Rows, TlpLevel Ceiling);
+/// <summary>The Our stack list: its rows, those that need a look first.</summary>
+public sealed record StackList(IReadOnlyList<StackRow> Rows);
 
 /// <summary>A CVE in a product's "Right now", with what's known about it (null until it's enriched).</summary>
 public sealed record StackCve(string Id, CveRecord? Record);
 
-/// <summary>A CVE on a recent brief's article about a product; <paramref name="Above"/> when that article is above the ceiling.</summary>
-public sealed record CveSighting(string Cve, bool Above, CveRecord? Record);
+/// <summary>A CVE on a recent brief's article about a product.</summary>
+public sealed record CveSighting(string Cve, CveRecord? Record);
 
 /// <summary>
 /// What is happening to a product right now: the CVEs on its articles from the last <see cref="StackService.RecentBriefDays"/>
-/// days' briefs, the worst first (on KEV, then by CVSS, then by EPSS); how many more come only from articles above the
-/// team edition's ceiling, counted and not named (<paramref name="CvesAbove"/>); and how many new triage items name it
+/// days' briefs, the worst first (on KEV, then by CVSS, then by EPSS); and how many new triage items name it
 /// (<paramref name="TriageItems"/>, null for someone who can't triage).
 /// </summary>
-public sealed record StackNow(IReadOnlyList<StackCve> Cves, int CvesAbove, int? TriageItems)
+public sealed record StackNow(IReadOnlyList<StackCve> Cves, int? TriageItems)
 {
-    public bool Any => Cves.Count > 0 || CvesAbove > 0 || TriageItems > 0;
+    public bool Any => Cves.Count > 0 || TriageItems > 0;
 
-    /// <summary>One of its articles at or below the team edition's ceiling is on today's brief.</summary>
+    /// <summary>One of its articles is on today's brief.</summary>
     public bool BriefedToday { get; init; }
 
     /// <summary>New triage items name it, and no article about it was written in the last
@@ -154,12 +153,10 @@ public sealed record StackAction(int Number, string Title, Priority Priority, Ac
 }
 
 /// <summary>
-/// A product with its history, newest first. Its articles are held to the team edition's <paramref name="Ceiling"/>:
-/// those above it are counted (<paramref name="ArticlesAbove"/>) but not named. Its actions are all named, those raised
-/// from an article above the ceiling too, as the Actions list and the action page name them.
+/// A product with its history, newest first: its articles and its actions, every marking, as the article pages and the
+/// Actions list name them to the team edition's readers (a ceiling governs what leaves the app, not what's seen in it).
 /// </summary>
-public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions,
-    TlpLevel Ceiling, int ArticlesAbove = 0)
+public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions)
 {
     /// <summary>Its open actions: what Our stack's row counts and its rail lists.</summary>
     public IReadOnlyList<StackAction> OpenActions { get; } = [.. Actions.Where(a => !ActionItem.IsClosedStatus(a.Status))];
@@ -183,7 +180,7 @@ public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyL
 /// an article can be tagged with any number of them (optional), and each product's page lists the articles and actions
 /// about it, tagged or found by name. A name matches as whole words, ignoring case, in a title or the start of a summary.
 /// </summary>
-public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock, DistributionSettings editions,
+public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock,
     Briefs.IMeetingsInProgress? meetings = null) : IArticleTagSource
 {
     /// <summary>How much of a summary (an item's excerpt, an article's bottom line) is read for a name.</summary>
@@ -263,17 +260,12 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     public static bool CheckIsOld(DateOnly? checkedOn, DateOnly today) => checkedOn is not { } on || on.AddDays(CheckOldAfterDays) < today;
 
     /// <summary>
-    /// A product's "Right now" from the CVEs seen on its recent articles. A CVE is named when at least one of those
-    /// articles is at or below the ceiling; one seen only above it is counted, and nothing else about it is kept.
+    /// A product's "Right now" from the CVEs seen on its recent articles, each named once, whatever its articles' TLP.
     /// </summary>
-    public static StackNow RightNow(IEnumerable<CveSighting> sightings, int? triageItems)
-    {
-        var byCve = sightings.GroupBy(s => s.Cve, StringComparer.OrdinalIgnoreCase).ToList();
-        var named = byCve.Where(g => g.Any(s => !s.Above)).Select(g => new StackCve(g.Key, g.First(s => !s.Above).Record))
+    public static StackNow RightNow(IEnumerable<CveSighting> sightings, int? triageItems) =>
+        new([.. sightings.GroupBy(s => s.Cve, StringComparer.OrdinalIgnoreCase).Select(g => new StackCve(g.Key, g.First().Record))
             .OrderByDescending(c => c.Record?.IsKev == true).ThenByDescending(c => c.Record?.CvssScore ?? -1).ThenByDescending(c => c.Record?.EpssScore ?? -1)
-            .ThenBy(c => c.Id, StringComparer.Ordinal).ToList();
-        return new StackNow(named, byCve.Count - named.Count, triageItems);
-    }
+            .ThenBy(c => c.Id, StringComparer.Ordinal)], triageItems);
 
     /// <summary>
     /// The products with their counts, by name, retired ones last: what the API lists. "Right now" isn't read (each
@@ -282,35 +274,34 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     public async Task<IReadOnlyList<StackRow>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();
-        return await RowsAsync(includeRetired, null, ct);
+        return await RowsAsync(includeRetired, rightNow: false, ct);
     }
 
     /// <summary>
     /// The list page: each product with its counts and its "Right now"; those that need a look first, then by name,
     /// retired ones last. Read in a fixed number of queries however many products there are: every article is matched
     /// against every name in one pass (<see cref="StackNames"/>), and the new triage items once, as triage matches
-    /// them. "Right now" is held to the team edition's ceiling, and the triage count is only for those who triage.
+    /// them. The triage count is only for those who triage.
     /// </summary>
     public async Task<StackList> OverviewAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();
-        var ceiling = (await editions.GetAsync(ct)).Team;
-        return new StackList(MostPressingFirst(await RowsAsync(includeRetired, ceiling, ct)), ceiling);
+        return new StackList(MostPressingFirst(await RowsAsync(includeRetired, rightNow: true, ct)));
     }
 
     /// <summary>
     /// The list's order, for rows read by name with the retired last: by <see cref="StackRow.Urgency"/>; then the worst
     /// CVSS score among the CVEs named, where one is known; then the more new triage items; then as they came, by name
     /// (the sort is stable). A product that needs nothing is last, a retired one after those, whatever is written about
-    /// it. Someone who can't triage has no triage counts, so they play no part; a CVE that's only counted lends no score.
+    /// it. Someone who can't triage has no triage counts, so they play no part.
     /// </summary>
     public static IReadOnlyList<StackRow> MostPressingFirst(IEnumerable<StackRow> byName) =>
         byName.OrderBy(r => r.Urgency)
             .ThenByDescending(r => r.NeedsLook ? r.Now.Cves.Max(c => c.Record?.CvssScore) ?? -1 : 0)
             .ThenByDescending(r => r.NeedsLook ? r.Now.TriageItems ?? 0 : 0).ToList();
 
-    // The rows by name, retired last; with "Right now" held to nowCeiling when one is given.
-    private async Task<List<StackRow>> RowsAsync(bool includeRetired, TlpLevel? nowCeiling, CancellationToken ct)
+    // The rows by name, retired last; with "Right now" when it's asked for.
+    private async Task<List<StackRow>> RowsAsync(bool includeRetired, bool rightNow, CancellationToken ct)
     {
         var today = clock.Today;
         await using var db = await dbs.CreateAsync(ct);
@@ -318,7 +309,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             .OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToListAsync(ct);
 
         // Each product's articles: those naming it, then those tagged with it.
-        var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.Tlp, a.CreatedAtUtc }).ToListAsync(ct);
+        var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.CreatedAtUtc }).ToListAsync(ct);
         var names = new StackNames(products.Select(Entry));
         var mine = ArticlesByProduct(products, names, articles.Select(a => (a.Id, a.Title, a.Bluf)),
             (await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct)).Select(t => (t.ArticleId, t.ProductId)));
@@ -336,16 +327,14 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var sightings = Enumerable.Empty<(Guid ArticleId, CveSighting Cve)>().ToLookup(s => s.ArticleId, s => s.Cve);
         Dictionary<Guid, int>? triage = null;
         HashSet<Guid> briefedToday = [], written = [];
-        if (nowCeiling is { } ceiling)
+        if (rightNow)
         {
-            // The CVEs on the recent briefs' articles, each with what's known about it and whether its article is above the ceiling.
+            // The CVEs on the recent briefs' articles, each with what's known about it.
             var from = today.AddDays(-RecentBriefDays);
             var recent = db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate >= from)).Select(i => i.ArticleId);
-            var above = articles.Where(a => a.Tlp > ceiling).Select(a => a.Id).ToHashSet();
-            // Today's brief's articles, those the team edition carries; and the articles written lately, whatever their TLP
-            // (the list counts every article a product has, so "written up" says nothing a count doesn't).
+            // Today's brief's articles, and the articles written lately.
             briefedToday = (await db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == today)).Select(i => i.ArticleId).ToListAsync(ct))
-                .Where(id => !above.Contains(id)).ToHashSet();
+                .ToHashSet();
             var lately = DateTimeOffset.UtcNow.AddDays(-RecentBriefDays);
             written = articles.Where(a => a.CreatedAtUtc >= lately).Select(a => a.Id).ToHashSet();
             sightings = (await (from c in db.ArticleCves.AsNoTracking()
@@ -353,7 +342,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
                                 join r in db.CveRecords.AsNoTracking() on c.CveId equals r.CveId into records
                                 from r in records.DefaultIfEmpty()
                                 select new { c.ArticleId, c.CveId, Record = r }).ToListAsync(ct))
-                .ToLookup(c => c.ArticleId, c => new CveSighting(c.CveId, above.Contains(c.ArticleId), c.Record));
+                .ToLookup(c => c.ArticleId, c => new CveSighting(c.CveId, c.Record));
             if (user.Has(Permission.WriteArticles)) triage = await NewItemsNamingAsync(db, products.Where(p => !p.IsRetired).Select(Entry).ToList(), ct);
         }
 
@@ -441,27 +430,25 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return details;
     }
 
-    // What every product's page reads alike: the team edition's ceiling, the articles, and every action (only the columns
-    // shown: every action is read, to find those that name the product without an article).
+    // What every product's page reads alike: the articles, and every action (only the columns shown: every action is read,
+    // to find those that name the product without an article).
     private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate,
         bool TeamExternal, string? TicketRef, string? TicketUrl);
 
-    private sealed record DetailFacts(TlpLevel Ceiling, List<ArticleFact> Articles, List<ActionFact> Actions);
+    private sealed record DetailFacts(List<ArticleFact> Articles, List<ActionFact> Actions);
 
     private async Task<DetailFacts> DetailFactsAsync(IAppDbContext db, CancellationToken ct)
     {
-        // The page is the team edition's readers': an article above its ceiling isn't named, as the brief leaves it out.
-        var ceiling = (await editions.GetAsync(ct)).Team;
         var articles = await ArticlesAsync(db, ct);
         var actions = await db.Actions.AsNoTracking()
             .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate,
                 a.Team!.IsExternal, a.TicketRef, a.TicketUrl))
             .ToListAsync(ct);
-        return new DetailFacts(ceiling, articles, actions);
+        return new DetailFacts(articles, actions);
     }
 
-    // Its articles at or below the ceiling named, those above counted; its actions all named, an action raised from an
-    // article above the ceiling too (the Actions list and the action page name it).
+    // Its articles and its actions, all named whatever their TLP: the page is the team edition's readers', who read every
+    // article and action in the app.
     private static async Task<StackDetail> DetailAsync(IAppDbContext db, StackProduct p, DetailFacts facts, CancellationToken ct)
     {
         var e = Entry(p);
@@ -472,8 +459,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
             .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate,
                 a.TeamExternal, a.TicketRef, a.TicketUrl)).ToList();
-        var articles = history.Where(h => h.Tlp <= facts.Ceiling).Select(h => h.Article).ToList();
-        return new StackDetail(p, p.Team?.Name, articles, actions, facts.Ceiling, history.Count - articles.Count);
+        return new StackDetail(p, p.Team?.Name, [.. history.Select(h => h.Article)], actions);
     }
 
     /// <summary>How many other articles a present-mode card lists.</summary>

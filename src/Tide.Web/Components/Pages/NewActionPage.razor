@@ -1,0 +1,6 @@
+@page "/actions/new"
+@attribute [Authorize(Policy = Policies.WriteArticles)]
+
+@* A new action: the action page without a number, for those who may create one (ActionService.CreateAsync asks for
+   WriteArticles). Anyone else gets the access-denied page, as every other page they can't use sends them. *@
+<ActionPage />

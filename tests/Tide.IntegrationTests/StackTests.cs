@@ -307,7 +307,7 @@ public class StackServiceTests : IDisposable
 
         var rows = (await stack.OverviewAsync()).Rows.ToDictionary(r => r.Product.Name, r => r.Now);
         (rows["Halo Router"].BriefedToday, rows["Halo Router"].NotWrittenUp).Should().Be((true, false), "an article on today's brief names it");
-        rows["Halo Keep"].BriefedToday.Should().BeFalse("its only article on today's brief is above the team edition's ceiling");
+        rows["Halo Keep"].BriefedToday.Should().BeTrue("its article on today's brief is RED, which the team edition's readers see in the app");
         (rows["Halo Quiet"].BriefedToday, rows["Halo Quiet"].NotWrittenUp).Should().Be((false, true), "triage names it and no article does");
         (rows["Halo Idle"].BriefedToday, rows["Halo Idle"].NotWrittenUp).Should().Be((false, false), "nothing is happening to it");
 
@@ -316,9 +316,9 @@ public class StackServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling()
+    public async Task RightNow_NamesEveryCve_WhateverItsArticlesTlp_ForTheTeamEditionsReaders()
     {
-        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };   // an administrator moves the ceiling
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         var stack = _db.Stack();
         await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway" });
         var articles = _db.Articles();
@@ -332,15 +332,12 @@ public class StackServiceTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        var list = await stack.OverviewAsync();
-        list.Ceiling.Should().Be(TlpLevel.AmberStrict, "the team edition's default ceiling");
-        var now = list.Rows.Single().Now;
-        now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0001"], "the RED article's own CVE isn't named, even to an analyst");
-        now.CvesAbove.Should().Be(1, "it's counted");
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
+        (await stack.OverviewAsync()).Rows.Single().Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0666", "CVE-2026-0001"],
+            "the RED article's CVE is named, worst first, as its article is to a Viewer everywhere in the app");
 
-        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Red);
-        var all = (await stack.OverviewAsync()).Rows.Single().Now;
-        (all.Cves.Select(c => c.Id).ToList(), all.CvesAbove).Should().BeEquivalentTo((new[] { "CVE-2026-0666", "CVE-2026-0001" }, 0));
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
+        await FluentActions.Invoking(() => stack.OverviewAsync()).Should().ThrowAsync<ForbiddenException>("a Reader never reads Our stack");
     }
 
     [Fact]
@@ -483,12 +480,12 @@ public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
         await using var analyst = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
         var seen = await After(analyst, p => p.SetWords("nowcast"));
         seen.Should().Contain("CVE-2026-4141").And.Contain("<span class=\"tide-kev\">KEV</span>").And.Contain(">9.1</span>").And.Contain("62 %")
-            .And.Contain("1 CVE above TLP:AMBER&#x2B;STRICT").And.Contain("<a href=\"triage?named=true\">1 new in triage</a>");
-        seen.Should().NotContain("CVE-2026-4666", "a CVE seen only on an article above the team edition's ceiling is counted, not named").And.NotContain("breach at a partner");
+            .And.Contain("<a href=\"triage?named=true\">1 new in triage</a>");
+        seen.Should().Contain("CVE-2026-4666", "a CVE seen only on the RED article is named, as the article is in the app").And.NotContain(" above TLP:");
 
         await using var owner = await ComponentHarness.RenderAsync<StackPage>(app, "/stack", @as: Owner);
         var theirs = await After(owner, p => p.SetWords("nowcast"));
-        theirs.Should().Contain("CVE-2026-4141").And.Contain("1 CVE above TLP:AMBER&#x2B;STRICT").And.NotContain("CVE-2026-4666");
+        theirs.Should().Contain("CVE-2026-4141").And.Contain("CVE-2026-4666");
         theirs.Should().NotContain("in triage", "triage is the analysts': its count isn't shown to anyone else").And.NotContain("href=\"triage");
     }
 
