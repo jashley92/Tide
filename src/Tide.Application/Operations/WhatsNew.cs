@@ -187,7 +187,7 @@ public sealed class ReleaseNotesCatalog
 /// which one they last saw (the <see cref="Preferences.UserPreferences.WhatsNewSeen"/> preference, saved as any other).
 /// </summary>
 public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abstractions.ICurrentUser user, ReleaseNotesCatalog catalog,
-    TimeProvider time)
+    Org.OrgClock clock)
 {
     /// <summary>The release running (<see cref="ReleaseNotesCatalog.Running"/>).</summary>
     public ReleaseVersion? Running => catalog.Running(AppVersionInfo.Current);
@@ -216,7 +216,7 @@ public sealed class WhatsNewService(Preferences.UserPreferenceService prefs, Abs
         await prefs.SetAsync(new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [Preferences.UserPreferences.WhatsNewSeen] = running.ToString(),
-            [GuideLinkService.Release] = running + "@" + GuideLinkService.Day(DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)),
+            [GuideLinkService.Release] = running + "@" + GuideLinkService.Day(clock.Today),
         }, ct);
     }
 }

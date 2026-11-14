@@ -38,7 +38,9 @@ public static class FileRisk
     public const int HeaderLength = 16;
 
     /// <summary>The password on every zip: the security field's public convention for samples, so anyone receiving one knows it.</summary>
+#pragma warning disable S2068 // the analyzer reports it in the build despite NOSONAR
     public const string ZipPassword = "infected"; // NOSONAR S2068: not a credential; a published convention shown to every user
+#pragma warning restore S2068
 
     private static readonly HashSet<string> RunnableExtensions = new(StringComparer.OrdinalIgnoreCase)
     {

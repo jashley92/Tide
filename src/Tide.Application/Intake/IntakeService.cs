@@ -1317,10 +1317,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         }
     }
 
-    // The article every one of these items already made (a promote someone else, or an earlier click, finished).
     // Who decided an item (promoted, attached, set aside), for a message: their name, or "Someone" when it isn't known.
     private static string Who(FeedItem? item) => string.IsNullOrWhiteSpace(item?.StatusByName) ? "Someone" : item.StatusByName;
 
+    // The article every one of these items already made (a promote someone else, or an earlier click, finished).
     private static Guid? OneArticle(List<FeedItem> items) =>
         items.Count > 0 && items.TrueForAll(i => i.Status == FeedItemStatus.Promoted && i.ArticleId is not null && i.ArticleId == items[0].ArticleId)
             ? items[0].ArticleId : null;

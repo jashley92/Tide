@@ -16,6 +16,7 @@ public sealed class SecurityHeadersMiddleware
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
         // Disable powerful features the app never uses.
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+#pragma warning disable S7039 // the analyzer reports it in the build despite NOSONAR
         headers.ContentSecurityPolicy = // NOSONAR S7039: 'unsafe-inline' for style only, below
             "default-src 'self'; " +
             "img-src 'self' data:; " +
@@ -31,6 +32,7 @@ public sealed class SecurityHeadersMiddleware
             "frame-ancestors 'none'; " +
             "base-uri 'self'; " +
             "form-action 'self'";
+#pragma warning restore S7039
         headers.Remove("Server");
 
         await _next(context);

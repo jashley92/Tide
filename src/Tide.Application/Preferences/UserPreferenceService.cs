@@ -168,11 +168,12 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
         {
             await using var db = await dbs.CreateAsync(ct);
             var rows = await db.UserPreferences.Where(p => p.UserId == user.UserId && names.Contains(p.Name)).ToDictionaryAsync(p => p.Name, StringComparer.Ordinal, ct);
+            var now = time.GetUtcNow();   // one save, one time on every row it writes
             foreach (var (name, value) in values)
             {
                 if (!rows.TryGetValue(name, out var row)) db.UserPreferences.Add(row = new UserPreference { UserId = user.UserId, Name = name });
                 row.Value = value;
-                row.UpdatedAtUtc = time.GetUtcNow();
+                row.UpdatedAtUtc = now;
             }
             try
             {
