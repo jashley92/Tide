@@ -26,6 +26,8 @@ window.tideTips = (function () {
     var TALL = 0.6;
     // Whether this step's control, pushed out of the window after it was found, has been brought back already.
     var brought = false;
+    // Whether this step's page has been scrolled to make room for its card beside its control (place), once a step.
+    var nudged = false;
     var root = document.documentElement;
 
     function shown(el) { return !!el && el.isConnected && el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'); }
@@ -57,6 +59,7 @@ window.tideTips = (function () {
         // before the mark is written, so this costs no extra layout.)
         var tall = target.getBoundingClientRect().height > innerHeight * TALL;
         brought = false;
+        nudged = false;
         target.classList.add('tide-tip-target');
         sizeWatch.observe(target);
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
@@ -215,8 +218,19 @@ window.tideTips = (function () {
             target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             r = target.getBoundingClientRect();
         }
-        var at = r && beside(r, w, high)
-            || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
+        var at = r && beside(r, w, high);
+        // Nowhere beside it fits where the page has it (a tall control, or a card that wider letters made taller), though
+        // the window can show both: for a step, once, the page is scrolled just enough for the card to fit under it, else
+        // over it. A control too tall for that keeps the card in the middle.
+        if (dialog && r && !at && !nudged && r.height + GAP + size.height <= innerHeight - EDGE - high) {
+            nudged = true;
+            // In whole pixels, rounded up: the page scrolls by whole pixels.
+            var down = Math.ceil(r.bottom + GAP + size.height - (innerHeight - EDGE));
+            if (down > 0) { scrollBy({ top: down, behavior: 'instant' }); r = target.getBoundingClientRect(); at = beside(r, w, high); }
+            var up = Math.ceil(high + size.height + GAP - r.top);
+            if (!at && up > 0) { scrollBy({ top: -up, behavior: 'instant' }); r = target.getBoundingClientRect(); at = beside(r, w, high); }
+        }
+        at = at || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
         // A control in the top bar, above the rail, keeps its card under it: moved off the rail it couldn't point at it.
         var overTheRail = r && rail && r.bottom <= rail.top + 1;
         var onTheRail = rail && !overTheRail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top;
