@@ -178,6 +178,8 @@
     }
     else
     {
+        @* Wider than a narrow window: the table scrolls in its own box, the page doesn't. *@
+        <div class="table-responsive">
         <table class="tide-table">
             <thead><tr><th>Source</th><th>Kind</th><th>Every</th><th>Last poll</th><th></th></tr></thead>
             <tbody>
@@ -224,6 +226,7 @@
                 }
             </tbody>
         </table>
+        </div>
     }
 </div>
 
