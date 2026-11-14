@@ -23,6 +23,9 @@ public class TideApp : WebApplicationFactory<Program>
     /// <summary>The SQL Server database the app runs on instead of SQLite (see <see cref="SqlServerTideApp"/>).</summary>
     private protected virtual string? SqlServerDatabase => null;
 
+    /// <summary>The app's clock, when not the system's (see <see cref="WeekdayApp"/>).</summary>
+    protected virtual TimeProvider? Time => null;
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tide-tests-" + Guid.NewGuid().ToString("N"));
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -51,6 +54,7 @@ public class TideApp : WebApplicationFactory<Program>
         // that reads it after a step that took longer on a loaded machine still finds it (ToastServiceTests holds
         // the few seconds themselves).
         builder.ConfigureTestServices(s => s.AddScoped(_ => new Tide.Web.Services.ToastService(new ManualClock())));
+        if (Time is { } time) builder.ConfigureTestServices(s => s.AddSingleton(time));
     }
 
     protected override void Dispose(bool disposing)
@@ -68,6 +72,13 @@ public class TideApp : WebApplicationFactory<Program>
 public class SqlServerTideApp : TideApp
 {
     private protected override string? SqlServerDatabase { get; } = SqlServerFactAttribute.NewDatabase();
+}
+
+/// <summary>The app on a working day's clock (<see cref="WeekdayClock"/>), for tests that start today's meeting or count
+/// business days from today: on a weekend Today shows Monday's brief, whose meeting can't start before Monday.</summary>
+public class WeekdayApp : TideApp
+{
+    protected override TimeProvider? Time { get; } = new WeekdayClock();
 }
 
 public class WebAppTests(TideApp app) : IClassFixture<TideApp>

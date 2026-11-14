@@ -24,7 +24,7 @@ namespace Tide.IntegrationTests;
 /// everyone following; nothing above the meeting's ceiling is named or counted; none on the company-wide edition. Its own
 /// app, so the slide holds only this class's actions, and each test retires its own when it ends.
 /// </summary>
-public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
+public class PresentActionsReviewTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private static readonly SignIn Owner = new("dev:review-owner", "Rhea Owner", "ActionOwner");
     private static readonly SignIn Visitor = new("dev:review-visitor", "Vic Visitor", "Visitor");

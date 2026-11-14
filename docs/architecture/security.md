@@ -404,7 +404,7 @@ Endpoints that serve content of their own override it:
 - **The circuit.** Every write in the app goes through the Blazor Server circuit. `CircuitOriginMiddleware` refuses
   any `/_blazor` request (negotiate, WebSocket upgrade, long polling) whose `Origin` is neither the request's host nor
   `App:BaseUrl`'s authority (scheme not compared, default ports equal). Starting a circuit also needs data-protected
-  component markers from a page the other site can't read. The hub's largest message is 256 KB.
+  component markers from a page the other site can't read. The hub's largest message is 1 MB.
 - **Antiforgery.** `UseAntiforgery` validates form tokens for Razor component forms. The API group calls
   `DisableAntiforgery`: it takes JSON bodies, and TIDE registers no CORS policy, so a browser won't send a cross-site
   JSON `PATCH` or `POST`.

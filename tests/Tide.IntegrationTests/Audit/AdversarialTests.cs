@@ -733,8 +733,8 @@ public sealed class ServiceWorld : IDisposable
         await using (var ctx = db.Context())
         {
             ctx.Users.AddRange(
-                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", LastSeenUtc = DateTimeOffset.UtcNow },
-                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", LastSeenUtc = DateTimeOffset.UtcNow });
+                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow },
+                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow });
             await ctx.SaveChangesAsync();
         }
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
@@ -895,7 +895,7 @@ public sealed class ServiceWorld : IDisposable
             ("Intake.Attach", () => db.Intake().AttachAsync(FeedItem, Article)),
             ("Cves.EnrichNow", () => db.Cves().EnrichNowAsync()),
             ("Stories.Create", () => db.Stories().CreateAsync("x", null)),
-            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active)),
+            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active, Guid.Empty)),
             ("Stories.Link", () => db.Stories().LinkAsync(Article, Story)),
             ("Stories.Delete", () => db.Stories().DeleteAsync(Story)),
             ("Rotation.AddMember", () => db.Rotation().AddMemberAsync("eve", "Eve")),

@@ -22,7 +22,7 @@ namespace Tide.IntegrationTests;
 /// card opened over or beside a slide (an action's, a product's, the indicators'). Every component present mode can
 /// draw that injects a service that saves is accounted for here.
 /// </summary>
-public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp>
+public partial class RehearsalReadOnlyTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 

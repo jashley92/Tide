@@ -129,7 +129,7 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         var (theirNumber, _) = await Raise(theirs, "Rail other sweep");
         var (patchNumber, _) = await Raise(mine, "Rail owner patch", ActionKind.PatchRemediate);
         var (closedNumber, closedId) = await Raise(mine, "Rail owner closed sweep");
-        await As(sp => sp.GetRequiredService<ActionService>().SetStatusAsync(closedId, ActionStatus.Done, ActionOutcome.NoHits, null));
+        await Close(closedId);
         var query = await Query("Rail owner query");
 
         var workable = await As(sp => sp.GetRequiredService<LibraryUseService>().WorkableAsync(), Owner);
@@ -475,7 +475,13 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
 
     // ---- Closed actions: nothing from the Library is added to them ----
 
-    private Task Close(Guid id) => As(sp => sp.GetRequiredService<ActionService>().SetStatusAsync(id, ActionStatus.Done, ActionOutcome.NoHits, null));
+    // Closed clean: a query run with no hits on record, as "no hits" needs.
+    private Task Close(Guid id) => As(async sp =>
+    {
+        var actions = sp.GetRequiredService<ActionService>();
+        await actions.RanCleanAsync(id);
+        await actions.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.NoHits, null);
+    });
 
     private Task<Guid> BlockPlaybook(string name) => As(sp => sp.GetRequiredService<PlaybookService>().SaveAsync(new PlaybookForm
     {
@@ -496,6 +502,7 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         await As(async sp =>
         {
             var actions = sp.GetRequiredService<ActionService>();
+            if (closed == ActionStatus.Done) await actions.RanCleanAsync(sweepId);
             await actions.SetStatusAsync(sweepId, closed, closed == ActionStatus.Done ? ActionOutcome.NoHits : ActionOutcome.None, "Closed for the test.");
             await actions.SetStatusAsync(blockId, closed, closed == ActionStatus.Done ? ActionOutcome.Blocked : ActionOutcome.None, "Closed for the test.");
         });

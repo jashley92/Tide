@@ -39,8 +39,7 @@ window.tideTriage = (function () {
         // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
         // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
         if (e.key === 'Escape' || action === 'read') {
-            const pane = document.querySelector('.tide-reading');
-            const shown = !!pane && pane.getClientRects().length > 0;
+            const shown = !!shownPane();
             if (e.key === 'Escape' && shown) return 'close-reading';
             if (action === 'read' && shown) return 'toggle-reading';
         }
@@ -54,6 +53,23 @@ window.tideTriage = (function () {
     function open(row) {
         const link = row && row.querySelector('a.tide-triage-link');
         if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
+    }
+
+    // The reading pane, when it's shown (one open by itself is hidden on a narrow window); null otherwise.
+    function shownPane() {
+        const pane = document.querySelector('.tide-reading');
+        return pane && pane.getClientRects().length > 0 ? pane : null;
+    }
+
+    // Where the pane sits over the list (a narrow window), the row kept in view after V can leave the pane's head above
+    // the window, under the top bar: once V has opened or read into it, its head is brought into view below the bar
+    // (focus stays on the row, for J and K). At once, not smoothly: a smooth scroll still keeping the row in view would
+    // otherwise carry on past it. Beside the list, it's in view already and nothing moves.
+    function showPane(actions) {
+        if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
+        const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
+        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+            pane.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
@@ -119,7 +135,7 @@ window.tideTriage = (function () {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
                 follow: ['toggle', 'expand', 'collapse', 'read', 'toggle-reading', 'close-reading', 'cancel'],
-                held: held, key: actionFor, open: open
+                held: held, key: actionFor, open: open, after: showPane
             });
         },
         stop: function () {
