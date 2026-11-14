@@ -179,6 +179,10 @@ public class Story : AuditableEntity
     public string Name { get; set; } = string.Empty;
     public string? Summary { get; set; }
     public StoryStatus Status { get; set; } = StoryStatus.Active;
+
+    /// <summary>Moved by each save of its form, so a form opened before a colleague's save can't save over it. Linking an
+    /// article to it doesn't move it: the form doesn't carry its articles.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
 }
 
 /// <summary>

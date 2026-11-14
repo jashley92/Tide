@@ -131,7 +131,7 @@
                             {
                                 <div>
                                     <div class="d-flex align-items-center">
-                                        <input id="@id" @ref="_boxes[t.Metric.Id]" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" inputmode="decimal" autocomplete="off"
+                                        <input id="@id" @ref="_boxes[t.Metric.Id]" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" maxlength="32" inputmode="decimal" autocomplete="off"
                                                value="@(bad ?? Shown(t.Metric.Id, false, Raw(t.Value)))" aria-invalid="@(bad is null ? null : "true")" aria-describedby="@(bad is null ? null : id + "-error")"
                                                @onchange="e => SaveValue(t, e.Value?.ToString())" @onfocus="() => Entering(t.Metric.Id, false)" @onblur="() => Left(t.Metric.Id, false)" />
                                         <LevelMark Level="t.Level" />

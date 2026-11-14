@@ -39,8 +39,11 @@ state beyond what's on screen.
   `MapRazorComponents<App>().AddInteractiveServerRenderMode(...)`. Two settings matter:
   - `DisconnectedCircuitRetentionPeriod` is **20 minutes** (the default is 3), so a laptop that slept comes back to an
     article being edited, unsaved changes and all.
-  - `MaximumReceiveMessageSize` is **256 KB** (SignalR's default is 32 KB), so a long article field read back from the
-    Markdown editor doesn't drop the circuit. Screenshots stream through `InputFile` and don't count.
+  - `MaximumReceiveMessageSize` is **1 MB** (SignalR's default is 32 KB). A text box sends all its text in one message,
+    and a message over the limit drops the circuit and the text with it, so every text box has a `maxlength` (a test
+    checks) and the limit holds the longest, 200,000 characters (`ArticleService.MaxPaste`, `HuntQuery.MaxText`), at up
+    to 3 bytes a character. A box that cuts a paste says so (`LengthNote`). Screenshots stream through `InputFile` and
+    don't count.
   - `ContentSecurityFrameAncestorsPolicy = null`, because `SecurityHeadersMiddleware` sets the one CSP.
 - **Short-lived database contexts.** A circuit shares one DI scope, so services open a context per operation through
   `IAppDbContextFactory`. See [backend](backend.md).

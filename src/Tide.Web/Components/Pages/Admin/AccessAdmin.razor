@@ -88,11 +88,11 @@
     <div class="row g-3">
         <div class="col-md-6">
             <label class="tide-field-label" for="team-recipients">Security team edition</label>
-            <textarea id="team-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" @bind="_teamRecipients" placeholder="cti-team@example.org"></textarea>
+            <textarea id="team-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" maxlength="4000" rows="4" @bind="_teamRecipients" placeholder="cti-team@example.org"></textarea>
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="public-recipients">Company-wide edition</label>
-            <textarea id="public-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
+            <textarea id="public-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" maxlength="4000" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
         </div>
     </div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => SaveRecipients()">Save recipients</button>
@@ -126,7 +126,7 @@
         </tbody>
     </table>
     <div class="d-flex gap-2 flex-wrap">
-        <input class="tide-maxw-md form-control form-control-sm" placeholder="DOMAIN\Group, Group, or a SID" aria-label="AD group" @bind="_group" />
+        <input class="tide-maxw-md form-control form-control-sm" maxlength="256" placeholder="DOMAIN\Group, Group, or a SID" aria-label="AD group" @bind="_group" />
         <select class="tide-maxw-xs form-select form-select-sm" aria-label="Role" @bind="_role">
             @foreach (var role in Enum.GetValues<AppRole>())
             {

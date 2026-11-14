@@ -318,11 +318,13 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 
 /* ---- Page parts ---- */
 .tide-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
-.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; }
+/* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
+   widening the page. */
+.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
-/* Breadcrumbs: "Actions › A-12". */
-.tide-crumbs { margin: 0 0 .25rem; }
+/* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
+.tide-crumbs { margin: 0 0 .25rem; overflow-wrap: anywhere; }
 .tide-crumbs ol { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: .85rem; }
 .tide-crumbs li { display: inline-flex; align-items: center; min-width: 0; }
 .tide-crumbs li + li::before { content: "\203A"; color: var(--tide-text-muted); padding: 0 .5rem; }
@@ -654,6 +656,8 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-edition article:last-child { border-bottom: 0; }
 .tide-edition h3 { font-size: 1.08rem; font-weight: var(--tide-weight-semibold); margin: .3rem 0; }
 .tide-edition .tide-bluf { font-weight: var(--tide-weight-medium); }
+/* An article as an edition carries it: a long unbroken run (a hash list, a blob) wraps rather than widening the page. */
+.tide-edition-article { min-width: 0; overflow-wrap: anywhere; }
 .tide-edition ul { margin: .4rem 0; }
 .tide-edition img { max-width: calc(100% - .4rem); max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
 .tide-withheld { font-size: .86rem; color: var(--tide-text-muted); font-style: italic; }
@@ -1670,7 +1674,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-tabbar-count.tide-live-tick { animation-name: tide-live-tick-count-colour; }
     .tide-live-pill { animation: none; }
 }
-.tide-triage-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); }
+.tide-triage-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); min-width: 0; overflow-wrap: anywhere; }
 /* The title and, beside it, the icon that opens the source in a new tab. In New and Shortlisted the title is a button
    that opens the promote form; it reads as the title, and underlines on hover as a link would. */
 .tide-triage-head { display: flex; align-items: baseline; gap: var(--tide-space-2); }
@@ -2011,8 +2015,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }
 .tide-empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .35rem; padding: 2rem 1rem; color: var(--tide-text-muted); }
 .tide-empty-state-icon { font-size: 2rem; color: var(--tide-accent); opacity: .8; margin-bottom: .2rem; }
-.tide-empty-state-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); }
-.tide-empty-state-msg { max-width: 32rem; font-size: .92rem; }
+.tide-empty-state-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); max-width: 100%; overflow-wrap: anywhere; }
+.tide-empty-state-msg { max-width: min(32rem, 100%); font-size: .92rem; overflow-wrap: anywhere; }
 .tide-empty-state-actions { margin-top: .6rem; display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
 .tide-empty-state-compact { padding: var(--tide-space-4) var(--tide-space-2); gap: var(--tide-space-1); }
 .tide-empty-state-compact .tide-empty-state-icon { font-size: var(--tide-text-lg); margin-bottom: 0; }
@@ -2320,6 +2324,10 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 @media (max-width: 1000px) {
   .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
   .tide-reading { position: static; max-height: none; order: -1; }
+  /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
+  .tide-reading-head { flex-wrap: wrap; }
+  /* Brought into view after V (triage.js), it stops below the top bar, which sticks. */
+  .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
 }
 @media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
 
@@ -3039,7 +3047,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    title in Attach gives way, the dismiss reason narrows, and the pane's text gives way so the bar stays in the pane.
    Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row, one row
    while there's room (below). ---- */
-.tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
+@media (min-width: 1000.02px) {
+    .tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
+}
 .tide-triage-decide { display: grid; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 .tide-triage-why { margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-triage-acts, .tide-triage-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; }

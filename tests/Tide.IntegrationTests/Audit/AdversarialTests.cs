@@ -892,7 +892,7 @@ public sealed class ServiceWorld : IDisposable
             ("Intake.Attach", () => db.Intake().AttachAsync(FeedItem, Article)),
             ("Cves.EnrichNow", () => db.Cves().EnrichNowAsync()),
             ("Stories.Create", () => db.Stories().CreateAsync("x", null)),
-            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active)),
+            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active, Guid.Empty)),
             ("Stories.Link", () => db.Stories().LinkAsync(Article, Story)),
             ("Stories.Delete", () => db.Stories().DeleteAsync(Story)),
             ("Rotation.AddMember", () => db.Rotation().AddMemberAsync("eve", "Eve")),

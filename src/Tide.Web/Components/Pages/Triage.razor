@@ -61,7 +61,7 @@ else
 <FilterBar Pills="Pills" Filters="Defs" Active="Narrowed" OnChanged="Refilter" OnClear="ClearFilters"
            Count="@(_loaded && _rows.Count > 0 ? CountText : null)">
     <Search>
-        <input class="tide-maxw-sm form-control form-control-sm" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
+        <input class="tide-maxw-sm form-control form-control-sm" maxlength="200" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
     </Search>
     <ChildContent>
     @if (_status is FeedItemStatus.New or FeedItemStatus.Shortlisted)

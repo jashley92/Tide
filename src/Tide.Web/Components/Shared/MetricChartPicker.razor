@@ -14,7 +14,7 @@
             .Select(g => (Group: g.ToList(), Listed: g.Where(m => (showRetired || !m.IsRetired) && Matches(m, find)).ToList()))
             .Where(g => g.Listed.Count > 0).ToList();
     }
-    <input type="search" class="form-control form-control-sm tide-filter-find" placeholder="Find a metric" aria-label="Find a metric"
+    <input type="search" class="form-control form-control-sm tide-filter-find" maxlength="200" placeholder="Find a metric" aria-label="Find a metric"
            @bind="_find" @bind:event="oninput" />
     <div class="tide-mc-list">
         @foreach (var (group, listed) in groups)

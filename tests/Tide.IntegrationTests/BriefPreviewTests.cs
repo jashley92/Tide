@@ -49,8 +49,8 @@ public class BriefPreviewTests(TideApp app) : IClassFixture<TideApp>
         var (team, company) = Sections(html);
         team.Should().Contain("id=\"proof-team-h\">Security team edition").And.Contain("What the security teams see").And.Contain("tide-edition-banner");
         company.Should().Contain("id=\"proof-company-h\">Company-wide edition").And.Contain("What the company sees").And.Contain("tide-edition-banner");
-        Count(team, "<article>").Should().Be(3);
-        Count(company, "<article>").Should().Be(2, "the TLP:AMBER article is above the company-wide ceiling");
+        Count(team, "<article class=\"tide-edition-article\">").Should().Be(3);
+        Count(company, "<article class=\"tide-edition-article\">").Should().Be(2, "the TLP:AMBER article is above the company-wide ceiling");
         company.Should().Contain("1 restricted item was briefed to the security team and left out of this edition.");
 
         // The switch for a narrow screen: the team edition shown first.
