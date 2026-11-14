@@ -169,18 +169,19 @@ public sealed class ReleaseNotesCatalog
     /// </summary>
     public IReadOnlyList<ReleaseHighlights> Due(ReleaseVersion current, ReleaseVersion? seen, IReadOnlyCollection<RoleGroup> groups)
     {
-        var due = Releases
-            .Where(r => r.Version <= current && (seen is null || r.Version > seen))
-            .Select(r => r.Highlights).OfType<ReleaseHighlights>()
-            .Where(h => h.For(groups).Count > 0)
-            .ToList();
-        return seen is null ? due.Take(1).ToList() : due;
+        var due = Unseen(current, seen, groups);
+        return seen is null ? due.Take(1).ToList() : due.ToList();
     }
 
     /// <summary>Whether any release up to <paramref name="current"/> has highlights for <paramref name="groups"/>: whether
     /// <see cref="Due"/> could list anything for them, whatever they've seen.</summary>
-    public bool AnyFor(ReleaseVersion current, IReadOnlyCollection<RoleGroup> groups) =>
-        Releases.Any(r => r.Version <= current && r.Highlights is { } h && h.For(groups).Count > 0);
+    public bool AnyFor(ReleaseVersion current, IReadOnlyCollection<RoleGroup> groups) => Unseen(current, null, groups).Any();
+
+    // The releases up to the one running, after the one seen, with highlights for the groups, newest first.
+    private IEnumerable<ReleaseHighlights> Unseen(ReleaseVersion current, ReleaseVersion? seen, IReadOnlyCollection<RoleGroup> groups) =>
+        Releases.Where(r => r.Version <= current && (seen is null || r.Version > seen))
+            .Select(r => r.Highlights).OfType<ReleaseHighlights>()
+            .Where(h => h.For(groups).Count > 0);
 
     /// <summary>The release this build is: the version it was released as, or, for a development build, the newest
     /// with notes (so what's new can be tried before a release).</summary>

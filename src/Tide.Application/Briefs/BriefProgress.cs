@@ -41,8 +41,8 @@ public static class BriefSteps
         var articles = brief.Items.Where(i => i.Article is not null).ToList();
         var total = articles.Count;
         var needWork = articles.Count(i => ArticleChecks.For(i.Article!).Any(c => c.Blocking));
-        // Ready: marked ready (or presented since), not a draft that happens to pass its checks.
-        var ready = articles.Count(i => i.Article!.Status != ArticleStatus.Draft && !ArticleChecks.For(i.Article!).Any(c => c.Blocking));
+        // With none needing work, ready means marked ready (or presented since): not a draft that happens to pass its checks.
+        var ready = articles.Count(i => i.Article!.Status != ArticleStatus.Draft);
         var marked = brief.Status != BriefStatus.Draft;
         var met = brief.Status is BriefStatus.Presented or BriefStatus.Sent;
         var numbers = missingNumbers > 0 ? $" · {Numbers(missingNumbers)} missing" : "";

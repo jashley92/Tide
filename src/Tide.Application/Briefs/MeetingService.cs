@@ -109,10 +109,13 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
     public async Task RemoveAttendeeAsync(Guid attendeeId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct);
-        if (a is null ? !MayAttend && !user.Has(Permission.PresentBriefs) : !CanRemoveAttendee(a))
-            throw new ForbiddenException("Only the presenter can take someone off who attended, or whoever added a name, that name.");
-        if (a is null) return;
+        const string refused = "Only the presenter can take someone off who attended, or whoever added a name, that name.";
+        if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a)
+        {
+            if (!MayAttend && !user.Has(Permission.PresentBriefs)) throw new ForbiddenException(refused);
+            return;
+        }
+        if (!CanRemoveAttendee(a)) throw new ForbiddenException(refused);
         db.MeetingAttendees.Remove(a);
         await db.SaveChangesAsync(ct);
     }

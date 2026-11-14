@@ -2549,10 +2549,7 @@ else
     private async Task ScrollTo(double fraction, bool instant)
     {
         ScrolledTo = fraction;
-        try { await JS.InvokeVoidAsync("tidePresent.follow", fraction, instant); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }   // not live (prerendered)
-        catch (JSException) { }
+        await JS.BestEffortAsync("tidePresent.follow", fraction, instant);
     }
 
     /// <summary>For tests: whether this page, handed the meeting, has told the room where it is on the slide.</summary>
@@ -3566,11 +3563,15 @@ else
     /// team edition, presenting or following (never a Visitor); or, with none live, it could present and corrects the
     /// record. Never in a rehearsal.
     /// </summary>
-    private bool MayAddAttendees => TeamEdition && !RehearsalAsked && !_followedToEnd && _brief is not null && MeetingSvc.CanAddAttendees(_brief.Id);
+    private bool MayAddAttendees => EditsAttendance && _brief is not null && MeetingSvc.CanAddAttendees(_brief.Id);
 
     /// <summary>Whether this page takes <paramref name="row"/> off who attended (MeetingService.CanRemoveAttendee): never in
     /// a rehearsal.</summary>
-    private bool MayRemove(MeetingAttendee row) => TeamEdition && !RehearsalAsked && !_followedToEnd && MeetingSvc.CanRemoveAttendee(row);
+    private bool MayRemove(MeetingAttendee row) => EditsAttendance && MeetingSvc.CanRemoveAttendee(row);
+
+    // Whether this page changes who attended at all: on the team edition, not a rehearsal, nor a page that followed the
+    // meeting to its end. MeetingService says whom.
+    private bool EditsAttendance => TeamEdition && !RehearsalAsked && !_followedToEnd;
 
     internal Task AddAttendee() => Run(async () =>
     {
