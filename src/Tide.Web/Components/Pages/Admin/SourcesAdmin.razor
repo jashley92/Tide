@@ -73,7 +73,7 @@
             </div>
             <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input id="s-en" class="form-check-input" type="checkbox" @bind="_form.Enabled" /><label class="form-check-label" for="s-en">Poll it</label></div></div>
             <div class="col-12"><label class="tide-field-label" for="s-lic">License or handling note (optional)</label><input id="s-lic" class="form-control form-control-sm" maxlength="500" @bind="_form.LicenseNote" placeholder="Members only: don't forward outside the company" /></div>
-            <div class="col-md-4">
+            <div class="col-12 col-xl-4">
                 <label class="tide-field-label" for="s-ua">User agent</label>
                 <select id="s-ua" class="form-select form-select-sm" @bind="_form.UserAgent" aria-describedby="s-ua-help">
                     <option value="@UserAgentChoice.Inherit">The global setting</option>
@@ -84,10 +84,12 @@
             </div>
             @if (_form.UserAgent == UserAgentChoice.Custom)
             {
-                <div class="col-md-8">
+                <div class="col-12 col-xl-8">
                     <label class="tide-field-label" for="s-ua-custom">Custom user agent</label>
-                    <input id="s-ua-custom" class="form-control form-control-sm tide-data" maxlength="@Source.MaxUserAgent" @bind="_form.CustomUserAgent" @bind:event="oninput"
-                           placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)" aria-describedby="s-ua-help" />
+                    <input id="s-ua-custom" @ref="_sourceAgentBox" class="form-control form-control-sm tide-data @(_sourceAgentProblem is null ? "" : "is-invalid")"
+                           maxlength="@Source.MaxUserAgent" @bind="_form.CustomUserAgent" @bind:event="oninput" aria-invalid="@(_sourceAgentProblem is null ? null : "true")"
+                           placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)" aria-describedby="@(_sourceAgentProblem is null ? "s-ua-help" : "s-ua-error s-ua-help")" />
+                    @if (_sourceAgentProblem is { } sourceAgentProblem) { <div class="invalid-feedback d-block" id="s-ua-error">@sourceAgentProblem</div> }
                 </div>
             }
             <div class="col-12 form-text mt-1" id="s-ua-help">Sent when its feed is pulled and its articles are read in triage (and by Test below).
@@ -293,7 +295,7 @@
     <p class="small tide-muted">What TIDE's outbound requests call themselves: pulling feeds, reading articles, CVE and KEV data, adversaries, the update
         check and the assistant's fetches. A source can choose its own on its form. A change applies to the next request.</p>
     <div class="row g-3">
-        <div class="col-md-4">
+        <div class="col-12 col-xl-4">
             <label class="tide-field-label" for="agent-choice">Send</label>
             <select id="agent-choice" class="form-select form-select-sm" @bind="GlobalAgent" aria-describedby="agent-sent agent-help">
                 <option value="@UserAgentChoice.Tide">TIDE's own (names this release)</option>
@@ -303,10 +305,10 @@
         </div>
         @if (GlobalAgent == UserAgentChoice.Custom)
         {
-            <div class="col-md-8">
+            <div class="col-12 col-xl-8">
                 <label class="tide-field-label" for="agent-custom">Custom user agent</label>
                 <input id="agent-custom" class="form-control form-control-sm tide-data @(_agentProblem is null ? "" : "is-invalid")" maxlength="@Source.MaxUserAgent"
-                       @bind="CustomAgent" @bind:event="oninput" placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)"
+                       @bind="CustomAgent" @bind:event="oninput" placeholder="Mozilla/5.0 (compatible; ExampleReader/1.0)" aria-invalid="@(_agentProblem is null ? null : "true")"
                        aria-describedby="@(_agentProblem is null ? "agent-help" : "agent-error agent-help")" />
                 @if (_agentProblem is { } agentProblem) { <div class="invalid-feedback d-block" id="agent-error">@agentProblem</div> }
             </div>
@@ -645,7 +647,12 @@
     private SourceForm? _form;
     private bool _showRetired, _busy;
     private string? _changedBy;
-    internal SourceForm? Form { get => _form; set => (_form, _changedBy) = (value, null); }
+    internal SourceForm? Form { get => _form; set => (_form, _changedBy, _sourceAgentProblem) = (value, null, null); }
+
+    // Why the source's custom user agent was refused, shown under its box; internal for the render tests.
+    internal string? SourceAgentProblem => _sourceAgentProblem;
+    private string? _sourceAgentProblem;
+    private ElementReference _sourceAgentBox;
     internal string? ChangedBy => _changedBy;
 
     // The banner's Reload, after a save refused as stale: the source as it is now (the list is read again by then), and
@@ -748,7 +755,21 @@
 
     // A new source is polled straight away when polling is on (the poller would within the minute anyway), so its row
     // shows how that went instead of "Never" until the page is reloaded.
-    internal Task Save() => Run(async () =>
+    internal async Task Save()
+    {
+        _sourceAgentProblem = _form!.UserAgent == UserAgentChoice.Custom ? UserAgents.Problem(_form.CustomUserAgent) : null;
+        if (_sourceAgentProblem is not null)
+        {
+            StateHasChanged();
+            Toasts.Error("The source wasn't saved: " + _sourceAgentProblem);
+            try { await _sourceAgentBox.FocusAsync(); }
+            catch (Exception ex) when (ex is JSException or InvalidOperationException) { }   // prerendering, or the circuit's gone
+            return;
+        }
+        await SaveSource();
+    }
+
+    private Task SaveSource() => Run(async () =>
     {
         if (_form!.Kind == SourceKind.CisaKev && string.IsNullOrWhiteSpace(_form.Url)) _form.Url = Cves.Options.KevUrl;
         var isNew = _form.Id is null;

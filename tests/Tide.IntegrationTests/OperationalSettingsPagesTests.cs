@@ -246,6 +246,26 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task Sources_ASourcesRefusedUserAgent_IsMarkedOnItsBox_AndNothingIsSaved()
+    {
+        await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");
+        r.Component.Form = new SourceForm { Name = "Tabbed agent", Url = "https://tabbed.example.org/feed.xml", PollMinutes = 60, Enabled = false,
+            UserAgent = UserAgentChoice.Custom, CustomUserAgent = "Reader/1.0\tcafé" };
+        await r.Click(c => c.Save());
+
+        r.Component.SourceAgentProblem.Should().NotBeNull();
+        (await r.Html()).Should().Contain("id=\"s-ua-error\"").And.Contain("aria-invalid=\"true\"");
+        r.Component.Form.Should().NotBeNull("the form stays open to fix");
+        await using (var scope = app.Services.CreateAsyncScope())
+        await using (var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+            db.Sources.Any(s => s.Name == "Tabbed agent").Should().BeFalse("a refused source isn't saved");
+
+        r.Component.Form!.CustomUserAgent = "Reader/1.0";
+        r.Component.Form = r.Component.Form;   // as reopening it does: the refusal goes
+        r.Component.SourceAgentProblem.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Sources_EditsTheAdvertLists_AndRefusesASelectorThatIsntOne()
     {
         await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");

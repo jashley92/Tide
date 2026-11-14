@@ -4792,7 +4792,7 @@ const pages = [
   // above that.
   { name: 'admin-sources-user-agent', route: '/admin/sources', setup: userAgentCustom, widths: [1920, 1440, 1100, 780, 400],
     rules: [[1440, noSidewaysScroll], fits('.tide-card-form'), fits('.tide-card:has(#agent-choice)'), visible('#agent-choice'), visible('#agent-custom'),
-      visible('#agent-sent'), visible('#s-ua'), visible('#s-ua-custom'), visible('#s-ua-help')] },
+      visible('#agent-sent'), visible('#s-ua'), visible('#s-ua-custom'), visible('#s-ua-help'), selectShowsOptions('#agent-choice'), selectShowsOptions('#s-ua')] },
   // Help: each release's highlights for the reader's roles, the full notes folded under them, linked to as "See all
   // changes" (that release's notes open).
   { name: 'help', route: '/help?release=1.13.0', setup: wideFont, widths: [1920, 1440, 780],
