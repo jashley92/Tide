@@ -2736,13 +2736,22 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 
 /* ---- Brief chip (BriefChip, in the top bar): when the brief meets and the step it's on, a link to Today ----
-   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps
-   or shrinks, so the top bar stays one row, and the search box matters more than it does: the chip shows only where the
-   search box keeps about 200px beside it. Under 1100px that takes the team's name giving way (only for those who have
-   a chip), and under 900px the chip itself is gone and the name is back. */
-.tide-brief-chip { flex: none; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
+   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps,
+   so the top bar stays one row, and the search box matters more than it does: the chip shows only where the search box
+   keeps 200px beside it, with Go to whole after it. Under 1100px that takes the team's name giving way (only for those
+   who have a chip), and under 900px the chip itself is gone and the name is back. Its wording is longer on a day off
+   ("Brief Mon 10:30 AM · ..."), or with a long step: where that's more than the bar has room for, the chip is cut
+   short (its title and name have the whole wording) rather than crowding the search box or Go to. */
+.tide-brief-chip { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
     border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text-muted);
     font-size: var(--tide-text-sm); white-space: nowrap; text-decoration: none; }
+.tide-brief-chip > .bi, .tide-brief-chip > .tide-live-dot { flex: none; }
+.tide-brief-chip-full, .tide-brief-chip-short { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 900px) {
+    .top-row:has(.tide-brief-chip) .tide-top-search { min-width: 200px; }
+    .top-row:has(.tide-brief-chip) .tide-top-find { min-width: auto; }
+    .top-row:has(.tide-brief-chip) .tide-top-end { flex: 0 1 auto; min-width: 0; }
+}
 .tide-brief-chip:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
 .tide-brief-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-brief-chip.is-live { border-color: var(--tide-accent); background: var(--tide-accent-soft); color: var(--tide-text); }

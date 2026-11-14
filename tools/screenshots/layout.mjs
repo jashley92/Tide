@@ -1324,9 +1324,44 @@ const railControlsUnscrolled = {
 /** This page starts today's meeting, or takes it up again (the dev analyst presented it last), and waits for it. */
 const startOrTakeUp = async p => {
   const button = p.getByRole('button', { name: 'Start the meeting' });
-  if (await button.count()) await button.click();
-  await p.locator('.tide-present-people').waitFor();
+  if (await button.count()) {
+    // Disabled before the brief's day (the demo's clock is a working day's, Demo:WorkingDay, so this shouldn't be):
+    // said at once, rather than waiting out a click that can't happen.
+    if (await button.isDisabled()) {
+      const why = await p.locator('#present-start-when').textContent({ timeout: 1000 }).catch(() => null);
+      throw new Error(`today's meeting can't be started${why ? `: ${why}` : ''}`);
+    }
+    await button.click();
+  }
+  await p.locator('.tide-present-people').waitFor({ timeout: 15_000 }).catch(async () => {
+    const toast = await p.locator('.tide-toast').first().textContent({ timeout: 1000 }).catch(() => null);
+    throw new Error(`the meeting didn't go live within 15s${toast ? `: ${toast.trim()}` : ''}`);
+  });
 };
+
+/**
+ * Setup: the top bar's brief chip worded as on a day off, when Today shows the next working day's brief and the chip
+ * puts the day before the time ("Brief Mon 10:30 AM · step 3 of 5 · Order"). The narrow chip gets the day before its
+ * time too ("Mon 10:30 AM · 3/5"), longer than BriefChipView makes it ("Mon · 3/5"), so the bar is checked with the
+ * chip at its longest. The demo's clock is always a working day's (Demo:WorkingDay): without this a run would see only
+ * a working day's wording.
+ */
+const dayOffChip = async page => {
+  await page.evaluate(() => {
+    for (const text of document.querySelectorAll('.tide-brief-chip-full, .tide-brief-chip-short'))
+      text.textContent = text.textContent.replace(/^(Brief )?(\d{1,2}:\d{2} [AP]M)/, '$1Mon $2');
+  });
+};
+
+/** The top bar: one row from a narrow window up, nothing pushed out of its group (the Go to button under the chip), and
+ *  the search box never squeezed for the chip: the chip is in view from 900px, and wherever it shows the search box keeps
+ *  200px. On a phone nothing pushes the page sideways. */
+const topBarRules = [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
+  [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')];
+
+/** The top bar on Today, wider letters: each control in its own room, whatever the width. */
+const topBarTodayRules = [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
+  oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')];
 
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
@@ -3964,9 +3999,7 @@ const pages = [
   { name: 'nav-very-short', route: '/admin', widths: [[1440, 600], [1920, 500]], rules: [navTargets, navScrollsToActive] },
   { name: 'nav-very-short-navigate', route: '/', setup: navigateToAdmin, widths: [[1440, 600]], rules: [navScrollsToActive] },
   // The top bar keeps each control in its own room, whatever the width and the fonts.
-  { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
-    rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
-      oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')] },
+  { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400], rules: topBarTodayRules },
   // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
   // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
   ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
@@ -4018,9 +4051,11 @@ const pages = [
   // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
   // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
   // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
-  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375],
-    rules: [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
-      [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
+  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375], rules: topBarRules },
+  // The same two with the chip as a day off has it (dayOffChip), whatever day the check runs: its wording is longer.
+  { name: 'top-bar-day-off', route: '/articles', setup: dayOffChip, widths: [1440, 1200, 1100, 1000, 900, 780], rules: topBarRules },
+  { name: 'top-bar-today-day-off', route: '/', setup: async page => { await wideFont(page); await dayOffChip(page); },
+    widths: [1920, 1440, 1200, 1100, 900, 780], rules: [...topBarTodayRules, roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-reader-sum'), visible('#tide-rail [role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1920, 800],
@@ -4889,9 +4924,11 @@ try {
   // Enough more new items for Triage to have a second page (the paging keys' rules), a slide with a dozen indicators
   // and CVEs (the slide's fit), and a meeting's action beside the slide (only the present-beside pages open one). Polling
   // on, with feeds the scheduled pass leaves alone (never fetched) last pulled the day before, and a cutoff at midnight,
-  // so Today says the feeds aren't pulled whenever the run is on a working day.
+  // so Today says the feeds aren't pulled. The app's clock is a working day's on a weekend too (Demo:WorkingDay), so
+  // today's brief is today's, its meeting can start and the feeds are due whatever day the checks run; the top bar is
+  // checked with a day off's chip as well (dayOffChip).
   server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true', '--Org:ActionBesideSlide=true',
-    '--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=00:00']);
+    '--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=00:00', '--Demo:WorkingDay=true']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);
@@ -4920,7 +4957,16 @@ async function check(list, demo) {
         let context;
         try {
           let page;
-          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo, p.context));
+          try {
+            ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo, p.context));
+          } catch (e) {
+            // A page that couldn't be loaded or set up (a meeting that wouldn't start) fails once, at once: its other
+            // widths would only wait out the same timeouts again.
+            const left = p.widths.length - p.widths.indexOf(size) - 1;
+            problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}${left ? ` (its other ${left} width${left === 1 ? '' : 's'} not checked)` : ''}`);
+            console.log(`  ${p.name} at ${width}x${height}: couldn't be set up`);
+            break;
+          }
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);

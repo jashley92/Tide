@@ -161,6 +161,10 @@ var demoMode = builder.Environment.IsDevelopment() && builder.Configuration.GetV
 var demoActivity = demoMode ? new DemoActivity() : null;
 if (demoActivity is not null)
     builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(demoActivity);
+// With Demo:WorkingDay too (the layout checks), the app's clock is a working day's on a weekend (DemoWorkingDayClock).
+if (demoMode && builder.Configuration.GetValue<bool>("Demo:WorkingDay"))
+    builder.Services.AddSingleton<TimeProvider>(new DemoWorkingDayClock(
+        TimeZoneInfo.FindSystemTimeZoneById(builder.Configuration["Org:TimeZone"] is { Length: > 0 } zone ? zone : new Tide.Application.Org.OrgOptions().TimeZone)));
 // First, so it stops last: it writes the jobs' last runs and lets the job lease go once they've stopped.
 builder.Services.AddHostedService<JobUpkeepHostedService>();
 builder.Services.AddHostedService<ReminderHostedService>();

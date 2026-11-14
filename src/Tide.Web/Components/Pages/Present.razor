@@ -194,16 +194,20 @@ else
                 @if (_view is null && _canPresent && TeamEdition && !Presented)
                 {
                     @* In a rehearsal it's shown, for the guide to point at, and does nothing: disabled, and Run refuses it even
-                       if a script takes that away. *@
-                    <button id="present-start" class="btn btn-sm btn-primary" disabled="@(_busy || RehearsalAsked)" aria-disabled="@(RehearsalAsked ? "true" : null)"
+                       if a script takes that away. Before the brief's day (a weekend, when Today shows Monday's brief) the
+                       meeting can't start yet (MeetingDay): the button is disabled and says when it can. *@
+                    var early = BeforeItsDay && !RehearsalAsked;
+                    <button id="present-start" class="btn btn-sm btn-primary" disabled="@(_busy || RehearsalAsked || early)" aria-disabled="@(RehearsalAsked || early ? "true" : null)"
+                            aria-describedby="@(early ? "present-start-when" : null)"
                             title="@(RehearsalAsked ? "Starts the real meeting; not in a rehearsal" : null)" @onclick="StartMeeting"><span class="bi bi-broadcast" aria-hidden="true"></span> Start the meeting</button>
+                    @if (early) { <span id="present-start-when" class="tide-present-help">@StartsOn</span> }
                 }
                 @if (_view is not null || Rehearsing)
                 {
                     <button id="present-copy-link" class="btn btn-sm btn-outline-secondary" disabled="@RehearsalAsked" aria-disabled="@(RehearsalAsked ? "true" : null)"
                             title="@(RehearsalAsked ? "Copies the link to follow the meeting; not in a rehearsal" : "Copy the join link")" @onclick="CopyLink"><span class="bi bi-link-45deg" aria-hidden="true"></span> Copy link</button>
                 }
-                @if (CanEnd && (_view is not null || !Presented) && !RehearsalAsked)
+                @if (CanEnd && (_view is not null || !Presented && !BeforeItsDay) && !RehearsalAsked)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="EndFromTop"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button>
                 }
@@ -1031,7 +1035,11 @@ else
                                     <input id="held" type="datetime-local" class="form-control form-control-sm d-inline-block w-auto ms-1" @bind="_heldAt" />
                                 </div>
                             }
-                            @if (CanEnd)
+                            @if (_view is null && BeforeItsDay)
+                            {
+                                <div class="tide-present-help mt-2">@StartsOn</div>
+                            }
+                            else if (CanEnd)
                             {
                                 <div><button id="present-end" class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
                                 <div class="tide-present-help">Marks the brief and its articles presented and records the meeting time.</div>
@@ -2166,11 +2174,18 @@ else
     // The presenter ends it, or anyone who can present once the presenter has gone for good; with no live meeting, any analyst.
     private bool CanEnd => _canPresent && (_view is null || Presenting || _view.CanTakeOver);
 
+    /// <summary>The brief's day hasn't come (a weekend or holiday, when Today shows the next brief): its meeting can't
+    /// start or be ended yet (<see cref="MeetingDay"/>). Preparing and rehearsing it can.</summary>
+    private bool BeforeItsDay => MeetingDay.Before(Clock, _date, Clock.Now);
+
+    /// <summary>What's said where Start and End would be before the brief's day.</summary>
+    private string StartsOn => $"The meeting can start on {Ui.ShortDay(_date)}, the brief's day.";
+
     private bool NoteDirty => !string.IsNullOrWhiteSpace(_noteText);
 
     internal Task StartMeeting() => Run(async () =>
     {
-        if (_disposed || !_canPresent) return;
+        if (_disposed || !_canPresent || BeforeItsDay) return;
         try { _seat = Meetings.Start(_date, _brief!.Id, _me, _meName, Circuit.CircuitId, Origin.Id, _slide); }
         catch (InvalidOperationException)
         {

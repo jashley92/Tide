@@ -22,7 +22,7 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>The app with its SQL commands counted, and its background jobs off so only what a test does is counted.</summary>
-public sealed class CountingApp : TideApp
+public sealed class CountingApp : WeekdayApp
 {
     public TestDb.CommandLog Commands { get; } = new();
 
@@ -85,7 +85,7 @@ internal static partial class BriefChipPage
 /// The brief chip in the top bar: when today's brief meets and which of the five steps it's on, read off the same steps
 /// as Today's strip, as a link to Today. The sample data has today's brief as a draft with three articles.
 /// </summary>
-public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
+public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private string Meets => BriefChipPage.Meets(app);
 
@@ -121,6 +121,19 @@ public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         current.Should().Contain(needsWork ? ">Write<" : ">Order<");
         BriefChipPage.In(today).Should().Contain(" aria-current=\"page\"", "on Today the chip is the current page's link, as the sidebar's is");
         BriefChipPage.In(await app.CreateClient().GetStringAsync("/?tab=distribute")).Should().Contain(" aria-current=\"page\"");
+    }
+
+    [Fact]
+    public void OnADayOff_TheNarrowChipNamesTheDay_NotTheTime_SoItIsNoLongerThanAWorkingDays()
+    {
+        // A weekend: Today shows Monday's brief. The wide chip and its name say the day and the time.
+        var step = new BriefStep(BriefStepKind.Order, "Order", "Not marked ready", StepState.Current);
+        var monday = new BriefChipView(new DateOnly(2026, 11, 16), Guid.NewGuid(), "Mon 10:30 AM", 3, 5, step);
+        monday.Short.Should().Be("Mon · 3/5");
+        monday.Full.Should().Be("Brief Mon 10:30 AM · step 3 of 5 · Order");
+        monday.Name.Should().Be("Brief at Mon 10:30 AM, step 3 of 5, Order");
+        (monday with { Meets = "10:30 AM" }).Short.Should().Be("10:30 AM · 3/5", "on the brief's own day it's the time");
+        (monday with { Step = null }).Short.Should().Be("Mon 10:30 AM", "not started, the chip has no step to give room to");
     }
 
     [Fact]
