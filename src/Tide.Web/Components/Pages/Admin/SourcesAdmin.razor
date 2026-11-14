@@ -54,7 +54,7 @@
         <h2>@(_form.Id is null ? "New source" : "Edit source")</h2>
         <ChangedElsewhere By="@_changedBy" What="source" OnReload="ReloadTheirs" />
         <div class="row g-2">
-            <div class="col-md-5"><label class="tide-field-label" for="s-name">Name</label><input id="s-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" /></div>
+            <div class="col-md-5"><label class="tide-field-label" for="s-name">Name</label><input id="s-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" @ref="_nameBox" /></div>
             <div class="col-md-3">
                 <label class="tide-field-label" for="s-kind">Kind</label>
                 <select id="s-kind" class="form-select form-select-sm" @bind="_form.Kind" @bind:after="KindChanged">
@@ -178,6 +178,8 @@
     }
     else
     {
+        @* Wider than a narrow window: the table scrolls in its own box, the page doesn't. *@
+        <div class="table-responsive">
         <table class="tide-table">
             <thead><tr><th>Source</th><th>Kind</th><th>Every</th><th>Last poll</th><th></th></tr></thead>
             <tbody>
@@ -224,6 +226,7 @@
                 }
             </tbody>
         </table>
+        </div>
     }
 </div>
 
@@ -563,7 +566,20 @@
     private SourceForm? _form;
     private bool _showRetired, _busy;
     private string? _changedBy;
-    internal SourceForm? Form { get => _form; set => (_form, _changedBy) = (value, null); }
+    // Edit or Add a source: the form opens above the list, so it takes focus (and with it the view) once it's drawn.
+    internal SourceForm? Form { get => _form; set => (_form, _changedBy, _focusForm) = (value, null, value is not null); }
+    private bool _focusForm;
+    private ElementReference _nameBox;
+
+    /// <summary>For tests: the form takes focus once the page is drawn.</summary>
+    internal bool FocusingForm => _focusForm;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusForm || _form is null) return;
+        _focusForm = false;
+        await _nameBox.TryFocusAsync(orGone: true);
+    }
     internal string? ChangedBy => _changedBy;
 
     // The banner's Reload, after a save refused as stale: the source as it is now (the list is read again by then), and

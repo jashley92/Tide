@@ -4771,6 +4771,17 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-days'), hidden('#tl-team')] },
   // The organization's settings: the two business-day limits for Actions that need review, each box with its unit, and
   // the brief's sent-by and posted-by times, with wider letters too.
+  // Edit on the last source in the list (far down the page): its form, drawn above the list, takes focus on its Name and
+  // is in view.
+  { name: 'admin-sources-edit-focus', route: '/admin/sources', setup: async page => {
+      const edit = page.locator('button:text-is("Edit")').last();
+      await edit.scrollIntoViewIfNeeded();
+      await edit.click();
+      await page.waitForFunction(() => document.activeElement?.id === 's-name', null, { timeout: 5000 }).catch(() => {});
+    }, widths: [1440, 780],
+    rules: [focusOn('#s-name'), inWindow('#s-name')] },
+  // The sources list at a narrow window: the table scrolls in its own box, never the page.
+  { name: 'admin-sources-narrow', route: '/admin/sources', widths: [780, [400, 800]], rules: [noSidewaysScroll] },
   { name: 'admin-organization', route: '/admin/organization', setup: wideFont, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'), visible('#org-sent-by'), visible('#org-posted-by'),
       oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
