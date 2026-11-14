@@ -1,0 +1,128 @@
+@page "/reports/teams/{TeamId:guid}"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@inject TeamScorecardService ScorecardSvc
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+@* One team's commitments by person (Team commitments, a team): its line as the scorecard has it, then each person's,
+   an action counting for whoever held it on its due date (a hand-off or reassignment before then moves it). Whoever
+   manages people sees every person's line and the actions nobody held; anyone else who reads actions sees only their
+   own. The window (?days=) and the parts filter (?parts=true) follow the scorecard's. *@
+
+<PageTitle>@(_people?.Team.Team.Name ?? "Team") commitments · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <Breadcrumbs Items="@([new("Team commitments", TeamCommitments.Href(_days, _parts, false)), new(_people?.Team.Team.Name ?? "Team")])" />
+        <h1>@(_people?.Team.Team.Name ?? "Team") by person</h1>
+        <div class="tide-sub">Each action counts for whoever held it on its due date.</div>
+    </div>
+</div>
+
+<ReportsTabBar Active="@ReportsTabs.Teams" />
+
+<div class="tide-card tide-noprint">
+    <SegmentedButtons T="int" Label="Window" Items="@TeamScorecardService.Windows" Selected="@_days" OnPick="d => Nav.NavigateTo(Href(TeamId, d, _parts))"
+                      Text="@(d => $"{d} days")" />
+</div>
+
+@if (_missing)
+{
+    <div class="tide-card"><EmptyState Icon="bi-people" Title="That team isn't on the scorecard" /></div>
+}
+else if (_failed)
+{
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the team's commitments" /></div>
+}
+else if (_people is not { } p)
+{
+    <LoadingBlock />
+}
+else
+{
+    <section class="tide-card" aria-labelledby="tp-title">
+        <h2 id="tp-title">@TeamCommitments.Range(p.Card)</h2>
+        <div class="table-responsive">
+            <table class="tide-table tide-report-table">
+                <caption class="visually-hidden">The team's actions due in the window, and each person's who held them on their due date</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Who</th>
+                        <th scope="col" class="tide-table-num">@(p.Card.PartsOnly ? "Parts" : "Actions") due</th>
+                        <th scope="col" class="tide-table-num" title="Done by the due date, of those done or past it">On time</th>
+                        <th scope="col" class="tide-table-num" title="Calendar days past the due date, done late or still open">Average days late</th>
+                        <th scope="col" class="tide-table-num">Open now</th>
+                        <th scope="col" class="tide-table-num">Overdue now</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th scope="row">@p.Team.Team.Name (the team)</th>
+                        <td class="tide-table-num">@p.Team.Parts</td>
+                        <td class="tide-table-num @(p.Team.OnTimePercent < 100 ? "tide-report-bad" : "")">@Share(p.Team.OnTimePercent, p.Team.OnTime, p.Team.Late)</td>
+                        <td class="tide-table-num">@Days(p.Team.AverageDaysLate)</td>
+                        <td class="tide-table-num">@p.Team.OpenNow</td>
+                        <td class="tide-table-num @(p.Team.OverdueNow > 0 ? "tide-report-bad" : "")">@p.Team.OverdueNow</td>
+                    </tr>
+                    @foreach (var r in p.People)
+                    {
+                        <tr @key="r.PersonId">
+                            <th scope="row">@r.PersonName</th>
+                            <td class="tide-table-num">@r.Parts</td>
+                            <td class="tide-table-num @(r.OnTimePercent < 100 ? "tide-report-bad" : "")">@Share(r.OnTimePercent, r.OnTime, r.Late)</td>
+                            <td class="tide-table-num">@Days(r.AverageDaysLate)</td>
+                            <td class="tide-table-num">@r.OpenNow</td>
+                            <td class="tide-table-num @(r.OverdueNow > 0 ? "tide-report-bad" : "")">@r.OverdueNow</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="small tide-muted mt-2 mb-0">
+            @if (p.Everyone)
+            {
+                <text>The team's line counts its actions as the scorecard does; each person's, those they held at the end of the due date,
+                    and the open ones they hold now. <em>Nobody</em> is the actions no one held.</text>
+            }
+            else if (p.People.Count == 0)
+            {
+                <text>You held none of this team's actions in the window, and hold none of its open ones. You see only your own line: a manager sees everyone's.</text>
+            }
+            else
+            {
+                <text>Your line: the actions you held at the end of their due dates, and the open ones you hold now. You see only your own line: a manager sees everyone's.</text>
+            }
+        </p>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid TeamId { get; set; }
+    [SupplyParameterFromQuery(Name = "days")] public string? DaysParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parts")] public string? PartsParam { get; set; }
+
+    private int _days = TeamScorecardService.DefaultDays;
+    private bool _parts, _failed, _missing;
+    private TeamPeople? _people;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _days = TeamScorecardService.WindowOrDefault(FilterValues.Number(DaysParam));
+        _parts = FilterValues.Flag(PartsParam);
+        (_people, _failed, _missing) = (null, false, false);
+        try { _people = await ScorecardSvc.PeopleAsync(TeamId, _days, _parts); }
+        catch (KeyNotFoundException) { _missing = true; }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>A team's by-person address for a window and the parts filter: only what isn't the default is in it.</summary>
+    internal static string Href(Guid teamId, int days, bool parts) => $"reports/teams/{teamId}" + TeamCommitments.Query(days, parts, false);
+
+    private static string Days(double? late) => late is { } d ? Words.Days(d) : "—";
+
+    private static string Share(double? percent, int onTime, int late) => TeamCommitments.Share(percent, onTime, late);
+}

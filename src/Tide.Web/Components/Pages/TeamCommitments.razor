@@ -14,7 +14,8 @@
 <div class="tide-page-head">
     <div>
         <h1>Team commitments</h1>
-        <div class="tide-sub">How each team does against the due dates on its actions, counted by when they were due.</div>
+        <div class="tide-sub">How each team does against the due dates on its actions, counted by when they were due. <em>By person</em>
+            splits a team by who held each action on its due date.</div>
     </div>
     @if (_card is not null)
     {
@@ -76,6 +77,7 @@ else
                                     <a href="@ActionsHref(r.Team, "open")">@r.Team.Name</a>
                                     @if (r.Team.IsExternal) { <Badge Class="ms-1">External</Badge> }
                                     @if (r.Team.IsRetired) { <span class="small tide-muted ms-1">(retired)</span> }
+                                    <a class="small ms-2 tide-noprint" href="@TeamCommitmentsPeople.Href(r.Team.Id, _days, _parts)" aria-label="@($"{r.Team.Name} by person")">By person</a>
                                 </th>
                                 <td class="tide-table-num">@r.Parts</td>
                                 <td class="tide-table-num @(r.OnTimePercent < 100 ? "tide-report-bad" : "")">@OnTime(r)</td>
@@ -149,7 +151,7 @@ else
     internal static string Href(int days, bool parts, bool external) =>
         "reports/teams" + Query(days, parts, external);
 
-    private static string Query(int days, bool parts, bool external)
+    internal static string Query(int days, bool parts, bool external)
     {
         var q = new List<string>();
         if (days != TeamScorecardService.DefaultDays) q.Add($"days={days}");
@@ -166,7 +168,7 @@ else
     // With the parts filter on, the list shows the team's parts and the rest; it has no filter for parts alone.
     internal static string ActionsHref(Team team, string view) => $"actions?view={view}&team={team.Id}&layout=list";
 
-    private static string Range(TeamScorecard c) =>
+    internal static string Range(TeamScorecard c) =>
         $"Due {c.From.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)} to {c.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
 
     private static string OnTime(TeamScore r) => Share(r.OnTimePercent, r.OnTime, r.Late);
@@ -174,7 +176,7 @@ else
     internal static string OnTimeOriginal(TeamScore r) => Share(r.OnTimeOriginalPercent, r.OnTimeOriginal, r.LateOriginal);
 
     // "50% (2 of 4)", or "—" with nothing on time or late.
-    private static string Share(double? percent, int onTime, int late) =>
+    internal static string Share(double? percent, int onTime, int late) =>
         percent is { } p ? $"{Words.Num(p)}% ({onTime} of {onTime + late})" : "—";
 
     // "2 of 7 (3 moves)": of the actions first due in the window, those re-dated, and how often.

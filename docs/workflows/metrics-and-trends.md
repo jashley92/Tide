@@ -286,6 +286,7 @@ before this was kept start from the date they had at the upgrade, with no moves.
 | Enter or clear the day's numbers | `EnterMetrics` (Analyst, Admin); on a sent day, `Administer` |
 | See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics only for those who write articles, and Reports for them and for managers; the pages stay open) |
 | Team commitments and its CSV | `ReadActions` (a tab of Reports, and linked from Workload) |
+| A team's commitments by person | `ReadActions` for one's own line; `ManagePeople` (Manager, Admin) for everyone's (`TeamScorecardService.PeopleAsync`) |
 | Brief timeliness and its CSV | `PresentBriefs` for one's own days, `ManagePeople` (Manager, Admin) for everyone's (`Policies.BriefTimeliness`, then `BriefTimelinessService`) |
 | Excuse a late brief day, or undo that | `ManagePeople` |
 | Define groups and metrics, the example set | `Administer` |

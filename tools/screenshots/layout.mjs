@@ -1654,6 +1654,14 @@ const triageLines = {
   cve: '.tide-triage-row:not(.tide-triage-group):has(.tide-cvss)',
 };
 
+/** Setup: the scorecard's first team opened by person, with wider letters (LETTER_SPACING). */
+const byPerson = async page => {
+  await page.locator('a:text-is("By person")').first().click();
+  await page.waitForURL(/\/reports\/teams\/[0-9a-f-]{36}/);
+  await idle(page);
+  await wideFont(page);
+};
+
 /** Setup: wider letters (LETTER_SPACING), then the first line of `kind` (triageLines) selected by a click on its source's
  *  name; the rail follows it. */
 const railOn = kind => async page => {
@@ -4708,6 +4716,10 @@ const pages = [
   // analyst (their own days), each table in its card, never a sideways scroll.
   ...['/reports', '/reports/teams', '/reports/timeliness'].map(route => ({ name: `reports-tabs ${route}`, route, setup: wideFont, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('nav[aria-label="Reports"]'), [1100, oneRow('nav[aria-label="Reports"]')], fits('.tide-card')] })),
+  // A team's commitments by person, opened from the scorecard's first By person link: the team's line and each person's
+  // in the card, wider letters too.
+  { name: 'team-people', route: '/reports/teams', setup: byPerson, widths: [1920, 1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tp-title'), visible('nav[aria-label="Reports"]')] },
   { name: 'timeliness-manager', route: '/reports/timeliness?by=week&as=Lee&roles=Manager', setup: wideFont, widths: [1920, 1440, 1100, 780, 400],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-team'), visible('#tl-over-time'), visible('#tl-days')] },
   { name: 'timeliness-analyst', route: '/reports/timeliness?roles=Analyst', setup: wideFont, widths: [1440, 780, 400],

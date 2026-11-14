@@ -47,8 +47,25 @@ public sealed record TeamScore(Team Team, int Parts, int OnTime, int Late, doubl
     public double? OnTimeOriginalPercent => Share(OnTimeOriginal, LateOriginal);
 
     // The on-time share both measures give: to one decimal place, or null with nothing on time or late.
-    private static double? Share(int onTime, int late) => onTime + late == 0 ? null : Math.Round(100.0 * onTime / (onTime + late), 1);
+    internal static double? Share(int onTime, int late) => onTime + late == 0 ? null : Math.Round(100.0 * onTime / (onTime + late), 1);
 }
+
+/// <summary>
+/// One person's line of a team's commitments: the team's actions due in the window that they held on their due date
+/// (<see cref="Parts"/>), of which <see cref="OnTime"/> were done by it and <see cref="Late"/> after it or are still open
+/// past it, by <see cref="TeamScore"/>'s rules; and the team's open and overdue actions they hold now. A null
+/// <see cref="PersonId"/> is the team's own: actions nobody held.
+/// </summary>
+public sealed record PersonScore(string? PersonId, string PersonName, int Parts, int OnTime, int Late, double? AverageDaysLate, int OpenNow, int OverdueNow)
+{
+    /// <summary>The share done on time, 0 to 100, of those on time or late; null when none were either.</summary>
+    public double? OnTimePercent => TeamScore.Share(OnTime, Late);
+}
+
+/// <summary>A team's commitments by person (Reports › Team commitments › a team): its line as the scorecard has it, and a
+/// line per person the reader may see (<see cref="Everyone"/>: all of them, the team's own unassigned line too; otherwise
+/// only the reader's own).</summary>
+public sealed record TeamPeople(TeamScorecard Card, TeamScore Team, bool Everyone, IReadOnlyList<PersonScore> People);
 
 /// <summary>The team commitments scorecard: a row per team, for the actions due from <see cref="From"/> to <see cref="To"/>
 /// (today), the last <see cref="Days"/> days.</summary>
@@ -117,6 +134,82 @@ public sealed class TeamScorecardService(IAppDbContextFactory dbs, ICurrentUser 
             if (!t.IsRetired || row.Parts > 0 || row.OriginallyDue > 0 || row.OpenNow > 0) rows.Add(row);
         }
         return new TeamScorecard(window, from, today, partsOnly, externalOnly, rows);
+    }
+
+    /// <summary>
+    /// <paramref name="teamId"/>'s commitments over the last <paramref name="days"/> days by person: each action due in the
+    /// window counts for whoever held it at the end of its due date, read back from its audit trail, so a hand-off or a
+    /// reassignment before the due date moves it and one after doesn't. Its line is the scorecard's. Whoever manages
+    /// people (<see cref="Permission.ManagePeople"/>) sees every person's line and the actions nobody held; anyone else
+    /// who reads actions, only their own.
+    /// </summary>
+    public async Task<TeamPeople> PeopleAsync(Guid teamId, int? days = null, bool partsOnly = false, CancellationToken ct = default)
+    {
+        var card = await BuildAsync(days, partsOnly, false, ct);
+        var team = card.Teams.FirstOrDefault(t => t.Team.Id == teamId) ?? throw new KeyNotFoundException("There's no such team on the scorecard.");
+        var everyone = user.Has(Permission.ManagePeople);
+        var today = card.To;
+        await using var db = await dbs.CreateAsync(ct);
+
+        var mine = db.Actions.AsNoTracking().Where(a => a.TeamId == teamId && (!partsOnly || a.ParentId != null));
+        var due = mine.Where(a => a.DueDate >= card.From && a.DueDate <= today);
+        var held = await due.Select(a => new Held(a.Id, a.DueDate!.Value, a.ClosedDate, a.AssigneeId, a.AssigneeName)).ToListAsync(ct);
+        var met = (await due.WhereMet().Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+        var late = (await due.WhereLate(today).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+        var holders = await HoldersOnDueDateAsync(db, held, ct);
+        var now = await mine.WhereOpen().Select(a => new { a.AssigneeId, a.AssigneeName, Overdue = a.DueDate < today }).ToListAsync(ct);
+
+        // Each person's name as last recorded with them; whose line is whose is by id ("" for nobody).
+        var names = new Dictionary<string, string>();
+        foreach (var (id, name) in held.Select(h => holders[h.Id]).Concat(now.Select(n => (n.AssigneeId, n.AssigneeName))))
+            if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name)) names.TryAdd(id, name);
+        var dueBy = held.ToLookup(h => holders[h.Id].Id ?? "");
+        var openBy = now.ToLookup(n => n.AssigneeId ?? "");
+        var people = dueBy.Select(g => g.Key).Union(openBy.Select(g => g.Key))
+            .Where(key => everyone || key == user.UserId)
+            .Select(key =>
+            {
+                var theirs = dueBy[key].ToList();
+                var lateDays = theirs.Where(h => late.Contains(h.Id)).Select(h => ActionSla.Late(h.Due, h.Closed ?? today)).ToList();
+                var open = openBy[key].ToList();
+                return new PersonScore(key.Length == 0 ? null : key, key.Length == 0 ? "Nobody (the team's)" : names.GetValueOrDefault(key, key),
+                    theirs.Count, theirs.Count(h => met.Contains(h.Id)), lateDays.Count, lateDays.Count == 0 ? null : Math.Round(lateDays.Average(), 1),
+                    open.Count, open.Count(n => n.Overdue));
+            })
+            .OrderBy(p => p.PersonId is null).ThenBy(p => p.PersonName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        return new TeamPeople(card, team, everyone, people);
+    }
+
+    private sealed record Held(Guid Id, DateOnly Due, DateOnly? Closed, string? AssigneeId, string? AssigneeName);
+
+    /// <summary>
+    /// Who held each action at the end of its due date: who holds it now, unless its assignee changed after that day, in
+    /// which case whoever its audit trail says held it before the first such change. A change on the day itself counts.
+    /// </summary>
+    private async Task<Dictionary<Guid, (string? Id, string? Name)>> HoldersOnDueDateAsync(IAppDbContext db, IReadOnlyList<Held> held, CancellationToken ct)
+    {
+        var result = held.ToDictionary(h => h.Id, h => (h.AssigneeId, h.AssigneeName));
+        if (held.Count == 0) return result;
+        var keys = held.ToDictionary(h => h.Id.ToString("D", CultureInfo.InvariantCulture));
+        var keyList = keys.Keys.ToList();
+        const string assignee = "\"" + nameof(ActionItem.AssigneeId) + "\"";
+        var since = clock.StartOfDay(held.Min(h => h.Due).AddDays(1));
+        var changes = await db.AuditLog.AsNoTracking()
+            .Where(e => e.EntityType == nameof(ActionItem) && e.Action == nameof(EntityState.Modified) && keyList.Contains(e.EntityKey)
+                        && e.AtUtc >= since && e.ChangesJson!.Contains(assignee))
+            .Select(e => new { e.EntityKey, e.AtUtc, e.ChangesJson }).ToListAsync(ct);
+        // The earliest change after each one's due date says who held it until then.
+        foreach (var g in changes.GroupBy(c => c.EntityKey))
+        {
+            var h = keys[g.Key];
+            var after = clock.StartOfDay(h.Due.AddDays(1));
+            var first = g.Where(c => c.AtUtc >= after).MinBy(c => c.AtUtc);
+            if (first is null || History.AuditRecords.Values(first.ChangesJson, nameof(ActionItem.AssigneeId)) is not { Length: 2 } ids) continue;
+            var name = History.AuditRecords.Values(first.ChangesJson, nameof(ActionItem.AssigneeName)) is { Length: 2 } names ? names[0] : null;
+            result[h.Id] = (string.IsNullOrEmpty(ids[0]) ? null : ids[0], name);
+        }
+        return result;
     }
 
     private static Task<Dictionary<Guid, int>> CountByTeam(IQueryable<ActionItem> q, CancellationToken ct) =>

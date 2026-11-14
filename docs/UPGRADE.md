@@ -194,6 +194,9 @@ the earlier ones change. On a DbaApplies install, the DBA applies it first.
 - **Reports has tabs**: Monthly report, Team commitments and Brief timeliness, each at the address it had
   (`/reports`, `/reports/teams`) or its own (`/reports/timeliness`, with a CSV). They replace the Team commitments
   link in the report's subtitle. Reports is now in the sidebar for Managers too.
+- **Team commitments by person.** *By person* beside a team splits its actions by who held each on its due date, from
+  the actions' history (a hand-off before the due date moves it). Managers and administrators see everyone's lines;
+  anyone else who reads actions sees only their own. Team lines are unchanged.
 
 **New settings**
 - `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every
