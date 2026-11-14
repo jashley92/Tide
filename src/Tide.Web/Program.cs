@@ -164,6 +164,9 @@ var demoMode = builder.Environment.IsDevelopment() && builder.Configuration.GetV
 var demoActivity = demoMode ? new DemoActivity() : null;
 if (demoActivity is not null)
     builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(demoActivity);
+// With Demo:WorkingDay too (the layout checks), the app's clock is a working day's on a weekend (DemoWorkingDayClock).
+if (demoMode && DemoWorkingDayClock.From(builder.Configuration) is { } workingDay)
+    builder.Services.AddSingleton<TimeProvider>(workingDay);
 // First, so it stops last: it writes the jobs' last runs and lets the job lease go once they've stopped.
 builder.Services.AddHostedService<JobUpkeepHostedService>();
 builder.Services.AddHostedService<ReminderHostedService>();

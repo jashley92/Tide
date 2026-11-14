@@ -34,13 +34,18 @@ public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, in
         _ => $"Brief {(Met ? "presented" : Meets)} · step {Number} of {Of} · {Step.Label}",
     };
 
-    /// <summary>What's seen in a narrow one: "10:30 AM · 3/5", "10:30 AM", "Presented · 5/5", "Sent".</summary>
+    /// <summary>What's seen in a narrow one: "10:30 AM · 3/5", "10:30 AM", "Presented · 5/5", "Sent". On a day off,
+    /// when the brief meets on another day, the step names the day rather than the time ("Mon · 3/5"), so the narrow chip
+    /// is never longer than a working day's; the full wording is its name and title.</summary>
     public string Short => Step switch
     {
         null => Meets,
         _ when Finished => Said.Split(" · ")[0],
-        _ => $"{(Met ? "Presented" : Meets)} · {Number}/{Of}",
+        _ => $"{(Met ? "Presented" : MeetsDay)} · {Number}/{Of}",
     };
+
+    // "Mon" from "Mon 10:30 AM" (MeetsAt with the day in front); the time alone otherwise.
+    private string MeetsDay => Meets.Split(' ') is [var day, _, _] ? day : Meets;
 
     /// <summary>The link's name at every width, which the short text alone wouldn't carry: "Brief at 10:30 AM, step 3
     /// of 5, Order".</summary>
