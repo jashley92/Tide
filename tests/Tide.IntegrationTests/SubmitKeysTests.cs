@@ -26,7 +26,7 @@ public partial class SubmitKeysTests(TideApp app) : IClassFixture<TideApp>
         { "Today/MeetingCard.razor", 1 },
         { "Pages/ExternalTeams.razor", 2 },
         { "Pages/Admin/AccessAdmin.razor", 2 },
-        { "Pages/Admin/SourcesAdmin.razor", 4 },
+        { "Pages/Admin/SourcesAdmin.razor", 5 },
         { "Pages/Admin/TeamsAdmin.razor", 4 },
         { "Pages/Admin/EmailTemplatesAdmin.razor", 3 },   // the template, its copies, and the archive copy
         { "Pages/Admin/QueryTemplatesAdmin.razor", 1 },
