@@ -49,7 +49,7 @@ public static class PageTips
         new("story", V1_14, Permission.WriteArticles, "[aria-controls=\"story-new\"]", "Add an article from here",
             "New article on this story starts a draft with the story's CVEs, tags and products we run. Add an existing article puts one on the story."),
         new("reports", V1_14, Permission.ReadTeamEdition, "#main-content nav[aria-label=\"Reports\"]", "Reports has tabs",
-            "The monthly report, team commitments and brief timeliness are tabs here. Each keeps its own address."),
+            "Each report you can open is a tab here, and each keeps its own address."),
     ];
 
     /// <summary>The tip for the page at <paramref name="relativePath"/> (as <c>NavigationManager.ToBaseRelativePath</c>
