@@ -56,7 +56,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var values = await Matching(db, null, null).Where(a => a.Tlp <= ceiling).OrderByDescending(a => a.CreatedAtUtc).Take(newest)
-            .Select(a => a.Cves.Select(c => c.CveId).FirstOrDefault() ?? a.Indicators.Select(i => i.Value).FirstOrDefault())
+            // First as the article lists them (its editor's order), so the same one is picked every time.
+            .Select(a => a.Cves.OrderBy(c => c.CveId).Select(c => c.CveId).FirstOrDefault()
+                         ?? a.Indicators.OrderBy(i => i.Type).ThenBy(i => i.Value).Select(i => i.Value).FirstOrDefault())
             .ToListAsync(ct);
         return values.FirstOrDefault(v => v is not null);
     }

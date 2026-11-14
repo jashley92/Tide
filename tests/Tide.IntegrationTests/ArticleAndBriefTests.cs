@@ -461,7 +461,7 @@ public class BriefServiceTests : IDisposable
 
         offered.Single(c => c.Id == carried).Available.Should().BeTrue("a carried-over draft is still to be briefed, however old");
         offered.Single(c => c.Id == talked).Available.Should().BeFalse("it was presented on Friday");
-        offered.Count(c => c.Available).Should().Be(1, "\"Add article (N available)\" counts only what's still to brief");
+        offered.Count(c => c.Available).Should().Be(1, "\"Add article (N ready, M drafts)\" counts only what's still to brief");
     }
 
     [Fact]

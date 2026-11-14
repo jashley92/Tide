@@ -999,6 +999,25 @@ const longTicket = async page => {
   });
 };
 
+/** Setup: the action's title made the longest the field takes (300 characters) and one word, as a pasted hash or
+ *  address is, with wider letters. */
+const longActionTitle = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const h1 = document.querySelector('.tide-action-title h1');
+    h1.lastChild.textContent = ' ' + 'a3f9c2e17b'.repeat(30);
+  });
+};
+
+/** Setup: a health check's detail made a server's long folder path, one word to the browser, with wider letters. */
+const longCheckDetail = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const cell = document.querySelector('.tide-diag-checks tr:first-child td:last-child');
+    cell.textContent = 'Writes to D:\\inetpub\\tide\\App_Data\\pickup\\' + 'OutgoingMailFolder\\'.repeat(6) + 'tide.eml';
+  });
+};
+
 /** Setup: wider letters, and `theme` (dark) set on the page as the app's theme switch would. */
 const darkWide = async page => {
   await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
@@ -4186,6 +4205,9 @@ const pages = [
       visible('.tide-hunt-story'), startsAbove('.tide-hunt [data-copy-target]', 900),
       // A-1's query is KQL: the control says the language of the query on the action, on the live page too.
       later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'))] },
+  // A title of one long word (a pasted hash) wraps in the header rather than widening the page, at every width.
+  { name: 'action-long-title', route: '/actions/{huntAction}', setup: longActionTitle, widths: [1920, 1440, 780, [400, 800]],
+    rules: [noSidewaysScroll, fits('.tide-action-title')] },
   // The action page's context rail. From 1500px it's docked open beside the page, which has about 873px for the sweep's
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
@@ -4546,6 +4568,9 @@ const pages = [
   // An action opened from its row and closed with Escape: focus is back on that row's title.
   { name: 'slide-open-actions-closed', route: '/present/{today}', setup: reviewActionClosed, widths: [1920],
     rules: [hidden('#present-action-title'), focusOn('.tide-slide-open tbody tr:first-child .tide-slide-row-open')] },
+  // Diagnostics: a health check's long detail (a server's folder path) wraps within its card, as the sidebar's open.
+  { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
+    rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)')] },
   // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
   { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),

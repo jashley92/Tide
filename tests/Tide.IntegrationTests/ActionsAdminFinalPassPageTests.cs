@@ -1,0 +1,85 @@
+using System.Net;
+using AwesomeAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Actions;
+using Tide.Application.Articles;
+using Tide.Application.Org;
+using Tide.Domain.Enums;
+using Tide.Web.Components.Pages.Admin;
+using Tide.Web.Components.Shared;
+using Tide.Web.Services;
+
+namespace Tide.IntegrationTests;
+
+/// <summary>Final bug pass, the pages: a cleared meeting time is refused rather than said to be saved; an action's header
+/// carries its article's marking; a closed hunt's card offers nothing new and says why.</summary>
+public class ActionsAdminFinalPassPageTests(TideApp app) : IClassFixture<TideApp>
+{
+    private static string Unique(string name) => $"{name} {Guid.NewGuid().ToString("N")[..6]}";
+
+    [Fact]
+    public async Task ABlankMeetingTime_IsRefusedOnTheField_AndNothingSaysSaved()
+    {
+        var was = app.Services.GetRequiredService<OrgClock>().MeetingTime;
+        await using var r = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<ToastService>();
+
+        await r.Click(c => c.MeetingBox!.OnChange(new ChangeEventArgs { Value = "" }));
+        await r.Click(c => c.Save());
+
+        var html = WebUtility.HtmlDecode(await r.Html());
+        html.Should().Contain("id=\"org-meeting-error\"").And.Contain("The brief meets at is a 24-hour time such as 10:30.")
+            .And.MatchRegex("id=\"org-meeting\"[^>]*aria-invalid=\"true\"|aria-invalid=\"true\"[^>]*id=\"org-meeting\"");
+        toasts.Toasts.Should().NotContain(t => !t.IsError, "nothing was saved, so nothing says it was");
+        app.Services.GetRequiredService<OrgClock>().MeetingTime.Should().Be(was);
+
+        // Put right, it saves, and the message goes.
+        await r.Click(c => c.MeetingBox!.OnChange(new ChangeEventArgs { Value = TimeBox.Format(was) }));
+        await r.Click(c => c.Save());
+        (await r.Html()).Should().NotContain("id=\"org-meeting-error\"");
+        toasts.Toasts.Should().Contain(t => !t.IsError && t.Message == "Saved.");
+    }
+
+    [Fact]
+    public async Task AnActionsHeader_CarriesItsArticlesMarking_FromAmberUp()
+    {
+        int red, clear;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync(Unique("Marked team"), null, null);
+            var articles = sp.GetRequiredService<ArticleService>();
+            var actions = sp.GetRequiredService<ActionService>();
+            red = await actions.CreateAsync(new ActionForm { Title = "From a partner's report", TeamId = team,
+                ArticleId = await articles.CreateAsync(Unique("Partner breach"), "Partner", null, TlpLevel.Red) });
+            clear = await actions.CreateAsync(new ActionForm { Title = "From a public report", TeamId = team,
+                ArticleId = await articles.CreateAsync(Unique("Public advisory"), "Vendor", null, TlpLevel.Clear) });
+        }
+
+        var page = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/actions/{red}"));
+        var head = page[page.IndexOf("tide-action-badges", StringComparison.Ordinal)..page.IndexOf("tide-action-who", StringComparison.Ordinal)];
+        head.Should().Contain("title=\"Raised from a TLP:RED article.").And.Contain(">TLP:RED<");
+        var plain = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/actions/{clear}"));
+        plain[plain.IndexOf("tide-action-badges", StringComparison.Ordinal)..plain.IndexOf("tide-action-who", StringComparison.Ordinal)]
+            .Should().NotContain("TLP:", "CLEAR goes without saying");
+    }
+
+    [Fact]
+    public async Task AClosedHuntsCard_OffersNoNewQuery_AndSaysWhy()
+    {
+        int number;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync(Unique("Hunters"), null, null);
+            var actions = sp.GetRequiredService<ActionService>();
+            number = await actions.CreateAsync(new ActionForm { Title = "Hunt for the loader", Kind = ActionKind.ThreatHunt, TeamId = team });
+            var id = (await actions.GetAsync(number))!.Action.Id;
+            await actions.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.HitsEscalated, "Found on two hosts");
+        }
+
+        var page = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/actions/{number}?tool=hunt"));
+        page.Should().Contain(HuntPanel.Closed).And.NotContain("Write one by hand").And.NotContain("Add indicators").And.NotContain("Generate from");
+    }
+}
