@@ -17,6 +17,15 @@ public sealed class DemoWorkingDayClock : TimeProvider
         Days = day switch { DayOfWeek.Saturday => 2, DayOfWeek.Sunday => 1, _ => 0 };
     }
 
+    /// <summary>The clock <paramref name="config"/> asks for with <c>Demo:WorkingDay</c>, in its <c>Org:TimeZone</c>
+    /// (the default zone when none is set), or null when it doesn't ask for one. Program uses it only in the demo mode.</summary>
+    public static DemoWorkingDayClock? From(IConfiguration config, TimeProvider? system = null)
+    {
+        if (!config.GetValue<bool>("Demo:WorkingDay")) return null;
+        var zone = config["Org:TimeZone"] is { Length: > 0 } id ? id : new Tide.Application.Org.OrgOptions().TimeZone;
+        return new DemoWorkingDayClock(TimeZoneInfo.FindSystemTimeZoneById(zone), system);
+    }
+
     /// <summary>How many days on from the system clock this one is (0 on a working day).</summary>
     public int Days { get; }
 

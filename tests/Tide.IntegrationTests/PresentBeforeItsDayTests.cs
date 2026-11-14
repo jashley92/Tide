@@ -49,6 +49,17 @@ public class PresentBeforeItsDayTests(SaturdayApp app) : IClassFixture<SaturdayA
         app.Services.GetRequiredService<LiveMeetings>().Get(Monday).Should().BeNull("nothing started");
         (await r.Html()).Should().NotContain("can't be held before");
 
+        // The wrap-up's rail: where End the meeting would be, the same word on when it can start.
+        var wrap = await r.Html();
+        for (var i = 0; i < 12 && !wrap.Contains("<h2>That's the brief</h2>", StringComparison.Ordinal); i++)
+        {
+            await r.Click(p => p.OnPresentKey("next"));
+            wrap = await r.Html();
+        }
+        wrap.Should().Contain("<h2>That's the brief</h2>")
+            .And.Contain("<div class=\"tide-present-help mt-2\">The meeting can start on Mon Nov 16, the brief&#x27;s day.</div>")
+            .And.NotContain("id=\"present-end\"");
+
         await using var rehearsal = await Rehearse(app, Monday, SignIn.Analyst);
         (await rehearsal.Html()).Should().NotContain("Only today's brief can be rehearsed.", "Monday's is today's brief on a weekend")
             .And.Contain("Rehearsal: nothing here is shared or saved");
