@@ -68,7 +68,7 @@ window.tideTriage = (function () {
     function showPane(actions) {
         if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
         const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
-        if (pane && list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
             pane.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
 

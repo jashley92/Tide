@@ -2841,11 +2841,12 @@ async function selectReport(page) {
 
 /**
  * Setup: one long unbroken word (a hash list joined without spaces, a pasted blob) in place of the first match of
- * `selector`'s text, as no seeded text has.
+ * `selector`'s text, as no seeded text has; with `last`, in place of its last part only (a crumb after its links),
+ * after `prefix`.
  */
-const longWord = selector => async page => {
+const longWord = (selector, { last = false, prefix = '' } = {}) => async page => {
   await page.locator(selector).first().waitFor({ state: 'attached' });
-  await page.$eval(selector, el => { el.textContent = '9f86d081884c7d65'.repeat(18); });
+  await page.$eval(selector, (el, [last, prefix]) => { (last ? el.lastChild : el).textContent = prefix + '9f86d081884c7d65'.repeat(18); }, [last, prefix]);
   await idle(page);
 };
 
@@ -2865,7 +2866,8 @@ const vAfterJ = times => async page => {
   await page.locator('.tide-triage-row.selected').focus();
   for (let i = 0; i < times; i++) await pressJ(page);
   await pressV(1)(page);
-  await page.waitForTimeout(1000);   // any smooth scroll done
+  // Any smooth scroll done: the page hasn't moved for a fifth of a second.
+  await page.waitForFunction(() => new Promise(done => { const y = scrollY; setTimeout(() => done(scrollY === y), 200); }));
 };
 
 /** Setup: the profile's "Merge into another profile" open, offering a profile with a long name. */
@@ -4485,7 +4487,7 @@ const pages = [
   { name: 'adversary-merge-long-name', route: '/adversaries/{adversary}', setup: longMergeOption, widths: [1440, 400],
     rules: [noSidewaysScroll, insidePage('#merge-into')] },
   { name: 'adversary-long-name', route: '/adversaries/{adversary}', widths: [1440, 780, 400],
-    setup: async page => { await longWord('.tide-page-head h1')(page); await page.$eval('.tide-crumbs', nav => { nav.lastChild.textContent = ' › ' + '9f86d081884c7d65'.repeat(18); }); },
+    setup: async page => { await longWord('.tide-page-head h1')(page); await longWord('.tide-crumbs', { last: true, prefix: ' › ' })(page); },
     rules: [noSidewaysScroll, fits('.tide-page-head'), fits('.tide-crumbs')] },
   { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },
   { name: 'reader-long-bottom-line', route: '/articles/{vpnArticle}', setup: longWord('#tide-rail .tide-edition-article .tide-bluf'), widths: [1600],
