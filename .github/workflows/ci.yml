@@ -214,7 +214,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           # If the runner can't reach Ubuntu's package mirrors, fall back to the browser alone: the runner image
           # already carries the system libraries Chromium needs.
-          ./node_modules/.bin/playwright install --with-deps --only-shell chromium \n            || ./node_modules/.bin/playwright install --only-shell chromium
+          ./node_modules/.bin/playwright install --with-deps --only-shell chromium \
+            || ./node_modules/.bin/playwright install --only-shell chromium
 
       - name: Layout holds
         run: node tools/screenshots/layout.mjs
