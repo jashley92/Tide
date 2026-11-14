@@ -22,7 +22,8 @@ namespace Tide.IntegrationTests;
 
 public class SearchServiceTests : IDisposable
 {
-    private readonly TestDb _db = new();
+    // A working day's clock: a brief's meeting is held on its day, and on a weekend today's brief is Monday's.
+    private readonly TestDb _db = new(time: new WeekdayClock());
 
     public SearchServiceTests() => _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
 

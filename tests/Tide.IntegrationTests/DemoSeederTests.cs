@@ -345,3 +345,71 @@ public class DemoActivityDoneTests
         ran.Should().BeTrue();
     }
 }
+
+/// <summary>The demo with Demo:WorkingDay, as the layout checks start it.</summary>
+public sealed class DemoWorkingDayApp : DemoTideApp
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting("Demo:WorkingDay", "true");
+    }
+}
+
+/// <summary>Demo:WorkingDay asked for, without the demo: it's the demo's alone, so the clock is the system's.</summary>
+public sealed class WorkingDayWithoutDemoApp : TideApp
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting("Demo:WorkingDay", "true");
+    }
+}
+
+/// <summary>The layout checks' demo clock: a working day's on a weekend, only in the demo, and only when asked for.</summary>
+public class DemoWorkingDayTests(DemoWorkingDayApp app) : IClassFixture<DemoWorkingDayApp>
+{
+    [Fact]
+    public void TheDemo_RunsOnAWorkingDaysClock_SoTodaysBriefIsToday()
+    {
+        app.CreateClient().Dispose();
+        app.Services.GetRequiredService<TimeProvider>().Should().BeOfType<DemoWorkingDayClock>();
+        var clock = app.Services.GetRequiredService<Tide.Application.Org.OrgClock>();
+        clock.Today.DayOfWeek.Should().NotBe(DayOfWeek.Saturday).And.NotBe(DayOfWeek.Sunday);
+        clock.CurrentBriefDate.Should().Be(clock.Today, "today's brief is today's, so its meeting can start");
+    }
+
+    [Fact]
+    public void ItsAskedForBySetting_InTheOrganizationsZone_OrTheDefaultOne()
+    {
+        static IConfiguration Config(params (string Key, string? Value)[] settings) =>
+            new ConfigurationBuilder().AddInMemoryCollection(settings.Select(s => new KeyValuePair<string, string?>(s.Key, s.Value))).Build();
+        // Sunday 15 November 2026, 11 PM in New York, 8 PM in Los Angeles; Monday in UTC.
+        var sunday = new TestClock(new DateTimeOffset(2026, 11, 16, 4, 0, 0, TimeSpan.Zero));
+
+        DemoWorkingDayClock.From(Config()).Should().BeNull("not asked for");
+        DemoWorkingDayClock.From(Config(("Demo:WorkingDay", "false"))).Should().BeNull();
+        DemoWorkingDayClock.From(Config(("Demo:WorkingDay", "true")), sunday)!.Days.Should().Be(1, "Sunday in New York, the default zone");
+        DemoWorkingDayClock.From(Config(("Demo:WorkingDay", "true"), ("Org:TimeZone", "")), sunday)!.Days.Should().Be(1);
+        DemoWorkingDayClock.From(Config(("Demo:WorkingDay", "true"), ("Org:TimeZone", "Asia/Tokyo")), sunday)!.Days
+            .Should().Be(0, "it's already Monday in Tokyo");
+    }
+
+    [Fact]
+    public void OnTheSystemClock_ItIsTheSystemsTime_ADayOrTwoOnAtMost()
+    {
+        var clock = new DemoWorkingDayClock(TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+        clock.Days.Should().BeInRange(0, 2);
+        (clock.GetUtcNow() - TimeProvider.System.GetUtcNow()).Should().BeCloseTo(TimeSpan.FromDays(clock.Days), TimeSpan.FromMinutes(1));
+    }
+}
+
+public class WorkingDayWithoutDemoTests(WorkingDayWithoutDemoApp app) : IClassFixture<WorkingDayWithoutDemoApp>
+{
+    [Fact]
+    public void WithoutTheDemo_DemoWorkingDay_ChangesNothing()
+    {
+        app.CreateClient().Dispose();
+        app.Services.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
+}

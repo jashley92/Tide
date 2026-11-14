@@ -22,6 +22,8 @@
 //   key     function (e, action, onRow): the action for this key, given the one found (or none); for keys that depend
 //           on what has focus or what is open
 //   open    function (row): opens the selected row here in the browser, in place of sending "open" to .NET
+//   after   function (actions): once the keys on their way are all answered and focus has followed, the actions
+//           answered, for what the page shows besides the row (the reading pane over a narrow list)
 window.tideRows = (function () {
     let ref = null, opt = null, token = 0;
     const shortcuts = window.tideShortcuts;
@@ -61,7 +63,7 @@ window.tideRows = (function () {
     // in .NET), so focusing the row an earlier answer drew, with later keys still waiting, would pull the selection back
     // to that older row. Meanwhile the selected row is only scrolled into view. Then focus follows the selection if any
     // of the keys was a move.
-    let waiting = [], answering = false, moved = false;
+    let waiting = [], answered = [], answering = false, moved = false;
 
     function busy() { return answering || waiting.length > 0; }
 
@@ -74,15 +76,19 @@ window.tideRows = (function () {
 
     function next() {
         answering = true;
-        ref.invokeMethodAsync(opt.method, waiting.shift()).then(done, done);
+        const action = waiting.shift();
+        answered.push(action);
+        ref.invokeMethodAsync(opt.method, action).then(done, done);
     }
 
     function done() {
         answering = false;
         if (ref && waiting.length > 0) { reveal(); next(); return; }
-        const then = moved ? follow : settle;
+        const then = moved ? follow : settle, actions = answered;
         moved = false;
+        answered = [];
         then();
+        if (opt && opt.after) opt.after(actions);
     }
 
     function onKey(e) {
@@ -109,7 +115,7 @@ window.tideRows = (function () {
             opt = {
                 row: options.row, method: options.method || 'OnRowKey',
                 keys: Object.assign({}, moves, options.keys), follow: ['next', 'prev'].concat(options.follow || []), onRow: options.onRow || [],
-                held: options.held, key: options.key, open: options.open
+                held: options.held, key: options.key, open: options.open, after: options.after
             };
             ref = dotnetRef;
             document.addEventListener('keydown', onKey);
@@ -119,6 +125,7 @@ window.tideRows = (function () {
             if (started !== token) return;   // another list has the keys now
             document.removeEventListener('keydown', onKey);
             waiting = [];
+            answered = [];
             ref = null;
             opt = null;
         },

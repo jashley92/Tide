@@ -20,7 +20,7 @@ namespace Tide.IntegrationTests;
 /// present mode in rehearsal: no meeting, nobody following, nothing shared or saved, never while the day's meeting is
 /// live, and never for a follower or a Visitor.
 /// </summary>
-public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
+public class GuidePagesTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private static SignIn Person(params string[] roles) => new($"dev:guide-{Guid.NewGuid():N}", "Guide tester", roles);
 

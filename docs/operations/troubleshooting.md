@@ -213,7 +213,8 @@ jobs. Run it there." on such a server.
 - **Cause:**
   - A dropped connection (sleep, network blip). The session is kept for 20 minutes, so reconnecting picks up where it
     was.
-  - A message from the browser over 256 KB drops the circuit (an enormous field). Screenshots don't count.
+  - A message from the browser over 1 MB drops the circuit. Every text box has a limit well under it; screenshots
+    don't count.
   - Behind a reverse proxy that rewrites the host, the browser's `Origin` isn't the request's host, so
     `CircuitOriginMiddleware` refuses the circuit with 403.
   - The app pool recycled without a persisted key ring (`DataProtection:KeyPath` blank), so every session ended.

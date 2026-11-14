@@ -88,6 +88,7 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         html.Should().NotContain("tide-status-prompt").And.Contain("aria-pressed=\"true\" data-status=\"Open\"");
         r.Component.IsPrompting.Should().BeFalse();
 
+        await As((actions, _) => actions.RanCleanAsync(a.Id));   // "no hits" needs a query run clean on record
         await r.Click(c => c.Pick(ActionStatus.Done));
         await r.Click(c => { c.Choose(ActionOutcome.NoHits); c.Write("30 days of proxy logs"); return c.Confirm(); });
         var done = await Reread(a);

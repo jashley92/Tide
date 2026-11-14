@@ -25,7 +25,7 @@ public sealed record BriefCandidate(Guid Id, string Title, Classification Classi
     ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "")
 {
     /// <summary>Whether it's still to be briefed: Draft or Ready, as an article carried over from an earlier brief's "not
-    /// discussed" stays. "Add article (N available)" counts these; a presented one is shown only on request.</summary>
+    /// discussed" stays. "Add article (N ready, M drafts)" counts these; a presented one is shown only on request.</summary>
     public bool Available => Status is ArticleStatus.Draft or ArticleStatus.Ready;
 }
 

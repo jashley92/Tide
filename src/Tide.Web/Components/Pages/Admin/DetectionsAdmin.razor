@@ -79,7 +79,7 @@
 <section class="tide-card p-0" aria-labelledby="rules-h">
     <div class="d-flex gap-2 align-items-center p-3 pb-2 flex-wrap">
         <h2 id="rules-h" class="h6 mb-0">Rules (@_rules.Count)</h2>
-        <input class="form-control form-control-sm tide-maxw-sm ms-auto" placeholder="Search names and techniques" aria-label="Search rules"
+        <input class="form-control form-control-sm tide-maxw-sm ms-auto" maxlength="200" placeholder="Search names and techniques" aria-label="Search rules"
                @bind="_search" @bind:event="oninput" @bind:after="Load" />
     </div>
     @if (_rules.Count == 0)

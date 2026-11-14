@@ -39,8 +39,11 @@ state beyond what's on screen.
   `MapRazorComponents<App>().AddInteractiveServerRenderMode(...)`. Two settings matter:
   - `DisconnectedCircuitRetentionPeriod` is **20 minutes** (the default is 3), so a laptop that slept comes back to an
     article being edited, unsaved changes and all.
-  - `MaximumReceiveMessageSize` is **256 KB** (SignalR's default is 32 KB), so a long article field read back from the
-    Markdown editor doesn't drop the circuit. Screenshots stream through `InputFile` and don't count.
+  - `MaximumReceiveMessageSize` is **1 MB** (SignalR's default is 32 KB). A text box sends all its text in one message,
+    and a message over the limit drops the circuit and the text with it, so every text box has a `maxlength` (a test
+    checks) and the limit holds the longest, 200,000 characters (`ArticleService.MaxPaste`, `HuntQuery.MaxText`), at up
+    to 3 bytes a character. A box that cuts a paste says so (`LengthNote`). Screenshots stream through `InputFile` and
+    don't count.
   - `ContentSecurityFrameAncestorsPolicy = null`, because `SecurityHeadersMiddleware` sets the one CSP.
 - **Short-lived database contexts.** A circuit shares one DI scope, so services open a context per operation through
   `IAppDbContextFactory`. See [backend](backend.md).
@@ -198,7 +201,9 @@ no top bar, so none there.
   brief, each article on it; a send publishes as its brief), from any circuit including its own, or when the day
   turns. The chip then reads again after `LiveChanges`' pause, and checks on each navigation (free unless something
   changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
-- **Width.** In full from 1200px; "10:30 AM · 3/5" below that; under 1000px the team's name gives way to it; under
+- **Width.** In full from 1200px; "10:30 AM · 3/5" below that ("Mon · 3/5" on a day off, the day rather than the time,
+  so it's never longer than a working day's); where the bar is still too tight the chip is cut short, its title and name
+  keeping the whole wording, rather than squeezing the search box or Go to; under 1000px the team's name gives way to it; under
   740px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and

@@ -25,7 +25,8 @@
     }
     else
     {
-        <a class="tide-brief-chip" href="" aria-label="@view.Name" aria-current="@Current" title="Open Today">
+        @* Cut short where the top bar is tight (app.css): the title has the whole wording. *@
+        <a class="tide-brief-chip" href="" aria-label="@view.Name" aria-current="@Current" title="@($"{view.Name}. Open Today")">
             <span class="bi bi-journal-text" aria-hidden="true"></span>
             <span class="tide-brief-chip-full">@view.Full</span>
             <span class="tide-brief-chip-short">@view.Short</span>

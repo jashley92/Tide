@@ -7,6 +7,31 @@ public sealed class TestClock(DateTimeOffset now = default) : TimeProvider
     public override DateTimeOffset GetUtcNow() => Now;
 }
 
+/// <summary>
+/// A working day's clock for a test that mustn't depend on the day it runs: it starts at 11:00 New York time (the
+/// organization's default zone, after the 10:30 meeting and well clear of midnight in UTC) on the coming Wednesday (today,
+/// when today is one) and runs on from there in real time. Whatever day the suite runs, "today" is a Wednesday with a
+/// working day either side, so today's brief is today's (not Monday's, as on a weekend), its meeting can start, and
+/// business days counted back from it fall the same way every run. What the app writes with the real clock is up to six
+/// days older than this one's "now", as if written earlier in the week.
+/// </summary>
+public sealed class WeekdayClock : TimeProvider
+{
+    private readonly TimeSpan _by;
+
+    public WeekdayClock()
+    {
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var now = System.GetUtcNow();
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+        var wednesday = today.AddDays(((int)DayOfWeek.Wednesday - (int)today.DayOfWeek + 7) % 7);
+        var local = wednesday.ToDateTime(new TimeOnly(11, 0));
+        _by = new DateTimeOffset(local, zone.GetUtcOffset(local)) - now;
+    }
+
+    public override DateTimeOffset GetUtcNow() => System.GetUtcNow() + _by;
+}
+
 /// <summary>The system clock, a fixed span ahead: "now", that much later.</summary>
 public sealed class ShiftedClock(TimeSpan by) : TimeProvider
 {

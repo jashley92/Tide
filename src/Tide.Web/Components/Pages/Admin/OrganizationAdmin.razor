@@ -37,7 +37,9 @@
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="org-meeting">The brief meets at</label>
-            <TimeBox Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" DescribedBy="org-meeting-help" />
+            <TimeBox @ref="MeetingBox" Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" Invalid="@(_meetingProblem is not null)"
+                     DescribedBy="@(_meetingProblem is null ? "org-meeting-help" : "org-meeting-error org-meeting-help")" />
+            @if (_meetingProblem is { } problem) { <div class="invalid-feedback d-block" id="org-meeting-error">@problem</div> }
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
         </div>
         <div class="col-12">
@@ -154,6 +156,11 @@
     internal string Zone { get; set; } = "";
     private TimeOnly _meeting;
 
+    // The meeting's box, so a save can tell a cleared or half-typed time from the last whole one (internal so a test can
+    // type into it), and what's wrong with it, said on the field.
+    internal TimeBox? MeetingBox { get; private set; }
+    private string? _meetingProblem;
+
     // Whether a meeting's action opens beside the slide (internal so a test can tick it).
     internal bool ActionBeside { get; set; }
 
@@ -253,6 +260,14 @@
     internal async Task Save()
     {
         if (_busy) return;
+        // A cleared box would otherwise save the last whole time, under "Saved.", as if it were what's shown.
+        _meetingProblem = MeetingBox is { Whole: false } ? "The brief meets at is a 24-hour time such as 10:30." : null;
+        StateHasChanged();
+        if (_meetingProblem is not null)
+        {
+            Toasts.Error("The settings weren't saved: " + _meetingProblem);
+            return;
+        }
         var zoneChanged = !string.Equals(Zone, Clock.Zone.Id, StringComparison.Ordinal)
                           && !(TimeZoneInfo.TryConvertWindowsIdToIanaId(Clock.Zone.Id, out var was) && was == Zone);
         if (zoneChanged && !await _confirm.Ask($"Change the time zone to {Zone}?",

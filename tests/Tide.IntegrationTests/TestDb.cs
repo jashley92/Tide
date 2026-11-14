@@ -249,8 +249,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// the model (EnsureCreated): the SQL Server migrations are proven by CI applying them, so a test needn't replay them.
     /// Each SQL Server context has its own connection, so <paramref name="connectionPerContext"/> doesn't apply there.
     /// </param>
-    public TestDb(bool retrying = true, bool connectionPerContext = false, string provider = Sqlite)
+    /// <param name="time">The clock the organization's day is read from (<see cref="Clock"/>): the system's unless given.</param>
+    public TestDb(bool retrying = true, bool connectionPerContext = false, string provider = Sqlite, TimeProvider? time = null)
     {
+        Clock = new(Options.Create(new OrgOptions()), time);
         (_retrying, _connectionPerContext) = (retrying, connectionPerContext);
         if (provider == SqlServer) _sqlServer = SqlServerFactAttribute.NewDatabase();
         else if (provider == Sqlite)
@@ -309,6 +311,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     private DbContextOptionsBuilder<AppDbContext> Configure(DbContextOptionsBuilder<AppDbContext> b, bool retrying)
     {
+        // A First or FirstOrDefault with neither a filter nor an order, or a Skip or Take with no order, picks any rows (SQL
+        // Server promises none): EF only warns of them, in the server's log, so a test that reads one fails instead.
+        b.ConfigureWarnings(w => w.Throw(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.FirstWithoutOrderByAndFilterWarning,
+            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.RowLimitingOperationWithoutOrderByWarning));
         if (_sqlServer is { } sql)
             return b.UseSqlServer(sql, o => { if (retrying) o.ExecutionStrategy(d => new RetryingStrategy(d)); });
         return _perContext is { } cs
@@ -453,7 +459,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Task<IAppDbContext> CreateAsync(CancellationToken ct = default) => Task.FromResult<IAppDbContext>(Context());
 
-    public OrgClock Clock { get; } = new(Options.Create(new OrgOptions()));
+    public OrgClock Clock { get; }
 
     /// <summary>The latest day whose brief can be sent now: today on a business day, else the last business day. A brief
     /// isn't sent before its day, and on a weekend the current brief day is the coming Monday.</summary>
