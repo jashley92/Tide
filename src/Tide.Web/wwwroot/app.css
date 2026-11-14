@@ -2033,11 +2033,13 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-step:first-child { border-left: 0; }
 .tide-step-ico { flex: none; width: 1.4rem; height: 1.4rem; border-radius: var(--tide-radius-round); display: grid; place-items: center; font-size: var(--tide-text-xs);
     font-weight: var(--tide-weight-bold); border: 2px solid var(--tide-border-strong); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
-.tide-step-txt { display: grid; min-width: 0; }
+.tide-step-txt { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .tide-step-label { font-weight: var(--tide-weight-semibold); display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); align-items: center; }
 .tide-step-label a, .tide-step-btn.btn-link { color: var(--tide-text); font-weight: var(--tide-weight-semibold); text-decoration: none; font-size: inherit; line-height: inherit; vertical-align: baseline; }
 .tide-step-label a:hover, .tide-step-btn.btn-link:hover { color: var(--tide-accent-text); text-decoration: underline; }
-.tide-step-detail { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word; }
+/* Each step says where it stands in full, on up to two lines. */
+.tide-step-detail { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .tide-step-now { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--tide-accent-text); }
 .tide-step.is-done .tide-step-ico { background: var(--tide-ok-soft); border-color: var(--tide-ok); color: var(--tide-ok); }
 .tide-step.is-current { background: var(--tide-accent-soft); box-shadow: inset 0 -3px 0 var(--tide-accent); }
@@ -2698,17 +2700,15 @@ html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
-   articles, and the hunt query beside the results on a wide window (under them on a narrow one). ---- */
+   articles; the hunt query is in the context rail. ---- */
 .tide-lookup-summary { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
 .tide-lookup-summary a { font-weight: inherit; }
-.tide-lookup-sweep + .tide-lookup-sweep::before { content: "\00b7"; margin: 0 var(--tide-space-1); color: var(--tide-text-muted); }
 .tide-seen-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-top: var(--tide-space-3); }
 .tide-seen-with-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
 a.tide-seen { margin: 0; max-width: 100%; text-decoration: none; }
 a.tide-seen:hover, a.tide-seen:focus-visible { border-color: var(--tide-accent); text-decoration: none; }
-.tide-lookup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 30rem); gap: 0 var(--tide-space-4); align-items: start; }
-@media (max-width: 1100px) { .tide-lookup { grid-template-columns: minmax(0, 1fr); } }
-.tide-lookup-query { min-height: 0; max-height: 28rem; overflow: auto; }
+/* The hunt query is read whole: its long lines wrap, as an action's do (copying takes its text, not its wrapping). */
+.tide-lookup-query { min-height: 0; max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 
 /* ── Library (the Team › Library page): a library's list beside the entry chosen from it. The rows are chosen as
@@ -2816,17 +2816,14 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    offers the button (KeepPlace): the app's ring from the keyboard, none from a click. */
 .tide-card > h2[tabindex="-1"]:focus { outline: none; }
 .tide-card > h2[tabindex="-1"]:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
-/* Beside a docked rail the page has about 870px. The brief's buttons stay beside its title, which wraps first. Each
-   step says where it stands in full, on up to two lines (Triage's KEV count a flag beside it); the strip stays one row
-   of steps. */
+/* Beside a docked rail the page has about 870px. The brief's buttons stay beside its title, which wraps first; the step
+   strip stays one row of steps (Triage's KEV count a flag beside its step's words). */
 @media (min-width: 1500px) {
     .tide-brief-head { flex-wrap: nowrap; }
     .tide-brief-head > :first-child { flex: 1 1 0; min-width: 0; }
     /* The buttons keep their own width, up to most of the row; past that (a live meeting's note beside them) they wrap. */
     .tide-brief-head > :last-child:not(:first-child) { flex: 0 0 auto; max-width: 70%; justify-content: flex-end; }
 }
-.tide-step-txt { grid-template-columns: minmax(0, 1fr); }
-.tide-step-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .tide-step-flag { margin-left: var(--tide-space-1); padding: 0 var(--tide-space-1); font-size: .68rem; vertical-align: baseline; }
 /* The KEV flag follows the detail's words where the strip is wide; where it's compact, and the detail may be cut short,
    it sits by the step's name instead, always in view. */
@@ -2887,23 +2884,23 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-library-tabrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-4);
     border-bottom: 1px solid var(--tide-border); margin-bottom: var(--tide-space-3); }
 .tide-library-tabrow > .tide-tabbar-page { border-bottom: 0; margin-bottom: 0; }
-.tide-library-find { flex: 0 1 18rem; min-width: 12rem; margin-bottom: var(--tide-space-1); }
+/* The search keeps to the tab row while the row has room for its least width, beside the docked rail too. */
+.tide-library-find { flex: 1 1 12rem; min-width: 12rem; max-width: 18rem; margin-bottom: var(--tide-space-1); }
 .tide-library-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3); }
 .tide-library-filters > .form-check { margin: 0 0 0 auto; }
 .tide-library-group { padding: .35rem .7rem; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted);
     background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
-/* The hunt query is read whole: its long lines wrap, as an action's do (copying takes its text, not its wrapping). */
-.tide-lookup-query { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tide-lookup-articles td:first-child .tide-badge, .tide-lookup-articles td:first-child .tide-tlp { margin-left: var(--tide-space-1); }
 /* A flag for what's missing (no team owns it): dashed, no fill. */
 .tide-badge-off { background: transparent; outline: 1px dashed var(--tide-border-strong); outline-offset: -1px; }
 .tide-hunt-sweeping { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
 .tide-hunt-sweeping-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
-/* A library entry: its name and what it is on the left, Copy, Edit and More at the top right (a More menu opening down
-   from there stays inside the panel); the entry the height of the window beside a long list. */
-.tide-library-entry-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
-.tide-library-entry-title { flex: 1 1 16rem; min-width: 0; display: grid; gap: var(--tide-space-1); }
-.tide-library-entry-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--tide-space-2); }
+/* A library entry: its name and what it is on the left, Copy, Edit and More at the top right, its name and line wrapping
+   beside them (a More menu opening down and to the left from there stays inside the panel); the entry the height of the
+   window beside a long list. */
+.tide-library-entry-head { display: flex; flex-wrap: nowrap; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
+.tide-library-entry-title { flex: 1 1 0; min-width: 0; display: grid; gap: var(--tide-space-1); }
+.tide-library-entry-tools { display: flex; flex: 0 1 auto; max-width: 65%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--tide-space-2); }
 @media (min-width: 1000.02px) {
     .tide-library-detail .tide-library-entry { min-height: calc(100vh - var(--tide-space-8)); }
 }
@@ -3160,17 +3157,10 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-library-fold { border-top: 1px solid var(--tide-border); }
 .tide-library-fold > .btn { width: 100%; padding: .5rem .7rem; text-align: left; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-library-fold > .btn:hover { color: var(--tide-text); }
-/* The Library's header keeps the tab's New button at its right, its line about the tab wrapping first. The entry's
-   tools stay at its top right, its name and line wrapping beside them, so a More menu opening down and to the left from
-   there stays within the entry's column. */
+/* The Library's header keeps the tab's New button at its right, its line about the tab wrapping first. */
 .tide-page-head:has(+ .tide-library-tabrow) { flex-wrap: nowrap; }
 .tide-page-head:has(+ .tide-library-tabrow) > :first-child { flex: 1 1 0; min-width: 0; }
 .tide-page-head:has(+ .tide-library-tabrow) > :last-child:not(:first-child) { flex: none; }
-.tide-library-entry-head { flex-wrap: nowrap; }
-.tide-library-entry-title { flex: 1 1 0; }
-.tide-library-entry-tools { flex: 0 1 auto; max-width: 65%; }
-/* The search keeps to the tab row while the row has room for its least width, beside the docked rail too. */
-.tide-library-find { flex: 1 1 12rem; max-width: 18rem; }
 /* Beside the docked rail the page has about 870px: the list keeps a little less, and the entry takes the rest. */
 @media (min-width: 1500px) {
     .tide-library { grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr); }
