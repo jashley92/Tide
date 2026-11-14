@@ -6,6 +6,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Operations;
+using Tide.Application.Org;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -90,18 +91,25 @@ public enum InboxCves
 public sealed record InboxPage(IReadOnlyList<InboxRow> Rows, int Total, int Page);
 
 /// <summary>
-/// Where a feed item overlaps what's already been covered: an article (and the first brief it was on, if any), the
-/// numbers of the actions raised from it that are still open, and whether a report can still be attached to it (it's
-/// a draft or ready, and no brief has been presented or sent with it).
+/// Where a feed item overlaps what's already been covered: an article (and the first brief that briefed it, if any: one
+/// presented or sent, as Search counts it), the numbers of the actions raised from it that are still open, and whether
+/// a report can still be attached to it (it's a draft or ready, and no brief has been presented or sent with it).
 /// </summary>
 public sealed record Coverage(string Why, Guid ArticleId, string ArticleTitle, DateOnly? BriefDate)
 {
+    /// <summary>The latest brief it's on that hasn't been presented yet, if any (Search's "not presented yet").</summary>
+    public DateOnly? OnBrief { get; init; }
+
     public IReadOnlyList<int> OpenActions { get; init; } = [];
     public bool Attachable { get; init; } = true;
 }
 
 /// <summary>An article a triage item can be attached to as another report: a recent draft or ready one, or one on today's brief.</summary>
 public sealed record AttachTarget(Guid Id, string Title, ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, bool OnBrief);
+
+/// <summary>What a promote from Triage came to: the article the items are in, whether this promote made it, and, when it
+/// didn't (a colleague promoted or attached them first), who put them there.</summary>
+public sealed record PromoteOutcome(Guid ArticleId, bool Made, string? By = null);
 
 /// <summary>
 /// An inbox row: the item, its source, a similar item it may repeat, past coverage it overlaps, (in the New tab) the
@@ -335,19 +343,88 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await lease.RequireHeldAsync(ct);
-        return await ExclusiveAsync(id, async () =>
+        return await ExclusiveAsync(id, () => PullHeldAsync(id, ct)) ?? throw new InvalidOperationException(Busy);
+    }
+
+    // Pull now's checks and poll, once the source is held. Read once it's ours: a pull that finished a moment ago has
+    // moved its last pull.
+    private async Task<PollResult> PullHeldAsync(Guid id, CancellationToken ct)
+    {
+        Source source;
+        await using (var db = await dbs.CreateAsync(ct))
+            source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
+        if (source.Kind == SourceKind.Api) throw new InvalidOperationException(NoFeed);
+        if (!source.Enabled || source.IsRetired) throw new InvalidOperationException("That source is paused, so it isn't pulled. An administrator turns it on under Administration › Sources.");
+        var now = time.GetUtcNow();
+        if (source.LastPolledAtUtc + PullWindow is { } pullable && now < pullable)
+            throw new PullTooSoonException(PullTimes.TooSoon(source.LastPolledAtUtc!.Value, pullable, now), pullable);
+        return await PollAsync(id, ct);
+    }
+
+    /// <summary>Whether someone's Pull all is running now.</summary>
+    public bool PullAllRunning => _polls.AllRunning;
+
+    /// <summary>Why pulls are refused here, as last seen: this process is standing by under the job lease (another runs the
+    /// background jobs); null when it may pull.</summary>
+    public string? StandingBy => lease?.Status is { State: LeaseState.StandingBy } s ? new StandingByException(s.HolderName).Message : null;
+
+    private const string AllBusy = "Someone is already pulling every source. Their new items arrive as each source is pulled.";
+
+    /// <summary>
+    /// An analyst pulls every polled source outside the pull-now window, by name, one at a time (never side by side, so
+    /// no publisher is asked twice at once), each as Pull now would (<see cref="PullNowAsync"/>'s checks, its guard, its
+    /// poll). Those pulled within the window are skipped, as are those someone else is pulling; one pulled by hand while
+    /// the run was on its way is skipped when reached. One run at a time, whoever starts it: a second is refused. Whether
+    /// or not intake is switched on, as Pull now. <paramref name="progress"/> hears of each source as it's reached.
+    /// <paramref name="stop"/> (the page that started it was left) ends the run cleanly between sources: the one being
+    /// pulled is finished, no other is started, and the result says how many weren't reached.
+    /// </summary>
+    public async Task<PullAllResult> PullAllAsync(Action<PullAllStep>? progress = null, CancellationToken stop = default)
+    {
+        RequireTriage();
+        await lease.RequireHeldAsync(stop);
+        if (!_polls.TryStartAll()) throw new InvalidOperationException(AllBusy);
+        try
         {
-            // Read once the source is ours: a pull that finished a moment ago has moved its last pull.
-            Source source;
-            await using (var db = await dbs.CreateAsync(ct))
-                source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
-            if (source.Kind == SourceKind.Api) throw new InvalidOperationException(NoFeed);
-            if (!source.Enabled || source.IsRetired) throw new InvalidOperationException("That source is paused, so it isn't pulled. An administrator turns it on under Administration › Sources.");
             var now = time.GetUtcNow();
-            if (source.LastPolledAtUtc + PullWindow is { } pullable && now < pullable)
-                throw new PullTooSoonException(PullTimes.TooSoon(source.LastPolledAtUtc!.Value, pullable, now), pullable);
-            return await PollAsync(id, ct);
-        }) ?? throw new InvalidOperationException(Busy);
+            var sources = await PolledSourcesAsync(stop);
+            List<string> recent = [.. sources.Where(s => !s.Pulling && !s.Pullable(now)).Select(s => s.Name)];
+            List<string> busy = [.. sources.Where(s => s.Pulling).Select(s => s.Name)];
+            List<string> failed = [];
+            var due = sources.Where(s => s.Pullable(now)).ToList();
+            int pulled = 0, added = 0, reached = 0;
+            foreach (var s in due)
+            {
+                if (stop.IsCancellationRequested) break;
+                reached++;
+                progress?.Invoke(new PullAllStep(reached, due.Count, s.Id, s.Name));
+                try
+                {
+                    // Not cut short by stop: a source is pulled whole or not at all.
+                    var result = await ExclusiveAsync(s.Id, () => PullHeldAsync(s.Id, CancellationToken.None));
+                    if (result is null) busy.Add(s.Name);
+                    else if (result.Error is not null) failed.Add(s.Name);
+                    else (pulled, added) = (pulled + 1, added + result.New);
+                }
+                catch (PullTooSoonException) { recent.Add(s.Name); }
+                catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { /* paused or removed since the list was read */ }
+            }
+            return new PullAllResult(pulled, added, recent, busy, failed, due.Count - reached);
+        }
+        finally { _polls.AllFinished(); }
+    }
+
+    /// <summary>
+    /// Whether the polled feeds have been pulled since this working day's cutoff (<see cref="IntakeOptions.PulledBy"/> in
+    /// the organization's zone), for Today's Triage step: null when there's nothing to say (intake is switched off, it's
+    /// a day off or before the cutoff, no source is polled, or every one has been pulled since and none is failing).
+    /// </summary>
+    public async Task<FeedFreshness?> FreshnessAsync(OrgClock clock, CancellationToken ct = default)
+    {
+        RequireTriage();
+        var o = options.CurrentValue;
+        if (!o.Enabled || FeedFreshness.Cutoff(time.GetUtcNow(), clock.Zone, clock.Days, o.PulledByTime) is not { } cutoff) return null;
+        return FeedFreshness.Of(await PolledSourcesAsync(ct), cutoff);
     }
 
     // Runs a poll of the source unless it's being polled already; null when it was.
@@ -873,6 +950,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return await db.FeedItems.AsNoTracking().CountAsync(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired, ct) - await OlderCount(db, ct);
     }
 
+    /// <summary>
+    /// How many new items name a CVE on CISA's known exploited list, as the CVE records TIDE keeps say it (the row's KEV
+    /// chip reads the same records): Today's Triage step. Only the new items' CVE lists are read, then those CVEs' records.
+    /// A KEV item never ages into Older, so every one counted is in New.
+    /// </summary>
+    public async Task<int> NewKevCountAsync(CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var items = (await db.FeedItems.AsNoTracking()
+            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "")
+            .Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
+        var kev = await KevAsync(db, items, ct);
+        return items.Count(i => i.CveList.Any(kev.Contains));
+    }
+
     /// <summary>Items as they are now, by id: where the rows that left Triage's list went, and who sent them. An item
     /// pruned since isn't there.</summary>
     public async Task<IReadOnlyList<FeedItem>> ItemsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
@@ -907,23 +1000,28 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                 .Join(db.Articles, l => l.ArticleId, a => a.Id, (l, a) => new { a.Id, a.Title, SourceUrl = (string?)l.Url }).ToListAsync(ct))
             .Select(a => (a.Id, a.Title, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct().ToList();
         var articleIds = byCve.Select(x => x.Id).Concat(recentLinks.Select(x => x.Id)).Distinct().ToList();
-        var briefs = await ArticleDates.FirstBriefedAsync(db, ct, articleIds);
+        var briefs = await Search.Lookups.BriefsAsync(db, articleIds, ct);
         var open = (await db.Actions.AsNoTracking()
                 .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))
                 .WhereOpen()
                 .Select(a => new { ArticleId = a.ArticleId!.Value, a.Number }).ToListAsync(ct))
             .GroupBy(a => a.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<int>)g.Select(a => a.Number).Order().ToList());
         var attachable = (await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Where(Unfrozen(db)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-        Coverage Of(string why, Guid id, string title) => new(why, id, title, briefs.TryGetValue(id, out var d) ? d : null)
+        Coverage Of(string why, Guid id, string title)
         {
-            OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
-        };
+            var on = briefs.GetValueOrDefault(id) ?? [];
+            return new(why, id, title, on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
+            {
+                OnBrief = on.Where(b => !b.Presented).Select(b => (DateOnly?)b.Day).Max(),
+                OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
+            };
+        }
         var result = new Dictionary<Guid, IReadOnlyList<Coverage>>();
         foreach (var item in items)
         {
             var list = new List<Coverage>();
             foreach (var a in recentLinks.Where(a => a.Url == item.Url))
-                list.Add(Of("Same link", a.Id, a.Title));
+                list.Add(Of(Search.RelatedService.SameLink, a.Id, a.Title));
             foreach (var cve in item.CveList)
                 foreach (var a in byCve.Where(x => x.CveId == cve).DistinctBy(x => x.Id))
                     list.Add(Of(cve, a.Id, a.Title));
@@ -1093,7 +1191,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// as an article save checks it, before the item is claimed. An item already promoted returns its article, whatever
     /// the form says. Returns the article's id.
     /// </summary>
-    public Task<Guid> PromoteAsync(Guid id, PromoteForm form, CancellationToken ct = default) => PromoteManyAsync([id], form, ct);
+    public async Task<Guid> PromoteAsync(Guid id, PromoteForm form, CancellationToken ct = default) => (await PromoteManyAsync([id], form, ct)).ArticleId;
 
     /// <summary>
     /// "Promote as one article": makes one draft from a suggested group's reports (<see cref="TriageGroup.Ids"/>). The
@@ -1103,13 +1201,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// just been promoted, attached or claimed by someone else, nothing changes and the analyst is told. Returns the
     /// article's id (the one they all made, when that's already happened).
     /// </summary>
-    public Task<Guid> PromoteAsOneAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default)
+    public async Task<Guid> PromoteAsOneAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default)
     {
-        if (ids.Distinct().Count() is < 2 or > TriageGroups.MaxSize) throw new ArgumentException($"Promote 2 to {TriageGroups.MaxSize} reports as one article.");
-        return PromoteManyAsync(ids, form, ct);
+        if (ids.Distinct().Count() < 2) throw new ArgumentException($"Promote 2 to {TriageGroups.MaxSize} reports as one article.");
+        return (await PromoteManyAsync(ids, form, ct)).ArticleId;
     }
 
-    private async Task<Guid> PromoteManyAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct)
+    /// <summary>
+    /// Triage's promote of one report (<see cref="PromoteAsync(Guid, PromoteForm, CancellationToken)"/>) or of a group as
+    /// one article (<see cref="PromoteAsOneAsync"/>), saying what came of it: when a colleague promoted or attached the
+    /// reports first, all into one article, that's the article given, with <see cref="PromoteOutcome.Made"/> false and who
+    /// put them there, so the page never says it promoted what it didn't.
+    /// </summary>
+    public Task<PromoteOutcome> PromoteOrJoinAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default) =>
+        PromoteManyAsync(ids, form, ct);
+
+    private async Task<PromoteOutcome> PromoteManyAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct)
     {
         RequireTriage();
         var chosenTitle = form.Title is null ? null : ArticleService.Clean(form.Title, ArticleService.MaxTitle);
@@ -1118,13 +1225,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (form.Priority is { } p && !Enum.IsDefined(p)) throw new ArgumentException("That isn't a priority.");
         var chosenTlp = form.Tlp is { } t ? Tlp.Checked(t) : (TlpLevel?)null;
         var wanted = ids.Distinct().ToList();
+        if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
         var single = wanted.Count == 1;
         List<FeedItem> items;
         await using (var db = await dbs.CreateAsync(ct))
         {
             items = await db.FeedItems.AsNoTracking().Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
             if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those items is gone.");
-            if (OneArticle(items) is { } existing) return existing;
+            if (OneArticle(items) is { } existing) return new(existing, Made: false, Who(items[0]));
             // Claim them first, in one statement: of two analysts promoting the same item at once, one makes the article
             // and the other is sent to it, rather than both making one. A group is claimed whole or not at all (the
             // transaction gives back a part claim), so no report is left in someone else's article and this one too. A
@@ -1152,9 +1260,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             if (!all)
             {
                 var others = await db.FeedItems.AsNoTracking().Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
-                if (OneArticle(others) is { } made) return made;
+                if (OneArticle(others) is { } made) return new(made, Made: false, Who(others[0]));
                 if (single)
-                    throw new InvalidOperationException($"{others[0].StatusByName ?? "Someone"} is promoting this item now. It'll be on the Promoted tab in a moment.");
+                    throw new InvalidOperationException($"{Who(others[0])} is promoting this item now. It'll be on the Promoted tab in a moment.");
                 throw new InvalidOperationException("Someone has just promoted or attached one of these reports, so none of them was promoted. Look at the group again.");
             }
         }
@@ -1186,7 +1294,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                 row.ArticleId = articleId;
             }
             await db.SaveChangesAsync(ct);
-            return articleId.Value;
+            return new(articleId.Value, Made: true);
         }
         catch
         {
@@ -1208,6 +1316,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             throw;
         }
     }
+
+    // Who decided an item (promoted, attached, set aside), for a message: their name, or "Someone" when it isn't known.
+    private static string Who(FeedItem? item) => string.IsNullOrWhiteSpace(item?.StatusByName) ? "Someone" : item.StatusByName;
 
     // The article every one of these items already made (a promote someone else, or an earlier click, finished).
     private static Guid? OneArticle(List<FeedItem> items) =>
@@ -1243,35 +1354,70 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// presented, or on a brief that was presented or sent, is refused unless <paramref name="evenIfPresented"/>: what was
     /// shown stays as it was, and a follow-up to it usually wants its own article.
     /// </summary>
-    public async Task AttachAsync(Guid itemId, Guid articleId, bool evenIfPresented = false, CancellationToken ct = default)
+    public Task AttachAsync(Guid itemId, Guid articleId, bool evenIfPresented = false, CancellationToken ct = default) =>
+        AttachReportsAsync([itemId], articleId, evenIfPresented, saidOnce: false, ct);
+
+    /// <summary>
+    /// "Attach all" (and Triage's Attach on one report): the reports added to an article together, each as
+    /// <see cref="AttachAsync"/> adds one (the same checks and the same save), in one transaction: every report is
+    /// attached or none is. When one stops it (gone, taken by another article or being promoted, by now or in the same
+    /// moment, or the article presented meanwhile), nothing changes and the message names that report, why and who. Reports
+    /// already on the article are left as they are; when that's all of them, the message says who added them. Returns how
+    /// many were attached.
+    /// </summary>
+    public Task<int> AttachAllAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, CancellationToken ct = default) =>
+        AttachReportsAsync(itemIds, articleId, evenIfPresented: false, saidOnce: true, ct);
+
+    // One attach, of one report or a group's: the checks, then each report's link and CVEs added and every report claimed
+    // for the article in one transaction. A single report's messages say "that item"; a group's name the report. With
+    // saidOnce, reports that are all on the article already are refused, saying who added them, rather than nothing
+    // happening without a word. Returns how many were attached.
+    private async Task<int> AttachReportsAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, bool evenIfPresented, bool saidOnce, CancellationToken ct)
     {
         RequireTriage();
+        var wanted = itemIds.Distinct().ToList();
+        if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Attach 1 to {TriageGroups.MaxSize} reports at once.");
+        var single = wanted.Count == 1;
+        string Refused(FeedItem item, string why) => single ? $"That item {why}." : $"“{item.Title}” {why}, so none of the {wanted.Count} was attached.";
         await using var db = await dbs.CreateAsync(ct);
-        var item = await db.FeedItems.Include(i => i.Source).FirstOrDefaultAsync(i => i.Id == itemId, ct) ?? throw new KeyNotFoundException("That item is gone.");
+        var items = await db.FeedItems.Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
+        if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those reports is gone, so none was attached.");
         var article = await db.Articles.Include(a => a.Cves).FirstOrDefaultAsync(a => a.Id == articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
-        if (item.Status == FeedItemStatus.Promoted && item.ArticleId != articleId)
-            throw new InvalidOperationException(item.ArticleId is null ? "That item is being promoted now." : "That item already made another article.");
-        if (!evenIfPresented && item.ArticleId != articleId && !await db.Articles.Where(a => a.Id == articleId).Where(Unfrozen(db)).AnyAsync(ct))
-            throw new InvalidOperationException("That article has already been presented. Promote this item as a follow-up instead.");
+        if (items.FirstOrDefault(i => i.Status == FeedItemStatus.Promoted && i.ArticleId != articleId) is { } taken)
+            throw new InvalidOperationException(Refused(taken, taken.ArticleId is null ? $"is being promoted by {Who(taken)} now" : $"already made another article ({Who(taken)})"));
+        // Reports already on this article stay as they are: the rest are attached.
+        var fresh = items.Where(i => i.Status != FeedItemStatus.Promoted).ToList();
+        if (fresh.Count == 0)
+        {
+            if (!saidOnce) return 0;
+            throw new InvalidOperationException($"{Who(items.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.StatusByName)))} already added {(single ? "it" : "these reports")} to that article.");
+        }
+        if (!evenIfPresented && !await db.Articles.Where(a => a.Id == articleId).Where(Unfrozen(db)).AnyAsync(ct))
+            throw new InvalidOperationException(single ? "That article has already been presented. Promote this item as a follow-up instead."
+                : "That article has already been presented, so none was attached. Promote these reports as a follow-up instead.");
         var known = (await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == articleId).Select(l => l.Url).ToListAsync(ct))
             .Append(article.SourceUrl).Select(UrlCanonicalizer.Canonicalize).ToHashSet(StringComparer.Ordinal);
+        var cves = article.Cves.Select(c => c.CveId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         // The CVEs are part of the editor's form: an editor open on the article now has a stale copy, and is told so,
         // rather than saving over them.
-        if (AddReport(db, item, articleId, known, article.Cves.Select(c => c.CveId).ToHashSet(StringComparer.OrdinalIgnoreCase)))
-            article.EditVersion = Guid.NewGuid();
-        // The item is claimed for the article in one statement that checks it isn't someone else's article now (read
-        // above, a colleague's promotion could claim it meanwhile: this save then pointed it here, leaving their article
-        // without it), and in the same transaction as the report it adds, so neither is kept without the other.
+        var cvesAdded = false;
+        foreach (var item in fresh) cvesAdded |= AddReport(db, item, articleId, known, cves);
+        if (cvesAdded) article.EditVersion = Guid.NewGuid();
+        // The reports are claimed in one statement that takes only those still unclaimed: a colleague's attach or promote
+        // that claimed one since it was read above (or claims it in the same moment: the database lets one statement
+        // through at a time) leaves it out, and then nothing is kept, so a report is never on two articles, nor twice on
+        // one. The links and CVEs are saved in the same transaction, after the claim.
+        var ids = fresh.Select(i => i.Id).ToList();
         var now = time.GetUtcNow();
         var strategy = db.Database.CreateExecutionStrategy();
         var claimed = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var n = await db.FeedItems.Where(i => i.Id == itemId && (i.Status != FeedItemStatus.Promoted || i.ArticleId == articleId))
+            var n = await db.FeedItems.Where(i => ids.Contains(i.Id) && i.Status != FeedItemStatus.Promoted)
                 .ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, FeedItemStatus.Promoted).SetProperty(i => i.ArticleId, articleId)
                     .SetProperty(i => i.StatusByName, user.DisplayName).SetProperty(i => i.StatusAtUtc, now)
                     .SetProperty(i => i.DismissReason, (string?)null).SetProperty(i => i.DuplicateOfId, (Guid?)null), ct);
-            if (n == 0)
+            if (n < ids.Count)
             {
                 await tx.RollbackAsync(ct);
                 return false;
@@ -1281,7 +1427,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             return true;
         });
         _learned = null;   // a decision changes what's learned
-        if (!claimed) throw new InvalidOperationException("Someone has just promoted or attached that item elsewhere. Look at it again.");
+        if (claimed) return ids.Count;
+        // Who got there first, from the reports as they are now.
+        var lost = await db.FeedItems.AsNoTracking().FirstOrDefaultAsync(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Promoted, ct);
+        var who = Who(lost);
+        throw new InvalidOperationException(single ? $"{who} has just promoted or attached that item. Look at it again."
+            : $"“{lost?.Title ?? "One of them"}” was just promoted or attached by {who}, so none of the {wanted.Count} was attached. Look at the group again.");
     }
 
     // Adds an item to an article as another report of it: its link, unless the article already has that address

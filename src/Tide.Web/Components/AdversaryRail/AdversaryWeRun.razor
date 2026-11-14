@@ -1,0 +1,29 @@
+@* An adversary's "We run", in its context rail (the list's selected row and the profile page alike): the products on
+   Our stack that its articles are about, tagged with or naming them, as a product's page finds its own articles
+   (StackService.RunByArticlesAsync). Profiles aren't linked to products, so this is only ever what the articles say. *@
+@using Tide.Application.Stack
+
+<section class="tide-card" aria-labelledby="rail-werun-h">
+    <h2 id="rail-werun-h">We run @if (Runs is not null) { <span class="tide-count">(@Runs.Count)</span> }</h2>
+    @if (Runs is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else if (Runs.Count == 0) { <p class="small tide-muted mb-0">None of its articles is about a product on Our stack.</p> }
+    else
+    {
+        <ul class="tide-rail-list">
+            @foreach (var r in Runs.Take(Shown))
+            {
+                <li class="tide-stack-rail-item"><a class="tide-rail-list-title tide-stack-rail-link" href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
+                    <span class="tide-rail-list-meta">@Ui.Plural(r.Articles, "article")</span></li>
+            }
+        </ul>
+        @if (Runs.Count > Shown) { <div class="small tide-muted">and @(Runs.Count - Shown) more</div> }
+    }
+</section>
+
+@code {
+    /// <summary>The products, most articles first; null while they're read.</summary>
+    [Parameter] public IReadOnlyList<StackRun>? Runs { get; set; }
+
+    /// <summary>How many the rail names.</summary>
+    internal const int Shown = 5;
+}

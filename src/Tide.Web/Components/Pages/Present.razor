@@ -1,4 +1,6 @@
 @page "/present/{Day}"
+@using Tide.Application.Indicators
+@using Tide.Application.Operations
 @layout BlankLayout
 @* Anyone who may join meetings can open it to join a live meeting; starting, running and ending one are the analysts'.
    A Visitor (not on the team edition) sees it only from a seat in the day's live meeting: the seat is taken before
@@ -28,13 +30,25 @@
 <PageTitle>Presenting @Ui.ShortDay(_date) · TIDE</PageTitle>
 @* The slides have no heading of their own for FocusOnNavigate to land on, so the page says what it is to a screen reader. *@
 <h1 class="visually-hidden">Presenting the brief for @Ui.ShortDay(_date)</h1>
+@* In rehearsal everything below is drawn read-only: each component that saves takes the cascade and saves nothing. *@
+<CascadingValue Name="@ReadOnlyCascade.Name" Value="RehearsalAsked">
 
-@if (_brief is null || NotLive)
+@if (RehearsalAsked)
+{
+    @* Learn to present's steps, announced as each shows (in rehearsal only). *@
+    <div class="visually-hidden" role="status" aria-live="polite">@GuideSaid</div>
+}
+@if (_brief is null || NotLive || RehearsalRefused is not null)
 {
     <div class="tide-present">
         <div></div>
         <div class="tide-slide"><div class="tide-slide-body"><div class="tide-slide-cover">
-            @if (_loaded && !_valid)
+            @if (_loaded && _valid && RehearsalRefused is { } refused)
+            {
+                <h2>@refused</h2>
+                <a href="@(_readsTeam ? Ui.BriefUrl(_date) : "published")">@(_readsTeam ? "Go to the brief" : "Go to the published briefs")</a>
+            }
+            else if (_loaded && !_valid)
             {
                 <h2>“@Day” isn't a day</h2>
                 <a href="@Ui.BriefUrl(Clock.Today)">Go to today's brief</a>
@@ -72,16 +86,94 @@ else
 {
     var edition = Cut(_brief);
     var count = edition.Articles.Count;
-    var m = LeadSlides;
-    var last = count + m + 1;
-    <div id="present-root" class="tide-present">
-        <header class="tide-present-top">
+    var last = LastSlide;
+    @* Worked out once a render, for the slide and the rail both. *@
+    var slideArticle = ArticleAt(edition, _slide);
+    var slideMatch = slideArticle is null ? default : RecommendedActions.Match(slideArticle.Article.RecommendedActions, slideArticle.Actions, r => r.Recommendation);
+    var notRaised = _slide == last && TeamEdition ? edition.Articles.Select(x => (x.Article, Lines: Unraised(x))).Where(x => x.Lines.Count > 0).ToList() : null;
+    List<BriefItem> undiscussed = _slide == last && !Presented ? Undiscussed(edition) : [];
+    <div id="present-root" class="tide-present @(RailDocked ? "has-rail" : "") @(ActionBeside ? "has-beside" : "")">
+        <header class="tide-present-top" inert="@RailOver">
             <div class="tide-present-title">
                 <span class="tide-brand-mark" aria-hidden="true">T</span>
                 <span>@Clock.TeamName daily brief <small>&middot; @Ui.Day(_date)</small></span>
                 @if (_past) { <span class="tide-present-help" title="This brief is being presented or recorded after its day">past day</span> }
             </div>
+            @* Who is here and whose hands are up, for the presenter and everyone following alike: the first few dots and "+N"
+               (the whole roster for a screen reader, read when reached; arrivals and hands are said briefly, in a status
+               region of their own, so a follower moving slides doesn't have the roster read again), how many are here, the hands as their count and then as
+               many whole names as fit, in the order they went up (a button: the list, where the presenter lowers one or
+               all). A follower's own Raise hand comes before the hands, which take the room that's left. With no meeting, who else has the brief open. *@
+            <div class="tide-present-people">
+                <span class="visually-hidden" role="status">@_presenceSaid</span>
+                @if (_view is { } meeting)
+                {
+                    var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
+                    var beyond = meeting.People.Skip(TopBarDots).ToList();
+                    var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
+                    <span class="tide-presence tide-presence-sm">
+                        @foreach (var p in meeting.People.Take(TopBarDots))
+                        {
+                            var away = meeting.Away(p);
+                            var up = raised.Contains(p.UserId);
+                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "") @(up ? "has-hand" : meeting.IsPresenter(p.UserId) ? "is-presenting" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
+                                @MainLayout.Initials(p.Name)
+                                @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
+                                else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
+                            </span>
+                        }
+                        @if (beyond.Count > 0)
+                        {
+                            <span class="tide-presence-dot tide-presence-more" title="@string.Join(", ", beyond.Select(p => Says(meeting, p)))" aria-hidden="true">+@beyond.Count</span>
+                        }
+                        <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
+                    </span>
+                    <span class="tide-present-here" aria-hidden="true">@Here(meeting)</span>
+                    @if (!Presenting)
+                    {
+                        var mine = raised.Contains(_me);
+                        <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
+                            <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
+                        </button>
+                    }
+                    @if (meeting.Hands.Count > 0)
+                    {
+                        var names = string.Join(", ", meeting.Hands.Select(h => h.Name));
+                        <div class="tide-hands-box" @ref="_handsHolder">
+                            <button type="button" class="tide-hands-btn" @ref="_handsButton" aria-expanded="@Ui.Aria(listOpen)" aria-controls="present-hands"
+                                    aria-label="@($"{Ui.Plural(meeting.Hands.Count, "hand")} up: {names}")" title="@names" @onclick="ToggleHandsList">
+                                <span class="tide-hands-count"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span><span class="tide-hands-n">@meeting.Hands.Count</span></span>
+                                <span class="tide-hands-names" aria-hidden="true"><i></i>@foreach (var h in meeting.Hands) { <span @key="h.UserId">@h.Name</span> }</span>
+                            </button>
+                            @if (listOpen)
+                            {
+                                <div class="tide-hands-pop" id="present-hands">
+                                    <ol class="tide-hands" aria-label="Hands up, in order">
+                                        @foreach (var h in meeting.Hands)
+                                        {
+                                            <li @key="h.UserId"><span class="tide-hand-name">@h.Name</span></li>
+                                        }
+                                    </ol>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else if (Rehearsing)
+                {
+                    @* Where who's here shows once the meeting is live, for Learn to present to point at. *@
+                    <span class="tide-present-here">Nobody here: a rehearsal</span>
+                }
+                else if (!RehearsalAsked)
+                {
+                    <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
+                }
+            </div>
             <div class="tide-present-tools">
+                @if (Rehearsing)
+                {
+                    <span class="tide-rehearsal"><span class="bi bi-easel" aria-hidden="true"></span> Rehearsal: nothing here is shared or saved</span>
+                }
                 @* Whom this page follows, as a pill among the tools: it takes no height from the slide. When there's something to
                    do (back to the presenter, take over) it holds that one button; it's a live region, so a change is read out. *@
                 @if (_view is { } live && !Presenting)
@@ -96,7 +188,7 @@ else
                     <option value="@Edition.Team">Team edition</option>
                     <option value="@Edition.Public">Company-wide edition</option>
                 </select>
-                @if (TeamEdition && _readsTeam)
+                @if (TeamEdition && _readsTeam && !RehearsalAsked)
                 {
                     var unseen = Unseen;
                     <button class="btn btn-sm btn-outline-secondary tide-notes-btn" title="Meeting notes" aria-label="@(unseen > 0 ? $"Meeting notes, {unseen} new" : "Meeting notes")" @onclick="ToggleNotes">
@@ -106,15 +198,28 @@ else
                 }
                 @if (_view is null && _canPresent && TeamEdition && !Presented)
                 {
-                    <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="StartMeeting"><span class="bi bi-broadcast" aria-hidden="true"></span> Start the meeting</button>
+                    @* In a rehearsal it's shown, for the guide to point at, and does nothing: disabled, and Run refuses it even
+                       if a script takes that away. Before the brief's day (a weekend, when Today shows Monday's brief) the
+                       meeting can't start yet (MeetingDay): the button is disabled and says when it can. *@
+                    var early = BeforeItsDay && !RehearsalAsked;
+                    <button id="present-start" class="btn btn-sm btn-primary" disabled="@(_busy || RehearsalAsked || early)" aria-disabled="@(RehearsalAsked || early ? "true" : null)"
+                            aria-describedby="@(early ? "present-start-when" : null)"
+                            title="@(RehearsalAsked ? "Starts the real meeting; not in a rehearsal" : null)" @onclick="StartMeeting"><span class="bi bi-broadcast" aria-hidden="true"></span> Start the meeting</button>
+                    @if (early) { <span id="present-start-when" class="tide-present-help">@StartsOn</span> }
                 }
-                @if (_view is not null)
+                @if (_view is not null || Rehearsing)
                 {
-                    <button class="btn btn-sm btn-outline-secondary" title="Copy the join link" @onclick="CopyLink"><span class="bi bi-link-45deg" aria-hidden="true"></span> Copy link</button>
+                    <button id="present-copy-link" class="btn btn-sm btn-outline-secondary" disabled="@RehearsalAsked" aria-disabled="@(RehearsalAsked ? "true" : null)"
+                            title="@(RehearsalAsked ? "Copies the link to follow the meeting; not in a rehearsal" : "Copy the join link")" @onclick="CopyLink"><span class="bi bi-link-45deg" aria-hidden="true"></span> Copy link</button>
                 }
-                @if (CanEnd && (_view is not null || !Presented))
+                @if (CanEnd && (_view is not null || !Presented && !BeforeItsDay) && !RehearsalAsked)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="EndFromTop"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button>
+                }
+                @if (Rail)
+                {
+                    <button type="button" id="present-rail-toggle" class="btn btn-sm btn-outline-secondary" aria-controls="present-rail" aria-expanded="@Ui.Aria(RailOpen)" @ref="_railToggle"
+                            title="Your controls for this slide (])" @onclick="ToggleRail">Rail <span class="tide-kbd">]</span></button>
                 }
                 <button class="btn btn-sm btn-outline-secondary" title="Full screen (F)" aria-label="Full screen (F)" @onclick="ToggleFullscreen"><span class="bi @(_fullscreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></span></button>
                 <a class="btn btn-sm btn-outline-secondary" href="@(_readsTeam ? Ui.BriefUrl(_date) : "published")" title="Leave present mode" aria-label="Leave present mode"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
@@ -131,7 +236,7 @@ else
             var scrollKey = SlideKey(_slide);
             var scrollPaused = ScrollBackShown(scrollKey);
         }
-        <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)">
+        <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)" inert="@RailOver">
             <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-slide-key="@scrollKey" data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
             <div class="tide-slide-inner">
                 @if (_slide == 0)
@@ -139,10 +244,20 @@ else
                     <div class="tide-slide-cover">
                         <div class="tide-slide-kicker justify-content-center">@Clock.TeamName</div>
                         <h2>Daily brief</h2>
-                        <div class="tide-cover-meta">@Ui.Day(_date) &middot; @_brief.AnalystName</div>
+                        <div class="tide-cover-meta">@Ui.Day(_date) &middot; @BriefService.PresentedBy(_brief)</div>
                         @if (edition.ShowIntro)
                         {
                             <div class="tide-slide-intro mt-2"><Md Text="@_brief.Intro" /></div>
+                        }
+                        @* What's coming: the slides before the articles in a line, then the articles, each with KEV when it names
+                           a CVE on CISA's list (shown on both editions, as the article slide's CVEs are). *@
+                        @if (FirstUp is { } first)
+                        {
+                            <p class="tide-agenda-first">First: @first.</p>
+                        }
+                        @if (AfterArticles is { } after)
+                        {
+                            <p class="tide-agenda-first">After the articles: @after.</p>
                         }
                         <ol class="tide-agenda">
                             @foreach (var (ea, i) in edition.Articles.Select((a, i) => (a, i)))
@@ -152,6 +267,10 @@ else
                                     <span class="n">@(i + 1)</span>
                                     <ClassBadge Classification="ea.Article.Classification" Priority="ea.Article.Priority" />
                                     <span>@ea.Article.Title</span>
+                                    @if (ea.Article.Cves.Any(c => _cves.GetValueOrDefault(c.CveId)?.IsKev == true))
+                                    {
+                                        <span class="tide-kev" title="It names a CVE on CISA's known exploited list">KEV</span>
+                                    }
                                     @if (item?.Discussed == true) { <span class="bi bi-check2 ms-auto" aria-hidden="true"></span> }
                                 </li>
                             }
@@ -167,31 +286,46 @@ else
                     @* The team's opening note, read before the numbers: team edition only, and only when it isn't blank. *@
                     <div class="tide-slide-note">
                         <div class="tide-slide-kicker"><span>Opening note</span><span>&middot; team edition only</span></div>
-                        <h2>Before we start</h2>
+                        <h2 tabindex="-1" @ref="_noteHeading">Before we start</h2>
                         <Md Text="@note" />
                     </div>
                 }
-                else if (OpenSlides == 1 && _slide == NoteSlides + MetricsSlides + 1)
+                else if (OpenSlides == 1 && _slide == OpenAt)
                 {
-                    @* The overdue actions, looked at again in the room: team edition only (ADR 0005), at most 8, worst first. *@
+                    @* The open actions the room should look at, from any brief: overdue, escalated, or gone too long without an
+                       update (ActionService.MeetingActionsAsync). Team edition only (ADR 0005), at most 8, most pressing first. *@
+                    var limits = Clock.StaleLimits;
+                    var more = _open.Overdue - _open.Rows.Count;
                     <div>
                         <div class="tide-slide-kicker"><span>Open actions</span><span>&middot; team edition only</span></div>
-                        <h2>Still open from earlier briefs</h2>
+                        <h2>@ReviewTitle</h2>
+                        @* Each with why it's here (late, escalated, quiet too long), its last update, and the one thing to do about it. *@
                         <table class="tide-slide-open">
-                            <thead><tr><th scope="col">Action</th><th scope="col">Team</th><th scope="col">Holder</th><th scope="col">Late</th></tr></thead>
+                            <thead><tr><th scope="col">Action</th><th scope="col">Who</th><th scope="col">Waited</th><th scope="col">Next</th></tr></thead>
                             <tbody>
                                 @foreach (var o in _open.Rows)
                                 {
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
-                                        <td>@o.Row.TeamName</td>
-                                        <td>@(o.NoOneToOwn ? "No one: the team has no members" : o.Row.AssigneeName ?? "Unassigned")</td>
-                                        <td class="tide-slide-late">@o.Late</td>
+                                        @* The badge, title and number flow as text; where this page can open the action, a button over the cell does. *@
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> <ActionRef Number="o.Row.Number" Title="@o.Row.Title" Link="false" TitleClass="tide-slide-row-title" /> <EscalatedBadge At="o.Row.EscalatedSince" />@if (CanOpenAction)
+                                            {
+                                                var n = o.Row.Number;
+                                                <button type="button" class="tide-slide-row-open" aria-label="Open @Ui.ActionLabel(n), @o.Row.Title" data-card-opener="action:@n" @onclick="() => ShowAction(n)"></button>
+                                            }</td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; <HolderText Label="o.Holder" Short="true" Links="!_visitor" /> &middot; <span class="text-nowrap">@ActionService.StatusName(o.Row.Status)</span></span></td>
+                                        <td><span class="tide-slide-why">@foreach (var (why, i) in o.Reasons.Select((w, i) => (w, i))) { @(i > 0 ? " · " : "")<span class="tide-slide-late">@why</span> }</span>@if (o.LastUpdate is { } lastUpdate)
+                                            {
+                                                <span class="tide-slide-waited">last: @lastUpdate</span>
+                                            }</td>
+                                        <td><span class="tide-slide-next">@o.NextInTheRoom(o.QuietDays)</span></td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
-                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (_readsTeam) { <text> </text><a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
+                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue shown: overdue, escalated, or with no update for @Ui.Plural(limits.OpenDays, "business day") (@limits.BlockedDays when blocked).@if (more > 0)
+                            {
+                                @(" ")@if (_readsTeam) { <a href="actions">@more more under Actions</a> } else { @($"{more} more under Actions") }@(".")
+                            }</div>
                     </div>
                 }
                 else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
@@ -206,7 +340,7 @@ else
                             @if (compared) { <span>&middot; each compared with its last earlier value</span> }
                             else if (tiles.Any(t => t.Value is not null)) { <span>&middot; no earlier values to compare with</span> }
                         </div>
-                        <h2>@(ms.Group?.Group.Name ?? "Opening metrics")</h2>
+                        <h2 tabindex="-1" @ref="_numbersHeading">@(ms.Group?.Group.Name ?? "Opening metrics")</h2>
                         @if (ms.AllZero.Count > 0)
                         {
                             <ul class="tide-mzero" aria-label="Groups with every number at 0">
@@ -222,6 +356,7 @@ else
                                     <div class="tide-mtile">
                                         <div class="tide-tile-name">@if (swatches) { <i class="tide-mchart-swatch @LineChart.Series(ti)" aria-hidden="true"></i> }@t.Metric.Name</div>
                                         <div class="tide-mtile-value @(t.Level == Tide.Application.Metrics.MetricLevel.Normal ? "" : "tide-level-" + t.Level.ToString().ToLowerInvariant())">@t.Display<LevelMark Level="t.Level" /></div>
+                                        @if (t.Value is null) { <div class="tide-mtile-missing">not entered</div> }
                                         @if (compared)
                                         {
                                             <div class="tide-tile-change"><MetricChange Tile="t" ShowDate="false" />@if (t.Previous is { } p && p.Date != Clock.Days.Previous(_date)) { <span class="tide-muted"> vs @Tide.Application.Metrics.MetricMath.ReferenceLabel(p.Date, _date, Clock.Days)</span> }</div>
@@ -240,13 +375,13 @@ else
                         }
                     </div>
                 }
-                else if (ArticleAt(edition, _slide) is { } ea)
+                else if (slideArticle is { } ea)
                 {
                     var a = ea.Article;
                     var item = ItemFor(a.Id);
                     <div class="@(a.Classification == Classification.Threat ? "tide-slide-threat" : "")">
                         <div class="tide-slide-kicker">
-                            <span>@(_slide - m) of @count</span>
+                            <span>@(_slide - LeadSlides) of @count</span>
                             <ClassBadge Classification="a.Classification" Priority="a.Priority" />
                             <TlpBadge Level="a.Tlp" />
                             @if (ea.Marking > a.Tlp) { <span title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="ea.Marking" /></span> }
@@ -259,12 +394,6 @@ else
                             @if (HandsOn(a.Id) is { Count: > 0 } hands)
                             {
                                 <span class="tide-hand" title="@string.Join(", ", hands.Select(h => h.Name))"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @string.Join(", ", hands.Select(h => h.Name))</span>
-                            }
-                            @if (item is not null && _canPresent)
-                            {
-                                <button class="btn btn-sm btn-outline-secondary ms-auto tide-discussed @(item.Discussed ? "on" : "")" aria-pressed="@Ui.Aria(item.Discussed)" @onclick="() => ToggleDiscussed(item)">
-                                    <span class="bi @(item.Discussed ? "bi-check2-square" : "bi-square")"></span> @(item.Discussed ? "Discussed" : "Mark discussed") <span class="tide-kbd">D</span>
-                                </button>
                             }
                         </div>
                         <h2>@a.Title</h2>
@@ -307,37 +436,27 @@ else
                                     <div class="tide-slide-section">Why it matters to us @if (a.Effective(a.WhyItMattersTlp) > a.Tlp) { <TlpBadge Level="a.Effective(a.WhyItMattersTlp)" /> }</div>
                                     <Md Text="@a.WhyItMatters" />
                                 }
+                                @* The recommended lines, each with the action it became (by the line the action stored as it was raised,
+                                   never its title), and the article's other actions in a list of their own below: raised by hand, or
+                                   from a line since edited or removed. Actions are the team edition's alone (ADR 0005). *@
+                                @{ var (recoLines, otherActions) = slideMatch; }
                                 @if (!string.IsNullOrWhiteSpace(a.RecommendedActions))
                                 {
                                     <div class="tide-slide-section">Recommended actions</div>
-                                    @if (TeamEdition && _canCreate && _teams.Count > 0)
+                                    @if (TeamEdition && recoLines.Count > 0)
                                     {
-                                        @* Each line raised in one click, as the kind its wording suggests and that kind's usual team (both
-                                           can be changed first); a line raised already shows its action instead. *@
+                                        @* Each line, and the action it became (number, status, holder): the room's view. The presenter
+                                           raises a line, and works an action, from the rail. *@
                                         <ul class="tide-reco">
-                                            @foreach (var (line, n) in RecommendedActions.Lines(a.RecommendedActions).Select((l, n) => (l, n)))
+                                            @foreach (var ((line, done), n) in recoLines.Select((l, n) => (l, n)))
                                             {
-                                                var lineId = $"reco-{a.Id:N}-{n}";
-                                                var done = ea.Actions.FirstOrDefault(r => RecommendedActions.Raised(line, r.Title));
-                                                <li @key="lineId">
-                                                    <span class="tide-reco-text" id="@lineId">@line</span>
+                                                <li @key="n" class="@(done is null ? "" : "is-raised")">
+                                                    <span>@line</span>
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
-                                                            <span class="bi bi-check2" aria-hidden="true"></span> Raised as @ActionNum(done.Number) &middot; @done.TeamName
-                                                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" disabled aria-describedby="@lineId">Raised</button>
+                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; <HolderText Label="@done.Holder("nobody")" Links="!_visitor" />
                                                         </span>
-                                                    }
-                                                    else
-                                                    {
-                                                        var draft = LineDraft(a.Id, line);
-                                                        <select class="form-select form-select-sm" aria-label="Kind for: @line" value="@draft.Kind" @onchange="e => SetLineKind(draft, e)">
-                                                            @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
-                                                        </select>
-                                                        <select class="form-select form-select-sm" aria-label="Team for: @line" @bind="draft.Team">
-                                                            @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
-                                                        </select>
-                                                        <button type="button" class="btn btn-sm btn-primary" disabled="@_raising" aria-describedby="@lineId" @onclick="() => Raise(a.Id, line, draft)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Raise</button>
                                                     }
                                                 </li>
                                             }
@@ -417,7 +536,7 @@ else
                                                 }
                                                 @if (many && CanOpenCard)
                                                 {
-                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(ShownCves?.Article.Id == a.Id)"
+                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" data-card-opener="cves-more:@a.Id" aria-expanded="@Ui.Aria(ShownCves?.Article.Id == a.Id)"
                                                             title="Show them all over the slide" @onclick="() => ShowCves(a.Id)">+@(cves.Items.Count - 1) more</button>
                                                 }
                                                 else if (many)
@@ -428,18 +547,49 @@ else
                                         }
                                     </section>
                                 }
+                                @* The indicators the edition carries (the team's only, ADR 0005), defanged as the email shows them, in the
+                                   card's order, so the room reads them without a click; the first ten, then how many more. A chip opens
+                                   the larger card over the slide (by type, with the notes), as "+N more" does; where no card opens
+                                   (a held follower, the company-wide edition), they are plain chips. *@
                                 @if (ea.Indicators.Count > 0)
                                 {
-                                    var iocs = Ui.Plural(ea.Indicators.Count, "indicator");
-                                    @if (CanOpenCard)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2 tide-slide-iocs" aria-expanded="@Ui.Aria(ShownIndicators?.Article.Id == a.Id)"
-                                                title="Show them over the slide" @onclick="() => ShowIndicators(a.Id)"><span class="bi bi-fingerprint" aria-hidden="true"></span> @iocs</button>
-                                    }
-                                    else
-                                    {
-                                        <div class="tide-present-help mt-2">@iocs on the article.</div>
-                                    }
+                                    var openIocs = ShownIndicators?.Article.Id == a.Id;
+                                    var moreIocs = ea.Indicators.Count - SlideIndicators;
+                                    var iocsId = $"slide-iocs-{a.Id:N}";
+                                    <section class="tide-slide-iocsec" aria-labelledby="@iocsId">
+                                        <div class="tide-slide-section" id="@iocsId">Indicators (@ea.Indicators.Count)</div>
+                                        <ul class="tide-slide-iocs">
+                                            @foreach (var ind in ea.Indicators.Take(SlideIndicators))
+                                            {
+                                                var type = IndicatorLabels.For(ind.Type);
+                                                var title = string.IsNullOrWhiteSpace(ind.Note) ? type : $"{type} · {ind.Note}";
+                                                var shown = IndicatorLabels.Shown(ind.Type, ind.Value);
+                                                <li @key="ind.Id">
+                                                    @if (CanOpenCard)
+                                                    {
+                                                        <button type="button" class="tide-slide-ioc" data-card-opener="ioc:@ind.Id" title="@title" aria-expanded="@Ui.Aria(openIocs)" @onclick="() => ShowIndicators(a.Id)"><span class="visually-hidden">@type: </span><span class="tide-data">@shown</span></button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="tide-slide-ioc" title="@title"><span class="visually-hidden">@type: </span><span class="tide-data">@shown</span></span>
+                                                    }
+                                                </li>
+                                            }
+                                            @if (moreIocs > 0)
+                                            {
+                                                <li>
+                                                    @if (CanOpenCard)
+                                                    {
+                                                        <button type="button" class="btn btn-link btn-sm tide-slide-cve-more tide-slide-ioc-more" data-card-opener="iocs-more:@a.Id" aria-expanded="@Ui.Aria(openIocs)" title="Show them all over the slide" @onclick="() => ShowIndicators(a.Id)">+@moreIocs more</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="tide-present-help tide-slide-ioc-more">+@moreIocs more</span>
+                                                    }
+                                                </li>
+                                            }
+                                        </ul>
+                                    </section>
                                 }
                                 @if (ea.WithheldParts > 0)
                                 {
@@ -449,57 +599,20 @@ else
                                 @if (TeamEdition)
                                 {
                                 <div class="tide-slide-actions">
-                                    <div class="tide-slide-section">Actions</div>
-                                    @{ var raised = ea.Actions; }
-                                    @if (raised.Count > 0)
+                                    <div class="tide-slide-section">@(recoLines.Count > 0 ? "Other actions" : "Actions")</div>
+                                    @if (otherActions.Count > 0)
                                     {
                                         <ul class="tide-slide-actlist">
-                                            @foreach (var r in raised)
+                                            @foreach (var r in otherActions)
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
-                                                    <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
-                                                    @if (CanWork(r))
-                                                    {
-                                                        <span class="tide-action-assign">
-                                                            <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
-                                                                   @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
-                                                            <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
-                                                                    @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
-                                                                <option value="">Nobody</option>
-                                                                @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
-                                                                @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
-                                                            </select>
-                                                            @if (r.AssigneeId != _me)
-                                                            {
-                                                                <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
-                                                            }
-                                                        </span>
-                                                    }
+                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Kind: not HolderKind.Nobody } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                 </li>
                                             }
                                         </ul>
                                     }
-                                    @if (_canCreate && _teams.Count > 0)
-                                    {
-                                        <div class="tide-quick-add">
-                                            <input class="form-control form-control-sm" placeholder="Another action: what needs doing" aria-label="New action title" maxlength="300"
-                                                   @bind:get="QuickAddTitle(a.Id)" @bind:set="v => TypeQuickAddTitle(a.Id, v)" @bind:event="oninput" />
-                                            <select class="form-select form-select-sm" aria-label="Kind" @bind="_qaKind">
-                                                @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
-                                            </select>
-                                            <select class="form-select form-select-sm" aria-label="Team" @bind="_qaTeam">
-                                                @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
-                                            </select>
-                                            <input type="date" class="form-control form-control-sm" aria-label="Due (blank: from the SLA)" title="Due (blank: from the SLA)" @bind="_qaDue" />
-                                            @if (_qaDue is { } qd && qd < ActionSvc.Today)
-                                            {
-                                                <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
-                                            }
-                                            <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(a.Id)))" @onclick="() => QuickAdd(a.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
-                                        </div>
-                                    }
-                                    else if (raised.Count == 0)
+                                    else
                                     {
                                         <div class="tide-present-help">None yet.</div>
                                     }
@@ -530,126 +643,103 @@ else
                             @threats threat@(threats == 1 ? "" : "s"),
                             @edition.Articles.Count(a => a.Article.Classification == Classification.Informational) informational
                         </div>
-                        @* On the team edition, only the recommended lines no action has been raised for yet (matched by title):
-                           the gap the meeting still has to fill (the raised actions are listed below). The company-wide edition
-                           shows them all, as written. *@
-                        @if (TeamEdition)
-                        {
-                            var open = edition.Articles.Select(x => (x.Article, Lines: Unraised(x))).Where(x => x.Lines.Count > 0).ToList();
-                            @if (open.Count > 0)
+                        @* What's left, as three short lists the room reads alike (the presenter's rail acts on them): the
+                           recommended lines no action has been raised from yet (by the stored link), who is doing what, and
+                           the articles not marked discussed. All from the edition, so nothing above its ceiling is named. The
+                           company-wide edition has no actions: it shows the recommendations as written instead. *@
+                        <div class="tide-wrap">
+                            @if (TeamEdition)
                             {
-                                <div class="tide-slide-text text-start mx-auto">
-                                    <div class="tide-slide-section">Recommended, with no action raised yet</div>
+                                var open = notRaised!;
+                                var holders = WrapUp.WhoHasWhat(edition.Articles.SelectMany(x => x.Actions));
+                                <section class="tide-wrap-list" data-wrap="unraised" aria-labelledby="wrap-unraised-h">
+                                    <h3 id="wrap-unraised-h" class="tide-slide-section">Recommended, with no action raised yet (@open.Sum(x => x.Lines.Count))</h3>
                                     @foreach (var x in open)
                                     {
-                                        <div class="mb-2"><strong>@x.Article.Title</strong><ul class="mb-0">@foreach (var l in x.Lines) { <li>@l</li> }</ul></div>
+                                        <div class="tide-wrap-item"><strong>@x.Article.Title</strong><ul>@foreach (var l in x.Lines) { <li>@l</li> }</ul></div>
                                     }
-                                </div>
+                                    @if (open.Count == 0) { <p class="tide-present-help">Nothing left to raise.</p> }
+                                </section>
+                                <section class="tide-wrap-list" data-wrap="owners" aria-labelledby="wrap-owners-h">
+                                    <h3 id="wrap-owners-h" class="tide-slide-section">Who is doing what (@holders.Sum(g => g.Actions.Count))</h3>
+                                    @foreach (var g in holders)
+                                    {
+                                        <div class="tide-wrap-item">
+                                            @* An external team's ticket links out, as on the open actions slide (words only for a Visitor). *@
+                                            <strong>@if (g.Outside is { Kind: HolderKind.Ticket } ticket) { <HolderText Label="ticket" Links="!_visitor" />@($" · {g.TeamName}") } else { @g.Who }</strong>
+                                            <ul>
+                                                @foreach (var r in g.Actions)
+                                                {
+                                                    @* The status and the due date each kept on one line. *@
+                                                    <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help"><span class="text-nowrap">@ActionService.StatusName(r.Status)</span>@if (r.DueDate is { } due) { @(" · ")<span class="text-nowrap">due @Ui.ShortDay(due)</span> }</span></li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+                                    @if (holders.Count == 0) { <p class="tide-present-help">No actions raised on these articles.</p> }
+                                </section>
                             }
-                        }
-                        else if (edition.Articles.Any(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)))
+                            else if (edition.Articles.Where(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)).ToList() is { Count: > 0 } recommended)
+                            {
+                                <section class="tide-wrap-list" data-wrap="recommended" aria-labelledby="wrap-reco-h">
+                                    <h3 id="wrap-reco-h" class="tide-slide-section">Recommended actions</h3>
+                                    @foreach (var x in recommended)
+                                    {
+                                        <div class="tide-wrap-item"><strong>@x.Article.Title</strong><Md Text="@x.Article.RecommendedActions" /></div>
+                                    }
+                                </section>
+                            }
+                            @if (!Presented)
+                            {
+                                @* Only the articles this edition shows: the company-wide one mustn't name the team-only ones. *@
+                                <section class="tide-wrap-list" data-wrap="undiscussed" aria-labelledby="wrap-undiscussed-h" role="status">
+                                    <h3 id="wrap-undiscussed-h" class="tide-slide-section">Not marked discussed (@undiscussed.Count)</h3>
+                                    @foreach (var item in undiscussed)
+                                    {
+                                        <div class="tide-wrap-item">@item.Article!.Title@(_carry.Contains(item.ArticleId) ? " (carried to the next brief)" : "")</div>
+                                    }
+                                    @if (undiscussed.Count == 0) { <p class="tide-present-help">Every article was discussed.</p> }
+                                </section>
+                            }
+                        </div>
+                        @* Who attended, during the meeting and after it (the presenter corrects it from the rail then); in a
+                           rehearsal, where it'll be, for Learn to present to show. *@
+                        @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0 || Rehearsing))
                         {
-                            <div class="tide-slide-text text-start mx-auto">
-                                <div class="tide-slide-section">Recommended actions</div>
-                                @foreach (var x in edition.Articles.Where(x => !string.IsNullOrWhiteSpace(x.Article.RecommendedActions)))
+                            <div class="tide-slide-text text-start mx-auto tide-slide-actions" id="wrap-attendance">
+                                @{ var attendance = Attendance; }
+                                <div class="tide-slide-section">Attended (@attendance.Count)</div>
+                                <ul class="tide-attendance">
+                                    @foreach (var p in attendance)
+                                    {
+                                        <li>
+                                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.Key)" aria-hidden="true">@MainLayout.Initials(p.Name)</span> @p.Name
+                                            @if (p.Here) { <span class="tide-present-help">here</span> }
+                                            @* Someone following takes off a name they added here; the presenter, anyone (joined too), from their rail. *@
+                                            @if (!Rail && MayRemove(p.Row))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(p.Row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                                @if (attendance.Count == 0) { <p class="tide-present-help">Filled in as people follow the meeting.</p> }
+                                @* For those following who may add: the presenter adds from their rail. *@
+                                @if (!Rail && MayAddAttendees)
                                 {
-                                    <div class="mb-2"><strong>@x.Article.Title</strong><Md Text="@x.Article.RecommendedActions" /></div>
+                                    <div class="tide-wrap-add">
+                                        <input id="wrap-add-name" class="form-control form-control-sm" aria-label="Add someone who was here" placeholder="Add someone who was here" maxlength="256" @bind="_addName" @bind:event="oninput" @onkeydown="AddNameKey" />
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_addName))" @onclick="AddAttendee"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                    </div>
                                 }
                             </div>
                         }
-                        @{ var allRaised = edition.Articles.SelectMany(x => x.Actions).ToList(); }
-                        @if (allRaised.Count > 0)
-                        {
-                            <div class="tide-slide-text text-start mx-auto tide-slide-actions">
-                                <div class="tide-slide-section">Actions on these articles (@allRaised.Count)</div>
-                                <ul>
-                                    @foreach (var r in allRaised)
-                                    {
-                                        <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
-                                    }
-                                </ul>
-                            </div>
-                        }
-                        @if (!Presented)
-                        {
-                            @* Only the articles this edition shows: the company-wide one mustn't name the team-only ones. *@
-                            var undiscussed = Undiscussed(edition);
-                            @if (undiscussed.Count > 0)
-                            {
-                                <div class="tide-slide-text text-start mx-auto tide-slide-actions" role="status">
-                                    <div class="tide-slide-section">Not marked discussed (@undiscussed.Count)</div>
-                                    @foreach (var item in undiscussed)
-                                    {
-                                        var id = item.ArticleId;
-                                        @if (_canCreate)
-                                        {
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="carry-@id" checked="@_carry.Contains(id)" @onchange="e => Carry(id, e.Value is true)" />
-                                                <label class="form-check-label" for="carry-@id">@item.Article!.Title</label>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <div>@item.Article!.Title</div>
-                                        }
-                                    }
-                                    @if (_canCreate)
-                                    {
-                                        <div class="tide-present-help">Ticked articles go on the brief for @Ui.Day(Clock.Days.Next(_date)) instead of being marked presented.</div>
-                                    }
-                                </div>
-                            }
-                            @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0))
-                            {
-                                <div class="tide-slide-text text-start mx-auto tide-slide-actions">
-                                    @{ var attendance = Attendance; }
-                                    <div class="tide-slide-section">Attended (@attendance.Count)</div>
-                                    <ul class="tide-attendance">
-                                        @foreach (var p in attendance)
-                                        {
-                                            <li>
-                                                <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.Key)" aria-hidden="true">@MainLayout.Initials(p.Name)</span> @p.Name
-                                                @if (p.Here) { <span class="tide-present-help">here</span> }
-                                                @if (_canPresent && p.Row is { } row)
-                                                {
-                                                    <button class="btn btn-sm btn-link p-0 ms-1" aria-label="Remove @p.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
-                                                }
-                                            </li>
-                                        }
-                                    </ul>
-                                    @if (_canPresent)
-                                    {
-                                        <div class="tide-quick-add">
-                                            <input class="form-control form-control-sm" aria-label="Add someone who was in the room" placeholder="Someone in the room" maxlength="256" @bind="_addName" @bind:event="oninput" @onkeydown="AddNameKey" />
-                                            <button class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_addName))" @onclick="AddAttendee"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            @if (_past)
-                            {
-                                <div class="tide-present-help mt-2">
-                                    <label for="held">The meeting was held</label>
-                                    <input id="held" type="datetime-local" class="form-control form-control-sm d-inline-block w-auto ms-1" @bind="_heldAt" />
-                                </div>
-                            }
-                            @if (CanEnd)
-                            {
-                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @ref="_endButton" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
-                                <div class="tide-present-help">Marks the brief and its articles presented and records the meeting time.</div>
-                            }
-                        }
-                        else
+                        @if (Presented)
                         {
                             <div class="tide-present-help">
                                 @if ((_brief.MeetingHeldAtUtc ?? _brief.PresentedAtUtc) is { } held) { <text>Held @Ui.When(Clock, held).</text> }
                                 @if (_brief.PresentedAtUtc is { } rec) { <text> Recorded @Ui.When(Clock, rec).</text> }
                             </div>
-                            @* Marked presented or sent from elsewhere while the meeting ran: it can still be ended. *@
-                            @if (_view is not null && CanEnd)
-                            {
-                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
-                            }
                         }
                     </div>
                 }
@@ -664,7 +754,367 @@ else
             </div>
         </section>
 
-        <footer class="tide-present-bottom">
+        @* The presenter's rail: what's theirs to do on this slide, in one place beside it (docked from 1500px, over it below
+           that once ] or Rail opens it). Never in a follower's page: it's drawn only for the page presenting, or with no
+           meeting for someone who could present. *@
+        @if (RailOpen)
+        {
+            var railArticle = slideArticle;
+            var railItem = railArticle is null ? null : ItemFor(railArticle.Article.Id);
+            var onNumbers = _slide > NoteSlides && _slide <= NoteSlides + MetricsSlides;
+            var railTiles = onNumbers ? MetricPlan[_slide - 1 - NoteSlides].Group?.Tiles ?? [] : [];
+            @if (RailOver)
+            {
+                @* Over the slide the rail is modal: the page under it is inert, behind a scrim that closes it on a click. *@
+                <div class="tide-present-scrim" @onclick="CloseRailFromScrim"></div>
+            }
+            <aside id="present-rail" class="tide-present-rail @(RailDocked ? "is-docked" : "is-over")" tabindex="-1" @ref="_railBox"
+                   role="@(RailDocked ? null : "dialog")" aria-modal="@(RailOver ? "true" : null)" aria-label="Presenter's controls">
+                @* Pinned at the top, never scrolled away: the rail's head, and the bar of what's pressed most (Mark
+                   discussed, Lock to me, the hands). Below it the rail scrolls. *@
+                <div class="tide-present-rail-pin">
+                <div class="tide-present-rail-head">
+                    <span>Presenter &middot; @(_slide != 0 && _slide != last ? "this slide" : MeetingOver ? "after the meeting" : _slide == 0 ? "before you start" : "before you end")</span>
+                    <button type="button" id="present-rail-close" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @ref="_railClose" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
+                </div>
+                @if (railItem is not null || _view is not null && Presenting)
+                {
+                    <fieldset class="tide-rehearsal-controls" disabled="@RehearsalAsked">
+                    <div class="tide-present-rail-bar">
+                        @if (railItem is not null)
+                        {
+                            <button type="button" class="btn btn-sm tide-present-rail-discussed @(railItem.Discussed ? "on" : "")" aria-pressed="@Ui.Aria(railItem.Discussed)" @onclick="() => ToggleDiscussed(railItem)">
+                                <span class="bi @(railItem.Discussed ? "bi-check2" : "bi-square")" aria-hidden="true"></span> @(railItem.Discussed ? "Discussed" : "Mark discussed") <span class="tide-kbd">D</span>
+                            </button>
+                        }
+                        @if (_view is { } pinned && Presenting)
+                        {
+                            <button type="button" id="present-rail-lock" class="btn btn-sm @(pinned.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(pinned.Locked)"
+                                    title="@(pinned.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
+                                <span class="bi @(pinned.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> Lock to me <span class="tide-present-rail-state">@(pinned.Locked ? "On" : "Off")</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary tide-present-rail-hands" aria-label="Hands up: @pinned.Hands.Count" aria-expanded="@Ui.Aria(HandsListOpen)"
+                                    aria-controls="present-hands" disabled="@(pinned.Hands.Count == 0)" @onclick="ToggleHandsList">
+                                <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @pinned.Hands.Count
+                            </button>
+                        }
+                    </div>
+                    </fieldset>
+                }
+                </div>
+                @* In rehearsal every control here is disabled (and each step checks again where it's handled). *@
+                <fieldset class="tide-rehearsal-controls" disabled="@RehearsalAsked">
+                @if (_slide == 0 && MeetingOver)
+                {
+                    <section aria-labelledby="rail-over-h">
+                        <h3 id="rail-over-h">The meeting is over</h3>
+                        <p class="tide-present-help">This brief has been presented. Who attended can still be corrected on the last slide.</p>
+                    </section>
+                }
+                else if (_slide == 0)
+                {
+                    <section aria-labelledby="rail-ready-h">
+                        <h3 id="rail-ready-h">Ready to present?</h3>
+                        <div class="tide-present-rail-row"><span class="bi bi-check2 tide-present-rail-ok" aria-hidden="true"></span><span class="tide-present-rail-grow">@Ui.Plural(edition.Articles.Count, "article") in order</span></div>
+                        @if (PresenterTools && BriefService.TeamNoteCarriedOver(_brief))
+                        {
+                            <div class="tide-present-rail-row"><span class="tide-present-rail-warn" aria-hidden="true">!</span><span class="tide-present-rail-grow">Opening note not updated</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="KeepOpeningNote">Still current</button></div>
+                        }
+                        @if (PresenterTools && FirstMissingSlide is { } missingAt)
+                        {
+                            <div class="tide-present-rail-row"><span class="tide-present-rail-warn" aria-hidden="true">!</span><span class="tide-present-rail-grow">@Ui.Plural(MissingNumbers, "number") missing</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ToMissingNumber(missingAt)">Enter</button></div>
+                        }
+                    </section>
+                    @if (FirstUp is { } first)
+                    {
+                        <section aria-labelledby="rail-then-h"><h3 id="rail-then-h">Then</h3><p class="tide-present-help">First: @first.</p></section>
+                    }
+                }
+                else if (NoteSlides == 1 && _slide == 1)
+                {
+                    <section aria-labelledby="rail-note-h">
+                        <h3 id="rail-note-h">The note</h3>
+                        @if (PresenterTools)
+                        {
+                            @* The presenter's alone (never in a follower's page): the note edited here, through the brief's own
+                               save, and, carried from the last brief and not looked at since, kept as it is. *@
+                            <div class="tide-slide-presenter">
+                                @if (_noteEditing)
+                                {
+                                    <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would be refused." OnReload="EditOpeningNote" />
+                                    <label class="visually-hidden" for="slide-note-text">Opening note</label>
+                                    <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
+                                              aria-describedby="slide-note-hint" @bind="_noteDraft" @bind:event="oninput" @onkeydown="NoteBoxKey"></textarea>
+                                    <div class="tide-slide-presenter-row">
+                                        <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteDraft))" @onclick="() => SaveOpeningNote(_noteDraft)">Save note</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="CancelOpeningNote">Cancel</button>
+                                        <span class="tide-slide-presenter-say" id="slide-note-hint">Esc cancels. An empty note isn't saved here: it would take the slide away.</span>
+                                    </div>
+                                }
+                                else if (BriefService.TeamNoteCarriedOver(_brief))
+                                {
+                                    <div class="tide-slide-presenter-row">
+                                        <span class="tide-slide-presenter-flag"><span class="bi bi-clock-history" aria-hidden="true"></span> Not updated</span>
+                                        <span class="tide-slide-presenter-say">Carried from the last brief.</span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @ref="_noteEditButton" @onclick="EditOpeningNote">Edit</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="KeepOpeningNote">Still current</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="tide-slide-presenter-row">
+                                        <span class="tide-slide-presenter-say">Current for this brief.</span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @ref="_noteEditButton" @onclick="EditOpeningNote">Edit</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <p class="tide-present-help">Team edition only: it never goes company-wide.</p>
+                    </section>
+                }
+                else if (onNumbers && (PresenterTools ? railTiles.Where(Missing).ToList() : []) is { Count: > 0 } missing)
+                {
+                    <section aria-labelledby="rail-numbers-h">
+                        <h3 id="rail-numbers-h">The numbers</h3>
+                        @* The presenter's alone: a number not entered yet (the room sees a dash), entered here through the
+                           day's numbers' own save. *@
+                        <div class="tide-slide-presenter">
+                            <div class="tide-slide-presenter-say">@Ui.Plural(missing.Count, "number") missing. The room sees a dash until it's saved.</div>
+                            @foreach (var t in missing)
+                            {
+                                var refused = _numberErrors.GetValueOrDefault(t.Metric.Id);
+                                var errorId = $"slide-number-error-{t.Metric.Id:N}";
+                                <div class="tide-slide-presenter-row" @key="t.Metric.Id">
+                                    <span class="tide-slide-presenter-name">@t.Metric.Name</span>
+                                    <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" maxlength="32" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
+                                           aria-invalid="@(refused is null ? null : "true")" aria-describedby="@(refused is null ? null : errorId)"
+                                           value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @oninput="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty"
+                                           @onkeydown="e => NumberKey(e, t.Metric.Id)" @ref="_numberBoxes[t.Metric.Id]" />
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => EnterMissingNumber(t.Metric.Id, _numberDrafts.GetValueOrDefault(t.Metric.Id) ?? string.Empty)">Save</button>
+                                    @if (refused is not null) { <span class="tide-slide-presenter-error" id="@errorId">@refused</span> }
+                                </div>
+                            }
+                        </div>
+                    </section>
+                }
+                else if (railArticle is { } ra && TeamEdition)
+                {
+                    var (railLines, railOthers) = slideMatch;
+                    var railActions = railLines.Where(l => l.Action is not null).Select(l => l.Action!).Concat(railOthers).ToList();
+                    <section aria-labelledby="rail-actions-h">
+                        <h3 id="rail-actions-h">Actions on this article (@railActions.Count)</h3>
+                        @foreach (var r in railActions)
+                        {
+                            <div class="tide-present-rail-action" @key="r.Id">
+                                <div class="tide-present-rail-row">@ActionNum(r.Number)<span class="tide-present-rail-grow">@r.Title</span></div>
+                                @ActionControls(r)
+                            </div>
+                        }
+                        @if (CanRaise)
+                        {
+                            @foreach (var line in railLines.Where(l => l.Action is null).Select(l => l.Line))
+                            {
+                                var draft = LineDraft(ra.Article.Id, line);
+                                var chipOpen = _chipsOpen.Contains((ra.Article.Id, line));
+                                @* The line and its one Raise; under it, what it'll be raised as, a chip that opens the two lists in place. *@
+                                <div class="tide-present-rail-raise" @key="line">
+                                    <div class="tide-present-rail-raise-line">@line</div>
+                                    <button type="button" class="btn btn-sm btn-primary" disabled="@_raising" @onclick="() => Raise(ra.Article.Id, line, draft)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Raise</button>
+                                    @KindTeamChip("Change the kind and team for: " + line, draft.Kind, draft.Team, chipOpen, () => EditRaiseChip(ra.Article.Id, line))
+                                    @if (chipOpen)
+                                    {
+                                        <div class="tide-present-rail-chip-edit">
+                                            <select class="form-select form-select-sm" aria-label="Kind for: @line" value="@draft.Kind" @onchange="e => SetLineKind(draft, e)">
+                                                @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+                                            </select>
+                                            <select class="form-select form-select-sm" aria-label="Team for: @line" @bind="draft.Team">
+                                                @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                                            </select>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @* Another action: collapsed to its button; opened, the title on a row, then its kind and team, due date and Add. *@
+                            <div class="tide-quick-add @(QuickAddOpen(ra.Article.Id) ? "is-open" : "")">
+                                @if (!QuickAddOpen(ra.Article.Id))
+                                {
+                                    <button type="button" class="btn btn-sm btn-link tide-quick-add-open" @onclick="() => OpenQuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Another action</button>
+                                }
+                                else
+                                {
+                                    <input class="form-control form-control-sm" placeholder="What needs doing" aria-label="New action title" maxlength="300" @ref="_quickAddTitleBox"
+                                           @bind:get="QuickAddTitle(ra.Article.Id)" @bind:set="v => TypeQuickAddTitle(ra.Article.Id, v)" @bind:event="oninput" />
+                                    <div class="tide-quick-add-row">
+                                        @KindTeamChip("Change the kind and team for the new action", _qaKind, _qaTeam, _qaChipOpen, () => _qaChipOpen = !_qaChipOpen)
+                                        <input type="date" class="form-control form-control-sm" aria-label="Due (blank: from the SLA)" title="Due (blank: from the SLA)" @bind="_qaDue" />
+                                        <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(ra.Article.Id)))" @ref="_quickAddButton" @onclick="() => QuickAdd(ra.Article.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                    </div>
+                                    @if (_qaChipOpen)
+                                    {
+                                        <div class="tide-present-rail-chip-edit">
+                                            <select class="form-select form-select-sm" aria-label="Kind" @bind="_qaKind">
+                                                @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+                                            </select>
+                                            <select class="form-select form-select-sm" aria-label="Team" @bind="_qaTeam">
+                                                @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                                            </select>
+                                        </div>
+                                    }
+                                    @if (_qaDue is { } qd && qd < ActionSvc.Today)
+                                    {
+                                        <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
+                                    }
+                                }
+                            </div>
+                        }
+                    </section>
+                    @if (_readsTeam && _canNote)
+                    {
+                        @* One line until it's written in, growing as it is; Add note beside it. The team's meeting notes:
+                           everyone in the meeting reads them under Notes. *@
+                        <section aria-labelledby="rail-note-mine-h">
+                            <h3 id="rail-note-mine-h">Your note</h3>
+                            <div class="tide-present-rail-note">
+                                <textarea class="form-control form-control-sm tide-autogrow" rows="1" aria-label="Note on this article" maxlength="@MeetingService.MaxNote" placeholder="Note on this article. Ctrl+Enter adds it."
+                                          @bind:get="_noteText" @bind:set="TypeNote" @bind:event="oninput" @onkeydown="RailNoteKey"></textarea>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" @onclick="AddNote">Add note</button>
+                            </div>
+                        </section>
+                    }
+                }
+                else if (_slide == last)
+                {
+                    <section aria-labelledby="rail-end-h">
+                        <h3 id="rail-end-h" tabindex="-1" @ref="_endHeading">@(MeetingOver ? "After the meeting" : "Before you end")</h3>
+                        @if (!MeetingOver && TeamEdition && CanRaise)
+                        {
+                            <div class="tide-present-rail-sub">Not raised yet (@notRaised!.Sum(x => x.Lines.Count))</div>
+                            @foreach (var (art, lines) in notRaised!)
+                            {
+                                @foreach (var line in lines)
+                                {
+                                    var draft = LineDraft(art.Id, line);
+                                    <div class="tide-present-rail-raise" @key="(art.Id, line)">
+                                        <div class="tide-present-rail-raise-line">@line <span class="tide-present-help">&middot; @art.Title</span></div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_raising" @onclick="() => Raise(art.Id, line, draft)">Raise as @ActionService.KindName(draft.Kind)</button>
+                                    </div>
+                                }
+                            }
+                            @if (notRaised!.Count == 0) { <p class="tide-present-help">Nothing left to raise.</p> }
+                        }
+                        @if (!Presented)
+                        {
+                            <div class="tide-present-rail-sub">Not discussed (@undiscussed.Count)</div>
+                            @if (undiscussed.Count == 0) { <p class="tide-present-help">Every article was discussed.</p> }
+                            @foreach (var item in undiscussed)
+                            {
+                                var id = item.ArticleId;
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="carry-@id" checked="@_carry.Contains(id)" @onchange="e => Carry(id, e.Value is true)" />
+                                    <label class="form-check-label" for="carry-@id">@item.Article!.Title</label>
+                                </div>
+                            }
+                            @if (undiscussed.Count > 0)
+                            {
+                                <p class="tide-present-help">Tick to carry it to @Ui.Day(Clock.Days.Next(_date))'s brief instead of marking it presented.</p>
+                            }
+                        }
+                        @* Who attended: corrected here during the meeting, and after it by whoever presents (MeetingService.CorrectsRecord). *@
+                        @if (TeamEdition && (_view is not null || _record.Attendees.Count > 0 || MeetingOver))
+                        {
+                            <div class="tide-present-rail-sub">Attendance</div>
+                            @foreach (var at in Attendance)
+                            {
+                                <div class="tide-present-rail-row"><span class="tide-present-rail-grow">@at.Name</span>
+                                    @if (MayRemove(at.Row))
+                                    {
+                                        <button class="btn btn-sm btn-link p-0" aria-label="Remove @at.Name" title="Remove" disabled="@_busy" @onclick="() => RemoveAttendee(at.Row)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                                    }
+                                </div>
+                            }
+                            @if (MayAddAttendees)
+                            {
+                                <div class="tide-quick-add">
+                                    <input class="form-control form-control-sm" aria-label="Add someone who was in the room" placeholder="Someone in the room" maxlength="256" @bind="_addName" @bind:event="oninput" @onkeydown="AddNameKey" />
+                                    <button class="btn btn-sm btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_addName))" @onclick="AddAttendee"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                </div>
+                            }
+                        }
+                        @if (!Presented)
+                        {
+                            @if (_past)
+                            {
+                                <div class="tide-present-help mt-2">
+                                    <label for="held">The meeting was held</label>
+                                    <input id="held" type="datetime-local" class="form-control form-control-sm d-inline-block w-auto ms-1" @bind="_heldAt" />
+                                </div>
+                            }
+                            @if (_view is null && BeforeItsDay)
+                            {
+                                <div class="tide-present-help mt-2">@StartsOn</div>
+                            }
+                            else if (CanEnd)
+                            {
+                                <div><button id="present-end" class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
+                                <div class="tide-present-help">Marks the brief and its articles presented and records the meeting time.</div>
+                            }
+                        }
+                            @* Marked presented or sent from elsewhere while the meeting ran: it can still be ended. *@
+                            @if (Presented && _view is not null && CanEnd)
+                            {
+                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
+                            }
+                    </section>
+                }
+                @if (_slide > 0 && _slide < last)
+                {
+                    <p class="tide-present-rail-next"><span class="tide-present-rail-next-label">Up next</span> @SlideTitle(edition, _slide + 1)</p>
+                }
+                @if (_view is { } room && Presenting)
+                {
+                    @* Everyone's view, at the foot: the hands to lower, bringing everyone back, handing presenting on. *@
+                    <section aria-labelledby="rail-hands-h">
+                        <h3 id="rail-hands-h">Hands</h3>
+                        @if (room.Hands.Count == 0)
+                        {
+                            <p class="tide-present-help">None up.</p>
+                        }
+                        else
+                        {
+                            @foreach (var h in room.Hands)
+                            {
+                                <div class="tide-present-rail-row" @key="h.UserId"><span class="tide-present-rail-grow">@h.Name</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)">Lower</button></div>
+                            }
+                            @if (room.Hands.Count > 1) { <button type="button" class="btn btn-sm btn-outline-secondary tide-hands-clear" @onclick="() => ClearHand(null)">Clear all</button> }
+                        }
+                    </section>
+                    <section aria-labelledby="rail-view-h">
+                        <h3 id="rail-view-h">Everyone's view</h3>
+                        <div class="tide-present-rail-row tide-present-rail-wrap">
+                            @if (room.People.Any(room.Away))
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
+                            }
+                            @if (room.People.Any(p => p.CanPresent && !room.IsPresenter(p.UserId)))
+                            {
+                                <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="@(_handTo ?? "")" @key="HandOffResets" @onchange="ChooseHandOff">
+                                    <option value="">Hand off to…</option>
+                                    @foreach (var p in room.People.Where(p => p.CanPresent && !room.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_handTo is null)" @onclick="ConfirmHandOff">Hand off</button>
+                            }
+                        </div>
+                    </section>
+                }
+                </fieldset>
+                <p class="tide-present-help tide-present-rail-foot">@(RehearsalAsked ? "A rehearsal: these controls do nothing here." : "Only on your page: never on a follower's.")</p>
+            </aside>
+        }
+
+        <footer class="tide-present-bottom" inert="@RailOver">
             <button class="btn btn-sm btn-outline-secondary" disabled="@(_slide == 0 || Held)" @onclick="() => Move(_slide - 1)" aria-label="Previous slide"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
             <nav class="tide-progress" aria-label="Slides">
                 @for (var i = 0; i <= last; i++)
@@ -675,66 +1125,11 @@ else
                     var hand = shown is { } h && HandsOn(h).Count > 0;
                     var title = SlideTitle(edition, n);
                     <button class="@(n == _slide ? "current" : done ? "done" : "") @(hand ? "hand" : "")" title="@title"
-                            aria-label="@(title + (done ? " (discussed)" : "") + (hand ? " (hand raised)" : ""))" disabled="@Held" aria-current="@(n == _slide ? "step" : null)" @onclick="() => Move(n)"></button>
+                            aria-label="@(title + (done ? " (discussed)" : "") + (hand ? " (hand raised)" : ""))" disabled="@Held" aria-current="@(n == _slide ? "step" : null)" @onclick="() => Move(n)"><span class="tide-progress-name">@SlideName(edition, n)</span></button>
                 }
             </nav>
             <button class="btn btn-sm btn-outline-secondary" disabled="@(_slide == last || Held)" @onclick="() => Move(_slide + 1)" aria-label="Next slide"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
             <span>@Elapsed</span>
-            @if (_view is { } meeting)
-            {
-                <span class="tide-presence tide-presence-sm" role="status">
-                    @foreach (var p in meeting.People)
-                    {
-                        var away = meeting.Away(p);
-                        var up = meeting.Hands.Any(h => h.UserId == p.UserId);
-                        <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
-                            @MainLayout.Initials(p.Name)
-                            @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
-                            else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
-                        </span>
-                    }
-                    <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
-                </span>
-                @if (Presenting)
-                {
-                    @if (meeting.Hands.Count > 0)
-                    {
-                        <span class="tide-hands">
-                            @foreach (var h in meeting.Hands)
-                            {
-                                <button class="btn btn-sm btn-outline-secondary" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @h.Name <span class="bi bi-x" aria-hidden="true"></span></button>
-                            }
-                            @if (meeting.Hands.Count > 1) { <button class="btn btn-sm btn-link" @onclick="() => ClearHand(null)">Clear all</button> }
-                        </span>
-                    }
-                    @if (meeting.People.Any(meeting.Away))
-                    {
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
-                    }
-                    <button class="btn btn-sm @(meeting.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(meeting.Locked)"
-                            title="@(meeting.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
-                        <span class="bi @(meeting.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(meeting.Locked ? "Unlock" : "Lock to me")
-                    </button>
-                    @if (meeting.People.Any(p => p.CanPresent && !meeting.IsPresenter(p.UserId)))
-                    {
-                        <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
-                            <option value="">Hand off to…</option>
-                            @foreach (var p in meeting.People.Where(p => p.CanPresent && !meeting.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
-                        </select>
-                    }
-                }
-                else
-                {
-                    var mine = meeting.Hands.Any(h => h.UserId == _me);
-                    <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
-                        <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
-                    </button>
-                }
-            }
-            else
-            {
-                <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
-            }
             <span class="d-none d-md-inline"><span class="tide-kbd">&larr;</span> <span class="tide-kbd">&rarr;</span> move &middot; <span class="tide-kbd">Space</span> scroll, then next &middot; <span class="tide-kbd">F</span> full screen</span>
         </footer>
 
@@ -788,7 +1183,7 @@ else
         @if (TeamEdition && _actionDetail is { } shownAction)
         {
             <PresentAction Detail="shownAction" Version="_actionVersion" Kicker="@Kicker(_ownAction)" CanClose="!Held" Autofocus="_focusAction"
-                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" />
+                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" Beside="ActionBeside" Inert="RailOver" />
         }
 
         @if (CanEditTags && _tagEdit is { } editing)
@@ -812,11 +1207,20 @@ else
         <ConfirmDialog @ref="_confirm" />
         <OverLimitDialog @ref="_overLimit" />
         @* A meeting note typed and not added: leaving present mode asks first. *@
-        <UnsavedGuard Dirty="NoteDirty" Message="Your meeting note isn't added." Discard="DiscardNote" />
+        <UnsavedGuard Dirty="AsksBeforeLeaving" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
+        @* Learn to present, only in rehearsal: no meeting, nobody following, so nobody else ever sees it. Inside the slides'
+           root, so it shows in full screen too; present.js leaves the keys to it while it's up (it's a .tide-modal). *@
+        @if (Rehearsing && GuideStep is { } guideStep)
+        {
+            <GuideStepDialog Step="guideStep" Index="_guideAt" Count="_guide.Count" Name="@_guideName"
+                             Skips="@(ForTheDay && _guideAt == 0)" OnSkip="BackToTheDay"
+                             OnNext="GuideNext" OnBack="GuideBack" OnEnd="GuideEnd" />
+        }
     </div>
 
     <Lightbox FileId="_zoom?.FileId" Caption="@_zoom?.Caption" OnClose="() => _zoom = null" />
 }
+</CascadingValue>
 
 @code {
     [Parameter] public string? Day { get; set; }
@@ -861,6 +1265,7 @@ else
             _day = day;
             (_brief, _loaded, _failed, _slide, _zoom, _actions, _record) = (null, false, false, 0, null, null, MeetingRecord.None);
             LeaveMeeting();
+            _followedToEnd = false;
             (_noteText, _noteOn, _addName, _editText, _editingNote, _showNotes) = (null, null, null, null, null, false);
             (_actionDetail, _ownAction, _sharedSeen) = (null, false, null);
             DropCard(forget: true);
@@ -872,6 +1277,10 @@ else
         _valid = Ui.TryParseDay(day, out var date);
         if (!_valid) { _loaded = true; return; }
         _date = date;
+        WatchDay();
+        // A rehearsal asked for by someone who can't present, or of a day other than today's brief: refused before anything is
+        // read or joined.
+        if (RehearsalAsked && (!CanRehearse || !OfToday)) { _loaded = true; return; }
         if (_visitor && !TakeVisitorSeat())
         {
             // Nothing of the team's is theirs without a seat: loading until the page is live, then "no meeting on now".
@@ -910,6 +1319,7 @@ else
             Toasts.Error(UserFacingError.For(ex));
         }
         _loaded = true;
+        StartGuide();
     }
 
     // Reads the day in full before anything is shown: dropped if the address moved on meanwhile.
@@ -918,14 +1328,14 @@ else
         var (publicMax, teamMax) = await Distribution.GetAsync();
         var brief = await BriefSvc.GetAsync(date);
         var metrics = brief is null ? null : await MetricsSvc.GetDayAsync(date);
-        var open = brief is null ? OpenActionsReview.None : await ActionSvc.OutstandingAsync(date, teamMax);
+        var open = brief is null ? OpenActionsReview.None : await ActionSvc.MeetingActionsAsync(date, teamMax);
         var canCreate = CurrentUser.Has(Permission.WriteArticles);
         var canPresent = CurrentUser.Has(Permission.PresentBriefs);
         var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
         var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
         // Internal teams only: the meeting raises work for the security team's own teams, and an external team's part is
-        // split off an action afterwards (QuickAddAsync refuses one).
-        var teams = _readsTeam ? (await TeamSvc.ListAsync()).Where(t => !t.IsExternal).ToList() : [];
+        // split off an action afterwards (QuickAddAsync refuses one). Their members are those an action may be given to.
+        var teams = _readsTeam ? (await TeamSvc.ListAsync(holdersOnly: true)).Where(t => !t.IsExternal).ToList() : [];
         var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
         var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
         var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
@@ -962,19 +1372,62 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // An analyst's day asked for a rehearsal while the meeting is live: present mode refuses it, and the day goes on
+        // at Send, saying why.
+        if (ForTheDay && !_backToTheDay && _brief is not null && _view is not null)
+        {
+            _backToTheDay = true;
+            Nav.NavigateTo(Nav.BaseUri + BackToTheDayFrom(live: true));
+        }
+        await (_handsPopout ??= new Popout(JS, HandsListDismissed)).FollowAsync(HandsListOpen, _handsHolder, _handsButton);
+        await FocusOnSlideAsync();
+        if (_moveRailFocus)
+        {
+            var to = RailOpen ? _railBox : _railToggle;
+            _moveRailFocus = false;
+            await to.TryFocusAsync(orGone: true);
+        }
+        else if (_railDrawn && !RailOpen)
+        {
+            // The rail went with focus in it (closed docked, handed off, taken over): focus doesn't drop to the body.
+            try { await JS.InvokeVoidAsync("tidePresent.refocus"); }
+            catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { /* the tab has gone, or not interactive */ }
+        }
+        _railDrawn = RailOpen;
+        if (_focusOpener)
+        {
+            _focusOpener = false;
+            try { await JS.InvokeVoidAsync("tidePresent.backToOpener"); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+        }
         if (_focusEditTags)
         {
             // The tag panel closed: focus goes back to the button that opened it.
             _focusEditTags = false;
             await _editTagsButton.TryFocusAsync(orGone: true);
         }
+        if (_focusQuickAdd && !_busy)
+        {
+            _focusQuickAdd = false;
+            await _quickAddButton.TryFocusAsync(orGone: true);
+        }
+        if (_focusQuickAddTitle)
+        {
+            _focusQuickAddTitle = false;   // Another action opened it: the title is what's typed first
+            await _quickAddTitleBox.TryFocusAsync(orGone: true);
+        }
         if (_focusEnd)
         {
-            // The top bar's End brought the wrap-up slide forward: its End the meeting button is the next step.
+            // The top bar's End brought the wrap-up forward: focus goes to its choices in the rail, read from their heading.
             _focusEnd = false;
-            await _endButton.TryFocusAsync(orGone: true);
+            await _endHeading.TryFocusAsync(orGone: true);
         }
         await CatchUpScrollAsync();
+        // Back on the actions that need review (however this page came to it: a key, following, a reload): its rows are
+        // read again, so what changed while it was off screen shows.
+        var key = _brief is null ? null : SlideKey(_slide);
+        if (key == "open" && _drawnKey is not null && _drawnKey != "open") _ = InvokeAsync(RereadReview);
+        _drawnKey = key;
         if (!firstRender) return;
         // The elapsed time in the footer ticks once a minute. Started before the await below, so a page closed during it
         // still stops the clock when it's disposed.
@@ -992,8 +1445,21 @@ else
     internal async Task GoLive()
     {
         _interactive = true;
+        WatchDay();
         if (_visitor) await LoadDay();
         else await JoinIfLive();
+    }
+
+    // The live page says which day it's open on, so its circuit, back from a dropped connection, hears of that day's
+    // meeting (LiveMeetings.Watch) and joins it; a prerendered page says nothing.
+    private IDisposable? _watch;
+    private DateOnly? _watchedDay;
+
+    private void WatchDay()
+    {
+        if (!_interactive || _watchedDay == _date) return;
+        _watch?.Dispose();
+        (_watch, _watchedDay) = (Meetings.Watch(_date, Circuit.CircuitId), _date);
     }
 
     private string Elapsed => $"{(int)(DateTimeOffset.UtcNow - (_view?.StartedAtUtc ?? _startedAt)).TotalMinutes} min";
@@ -1004,16 +1470,34 @@ else
     private List<BriefItem> Undiscussed(BriefEdition edition) =>
         edition.Articles.Select(x => ItemFor(x.Article.Id)).OfType<BriefItem>().Where(i => !i.Discussed).ToList();
 
-    private void Carry(Guid articleId, bool on)
+    internal void Carry(Guid articleId, bool on)
     {
+        if (!InCharge) return;
         if (on) _carry.Add(articleId);
         else _carry.Remove(articleId);
     }
 
-    private string SlideTitle(BriefEdition e, int n) =>
-        n == 0 ? "Title" : n <= NoteSlides ? "Opening note"
-        : n <= NoteSlides + MetricsSlides ? "Numbers: " + (MetricPlan[n - 1 - NoteSlides].Group?.Group.Name ?? "all 0") : n <= LeadSlides ? "Still open from earlier briefs"
-        : ArticleAt(e, n) is { } x ? $"{n - LeadSlides}. {x.Article.Title}" : "Wrap-up";
+    private string SlideTitle(BriefEdition e, int n) => SlideLabel(e, n, shortName: false);
+
+    /// <summary>A slide's name in the footer: short, the whole title in the button's own.</summary>
+    private string SlideName(BriefEdition e, int n) => SlideLabel(e, n, shortName: true);
+
+    private string SlideLabel(BriefEdition e, int n, bool shortName)
+    {
+        if (n == 0) return "Title";
+        if (n <= NoteSlides) return "Opening note";
+        if (n <= NoteSlides + MetricsSlides)
+        {
+            var group = MetricPlan[n - 1 - NoteSlides].Group?.Group.Name;
+            return shortName ? group ?? "Numbers" : "Numbers: " + (group ?? "all 0");
+        }
+        if (OpenSlides == 1 && n == OpenAt) return ReviewTitle;
+        return ArticleAt(e, n) is not { } x ? "Wrap-up"
+            : shortName ? $"{n - LeadSlides} · {FirstWords(x.Article.Title, 2)}" : $"{n - LeadSlides}. {x.Article.Title}";
+    }
+
+    // A title's first words ("Edge VPN" of "Edge VPN appliance zero-day…"), for a name the footer has room for.
+    private static string FirstWords(string title, int n) => string.Join(' ', title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(n));
 
     // The article on slide n of the edition, if slide n is an article's.
     private EditionArticle? ArticleAt(BriefEdition e, int n)
@@ -1026,6 +1510,12 @@ else
 
     // Already presented, or sent: the meeting has nothing left to mark.
     private bool Presented => _brief?.Status is BriefStatus.Presented or BriefStatus.Sent;
+
+    // The brief presented, and no meeting of it live: what's left to do is correct who attended.
+    private bool MeetingOver => Presented && _view is null;
+
+    // This page followed the meeting to its end (MeetingOver): it stays a follower's page until it's opened again.
+    private bool _followedToEnd;
 
     // The edition shown: what its ceiling allows, and (team edition only) the indicators and actions. Slides render only
     // what this carries, so the company-wide edition can't show the team's actions or indicators (ADR 0005). The team
@@ -1064,9 +1554,13 @@ else
     private IReadOnlyList<Tide.Application.Metrics.MetricSlide> _plan = [];
     private Tide.Application.Metrics.MetricDay? _planOf;
 
-    // The overdue actions follow the numbers on the team edition when any are overdue; never on the public one.
+    // The actions that need review (overdue, escalated, or gone too long without an update: ActionService.MeetingActionsAsync)
+    // come after the articles, just before the wrap-up, on the team edition when there are any; never on the public one.
     private OpenActionsReview _open = OpenActionsReview.None;
     private int OpenSlides => TeamEdition && _open.Any ? 1 : 0;
+
+    /// <summary>The open actions slide's title, wherever it's named.</summary>
+    internal const string ReviewTitle = "Actions that need review";
 
     // The team's opening note has a slide of its own straight after the title, before the numbers: on the team edition,
     // when the note isn't blank (the edition carries it only then). Switching editions, or a colleague clearing the note,
@@ -1076,10 +1570,13 @@ else
     /// <summary>The opening note's slide key.</summary>
     internal const string NoteKey = "note";
 
-    /// <summary>The slides before the first article: the opening note, the numbers, then the open actions.</summary>
-    private int LeadSlides => NoteSlides + MetricsSlides + OpenSlides;
+    /// <summary>The slides before the first article: the opening note, then the numbers.</summary>
+    private int LeadSlides => NoteSlides + MetricsSlides;
 
-    private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + 1;
+    /// <summary>The actions that need review's slide, after the articles (when there's one: <see cref="OpenSlides"/>).</summary>
+    private int OpenAt => _brief is null ? 0 : LeadSlides + Cut(_brief).Articles.Count + 1;
+
+    private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + OpenSlides + 1;
 
     private void Go(int n)
     {
@@ -1145,13 +1642,18 @@ else
             case "prev": Go(_slide - 1); break;
             case "first": Go(0); break;
             case "last": Go(LastSlide); break;
+            case "rail":
+                ToggleRail();
+                break;
             case "close":
-                if (_zoom is not null) _zoom = null;
+                if (_handsOpen) _handsOpen = false;
+                else if (RailOpen && !_railRoom) ToggleRail();   // the rail over the slide closes first
+                else if (_zoom is not null) _zoom = null;
                 else if (CardOpen) await CloseCard();
                 else await CloseAction();
                 break;
             case "discussed":
-                if (_brief is null || !_canPresent) break;   // no brief for the day, or not theirs to tick
+                if (_brief is null || !InCharge) break;   // no brief for the day, or not theirs to tick
                 if (ShownArticle() is { } shown && ItemFor(shown) is { } item) await ToggleDiscussed(item);
                 break;
         }
@@ -1166,8 +1668,9 @@ else
         StateHasChanged();
     }
 
-    private async Task ToggleDiscussed(BriefItem item)
+    internal async Task ToggleDiscussed(BriefItem item)
     {
+        if (!InCharge) return;
         try
         {
             await BriefSvc.SetDiscussedAsync(item.Id, !item.Discussed);
@@ -1187,8 +1690,10 @@ else
         (_me, _meName) = (CurrentUser.UserId, CurrentUser.DisplayName);
         _visitor = MeetingAccess.MeetingOnly(CurrentUser);
         _readsTeam = CurrentUser.Has(Permission.ReadTeamEdition);
+        _writesBriefs = CurrentUser.Has(Permission.WriteArticles);
         Meetings.Changed += OnMeetingChanged;
         Meetings.Scrolled += OnMeetingScrolled;
+        Clock.Changed += OnOrgChanged;
     }
 
     private HashSet<string> Followed()
@@ -1242,12 +1747,13 @@ else
         // Only an article's ATT&CK techniques or scorecard tags changed (present mode's tag panel, or the editor): the
         // chips update quietly, as a product tag's do, and nothing else the slides show is read again.
         var tagsOnly = SlideTags.OnlyTagsChanged(_brief, brief, changes);
+        NoteHeard(brief, changes);
         _brief = brief;
         _follow = Followed();
         if (!tagsOnly)
         {
             _metrics = await MetricsSvc.GetDayAsync(_date);
-            _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+            _open = await ActionSvc.MeetingActionsAsync(_date, _teamMax);
             await LoadActions();
             _cves = await CvesOf(_brief);
             _stackOf = await StackOf(_brief);
@@ -1270,7 +1776,7 @@ else
     private async Task ReloadActionLists()
     {
         var shown = SlideKey(_slide);
-        _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+        _open = await ActionSvc.MeetingActionsAsync(_date, _teamMax);
         await LoadActions();
         var at = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
         if (at == _slide && SlideKey(at) == shown && !Behind) return;
@@ -1307,8 +1813,8 @@ else
     private string SlideKey(int n) =>
         _brief is null ? ""
         : n == 0 ? "title" : n <= NoteSlides ? NoteKey
-        : n <= NoteSlides + MetricsSlides ? MetricPlan[n - 1 - NoteSlides].Key : n <= LeadSlides ? "open"
-        : ArticleAt(Cut(_brief), n) is { } x ? ArticleKey(x.Article.Id) : "wrap";
+        : n <= LeadSlides ? MetricPlan[n - 1 - NoteSlides].Key
+        : ArticleAt(Cut(_brief), n) is { } x ? ArticleKey(x.Article.Id) : OpenSlides == 1 && n == OpenAt ? "open" : "wrap";
 
     // An article's slide key.
     private static string ArticleKey(Guid articleId) => "article:" + articleId;
@@ -1323,11 +1829,12 @@ else
         // The note's slide, or the title when this page has none (the note was cleared, or this is the company-wide edition).
         NoteKey => NoteSlides,
         var k when MetricsSlides > 0 && Tide.Application.Metrics.MetricSlides.IndexOf(MetricPlan, k) is { } at => at + 1 + NoteSlides,
-        "open" when OpenSlides > 0 => NoteSlides + MetricsSlides + 1,
+        "open" when OpenSlides > 0 => OpenAt,
         // A numbers or open actions slide this page doesn't have (the company-wide edition, or none left): the slide
-        // in its place, rather than whichever article has its number.
-        var k when k == "open" || k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
-            => Math.Min(k == "open" ? NoteSlides + MetricsSlides + 1 : NoteSlides + 1, LastSlide),
+        // in its place (the first article; the wrap-up), rather than whichever slide has its number.
+        "open" => LastSlide,
+        var k when k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
+            => Math.Min(NoteSlides + 1, LastSlide),
         "wrap" => LastSlide,
         var k when k.StartsWith("article:", StringComparison.Ordinal) => SlideOf(k),
         _ => null,
@@ -1365,19 +1872,63 @@ else
     /// <summary>The quick-add title typed for an article's slide, not yet added.</summary>
     internal string? QuickAddTitle(Guid articleId) => _qaTitles.GetValueOrDefault(articleId);
 
+    // The recommended lines whose kind and team chip is open for editing, by article and line; the quick add's own chip,
+    // and the articles whose quick add is open (one typed in stays open, as it would be left).
+    private readonly HashSet<(Guid Article, string Line)> _chipsOpen = [];
+    private readonly HashSet<Guid> _quickAddsOpen = [];
+    private bool _qaChipOpen, _focusQuickAddTitle;
+    private ElementReference _quickAddTitleBox;
+
+    /// <summary>Opens a recommended line's kind and team chip into its two lists, or shuts it again.</summary>
+    internal void EditRaiseChip(Guid articleId, string line)
+    {
+        if (!_chipsOpen.Remove((articleId, line))) _chipsOpen.Add((articleId, line));
+    }
+
+    /// <summary>Whether the article's quick add is open: opened, or with a title typed in it.</summary>
+    private bool QuickAddOpen(Guid articleId) => _quickAddsOpen.Contains(articleId) || !string.IsNullOrEmpty(QuickAddTitle(articleId));
+
+    /// <summary>Another action: opens the article's quick add, its title box taking focus.</summary>
+    internal void OpenQuickAdd(Guid articleId)
+    {
+        _quickAddsOpen.Add(articleId);
+        _focusQuickAddTitle = true;
+    }
+
+    // A kind and team, as a chip ("Threat hunt · Identity & Access ✎"); pressed, it opens or shuts the lists that change them.
+    private RenderFragment KindTeamChip(string label, ActionKind kind, Guid team, bool open, Action toggle) =>
+        @<button type="button" class="tide-present-rail-chip" aria-label="@label" aria-expanded="@Ui.Aria(open)" @onclick="toggle">
+            <span>@ActionService.KindName(kind) &middot; @(_teams.FirstOrDefault(t => t.Id == team)?.Name ?? "no team")</span>
+            <span class="bi @(open ? "bi-check2" : "bi-pencil")" aria-hidden="true"></span>
+        </button>;
+
     /// <summary>The quick-add box, as typed (each keystroke).</summary>
     internal void TypeQuickAddTitle(Guid articleId, string? title) => _qaTitles[articleId] = title;
 
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
-        var number = 0;
+        if (!InCharge) return;
+        var added = default(ActionService.QuickAdded);
+        var team = _qaTeam;
         if (!await _overLimit.RunAsync(async reason =>
-                number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
+                added = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, team, _qaDue, RaisedFor, reason)))
+        {
+            _focusQuickAdd = true;   // the over-limit question cancelled: back to Add, which was disabled while it asked
+            return;
+        }
         _qaTitles.Remove(articleId);
+        _quickAddsOpen.Remove(articleId);   // added: back to Another action
+        _qaChipOpen = false;
         _qaDue = null;
         await LoadActions();
-        Toasts.Show($"{Ui.ActionLabel(number)} added and assigned to you.");
+        Toasts.Show(AddedSaid(added, "added", team));
     });
+
+    // What a quick add or a raise did, as the service says: given to whoever raised it, or left with its team, whose
+    // member they aren't.
+    private string AddedSaid(ActionService.QuickAdded added, string verb, Guid team) =>
+        $"{Ui.ActionLabel(added.Number)} {verb} and "
+        + (added.Yours ? "assigned to you." : $"left with {_teams.FirstOrDefault(t => t.Id == team)?.Name ?? "its team"} to assign: you're not on it.");
 
     // --- the recommended lines, raised one at a time ------------------------------------------------------------
 
@@ -1392,8 +1943,12 @@ else
     private IReadOnlyDictionary<ActionKind, Guid> _teamsByKind = new Dictionary<ActionKind, Guid>();
     private bool _raising;
     private ConfirmDialog _confirm = default!;
-    private ElementReference _endButton;
-    private bool _focusEnd;
+    private ElementReference _endHeading;
+    private bool _focusEnd, _focusQuickAdd;
+
+    /// <summary>For tests: focus goes back to the rail's Add once the page is drawn (the over-limit question cancelled).</summary>
+    internal bool FocusingQuickAdd => _focusQuickAdd;
+    private ElementReference _quickAddButton;
 
     private RaiseDraft LineDraft(Guid articleId, string line)
     {
@@ -1413,30 +1968,36 @@ else
         draft.Team = TeamFor(kind);
     }
 
-    // The edition article's recommended lines that no action on it has the title of.
-    private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions.Select(r => r.Title));
+    /// <summary>Whether this page can raise actions in the meeting: someone who may create them, with a team to give them.</summary>
+    private bool CanRaise => _canCreate && _teams.Count > 0;
+
+    // The edition article's recommended lines no action was raised from.
+    private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions, r => r.Recommendation);
+
+    /// <summary>Raises a recommended line as its draft (kind, team) has it.</summary>
+    internal Task Raise(Guid articleId, string line) => Raise(articleId, line, LineDraft(articleId, line));
 
     private async Task Raise(Guid articleId, string line, RaiseDraft draft)
     {
-        if (_raising) return;   // a second click while the first is saving would raise it twice
+        if (_raising || !InCharge) return;   // a second click while the first is saving would raise it twice
         _raising = true;
         try
         {
-            var number = 0;
+            var added = default(ActionService.QuickAdded);
             if (!await _overLimit.RunAsync(async reason =>
-                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason))) return;
+                    added = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason, recommendation: line))) return;
             await LoadActions();
-            Toasts.Show($"{Ui.ActionLabel(number)} raised and assigned to you.");
+            Toasts.Show(AddedSaid(added, "raised", draft.Team));
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _raising = false; }
     }
 
     // One step at a time: a second click while one runs (a double-click on Add or End) does nothing, so it can't add the
-    // action twice or end the meeting twice. The buttons are disabled meanwhile.
+    // action twice or end the meeting twice. The buttons are disabled meanwhile. A rehearsal runs none: it changes nothing.
     private async Task Run(Func<Task> step)
     {
-        if (_busy) return;
+        if (_busy || RehearsalAsked) return;
         _busy = true;
         try { await step(); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -1444,12 +2005,15 @@ else
     }
 
     // The top bar's End: a past day's meeting needs its time chosen, and articles not ticked off need a decision, which
-    // the wrap-up slide asks for; otherwise it asks first.
-    // On the wrap-up slide itself its choices are on screen, so the top bar's End ends the meeting as the slide's does.
-    private async Task EndFromTop()
+    // the wrap-up's rail asks for; otherwise it asks first.
+    // On the wrap-up slide with the rail open its choices are on screen, so the top bar's End ends the meeting as the
+    // rail's does. With the rail shut (a window too narrow to dock it), End opens it on those choices first: a meeting is
+    // never ended past choices no one could see.
+    internal async Task EndFromTop()
     {
+        if (RehearsalAsked) return;   // nothing ends in a rehearsal
         var needsWrapUp = _past || Undiscussed(Cut(_brief!)).Count > 0;
-        if (needsWrapUp && _slide == LastSlide)
+        if (needsWrapUp && _slide == LastSlide && RailOpen)
         {
             await EndMeeting();
             return;
@@ -1457,7 +2021,9 @@ else
         if (needsWrapUp)
         {
             Go(LastSlide);
-            _focusEnd = _slide == LastSlide;
+            if (_slide != LastSlide) return;
+            if (!RailOpen && Rail) _railToggled = !_railToggled;
+            _focusEnd = true;
             return;
         }
         if (await _confirm.Ask("End the meeting now?", "The brief and its articles are marked presented.", "End the meeting", danger: false)) await EndMeeting();
@@ -1580,7 +2146,7 @@ else
 
     /// <summary>Whether this page can edit an article's tags from its slide: an analyst (who can write articles), on the
     /// team edition, presenting or following (never a Viewer or Visitor, who can't write). The save itself is the article editor's, which checks again.</summary>
-    private bool CanEditTags => TeamEdition && CurrentUser.Has(Permission.WriteArticles);
+    private bool CanEditTags => TeamEdition && !RehearsalAsked && CurrentUser.Has(Permission.WriteArticles);
 
     // The articles whose full CVE list is open in place on this screen: where no card can open (the company-wide
     // edition, or a follower the presenter holds). Elsewhere "+N more" opens the CVE card.
@@ -1652,11 +2218,18 @@ else
     // The presenter ends it, or anyone who can present once the presenter has gone for good; with no live meeting, any analyst.
     private bool CanEnd => _canPresent && (_view is null || Presenting || _view.CanTakeOver);
 
+    /// <summary>The brief's day hasn't come (a weekend or holiday, when Today shows the next brief): its meeting can't
+    /// start or be ended yet (<see cref="MeetingDay"/>). Preparing and rehearsing it can.</summary>
+    private bool BeforeItsDay => MeetingDay.Before(Clock, _date, Clock.Now);
+
+    /// <summary>What's said where Start and End would be before the brief's day.</summary>
+    private string StartsOn => $"The meeting can start on {Ui.ShortDay(_date)}, the brief's day.";
+
     private bool NoteDirty => !string.IsNullOrWhiteSpace(_noteText);
 
     internal Task StartMeeting() => Run(async () =>
     {
-        if (_disposed || !_canPresent) return;
+        if (_disposed || !_canPresent || BeforeItsDay) return;
         try { _seat = Meetings.Start(_date, _brief!.Id, _me, _meName, Circuit.CircuitId, Origin.Id, _slide); }
         catch (InvalidOperationException)
         {
@@ -1677,7 +2250,8 @@ else
     internal async Task JoinIfLive()
     {
         Refresh();
-        if (_disposed || _seat is not null && !_seatTaken || _brief is null || _view is not { } live || live.BriefId != _brief.Id) return;
+        // A rehearsal never joins: with the meeting live it's refused instead (RehearsalRefused).
+        if (_disposed || RehearsalAsked || _seat is not null && !_seatTaken || _brief is null || _view is not { } live || live.BriefId != _brief.Id) return;
         // A Visitor's seat was taken before the brief was read (TakeVisitorSeat): it's settled into here.
         _seatTaken = false;
         _seat ??= Meetings.Join(_date, _me, _meName, _canPresent, Circuit.CircuitId, Origin.Id, live.Slide);
@@ -1724,15 +2298,47 @@ else
     // In the meeting, started or joined: on the team edition, following, and recorded as there.
     private async Task Seated()
     {
+        // A rehearsal is never in the meeting, however a seat came its way: it's given back, unrecorded.
+        if (RehearsalAsked) { LeaveMeeting(); return; }
         Refresh();
         (_attended, _following, _summons, _edition) = (true, true, _view?.Summons ?? 0, Edition.Team);
+        _followedToEnd = false;
         _scrollCaughtUp = null;   // the slide drawn before the seat (the title, as the page opened) may be the presenter's
         await MeetingSvc.JoinedAsync(_brief!.Id);
         await ReloadRecord();
     }
 
     // The meeting as it is now, after this page's own change (which it doesn't hear about: see OnMeetingChanged).
-    private void Refresh() => _view = Meetings.Get(_date);
+    private void Refresh()
+    {
+        var was = _view;
+        _view = Meetings.Get(_date);
+        if (was is not null && _view is not null && PresenceNews(was, _view, _me) is { } news) _presenceSaid = news;
+        if (RehearsalAsked && _view is not null) GuideEnd();   // the meeting went live: the rehearsal is over
+    }
+
+    // Said once, briefly, as people come and go and hands go up and down (the top bar's status region).
+    private string? _presenceSaid;
+
+    /// <summary>Who joined, left, raised or lowered a hand between two views of the meeting ("Robin Analyst raised a
+    /// hand."), leaving out this page's own; null when nothing of that changed (a follower moving slides, say).</summary>
+    internal static string? PresenceNews(LiveMeetingView was, LiveMeetingView now, string me)
+    {
+        string? Said<T>(IEnumerable<T> from, IEnumerable<T> notIn, Func<T, string> id, Func<T, string> name, string what)
+        {
+            var other = notIn.Select(id).ToHashSet();
+            var names = from.Where(x => id(x) != me && !other.Contains(id(x))).Select(name).ToList();
+            return names.Count > 0 ? $"{string.Join(", ", names)} {what}." : null;
+        }
+        var parts = new[]
+        {
+            Said(now.People, was.People, p => p.UserId, p => p.Name, "joined"),
+            Said(was.People, now.People, p => p.UserId, p => p.Name, "left"),
+            Said(now.Hands, was.Hands, h => h.UserId, h => h.Name, "raised a hand"),
+            Said(was.Hands, now.Hands, h => h.UserId, h => h.Name, "lowered a hand"),
+        }.OfType<string>().ToList();
+        return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
 
     private async Task ReloadRecord()
     {
@@ -1778,7 +2384,9 @@ else
                 Toasts.Show("The meeting has ended.");
                 return;
             }
-            // It ended under us: to the wrap-up. The brief, now presented, and the record follow as ChangeFeed changes.
+            // It ended under us: to the wrap-up. The brief, now presented, and the record follow as ChangeFeed changes. A page that
+            // was following stays a follower's: it doesn't turn into the presenter's rail, nor correct the record from here.
+            _followedToEnd = was?.IsPresenter(_me) != true;
             _seat = null;
             _slide = LastSlide;
             DropAction();
@@ -1956,10 +2564,7 @@ else
     private async Task ScrollTo(double fraction, bool instant)
     {
         ScrolledTo = fraction;
-        try { await JS.InvokeVoidAsync("tidePresent.follow", fraction, instant); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }   // not live (prerendered)
-        catch (JSException) { }
+        await JS.BestEffortAsync("tidePresent.follow", fraction, instant);
     }
 
     /// <summary>For tests: whether this page, handed the meeting, has told the room where it is on the slide.</summary>
@@ -1971,10 +2576,7 @@ else
     private async Task ShareScroll()
     {
         SharedPlace = true;
-        try { await JS.InvokeVoidAsync("tidePresent.share"); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }   // not live (prerendered)
-        catch (JSException) { }
+        await JS.BestEffortAsync("tidePresent.share");
     }
 
     internal async Task BackToPresenter()
@@ -2012,24 +2614,443 @@ else
         Refresh();
     }
 
-    private void ClearHand(string? userId)
+    /// <summary>How many people the top bar shows a dot for, before "+N".</summary>
+    private const int TopBarDots = 5;
+
+    // The list of hands, opened from the top bar's count of them: a shared popout (Popout), so Escape (focus back on the
+    // count), a press outside it or Tab past it closes it as it does the other popouts.
+    private bool _handsOpen;
+    private ElementReference _handsHolder, _handsButton;
+    private Popout? _handsPopout;
+
+    /// <summary>Whether the list of hands is open: only while there's a hand up. When the last one goes down it shuts, and
+    /// stays shut when the next goes up; it opens only from its button.</summary>
+    private bool HandsListOpen => _handsOpen &= _view?.Hands.Count > 0;
+
+    internal void ToggleHandsList() => _handsOpen = !_handsOpen && _view?.Hands.Count > 0;
+
+    // --- the presenter's rail -----------------------------------------------------------------------------------
+
+    /// <summary>Whether this page has the presenter's rail: the page presenting, or with no meeting someone who could
+    /// present, or a rehearsal (its controls disabled). Never a follower's.</summary>
+    private bool Rail => InCharge || Rehearsing;
+
+    /// <summary>
+    /// Whether this page runs the meeting: it's presenting it, or there's no meeting and it could present (alone, getting
+    /// ready). Read from the live meeting, not this page's copy, so it holds the moment the meeting starts or changes
+    /// hands. Every one of the presenter's steps checks it where it's handled, not only by what the page draws: someone
+    /// following, an analyst who could present included, changes nothing with a key or a forged event. A rehearsal
+    /// never runs it, nor a page that followed the meeting to its end.
+    /// </summary>
+    private bool InCharge => !RehearsalAsked && !_followedToEnd && _canPresent && (Meetings.Get(_date) is not { } live || _seat is not null && live.IsPresenter(_me));
+
+    // --- rehearsal: Learn to present ----------------------------------------------------------------------------
+
+    /// <summary>"1" when Help's Learn to present opened the page: a rehearsal (<see cref="RehearsalHref"/>).</summary>
+    [SupplyParameterFromQuery(Name = "rehearse")] public string? Rehearse { get; set; }
+
+    /// <summary>What, with <see cref="RehearsalHref"/>, marks a rehearsal as An analyst's day's presenting.</summary>
+    public const string DayGuide = "guide=" + Guides.Day;
+
+    /// <summary>Present mode for <paramref name="day"/>'s brief in rehearsal as An analyst's day's presenting.</summary>
+    public static string DayRehearsalHref(DateOnly day) => RehearsalHref(day) + "&" + DayGuide;
+
+    /// <summary>Where An analyst's day goes on back on Today (<see cref="BackToTheDayFrom"/>), read from
+    /// <paramref name="uri"/>: the step, and whether the rehearsal was refused for a live meeting; null for any other
+    /// address.</summary>
+    public static (string From, bool Live)? ResumesTheDay(string uri)
     {
-        if (_seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(uri).Query);
+        return query.TryGetValue("guide", out var guide) && guide == Guides.Day && query.TryGetValue("from", out var from)
+            ? (from.ToString(), query.ContainsKey("live")) : null;
     }
 
-    private void Summon()
+    /// <summary><see cref="Guides.Day"/> when An analyst's day opened the rehearsal (<see cref="DayGuide"/>).</summary>
+    [SupplyParameterFromQuery(Name = "guide")] public string? GuideOf { get; set; }
+
+    // The rehearsal is An analyst's day's presenting: its guide is the day's, and ends back on Today at Send.
+    private bool ForTheDay => RehearsalAsked && GuideOf == Guides.Day;
+    private bool _backToTheDay;
+
+    /// <summary>Today, with An analyst's day going on at Send (OnboardingHost); <paramref name="live"/> when present mode
+    /// refused the rehearsal because the meeting is live.</summary>
+    public static string BackToTheDayFrom(bool live) => $"?guide={Guides.Day}&from=send" + (live ? "&live=1" : "");
+
+    // Skip the details, or Done: back to Today for Send.
+    internal void BackToTheDay()
     {
-        if (_seat is not null && Meetings.Summon(_seat)) Refresh();
+        _backToTheDay = true;
+        GuideEnd();
+        Nav.NavigateTo(Nav.BaseUri + BackToTheDayFrom(live: false));
+    }
+
+    /// <summary>Present mode for <paramref name="day"/>'s brief in rehearsal, as Help's Learn to present opens it.</summary>
+    public static string RehearsalHref(DateOnly day) => Ui.PresentUrl(day) + "?rehearse=1";
+
+    /// <summary>
+    /// Whether the address asks for a rehearsal: `rehearse` in it at all, whatever its value (1, true, empty), so a
+    /// mistyped value fails safe, as a rehearsal. Such a page never starts, joins or ends a meeting, joins nobody's
+    /// presence and broadcasts nothing; every step that saves is refused where it's handled (Run, InCharge), and the
+    /// rail's controls are disabled. Nobody follows it, so Learn to present's steps are on this screen alone.
+    /// </summary>
+    private bool RehearsalAsked => Rehearse is not null;
+
+    private bool CanRehearse => !_visitor && CurrentUser.Has(Permission.PresentBriefs);
+
+    // Whether the page is of today's brief, the only one a rehearsal is of.
+    private bool OfToday => _date == Clock.CurrentBriefDate;
+
+    /// <summary>Why a rehearsal asked for isn't run: the person can't present, it isn't today's brief (only today's is
+    /// rehearsed, so no rehearsal runs beside another day's live meeting), or today's meeting is live.</summary>
+    private string? RehearsalRefused => !RehearsalAsked ? null
+        : !CanRehearse ? "Rehearsal is for whoever presents the brief."
+        : _valid && !OfToday ? "Only today's brief can be rehearsed."
+        : _valid && _view is not null ? "The meeting is live, so it can't be rehearsed now." : null;
+
+    /// <summary>A rehearsal is running: asked for, by someone who can present, with the day's meeting not live.</summary>
+    private bool Rehearsing => RehearsalAsked && RehearsalRefused is null;
+
+    private IReadOnlyList<TourStep> _guide = [];
+    private string? _guideName;
+    private int _guideAt;
+    private bool _guideStarted;
+
+    private TourStep? GuideStep => _guideAt < _guide.Count ? _guide[_guideAt] : null;
+
+    private string GuideSaid => Rehearsing && GuideStep is { } s
+        ? (_guideAt == 0 ? "Rehearsal: nothing here is shared or saved. " : "") + GuideStepDialog.Said(s, _guideAt, _guide.Count) : "";
+
+    // Learn to present, once the rehearsal's brief is read: from its first step, on the title slide. A step about a slide
+    // this brief hasn't (no numbers, nothing needing review, no article with indicators) is left out, so the count is of
+    // the steps shown and none points at nothing; so are Going live, Inviting the room and Ending the meeting once
+    // the brief has been presented, as the meeting they lead to is over.
+    private void StartGuide()
+    {
+        if (_guideStarted || !Rehearsing || _brief is null) return;
+        _guideStarted = true;
+        var learn = Guides.Find(Guides.Present, CurrentUser.Has);
+        (_guide, _guideName) = ((learn?.Steps ?? []).Where(s => GuideSlide(s.Route) is not null && !(Presented && s.Key is "start" or "invite" or "end")).ToList(),
+            ForTheDay ? Guides.Find(Guides.Day, CurrentUser.Has)?.Title + " · Presenting" : learn?.Title);
+        GuideTo(0);
+    }
+
+    /// <summary>Next, or Done on the last step.</summary>
+    internal void GuideNext()
+    {
+        if (_guideAt + 1 < _guide.Count) GuideTo(_guideAt + 1);
+        else if (ForTheDay) BackToTheDay();
+        else GuideEnd();
+    }
+
+    /// <summary>Back.</summary>
+    internal void GuideBack() => GuideTo(Math.Max(0, _guideAt - 1));
+
+    /// <summary>End guide, Escape or Done: the steps go, and the rehearsal stays to look round.</summary>
+    internal void GuideEnd() => (_guide, _guideAt) = ([], 0);
+
+    // The step, on its slide.
+    private void GuideTo(int at)
+    {
+        _guideAt = at;
+        if (GuideStep is { } s && GuideSlide(s.Route) is { } n) Go(n);
+    }
+
+    // The slide a Learn to present step is on (its Route): the title, the first numbers slide, the actions that need
+    // review, the first article; for a step about part of an article's slide, the first article with it (indicators, a
+    // line raised as an action, an action to open); the wrap-up. Null when this brief has no such slide.
+    private int? GuideSlide(string route)
+    {
+        if (_brief is not { } b) return null;
+        var articles = Cut(b).Articles;
+        int? First(Func<EditionArticle, bool> has) =>
+            articles.Select((a, i) => (a, i)).Where(x => has(x.a)).Select(x => (int?)(LeadSlides + 1 + x.i)).FirstOrDefault();
+        return route switch
+        {
+            "title" => 0,
+            "metrics" when MetricsSlides > 0 => 1 + NoteSlides,
+            "open" when OpenSlides > 0 => SlideNamed("open"),
+            "article" => First(_ => true),
+            "article:indicators" when TeamEdition => First(a => a.Indicators.Count > 0),
+            "article:raised" when TeamEdition => First(a => Raised(a).Lines.Any(l => l.Action is not null)),
+            "article:card" when TeamEdition => First(a => a.Actions.Count > 0),
+            "wrap" => LastSlide,
+            _ => null,
+        };
+    }
+
+    private static (IReadOnlyList<(string Line, EditionAction? Action)> Lines, IReadOnlyList<EditionAction> Others) Raised(EditionArticle a) =>
+        RecommendedActions.Match(a.Article.RecommendedActions, a.Actions, r => r.Recommendation);
+
+    // Whether the window has room to dock it (1500px and wider, as present.js reports), and whether ] or Rail has turned it
+    // from what that room gives (open when docked, shut over the slide).
+    private bool _railRoom, _railToggled;
+    private ElementReference _railBox, _railToggle, _railClose;
+    private bool _moveRailFocus;
+
+    // Whether the rail was drawn at the last render, to see it go.
+    private bool _railDrawn;
+
+    private bool RailOpen => Rail && _railRoom != _railToggled;
+
+    /// <summary>Docked beside the slide (the slide's column narrows), rather than over it.</summary>
+    private bool RailDocked => RailOpen && _railRoom;
+
+    /// <summary>The rail open over the slide: a modal dialog, the page under it inert.</summary>
+    private bool RailOver => RailOpen && !_railRoom;
+
+    /// <summary>A click on the scrim around the rail open over the slide: it closes, and focus goes back to Rail.</summary>
+    internal void CloseRailFromScrim()
+    {
+        if (RailOver) ToggleRail();
+    }
+
+    /// <summary>] or Rail: the rail opens or shuts. Over the slide it's a dialog: it takes focus as it opens, and gives it
+    /// back to Rail as it shuts.</summary>
+    internal void ToggleRail()
+    {
+        if (!Rail) return;
+        _railToggled = !_railToggled;
+        _moveRailFocus = !_railRoom;
+    }
+
+    /// <summary>present.js: whether the window is wide enough to dock the rail (it says again as that changes).</summary>
+    [JSInvokable]
+    public Task OnRailRoom(bool room) => InvokeAsync(() =>
+    {
+        if (_railRoom == room) return;
+        (_railRoom, _railToggled) = (room, false);
+        StateHasChanged();
+    });
+
+    // Ctrl+Enter in the rail's note adds it.
+    private Task RailNoteKey(KeyboardEventArgs e) => e.Key == "Enter" && e.CtrlKey ? AddNote() : Task.CompletedTask;
+
+    /// <summary>How many of the day's numbers are missing, and the first numbers slide with one (for the title's checks).</summary>
+    private int MissingNumbers => MetricPlan.Sum(m => m.Group?.Tiles.Count(Missing) ?? 0);
+
+    private int? FirstMissingSlide => MetricPlan.Select((m, i) => (m, i)).Where(x => x.m.Group?.Tiles.Any(Missing) == true)
+        .Select(x => (int?)(x.i + 1 + NoteSlides)).FirstOrDefault();
+
+    /// <summary>A number the day should have that nobody has entered.</summary>
+    private static bool Missing(Tide.Application.Metrics.MetricTile t) => t.Value is null && t.Metric.FlagMissing;
+
+    // --- the day's loose ends, dealt with on their slides by the presenter ------------------------------------------
+
+    /// <summary>Whether this page has the presenter's tools on the slides: it's presenting (or there's no meeting and it
+    /// could), on the team edition, as someone who may change the brief, before it's sent. Never a follower's.</summary>
+    private bool PresenterTools => TeamEdition && InCharge && _writesBriefs
+        && _brief is { Status: not BriefStatus.Sent };
+
+    private bool _writesBriefs, _noteEditing;
+    private string? _noteDraft;
+    private readonly Dictionary<Guid, string> _numberDrafts = [];
+
+    // The note as it was opened to edit, and the brief's version then: saving is refused if a colleague saved the brief
+    // meanwhile (BriefService.SetTeamNoteAsync). A change heard to anything but the note moves the version on; one to the
+    // note says who saved it (_noteChangedBy), as the brief page does, and the draft stays to copy from.
+    private string? _noteBase, _noteChangedBy;
+    private Guid? _noteVersion;
+
+    internal void EditOpeningNote() =>
+        (_noteEditing, _noteDraft, _noteBase, _noteVersion, _noteChangedBy, _slideFocus) = (true, _brief?.TeamNote, _brief?.TeamNote, _brief?.EditVersion, null, SlideFocus.NoteBox);
+
+    /// <summary>Cancel (or Escape in the box): the note as saved, and focus back on Edit.</summary>
+    internal void CancelOpeningNote() => (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteEdit);
+
+    // A brief heard to have changed while the note is open: who saved it, if it was the note; else the edit carries on.
+    private void NoteHeard(Brief brief, IReadOnlyList<Change> changes)
+    {
+        if (!_noteEditing) return;
+        if (brief.TeamNote == _noteBase) _noteVersion = brief.EditVersion;
+        else _noteChangedBy ??= LiveChanges.Who(changes);
+    }
+
+    // Typed and not saved: the meeting note (not yet added), the opening note's edit, or a number.
+    private bool OpeningNoteDirty => _noteEditing && (_noteDraft ?? "") != (_noteBase ?? "");
+    private bool NumbersDirty => _numberDrafts.Values.Any(v => !string.IsNullOrWhiteSpace(v));
+    private bool Unsaved => NoteDirty || OpeningNoteDirty || NumbersDirty;
+
+    /// <summary>Whether leaving asks first: something typed and not saved, outside a rehearsal (where nothing can be saved,
+    /// so there's nothing to discard).</summary>
+    internal bool AsksBeforeLeaving => Unsaved && !RehearsalAsked;
+    private string UnsavedMessage => NoteDirty ? "Your meeting note isn't added."
+        : OpeningNoteDirty ? "Your edit to the opening note isn't saved." : "A number you typed isn't saved.";
+
+    private void DiscardUnsaved()
+    {
+        DiscardNote();
+        (_noteEditing, _noteChangedBy) = (false, null);
+        _numberDrafts.Clear();
+    }
+
+    // Escape in the note's box cancels; the slide's own keys never hear the box's (present.js leaves typing alone).
+    private void NoteBoxKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelOpeningNote();
+    }
+
+    // Enter in a number's box saves it.
+    private Task NumberKey(KeyboardEventArgs e, Guid metricId) =>
+        e.Key == "Enter" ? EnterMissingNumber(metricId, _numberDrafts.GetValueOrDefault(metricId) ?? string.Empty) : Task.CompletedTask;
+
+    // Where focus goes once a slide's strip is drawn again: into the note's box, back to Edit, or to the slide's heading
+    // as a strip goes (the note kept or saved, the last number entered); a number refused keeps its box.
+    private enum SlideFocus { None, NoteBox, NoteEdit, NoteHeading, NumbersHeading, NumberBox }
+
+    private SlideFocus _slideFocus;
+    private ElementReference _noteBox, _noteEditButton, _noteHeading, _numbersHeading;
+    private readonly Dictionary<Guid, ElementReference> _numberBoxes = [];
+
+    /// <summary>The title's Enter beside "numbers missing": the first numbers slide with one, focus in its first box.</summary>
+    private async Task ToMissingNumber(int slide)
+    {
+        await Move(slide);
+        _slideFocus = SlideFocus.NumberBox;
+    }
+
+    // The first missing number's box on the numbers slide shown.
+    private ElementReference FirstNumberBox()
+    {
+        var onNumbers = _slide > NoteSlides && _slide <= NoteSlides + MetricsSlides;
+        var first = onNumbers ? MetricPlan[_slide - 1 - NoteSlides].Group?.Tiles.FirstOrDefault(Missing) : null;
+        return first is not null && _numberBoxes.TryGetValue(first.Metric.Id, out var box) ? box : default;
+    }
+    private readonly Dictionary<Guid, string> _numberErrors = [];
+
+    private async Task FocusOnSlideAsync()
+    {
+        var to = _slideFocus switch
+        {
+            SlideFocus.NoteBox => _noteBox, SlideFocus.NoteEdit => _noteEditButton,
+            // Over the slide the rail is modal and the slide inert: focus stays in the rail, on the note's Edit, or once no
+            // number is left to enter, on its close button. A number still missing takes it first, wherever the rail is.
+            SlideFocus.NoteHeading => RailOver ? _noteEditButton : _noteHeading,
+            SlideFocus.NumbersHeading => FirstNumberBox() is { Id: not null } next ? next : RailOver ? _railClose : _numbersHeading,
+            SlideFocus.NumberBox => FirstNumberBox(), _ => default,
+        };
+        if (_slideFocus == SlideFocus.None || _busy) return;
+        _slideFocus = SlideFocus.None;
+        await to.TryFocusAsync(orGone: true);
+    }
+
+    /// <summary>Still current: the carried note kept as it is for this brief (BriefService marks it reviewed).</summary>
+    internal Task KeepOpeningNote() => SaveOpeningNote(_brief?.TeamNote, "Opening note kept as it is.");
+
+    /// <summary>Save note. An empty note isn't saved from the slide: clearing it would take the slide away from under the room
+    /// mid-meeting (it's cleared from Today); Still current or Cancel are the ways out.</summary>
+    internal Task SaveOpeningNote(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Toasts.Error("An empty note isn't saved here: it would take the slide away. Use Cancel, or Still current.");
+            return Task.CompletedTask;
+        }
+        return SaveOpeningNote(text, "Opening note saved.");
+    }
+
+    private Task SaveOpeningNote(string? text, string done) => Run(async () =>
+    {
+        if (_brief is null || !InCharge) return;
+        try { await BriefSvc.SetTeamNoteAsync(_brief.Id, text, _noteEditing ? _noteVersion : _brief.EditVersion); }
+        catch (StaleEditException)
+        {
+            _noteChangedBy ??= "Someone else";
+            throw;
+        }
+        (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteHeading);
+        await ReadBriefAgain();
+        Toasts.Show(done);
+    });
+
+    /// <summary>A number missing from the day's, entered on its slide: blank or not a number is refused, as the form does.</summary>
+    internal Task EnterMissingNumber(Guid metricId, string text) => Run(async () =>
+    {
+        if (!InCharge) return;
+        if (!Tide.Application.Metrics.MetricMath.TryParseValue(text, out var value))
+        {
+            _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
+            return;
+        }
+        // The number only: a colleague's note added a moment ago isn't wiped by it.
+        await MetricsSvc.SaveNumberAsync(metricId, _date, value);
+        _numberDrafts.Remove(metricId);
+        _numberErrors.Remove(metricId);
+        // The group may fold away (its last number entered as 0): this page stays where its slide's line now is, with the room.
+        var shown = SlideKey(_slide);
+        _metrics = await MetricsSvc.GetDayAsync(_date);
+        Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
+        _slideFocus = SlideFocus.NumbersHeading;
+        Toasts.Show("Saved. The room sees it now.");
+    });
+
+    // After a save from a slide: the brief read again, and this page kept on the slide it showed (a cleared note takes its
+    // slide away), as a colleague's change would.
+    private async Task ReadBriefAgain()
+    {
+        var shown = SlideKey(_slide);
+        if (await BriefSvc.GetAsync(_date) is not { } brief) return;
+        _brief = brief;
+        Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
+    }
+
+    /// <summary>The slides before the articles, in a line for the title slide: "the opening note and the numbers"; null
+    /// when the articles come first.</summary>
+    private string? FirstUp
+    {
+        get
+        {
+            List<string> parts = [];
+            if (NoteSlides > 0) parts.Add("the opening note");
+            if (MetricsSlides > 0) parts.Add("the numbers");
+            return parts.Count switch
+            {
+                0 => null,
+                1 => parts[0],
+                _ => string.Join(", ", parts[..^1]) + " and " + parts[^1],
+            };
+        }
+    }
+
+    /// <summary>What comes after the articles, before the wrap-up, for the title slide: "2 actions that need review"; null
+    /// when the wrap-up follows them.</summary>
+    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review") : null;
+
+
+    private Task HandsListDismissed() => InvokeAsync(() =>
+    {
+        _handsOpen = false;
+        StateHasChanged();
+    });
+
+    internal void ClearHand(string? userId)
+    {
+        if (InCharge && _seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
+    }
+
+    internal void Summon()
+    {
+        if (InCharge && _seat is not null && Meetings.Summon(_seat)) Refresh();
     }
 
     internal void ToggleLock()
     {
-        if (_seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
+        if (InCharge && _seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
     }
 
-    internal void HandOff(ChangeEventArgs e)
+    // Who's chosen in "Hand off to…": handed the meeting only once Hand off is pressed.
+    private string? _handTo;
+
+    internal void ChooseHandOff(ChangeEventArgs e) => _handTo = e.Value is string to && to.Length > 0 ? to : null;
+
+    internal void ConfirmHandOff()
     {
-        if (_seat is null || e.Value is not string to || to.Length == 0) return;
+        if (_handTo is { } to) HandOff(to);
+    }
+
+    internal void HandOff(string to)
+    {
+        _handTo = null;
+        if (!InCharge || _seat is null || to.Length == 0) return;
         var name = _view?.People.FirstOrDefault(p => p.UserId == to)?.Name;
         if (!Meetings.HandTo(_seat, to))
         {
@@ -2049,6 +3070,7 @@ else
 
     private async Task CopyLink()
     {
+        if (RehearsalAsked) return;
         var link = Nav.ToAbsoluteUri(Ui.PresentUrl(_date)).ToString();
         var copied = false;
         try { copied = await JS.InvokeAsync<bool>("tideCopy", link); }
@@ -2070,15 +3092,80 @@ else
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenAction => TeamEdition && !Held && _readsTeam;
 
+    /// <summary>Whether the action open shows beside the slide, which narrows for it (an administrator's choice, off until
+    /// rehearsed): the same for the presenter and everyone following, so the room sees what they see.</summary>
+    private bool ActionBeside => Clock.ActionBesideSlide && TeamEdition && _actionDetail is not null;
+
+    // The organization's settings changed: an action open now moves beside the slide, or back over it, on every page in
+    // the meeting at once (each draws it from the setting), rather than when it's next opened; and the actions that need
+    // review are read again by the new limits, so the rows and the count agree with the line under them.
+    private void OnOrgChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(RereadReview);
+    }
+
+    // The actions that need review, read again (a limit changed, or their slide is shown again), and drawn.
+    private async Task RereadReview()
+    {
+        if (_disposed || _brief is null) return;
+        try
+        {
+            await ReloadActionLists();
+            StateHasChanged();
+        }
+        catch (ObjectDisposedException) { /* the page closed meanwhile */ }
+    }
+
+    // The slide key last drawn: coming to the actions that need review from another slide reads them again.
+    private string? _drawnKey;
+
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
-        @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+        @<ActionRef Number="number" Title="@title" Link="false" Opener="@($"action:{number}")"
+                    OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+
+    // An action's due date, holder and Take it, for someone who can work it: on its recommended line, or in the list of
+    // the article's other actions.
+    private RenderFragment ActionControls(EditionAction r) =>
+        @<text>@if (CanWork(r))
+        {
+            <span class="tide-action-assign">
+                <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
+                       @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                @* An external team has no members, as expected: nobody here is given it, and its ticket names who has it. *@
+                @if (r.TeamExternal)
+                {
+                    <span class="tide-present-help"><HolderText Label="@r.Holder("nobody")" Links="!_visitor" /></span>
+                }
+                else
+                {
+                <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
+                        @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
+                    <option value="">Nobody</option>
+                    @foreach (var member in MembersOf(r.TeamId).OrderBy(m => m.DisplayName)) { <option value="@member.UserId">@member.DisplayName</option> }
+                    @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
+                </select>
+                @* Only the team's members can be given it (ActionService.AssignAsync): with none, say so, and where to add them. *@
+                @if (MembersOf(r.TeamId).Count == 0)
+                {
+                    <span class="tide-present-help tide-assign-none">No one is on @r.TeamName yet.
+                        @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
+                }
+                }
+                @* Taken only by a member of its team, as it's only given to one; an external team has none. *@
+                @if (r.AssigneeId != _me && OnTeam(r))
+                {
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
+                }
+            </span>
+        }</text>;
 
     // An action's number alone, where it's what's quoted ("Raised as A-6"): it opens the action too.
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
         {
-            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
+            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" data-card-opener="action:@number" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
         }
         else
         {
@@ -2125,6 +3212,7 @@ else
             Refresh();
         }
         DropAction();
+        _focusOpener = true;   // closed here (Escape, Close): focus back on the title that opened it, once it's drawn
         return Task.CompletedTask;
     }
 
@@ -2138,7 +3226,7 @@ else
     private async Task LoadAction(int number, bool focus = false)
     {
         ActionDetail? detail;
-        try { detail = await ActionSvc.GetAsync(number); }
+        try { detail = await ActionSvc.MeetingViewAsync(number, _teamMax); }
         catch (ForbiddenException) when (_visitor)
         {
             DropAction();   // the presenter closed it a moment ago: a Visitor sees only the one open for the room
@@ -2157,11 +3245,12 @@ else
 
     private Task ReloadAction() => _actionDetail is { } open ? LoadAction(open.Action.Number, _focusAction) : Task.CompletedTask;
 
-    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status.
-    private async Task OnActionChanged()
+    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status, the actions that need
+    // review among them (this page doesn't hear its own change, as the others following do).
+    internal async Task OnActionChanged()
     {
         await ReloadAction();
-        await LoadActions();
+        await ReloadActionLists();
     }
 
     // Goes along with the action the presenter has open: always while locked; otherwise when following, unless this page
@@ -2201,6 +3290,9 @@ else
 
     /// <summary>Whether this page can open a card: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenCard => TeamEdition && !Held && _readsTeam;
+
+    /// <summary>How many of an article's indicators its slide shows; the card has them all.</summary>
+    internal const int SlideIndicators = 10;
 
     // The article whose indicators are open over its slide, as this page's edition carries them (read again with it).
     private EditionArticle? ShownIndicators =>
@@ -2278,8 +3370,11 @@ else
             Refresh();
         }
         DropCard();
+        _focusOpener = true;   // closed here (Escape, Close): focus back on what opened it, once it's drawn
         return Task.CompletedTask;
     }
+
+    private bool _focusOpener;
 
     // Closes the card; forgetting the presenter's too, so theirs shows again (a move, a hand-off, a new day).
     private void DropCard(bool forget = false)
@@ -2365,17 +3460,27 @@ else
         return p.Name + where + hand;
     }
 
+    /// <summary>How many are in the meeting, and how many aren't on the presenter's slide: short, so it's always whole.</summary>
+    private static string Here(LiveMeetingView m)
+    {
+        var away = m.People.Count(m.Away);
+        return away == 0 ? $"{m.People.Count} here" : $"{m.People.Count} here · {away} away";
+    }
+
     // --- actions, given to someone at the meeting ----------------------------------------------------------------
 
     private IReadOnlyList<TeamMember> MembersOf(Guid teamId) => _teams.FirstOrDefault(t => t.Id == teamId)?.Members ?? [];
 
-    // Who can take or assign it, as ActionService.CanWorkAsync decides (and checks again): analysts any action, others
-    // their own teams'.
-    private bool CanWork(EditionAction r) => r.Id != Guid.Empty &&
-        (_canCreate || _canWork && MembersOf(r.TeamId).Any(m => m.UserId == _me));
 
-    private Task Take(EditionAction r) => Run(async () =>
+    // Who can assign it, as ActionService.CanWork decides (and checks again): analysts any action, others their own
+    // teams'. Assign offers the action's team's members, the only people AssignAsync gives it to; only they take it.
+    private bool CanWork(EditionAction r) => r.Id != Guid.Empty && (_canCreate || _canWork && OnTeam(r));
+
+    private bool OnTeam(EditionAction r) => MembersOf(r.TeamId).Any(m => m.UserId == _me);
+
+    internal Task Take(EditionAction r) => Run(async () =>
     {
+        if (!InCharge) return;
         await ActionSvc.TakeAsync(r.Id);
         await LoadActions();
         Toasts.Show($"{Ui.ActionLabel(r.Number)} is yours.");
@@ -2387,6 +3492,7 @@ else
     // does: the value drawn hasn't changed, so the browser's wouldn't be put back.
     internal async Task Assign(EditionAction r, string? assigneeId)
     {
+        if (!InCharge) return;
         var kept = false;
         await Run(async () =>
         {
@@ -2426,7 +3532,7 @@ else
     // Only the date changes: whoever holds it now keeps it (not this page's copy's holder, who may have been replaced).
     internal async Task SetDue(EditionAction r)
     {
-        if (!_dueTyped.Remove(r.Id, out var typed)) return;   // left without a change
+        if (!_dueTyped.Remove(r.Id, out var typed) || !InCharge) return;   // left without a change
         if (DateInput(typed) is { } due && due != r.DueDate)
         {
             try
@@ -2445,24 +3551,46 @@ else
 
     // --- attendance and notes -------------------------------------------------------------------------------------
 
-    /// <summary>Someone at the meeting: in the record (<see cref="Row"/>), here now, or both.</summary>
-    private sealed record Attendee(string Key, string Name, bool Here, MeetingAttendee? Row);
+    /// <summary>Someone who attended, as the record has them (<see cref="Row"/>), and whether they're here now.</summary>
+    private sealed record Attendee(string Key, string Name, bool Here, MeetingAttendee Row);
 
+    // Who attended is the record, on every page alike: joining records someone at once, and someone taken off it while
+    // still in the room isn't listed (nor recorded again as the meeting ends) unless they join again.
     private List<Attendee> Attendance
     {
         get
         {
-            var here = _view?.People ?? [];
-            var list = _record.Attendees
-                .Select(a => new Attendee(a.UserId.Length > 0 ? a.UserId : a.Name, a.Name, a.UserId.Length > 0 && here.Any(p => p.UserId == a.UserId), a))
-                .ToList();
-            list.AddRange(here.Where(p => _record.Attendees.All(a => a.UserId != p.UserId)).Select(p => new Attendee(p.UserId, p.Name, true, null)));
-            return list.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var here = (_view?.People ?? []).Select(p => p.UserId).ToHashSet(StringComparer.Ordinal);
+            return _record.Attendees
+                .Select(a => new Attendee(a.UserId.Length > 0 ? a.UserId : a.Name, a.Name, a.UserId.Length > 0 && here.Contains(a.UserId), a))
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
     }
 
-    private Task AddAttendee() => Run(async () =>
+    /// <summary>The name typed to add to who attended.</summary>
+    internal string? AddAttendeeName { get => _addName; set => _addName = value; }
+
+    /// <summary>The undiscussed articles ticked to carry to the next brief.</summary>
+    internal IReadOnlyCollection<Guid> Carried => _carry;
+
+    /// <summary>
+    /// Whether this page adds to who attended (MeetingService.CanAddAttendees): it's in the brief's live meeting on the
+    /// team edition, presenting or following (never a Visitor); or, with none live, it could present and corrects the
+    /// record. Never in a rehearsal.
+    /// </summary>
+    private bool MayAddAttendees => EditsAttendance && _brief is not null && MeetingSvc.CanAddAttendees(_brief.Id);
+
+    /// <summary>Whether this page takes <paramref name="row"/> off who attended (MeetingService.CanRemoveAttendee): never in
+    /// a rehearsal.</summary>
+    private bool MayRemove(MeetingAttendee row) => EditsAttendance && MeetingSvc.CanRemoveAttendee(row);
+
+    // Whether this page changes who attended at all: on the team edition, not a rehearsal, nor a page that followed the
+    // meeting to its end. MeetingService says whom.
+    private bool EditsAttendance => TeamEdition && !RehearsalAsked && !_followedToEnd;
+
+    internal Task AddAttendee() => Run(async () =>
     {
+        if (!MayAddAttendees) return;
         if (string.IsNullOrWhiteSpace(_addName)) return;
         await MeetingSvc.AddAttendeeAsync(_brief!.Id, _addName);
         _addName = null;
@@ -2471,8 +3599,13 @@ else
 
     private Task AddNameKey(KeyboardEventArgs e) => e.Key == "Enter" ? AddAttendee() : Task.CompletedTask;
 
-    private Task RemoveAttendee(MeetingAttendee row) => Run(async () =>
+    /// <summary>Who the wrap-up lists as attending, by name.</summary>
+    internal IReadOnlyList<string> AttendanceNames => Attendance.Select(a => a.Name).ToList();
+
+    // The presenter, anyone; a follower, a name they added: MeetingService checks again as it saves.
+    internal Task RemoveAttendee(MeetingAttendee row) => Run(async () =>
     {
+        if (!MayRemove(row)) return;
         await MeetingSvc.RemoveAttendeeAsync(row.Id);
         await ReloadRecord();
     });
@@ -2535,10 +3668,13 @@ else
         _disposed = true;   // a join or follow still under way doesn't take a seat for a page that's gone
         Meetings.Changed -= OnMeetingChanged;
         Meetings.Scrolled -= OnMeetingScrolled;
+        Clock.Changed -= OnOrgChanged;
         LeaveMeeting();
+        _watch?.Dispose();
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();
         await JS.StopAsync("tidePresent.stop");
+        if (_handsPopout is not null) await _handsPopout.DisposeAsync();
         _ref?.Dispose();
     }
 }

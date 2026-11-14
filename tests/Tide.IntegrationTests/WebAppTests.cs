@@ -23,6 +23,9 @@ public class TideApp : WebApplicationFactory<Program>
     /// <summary>The SQL Server database the app runs on instead of SQLite (see <see cref="SqlServerTideApp"/>).</summary>
     private protected virtual string? SqlServerDatabase => null;
 
+    /// <summary>The app's clock, when not the system's (see <see cref="WeekdayApp"/>).</summary>
+    protected virtual TimeProvider? Time => null;
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tide-tests-" + Guid.NewGuid().ToString("N"));
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -39,6 +42,8 @@ public class TideApp : WebApplicationFactory<Program>
         builder.UseSetting("Email:PickupDirectory", Path.Combine(_dir, "mail"));
         // The organization's boundary (the sending address's domain): the tests' own addresses are in example.org.
         builder.UseSetting("Email:From", "tide@example.org");
+        // Never offered unasked in tests: what's new, tips and the tour are tried by asking for them.
+        builder.UseSetting("Onboarding:Enabled", "false");
         if (Role is { } role)
         {
             builder.UseSetting("DevAuth:Roles:0", role);
@@ -49,6 +54,7 @@ public class TideApp : WebApplicationFactory<Program>
         // that reads it after a step that took longer on a loaded machine still finds it (ToastServiceTests holds
         // the few seconds themselves).
         builder.ConfigureTestServices(s => s.AddScoped(_ => new Tide.Web.Services.ToastService(new ManualClock())));
+        if (Time is { } time) builder.ConfigureTestServices(s => s.AddSingleton(time));
     }
 
     protected override void Dispose(bool disposing)
@@ -66,6 +72,13 @@ public class TideApp : WebApplicationFactory<Program>
 public class SqlServerTideApp : TideApp
 {
     private protected override string? SqlServerDatabase { get; } = SqlServerFactAttribute.NewDatabase();
+}
+
+/// <summary>The app on a working day's clock (<see cref="WeekdayClock"/>), for tests that start today's meeting or count
+/// business days from today: on a weekend Today shows Monday's brief, whose meeting can't start before Monday.</summary>
+public class WeekdayApp : TideApp
+{
+    protected override TimeProvider? Time { get; } = new WeekdayClock();
 }
 
 public class WebAppTests(TideApp app) : IClassFixture<TideApp>
@@ -87,8 +100,9 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         "/actions/new",
         "/actions/1",
         "/workload",
-        "/hunts/saved",
-        "/outreach/templates",
+        "/library",
+        "/library/queries",
+        "/library/templates",
         "/admin/teams",
         "/admin/organization",
         "/admin/queries",
@@ -99,8 +113,8 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         "/admin/sources",
         "/rotation",
         "/admin/rotation",
-        "/playbooks",
-        "/board-rules",
+        "/library/playbooks",
+        "/library/board-rules",
         "/admin/card-rules",
         "/actions?view=open&layout=board",
     ];
@@ -267,6 +281,26 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         (await app.CreateClient().GetAsync($"/briefs/{day:yyyy-MM-dd}/email/nonsense")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // An indicator export names its TLP ceiling and its format, for every scope: with no ceiling, or a format it doesn't
+    // write, it's refused rather than given the most sensitive ceiling or another format. No format is STIX, as documented.
+    [Theory]
+    [InlineData("brief")]
+    [InlineData("lookup")]
+    public async Task AnIndicatorExport_WithNoCeilingOrAnUnknownFormat_IsRefused(string scope)
+    {
+        var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        var key = scope == "brief" ? $"{day:yyyy-MM-dd}" : Tide.Application.Exports.ExportService.LookupKey("203.0.113.45");
+        var client = app.CreateClient();
+        (await client.GetAsync($"/exports/{scope}/{key}")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "no ceiling isn't every level");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=csv")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync($"/exports/{scope}/{key}?format=xml&tlp=clear")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "xml isn't a format it writes");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=&tlp=clear")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var stix = await client.GetAsync($"/exports/{scope}/{key}?tlp=clear");
+        stix.StatusCode.Should().Be(HttpStatusCode.OK, "no format is STIX");
+        stix.Content.Headers.ContentType!.MediaType.Should().Be("application/stix+json");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=CSV&tlp=clear")).Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+    }
+
     [Fact]
     public async Task SharePointPage_AndMetricsCsv_Answer()
     {
@@ -280,10 +314,16 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         stix.Content.Headers.ContentType!.MediaType.Should().Be("application/stix+json");
         stix.Content.Headers.ContentDisposition!.FileNameStar.Should().Be($"tide-brief-{day:yyyy-MM-dd}-amber.stix.json");
         (await stix.Content.ReadAsStringAsync()).Should().Contain("\"type\": \"bundle\"");
-        var indicators = await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?format=csv");
+        var indicators = await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?format=csv&tlp=clear");
         (await indicators.Content.ReadAsStringAsync()).Should().Contain("type,value,defanged");
         (await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?tlp=purple")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await app.CreateClient().GetAsync($"/exports/nothing/{day:yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // A lookup's export: the articles the sample's VPN address is on, named for it and the ceiling.
+        var lookup = await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix&tlp=amber");
+        lookup.StatusCode.Should().Be(HttpStatusCode.OK);
+        lookup.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-lookup-203-0-113-45-amber.stix.json");
+        (await lookup.Content.ReadAsStringAsync()).Should().Contain("[ipv4-addr:value = '203.0.113.45']").And.Contain("update-check.example.net");
+        (await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("just words")}?tlp=red")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         var trends = await app.CreateClient().GetAsync("/trends/export.csv?p=2026-Q3");
         trends.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-trends-2026-Q3.csv");
         (await trends.Content.ReadAsStringAsync()).Should().Contain("section,group,line,key,2025-Q3,2025-Q4,2026-Q1,2026-Q2,2026-Q3,change");
@@ -319,6 +359,7 @@ public class ReaderTests(ReaderApp app) : IClassFixture<ReaderApp>
         (await client.GetAsync("/published")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/metrics/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/exports/brief/2026-10-26?format=csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await client.GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/trends/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var page = await client.GetAsync("/actions");
         page.StatusCode.Should().Be(HttpStatusCode.Redirect, "a page they can't open goes to the friendly access-denied page");

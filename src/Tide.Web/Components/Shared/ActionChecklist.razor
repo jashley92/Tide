@@ -20,14 +20,14 @@ else
         {
             var id = $"chk-{i.Id:N}";
             <li @key="i.Id" class="@(i.IsDone ? "done" : "")">
-                <input type="checkbox" class="form-check-input" id="@id" checked="@i.IsDone" disabled="@(!CanWork || _busy)"
+                <input type="checkbox" class="form-check-input" id="@id" checked="@i.IsDone" disabled="@(!Works || _busy)"
                        @onchange="e => Tick(i, e.Value is true)" />
                 <label for="@id">@i.Text</label>
                 @if (!Compact && i.IsDone && i.DoneByName is not null)
                 {
                     <span class="small tide-muted">@i.DoneByName</span>
                 }
-                @if (!Compact && CanWork)
+                @if (!Compact && Works)
                 {
                     <button type="button" class="btn btn-link btn-sm p-0 ms-auto tide-checklist-remove" aria-label="Take “@i.Text” off the checklist"
                             disabled="@_busy" @onclick="() => Remove(i)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
@@ -35,13 +35,14 @@ else
             </li>
         }
     </ul>
-    @if (!Compact && CanWork)
+    @if (!Compact && Works)
     {
         <div class="d-flex gap-2 mt-2">
             <input class="form-control form-control-sm" maxlength="@ActionChecklistItem.MaxText" aria-label="New checklist item" placeholder="Add an item"
                    @ref="_newInput" @bind="_newItem" @bind:event="oninput" @onkeydown="OnNewKey" />
             <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || string.IsNullOrWhiteSpace(_newItem))" @onclick="Add">Add</button>
         </div>
+        @* A closed action takes no playbook (ActionService refuses it): it's offered only while the action is open. *@
         @if (_playbooks.Count > 0)
         {
             <div class="d-flex gap-2 mt-2 align-items-center">
@@ -57,10 +58,19 @@ else
 }
 
 @code {
+    /// <summary>Drawn read-only (present mode in rehearsal, ReadOnlyCascade): nothing here saves.</summary>
+    [CascadingParameter(Name = ReadOnlyCascade.Name)] public bool ReadOnly { get; set; }
+
+    // Whether it can be ticked and added to: by whoever may work the action, unless drawn read-only.
+    private bool Works => CanWork && !ReadOnly;
+
     [Parameter, EditorRequired] public Guid ActionId { get; set; }
     [Parameter, EditorRequired] public ActionKind Kind { get; set; }
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Whether the action is open: a closed one isn't offered a playbook.</summary>
+    [Parameter] public bool Open { get; set; } = true;
 
     /// <summary>Focus the new item's box once it's drawn: the page's empty checklist was just opened to add one.</summary>
     [Parameter] public bool Autofocus { get; set; }
@@ -85,19 +95,19 @@ else
         // The action page's first interactive draw has the prerendered items, not "Loading" over them; they're read again
         // if something was saved since.
         if (Handoff.Take<ActionChecklist>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.ActionId == ActionId
-            && prerendered.CanWork == CanWork && !Compact)
+            && prerendered.CanWork == CanWork && prerendered.Open == Open && !Compact)
         {
             (_items, _playbooks) = (prerendered._items, prerendered._playbooks);
             if (current) return;
         }
         await Load();
-        if (!Compact && CanWork) _playbooks = await PlaybookSvc.ForKindAsync(Kind);
+        _playbooks = !Compact && Works && Open ? await PlaybookSvc.ForKindAsync(Kind) : [];
         if (!Compact) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Autofocus || _focused || _items is null || Compact || !CanWork) return;
+        if (!Autofocus || _focused || _items is null || Compact || !Works) return;
         _focused = true;
         try { await _newInput.FocusAsync(); }
         catch (JSDisconnectedException) { }
@@ -129,7 +139,7 @@ else
 
     private async Task Run(Func<Task> change)
     {
-        if (_busy) return;   // Enter pressed twice in the box, or a second click: one step each
+        if (_busy || !Works) return;   // Enter pressed twice in the box, or a second click: one step each
         _busy = true;
         try
         {

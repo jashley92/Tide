@@ -6,8 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
 
-#pragma warning disable BL0006 // the render tree is read here as the browser would get it
-
 namespace Tide.IntegrationTests;
 
 /// <summary>

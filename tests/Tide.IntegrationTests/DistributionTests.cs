@@ -32,7 +32,9 @@ public class DistributionTests : IDisposable
         await articles.SaveAsync(form);
         var shots = await _db.Screenshots().AddAsync(open, [new ScreenshotUpload("a.png", TestDb.Png), new ScreenshotUpload("b.png", TestDb.Png)]);
         form = ArticleForm.From((await articles.GetAsync(open))!);
-        form.Screenshots.Single(s => s.Id == shots[0].Id).Caption = "open caption";
+        var openShot = form.Screenshots.Single(s => s.Id == shots[0].Id);
+        openShot.Caption = "open caption";
+        openShot.Tlp = TlpLevel.Clear;   // a new screenshot starts at AMBER: lowered on purpose
         var secret = form.Screenshots.Single(s => s.Id == shots[1].Id);
         secret.Caption = "secret caption";
         secret.Tlp = TlpLevel.Red;
@@ -272,11 +274,12 @@ public class DistributionTests : IDisposable
         await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@example.org");
         var svc = _db.Distribution();
 
-        // The default team ceiling (AMBER+STRICT): the RED article's action is counted, not named; the AMBER one marks the email.
+        // The default team ceiling (AMBER+STRICT): the RED article's action is neither named nor counted (the count would
+        // say it exists); the AMBER one marks the email.
         var plan = await svc.PlanAsync(Day, Edition.Team);
         var email = await svc.PreviewEmailAsync(Day, Edition.Team, id => $"/files/{id}");
         var cut = await svc.EditionToSendAsync(Day, Edition.Team);
-        email.Should().Contain("Reset partner keys").And.Contain("2 overdue in all").And.NotContain("203.0.113.7");
+        email.Should().Contain("Reset partner keys").And.NotContain("overdue in all", "every one it may count is listed").And.NotContain("203.0.113.7");
         cut.Open!.Rows.Should().NotContain(o => o.Row.Title.Contains("203.0.113.7"));
         plan.Marking.Should().Be(TlpLevel.Amber, "the email carries an action raised from an AMBER article");
         plan.Subject.Should().EndWith("[TLP:AMBER]");

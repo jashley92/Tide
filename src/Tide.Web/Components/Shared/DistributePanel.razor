@@ -101,14 +101,28 @@ else if (_canSend)
                         <EditionView Edition="cut" Metrics="_metrics" Open="_open" />
                     </details>
                 }
-                <div class="form-check mt-2 mb-0">
-                    <input class="form-check-input" type="checkbox" id="@(id)-checked" checked="@_checked.Contains(edition)" disabled="@_busy"
-                           @onchange="e => Tick(edition, e.Value is true)" />
-                    <label class="form-check-label small" for="@(id)-checked">@CheckedLabel(plan)</label>
-                </div>
+                var held = HeldAsSent(plan);
+                @if (!held)
+                {
+                    <div class="form-check mt-2 mb-0">
+                        <input class="form-check-input" type="checkbox" id="@(id)-checked" checked="@_checked.Contains(edition)" disabled="@_busy"
+                               @onchange="e => Tick(edition, e.Value is true)" />
+                        <label class="form-check-label small" for="@(id)-checked">@CheckedLabel(plan)</label>
+                    </div>
+                }
                 <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
-                    <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_checked.Contains(edition) || !plan.EmailEnabled || plan.Recipients.Count == 0 || plan.Articles == 0 || !MaySend || HeldForReview(edition))"
-                            @onclick="() => SendNow(_plans[edition])"><span class="bi bi-send-check" aria-hidden="true"></span> @SendConfirmation.Label(plan)</button>
+                    @if (held)
+                    {
+                        @* Gone already (its warning is above): sending it again is a choice of its own, never the dialog's
+                           next step, so the other edition is the one ready to go. *@
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="@(id)-again" disabled="@_busy" @onclick="() => SendAgain(edition)">
+                            <span class="bi bi-arrow-repeat" aria-hidden="true"></span> Send it again…</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_checked.Contains(edition) || !plan.EmailEnabled || plan.Recipients.Count == 0 || plan.Articles == 0 || !MaySend || HeldForReview(edition))"
+                                @onclick="() => SendNow(_plans[edition])"><span class="bi bi-send-check" aria-hidden="true"></span> @SendConfirmation.Label(plan)</button>
+                    }
                     <a class="btn btn-link btn-sm" href="@EmailUrl(edition)" target="_blank" rel="noopener">The email in a new tab</a>
                     @if (edition == Edition.Public)
                     {
@@ -154,7 +168,7 @@ else if (_canSend)
     {
         @* Email on, but the brief won't go today: finished as a send would finish it, with the reason kept. It can still be
            sent after. A brief finished another way (distributed while email was off) has nothing to finish here. *@
-        <section class="tide-card tide-send-edition tide-not-sent" aria-labelledby="send-not-sent-h" data-submit-scope>
+        <section class="tide-card tide-send-edition" aria-labelledby="send-not-sent-h" data-submit-scope>
             <h3 class="tide-card-title" id="send-not-sent-h">Finish without sending</h3>
             @if (Brief.NotSentAtUtc is { } at)
             {
@@ -417,6 +431,18 @@ else if (_canSend)
 
     internal bool Ticked(Edition e) => _checked.Contains(e);
 
+    // An edition that went (or may have) offers no tick and no send until "Send it again" is chosen, so the dialog never
+    // has the one just sent ready to go again; the choice holds until it's sent.
+    private readonly HashSet<Edition> _again = [];
+
+    private bool HeldAsSent(SendPlan plan) => plan.LastSentAtUtc is not null && !_again.Contains(plan.Edition);
+
+    internal void SendAgain(Edition e)
+    {
+        _again.Add(e);
+        StateHasChanged();
+    }
+
     /// <summary>The tick's words: "I've checked the marking (TLP:AMBER) and the recipients (2 addresses on the security team
     /// edition list)". Addresses, not people: one may be a distribution list.</summary>
     public static string CheckedLabel(SendPlan plan) =>
@@ -518,6 +544,7 @@ else if (_canSend)
         _busy = true;
         _notes.Remove(plan.Edition);
         _checked.Remove(plan.Edition);
+        _again.Remove(plan.Edition);
         try
         {
             var send = await Distribution.SendAsync(plan, _withoutMeeting);

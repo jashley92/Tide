@@ -5,11 +5,15 @@
    isn't a whole time is ignored, and the box is only written to when the time changes from outside (a reload, a save
    read back), never as an echo of what's being typed, which would also put the cursor back. *@
 
-<input @key="_generation" id="@Id" type="time" class="@Class" value="@_shown" disabled="@Disabled" aria-describedby="@DescribedBy" @onchange="OnChange" />
+<input @key="_generation" id="@Id" type="time" class="@(Invalid ? Class + " is-invalid" : Class)" value="@_shown" disabled="@Disabled"
+       aria-invalid="@(Invalid ? "true" : null)" aria-describedby="@DescribedBy" @onchange="OnChange" />
 
 @code {
     [Parameter] public string? Id { get; set; }
     [Parameter] public string Class { get; set; } = "form-control form-control-sm";
+
+    /// <summary>The form refused what's in the box: it's marked so, for the eye and a screen reader.</summary>
+    [Parameter] public bool Invalid { get; set; }
     [Parameter] public string? DescribedBy { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public TimeOnly Value { get; set; }
@@ -35,8 +39,13 @@
         TimeOnly.TryParseExact(raw, ["HH:mm", "HH:mm:ss"], System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.None, out var t) ? t : null;
 
+    /// <summary>Whether the box holds a whole time: false once it's been cleared, or holds one the browser won't give
+    /// (half-typed, or past 23:59), so a form doesn't save the last whole time as if it were what's shown.</summary>
+    internal bool Whole { get; private set; } = true;
+
     internal async Task OnChange(ChangeEventArgs e)
     {
+        Whole = Read(e.Value?.ToString()) is not null;
         if (Read(e.Value?.ToString()) is not { } t) return;   // half-typed: keep typing, change nothing
         _inBox = Format(t);
         await ValueChanged.InvokeAsync(t);

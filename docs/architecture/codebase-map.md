@@ -23,7 +23,7 @@ who are new to TIDE or about to change an area they haven't worked in. Paths are
 
 ```
 Tide.sln
-Directory.Build.props        .NET 10, nullable on, latest-recommended analyzers, InvariantGlobalization=false
+Directory.Build.props        .NET 10, nullable on, analyzers pinned at 10.0-recommended, InvariantGlobalization=false
 .github/workflows/           ci.yml (build, test, migration guards, SQL Server job, upgrade test) and release.yml (bundle)
 deploy/                      PowerShell install, upgrade, backup and restore-drill scripts, SQL, production config template
 docs/                        This documentation set, ADRs (docs/decisions) and screenshots
@@ -157,7 +157,7 @@ API endpoints and hosted services.
 | `Program.cs` | Service registration, the middleware order, and the non-page endpoints: `/files/{id}/inline`, `/download` and `/zip`, email previews (`/briefs/{day}/email/{edition}`, `/sends/{id}/email`, `/corrections/{id}/email`), the SharePoint image zip, `/rotation/my.ics`, the CSV exports (metrics, trends, reports), `/exports/{scope}/{key}`, the admin downloads (`tide.config.psd1`, `config-bundle.json`, `audit.csv`), and the Navigator layer. Also health checks. | the `app.Map…` calls |
 | `Api/` | The REST API under `/api/v1` (`ApiEndpoints`), its hand-kept OpenAPI 3.1 document (`OpenApi`, served at `/api/v1/openapi.json`), shared download behaviour (`ExportEndpoints`), and webhook delivery (`WebhookHostedService`, `DataProtectionSecrets` in `WebhookServices.cs`). See [../API.md](../API.md). | `ApiEndpoints` |
 | `Security/` | Sign-in and request security. `AuthModeGuard` (Windows in Production, the dev sign-in otherwise) and `DevAuthenticationHandler`. `ApiTokenAuthentication` (`Authorization: Bearer tide_pat_…`). `RoleClaimsTransformer`, `SidNames`, `BoundedDirectoryCalls` and `WindowsNames` turn AD groups into role and permission claims under a time limit. `PermissionRevalidatingAuthStateProvider` and `SessionPermissionRefresher` re-check open circuits. `CurrentUser` implements `ICurrentUser`. `UserMirrorMiddleware` writes `Users`. `CircuitOriginMiddleware` and `SecurityHeadersMiddleware` (CSP and headers). `FileDownloads` covers attachment downloads and the `infected` zip. | `RoleClaimsTransformer`, `CurrentUser` |
-| `Services/` | Web-only services and background jobs. The hosted services: `IntakeHostedService` (polls, CVE refresh, daily prune), `ReminderHostedService`, `MetricImportHostedService` and `UpdateCheckHostedService`. Collaboration: `LiveMeetings` (present mode's in-memory meetings), `Together` (who else is here), `LiveRows`, `TriageNews` and `BoardDrags`. Also `PrerenderHandoff`, `PathBaseSetting`, `ConnectionTransport`, `SystemDiagnostics` (the Diagnostics page's checks), `ConfigSource`, and `ToastService` in `Services.cs`. | `IntakeHostedService`, `LiveMeetings` |
+| `Services/` | Web-only services and background jobs. The hosted services: `IntakeHostedService` (polls, CVE refresh, daily prune), `ReminderHostedService`, `MetricImportHostedService` and `UpdateCheckHostedService`. Collaboration: `LiveMeetings` (present mode's in-memory meetings), `Together` (who else is here), `LiveRows`, `TriageNews` and `BoardDrags`. Also `PrerenderHandoff`, `BriefChipSource` (what the top bar's brief chip says, kept per circuit), `PathBaseSetting`, `ConnectionTransport`, `SystemDiagnostics` (the Diagnostics page's checks), `ConfigSource`, and `ToastService` in `Services.cs`. | `IntakeHostedService`, `LiveMeetings` |
 | `Components/App.razor`, `Routes.razor` | The document shell (`<base href>`, CSS and script tags with their `?v=` versions) and the router. | |
 | `Components/Layout/` | `MainLayout`, `AdminLayout`, `BlankLayout` (present mode), `NavMenu` with `NavPages` (sidebar entries and the permissions each needs), the command palette (`CommandPalette`, `PaletteEntries`), keyboard shortcuts (`Shortcuts`, `ShortcutsOverlay`), top search, and `PageBoundary` (error boundary). | `NavPages.cs` |
 | `Components/Pages/` | One component per page, routed by `@page`. The table after this one maps routes to files. | `Present.razor`, `Triage.razor`, `BriefPage.razor` |
@@ -180,8 +180,7 @@ API endpoints and hosted services.
 | `/published`, `/published/{day}` | `Published.razor` | The published archive that Readers see. |
 | `/actions`, `/actions/new`, `/actions/{number}` | `ActionsBoard.razor`, `ActionPage.razor` | The board and list, and one action. |
 | `/workload` | `Workload.razor` | Load by team and person. |
-| `/hunts/saved` | `SavedQueriesPage.razor` | Saved hunt queries. |
-| `/outreach/templates` | `OutreachTemplatesPage.razor` | Outreach email templates. |
+| `/library`, `/library/{tab}` | `Library.razor` (tabs: `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `PlaybooksPage.razor`, `BoardRulesPage.razor`) | The team's library: saved hunt queries, outreach email templates, playbooks and the board rules. The old addresses redirect (`LibraryMoved.razor`). |
 | `/stories`, `/stories/{id}` | `Stories.razor` | Threat stories. |
 | `/adversaries`, `/adversaries/{id}` | `AdversariesPage.razor` | Actor and campaign profiles. |
 | `/stack`, `/stack/{id}` | `StackPage.razor` | Our stack. |

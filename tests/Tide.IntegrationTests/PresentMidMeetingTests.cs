@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
@@ -107,7 +108,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await Do(robin, p => p.Follow());
         (await robin.Html()).Should().Contain("present-product-title");
 
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Card == null && v.Locked);
         (await pat.Html()).Should().NotContain("present-product-title", "the room's card closed with the hand-off, and a lock wouldn't let them close it")
             .And.Contain("is-held");
@@ -256,6 +257,51 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         html.Should().Contain("Replaced in the north office.").And.NotContain("Two in the branch offices.")
             .And.Contain(">Retired<").And.Contain($"We run {s.Name} 4.3 (retired)");
         pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.Message.StartsWith("Robin"), "quietly");
+        EndMeeting(app, s.Day);
+    }
+
+    [Fact]
+    public async Task APresenterWhoseConnectionComesBackAfterATakeOver_CanNoLongerRunTheMeeting_AndFollowsTheNewPresenter()
+    {
+        var s = await Brief(87);
+        await using var pat = await Open(app, s.Day);
+        pat.Scope.ServiceProvider.GetRequiredService<PresenceCircuit>().Opened("reconnect-pat");
+        await Do(pat, p => p.StartMeeting());
+        await using var robin = await Open(app, s.Day, Robin);
+        await Do(robin, p => p.JoinIfLive());
+        await FirstArticle(pat);
+        await Do(robin, p => p.Follow());
+
+        // Pat's connection drops for longer than the grace period, Robin takes over and moves on, then Pat's comes back.
+        Meetings.SetConnected("reconnect-pat", false);
+        app.Clock.Now += LiveMeetings.Grace + TimeSpan.FromSeconds(1);
+        await Do(robin, p => p.Follow());
+        await Do(robin, p => p.TakeOver());
+        await Do(robin, p => p.OnPresentKey("prev"));
+        var room = Meetings.Get(s.Day)!;
+        room.PresenterId.Should().Be(Robin.UserId);
+        Meetings.SetConnected("reconnect-pat", true);
+
+        // Back, Pat's page has no presenter's rail, and it's on Robin's slide, following.
+        await Do(pat, p => p.Follow());
+        var html = await pat.Html();
+        html.Should().NotContain("id=\"present-rail\"").And.NotContain("Hand off to");
+        PresentFollowPillTests.Heard(html).Should().Be("Following Robin Analyst");
+        Meetings.Get(s.Day)!.People.Single(p => p.UserId == "dev:tester").Slide.Should().Be(room.Slide);
+
+        // Nor does anything it sends as presenter (a key, a forged event) take: every step reads the live meeting.
+        await Do(pat, p => p.OnPresentKey("next"));
+        await Do(pat, p => p.OnPresentKey("discussed"));
+        await Do(pat, p => p.QuickAdd(s.First));
+        await Do(pat, p => p.ToggleLock());
+        await Do(pat, p => p.EndMeeting());
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Slide == room.Slide && !v.Locked);
+        await using (var db = await robin.Scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+        {
+            (await db.Briefs.Include(b => b.Items).SingleAsync(b => b.Id == s.Brief)).Should()
+                .Match<Tide.Domain.Entities.Brief>(b => b.Status != BriefStatus.Presented && b.Items.All(i => !i.Discussed));
+            (await db.Actions.CountAsync(a => a.ArticleId == s.First)).Should().Be(0);
+        }
         EndMeeting(app, s.Day);
     }
 }

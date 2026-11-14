@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
@@ -10,10 +11,11 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// EP-85 on the team libraries: Saved queries and Outreach templates show 20 cards a page with "1–20 of 34", the page
-/// in the address, a filter starting again from the first page, and a delete that takes a page away showing the last.
+/// EP-85 on the team libraries (tabs of the Library page): Saved queries and Outreach templates list 20 entries a page
+/// with "1–20 of 34", the page in the address, a filter starting again from the first page, and a delete that takes a
+/// page away showing the last.
 /// </summary>
-public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
+public partial class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
@@ -38,24 +40,29 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         return ids;
     }
 
-    // Types the words into Find, as the box's change does (the first page, then what's left).
-    private static Task Find<T>(Rendered<T> r, string words) where T : Microsoft.AspNetCore.Components.IComponent => r.Click(c =>
+    // Types the words into Find, as the box's change does (the first page, then what's left), and the address follows
+    // (the first page's has no ?page=), as the live page's does.
+    private static async Task Find<T>(Rendered<T> r, string words) where T : Microsoft.AspNetCore.Components.IComponent
     {
-        typeof(T).GetField("_words", Private)!.SetValue(c, words);
-        typeof(T).GetMethod("Refilter", Private)!.Invoke(c, null);
-        return Task.CompletedTask;
-    });
+        await r.Click(c =>
+        {
+            typeof(T).GetField("_words", Private)!.SetValue(c, words);
+            typeof(T).GetMethod("Refilter", Private)!.Invoke(c, null);
+            return Task.CompletedTask;
+        });
+        await Go(r, 1);
+    }
 
     // Moves to a page as a pager link does: the address's page, read as it changes.
     private static Task Go<T>(Rendered<T> r, int page) where T : Microsoft.AspNetCore.Components.IComponent => r.Click(c =>
     {
-        typeof(T).GetProperty("PageParam")!.SetValue(c, page.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        typeof(T).GetProperty("PageParam")!.SetValue(c, page == 1 ? null : page.ToString(System.Globalization.CultureInfo.InvariantCulture));
         typeof(T).GetMethod("OnParametersSet", Private)!.Invoke(c, null);
         return Task.CompletedTask;
     });
 
     [Fact]
-    public async Task SavedQueries_Show20APage_ThePageFromTheAddress_EachLanguageHeadedOnEveryPage()
+    public async Task SavedQueries_Show20APage_ThePageFromTheAddress_EachLanguageSaidOnEveryPage()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         await SeedQueries(tag);
@@ -63,17 +70,17 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             total = (await scope.ServiceProvider.GetRequiredService<SavedQueryService>().ListAsync()).Count;
 
-        await using (var second = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved?page=2"))
+        await using (var second = await RenderAsync<SavedQueriesPage>(app, "/library/queries?page=2"))
         {
             second.Component.Page.Should().Be(2, "the page is the address's");
             var html = WebUtility.HtmlDecode(await second.Html());
             html.Should().Contain($"21–{Math.Min(40, total)} of {total} saved queries");
             html.Should().Contain("<nav class=\"tide-pager\" aria-label=\"Pages of saved queries\">")
                 .And.Contain("aria-current=\"page\" aria-label=\"Page 2, this page\"")
-                .And.Contain("href=\"http://localhost/hunts/saved\" aria-label=\"Page 1\"", "the first page's link has no page in it");
+                .And.Contain("href=\"http://localhost/library/queries\" aria-label=\"Page 1\"", "the first page's link has no page in it");
         }
 
-        await using var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved?page=2");
+        await using var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries?page=2");
         await Find(r, tag);
         r.Component.Page.Should().Be(1, "a new filter starts from the first page");
         r.Component.Shown.Should().HaveCount(25);
@@ -85,8 +92,9 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnChangedElsewhere([]));   // a colleague's change: read again, on the same page
         r.Component.Page.Should().Be(2);
         var two = WebUtility.HtmlDecode(await r.Html());
-        two.Should().Contain("21–25 of 25 saved queries").And.Contain("<h2 id=\"sq-fql\">").And.NotContain("<h2 id=\"sq-kql\">");
-        two.Should().Contain(", continued", "page 1 ends with FQL's first five, so its heading says it runs on");
+        two.Should().Contain("21–25 of 25 saved queries");
+        RowMeta().Matches(two).Select(m => m.Groups[1].Value).Should()
+            .HaveCount(5).And.OnlyContain(meta => meta == "Falcon · Not used yet", "each row says its language, on whichever page it is");
 
         // The language filter starts from the first page too.
         await r.Click(p =>
@@ -100,7 +108,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task SavedQueries_ALanguageRunningOnToTheNextPage_IsHeadedThereToo()
+    public async Task SavedQueries_ALanguageRunningOnToTheNextPage_IsSaidThereToo()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         await SeedQueries(tag);
@@ -110,14 +118,15 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
             var svc = scope.ServiceProvider.GetRequiredService<SavedQueryService>();
             for (var i = 25; i < 50; i++) await svc.SaveAsync(new SavedQueryForm { Name = $"Paged {tag} {i:00}", Dialect = "kql", Text = "DeviceEvents | take 1" });
         }
-        await using var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved");
+        await using var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries");
         await Find(r, tag);
         await Go(r, 2);
         await r.Click(p => p.OnChangedElsewhere([]));
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("21–40 of 50 saved queries");
-        html.Should().MatchRegex(@"<h2 id=""sq-kql"">[^<]+<span class=""tide-count tide-muted fw-normal"">\(40\)</span>\s*<span class=""small tide-muted fw-normal"">, continued</span></h2>",
-            "the heading repeats at the top of the page, counting the language's every match");
+        RowMeta().Matches(html).Select(m => m.Groups[1].Value).Should()
+            .HaveCount(20).And.OnlyContain(meta => meta.StartsWith("KQL · ", StringComparison.Ordinal), "KQL runs on from page 1, and each row says so");
+        html.Should().Contain("Microsoft Sentinel / Defender (KQL)</span>", "the query shown in full names its language whole");
     }
 
     [Fact]
@@ -125,7 +134,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         var ids = await SeedQueries(tag);
-        await using var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved");
+        await using var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries");
         await Find(r, tag);
         await Go(r, 2);
         r.Component.OnPage.Should().HaveCount(5);
@@ -150,7 +159,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             total = (await scope.ServiceProvider.GetRequiredService<OutreachTemplateService>().ListAsync()).Count;
 
-        await using var r = await RenderAsync<OutreachTemplatesPage>(app, "/outreach/templates?page=2");
+        await using var r = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates?page=2");
         r.Component.Page.Should().Be(2);
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain($"21–{Math.Min(40, total)} of {total} templates").And.Contain("aria-label=\"Pages of templates\"")
@@ -171,4 +180,7 @@ public class LibraryPagingTests(TideApp app) : IClassFixture<TideApp>
         r.Component.Page.Should().Be(1, "retiring five took page 2 away");
         r.Component.OnPage.Should().HaveCount(20);
     }
+
+    [GeneratedRegex("<span class=\"tide-library-row-meta\">([^<]*)</span>")]
+    private static partial Regex RowMeta();
 }

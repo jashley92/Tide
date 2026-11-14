@@ -1,31 +1,23 @@
-@page "/outreach/templates"
-@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject OutreachTemplateService TemplateSvc
 @inherits LibraryPage<OutreachTemplateRow>
+@using Tide.Web.Components.LibraryRail
 
-@* The team's outreach emails (ADR 0019): a question to a vendor, a partner, an ISAC or another team, kept for a
-   colleague to fill from their own Outreach action with Write the email. Kept as the saved hunt queries are: whoever
-   works actions saves, edits, retires and restores them, and deletes one they saved (an administrator, any); everyone
-   else who reads actions reads them. Each shows how many emails were written from it. A colleague's change re-reads the
-   list in place; an edit under way keeps what's typed, and its save is refused if the template changed since it began. *@
+@* The team's outreach emails (ADR 0019), a tab of the Library page (which checks who may open it): a question to a
+   vendor, a partner, an ISAC or another team, kept for a colleague to fill from their own Outreach action with Write
+   the email. Kept as the saved hunt queries are: whoever works actions saves, edits, retires and restores them, and
+   deletes one they saved (an administrator, any); everyone else who reads actions reads them. The list names each with
+   its TLP ceiling and how many emails were written from it; the one chosen is shown in full. A colleague's change
+   re-reads the list in place; an edit under way keeps what's typed, and its save is refused if the template changed
+   since it began. *@
 
-<PageTitle>Outreach templates · TIDE</PageTitle>
+<PageTitle>Outreach templates · Library · TIDE</PageTitle>
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head">
-    <div>
-        <h1>Outreach templates</h1>
-        <div class="tide-sub">Emails kept for the team, for asking a vendor, a partner, an ISAC or another team for information.
-            Fill one on an Outreach action with Write the email: <span class="tide-data">{{article.title}}</span>,
-            <span class="tide-data">{{indicators}}</span> and the other placeholders take the action's details, held to the
-            template's TLP ceiling. TIDE never sends them. Changes are audited.</div>
-    </div>
-    @if (_canWrite && _form is null)
-    {
-        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New template</button>
-    }
-</div>
+@if (_canWrite && _form is null)
+{
+    <LibraryHead><button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New template</button></LibraryHead>
+}
 
 @if (_form is { Id: null })
 {
@@ -34,29 +26,23 @@
         @EditForm
     </section>
 }
-else if (EditingOffPage)
+else if (EditingAway)
 {
-    @* The template being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
-       form stays here, so what's typed can be saved or cancelled. *@
+    @* The template being edited isn't the one shown (another was chosen, or a colleague retired, deleted or renamed it, or
+       a filter hides it): its form stays here, so what's typed can be saved or cancelled. *@
     <section class="tide-card tide-card-form" aria-labelledby="ot-edit-h">
         <h2 id="ot-edit-h">Edit template</h2>
         @EditForm
     </section>
 }
 
-@* The filter bar: the words, and Show retired as the switch it was, as on Saved queries. *@
-<FilterBar Active="@(!string.IsNullOrWhiteSpace(_words))" OnClear="ClearFilters">
-    <Search>
-        <input id="ot-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description, subject or body" aria-label="Find templates"
-               @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
-    </Search>
-    <ChildContent>
-        <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-            <label class="form-check-label small" for="ot-retired">Show retired</label>
-        </div>
-    </ChildContent>
-</FilterBar>
+@* Show retired, as on Saved queries. The words are the Library's search's. *@
+<div class="tide-library-filters">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+        <label class="form-check-label small" for="ot-retired">Show retired</label>
+    </div>
+</div>
 
 @if (_rows is null)
 {
@@ -64,26 +50,24 @@ else if (EditingOffPage)
 }
 else if (_rows.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-envelope-paper" Title="No outreach templates yet.">@(_canWrite ? "Add one here, then fill it from an Outreach action." : "Someone who works actions can add one.")</EmptyState>
     </div>
 }
 else if (Shown.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No template matches these filters." />
     </div>
 }
 else
 {
-    <section class="tide-card" aria-labelledby="ot-list-h">
-        <h2 id="ot-list-h">Templates <span class="tide-count tide-muted fw-normal">(@Shown.Count)</span></h2>
-        <p class="small tide-muted mb-2" role="status">@CountText</p>
-        @foreach (var r in OnPage)
-        {
-            var t = r.Template;
-            var id = "ot-" + t.Id.ToString("N");
-            <article class="tide-hunt tide-outreach-template @(t.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="t.Id">
+    var r = Selected!;
+    var t = r.Template;
+    var id = "ot-" + t.Id.ToString("N");
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Outreach templates" OnPick="Pick" Page="_page" Pages="Pages" OnPage="Turn" @ref="_browser">
+        <ChildContent>
+            <article class="tide-hunt tide-library-entry @(t.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="t.Id">
                 @if (_form?.Id == t.Id)
                 {
                     <h3 class="tide-subhead mt-0" id="@(id + "-h")">Edit @t.Name</h3>
@@ -91,37 +75,38 @@ else
                 }
                 else
                 {
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <h3 class="tide-subhead my-0" id="@(id + "-h")">@t.Name</h3>
-                        <TlpBadge Level="t.Ceiling" />
-                        @if (t.IsRetired) { <Badge>Retired</Badge> }
-                        <span class="ms-auto small tide-muted">@Used(r.Emails, "for", "email")</span>
+                    <div class="tide-library-entry-head">
+                        <div class="tide-library-entry-title">
+                            <h3 class="tide-library-entry-name" id="@(id + "-h")">@t.Name</h3>
+                            <div class="small tide-muted"><TlpBadge Level="t.Ceiling" /> @if (t.IsRetired) { <Badge>Retired</Badge> } @Provenance(t) · <span>@Used(r.Emails, "for", "email")</span></div>
+                        </div>
+                        <div class="tide-library-entry-tools">
+                            <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                            <button type="button" class="btn btn-primary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")" data-copy-done="Copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                            @if (_canWrite)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @t.Name" @onclick="() => Edit(t)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                            }
+                            @if (MoreItems(t) is { Count: > 0 } more)
+                            {
+                                <MenuButton Label="More" MenuLabel="@($"More for {t.Name}")" Items="more" ButtonClass="btn btn-outline-secondary btn-sm" Disabled="_busy" />
+                            }
+                        </div>
                     </div>
                     @if (t.Description is { } about) { <p class="small mb-1">@about</p> }
-                    <div class="small tide-muted mb-2">@Provenance(t)</div>
                     <div class="small mb-1">Filled up to @Tlp.Label(t.Ceiling)@(t.To is { } to ? $", always to {to}" : "").</div>
                     <div class="tide-field-label mb-0">Subject</div>
                     <div class="tide-data mb-2">@t.Subject</div>
                     <div class="tide-field-label mb-0">Body</div>
                     <pre id="@(id + "-text")" class="tide-email-text">@t.Body</pre>
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")" data-copy-done="Copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                        @if (_canWrite)
-                        {
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @t.Name" @onclick="() => Edit(t)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((t.IsRetired ? "Restore " : "Retire ") + t.Name)" @onclick="() => Retire(t, !t.IsRetired)">@(t.IsRetired ? "Restore" : "Retire")</button>
-                        }
-                        @if (TemplateSvc.CanDelete(t))
-                        {
-                            <button class="btn btn-link btn-sm text-danger" disabled="@_busy" aria-label="Delete @t.Name" @onclick="() => Delete(t)">Delete</button>
-                        }
-                        <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
-                    </div>
+                    <p class="small tide-muted tide-library-entry-foot">TIDE never sends an email itself.@UnderMore(MoreItems(t))</p>
                 }
             </article>
-        }
-        <Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="templates" Href="PageHref" />
-    </section>
+        </ChildContent>
+        <Below><Pager Page="_page" Pages="Pages" Many="templates" Href="PageHref" /></Below>
+    </LibraryBrowser>
+    <LibraryEntryRail Kind="LibraryKind.OutreachTemplate" EntryId="t.Id" Name="@t.Name" Noun="template" Retired="t.IsRetired" OnAdded="Reread"
+                      Facts="Facts(r)" Fills="LibraryFills.OfTemplate(t.Subject, t.Body)" />
 }
 
 @code {
@@ -139,7 +124,15 @@ else
 
     protected override Guid IdOf(OutreachTemplateRow row) => row.Template.Id;
 
+    protected override LibraryEntry Entry(OutreachTemplateRow row) =>
+        new(row.Template.Id, row.Template.Name, row.Template.Description, Tlp.Label(row.Template.Ceiling), Used(row.Emails, "for", "email"), row.Template.IsRetired);
+
     protected override Guid? EditingId => _form?.Id;
+
+    // The rail's facts: how far it's filled, where it always goes, who saved it, and how many emails were written from it.
+    private List<LibraryFact> Facts(OutreachTemplateRow r) =>
+        [new("Filled up to", Tlp.Label(r.Template.Ceiling)), .. r.Template.To is { } to ? [new LibraryFact("Always to", to)] : Array.Empty<LibraryFact>(),
+            SavedBy(r.Template), UsedFact(r.Emails, "For", "email")];
 
     // Every word typed.
     protected override IEnumerable<OutreachTemplateRow> Filtered(IReadOnlyList<OutreachTemplateRow> rows, IReadOnlyList<string> words) =>
@@ -152,7 +145,7 @@ else
             <div class="row g-2">
                 <div class="col-md-6">
                     <label class="tide-field-label" for="ot-f-name">Name</label>
-                    <input id="ot-f-name" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxName" placeholder="Are we affected? (vendor PSIRT)" @bind="f.Name" />
+                    <input id="ot-f-name" @ref="_formStart" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxName" placeholder="Are we affected? (vendor PSIRT)" @bind="f.Name" />
                 </div>
                 <div class="col-md-3">
                     <label class="tide-field-label" for="ot-f-ceiling">Highest TLP it carries</label>
@@ -180,7 +173,7 @@ else
             </div>
             <div class="d-flex gap-2 mt-2">
                 <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="Cancel">Cancel</button>
             </div>
         </div>
     };
@@ -194,7 +187,14 @@ else
     internal void New()
     {
         _form = new OutreachTemplateForm { Subject = StarterSubject, Body = StarterBody };
+        FocusForm();
         StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        _form = null;
+        FocusList();
     }
 
     // A new template starts from a common question, so the placeholders are there to keep or cut.
@@ -218,15 +218,21 @@ else
     internal void Edit(OutreachTemplate t)
     {
         _form = OutreachTemplateForm.From(t);
+        FocusForm();
         StateHasChanged();
     }
 
     internal Task Save() => Run(async () =>
     {
-        await TemplateSvc.SaveAsync(_form!);
+        Reveal(await TemplateSvc.SaveAsync(_form!));
         Toasts.Show(_form!.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
+        FocusList();
     });
+
+    /// <summary>The template's More menu: Retire or Restore, and Delete, for whoever may.</summary>
+    internal IReadOnlyList<MenuButton.Item> MoreItems(OutreachTemplate t) =>
+        MoreMenu(t.IsRetired, _canWrite, () => Retire(t, !t.IsRetired), TemplateSvc.CanDelete(t), () => Delete(t));
 
     internal Task Retire(OutreachTemplate t, bool retired) => Retiring(t.Name, retired, () => TemplateSvc.SetRetiredAsync(t.Id, retired));
 
@@ -237,6 +243,7 @@ else
         {
             await TemplateSvc.DeleteAsync(t.Id);
             Toasts.Show($"{t.Name} deleted.");
+            FocusList();
         });
     }
 }

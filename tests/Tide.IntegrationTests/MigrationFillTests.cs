@@ -223,6 +223,85 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ActionStatusTimes_AreFilledFromWhatWasRecorded(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var team = new Team { Key = "fill-team", Name = "Fill team" };
+        var number = 0;
+        ActionItem Made(ActionStatus status, int createdDaysAgo) => new()
+        {
+            Number = ++number, Title = $"Fill {number}", TeamId = team.Id, Status = status, CreatedAtUtc = Decided.AddDays(-createdDaysAgo),
+        };
+        var (never, moved, updated, taken, closed, misled) = (Made(ActionStatus.Open, 9), Made(ActionStatus.InProgress, 9), Made(ActionStatus.Blocked, 9),
+            Made(ActionStatus.InProgress, 9), Made(ActionStatus.Done, 9), Made(ActionStatus.Blocked, 9));
+        closed.ClosedAtUtc = Decided.AddDays(-1);
+        ActionEvent Line(ActionItem a, int daysAgo, string text) => new() { ActionId = a.Id, AtUtc = Decided.AddDays(-daysAgo), ByName = "X", Text = text };
+        await using (var ctx = database.Context())
+        {
+            ctx.Add(team);
+            ctx.AddRange(never, moved, updated, taken, closed, misled);
+            ctx.ActionEvents.AddRange(
+                Line(never, 8, "Raised from the brief."),
+                Line(moved, 7, "Status: Open → Blocked."), Line(moved, 5, "Status: Blocked → In progress."), Line(moved, 2, "Changed priority: P3 → P2."),
+                Line(updated, 4, "Update from Network: waiting on the vendor. Status: In progress → Blocked."),
+                Line(taken, 3, "Took it on and started it."),
+                Line(closed, 6, "Status: Open → In progress."),
+                // A person's words that only look like a move don't count.
+                Line(misled, 2, "Deleted the checklist item \"Status: Open → Blocked\"."));
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ActionStatusChangedAt");
+
+        await using (var ctx = database.Context())
+        {
+            var at = await ctx.Actions.ToDictionaryAsync(a => a.Id, a => a.StatusChangedAtUtc);
+            at[never.Id].Should().Be(Decided.AddDays(-9), "never moved: since it was raised");
+            at[moved.Id].Should().Be(Decided.AddDays(-5), "its last move into the status it has");
+            at[updated.Id].Should().Be(Decided.AddDays(-4), "a team's update that moved it");
+            at[taken.Id].Should().Be(Decided.AddDays(-3), "taking it on started it");
+            at[closed.Id].Should().Be(Decided.AddDays(-1), "when it was closed");
+            at[misled.Id].Should().Be(Decided.AddDays(-9), "no move was recorded, so since it was raised");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task WhyItMattersKept_LeavesEveryArticleUnkept_AndKeepsWhatIsKept(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var threat = new Article
+        {
+            Title = "Written before", AuthorId = "x", AuthorName = "X", Classification = Classification.Threat,
+            WhyItMatters = "We run two of these.", WhyItMattersTlp = TlpLevel.Clear,
+        };
+        await using (var ctx = database.Context())
+        {
+            ctx.Add(threat);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("WhyItMattersKept");
+
+        await using (var ctx = database.Context())
+        {
+            var a = await ctx.Articles.SingleAsync();
+            (a.WhyItMattersKeptTlp, a.WhyItMattersKeptHash, a.WhyItMattersKeptById, a.WhyItMattersKeptByName, a.WhyItMattersKeptAtUtc)
+                .Should().Be(((TlpLevel?)null, (string?)null, (string?)null, (string?)null, (DateTimeOffset?)null), "nothing was kept before");
+            Tide.Application.Articles.ArticleChecks.WhyReachesCompany(a, TlpLevel.Green).Should().NotBeNull("so its warning still shows");
+            a.KeepWhyItMatters("dev:robin", "Robin", Decided);
+            await ctx.SaveChangesAsync();
+        }
+        await using (var ctx = database.Context())
+        {
+            var a = await ctx.Articles.SingleAsync();
+            (a.WhyItMattersKeptTlp, a.WhyItMattersKeptById, a.WhyItMattersKeptByName, a.WhyItMattersKeptAtUtc, a.WhyItMattersKept)
+                .Should().Be(((TlpLevel?)TlpLevel.Clear, "dev:robin", "Robin", (DateTimeOffset?)Decided, true));
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {

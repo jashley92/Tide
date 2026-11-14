@@ -22,9 +22,9 @@ Every route, its component and the permission it needs are in the [route table](
   [Adversary profiles](#adversary-profiles) · [Detection coverage](#detection-coverage) ·
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
   [Reports](#reports) · [Team commitments](#team-commitments) · [Opening metrics](#opening-metrics)
-- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
-  [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) · [Board rules](#board-rules) ·
-  [External teams](#external-teams) · [My notifications](#my-notifications)
+- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Library](#library)
+  ([Saved queries](#saved-queries) · [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) ·
+  [Board rules](#board-rules)) · [External teams](#external-teams) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
 - [Administration](#administration)
 - [When something's wrong](#when-somethings-wrong)
@@ -35,12 +35,40 @@ Every route, its component and the permission it needs are in the [route table](
   the brief archive, our stack, adversaries), **Insight** (trends, metrics, coverage, reports), **Team**, **Company-wide**
   and **Administration**. A group with nothing in it for that person isn't shown. Triage
   carries a count of new items, and Actions a count of the person's overdue actions (in red). The sidebar collapses
-  to icons from the button at its top, and remembers that per browser.
+  to icons from the button at its top, and remembers that per browser. On a short laptop screen the links tighten so
+  the whole menu fits; where it still can't, it scrolls with a thin scrollbar and keeps the current page in view.
 - **The top bar** has the team's name, the search box (for anyone on the team edition), the **Go to** button
-  (`Ctrl+K`), the keyboard shortcuts button (`?`), and the account menu.
+  (`Ctrl+K`), the **brief chip**, the **Context** button on a page with a context rail, the keyboard shortcuts button
+  (`?`), and the account menu.
+- **The brief chip** ("Brief 10:30 AM · step 3 of 5 · Order") says from any page when the brief meets and which of its
+  five steps it's on, and is a link back to Today. During the meeting it reads "Brief is live". It's there for people
+  who read the team edition and write articles, shortened on a narrow window and gone under 740px.
+- **The context rail** is a column on the right of the pages that have one (Today, Triage, the article editor,
+  Actions, an action, Search, Our stack, the Library and Adversaries). It shows what TIDE already knows about what's
+  selected, and the tools for it, so you don't leave the page to find out. In a window 1500px or wider it's docked
+  open beside the page; **Context** or `]` closes it and the page takes the width back, and the browser remembers.
+  Below 1500px it's shut, and **Context** or `]` opens it over the page, dimming the rest; Escape, Close or a click
+  outside shuts it and puts focus back on Context.
+- **Lists with a selected row.** Triage, the Actions list and board, Our stack, Adversaries and the Library keep one
+  row selected: a click, `J` and `K` or the arrows move it, `Enter` opens it, and the address names it (`?row=`), so a
+  link or a reload shows the same one. The context rail shows the selected row.
+- **Popouts** (Triage's Attach to…, the account menu, a brief's Export indicators) close on Escape anywhere, a click
+  outside, or Tab out of them. Escape gives focus back to the button that opened it.
 - **The account menu** (the initials in the top right) says who you are and your roles, and holds your own settings:
   light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
-  and About.
+  **Help and what's new**, and About.
+- **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
+  their role: analysts, presenters, administrators, or viewers and action owners. It shows once, never in present
+  mode and never to a Reader or a Visitor. **See all changes** opens **Help** (`/help`, also linked from the `?`
+  overlay), which lists each release's highlights for your role; an administrator also gets
+  every release's full notes.
+- **Tips.** Each page that changed (Today, Triage, the article editor, Actions, an action, Search, the Library and Our
+  stack) shows a small tip on your first visit to it, pointing at what changed: Today's at the rail button and `]`. It
+  doesn't block the page or its keys. **Got it** puts it away for good; Help's **Show tips again** brings them back.
+- **The tour.** On your first-ever sign-in, a short tour steps through the pages and controls your role uses: Today,
+  the context rail and `]`, then Triage, Articles, Actions, Search, presenting or the meeting, and Administration, as
+  they apply to you. **Skip tour** or Escape ends it at any step; Help's **Take the tour** starts it again. Someone who
+  already used TIDE gets *What's new* instead.
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables
@@ -54,6 +82,14 @@ Every route, its component and the permission it needs are in the [route table](
   page. On a phone the search box takes a row of its own, the pills scroll sideways, and the menu rises from the
   bottom of the screen.
 
+![Today at 1920px, with the context rail docked open beside the brief](../screenshots/context-rail-docked.png)
+
+*The context rail docked: in a window 1500px or wider it sits beside the page ("Beside the brief" on Today).*
+
+![Today at 1440px, with the context rail open over the page](../screenshots/context-rail-overlay.png)
+
+*The context rail as an overlay: below 1500px, Context or `]` opens it over the page and dims the rest.*
+
 What sits behind this is in [frontend](../architecture/frontend.md#layout-and-navigation).
 
 ## Today
@@ -61,32 +97,59 @@ What sits behind this is in [frontend](../architecture/frontend.md#layout-and-na
 **Route:** `/` · **Workflow:** [the brief and the meeting](../workflows/brief-and-meeting.md)
 
 Where the presenting analyst starts. Today's brief shows a strip of its five steps (**Triage, Write, Order,
-Present, Send**), each saying where it stands, with one main button for whichever step is next. Beside it:
+Present, Send**), each saying where it stands, with one main button for whichever step is next. Triage says how many
+new items wait in the feed and, when any name a CVE on CISA's known exploited list, how many ("4 new in the feed ·
+2 on KEV"; the KEV count is on Today only, not another day's brief). From 8:00 on a working day (an administrator
+sets the time), it also says how many feeds haven't been pulled since ("4 of 9 feeds not pulled since 8:00 AM · 1
+failing"), with **Pull all**, for people who may pull sources.
+
+The brief takes the page:
 
 - **the running order**, which you drag, or move up and down, with removal you can undo;
-- **today's numbers**, each box with the value it's compared with;
-- **what each edition will carry**;
-- **the meeting**: its time, and who the rotation names to present.
+- **the opening note**, read-only until **Edit**, marked *Not updated* while it's carried from the last brief, with
+  *Still current*;
+- **My actions**;
+- **Not on a brief yet**: what hasn't been on any brief, Ready articles (anyone's) first, then your own drafts, newest
+  first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
+  rest are under *Add article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't
+  write the brief sees **Recently presented** there instead: only articles that have been presented, so never a
+  draft's title; every marking, as the brief beside it names them;
+- **today's numbers**, each box with the value it's compared with.
 
-Beside them, **Not on a brief yet** lists what hasn't been on any brief: Ready articles (anyone's) first, then your own
-drafts, newest first, up to 8, each with *Add* while today's brief hasn't gone out (the rest are under *Add
-article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't write the brief sees
-**Recently presented** there instead: only articles that have been presented, at or below the team edition's TLP
-ceiling, so never a draft's title or one marked above what the team edition carries.
+Beside the brief, in the context rail:
+
+- **the edition check**: how many of the articles each edition carries, then only the exceptions (what is partly
+  included, left out, or goes out with a warning). When every article goes out whole it says so, and doesn't list
+  them again; if something else is listed (numbers not entered, say) the line reads "All 3 articles go out whole, but
+  not everything else:";
+- for anyone who works actions, **your teams' queue**: their teams' open actions that are theirs or nobody's, theirs
+  first, up to 8, with *Take it* on those nobody has (a colleague who took one meanwhile is named, and yours isn't
+  taken);
+- **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
+  theirs): each one's priority, team, holder and how late it is;
+- **reviews asked of you**;
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place;
+- **coming up** for you on the rotation, and the brief's **history**.
+
+An action owner's Today leads with the queue. A colleague's save never replaces what you're typing in the meeting form
+or the opening note; a "changed elsewhere" notice shows beside it instead.
 
 Readiness checks say what's missing on each article before the meeting. A threat whose "why it matters to us" would
-reach the company-wide edition is flagged.
-
-Anyone who works actions also gets their **team's queue**: their teams' open actions that are theirs or nobody's,
-theirs first, by due date, with *Take it*. An action owner's Today leads with it. When the escalation ladder has
-flagged any of their actions (theirs, their teams', or a part of one of theirs), an **Escalated** card comes first:
-each one's priority, team, holder and how late it is.
+reach the company-wide edition is flagged, and the flag has its fix beside it: **Set to AMBER** marks that paragraph
+TLP:AMBER in one click, so the company-wide edition leaves it out. **Keep it** records that the paragraph is meant to
+reach everyone at the marking it has: it changes no marking, the warning goes, and it comes back by itself if the
+text or the marking changes. Both are there for people who can edit articles, until the brief is sent; either is in
+the article's history under their name. The warning doesn't stop the brief being marked ready.
 
 Any day's brief, today's included, has a **preview of both editions** for proofreading (`/briefs/{day}?tab=preview`),
-a tab beside the running order. A past day's brief opens at `/briefs/{day}`; today's address redirects to Today. A
-Reader or Visitor who opens `/` goes to Published briefs instead.
+a tab beside the running order. A past day's brief opens at `/briefs/{day}`, with the same rail; today's address
+redirects to Today. A Reader or Visitor who opens `/` goes to Published briefs instead.
 
 ![Today](../screenshots/brief-todays-numbers.png)
+
+![Today's word on feeds not pulled since the morning](../screenshots/today-feeds.png)
+
+*From 8:00 on a working day, under the step strip: the feeds not pulled since then, with Pull all.*
 
 ## Triage
 
@@ -112,22 +175,56 @@ markers matched.
 
 ![Triage inbox](../screenshots/triage-inbox.png)
 
+### Deciding on an item
+
+The list is a column about 440px wide; the reading pane takes the rest. Under the pane, a **decision bar** opens with
+one line saying why the suggested step is suggested ("Already covered by “Edge VPN…” (briefed Mon Nov 9), so the
+suggested step is to attach it as another report."), then one row of buttons with that step first: **Promote**, or
+for a report an article already covers and can still take, **Attach to “…”** (a covered group gets **Attach all N
+to “…”**, every report or none). Then Promote, Shortlist, Duplicate or Put back, **Attach to…**, and the dismiss
+reason with Dismiss. P still promotes. With the pane closed, or on a narrower window, the same decision is in the
+selected row.
+
+A row says what already covers it in one line ("Covered Nov 11 · Edge VPN appliance zero-day…", the title a link),
+with *We run* and *Watching* at the end of its CVEs' line.
+
+**The context rail**, "What TIDE knows", follows the selected item:
+
+- its CVE: CVSS, EPSS, whether it's on KEV, and the priority a promote would suggest;
+- **Already covered**: the article that covers it, and that article's open actions;
+- **Same event**: the other reports, with *Attach both* or *Attach all*, and *Not the same*;
+- the threat **story**;
+- what it names: **We run it**, a **watched adversary**, and *Add to what we run…*.
+
+It shows only what TIDE has stored: moving through items never fetches anything from a source's site.
+
 ### The Sources tab
 
 The last tab lists the sources TIDE polls: when each was last pulled ("12 min ago", the exact time on hover), when
 it's next due, and how its last pull went (items added, or the error). Its count is the number of sources whose last
 poll failed, shown as a warning. *Pull now* takes in a source's latest items straight away, once per analyst
 pull-now window (15 minutes by default, set on Sources): a source pulled within it, on schedule or by hand, shows when
-it can be pulled again instead.
+it can be pulled again instead. **Pull all** pulls every polled source, one at a time, skipping those pulled within the
+window or being pulled, and says how it's going ("Pulling 3 of 9: Sample news…"), then what it did ("Pulled 7 · 12 new
+items · 2 skipped (pulled in the last 15 min) · 1 failed: Sample news"). One runs at a time, whoever starts it; leaving
+the page stops it after the source it's on.
+
+![The Sources tab, with Pull all at its head](../screenshots/triage-pull-all.png)
+
+*The Sources tab, with Pull now on each source and Pull all at its head.*
 
 ### Reading the article here
 
-- **V reads it.** The selected item's article opens in a pane beside the list, fetched once from its page (the
+- **Open by itself.** On a window 1400px or wider the pane opens by itself, until you close it (TIDE remembers that
+  for you). Opened by itself, it shows only text already read: nothing is fetched until you ask.
+- **V reads it.** The selected item's article opens in the pane beside the list, fetched once from its page (the
   source's fetch setting and body selector apply; a source set to Never isn't fetched). Inline adverts are taken out:
   blocks whose class or id names an ad slot, the advert selectors and label lines listed on Sources ("Advertisement",
   "Story continues below"), and a source's own *Also remove* selector for one site's odd markup. CVEs, indicators and
   products on Our stack are marked, with the CVE chips under it. While the pane is open it follows J and K, showing a
-  report's text when it's already been read and offering to read it when it hasn't. Esc closes it.
+  report's text when it's already been read and offering to read it when it hasn't. *Read it here*, *Read again*
+  and *Open the site* sit in its head. The pane is as tall as its text, and a long text scrolls inside it. V again, or
+  Esc, closes it.
 - **Kept for a week.** The text is kept on the item for `Intake:ReadingDays` (7), so a colleague reads it without
   fetching again and *Draft from the sources* starts with it after promoting. It's for reading inside TIDE only: it's
   never sent, exported or shown to readers.
@@ -165,11 +262,16 @@ it can be pulled again instead.
 ### Several reports of one event
 
 - **Attach to…** Any item can be kept as another report of a recent draft or ready article, instead of becoming a
-  new one, and its CVEs go with it.
+  new one, and its CVEs go with it. When an article already covers the item, that's the main button.
 - **Looks like one event.** Reports from several feeds that share a CVE, or names and amounts in their headlines
   ("Binance", "$6.3 billion"), are suggested as one line. It opens to the reports themselves, each with its source and
   excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click, and
   a group has no "dismiss all". *Not the same* splits a suggested group for everyone, with Undo.
+
+![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
+
+*(1) The group, opened to its two reports; (2) its decision bar, with Attach all first because an article already
+covers it; (3) Same event in the context rail.*
 
 ### Two analysts at once
 
@@ -195,17 +297,33 @@ dates counted from and to. Each filter in force is a chip that links to the list
 sent. Trends opens this list
 pre-filtered when you click a count; opened from a tactic or technique, each row shows the techniques it was counted
 for. An analyst starts an article here with **New article**: a title, a source, a link and a TLP, which is set first
-because screenshots take the article's marking.
+because the parts start from it. A new screenshot starts at TLP:AMBER, or the article's marking when that's higher, so
+it reaches the company-wide edition only once someone lowers it (owner decision 2026-11-11).
 
 ## The article editor
 
 **Route:** `/articles/{id}` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
-Section pills jump to each part of the article, and a sticky save bar sits along the bottom. Beside the editor is
-**what readers get**: the article as the team or company-wide edition carries it, with what that edition leaves out
-marked for the writer. Keys 1 and 2 switch the preview between the editions. On today's brief, a stepper ("4 of 5
+The form is one column, in the order the sent brief reads: Assessment, Bottom line, Bullets, Why it matters to us,
+Recommended actions, Screenshots, Indicators and CVEs, then Tags & ATT&CK. Its text boxes keep a readable width.
+Section pills jump to each part of the article and mark each with ✓, a count, "Needed" or "check TLP", and a sticky
+save bar sits along the bottom.
+
+In the context rail, **Context · what readers get**: whether the article is ready (or how many things are missing,
+with Show), then the Preview, Actions and Details tabs. Preview is the article as the team or company-wide edition
+carries it, with what that edition leaves out marked for the writer; keys 1 and 2 switch the edition. The threat
+story and similar articles follow. On a phone an Edit / Preview switch shows it. On today's brief, a stepper ("4 of 5
 ‹ Previous Next ›") walks to the article before or after it, and J and K press it. Someone who can't write articles
 sees the reader preview, with the article's actions, as the whole page.
+
+**It saves itself.** After a two-second pause in typing the form is saved, and the save bar says "Saving…", then
+"Saved at 3:17 PM", or why it didn't. It never saves over a colleague's newer version (it stops and says who), and it
+never saves a change to a TLP marking, or anything that would put a part into the company-wide edition: those wait
+for **Save**, and the bar says so. An article on a sent brief isn't saved by itself. The history shows one editing
+session as one entry.
+
+"Why it matters to us" carries the same **Set to AMBER** and **Keep it** as Today when it would reach the
+company-wide edition.
 
 ![Article editor](../screenshots/article-editor.png)
 
@@ -271,7 +389,7 @@ matters".
 
 ### Similar articles and history
 
-Beside the editor, under the threat story, **Similar articles** (folded) lists other articles with the same CVE, link
+In the context rail, under the threat story, **Similar articles** (folded) lists other articles with the same CVE, link
 or story, when each was briefed, and its open actions. Each is one click from mentioning an action or joining the
 story.
 
@@ -316,11 +434,35 @@ that fits its kind.
 - **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
   choice on any computer. A link that names a layout opens that one. It opens on Mine until someone picks *Open here
   by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
-  team) opens All open instead. On the board, a card is dragged to another
-  column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked, Tracking, Done, Cancelled
-  and Not applicable.
+  team) opens All open instead. Each tab (Mine, My teams, All open, Overdue, Recently closed) shows its count, and
+  they stay on one row, scrolling sideways in themselves when they don't fit.
+- **The board.** Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
+  scrolls on its own. A card shows its title, the article's short title, a KEV flag, its checklist progress, a sweep's
+  hunt state and how long it has been in its lane. A card is dragged to another lane, or moved from its Move menu by
+  keyboard. Under the lanes a strip counts what closed as Done, Cancelled and Not applicable in the last 7 days. A card
+  dropped on one of those closes that way, and a click on one opens those actions on the list's Recently closed tab,
+  with the board's filters.
+![The Actions board](../screenshots/doc-actions-board.png)
+
+*(1) The view tabs with their counts; (2) the filter bar; (3) the selected card; (4) the closed strip: what closed
+each way in the last 7 days, a drop target for each.*
+
+- **The list.** All open and My teams are grouped by when actions are due, each group saying how many have no owner.
+  A row shows the title, the article it came from (with KEV), the kind, the team and who has it, a **Progress** column
+  (the checklist, the hunt state, or "No update for 3 days"), the due date and the status. **Take it** is on the rows
+  you may take, and the status is a menu for whoever may move the action. When Mine is empty but your teams have work
+  nobody holds, one line says so, with *Show them*.
+- **The selected action.** On the list a row is selected, and on the board a card (the address keeps it: `?row=`,
+  `?card=`). `J` and `K` or the arrows move it (on the board `←` and `→` go between lanes), `T` takes it and `Enter`
+  opens it. The context rail shows it: its Next line; Take it, Assign… (list) or Move to (board), and Open; its kind,
+  team, time in its status and checklist; its hunt query with Copy (a preview that saves nothing until Copy, for those
+  who work it); the article it came from with its CVE, KEV, CVSS and EPSS; and its last activity.
+- **External teams' tickets.** An action an external team has, which nobody in TIDE holds, is named by its ticket
+  ("INC-4411", a link when the ticket link is a web address) wherever its holder would be, or "With Branch IT · no
+  ticket yet".
 - **Filters.** One bar serves the list and the board: the search box (title, A-number or the article's title), then
-  the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked**, **Tracking** and **Raised by me**. Overdue and Due this
+  the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked**, **Tracking**, **Raised by me** and **No owner**
+  (with its count). Overdue and Due this
   week take turns, as do Blocked and Tracking (each pair is one filter). **+ Filter** holds team, held by (you, nobody,
   or anyone holding an open action), internal or external teams, raised by, kind, priority (any of P1 to P4), due date
   (including no due date), status and, when an administrator shows card rules as filters, the rule, each with its
@@ -332,21 +474,28 @@ that fits its kind.
   renames, moves or deletes it. They're each person's own, up to 12, on any computer.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
-  more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
-- **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
-- **An action's page.** Its title and one line of badges (status, priority, due date, Escalated), then its team, who
-  has it and who handed it over. One button does the thing that comes next, chosen by where the action stands: *Write
-  the email* for an Outreach action with none sent, *Record the reply* while one waits, *Record an update* for work
-  followed rather than done here (Tracking, an external team's, a parent with open parts), *Take it* when nobody has
-  it, else *Start work*, *Unblock* or *Close with outcome*. Everything else is under *More*, the last of it *Delete…*
-  for an analyst or administrator: for an action raised by mistake or twice, it asks why and says that work that
-  won't be done is closed Cancelled or Not applicable instead. A deleted action leaves every list, count, reminder and
-  report; an administrator can restore it. The status badge opens the status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
-  record their reply), an email past its follow-up day, escalated, blocked, or late. Beside the work, the facts (once
-  the due date has moved, "Originally due Mon Nov 9 · moved 2 times" under it) and a card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
-  address can name one: `?tool=hunt`). *What's happened* is one feed of its comments and history, newest at the
-  bottom by the comment box, with *Show N earlier* for the rest. On a phone it's one column: the header, Next,
-  details, the tools, the lineage, what's happened, the facts, the article and the files.
+  more*. The closed strip counts the last 7 days; *Show the last 30 days* takes it back 30.
+- **Raising.** Raise one from an article, from the board, or in the meeting from the presenter's rail.
+- **An action's page.** One column: its title and one line of badges (status, priority, kind, the due date and its
+  state, Escalated), then its team, who has it and who handed it over. One button does the thing that comes next,
+  chosen by where the action stands: *Write the email* for an Outreach action with none sent, *Record the reply* while
+  one waits, *Record an update* for work followed rather than done here (Tracking, an external team's, a parent with
+  open parts), *Take it* when nobody has it, else *Start work*, *Unblock* or *Close with outcome*. Everything else is
+  under *More*, the last of it *Delete…* for an analyst or administrator: for an action raised by mistake or twice, it
+  asks why and says that work that won't be done is closed Cancelled or Not applicable instead. A deleted action
+  leaves every list, count, reminder and report; an administrator can restore it. The status badge opens the status
+  choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or record
+  their reply), an email past its follow-up day, escalated, blocked, or late; on a sweep or hunt with none of those,
+  where its query stands (nobody has it, and whether a query is already on it; copy the query and run it; run the
+  query that's on the action and record what it found). Then *Details*, a card of tools in tabs (the checklist, the
+  parts' timeline, hunt queries, outreach), opening on the action's own (the address can name one: `?tool=hunt`; on a
+  sweep or hunt the Hunt tab comes first), the lineage, and *What's happened*, one feed of its comments and history,
+  newest at the bottom by the comment box, with *Show N earlier* for the rest. A team's reply recorded on the action
+  reads as a quote.
+- **About this action**, in the context rail: the facts (once the due date has moved, "Originally due Mon Nov 9 ·
+  moved 2 times" under it), the article it came from with its CVEs, *Also raised from it* (the other actions from the
+  same article, open ones first), an external team's contact, and Files. On a phone the page is the same one column,
+  and the rail opens over it.
 - **Splitting.** A long remediation splits into parts, one per team: one at a time (*Split off a part*, prefilled from
   the parent, with no team chosen), or several at once (*Split to teams*: tick the teams, give each a due date and a
   ticket link). A parent shows its parts in its lineage, with their progress ("3 of 5 done · 1 overdue · next due
@@ -367,14 +516,15 @@ that fits its kind.
   external team that won't hear of it says so and why, with the fix, while external team reminders are on for
   everyone. Off for everyone is an administrator's choice, so it isn't said on each action, nor on a slide in the
   meeting. The contact email fix opens in a new tab, so nothing typed is lost.
-- **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
+- **Tracking.** A status, and the board's last lane, after Blocked, for work handed to others and followed: still
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",
   and going over is counted, asked about or refused, as an administrator set it.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history, read
   together under *What's happened*.
-- **Files.** Files can be added to an action itself (picked, dropped or pasted, or while raising it) as well as to
-  its comments. Its Files section, last in the side column, lists both, newest first: a compact row each, with
+- **Files.** Files can be added to an action itself (picked, dropped anywhere on its page or pasted, or while raising
+  it) as well as to its comments. Its Files section, last in the context rail with *Add files* in its heading, lists
+  both, newest first: a compact row each, with
   its description, SHA-256 and controls under its "More" button. A file is checked from its first bytes as well as
   its name and type, and an image whose bytes don't match isn't shown inline. A file that can run (a program,
   script, installer, shortcut, Office file with macros and the like) downloads in a zip with the password `infected`,
@@ -383,7 +533,8 @@ that fits its kind.
   paperclip with the count.
 - **How late.** An overdue action says how late it is.
 - **Escalated.** An open action the escalation ladder flagged has a red *Escalated* badge on its list row, its board
-  card and its page (its title says when), is on Today's Escalated card, and leads the meeting's overdue list. The
+  card and its page (its title says when), is on Today's Escalated card, and leads the meeting's *Actions that need
+  review* slide. The
   badge goes when it closes or its due date moves.
 
 ![Action with a hunt query](../screenshots/action-hunt.png)
@@ -391,6 +542,10 @@ that fits its kind.
 ### Hunt queries
 
 - **Where they come from.** They're generated from the article's indicators, or from every article in its story.
+- **Ready when the page opens.** An open sweep or hunt with indicators and no query yet shows the generated query
+  straight away, marked *Preview*, to anyone who may work the action. Looking saves nothing and leaves no line in the
+  action's history. *Copy* or *Keep this query* puts it on the action, as *Generate* does; until then *No hits, close*
+  and *Record hits* beside it are disabled and say why. Changing the language rewrites the preview.
 - **Which SIEMs.** **Cortex XSIAM (XQL)**, **Microsoft Sentinel / Defender (KQL)** and **CrowdStrike Falcon /
   Next-Gen SIEM**.
 - **Templates.** Administrators edit a template per kind of indicator.
@@ -419,7 +574,9 @@ that fits its kind.
 
 ### Keeping track
 
-- **Lists.** Views by me, my teams, all open, overdue and recently closed.
+- **Lists.** Views by me, my teams, all open, overdue and recently closed. On the board, each chip under the lanes
+  (Done, Cancelled, Not applicable, closed in the last 7 or 30 days) opens those actions on Recently closed, and a
+  closed action's context rail there has **Reopen**, for whoever may move it.
 - **Reminders.** Reminder emails for due soon and overdue, a weekly team digest, and an outreach follow-up. Each is
   off until enabled.
 - **Personal choices.** Each person turns off the emails they don't want on [My notifications](#my-notifications).
@@ -432,12 +589,29 @@ One box at the top of every page.
 
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
   ATT&CK techniques by name and captions, with the matches marked.
-- **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not, to see:
-  - every article it's on, and when it was briefed;
-  - other indicators on the same host;
+- **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not. The lookup opens with
+  one line that says whether the team knows it and whether anyone is on it ("On 1 article · briefed Mon Nov 9 ·
+  2 actions open · no hunt result yet", "Not on any article yet · no action raised · 1 new in triage" for a CVE in
+  Triage's inbox, or "Not seen before" when nothing in TIDE has it). "Briefed" means the brief was presented or sent; an
+  article on a brief that hasn't been is "on today's brief, not presented yet". The answer stays in the page:
+  - each article once, in a table: the article with its kind, priority and TLP, what matched (this indicator, or
+    another on the same host), when it was briefed and when it was written. Other articles that only mention the
+    value in their text follow under **Also mentioned in**;
   - the actions raised, and whether their hunts found anything;
-  - a ready hunt query.
-- **A CVE.** Paste a CVE for its CVSS, EPSS and KEV status, the articles about it, and what was done.
+  - **Seen with**: the other indicators, CVEs, ATT&CK techniques and the story on the same articles. Each looks that
+    value up (a story opens its page).
+
+  What you'd do with it is in the context rail, **Do something with it**:
+  - the **hunt query**, already built in the query language the person chose last (XQL, KQL or Falcon), with
+    **Copy** and *Include what it travels with*, which adds the indicators on the same articles. Changing the language
+    rebuilds it and is remembered. When a language has no query for that kind of value (Falcon for a URL, say), the
+    rail says so and Copy is off. Looking a value up saves nothing: a query is kept only when it's added to an action;
+  - **who is sweeping for it**: each open sweep or hunt that searches for it, with its team, holder, status and hunt
+    result, *Open A-n*, and *Take it* for someone who may work that team's actions; or "Nobody has swept for it yet";
+  - **Export** as STIX 2.1 or CSV: the articles it's on, with what it travels with, up to the TLP you choose.
+- **A CVE.** Paste a CVE for the same first line without a hunt result (a hunt searches for indicators, not a CVE),
+  its CVSS, EPSS and KEV status, the sweeps of the articles' indicators, **Seen with**, the articles about it (each
+  once) and what was done, with the same rail.
 
 **Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). `?`
 lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
@@ -445,7 +619,7 @@ lists the page's keyboard shortcuts, with the switch that turns single-letter sh
 settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.
 
 **Toasts.** A confirmation goes after a few seconds (10 when it offers Undo), but stays while the pointer or focus is
-on it, and gets its full time again after. `Alt+Z` (`âŒ¥ Z` on a Mac) presses the newest Undo while it shows.
+on it, and gets its full time again after. `Alt+Z` (`⌥ Z` on a Mac) presses the newest Undo while it shows.
 
 ![Indicator lookup](../screenshots/search-lookup.png)
 
@@ -455,29 +629,73 @@ on it, and gets its full time again after. `Alt+Z` (`âŒ¥ Z` on a Mac) presses
 
 A full-screen, keyboard-driven slide deck, always dark because it's on a shared screen:
 
-- a title slide with the agenda;
+- a title slide with the articles in order (KEV marked), what comes first ("First: the opening note and the
+  numbers.") and what comes after them ("After the articles: 4 actions that need review.");
 - the team's opening note (what's coming up, the week's phishing trends; team edition only, carried from the
-  previous brief, and flagged *Not updated* on Today for analysts until it's changed or kept with *Still current*);
+  previous brief, and flagged *Not updated* for analysts until it's changed or kept with *Still current*);
 - the opening numbers, a slide per metric group;
-- one slide per article;
-- a wrap-up with every recommended action not yet raised;
-- (team edition) the actions still open from earlier briefs, the escalated first, each marked *Escalated*, then the
-  overdue ones.
+- one slide per article, with its indicators as defanged chips (a chip opens the larger card) and its CVEs; each
+  recommended line shows the action it became ("✓ A-2 · In progress · Sam"), and the article's other actions are
+  listed apart;
+- after the articles, just before the wrap-up, (team edition) **Actions that need review**: open actions from any brief that are overdue, escalated, or have gone
+  too long without an update by a person (2 business days, or 5 when Blocked; an administrator sets both), each once,
+  most pressing first, at most 8. Each row says every reason it's there, its last update ("last: comment by Sam"), and
+  one thing the room can do (ask for an update, reassign it, find someone to take it, ask what it's waiting on, agree
+  a new due date);
+- a wrap-up of three lists: the recommended lines not raised yet, who has what (the brief's actions by team and
+  holder), and the articles not discussed.
 
-Screenshots zoom, articles are ticked off as discussed, and the editions can be switched on screen. A slide too tall
-for the screen shrinks a little, then scrolls inside itself.
+![The Actions that need review slide](../screenshots/present-needs-review.png)
+
+*Actions that need review: why each is there, its last update, and one thing to do.*
+
+The footer names each slide ("1 · Edge VPN"). Screenshots zoom, articles are ticked off as discussed, and the editions
+can be switched on screen. A slide too tall for the screen shrinks a little, then scrolls inside itself.
 
 **Start the meeting** and it's live for the team: a banner on every page, and a Join button on the brief. Invite
 everyone on the team edition in (or paste the copied link). People who join follow the presenter's slide, can browse
-off on their own and come back, and show in the strip with the slide they're on. They raise a hand on an article,
-take notes (each person's own, against the article on screen as they began it), raise actions and take or assign them. The presenter
-can bring everyone back or lock everyone to their slide, clear hands and hand presenting to another analyst; if the
-presenter drops out, another analyst can take over. Attendance is recorded as people join, and the presenter can add
-people who were in the room. The brief's page keeps who attended and the notes, by article.
+off on their own and come back, and see whatever card or action the presenter opens. Who is here and whose hand is
+up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same slide") and the raised
+hands in order. People raise and lower their own hand there, and take notes (each person's own, against the article on
+screen as they began it). Attendance is recorded as people join. Anyone in the meeting on the team edition can add
+people who were there, from the box under *Attended* on the wrap-up (the presenter, from their rail), and take off
+whoever they added; the presenter can take off anyone, joined or added. With no meeting live, before or after it, whoever can
+present corrects the list from the rail. The brief's page keeps who attended and the notes, by article.
 
-Each of an article's recommended actions is **raised in one click** from its slide. It's raised at the article's
-priority, as the kind its wording suggests and for the team that last took that kind; both can be changed first.
-Articles not discussed carry to the next brief. Ending the meeting asks first.
+
+**The presenter's rail** holds what only the presenter does, and is never on a follower's screen. From 1500px wide
+it's docked beside the slide, which narrows to fit; below that **Rail** or `]` opens it over the slide. For the slide
+on screen it holds: *Ready to present?* on the title slide; *Still current* and *Edit* for an opening note carried
+over; a box for each number not entered yet; an article's actions, compact (the title, then its due date and holder
+side by side, and *Take it*), its recommended lines to raise (each in one click, at the article's priority, as the kind
+its wording suggests and for the team that last took that kind, shown as a chip that opens both to change first),
+*Another action* (the quick add, opened when wanted) and your note (one line, Ctrl+Enter adds it); and on the
+wrap-up, *Before you end*: what's not raised, the articles not discussed (tick to carry each to the next brief),
+attendance and *End the meeting*. Once the brief has been presented, with no meeting live, the title slide's rail
+says the meeting is over and the wrap-up's, *After the meeting*, holds only attendance to correct; a page that followed
+the meeting to its end stays a follower's, with no rail. A bar pinned at its top never scrolls away: *Mark discussed*
+(D) with the slide's state (D, the arrows, Home and End still work with the rail open over the slide), and in a meeting *Lock to me* (on or off) and the count of hands up, which opens their list. At its foot, in a
+meeting, the hands (lower one, or clear all) and everyone's view: bring everyone here, and hand presenting to another
+analyst. If the presenter drops out,
+another analyst can take over. Ending the meeting asks first.
+
+![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
+
+*The presenter's rail on an article's slide: (1) its actions with Take it, (2) a recommended line to raise, (3)
+Another action, the quick add, (4) your note.*
+
+![The wrap-up, with Before you end in the presenter's rail](../screenshots/present-wrap-up.png)
+
+*The wrap-up's three lists for the room, and Before you end in the presenter's rail.*
+
+**An action beside the slide.** An action opened in the meeting opens over the slide. An administrator can tick *In a
+meeting, an action opens beside the slide* in Organization settings (off by default; rehearse in the meeting room
+first): then, on a window 1200px or wider, the action opens as a column beside the slide, which narrows for it, the
+same for the presenter and everyone following.
+
+![An action open beside the slide](../screenshots/present-action-beside.png)
+
+*An action beside the slide, with the presenter's rail docked: slide, action and rail side by side.*
 
 ![Opening metrics slide](../screenshots/present-metrics-slide.png)
 
@@ -568,12 +786,32 @@ off, or changes one of its articles; changes to other articles don't touch it. T
 
 **Routes:** `/stack`, `/stack/{id}` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)
 
-The products the organization runs, kept by analysts. The list shows each product's versions, team and how much has
-been written about it. A product's page has its other names, versions and notes (AMBER), a vendor contact for
+The products the organization runs, kept by analysts. The list answers "which of our products need attention today":
+products that need a look come first, the most pressing at the top: a CVE on KEV, then any other CVE (the worst CVSS
+score first), then new triage items (more first), then housekeeping (an old or missing check, no owning team), by
+name within each. The rest follow by name. A product needs a look when something is in its **Right
+now** column, its check is old or missing, or no team owns it.
+
+- **Right now** shows the CVEs on articles about the product (tagged with it or naming it) from the last seven days'
+  briefs, the worst first, each with its CVSS score, EPSS score and a KEV mark where known, and for analysts the
+  number of new triage items that name it, linked to Triage's **We run it** filter. It adds "briefed today" when an
+  article about it is on today's brief, and for analysts "not written up" when new triage items name it and no
+  article about it was written in the last seven days. It says "Nothing new" otherwise.
+- **Checked** flags a date more than 90 days old, and a product never checked. A date from another year shows its year.
+- A filter box narrows the list by product, other name or version. The quick filters **Needs a look**, **Check is
+  old** and **No owning team** each show how many products they match, and **+ Filter** keeps one owning team's products.
+  **Show retired products** adds the retired ones, last.
+- **Add a product** opens the add form; it stays out of the way until asked for.
+- **The selected product.** A row is selected (a click, `J` and `K` or the arrows, the address's `?row=`; `Enter`
+  opens the product), and the context rail shows it: its versions, team, last check and contact; *Edit*, *Start an
+  outreach* (a new Outreach action titled "Ask {contact} about {product}", or "Reach out about {product}" with no
+  contact) and *Mark checked*, for analysts; what's in triage for it now; its articles; its open actions; and its notes.
+
+The list also shows each product's versions, team, and how many articles and open actions it has. A product's page has its other names, versions and notes (AMBER), a vendor contact for
 outreach emails, and its history: the articles tagged with it or naming it, and their actions. Triage lifts items
 that name a product, and an article is tagged with any number of them from the editor's **We run**. A product's
-history is held to the team edition's TLP ceiling: articles above it, and actions raised from them, are counted but
-not named. A colleague's change re-reads the page in place; the edit form keeps what's typed in it.
+history names every article and action, whatever its TLP, as the rest of the app does for the team edition's readers;
+present mode's product card stays held to the team edition's ceiling. A colleague's change re-reads the page in place; the edit form keeps what's typed in it.
 
 ## Adversary profiles
 
@@ -597,6 +835,25 @@ under the picker until cleared.
 A **watched** profile marks triage items that name it ("Watching: Scattered Spider"). Two profiles that turn out to be
 one group can be merged. MITRE ATT&CK's groups and campaigns can be imported for their ids and aliases: fetched from
 MITRE's TAXII server, or uploaded from a saved copy where the server has no internet.
+
+**The context rail.** On the list a row is selected, as on Our stack (a click, `J` and `K`, the row named in the
+address; `Enter` opens the profile), and the rail is **About** that profile: its badges (Watched, Retired or Merged,
+its MITRE id); **Open profile** and, for analysts on a profile not retired, **Watch** or **Stop watching**; its kind,
+motivation and sectors; **Lately**, its three newest articles with their dates, then how many more and how many name
+it but aren't tagged; its **open actions** (up to three, then how many more); its **top techniques** with how many
+articles show each ("T1190 ×3"); and **We run**. On a profile's page the rail has its **facts** (kind, MITRE id,
+motivation, sectors, briefs this quarter and when it was last reported, what it was merged into), **Do** (Watch or Stop
+watching, the Navigator layer, Retire or Bring back, for analysts as before), **To link** for analysts (the articles
+that name it but aren't tagged, a few named, and a link to the timeline where they're tagged), **We run** and, for
+analysts once detection rules are imported, **Hunting**: how many of its techniques have an enabled rule tagged,
+linked to Coverage. The page keeps the story: the timeline, the actions, the techniques and About it. Docked from
+1500px, beside the page; below that `]` opens it over the page.
+
+Both rails read what the profile's page reads, so they list the same articles and actions to the same people, and
+they never show the notes (AMBER), which stay in About it. **We run** is the products on Our stack that the profile's
+articles are about, tagged with them or naming them, as a product's page finds its own articles: profiles aren't
+linked to products, so it says only what the articles say. Retired products aren't listed. Saved hunt queries aren't
+tied to techniques, so Hunting is the detection rules alone.
 
 ## Detection coverage
 
@@ -740,54 +997,91 @@ open actions on the Actions list. The numbers update live as actions change.
 
 ![Workload](../screenshots/workload.png)
 
-## Saved queries
+## Library
 
-**Route:** `/hunts/saved` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+**Route:** `/library` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+
+What the team keeps to use again on actions, on one page with four tabs: **Saved queries**, **Outreach templates**,
+**Playbooks** and **Board rules**. Each tab shows how many entries it holds (those in use: not retired, and for
+board rules not turned off), and the count follows a colleague's change. Each tab has its own address
+(`/library/queries`, `/library/templates`, `/library/playbooks`, `/library/board-rules`), so a link or a bookmark
+opens the right one, and a tab's page and selected entry stay its own. The addresses the four had as separate pages
+(`/hunts/saved`, `/outreach/templates`, `/playbooks`, `/board-rules`, and the older `/admin/playbooks`) lead to
+their tabs. The command palette (`Ctrl+K`) still finds each tab by its name and its other words ("kql",
+"checklist", "card colour"). Everyone who reads actions opens the Library.
+
+One **Search the whole library** box sits on the tab row (kept in the address, `?q=`), and each tab shows how many
+entries match; it searches only the tabs you may open. Each tab's New button is in the page's header.
+
+The first three tabs work the same way. On the left is the list, 20 entries to a page with the page in the address:
+each entry's name, what it's for in one line, its kind (a query's language, a template's TLP ceiling, the kind of
+action a playbook is for) and how often it was used ("Used on 3 actions", "Not used yet"). A long grouped list folds
+after the selected entry's group ("3 more KQL, then Falcon · 3"). Beside it is the selected entry in full, with
+**Copy** and **Edit**, and **Retire** or **Restore** and **Delete** under **More**. Choose an entry with a click, or
+with `J` and `K` or the arrows, which turn the page at the ends; `Enter` goes into it. The selected entry is in the
+address (`?row=`), so a copied link opens the same entry on whichever page of the list it's on; when nothing is
+selected (a filter matches nothing) the address names none. An entry just saved is the one shown. Opening a form puts
+the cursor in its first box; Save, Cancel and a confirmed Delete put focus back on the selected row, so `J` and `K`
+carry on from there. On a window narrower than about 1000px the list sits above the entry.
+
+The context rail, **About this query** (or template, or playbook), has its facts (platform or kind, who saved it,
+how often it was used), the placeholders it fills and what each becomes, **Try it on an open action** and **Used on**.
+Try it lists the open actions you work that the entry suits, and shows it filled in for the one you choose; *Add to
+A-n* adds it there, as adding it from the action does (a template offers *Copy filled in* and a link to write it on
+the action). With no suitable open action it says so. Used on lists the actions it was used on, with what each found.
+A saved query or playbook can't be added to a closed action: reopen the action first.
+
+A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused if
+the entry changed since it began. When a colleague's change moves the entry being edited to another page (one added
+before it pushes it on), the page goes with it; when you choose another entry while editing, or the edited one
+leaves the list altogether, its form stays above the list.
+
+### Saved queries
+
+**Route:** `/library/queries` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 The team's library of hunt queries: a tuned sweep or a behavioural hunt kept for a colleague to add to their own
-action. The page lists them by language, with how many actions used each, 20 to a page with the page in the address.
-A language that runs on to the next page is headed there too ("continued"). Whoever works actions saves, edits,
-retires and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads
-them. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused
-if the query changed since it began. When a colleague's change moves the card being edited to another page (one added
-before it pushes it on), the page goes with it; when the card leaves the list altogether, its form stays above the list. The filter bar has the search box and a pill per language (**XQL**, **KQL**,
-**Falcon**), one at a time; **Show retired** stays a switch beside them, since it widens the list rather than
-narrowing it.
+action. The list keeps each language's queries together and says each one's language and how many actions used it.
+Whoever works actions saves, edits, retires and restores them; whoever saved one, or an administrator, deletes it.
+Everyone else who reads actions reads them. A platform control (**All**, **XQL**, **KQL**, **Falcon**, each with its
+count) narrows the list, **By platform** or **Most used** sorts it (most used counts the actions each was added to),
+and **Show retired** widens it.
 
 A new install, or an upgrade whose library is still empty, starts with 13 starter sweeps saved by "TIDE": IP,
 domain, file hash, URL and every-indicator sweeps in KQL and XQL, and IP, domain and file hash sweeps for Falcon.
 They're added once. The team edits, retires or deletes them like any other, and deleted ones don't come back.
 
-## Outreach templates
+### Outreach templates
 
-**Route:** `/outreach/templates` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+**Route:** `/library/templates` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 The team's outreach emails, kept beside Saved queries and in the same way, 20 to a page: a name, a subject and a body
 with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV
 and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
-`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. Each
-shows how many emails were written from it. Its filter bar is the search box with **Show retired** as a switch, as on
-Saved queries.
+`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. The
+list says each one's TLP ceiling and how many emails were written from it. Its filter bar is the search box with
+**Show retired** as a switch, as on Saved queries.
 
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
 and *Internal inquiry: are we impacted?*.
 
-## Playbooks
+### Playbooks
 
-**Route:** `/playbooks` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#playbooks)
+**Route:** `/library/playbooks` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#playbooks)
 
 The team's checklists, kept beside Saved queries and in the same way, 20 to a page: a name, the kind of action it's
 for (or any kind), a description and its steps. Choose one when raising an action, or apply one from an action's
 checklist; the steps are copied. Whoever works actions adds, edits, reorders, retires and restores them; whoever made
 one, or an administrator, deletes it, unless an action was started from it (then only Retire). The 7 starters are
-made by "TIDE": an administrator deletes them. Each card says how many actions were started from it, and who saved
-and changed it. The filter bar has the search box, a pill per kind of action and **Show retired**. The old
-`/admin/playbooks` address comes here.
+made by "TIDE": an administrator deletes them. The list says how many actions were started from each, and the
+selected one who saved and changed it. The up and down arrow buttons on the selected playbook change the order the
+pickers offer them in. The filter bar has the search box, a pill per kind of action and **Show retired**. The old
+`/playbooks` and `/admin/playbooks` addresses come here.
 
-## Board rules
+### Board rules
 
-**Route:** `/board-rules` (under Team in the sidebar, and a button on the Actions page) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#board-rules)
+**Route:** `/library/board-rules` (and a button on the Actions page) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#board-rules)
 
 The card rules, read-only, for everyone who reads actions: each rule's label in its colour, what it matches, the
 colour and whether + Filter on the Actions page offers it. An administrator gets a link to edit them on

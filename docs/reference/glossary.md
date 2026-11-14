@@ -44,6 +44,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Brief day** | The day a brief is for: today if it's a working day, else the next working day. | `OrgClock.CurrentBriefDate` |
 | **Brief status** | Draft, Ready, Presented, Sent. A brief finished as distributed or not sent is Sent too. | `BriefStatus` |
 | **Brief steps** | Today's five steps: Triage, Write, Order, Present, Send (Distribute when email is off). | `BriefSteps`, `StepStrip` |
+| **Brief chip** | The top bar's link back to Today, saying when the brief meets and which step it's on ("Brief 10:30 AM · step 3 of 5 · Order"). | `BriefChip`, `BriefChipSource` |
 
 ## C
 
@@ -56,6 +57,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Classification** | Whether an article asks something of the organization: a **Threat** (with a *priority*) or **Informational**. | `Classification` |
 | **Company-wide edition** | The edition for the whole company: email to everyone, the SharePoint copy, and the *Reader archive*. Carries only what's at or below its ceiling (GREEN by default), and never indicators, actions, metrics or the team note. Called "public" in code. | `Edition.Public` |
 | **Configuration bundle** | The app's in-app setup (settings, templates, teams and the like) as a file to copy to another TIDE, plus the install answers file. Carries no secrets. | `ConfigBundleService`, `/admin/system/bundle` |
+| **Context rail** | The column on the right of a page that shows what TIDE knows about what's selected, and the tools for it. Docked open from 1500px wide; an overlay below that; `]` shows or hides it. | `ContextRail`, `tideRail` |
 | **Correction** | A short email of its own, sent after a brief went out, to the people who had the original: a required note on what changed and a diff of each article as sent against now. Frozen and logged like a *send*. | `BriefCorrection`, `CorrectionService`, `CorrectionRenderer`; [ADR 0015](../decisions/0015-corrections-after-send.md) |
 | **Cover** | A *rotation change* that gives the requester's brief days to a colleague. | `RotationChangeKind.Cover` |
 | **Coverage** | The page that compares the ATT&CK techniques briefed in the last 90 days with the SOC's *detection rules*. A technique is covered when a current, enabled rule is tagged with it, its parent or a sub-technique. "Covered" means tagged, not proven to fire. | `CoveragePage`, `DetectionService`, `DetectionGap`; [ADR 0017](../decisions/0017-detection-rules-are-referenced-and-tagged.md) |
@@ -86,7 +88,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Earlier note** | What an article's old free-text Threat actors box held, kept after the field became an *adversary* picker. Names a profile goes by are offered as one-click tags; the rest stays visible until cleared. | `Article.Actors`, `AdversaryService.ForArticleAsync` |
 | **Edit version** | A concurrency token on articles, briefs, comments, saved queries and templates. A save from a stale copy is refused. | `EditVersion`, `StaleEditException` |
 | **Edition** | One audience's cut of a brief: the *team edition* or the *company-wide edition*. Both are built from the same brief by TLP, in one place. | `Edition`, `BriefEdition`, `BriefEditions.Build`; [ADR 0005](../decisions/0005-editions-from-one-model.md) |
-| **Edition check** | Today's panel saying what each edition will carry and what it leaves out. | `EditionCheck` |
+| **Edition check** | The panel in Today's context rail saying what each edition will carry and what it leaves out, listing only the exceptions. | `EditionCheck` |
 | **EPSS** | Exploit Prediction Scoring System: FIRST's daily probability that a CVE will be exploited in the next 30 days, with its percentile. A high EPSS suggests (never sets) a priority. | `CveRecord.EpssScore`, `EpssPercentile` |
 
 ## F
@@ -176,6 +178,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Playbook** | A checklist for a kind of action, offered when one is created or worked. The team's library, kept by whoever works actions. | `Playbook`, `PlaybookStep`, `ActionChecklistItem` |
 | **Presence** | Who else has a brief, article, action or triage item open, and whether they're editing. In memory. | `Presence`, `PresenceNote`, `PresenceCircuit` |
 | **Presenter** | The analyst who presents a day's brief: the rotation's choice for the day (an *override*, else the week's analyst), recorded on the brief. Presenting can be handed to another analyst in the meeting. | `IPresenterLookup`, `Brief.AnalystName` |
+| **Presenter's rail** | In present mode, the column of controls only the presenter uses (take, raise, notes, Mark discussed, hands, ending). Drawn only on the presenting page, never on a follower's. | `Present.razor` (`Rail`, `InCharge`) |
 | **Primary button** | The one button an action's page offers first, chosen by where the action stands and its kind (Write the email, Record the reply, Record an update, Take it, Start work, Unblock, Close with outcome); everything else is under *More*. | `ActionGuide.Primary`, `ActionFlow` |
 | **Priority** | How urgent a threat is, P1 (most urgent) to P4. An action raised in the meeting takes its article's priority. | `Priority` |
 | **Promote** | In triage: turn an item into a draft article, claimed in one statement so two analysts can't make two. *Promote as one article* does it for a whole *group*. | `IntakeService.PromoteAsync`, `PromoteAsOneAsync`, `FeedItemStatus.Promoted` |
@@ -201,7 +204,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Saved query** | A hunt query kept in the team's library, by language, with `{{days}}` and `{{values}}` placeholders, to add to any action. | `SavedQuery`, `SavedQueryService`, `/hunts/saved` |
+| **Saved query** | A hunt query kept in the team's library, by language, with `{{days}}` and `{{values}}` placeholders, to add to any action. | `SavedQuery`, `SavedQueryService`, `/library/queries` |
 | **Scorecard** | The board's taxonomy of what the team reports on: categories and tags articles are counted by in Trends. Tags are retired, never deleted, once used. | `ScorecardCategory`, `ScorecardTag`, `ScorecardService` |
 | **Seat** | A place in a live meeting. A *Visitor* reads team-edition content only from a seat, only for that meeting's brief, and only while it runs. | `LiveMeetings.Join`, `MeetingAccess` |
 | **Send** | Emailing one edition of a brief to its recipient list, after a confirmation showing the marking and every recipient. It's frozen first; only a send the relay took marks the brief Sent. A test send goes to the sender only and isn't frozen. | `BriefSend`, `SendStatus` (`Sending`, `Sent`, `Failed`, `Unknown`), `DistributionService`, `SendPlan`, `BriefSend.IsTest` |
@@ -223,8 +226,8 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Team commitments** | The scorecard of each team against the due dates on its actions over the last 30, 90, 180 or 365 days: actions due, the share done on time, average days late, open and overdue now. An action counts in the window its due date falls in. | `TeamScorecardService`, `TeamScore`, `/reports/teams` |
 | **Team edition** | The edition for the security teams: everything up to its ceiling (AMBER+STRICT by default), with the day's numbers, the team note, indicators and the actions raised. | `Edition.Team` |
 | **Team note (opening note)** | The team's note at the start of the meeting (what's coming up, the week's phishing trends), in Markdown. Team edition only; a new brief starts with the previous one's. | `Brief.TeamNote`, `BriefService.SetTeamNoteAsync` |
-| **Team queue** | On Today, a person's teams' open actions that are theirs or nobody's, theirs first, by due date, with *Take it*. | `TeamQueue`, `ActionService.TeamQueueAsync` |
-| **Tool drawer** | On an action's page, the card of tabs beside the work holding its checklist, parts' timeline, hunt queries and outreach, opening on the kind's own (or `?tool=`). | `ActionToolDrawer`, `ActionGuide.Tools`, `ActionTool` |
+| **Team queue** | In Today's context rail, a person's teams' open actions that are theirs or nobody's, theirs first, by due date, with *Take it* on those nobody has. | `TeamQueue`, `ActionService.TeamQueueAsync` |
+| **Tool drawer** | On an action's page, the card of tabs under the details holding its checklist, parts' timeline, hunt queries and outreach, opening on the kind's own (or `?tool=`). | `ActionToolDrawer`, `ActionGuide.Tools`, `ActionTool` |
 | **Tracking** | An action status: handed to others and followed. Open (its due date and SLA apply) but not active, so not counted against its team's limit. | `ActionStatus.Tracking` |
 | **Threat** | An article that asks something of the organization, with a *priority*. Its "why it matters" starts at AMBER. | `Classification.Threat` |
 | **TLP 2.0** | The Traffic Light Protocol, version 2.0 (FIRST), on every article and part. **CLEAR**: no limit. **GREEN**: the community, not public. **AMBER**: the organization and its clients, need to know. **AMBER+STRICT**: the organization only. **RED**: the named recipients only. A part never counts lower than its article. | `TlpLevel` (`Clear`, `Green`, `Amber`, `AmberStrict`, `Red`), `Article.Effective`, `Article.HighestTlp` |

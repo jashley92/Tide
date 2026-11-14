@@ -1,15 +1,17 @@
 @* A menu button: a button (aria-haspopup, aria-expanded) that opens a short menu of commands in the popover the filter bar's
    + Filter uses, over a backdrop that closes it. Each item runs something or goes somewhere. From the keyboard it works as
    + Filter does (filters.js): the down arrow on the button opens it, the first item takes focus, the arrows, Home and End
-   move between items (tideRoving), Tab leaves it closed, and Esc closes it with focus back on the button. Choosing an item
+   move between items (tideRoving), Tab leaves it closed, and Esc anywhere on the page closes it with focus back on the
+   button (Popout), the page under it not hearing that Esc. Choosing an item
    closes it first, so a dialog the item opens takes focus from there. With ChildContent instead of Items, the popover
    holds that (the metric history's chart picker: boxes to tick, and a find box that takes focus first), and stays open
    while it's used. *@
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="tide-menubutton">
+<div class="tide-menubutton" @ref="_holder">
     <button type="button" class="@ButtonClass tide-menubutton-btn" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_open ? _id : null)"
-            disabled="@Disabled" title="@(IconOnly ? Label : null)" @ref="_trigger" @onclick="Toggle">
+            disabled="@Disabled" title="@(IconOnly ? Label : null)" aria-label="@AriaLabel" @ref="_trigger" @onclick="Toggle">
         @if (Icon is not null) { <span class="bi @Icon" aria-hidden="true"></span> }
         @if (IconOnly)
         {
@@ -23,7 +25,7 @@
     @if (_open)
     {
         <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
-        <div class="tide-popover tide-popover-end tide-menubutton-pop @PopClass" id="@_id" role="menu" aria-label="@(MenuLabel ?? Label)" @ref="_pop" @onkeydown="Key">
+        <div class="tide-popover tide-popover-end tide-menubutton-pop @PopClass" id="@_id" role="menu" aria-label="@(MenuLabel ?? Label)" @ref="_pop">
             @ChildContent
             @foreach (var i in Items)
             {
@@ -61,12 +63,16 @@
     [Parameter] public string ButtonClass { get; set; } = "btn btn-outline-secondary";
     [Parameter] public bool Disabled { get; set; }
 
+    /// <summary>The button's name for a screen reader when its label alone doesn't say enough ("Status of A-12: Open").</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+
     /// <summary>Only the icon shows (a saved view's menu beside its pill): the label is the button's name for a screen
     /// reader and its tooltip, and there's no caret.</summary>
     [Parameter] public bool IconOnly { get; set; }
 
     private readonly string _id = "menu-" + Guid.NewGuid().ToString("N")[..8];
-    private ElementReference _trigger, _pop;
+    private ElementReference _holder, _trigger, _pop;
+    private Popout? _popout;
     private bool _open, _focusPop, _focusTrigger;
 
     internal bool IsOpen => _open;
@@ -82,11 +88,13 @@
         StateHasChanged();
     }
 
-    /// <summary>Runs an item, as a click on it does: the menu closes first.</summary>
+    /// <summary>Runs an item, as a click on it does: the menu closes first, with focus on its button, so a dialog the
+    /// item opens gives focus back there (not to the page body, where the item it was chosen from went).</summary>
     internal async Task Choose(Item i)
     {
         Close(false);
         StateHasChanged();
+        await _trigger.TryFocusAsync(orGone: true);
         await i.Run.InvokeAsync();
     }
 
@@ -96,9 +104,11 @@
         _focusTrigger = refocus;
     }
 
-    private void Key(KeyboardEventArgs e)
+    private Task Dismissed()
     {
-        if (e.Key == "Escape") Close(true);
+        Close(false);
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private static RenderFragment Inner(Item i) => @<text>
@@ -108,6 +118,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Placed before its first choice takes focus.
+        _popout ??= new Popout(JS, Dismissed);
+        await _popout.FollowAsync(_open, _holder, _trigger);
         if (_focusPop && _open)
         {
             _focusPop = false;
@@ -121,4 +134,6 @@
             await _trigger.TryFocusAsync(orGone: true);
         }
     }
+
+    public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

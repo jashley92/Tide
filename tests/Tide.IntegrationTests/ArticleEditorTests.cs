@@ -82,27 +82,31 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("What readers get", "the reader preview stays beside the editor").And.Contain("A threat needs a priority.");
     }
 
+    // Adding an indicator left Save disabled: the box tells the editor through a plain callback, which redraws only the
+    // box, so the bar went on saying "All changes saved" until something else redrew it.
     [Fact]
-    public async Task TagsAndAttack_AreFoldedAway_SayingHowManyAreSelected()
+    public async Task AddingAnIndicator_EnablesSave()
     {
-        Guid id;
-        using (var scope = app.Services.CreateScope())
+        var id = await NewArticle();
+        await using var r = await ComponentHarness.RenderAsync<Web.Components.Shared.ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+        SaveButton(await r.Html()).Should().Contain(" disabled", "nothing has changed yet");
+
+        await r.Click(p =>
         {
-            var tag = scope.ServiceProvider.GetRequiredService<AppDbContext>().ScorecardTags.First();
-            id = await NewArticle(a =>
-            {
-                a.Tags.Add(new Domain.Entities.ArticleTag { TagId = tag.Id });
-                a.Techniques.Add(new Domain.Entities.ArticleTechnique { TechniqueId = "T1566" });
-                a.Techniques.Add(new Domain.Entities.ArticleTechnique { TechniqueId = "T1190" });
-            });
-        }
+            p.IndicatorBox!.FindIn("Seen calling back to 203.0.113.45.");
+            return p.IndicatorBox.AddFound();
+        });
 
-        var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
+        var html = await r.Html();
+        SaveButton(html).Should().NotContain(" disabled", "the indicator is an unsaved change");
+        html.Should().Contain("Unsaved changes").And.Contain("203.0.113[.]45");
+    }
 
-        html.Should().Contain("aria-expanded=\"false\" aria-controls=\"sec-tags-body\"")
-            .And.Contain("<div id=\"sec-tags-body\" class=\"tide-disclosure-body\" hidden>")
-            .And.Contain("1 tag &#xB7; 2 techniques selected");
-        (await app.CreateClient().GetStringAsync($"/articles/{await NewArticle()}")).Should().Contain("0 tags &#xB7; 0 techniques selected");
+    private static string SaveButton(string html)
+    {
+        var bar = html[html.IndexOf("class=\"tide-sticky-save", StringComparison.Ordinal)..];
+        var save = bar.IndexOf("> Save</button>", StringComparison.Ordinal);
+        return bar[bar.LastIndexOf("<button", save, StringComparison.Ordinal)..save];
     }
 
     [Fact]
@@ -153,11 +157,12 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task AColleaguesTag_DoesntWarnTheEditor_AndASaveThatWorksClearsAWarning()
     {
-        var id = await NewArticle();
+        var id = await NewArticle(a => a.WhyItMattersTlp = Domain.Enums.TlpLevel.Clear);
         await using var robin = await ComponentHarness.RenderAsync<Web.Components.Shared.ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
         await using var card = await ComponentHarness.RenderAsync<Web.Components.Shared.ArticleAdversaryCard>(app, $"/articles/{id}",
             new() { ["ArticleId"] = id, ["CanWrite"] = true });
-        await robin.Click(p => p.FocusFieldAsync(Application.Articles.ArticlePart.Bullets));   // an unsaved edit
+        // An unsaved edit that autosave holds for Save (a marking), so it's still unsaved when Sam's notice arrives.
+        await robin.Click(p => p.FixAsync(Application.Articles.ArticleFix.WhyItMattersAmber));
 
         await using (var sam = ComponentHarness.SignedIn(app, new ComponentHarness.SignIn("dev:sam", "Sam", "Analyst")))
         {
@@ -178,8 +183,8 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
         (await robin.Html()).Should().NotContain("while you were editing");
     }
 
-    // A section pill: its label, then "Needed" when that section has a gap.
-    [GeneratedRegex("<button type=\"button\"[^>]*>(?<label>[^<]*)(?:<span class=\"visually-hidden\">,</span><span class=\"tide-needed\">(?<needed>Needed)</span>)?\\s*</button>")]
+    // An item of the section index: its label, then "Needed" when that section has a gap (or what it has, when it hasn't).
+    [GeneratedRegex("<button type=\"button\"[^>]*>(?<label>[^<]*)(?:<span class=\"visually-hidden\">,</span>)?(?:<span class=\"tide-pill-state[^\"]*\">(?:(?<needed>Needed)|[^<]*)</span>)?\\s*</button>")]
     private static partial Regex Pills();
 
     // The editor's markup: the routed page, and the panel it hands the fields to once that exists.

@@ -7,7 +7,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>A component's disposal that throws ends the whole circuit, so a teardown call to the page's script must never
 /// throw when the call can't happen.</summary>
-public class JsTeardownTests
+public partial class JsTeardownTests
 {
     [Theory]
     [InlineData(typeof(JSDisconnectedException))]
@@ -19,6 +19,18 @@ public class JsTeardownTests
         var js = new FailingJs((Exception)Activator.CreateInstance(failure, "gone")!);
         await FluentActions.Awaiting(async () => await js.StopAsync("tideOrder.stop")).Should().NotThrowAsync();
         js.Called.Should().Be("tideOrder.stop");
+    }
+
+    [Theory]
+    [InlineData(typeof(JSDisconnectedException))]
+    [InlineData(typeof(TaskCanceledException))]   // the browser not answering in time (present mode's share of its place)
+    [InlineData(typeof(InvalidOperationException))]
+    [InlineData(typeof(JSException))]
+    public async Task BestEffortAsync_SwallowsEveryFailure(Type failure)
+    {
+        var js = new FailingJs((Exception)Activator.CreateInstance(failure, "gone")!);
+        await FluentActions.Awaiting(async () => await js.BestEffortAsync("tidePresent.share")).Should().NotThrowAsync();
+        js.Called.Should().Be("tidePresent.share");
     }
 
     [Fact]
@@ -38,7 +50,7 @@ public class JsTeardownTests
         foreach (var file in Directory.EnumerateFiles(Path.Combine(dir, "src", "Tide.Web", "Components"), "*.razor", SearchOption.AllDirectories))
         {
             var text = File.ReadAllText(file);
-            var dispose = Regex.Match(text, @"ValueTask DisposeAsync\(\)\s*\{(?<body>(?:[^{}]|\{(?<d>)|\}(?<-d>))*)\}");
+            var dispose = DisposeAsyncBody().Match(text);
             if (dispose.Success && dispose.Groups["body"].Value.Contains("JS.Invoke")) offenders.Add(Path.GetFileName(file));
         }
         offenders.Should().BeEmpty("a disposal's script call goes through JsTeardown.StopAsync, which can't end the circuit");
@@ -57,4 +69,7 @@ public class JsTeardownTests
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
             InvokeAsync<TValue>(identifier, args);
     }
+
+    [GeneratedRegex(@"ValueTask DisposeAsync\(\)\s*\{(?<body>(?:[^{}]|\{(?<d>)|\}(?<-d>))*)\}")]
+    private static partial Regex DisposeAsyncBody();
 }

@@ -58,11 +58,31 @@ current brief date (`BriefPage` with `AsToday`, the date from `OrgClock.CurrentB
 zone). Someone without the team edition (a Reader, a Visitor) is sent to `/published` instead. It shows:
 
 - the step strip, with one main button for whichever step is next (`BriefSteps.Next`: Mark ready, Present, Send, Post
-  to SharePoint, or read it as sent);
-- the running order, today's numbers, what each edition will carry, and the meeting (its time and who the rotation
-  names to present);
-- reviews asked of you, and, for anyone who works actions, the team's queue (see
-  [actions-and-hunting.md](actions-and-hunting.md)).
+  to SharePoint, or read it as sent). The step it's on also shows in the top bar of every page, as a link back to
+  Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
+- a brief is Sent from its first real send, but while one of the two editions (security team and company-wide) has
+  gone and the other is still to go, Today's header status, the note under it, the strip's Send step and the brief chip
+  all say **1 of 2 sent**, and the next step is still Send (`BriefSteps.PartlySent`). They say **Sent** only once both
+  have gone, or once the one that went is the only edition with anything in it;
+- under the strip, from `Intake:PulledBy` on a working day, how many polled feeds haven't been pulled since, with
+  **Pull all** (see [intake-and-triage.md](intake-and-triage.md#feeds-not-pulled-since-the-morning));
+
+  ![Today's word on feeds not pulled since the morning, under the step strip](../screenshots/today-feeds.png)
+
+  *Under the step strip: the feeds not pulled since 8:00, one of them failing, with Pull all.*
+- the running order, then the team's opening note (read-only until **Edit**), then **My actions**, **Not on a brief
+  yet** (for whoever writes the brief: Ready articles never on a brief, then their own drafts, each with *Add*; on a
+  day with no brief, *Add* starts it) or **Recently presented** for everyone else, and today's numbers.
+
+The cards that sit beside the brief are in the context rail, "Beside the brief" (`Components/Today/`): the **edition
+check**, **your teams' queue** (their teams' open actions that are theirs or nobody's, up to 8, with *Take it* on those
+nobody holds; a colleague's take in the
+meantime is refused and names who took it), **Escalated**, **reviews asked of you**, the **meeting** (when, the
+presenter, and the title slide line, changed in place with *Change presenter* and *Title slide line*), **coming up**
+and the brief's **history**. From 1500px wide the rail is docked beside the brief and `]` hides it; below that it's
+shut, and **Context** in the top bar, or `]`, opens it over the page. A past day's brief (`/briefs/{day}`) has the same
+rail. A colleague's save never replaces what you're typing in the meeting form or the opening note: a "changed
+elsewhere" notice shows beside the form instead.
 
 ## Starting a brief
 
@@ -73,6 +93,7 @@ it when an analyst first opens it:
 |---|---|
 | `BriefDate` | The day. Refused on a weekend or holiday (`OrgClock.Days.DayOffReason`, ADR [0018](../decisions/0018-holidays-are-days-off-like-weekends.md)). |
 | `AnalystId`, `AnalystName` | Who the rotation names for that day (`IPresenterLookup`), else the analyst starting it. A past day's brief is presented by whoever starts it. |
+| `PresentedByName` | Set as the live meeting ends: whoever held its presenter's seat ("Pat", or "Pat and Sam" when it changed hands). The brief page and the editions say "Presented by" this, else `AnalystName` (presented without a live meeting). Back to ready clears it. |
 | `TeamNote` | The latest earlier brief's note, so standing items roll forward. A note cleared on that brief stays cleared. |
 | `Status` | Draft. |
 
@@ -86,7 +107,7 @@ with removal you can undo.
 
 | Action | Code | Rule |
 |---|---|---|
-| Add article (N available) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
+| Add article (N ready, M drafts) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
 | Remove | `RemoveItemAsync` | Undo re-adds it at its old position (`AddArticleAsync(…, at)`), on the brief it came off even if the page has since moved to another day. |
 | Move, reorder | `MoveItemAsync`, `ReorderAsync` | Positions are renumbered from 0. |
 | Add to today's brief from the editor | `ArticleEditorPanel.AddToTodaysBrief` | Saves the article first if it has unsaved edits, then `GetOrStartAsync` and `AddArticleAsync`. |
@@ -96,11 +117,22 @@ before the change is refused. Once the brief is Sent, its running order, present
 (`BriefService.Editable`, `SetDetailsAsync`). Its articles stay editable; a mistake after a send is put right by a
 [correction](distribution.md#corrections-after-a-send).
 
-The **edition check** beside the running order shows what each edition will carry, per article, and the readiness
-gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with the company-wide ceiling). How the editions are cut
-is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
+The running order shows each article's readiness gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with
+the company-wide ceiling). A gap with a one-click fix has its button beside it: **Set to AMBER**, for a threat whose
+"why it matters" would reach the company-wide edition, calls `ArticleService.MarkWhyItMattersAmberAsync` with the
+article's edit version as the page showed it. Beside it, **Keep it** records that the paragraph is meant to reach the
+company-wide edition at the marking it has (`ArticleService.KeepWhyItMattersAsync`): it changes no marking and no
+edition, and stores the marking kept, a hash of that marking and the text, who and when (migration
+`WhyItMattersKept`). The warning then stops showing, and returns by itself when the text or the marking changes. The
+history reads "Kept “Why it matters” at TLP:CLEAR". Both are for people with `WriteArticles`, on a brief that isn't
+Sent, refuse a stale edit version or an article not on that brief, and are audited and heard like any save of the
+article.
 
-Colleagues see changes live: the brief's topic on `ChangeFeed` re-reads the page, the "Add article (N available)" count
+The **edition check**, in the context rail, counts the articles each edition will carry and lists only the
+exceptions (`EditionChecks.Exceptions`): what is partly included, left out, or goes out with a warning. How the
+editions are cut is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
+
+Colleagues see changes live: the brief's topic on `ChangeFeed` re-reads the page, the "Add article (N ready, M drafts)" count
 and an open Add articles picker (which keeps what's ticked).
 
 ## The title slide line and the team's opening note
@@ -162,31 +194,130 @@ lands on the same one however many slides their page has loaded:
 
 | Slide | Key | Shows |
 |---|---|---|
-| Title | `title` | The date, the presenter, the agenda, the title slide line if the edition carries it |
+| Title | `title` | The date, the presenter, the title slide line if the edition carries it, the articles in order (number, kind, priority, KEV where an article names a KEV-listed CVE), what comes first ("First: the opening note and the numbers.") and what comes after the articles ("After the articles: 4 actions that need review.") |
 | Opening note | `note` | The team's opening note. Team edition only, and only when it isn't blank. |
 | Metrics | `metrics:{group key}` | One slide per metric group: tiles and the group's chart. Team edition only. |
-| Open actions | `open` | Overdue actions to review. Team edition only. |
-| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Its recommended actions can be raised in one click. |
-| Wrap-up | `wrap` | Every recommended action not yet raised, who attended, and the undiscussed articles with a tick to carry each to the next brief. |
+| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Its indicators as defanged chips (the first 10, then "+N more"; a chip opens the larger card), on the team edition only, and its CVEs. Each recommended line shows the action it became ("✓ A-2 · In progress · holder"); the article's other actions are listed below. |
+| Actions that need review | `open` | The open actions the room should look at, from any brief (below), after the articles and just before the wrap-up. Team edition only, and only when there are any. |
+| Wrap-up | `wrap` | Three lists, side by side from 1400px: the recommended lines no action has been raised from yet; who has what, the brief's actions by team and holder, with each team's unheld ones ("nobody yet") last; and the articles not marked discussed. Built from the edition, so nothing above its ceiling is named. |
+
+**Actions that need review** (`ActionService.MeetingActionsAsync`) lists every open action the edition may show that is
+overdue, escalated, or has gone too long without an update, each once, at most 8:
+
+- **Too long without an update:** Open or In progress with no update for 2 business days, or Blocked for 5. An
+  administrator sets both in Organization settings (**An open action needs review after**, `Org:StaleOpenDays`; **A
+  blocked action needs review after**, `Org:StaleBlockedDays`; whole numbers from 1 to 30), and a change counts at once.
+  Business days are the organization's: its time zone, weekends off, and its holidays, as due dates count them.
+- **An update** is anything a person did: a comment, a status change, a checklist tick, a new holder or due date, any
+  other edit. TIDE's own lines (the escalation ladder's, a skipped reminder's) and the emails it sends aren't. The action
+  table's "no update for" counts from the same update.
+- **Order, most pressing first:** escalated; then P1 and P2 overdue; then Blocked and quiet too long; then the other
+  overdue, latest first; then the others quiet too long, quietest first.
+- **Each row** names the action (the presenter opens it from there, over the slide or beside it as set), who has it and
+  its status; under Waited, every reason it's there ("escalated", "3 days late", "quiet 6 business days (Blocked)") and
+  its last update ("last: comment by Sam"); and the one thing the room can do (a quiet one is asked for an update, unless
+  reassigning it, finding it a holder or asking what it's waiting on comes first). Closing the action puts focus back on
+  its row.
+- The title slide counts every action that needs review, not only the 8 shown. The rows are read again when the limits
+  change, when the slide is come back to, and after the presenter changes an action from it, for the presenter and
+  everyone following alike.
+- **Under the table** how many are shown of how many in all, and what's counted; "N more under Actions" when there are
+  more than 8 (a link, except for a Visitor).
+- An action raised from an article above the meeting's ceiling is neither named nor counted. Everyone following sees
+  the same slide; the company-wide edition has none.
+
+The team email's "Still open from earlier briefs" keeps to the overdue and escalated actions.
+
+![The Actions that need review slide](../screenshots/present-needs-review.png)
+
+*Actions that need review: each row's reasons under Waited, its last update, and the one thing the room can do.*
+
+The footer names each slide under its bar (Title, Opening note, each group of numbers, "1 · Edge VPN", Actions that
+need review, Wrap-up), shortened to fit; the whole title is in its tooltip and what a screen reader hears. Who is
+here and whose hands are up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same
+slide") and the raised hands in the order they went up. A follower raises and lowers their own hand there.
 
 A page without a slide another has (the company-wide edition has no note) shows the title instead. The edition can be
 switched on screen; joining a live meeting switches to the team edition. Articles are ticked off as discussed
 (`BriefService.SetDiscussedAsync`, `PresentBriefs`).
 
 From an article's slide the presenter can open an action, an Our stack product's card or the article's indicators over
-the slide for the room (`LiveMeetings.Open`, `Show`), and edit its scorecard tags and techniques
-(`PresentTagEditor`, through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies). Raising actions is on
+the slide for the room (`LiveMeetings.Open`, `Show`). Anyone who may write articles, presenting or following, can edit
+an article's scorecard tags and techniques from **Edit tags** on its slide in the team edition (`PresentTagEditor`,
+through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies); the editor opens on their own screen
+only. Following the meeting doesn't take it away: an analyst following has it as the presenter does. Viewers,
+Visitors and action owners never see the button, nor does the company-wide edition. Raising actions is on
 [actions-and-hunting.md](actions-and-hunting.md).
 
-An article slide's actions are one line each, title first: the whole title opens the action over the slide, its number
-follows, then its team and due date, then Take it, the assignee and the due date at the row's end. They share one set of
-control columns with the recommended lines above (kind over due date, team over assignee, Raise over Take it), so the
-boxes and buttons line up down the slide.
+The slides are the room's: they show what's being discussed and none of the presenter's controls. The presenter's
+controls are in **the presenter's rail** beside the slide (docked from 1500px wide, over the slide below that; `]` or
+**Rail** opens and shuts it). Over the slide it's a modal dialog, as the context rail's overlay is: the page under it is
+inert behind a scrim, Tab stays in it, the slide's keys wait, and Escape, `]` or a click on the scrim shuts it and puts
+focus back on **Rail**. It holds, for the slide on screen:
+
+| Slide | The rail |
+|---|---|
+| Title | Ready to present? (the articles, an opening note not updated with Still current, a number missing with Enter, which goes to its box), and what comes first. |
+| Opening note | The note's Edit, and Still current while it's carried over from the last brief. |
+| Numbers | A box for each number not entered yet (nothing, once none is missing). |
+| An article | Its actions, each its title and then its due date and holder side by side, with Take it (the holder offered as on the action page: the team's members, then, for an analyst, everyone else); its recommended lines, each with one Raise beside it and its kind and team as a chip ("Threat hunt · Identity & Access") that opens their two lists in place; the quick add, collapsed to *Another action* until it's opened (then its title, and a row of its kind and team chip, due date and Add); a meeting note on it, one line until it's written in, with Add note beside it; and Up next, a line at the foot. |
+| Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
+| Any slide, in a meeting | At the foot, the hands (lower one, or clear them all) and everyone's view (bring everyone here, hand off: choose who, then **Hand off**). |
+
+A bar is pinned at the top of the rail, under its head, and never scrolls away: **Mark discussed** with its `D` and
+the slide's state ("Discussed" once it is) on an article's slide, and in a meeting **Lock to me** (on or off) and the
+count of hands up, which opens the list of hands. The rest of the rail scrolls under it.
+
+![An article's slide with the presenter's rail docked beside it](../screenshots/doc-present-rail.png)
+
+1. The article's actions, each with its due date, holder and *Take it*.
+2. A recommended line no action has been raised from yet: *Raise*, and its kind and team as a chip.
+3. The quick add, *Another action*, for an action the article doesn't recommend.
+4. Your note on the article (Ctrl+Enter adds it). *Mark discussed* (D) is pinned at the top of the rail.
+
+The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
+follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
+presenter's, from the rail. Someone following, an analyst included, raises or works an action on the action pages.**
+Each of the presenter's steps checks it where it's handled, not only by what's drawn: the page must be presenting the
+meeting (or, with no meeting, be someone who could present). A follower's `D`, or any of the rail's steps sent by hand,
+changes nothing.
+
+**Rehearsing.** Help's **Learn to present**, for whoever can present, opens present mode on today's brief in
+rehearsal: no meeting starts, nobody follows, nothing is shared or saved, and a short guide steps through the title
+slide, the rail and `]`, raising an action (pointed at, not done), an action's card, Actions that need review (after
+the articles), the wrap-up and ending the meeting. The rail's controls are there but disabled. It isn't offered, and refuses, while the
+day's meeting is live. See [rehearsal](../architecture/frontend.md#rehearsal).
+
+**An action beside the slide.** An action opened in the meeting (its title or number on a slide) opens over the slide.
+With **In a meeting, an action opens beside the slide** ticked in Organization settings (`Org:ActionBesideSlide`, off
+by default, to be turned on after a rehearsal in the meeting room), it opens beside the slide instead, and the slide
+narrows for it, so the room reads the two together:
+
+- From 1200px wide the action is a column of the page between the slide and the presenter's rail,
+  `clamp(22em, 30vw, 30em)` wide. That's the same width for the presenter and everyone following at the same window
+  width, so their slides narrow alike, fit alike (present.js's fit) and the shared scroll lands in the same place.
+- With the presenter's rail docked (1500px and wider) the three share the width: the rail keeps its own, the action
+  takes its column, and the slide fits in what's left (at least 560px at 1600px wide). The presenter's own slide is
+  narrower than the room's by the rail, as it is without an action open. The rail open over the slide covers the action
+  too, as a modal.
+- Narrower than 1200px it opens over the slide, as without the setting.
+- Turned on or off while an action is open, it moves there at once for everyone in the meeting.
+- Only the action does: a product's card, the indicators, the CVEs and the tag panel open over the slide as ever.
+- Whoever follows sees it where the presenter has it, as they see the card over the slide. It shows no more than that
+  card: their own read of the action (a Visitor's only the one open for the room, without its page link or files), and,
+  for an action raised from an article above the meeting's ceiling, only its number and title.
+
+![An action open beside the slide, between the slide and the presenter's rail](../screenshots/present-action-beside.png)
+
+*With the setting on, at 1920px: the slide, the action and the presenter's rail side by side.*
 
 ## The live meeting
 
 **Start the meeting** makes it live for the team: a banner on every page and a Join button on the brief invite anyone
-on the team edition in, or they paste the copied link.
+on the team edition in, or they paste the copied link. It can't start before the brief's day (`MeetingDay`): on a weekend
+or holiday, when Today shows the next working day's brief, present mode shows Start the meeting disabled, with "The
+meeting can start on Mon Nov 16, the brief's day." beside it and in the wrap-up's place for End the meeting. The brief
+can still be prepared and rehearsed.
 
 `LiveMeetings` (a singleton in `Tide.Web`, implementing `IMeetingsInProgress`) holds one live meeting per brief day, in
 memory (ADR [0001](../decisions/0001-blazor-server-on-prem.md)): who presents, their slide and its key, how far they've
@@ -234,20 +365,29 @@ What people in the meeting can do:
 
 | Who | Can |
 |---|---|
-| Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the strip with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
+| Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the top bar with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
+| With `JoinMeetings` and the team edition (Analyst, Action owner, Viewer, Admin; never a Visitor) | Add someone who was there by name, from the box under *Attended* on the wrap-up slide (the presenter, from their rail), and take off a name they added (`MeetingService.AddAttendeeAsync`, `RemoveAttendeeAsync`). Not in a rehearsal, which has no seat in a meeting, nor on the company-wide edition, which shows no attendance. |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
-| With `WorkActions` | Raise actions, from the quick add or a recommended line, each assigned to whoever raises it (they can hand it on) and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
-| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
+| The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it when they're on that team, else the team's (they can hand it on), and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take them (when on their team) or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
+| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), take off anyone who attended, joined or added by name (`MeetingService.RemoveAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 
 **Connections.** A circuit whose connection drops is "away": not shown and not presenting, so a presenter's drop starts
 the grace period at once (`SetConnected`). A tab that closes without saying so is cleared with its circuit
-(`RemoveCircuit`). A meeting with nobody in it for 15 minutes is dropped (`LiveMeetings.Abandoned`, swept every 10
-seconds).
+(`RemoveCircuit`). A page open before the meeting started whose browser has gone since (a closed tab, a killed
+browser) keeps its circuit for minutes, but is away too: the start doesn't seat it, record it as attending or show it as
+here. If its connection comes back, it joins then, as anyone does. A meeting with nobody in it for 15 minutes is
+dropped (`LiveMeetings.Abandoned`, swept every 10 seconds).
 
 **Attendance.** `MeetingService.JoinedAsync` records a `MeetingAttendee` the first time someone joins (who and when);
 joining again keeps the first join and clears the leaving time. Someone the presenter added by name before they joined
 in TIDE becomes them, not a second entry. As the meeting ends, `LeftAsync` writes each person's last leaving time.
+While the meeting is live, names are added and taken off only from a seat in it on the team edition
+(`MeetingService.CanAddAttendees`, from `IMeetingsInProgress.SeatedIn`): each added row keeps who added it
+(`AddedById`), and only they can take it off; whoever presents the meeting can take off anyone, joined or added
+(`CanRemoveAttendee`). With no meeting of the brief live, before or after it, anyone with `PresentBriefs` corrects the
+record from the rail: adding, or taking off anyone. A rehearsal changes none of it. Each add and removal is in the
+audit log under whoever made it.
 
 **Notes and attendance publish `ChangeFeed.Meeting(briefId)`**, not the brief's own topic, so a note doesn't show as an
 edit to the brief.
@@ -258,6 +398,10 @@ meeting. Present mode takes their seat (`LiveMeetings.Join`) before it reads any
 the meeting ends or they leave, their reads are refused. See [architecture/security.md](../architecture/security.md).
 
 ## Ending the meeting
+
+![The wrap-up's three lists, with Before you end in the presenter's rail](../screenshots/present-wrap-up.png)
+
+*The wrap-up: not raised, who is doing what, and not discussed; in the presenter's rail, Before you end.*
 
 **End the meeting** (`Present.EndMeeting`, after an "End the meeting now?" confirmation in a `ConfirmDialog`) calls `BriefService.MarkPresentedAsync(briefId, heldAtUtc, carry)`. The brief page's Send step also has an End
 the meeting for a meeting held outside present mode (`DistributePanel.EndMeeting`, with the time it was held).

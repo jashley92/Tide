@@ -33,7 +33,14 @@ public class CapabilitiesTests : IDisposable
         ["Read the company-wide archive (published briefs)"] = (db, _) => db.Distribution().PublishedAsync(),
         ["Read the team edition: briefs, the brief archive, Today"] = (db, _) => db.Briefs().ListAsync(),
         ["Add meeting notes"] = (db, s) => db.Meetings().AddNoteAsync(s.Brief, null, "A note"),
-        ["Present, start and end a meeting"] = (db, s) => db.Meetings().AddAttendeeAsync(s.Brief, "Someone in the room"),
+        ["In a live meeting, add someone who was there, and take off whom you added"] = async (db, s) =>
+        {
+            db.Live = new InMeeting(s.Brief);
+            try { await db.Meetings().AddAttendeeAsync(s.Brief, "Someone in the room"); }
+            finally { db.Live = null; }
+        },
+        ["With no meeting live, correct who attended (add, or take off anyone)"] = (db, s) => db.Meetings().AddAttendeeAsync(s.Brief, "Someone afterwards"),
+        ["Present, start and end a meeting"] = (db, s) => db.Meetings().LeftAsync(s.Brief, new Dictionary<string, DateTimeOffset> { ["S-1-5-21-OTHER"] = DateTimeOffset.UtcNow }),
         ["Build a brief (its articles, order, team note)"] = (db, s) => db.Briefs().SetTeamNoteAsync(s.Brief, "Morning"),
         ["Reopen a brief"] = (db, s) => db.Briefs().ReopenAsync(s.Brief),
         ["Send a brief, finish one not sent, mark it posted"] = (db, _) => db.Distribution().FinishNotSentAsync(Day, "No meeting"),
@@ -89,10 +96,11 @@ public class CapabilitiesTests : IDisposable
         ["Join and follow a live meeting"] = [typeof(Present)],
         ["Raise a hand in a meeting"] = [typeof(Present)],
         ["Read actions: their pages, the board, Workload"] = [typeof(ActionPage), typeof(ActionsBoard), typeof(Workload)],
-        ["Read the saved hunt queries"] = [typeof(SavedQueriesPage)],
-        ["Read the outreach templates"] = [typeof(OutreachTemplatesPage)],
-        ["Read the playbooks"] = [typeof(PlaybooksPage)],
-        ["Read the board rules (the card rules, read-only)"] = [typeof(BoardRulesPage)],
+        // Each a tab of the Library page; the addresses they had (LibraryMoved) lead to their tabs.
+        ["Read the saved hunt queries"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the outreach templates"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the playbooks"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the board rules (the card rules, read-only)"] = [typeof(Library), typeof(LibraryMoved)],
         ["Triage the inbox"] = [typeof(Triage)],
         ["Review articles"] = [typeof(ReviewPage)],
         ["Read the team edition: briefs, the brief archive, Today"] = [typeof(BriefPage), typeof(BriefsArchive)],
@@ -160,6 +168,18 @@ public class CapabilitiesTests : IDisposable
         }
     }
 
+    // The Library's tabs each ask for what their row says, as their pages' policies did.
+    [Theory]
+    [InlineData("Read the saved hunt queries", Tide.Web.Components.Layout.LibraryTabs.Queries)]
+    [InlineData("Read the outreach templates", Tide.Web.Components.Layout.LibraryTabs.Templates)]
+    [InlineData("Read the playbooks", Tide.Web.Components.Layout.LibraryTabs.Playbooks)]
+    [InlineData("Read the board rules (the card rules, read-only)", Tide.Web.Components.Layout.LibraryTabs.BoardRules)]
+    public void EachLibraryRow_NeedsWhatItsTabRequires(string activity, string tab)
+    {
+        Capabilities.All.Single(c => c.Activity == activity).Grants[0].Needs.Should()
+            .Equal([Tide.Web.Components.Layout.LibraryTabs.All.Single(t => t.Key == tab).Requires]);
+    }
+
     [Fact]
     public void EveryAdminPage_IsAdministersAndSoIsEveryAdministrationRow()
     {
@@ -199,6 +219,8 @@ public class CapabilitiesTests : IDisposable
         Cell("Raise a hand in a meeting", AppRole.Visitor).Should().Be("");
         Cell("Add meeting notes", AppRole.Visitor).Should().BeNull();
         Cell("Add meeting notes", AppRole.Viewer).Should().Be("");
+        Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Viewer).Should().Be("");
+        Cell("In a live meeting, add someone who was there, and take off whom you added", AppRole.Visitor).Should().BeNull();
         Cell("Join and follow a live meeting", AppRole.Reader).Should().BeNull();
         Capabilities.All.Should().OnlyContain(c => c.For(AppRole.Admin) == "", "an administrator holds every permission");
     }

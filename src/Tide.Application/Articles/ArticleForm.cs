@@ -28,6 +28,21 @@ public sealed class ArticleForm
     public string? RecommendedActions { get; set; }
     public string? Sectors { get; set; }
 
+    /// <summary>The saved article's "Keep it" on "Why it matters" (<see cref="Article.WhyItMattersKeptHash"/>), so the
+    /// preview answers the warning as the running order does until the text or marking is edited. A save never writes it.</summary>
+    public string? WhyItMattersKeptHash { get; set; }
+
+    /// <summary>
+    /// Carries a one-click answer saved meanwhile (Set to AMBER, Keep it) onto a form that was edited while it saved:
+    /// its "Why it matters" marking, keep and edit version, so the edits stay and a save afterwards isn't refused as stale.
+    /// </summary>
+    public void TakeAnswer(Article saved)
+    {
+        EditVersion = saved.EditVersion;
+        WhyItMattersTlp = saved.WhyItMattersTlp;
+        WhyItMattersKeptHash = saved.WhyItMattersKeptHash;
+    }
+
     public List<BulletForm> Bullets { get; set; } = [];
     public List<ScreenshotForm> Screenshots { get; set; } = [];
     public HashSet<Guid> TagIds { get; set; } = [];
@@ -107,6 +122,7 @@ public sealed class ArticleForm
             WhyItMattersTlp = Domain.Enums.Tlp.Checked(WhyItMattersTlp),
             RecommendedActions = ArticleService.TidyOrNull(RecommendedActions, multiline: true),
             Sectors = ArticleService.TidyOrNull(Sectors),
+            WhyItMattersKeptHash = WhyItMattersKeptHash,
         };
         a.Bullets = ArticleService.KeptBullets(Bullets)
             .Select((b, i) => new ArticleBullet { ArticleId = a.Id, SortOrder = i, Text = b.Text, Tlp = b.Tlp }).ToList();
@@ -154,6 +170,7 @@ public sealed class ArticleForm
         WhyItMattersTlp = a.WhyItMattersTlp,
         RecommendedActions = a.RecommendedActions,
         Sectors = a.Sectors,
+        WhyItMattersKeptHash = a.WhyItMattersKeptHash,
         Bullets = a.Bullets.OrderBy(b => b.SortOrder).Select(b => new BulletForm { Text = b.Text, Tlp = b.Tlp }).ToList(),
         Screenshots = a.Screenshots.OrderBy(s => s.SortOrder)
             .Select(s => new ScreenshotForm { Id = s.Id, FileId = s.FileId, Caption = s.Caption, Tlp = s.Tlp }).ToList(),
@@ -207,14 +224,19 @@ public enum ArticleFix
 {
     /// <summary>Mark "Why it matters to us" TLP:AMBER, so the company-wide edition leaves it out.</summary>
     WhyItMattersAmber,
+
+    /// <summary>Keep "Why it matters" at its marking: it is meant for the company-wide edition. Changes no marking.</summary>
+    KeepWhyItMatters,
 }
 
 /// <summary>
 /// A gap in an article that a brief shouldn't go out with. <see cref="Blocking"/> ones stop it being Ready; <see cref="Part"/>
 /// is where it's fixed, and <see cref="Need"/> names what's missing in a word or two, for a row's "Needs: Bottom line".
-/// <see cref="Fix"/>, when set, is a one-click change the editor offers for it.
+/// <see cref="Fix"/>, when set, is a one-click change the editor offers for it. <see cref="ToCheck"/> marks one that asks
+/// for a second look at something written (a TLP marking) rather than something missing.
 /// </summary>
-public sealed record ArticleCheck(string Message, bool Blocking, ArticlePart Part, string? Need = null, ArticleFix? Fix = null)
+public sealed record ArticleCheck(string Message, bool Blocking, ArticlePart Part, string? Need = null, ArticleFix? Fix = null,
+    bool ToCheck = false)
 {
     /// <summary>What's missing in a word or two, or the whole message when there's no short name.</summary>
     public string Short => Need ?? Message;
@@ -248,14 +270,16 @@ public static class ArticleChecks
     /// The warning for a threat whose "Why it matters to us" goes to everyone: it has text, and its effective TLP is at or
     /// below <paramref name="companyCeiling"/>, so the company-wide edition carries it. That paragraph often names our own
     /// systems and exposure, so the writer is asked to check it, with a one-click fix that marks it AMBER (offered only
-    /// when AMBER is above the ceiling, so that marking it does leave it out). Null otherwise.
+    /// when AMBER is above the ceiling, so that marking it does leave it out). Null otherwise, and while someone has kept
+    /// the paragraph as it is (<see cref="Article.WhyItMattersKept"/>): they looked, and it is meant to go to everyone.
+    /// Keeping it answers only this warning; the editions carry the paragraph exactly as they would anyway.
     /// </summary>
     public static ArticleCheck? WhyReachesCompany(Article a, TlpLevel companyCeiling)
     {
-        if (a.Classification != Classification.Threat || string.IsNullOrWhiteSpace(a.WhyItMatters)) return null;
+        if (a.Classification != Classification.Threat || string.IsNullOrWhiteSpace(a.WhyItMatters) || a.WhyItMattersKept) return null;
         var why = a.Effective(a.WhyItMattersTlp);
         return why > companyCeiling ? null
             : new($"Why it matters is {Tlp.Label(why)} and will reach the company-wide edition.", false, ArticlePart.WhyItMatters,
-                "Why it matters TLP", TlpLevel.Amber > companyCeiling ? ArticleFix.WhyItMattersAmber : null);
+                "Why it matters TLP", TlpLevel.Amber > companyCeiling ? ArticleFix.WhyItMattersAmber : null, ToCheck: true);
     }
 }

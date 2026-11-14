@@ -61,13 +61,34 @@ public sealed class TlpBadge : ComponentBase
 {
     [Parameter, EditorRequired] public TlpLevel Level { get; set; }
 
+    /// <summary>Said before the marking's meaning on hover ("Raised from a TLP:RED article."), if anything.</summary>
+    [Parameter] public string? Lead { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "span");
         b.AddAttribute(1, "class", "tide-tlp tide-tlp-" + Level.ToString().ToLowerInvariant());
-        b.AddAttribute(2, "title", Tlp.Meaning(Level));
+        b.AddAttribute(2, "title", Lead is null ? Tlp.Meaning(Level) : Lead + " " + Tlp.Meaning(Level));
         b.AddContent(3, Tlp.Label(Level));
         b.CloseElement();
+    }
+}
+
+/// <summary>
+/// The marking of the article an action was raised from, beside the action's title on its page and its list row: AMBER
+/// and above only (CLEAR and GREEN go without saying). Shown only: who sees the action doesn't follow it.
+/// </summary>
+public sealed class SourceTlpBadge : ComponentBase
+{
+    [Parameter] public TlpLevel? Level { get; set; }
+
+    protected override void BuildRenderTree(RenderTreeBuilder b)
+    {
+        if (Level is not { } level || level < TlpLevel.Amber) return;
+        b.OpenComponent<TlpBadge>(0);
+        b.AddComponentParameter(1, nameof(TlpBadge.Level), level);
+        b.AddComponentParameter(2, nameof(TlpBadge.Lead), $"Raised from a {Tlp.Label(level)} article.");
+        b.CloseComponent();
     }
 }
 
@@ -148,6 +169,11 @@ public sealed class Md : ComponentBase
     }
 }
 
+/// <summary>Whether an <see cref="SlaBadge"/> says the due date: not at all, in place of "Due soon" or "On track" for
+/// an action not yet late ("Due Tue Nov 10"; the tone still says which), or before how it stands ("Due Thu Nov 12 · due
+/// soon", "Due Mon Nov 9 · overdue · 3 days"), as an action's header has it.</summary>
+public enum SlaDate { None, Instead, Before }
+
 /// <summary>An action's standing against its due date: overdue, due soon, on track, met or missed.</summary>
 public sealed class SlaBadge : ComponentBase
 {
@@ -157,10 +183,17 @@ public sealed class SlaBadge : ComponentBase
     /// <summary>Today, for how late an overdue action is ("Overdue · 3 days"); without it, just "Overdue".</summary>
     [Parameter] public DateOnly? Today { get; set; }
 
+    /// <summary>Whether, and how, it says the due date.</summary>
+    [Parameter] public SlaDate Date { get; set; }
+
+    /// <summary>Classes for where it sits (<c>tide-action-due</c>).</summary>
+    [Parameter] public string? Class { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         var text = State switch
         {
+            Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when Date == SlaDate.Instead && Due is { } due => "Due " + Ui.ShortDay(due),
             Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.Late(Due, Today) switch
             {
                 > 0 and var days => $" · {days} day{(days == 1 ? "" : "s")}",
@@ -187,8 +220,10 @@ public sealed class SlaBadge : ComponentBase
             Application.Actions.SlaState.OnTrack or Application.Actions.SlaState.Met => BadgeTone.Ok,
             _ => BadgeTone.Neutral,
         };
+        if (Date == SlaDate.Before && Due is { } on && State != Application.Actions.SlaState.NoDue)
+            text = $"Due {Ui.ShortDay(on)} · {char.ToLowerInvariant(text[0])}{text[1..]}";
         Badge.Write(b, tone, State == Application.Actions.SlaState.Overdue, text, icon,
-            Due is { } d ? "Due " + Ui.Day(d) : null);
+            Due is { } d ? "Due " + Ui.Day(d) : null, Class);
     }
 }
 
@@ -229,21 +264,32 @@ public sealed class ActionStatusBadge : ComponentBase
 {
     [Parameter, EditorRequired] public ActionStatus Status { get; set; }
 
-    protected override void BuildRenderTree(RenderTreeBuilder b) =>
-        Badge.Write(b, Status switch
-        {
-            ActionStatus.InProgress => BadgeTone.Info,
-            ActionStatus.Blocked => BadgeTone.Warn,
-            ActionStatus.Tracking => BadgeTone.Purple,
-            ActionStatus.Done => BadgeTone.Ok,
-            _ => BadgeTone.Neutral,
-        }, false, Application.Actions.ActionService.StatusName(Status));
+    protected override void BuildRenderTree(RenderTreeBuilder b) => Badge.Write(b, Tone(Status), false, Application.Actions.ActionService.StatusName(Status));
+
+    /// <summary>A status's tone (the list's Status menu is tinted as its badge is).</summary>
+    public static BadgeTone Tone(ActionStatus status) => status switch
+    {
+        ActionStatus.InProgress => BadgeTone.Info,
+        ActionStatus.Blocked => BadgeTone.Warn,
+        ActionStatus.Tracking => BadgeTone.Purple,
+        ActionStatus.Done => BadgeTone.Ok,
+        _ => BadgeTone.Neutral,
+    };
 }
 
 /// <summary>How an action's hunts went, or one hunt did: hits, no hits, or not run yet. Nothing when it has no hunt.
 /// <see cref="OfOneHunt"/> drops the word "Hunt" (it sits on the hunt itself) and gives the hit count when known.</summary>
 public sealed class HuntBadge : ComponentBase
 {
+    /// <summary>How an action's hunts went, in words ("Hunt not run", "Hunt: no hits", "Hunt: hits"), as the badge says it
+    /// (the actions list says it as text).</summary>
+    public static string Text(HuntResult result) => result switch
+    {
+        HuntResult.Hits => "Hunt: hits",
+        HuntResult.NoHits => "Hunt: no hits",
+        _ => "Hunt not run",
+    };
+
     [Parameter] public HuntResult? Result { get; set; }
     [Parameter] public bool OfOneHunt { get; set; }
     [Parameter] public int? Count { get; set; }
@@ -251,14 +297,12 @@ public sealed class HuntBadge : ComponentBase
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         if (Result is not { } r) return;
-        var text = (r, OfOneHunt) switch
+        var text = OfOneHunt switch
         {
-            (HuntResult.Hits, true) => Count is { } c ? "Hits: " + c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "Hits",
-            (HuntResult.Hits, false) => "Hunt: hits",
-            (HuntResult.NoHits, true) => "No hits",
-            (HuntResult.NoHits, false) => "Hunt: no hits",
-            (_, true) => "Not run yet",
-            _ => "Hunt not run",
+            true when r == HuntResult.Hits => Count is { } c ? "Hits: " + c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "Hits",
+            true when r == HuntResult.NoHits => "No hits",
+            true => "Not run yet",
+            _ => Text(r),
         };
         Badge.Write(b, r switch
         {
@@ -329,6 +373,11 @@ public static class Ui
 
     public static string ActionUrl(int number) => $"actions/{number}";
 
+    /// <summary>The address that looks a value up on Search: the value encoded, and quoted when it has a space so it stays
+    /// one term.</summary>
+    public static string LookupUrl(string value) =>
+        "search?q=" + Uri.EscapeDataString(value.Any(char.IsWhiteSpace) && !value.Contains('"') ? $"\"{value}\"" : value);
+
     /// <summary>An action's address with a query (<c>do=recordupdate</c>), or its plain address for none.</summary>
     public static string ActionUrl(int number, string? query) => string.IsNullOrEmpty(query) ? ActionUrl(number) : $"{ActionUrl(number)}?{query}";
 
@@ -340,6 +389,11 @@ public static class Ui
     public static string Clip(string? text, int max = 48) => text is null ? "" : text.Length <= max ? text : text[..(max - 1)].TrimEnd() + "…";
 
     public static string ShortDay(DateOnly d) => d.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary><see cref="ShortDay(DateOnly)"/>, with its year when that isn't <paramref name="today"/>'s ("Tue Sep 16, 2025"):
+    /// for a date that may be long past, where the day alone would read as this year's.</summary>
+    public static string ShortDay(DateOnly d, DateOnly today) =>
+        d.Year == today.Year ? ShortDay(d) : $"{ShortDay(d)}, {d.Year.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
     /// <summary>A UTC instant in the organization's zone, e.g. "Oct 24, 9:41 AM".</summary>
     public static string When(Application.Org.OrgClock clock, DateTimeOffset utc) => clock.ToLocal(utc).ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture);

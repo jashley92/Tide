@@ -1,8 +1,10 @@
+using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Adversaries;
 using Tide.Application.Articles;
+using Tide.Application.Briefs;
 using Tide.Application.Stack;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
@@ -11,23 +13,50 @@ using Tide.Web.Components.Shared;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// The editor after the right rail's Related tab went: Threat actors is the adversary picker under Tags &amp; ATT&amp;CK ›
-/// Context (the free-text box is gone), We run is under the "Why it matters" text, Similar articles is folded under
-/// the threat story, and someone who can't edit sees the tags as read-only cards in the rail.
+/// Where the article editor puts things: a section index across the top, then the form as one column of cards in the
+/// order the sent brief reads (Assessment, the draft from the sources, Bottom line, Bullets, Why it matters,
+/// Recommended actions, Screenshots, Indicators and CVEs, then Tags &amp; ATT&amp;CK), and what readers get in the context rail ("Context · what
+/// readers get": Preview, Actions and Details, and the Team or Company-wide edition). Threat actors is the adversary
+/// picker in the Tags card, We run is under the "Why it matters" text, Similar articles is folded under the threat
+/// story in the rail, and someone who can't edit reads the preview in the page, the tags as read-only cards.
 /// </summary>
-public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
+public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
 {
-    private async Task<Guid> NewArticle(string title, string? earlierActors = null)
+    private async Task<Guid> NewArticle(string title, string? earlierActors = null, Action<Domain.Entities.Article>? fill = null)
     {
         await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
         var id = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync(title, "Vendor", null, TlpLevel.Clear);
-        if (earlierActors is not null)
+        if (earlierActors is not null || fill is not null)
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            (await db.Articles.SingleAsync(a => a.Id == id)).Actors = earlierActors;
+            var a = await db.Articles.Include(x => x.Bullets).SingleAsync(a => a.Id == id);
+            if (earlierActors is not null) a.Actors = earlierActors;
+            fill?.Invoke(a);
             await db.SaveChangesAsync();
         }
         return id;
+    }
+
+    // A threat whose "Why it matters" is CLEAR: the company-wide edition would carry it, so the editor warns.
+    private Task<Guid> WhyAtClear(string title) => NewArticle(title, fill: a =>
+    {
+        a.Classification = Classification.Threat;
+        a.Priority = Priority.P2;
+        a.WhyItMatters = "Our remote-access gateways run the affected firmware.";
+        a.WhyItMattersTlp = TlpLevel.Clear;
+    });
+
+    private async Task OnTodaysBrief(Guid id)
+    {
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+        await briefs.AddArticleAsync((await briefs.GetOrStartAsync(briefs.CurrentDate)).Id, id);
+    }
+
+    private async Task<Domain.Entities.Article> Saved(Guid id)
+    {
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        return (await scope.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(id))!;
     }
 
     private static int At(string html, string what)
@@ -38,16 +67,37 @@ public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task ThreatActors_IsThePickerInContext_AndWeRun_IsUnderWhyItMatters()
+    public async Task TheForm_IsOneColumn_InTheOrderTheBriefReads_UnderASectionIndex()
+    {
+        var id = await NewArticle("layout-order article");
+        var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
+
+        string[] order = ["sec-assessment", "sec-draft", "sec-bluf", "sec-bullets", "sec-why", "sec-rec", "sec-shots", "sec-ind", "sec-tags"];
+        SectionHeading().Matches(html).Select(m => m.Groups["id"].Value).Should().Equal(order,
+            "the page's order is the sent brief's, the draft from the sources with the bottom line it writes, the tags last");
+        At(html, "aria-label=\"Article sections\"").Should().BeLessThan(At(html, "id=\"sec-assessment\""), "the index is above the cards");
+        foreach (var sec in order.Except(["sec-draft"]))
+            html.Should().Contain($"aria-labelledby=\"{sec}\"", $"{sec} is a card of its own");
+
+        html.Should().NotContain("sec-tags-body", "Tags & ATT&CK is open, not folded at the bottom")
+            .And.NotContain("tags &#xB7;");
+    }
+
+    [GeneratedRegex("<h[23] id=\"(?<id>sec-[a-z]+)\"")]
+    private static partial Regex SectionHeading();
+
+    [Fact]
+    public async Task ThreatActors_IsThePickerInTheTagsCard_AndWeRun_IsUnderWhyItMatters()
     {
         var id = await NewArticle("layout-1 article");
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
 
         html.Should().NotContain("id=\"actors\"", "the free-text box is gone").And.NotContain("placeholder=\"Scattered Spider, UNC3944\"");
+        var tags = At(html, "id=\"sec-tags\"");
         var context = At(html, "<h3 class=\"tide-subhead\">Context</h3>");
         var actors = At(html, $"for=\"adv-pick-{id}\">Threat actors</label>");
+        context.Should().BeGreaterThan(tags, "the context is in the Tags card");
         actors.Should().BeGreaterThan(context).And.BeLessThan(At(html, "for=\"sectors\">Sectors</label>"), "it reads as the same field, where the box was");
-        At(html, "id=\"sec-tags-body\"").Should().BeLessThan(context);
 
         var why = At(html, "id=\"f-why\"");
         var weRun = At(html, $"id=\"werun-h-{id}\" class=\"tide-subhead my-0\">We run</h3>");
@@ -58,26 +108,33 @@ public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheRail_HasNoRelatedTab_AndSimilarArticles_IsFoldedUnderTheStory()
+    public async Task TheRail_IsWhatReadersGet_WithItsTabsAndEditions_AndSimilarArticlesFoldedUnderTheStory()
     {
         var id = await NewArticle("layout-2 article");
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
 
-        html.Should().NotContain("Related articles and their open actions").And.NotContain("tide-seg-count");
-        var tabs = html[At(html, "class=\"tide-seg\" role=\"group\" aria-label=\"Show\"")..];
-        tabs = tabs[..tabs.IndexOf("</div>", StringComparison.Ordinal)];
-        tabs.Split("class=\"tide-seg-opt").Length.Should().Be(3, "two tabs: Team and Company-wide");
+        var rail = html[At(html, "<aside id=\"tide-rail\" class=\"tide-rail\" aria-label=\"Context &#xB7; what readers get\"")..];
+        rail = rail[..rail.IndexOf("</aside>", StringComparison.Ordinal)];
+        At(html, "id=\"tide-rail\"").Should().BeGreaterThan(At(html, "class=\"tide-sticky-save"), "the rail is the layout's, after the page");
+        html.Should().NotContain("class=\"tide-editor-side\"", "nothing of the preview is left in the page for an analyst");
 
-        var story = At(html, "for=\"story-pick\">Threat story");
-        var similar = At(html, "Similar articles (0)");
-        similar.Should().BeGreaterThan(story, "directly under the story");
-        html.Should().Contain("aria-expanded=\"false\" aria-controls=\"similar-body\"")
+        rail.Should().Contain("aria-label=\"Beside the article\"").And.Contain("<span>Preview</span>").And.Contain("<span>Actions</span>")
+            .And.Contain("<span>Details</span>").And.Contain("What readers get");
+        var seg = rail[At(rail, "class=\"tide-seg\" role=\"group\" aria-label=\"Show\"")..];
+        seg = seg[..seg.IndexOf("</div>", StringComparison.Ordinal)];
+        seg.Split("class=\"tide-seg-opt").Length.Should().Be(3, "two choices: Team and Company-wide");
+        seg.Should().Contain(">Team</button>").And.Contain(">Company-wide</button>");
+
+        rail.Should().NotContain("Related articles and their open actions").And.NotContain("tide-seg-count");
+        var story = At(rail, "for=\"story-pick\">Threat story");
+        At(rail, "Similar articles (0)").Should().BeGreaterThan(story, "directly under the story");
+        rail.Should().Contain("aria-expanded=\"false\" aria-controls=\"similar-body\"")
             .And.Contain("id=\"similar-body\" class=\"tide-disclosure-body\" hidden").And.NotContain("tide-related-list");
-        html[story..].Should().NotContain("Threat actors</h2>").And.NotContain("We run <a", "nothing tag-like is left in the rail for an analyst");
+        rail[story..].Should().NotContain("Threat actors</h2>").And.NotContain("We run <a", "nothing tag-like is left in the rail for an analyst");
     }
 
     [Fact]
-    public async Task SomeoneWhoCantEdit_SeesTheTagsAsReadOnlyCardsInTheRail()
+    public async Task SomeoneWhoCantEdit_ReadsThePreviewInThePage_WithTheTagsAsReadOnlyCards()
     {
         var id = await NewArticle("layout-3 article");
         await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
@@ -86,26 +143,214 @@ public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
             await sp.GetRequiredService<AdversaryService>().TagArticleAsync(id, await sp.GetRequiredService<AdversaryService>().SaveAsync(new AdversaryForm { Name = "layout-3 Spider" }));
             await sp.GetRequiredService<StackService>().TagArticleAsync(id, await sp.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "layout-3 Gateway", Versions = "9.1" }));
         }
-        await using var scopeArticle = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
-        var article = (await scopeArticle.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(id))!;
+        var owner = new ComponentHarness.SignIn("dev:owner", "Owner", "ActionOwner");
+        await using (var page = await ComponentHarness.RenderAsync<Web.Components.Pages.ArticleEdit>(app, $"/articles/{id}", new() { ["Id"] = id }, owner))
+        {
+            var html = await page.HtmlOnce("What readers get");
+            html.Should().NotContain("id=\"tide-rail\"", "the preview is the page for someone who can't edit, not a rail beside it")
+                .And.Contain("class=\"tide-editor-side\"").And.Contain("data-readonly=\"true\"");
+        }
+
+        var article = await Saved(id);
         await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
         {
             ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), [], [], false),
-        }, new ComponentHarness.SignIn("dev:owner", "Owner", "ActionOwner"));
+        }, owner);
 
-        var html = await r.HtmlOnce("layout-3 Gateway");
-        html.Should().Contain("<h2>We run <a class=\"ms-auto small fw-normal\" href=\"stack\">Our stack</a></h2>")
+        var preview = await r.HtmlOnce("layout-3 Gateway");
+        preview.Should().Contain("<h2>We run <a class=\"ms-auto small fw-normal\" href=\"stack\">Our stack</a></h2>")
             .And.Contain("<h2>Threat actors <a class=\"ms-auto small fw-normal\" href=\"adversaries\">All profiles</a></h2>");
         (await r.HtmlOnce("layout-3 Spider")).Should().Contain("layout-3 Spider").And.Contain("9.1")
             .And.NotContain("role=\"combobox\" autocomplete=\"off\" spellcheck=\"false\" maxlength=\"100\"").And.NotContain("Untag");
     }
 
     [Fact]
+    public async Task TheSectionIndex_SaysWhatsDone_AndHowMany()
+    {
+        Guid tag;
+        using (var scope = app.Services.CreateScope())
+            tag = scope.ServiceProvider.GetRequiredService<AppDbContext>().ScorecardTags.First().Id;
+        var id = await NewArticle("layout-index article", fill: a =>
+        {
+            a.Classification = Classification.Threat;
+            a.Priority = Priority.P1;
+            a.Bluf = "Exploited in the wild.";
+            a.Bullets.Add(new Domain.Entities.ArticleBullet { Text = "One" });
+            a.Bullets.Add(new Domain.Entities.ArticleBullet { Text = "Two", SortOrder = 1 });
+            a.RecommendedActions = "- Patch today\n- Hunt for the indicators";
+            a.Tags.Add(new Domain.Entities.ArticleTag { TagId = tag });
+            a.Techniques.Add(new Domain.Entities.ArticleTechnique { TechniqueId = "T1190" });
+            a.Indicators.Add(new Domain.Entities.ArticleIndicator { Type = IndicatorType.IpAddress, Value = "203.0.113.45" });
+            a.Cves.Add(new Domain.Entities.ArticleCve { CveId = "CVE-2026-0001" });
+            a.WhyItMatters = "We run it.";
+            a.WhyItMattersTlp = TlpLevel.Clear;
+        });
+
+        var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
+        var nav = html[At(html, "aria-label=\"Article sections\"")..];
+        nav = nav[..nav.IndexOf("</nav>", StringComparison.Ordinal)];
+
+        IndexItem().Matches(nav).Select(m => (m.Groups["label"].Value.Trim(), m.Groups["state"].Value.Trim())).Should().Equal(
+            ("Assessment", "&#x2713;"),
+            ("Bottom line", "&#x2713;"),
+            ("Bullets", "2"),
+            ("Why it matters", "check TLP"),
+            ("Recommended", "2"),
+            ("Indicators &amp; CVEs", "1 &#xB7; 1"),
+            ("Tags &amp; ATT&amp;CK", "1 &#xB7; 1"));
+    }
+
+    [Fact]
+    public async Task WhyItMatters_ReachingEveryone_IsFixedInItsCard_SetToAmberOrKeepIt_ThroughTheBriefsAnswers()
+    {
+        var id = await WhyAtClear("layout-why article");
+        await OnTodaysBrief(id);
+        await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+
+        var html = await r.Html();
+        var card = html[html.LastIndexOf("<section", At(html, "aria-labelledby=\"sec-why\""), StringComparison.Ordinal)..At(html, "id=\"sec-rec\"")];
+        card.Should().Contain("tide-section-warn").And.Contain("Will reach the company-wide edition.")
+            .And.Contain(">Set to AMBER</button>").And.Contain(">Keep it</button>");
+
+        // Set to AMBER, with nothing else unsaved and the article on today's open brief: the running order's own answer,
+        // saved, checked and audited there; the form reads the article again, clean.
+        await r.Click(p => p.SetWhyAmberAsync());
+        (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Amber);
+        html = await r.Html();
+        html.Should().NotContain("Will reach the company-wide edition.").And.Contain("All changes saved");
+        (await HistoryRows(id)).Should().BeGreaterThan(0, "the change is audited");
+    }
+
+    [Fact]
+    public async Task SetToAmber_KeepsWhatWasTypedWhileItSaved()
+    {
+        var id = await WhyAtClear("layout-why-typing article");
+        await OnTodaysBrief(id);
+        await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+
+        await r.Press(p => p.SetWhyAmberAsync());          // its round trips under way
+        await r.Click(p => p.MentionAsync("Typed meanwhile."));
+        await r.Until(p => !p.Busy);
+
+        (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Amber);
+        (await r.Html()).Should().Contain("Typed meanwhile.", "what was typed during the save stays in the form");
+        r.Component.Dirty.Should().BeTrue("and is still to be saved");
+        var ok = false;
+        await r.Click(async p => ok = await p.Save());
+        ok.Should().BeTrue("the form carries on from the answer's version");
+        var saved = await Saved(id);
+        (saved.WhyItMattersTlp, saved.WhyItMatters!.Contains("Typed meanwhile.", StringComparison.Ordinal)).Should().Be((TlpLevel.Amber, true));
+    }
+
+    [Fact]
+    public async Task KeepIt_RecordsThatWhyItMattersIsMeantForEveryone_AndLeavesItsMarking()
+    {
+        var id = await WhyAtClear("layout-keep article");
+        await OnTodaysBrief(id);
+        await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+
+        await r.Click(p => p.KeepWhyAsync());
+
+        var saved = await Saved(id);
+        (saved.WhyItMattersKept, saved.WhyItMattersTlp).Should().Be((true, TlpLevel.Clear));
+        (await r.Html()).Should().NotContain("Will reach the company-wide edition.").And.Contain("All changes saved");
+    }
+
+    [Fact]
+    public async Task OffABrief_SetToAmber_IsAnUnsavedEdit_AndKeepItIsntOffered()
+    {
+        var id = await WhyAtClear("layout-off-brief article");
+        await using var r = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
+
+        var html = await r.Html();
+        html[At(html, "aria-labelledby=\"sec-why\"")..At(html, "id=\"sec-rec\"")].Should().Contain(">Set to AMBER</button>").And.NotContain(">Keep it</button>");
+
+        await r.Click(p => p.SetWhyAmberAsync());
+
+        (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Clear, "nothing is saved until Save");
+        (await r.Html()).Should().Contain("Unsaved changes").And.NotContain("Will reach the company-wide edition.");
+        var ok = false;
+        await r.Click(async p => ok = await p.Save());
+        ok.Should().BeTrue();
+        (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Amber);
+    }
+
+    // A threat that's ready but for its "Why it matters" marking: one thing to check, nothing missing.
+    private Task<Guid> ReadyButForWhy(string title) => NewArticle(title, fill: a =>
+    {
+        a.Classification = Classification.Threat;
+        a.Priority = Priority.P2;
+        a.Bluf = "Exploited in the wild.";
+        a.Bullets.Add(new Domain.Entities.ArticleBullet { Text = "One" });
+        a.RecommendedActions = "- Patch";
+        a.SourceUrl = "https://example.com/a";
+        a.WhyItMatters = "Our gateways run it.";
+        a.WhyItMattersTlp = TlpLevel.Clear;
+    });
+
+    private static string Summary(string html)
+    {
+        var sum = html[At(html, "class=\"tide-reader-sum\"")..];
+        return sum[..sum.IndexOf("</p>", StringComparison.Ordinal)];
+    }
+
+    [Fact]
+    public async Task TheReadinessLine_NamesTheEditionShown_AndCallsATlpCheckACheck()
+    {
+        var id = await ReadyButForWhy("layout-sum article");
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tag = await db.ScorecardTags.FirstAsync();
+            db.ArticleTags.Add(new Domain.Entities.ArticleTag { ArticleId = id, TagId = tag.Id });
+            await db.SaveChangesAsync();
+        }
+        var article = await Saved(id);
+        async Task<string> Shown(string? edition)
+        {
+            await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
+            {
+                ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), [], [], false, CanWrite: true), ["EditionKey"] = edition,
+            });
+            return Summary(await r.Html());
+        }
+
+        var team = await Shown(null);
+        team.Should().Contain("Security team edition").And.Contain("1 to check").And.NotContain("missing")
+            .And.NotContain("company-wide edition", "the other edition has the same one thing, so it isn't repeated");
+
+        var company = await Shown("company");
+        company.Should().Contain("Company-wide edition").And.Contain("1 to check").And.NotContain("missing").And.NotContain("team edition");
+    }
+
+    [Fact]
+    public async Task SomeoneWhoCantEdit_GetsNoAuthorPrompts_InThePreview()
+    {
+        var id = await ReadyButForWhy("layout-prompts article");
+        var article = await Saved(id);
+        await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
+        {
+            ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), ArticleChecks.For(article), [], false),
+        }, new ComponentHarness.SignIn("dev:viewer", "Viewer", "Viewer"));
+
+        var html = await r.HtmlOnce("What readers get");
+        html.Should().NotContain("class=\"tide-reader-sum\"", "whether it's ready to brief is the author's question")
+            .And.NotContain("tide-placeholder", "nor are the gaps' buttons theirs to press").And.NotContain("Check it");
+    }
+
+    private async Task<int> HistoryRows(Guid id)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var key = id.ToString();
+        return await db.AuditLog.CountAsync(e => e.EntityKey == key && e.ChangesJson != null && e.ChangesJson.Contains("WhyItMattersTlp"));
+    }
+
+    [Fact]
     public async Task ShowRelated_OpensSimilarArticles_WhereThePanelIs()
     {
         var id = await NewArticle("layout-4 article");
-        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
-        var article = (await scope.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(id))!;
+        var article = await Saved(id);
         await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
         {
             ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), [], [], false, CanWrite: true),
@@ -160,7 +405,11 @@ public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         panel.Should().Contain("<ArticleStackCard ArticleId=\"_article.Id\" CanWrite=\"_canWrite\" OnMention=\"MentionAsync\" />");
     }
 
-    private static string WebRoot()
+    // An item of the section index: its label, then what it says of the section (✓, a count, "check TLP" or "Needed").
+    [GeneratedRegex("<button type=\"button\"[^>]*>(?<label>[^<]*)(?:<span class=\"visually-hidden\">,</span>)?(?:<span class=\"tide-pill-state[^\"]*\">(?<state>[^<]*)</span>)?\\s*</button>")]
+    private static partial Regex IndexItem();
+
+    internal static string WebRoot()
     {
         var dir = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;

@@ -9,7 +9,7 @@ using Tide.Domain.Enums;
 namespace Tide.Application.Briefs;
 
 /// <summary>A row on the brief list.</summary>
-public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string AnalystName, BriefStatus Status, int Articles,
+public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string PresentedBy, BriefStatus Status, int Articles,
     int Threats, DateTimeOffset? PresentedAtUtc, DateTimeOffset? DistributedAtUtc = null, DateTimeOffset? SharePointPostedAtUtc = null,
     bool SharePointRequired = false, bool Emailed = false, DateTimeOffset? NotSentAtUtc = null, string? NotSentByName = null,
     string? NotSentReason = null);
@@ -25,7 +25,7 @@ public sealed record BriefCandidate(Guid Id, string Title, Classification Classi
     ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "")
 {
     /// <summary>Whether it's still to be briefed: Draft or Ready, as an article carried over from an earlier brief's "not
-    /// discussed" stays. "Add article (N available)" counts these; a presented one is shown only on request.</summary>
+    /// discussed" stays. "Add article (N ready, M drafts)" counts these; a presented one is shown only on request.</summary>
     public bool Available => Status is ArticleStatus.Draft or ArticleStatus.Ready;
 }
 
@@ -47,14 +47,26 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>The longest the team's opening note can be.</summary>
     public const int TeamNoteMax = 4000;
 
+    /// <summary>The longest <see cref="Brief.PresentedByName"/> kept.</summary>
+    public const int PresentedByMax = 512;
+
+    /// <summary>Who presented <paramref name="brief"/>, as its pages and editions say: whoever held the live meeting's
+    /// presenter's seat, else (presented without a live meeting, or not yet) the presenter it was given.</summary>
+    public static string PresentedBy(Brief brief) => brief.PresentedByName ?? brief.AnalystName;
+
+    // "Pat", "Pat and Sam", "Pat, Sam and Robin".
+    private static string Names(IReadOnlyList<string> names) =>
+        names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
+
     /// <summary>The newest <paramref name="take"/> briefs, or every one (the archive: a row a day stays small).</summary>
     public async Task<IReadOnlyList<BriefSummary>> ListAsync(int? take = 60, CancellationToken ct = default)
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var q = db.Briefs.AsNoTracking().OrderByDescending(b => b.BriefDate);
+        // The presenter shown is BriefService.PresentedBy, written out so the query can run it.
         return await (take is { } n ? q.Take(n) : q)
-            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.AnalystName, b.Status, b.Items.Count,
+            .Select(b => new BriefSummary(b.Id, b.BriefDate, b.PresentedByName ?? b.AnalystName, b.Status, b.Items.Count,
                 b.Items.Count(i => i.Article!.Classification == Classification.Threat), b.PresentedAtUtc, b.DistributedAtUtc, b.SharePointPostedAtUtc, b.SharePointRequired,
                 db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent),
                 b.NotSentAtUtc, b.NotSentByName, b.NotSentReason))
@@ -232,21 +244,27 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>
     /// Saves the team's opening note (Markdown; blank clears it), and marks it reviewed for this brief: saved unchanged,
     /// it's kept as still current. Refused once the brief is sent, as its other content is: the note went out in the team
-    /// email as it was then.
+    /// email as it was then. With <paramref name="editVersion"/> (the brief's <see cref="Brief.EditVersion"/> when the note
+    /// was opened to edit), it's refused (<see cref="StaleEditException"/>) if the brief has been saved since, so a
+    /// colleague's note isn't overwritten unseen; null skips the check.
     /// </summary>
-    public async Task SetTeamNoteAsync(Guid briefId, string? note, CancellationToken ct = default)
+    public async Task SetTeamNoteAsync(Guid briefId, string? note, Guid? editVersion = null, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its title slide line is fixed.");
+        if (editVersion is { } v && v != brief.EditVersion) throw new StaleEditException(NoteSavedMeanwhile);
         var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
         if (text == brief.TeamNote && brief.TeamNoteReviewedAtUtc is not null) return;
         brief.TeamNote = text;
         brief.TeamNoteReviewedAtUtc = clock.Now.ToUniversalTime();   // who saved it is in the brief's audit trail
         Touch(brief);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) when (editVersion is not null) { throw new StaleEditException(NoteSavedMeanwhile); }
     }
+
+    private const string NoteSavedMeanwhile = "Someone else saved this brief since you opened the note. Reload to see theirs, then save yours again.";
 
     /// <summary>
     /// Whether <paramref name="brief"/>'s opening note is the previous brief's, carried forward and not yet looked at for
@@ -327,13 +345,15 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         brief.Status = BriefStatus.Presented;
         var now = clock.Now.ToUniversalTime();
         var held = heldAtUtc?.ToUniversalTime() ?? (IsPast(brief.BriefDate) ? clock.MeetingStart(brief.BriefDate).ToUniversalTime() : now);
-        if (DateOnly.FromDateTime(clock.ToLocal(held).DateTime) < brief.BriefDate) throw new ArgumentException("The meeting can't be held before the brief's day.");
+        if (MeetingDay.Before(clock, brief.BriefDate, held)) throw new ArgumentException(MeetingDay.TooEarly);
         if (held > now.AddMinutes(5)) throw new ArgumentException("The meeting can't be in the future.");
         // Ended already (from present mode, as the brief page's End was clicked): an article that end carried to a later
         // brief is that brief's to present, so it keeps its status.
         HashSet<Guid> onLater = brief.PresentedAtUtc is null ? [] : await LaterBriefedAsync(db, brief, ct);
         brief.MeetingHeldAtUtc ??= held;
         brief.PresentedAtUtc ??= now;
+        // Ended from its live meeting: whoever presented it there, which may not be the presenter it was given.
+        if (_meetings.PresentersOf(briefId) is { Count: > 0 } presentedBy) brief.PresentedByName = ArticleService.Clean(Names(presentedBy), PresentedByMax);
         // An article carried to the next brief wasn't presented; it keeps its status for that meeting. What each article
         // was before this meeting marked it is kept on its item, so reopening the meeting can put it back.
         foreach (var item in brief.Items.Where(i => !carried.Contains(i.ArticleId) && !onLater.Contains(i.ArticleId)))
@@ -440,6 +460,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         brief.Status = BriefStatus.Ready;
         brief.MeetingHeldAtUtc = null;
         brief.PresentedAtUtc = null;
+        brief.PresentedByName = null;
         Touch(brief);
         await db.SaveChangesAsync(ct);
         return plan;

@@ -144,13 +144,14 @@ public class TriageReadingPaneTests(TideApp app) : IClassFixture<TideApp>
             await db.SaveChangesAsync();
         }
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, "/triage");
-        (await r.HtmlOnce("reading-pane: VPN flaw exploited")).Should().NotContain("tide-reading\"").And.Contain("<span class=\"tide-kbd\">V</span> read it here");
+        // Until V or Esc, the pane is open by itself only on a wide window (reading-auto).
+        (await r.HtmlOnce("reading-pane: VPN flaw exploited")).Should().Contain("tide-triage-layout reading reading-auto").And.Contain("<span class=\"tide-kbd\">V</span> read it here");
 
         await r.Click(t => t.OnTriageKey("read"));
         var html = await r.Html();
         html.Should().Contain("aria-label=\"The article\"").And.Contain("<mark class=\"tide-read-cve\">CVE-2026-4242</mark>")
             .And.Contain("<mark class=\"tide-read-ioc\">203.0.113[.]9</mark>").And.Contain("Found here: 1 CVE &#xB7; 1 indicator")
-            .And.Contain("Read again").And.Contain("sent or exported");
+            .And.Contain("Read again").And.NotContain("sent or exported", "the pane no longer shows that notice");
 
         await r.Click(t => t.OnTriageKey("close-reading"));
         (await r.Html()).Should().NotContain("aria-label=\"The article\"");

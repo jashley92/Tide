@@ -21,7 +21,7 @@ namespace Tide.IntegrationTests;
 /// The "Tags and ATT&amp;CK" section of an article's slide: its scorecard tags by category and its ATT&amp;CK techniques by tactic in kill-chain order, each
 /// edition showing only what that edition's email and web copy show.
 /// </summary>
-public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
+public partial class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
 {
     // Read once: a test that straddles midnight mustn't see two days.
     private DateOnly Today { get; } = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
@@ -82,10 +82,10 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         (await r.Html()).Should().Contain($"<h2>{title}</h2>");
     }
 
-    /// <summary>The slide's "Tags and ATT&amp;CK" section, or null when it has none.</summary>
-    internal static string? Section(string html)
+    /// <summary>The slide's "Tags and ATT&amp;CK" section (or the one of class <paramref name="cls"/>), or null when it has none.</summary>
+    internal static string? Section(string html, string cls = "tide-slide-tagsec")
     {
-        var at = html.IndexOf("<section class=\"tide-slide-tagsec\"", StringComparison.Ordinal);
+        var at = html.IndexOf($"<section class=\"{cls}\"", StringComparison.Ordinal);
         return at < 0 ? null : html[at..(html.IndexOf("</section>", at, StringComparison.Ordinal) + 10)];
     }
 
@@ -111,11 +111,11 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal).Should().BeLessThan(section.IndexOf("tide-slide-attack", StringComparison.Ordinal));
 
         // Then a column per tactic in the matrix's order, its colour a bar, its techniques one to a line: each technique once.
-        Regex.Matches(section, "class=\"tide-slide-tag-name\">([^<]+)<").Select(m => m.Groups[1].Value)
+        TagName().Matches(section).Select(m => m.Groups[1].Value)
             .Should().Equal(["Initial Access", "Execution", "Impact"], "tactics in the matrix's order");
         section.Should().Contain($"style=\"--tac:{Ui.TacticColor(MitreTactic.InitialAccess)}\"").And.Contain(Ui.TacticGlyph(MitreTactic.Impact));
         section.Should().Contain("<span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1190</span> Exploit Public-Facing Application</span><span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1566.001</span> Spearphishing Attachment</span>");
-        Regex.Count(html, "T1566\\.001").Should().Be(1, "a technique appears once on the slide");
+        html.Should().Contain("T1566.001", Exactly.Once(), "a technique appears once on the slide");
         section.Should().NotContain("tide-chip-technique", "the old flat chip list is gone");
     }
 
@@ -178,4 +178,7 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         row.Left.Should().Equal(many.Skip(SlideTags.MaxTechniques));
         new SlideTactic(MitreTactic.Impact, many.Take(1).ToList()).Left.Should().BeEmpty();
     }
+
+    [GeneratedRegex("class=\"tide-slide-tag-name\">([^<]+)<")]
+    private static partial Regex TagName();
 }

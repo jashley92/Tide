@@ -24,8 +24,8 @@ public class ListsBugRoundTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/triage?named=1", "<h1>Triage</h1>")]
     [InlineData("/triage?source=not-a-source&since=yes&older=on", "<h1>Triage</h1>")]
     [InlineData("/triage?at=12345&row=first&promote=1", "<h1>Triage</h1>")]
-    [InlineData("/actions?team=network", "<h1>Actions</h1>")]
-    [InlineData("/actions?rule=x&parent=99999999999", "<h1>Actions</h1>")]
+    [InlineData("/actions?team=network", "<h1 tabindex=\"-1\">Actions</h1>")]
+    [InlineData("/actions?rule=x&parent=99999999999", "<h1 tabindex=\"-1\">Actions</h1>")]
     [InlineData("/articles?new=yes", "<h1>Articles</h1>")]
     [InlineData("/reports/teams?days=thirty&parts=y&external=n", "Team commitments")]
     [InlineData("/actions/new?article=12ab&parent=nope", "New action")]
@@ -47,7 +47,7 @@ public class ListsBugRoundTests(TideApp app) : IClassFixture<TideApp>
             for (var i = 0; i < 25; i++)
                 await svc.SaveAsync(new SavedQueryForm { Name = $"Edited {tag} {i:00}", Dialect = i < 15 ? "kql" : "fql", Text = "DeviceEvents | take 1" });
         }
-        var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved");
+        var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries");
         await r.Click(c =>
         {
             typeof(SavedQueriesPage).GetField("_words", Private)!.SetValue(c, tag);
@@ -63,21 +63,22 @@ public class ListsBugRoundTests(TideApp app) : IClassFixture<TideApp>
         await change(scope.ServiceProvider.GetRequiredService<SavedQueryService>());
     }
 
-    // A colleague's new query pushed the card being edited onto the next page: the page goes with it, so the form stays
-    // on its card, rather than standing above a page the card isn't on (LibraryPage.EditingOffPage, for a card that's gone).
+    // A colleague's new query pushed the entry being edited (the one shown) onto the next page: the page goes with it, so
+    // the form stays where the entry is shown, rather than standing above a page it isn't on (LibraryPage.EditingAway,
+    // for one that's gone).
     [Fact]
     public async Task ALibraryCardPushedToTheNextPageWhileEdited_IsFollowed()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         await using var r = await QueriesPage(tag);
         var last = r.Component.OnPage[^1].Query;   // the 20th: "… 19", FQL
-        await r.Click(c => { c.Edit(last); return Task.CompletedTask; });
+        await r.Click(c => { c.Pick(last.Id); c.Edit(last); return Task.CompletedTask; });
 
         await AsColleague(svc => svc.SaveAsync(new SavedQueryForm { Name = $"Edited {tag} 00a", Dialect = "kql", Text = "DeviceEvents | take 2" }));
         await r.Click(c => c.OnChangedElsewhere([]));
 
         r.Component.Page.Should().Be(2, "the card being edited is on page 2 now");
-        r.Component.OnPage.Should().Contain(q => q.Query.Id == last.Id);
+        r.Component.Selected!.Query.Id.Should().Be(last.Id, "and it's still the one shown");
         WebUtility.HtmlDecode(await r.Html()).Should().Contain($"Edit {last.Name}</h3>");
     }
 

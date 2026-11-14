@@ -17,7 +17,7 @@ namespace Tide.Migrations.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -503,8 +503,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<DateOnly?>("RaisedOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("RecommendationLine")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("StatusChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");
@@ -930,6 +937,24 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("WhyItMatters")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("WhyItMattersKeptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WhyItMattersKeptById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WhyItMattersKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WhyItMattersKeptHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("WhyItMattersKeptTlp")
+                        .HasColumnType("int");
+
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("int");
 
@@ -1327,6 +1352,10 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<DateTimeOffset?>("PresentedAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset?>("SharePointPostedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -1947,6 +1976,25 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("JobLeases");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.JobProcess", b =>
+                {
+                    b.Property<string>("Holder")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("LastSeenAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Holder");
+
+                    b.HasIndex("LastSeenAtUtc");
+
+                    b.ToTable("JobProcesses");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.JobRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1992,6 +2040,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AddedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
@@ -3267,6 +3319,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");

@@ -541,16 +541,16 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
     public async Task ThePage_ListsTheTemplates_WithTheirCeilingAndUse_AndAViewerOnlyReads()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
-        await Saved("Ask the PSIRT " + tag, to: "psirt@vendor.example");
+        var asked = await Saved("Ask the PSIRT " + tag, to: "psirt@vendor.example");
 
-        await using (var r = await RenderAsync<OutreachTemplatesPage>(app, "/outreach/templates"))
+        await using (var r = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates?row=" + asked))
         {
             var html = await r.Html();
-            html.Should().Contain("<h1>Outreach templates</h1>").And.Contain("Ask the PSIRT " + tag).And.Contain("For the vendor")
+            html.Should().NotContain("<h2>Outreach templates</h2>").And.Contain("Ask the PSIRT " + tag).And.Contain("For the vendor")
                 .And.Contain("Filled up to TLP:GREEN, always to psirt@vendor.example.").And.Contain("Not used yet").And.Contain("Saved by Tester, ")
-                .And.Contain("New template</button>").And.Contain($"aria-label=\"Edit Ask the PSIRT {tag}\"").And.Contain($"aria-label=\"Retire Ask the PSIRT {tag}\"")
-                .And.Contain($"aria-label=\"Delete Ask the PSIRT {tag}\"").And.Contain("data-copy-done=\"Copied.\"").And.NotContain("style=");
-            html.Split("<h1").Length.Should().Be(2);
+                .And.Contain($"aria-label=\"Edit Ask the PSIRT {tag}\"").And.Contain("aria-haspopup=\"menu\"")
+                .And.Contain("data-copy-done=\"Copied.\"").And.NotContain("style=");
+            html.Should().NotContain("<h1", "the Library page has the title");
 
             await r.Click(p => { p.New(); return Task.CompletedTask; });
             var form = await r.Html();
@@ -563,7 +563,7 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
             r.Component.Rows!.Should().Contain(x => x.Template.Name == "Ask the ISAC " + tag && x.Template.Ceiling == TlpLevel.Clear);
         }
 
-        await using var viewer = await RenderAsync<OutreachTemplatesPage>(app, "/outreach/templates", @as: Viewer);
+        await using var viewer = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates?row=" + asked, @as: Viewer);
         var read = await viewer.Html();
         read.Should().Contain("Ask the PSIRT " + tag).And.Contain(" Copy</button>")
             .And.NotContain("New template").And.NotContain("aria-label=\"Edit ").And.NotContain("aria-label=\"Retire ").And.NotContain("aria-label=\"Delete ");
@@ -581,7 +581,7 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
         {
             var html = await r.Html();
             html.Should().Contain("<h2 id=\"outreach-h\">Outreach").And.Contain("aria-controls=\"outreach-writer\"").And.Contain("Write the email")
-                .And.Contain("href=\"outreach/templates\"", "relative, so it works under a sub-path");
+                .And.Contain("href=\"library/templates\"", "relative, so it works under a sub-path");
             await r.Click(p => p.ToggleWriter());
             await r.Click(p => p.Choose(template));
             var written = await r.Html();

@@ -20,6 +20,16 @@ public static class OperationalSettings
     public const string MeetingTime = "Org:MeetingTime";
     public const string TeamName = "Org:TeamName";
 
+    /// <summary>Whether a meeting's action opens beside the slide rather than over it. Off by default.</summary>
+    public const string ActionBesideSlide = "Org:ActionBesideSlide";
+
+    /// <summary>Business days an Open or In progress action, and a Blocked one, may go without an update before the
+    /// meeting's "Needs an update" slide asks about it (<see cref="StaleLimits"/>): 1 to 30, 2 and 5 by default.</summary>
+    public const string StaleOpenDays = "Org:StaleOpenDays";
+    public const string StaleBlockedDays = "Org:StaleBlockedDays";
+    // How long a page's Show me around link shows (OrgOptions.GuideLinkDays).
+    public const string GuideLinkDays = "Org:GuideLinkDays";
+
     public const string ReminderTime = "Notifications:ReminderTime";
     public const string DueSoon = "Notifications:DueSoon:Enabled";
     public const string Presenting = "Notifications:Presenting:Enabled";
@@ -59,6 +69,11 @@ public static class OperationalSettings
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
     public const string PullNowMinutes = "Intake:PullNowMinutes";
+
+    /// <summary>The time each working day the feeds should have been pulled by (Today's Triage step says when they
+    /// haven't): 24-hour, in the organization's zone, 08:00 by default.</summary>
+    public const string PulledBy = "Intake:PulledBy";
+
     public const string SkipSponsored = "Intake:SkipSponsored";
     public const string SponsoredMarkers = "Intake:SponsoredMarkers";
     public const string SponsoredExceptions = "Intake:SponsoredExceptions";
@@ -106,6 +121,10 @@ public static class OperationalSettings
         [TimeZone] = Zone,
         [MeetingTime] = Time("The meeting time"),
         [TeamName] = Name,
+        [ActionBesideSlide] = Switch,
+        [StaleOpenDays] = Number("Business days an open action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
+        [StaleBlockedDays] = Number("Business days a blocked action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
+        [GuideLinkDays] = Number("Days a page's Show me around link shows", OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays),
         [ReminderTime] = Time("The reminder time"),
         [DueSoon] = Switch,
         [Presenting] = Switch,
@@ -131,6 +150,7 @@ public static class OperationalSettings
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
         [PullNowMinutes] = Number("The analyst pull-now window", 1, 24 * 60),
+        [PulledBy] = Time("The time feeds are pulled by"),
         [SkipSponsored] = Switch,
         [SponsoredMarkers] = v => SponsoredFilter.Normalize("The marker list", v, required: true),
         [SponsoredExceptions] = v => SponsoredFilter.Normalize("The exception list", v, required: false),
@@ -199,6 +219,10 @@ public static class OperationalSettings
         s.Use(TimeZone, v => o.TimeZone = v);
         s.Use(MeetingTime, v => o.MeetingTime = v);
         s.Use(TeamName, v => o.TeamName = v);
+        s.Use(ActionBesideSlide, v => o.ActionBesideSlide = bool.Parse(v));
+        s.Use(StaleOpenDays, v => o.StaleOpenDays = int.Parse(v, Invariant));
+        s.Use(StaleBlockedDays, v => o.StaleBlockedDays = int.Parse(v, Invariant));
+        s.Use(GuideLinkDays, v => o.GuideLinkDays = int.Parse(v, Invariant));
     }
 
     internal static void Apply(SavedSettings s, ReminderOptions o)
@@ -232,6 +256,7 @@ public static class OperationalSettings
         s.Use(RetentionDays, v => o.RetentionDays = int.Parse(v, Invariant));
         s.Use(MinPollMinutes, v => o.MinPollMinutes = int.Parse(v, Invariant));
         s.Use(PullNowMinutes, v => o.PullNowMinutes = int.Parse(v, Invariant));
+        s.Use(PulledBy, v => o.PulledBy = v);
         s.Use(SkipSponsored, v => o.SkipSponsored = bool.Parse(v));
         s.Use(SponsoredMarkers, v => o.SponsoredMarkers = v);
         s.Use(SponsoredExceptions, v => o.SponsoredExceptions = v);

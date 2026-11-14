@@ -96,6 +96,10 @@ public static class SettingsCatalog
         new("Organization", "Time zone", OperationalSettings.TimeZone, EditedIn: OrganizationPage),
         new("Organization", "Brief meets at", OperationalSettings.MeetingTime, EditedIn: OrganizationPage),
         new("Organization", "Team name", OperationalSettings.TeamName, EditedIn: OrganizationPage),
+        new("Organization", "A meeting's action opens beside the slide", OperationalSettings.ActionBesideSlide, EditedIn: OrganizationPage),
+        new("Organization", "Needs an update: open actions, after business days", OperationalSettings.StaleOpenDays, EditedIn: OrganizationPage),
+        new("Organization", "Needs an update: blocked actions, after business days", OperationalSettings.StaleBlockedDays, EditedIn: OrganizationPage),
+        new("Organization", "Show me around links: days shown", OperationalSettings.GuideLinkDays, EditedIn: OrganizationPage),
 
         new("Reminders", "Reminder time", OperationalSettings.ReminderTime, EditedIn: TeamsPage),
         new("Reminders", "Due soon", OperationalSettings.DueSoon, EditedIn: TeamsPage),
@@ -123,6 +127,7 @@ public static class SettingsCatalog
         new("Intake", "Feed items kept (days)", OperationalSettings.RetentionDays, EditedIn: SourcesPage),
         new("Intake", "Shortest poll (minutes)", OperationalSettings.MinPollMinutes, EditedIn: SourcesPage),
         new("Intake", "Analyst pull-now window (minutes)", OperationalSettings.PullNowMinutes, EditedIn: SourcesPage),
+        new("Intake", "Feeds pulled by (each working day)", OperationalSettings.PulledBy, EditedIn: SourcesPage),
         new("Intake", "Skip sponsored items", OperationalSettings.SkipSponsored, EditedIn: SourcesPage),
         new("Intake", "Sponsored markers", OperationalSettings.SponsoredMarkers, EditedIn: SourcesPage),
         new("Intake", "Not sponsorship (exceptions)", OperationalSettings.SponsoredExceptions, EditedIn: SourcesPage),

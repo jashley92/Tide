@@ -19,6 +19,41 @@ public sealed record StackEntry(Guid Id, string Name, IReadOnlyList<string> Term
     internal IReadOnlyList<string> Keys { get; } = [.. Terms.Select(StackService.Normal).Where(w => w.Length > 0).Select(w => $" {w} ")];
 }
 
+/// <summary>
+/// Every product's names, indexed by their first word, so a text is matched against them all in one pass over its words
+/// rather than once a product. <see cref="In"/> finds exactly the entries <see cref="StackService.Names"/> would.
+/// </summary>
+internal sealed class StackNames
+{
+    private readonly Dictionary<string, List<(StackEntry Entry, string Key)>> _byFirstWord = new(StringComparer.Ordinal);
+
+    public StackNames(IEnumerable<StackEntry> entries)
+    {
+        foreach (var e in entries)
+            foreach (var key in e.Keys)
+            {
+                // A key is " connect secure ": its first word runs from 1 to the next space.
+                var first = key[1..key.IndexOf(' ', 1)];
+                if (!_byFirstWord.TryGetValue(first, out var keys)) _byFirstWord[first] = keys = [];
+                keys.Add((e, key));
+            }
+    }
+
+    /// <summary>The entries <paramref name="words"/> (as <see cref="StackService.Words"/> makes them) names, each once.</summary>
+    public IReadOnlyCollection<StackEntry> In(string words)
+    {
+        HashSet<StackEntry>? found = null;
+        var byWord = _byFirstWord.GetAlternateLookup<ReadOnlySpan<char>>();
+        for (int space = words.IndexOf(' '), next; space >= 0 && (next = words.IndexOf(' ', space + 1)) >= 0; space = next)
+        {
+            if (next == space + 1 || !byWord.TryGetValue(words.AsSpan(space + 1, next - space - 1), out var keys)) continue;
+            foreach (var (entry, key) in keys)
+                if (string.CompareOrdinal(words, space, key, 0, key.Length) == 0) (found ??= []).Add(entry);
+        }
+        return found ?? (IReadOnlyCollection<StackEntry>)[];
+    }
+}
+
 /// <summary>What the Our stack form edits.</summary>
 public sealed class StackForm
 {
@@ -46,27 +81,92 @@ public sealed class StackForm
     };
 }
 
-/// <summary>A product on the list: how many articles carry it (tagged or naming it) and how many of their actions are open.</summary>
-public sealed record StackRow(StackProduct Product, string? TeamName, int Articles, int OpenActions);
+/// <summary>
+/// A product on the list: how many articles carry it (tagged or naming it), how many of their actions are open, what is
+/// happening to it <paramref name="Now"/>, and whether it's in use with a check that is old or missing
+/// (<paramref name="CheckOld"/>, by <see cref="StackService.CheckIsOld"/>).
+/// </summary>
+public sealed record StackRow(StackProduct Product, string? TeamName, int Articles, int OpenActions, StackNow Now, bool CheckOld)
+{
+    /// <summary>In use, and no team owns it.</summary>
+    public bool NoTeam => !Product.IsRetired && Product.TeamId is null;
+
+    /// <summary>
+    /// Whether the product needs a look: it's in use, and something is happening to it right now, its check is old or
+    /// missing, or no team owns it. The one definition: the list's order and its "Needs a look" filter both read it.
+    /// </summary>
+    public bool NeedsLook => !Product.IsRetired && (Now.Any || CheckOld || NoTeam);
+
+    /// <summary>How pressing it is, the most first: the order of the list (<see cref="StackService.MostPressingFirst"/>).</summary>
+    public StackUrgency Urgency =>
+        !NeedsLook ? StackUrgency.Nothing
+        : Now.Cves.Any(c => c.Record?.IsKev == true) ? StackUrgency.Kev
+        : Now.Cves.Count > 0 ? StackUrgency.Cve
+        : Now.TriageItems > 0 ? StackUrgency.Triage
+        : StackUrgency.Housekeeping;
+}
+
+/// <summary>
+/// Why a product needs a look, the most pressing first: a CVE on KEV; any CVE; new triage items; or only housekeeping (a
+/// check that's old or missing, no owning team). <see cref="Nothing"/> for one that needs none.
+/// </summary>
+public enum StackUrgency { Kev, Cve, Triage, Housekeeping, Nothing }
+
+/// <summary>A CVE in a product's "Right now", with what's known about it (null until it's enriched).</summary>
+public sealed record StackCve(string Id, CveRecord? Record);
+
+/// <summary>A CVE on a recent brief's article about a product.</summary>
+public sealed record CveSighting(string Cve, CveRecord? Record);
+
+/// <summary>
+/// What is happening to a product right now: the CVEs on its articles from the last <see cref="StackService.RecentBriefDays"/>
+/// days' briefs, the worst first (on KEV, then by CVSS, then by EPSS); and how many new triage items name it
+/// (<paramref name="TriageItems"/>, null for someone who can't triage).
+/// </summary>
+public sealed record StackNow(IReadOnlyList<StackCve> Cves, int? TriageItems)
+{
+    public bool Any => Cves.Count > 0 || TriageItems > 0;
+
+    /// <summary>One of its articles is on today's brief.</summary>
+    public bool BriefedToday { get; init; }
+
+    /// <summary>New triage items name it, and no article about it was written in the last
+    /// <see cref="StackService.RecentBriefDays"/> days: the news hasn't been written up. Only for those who triage.</summary>
+    public bool NotWrittenUp { get; init; }
+}
+
+/// <summary>A new triage item marked "We run" for a product: its id, its title, and whether one of its CVEs is on KEV.</summary>
+public sealed record StackTriageItem(Guid Id, string Title, bool Kev);
 
 /// <summary>An article in a product's history: tagged with it, or found because it names it.</summary>
 public sealed record StackArticle(Guid Id, string Title, DateOnly On, ArticleStatus Status, bool Tagged);
 
 /// <summary>An action in a product's history: raised from one of its articles, or naming it.</summary>
-public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate);
+public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate,
+    bool TeamExternal = false, string? TicketRef = null, string? TicketUrl = null)
+{
+    /// <summary>Who has it, in words (<see cref="Actions.HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public Actions.HolderLabel Holder(string nobody) => Actions.HolderLabel.Of(AssigneeName, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+}
 
 /// <summary>
-/// A product with its history, newest first, held to the team edition's <paramref name="Ceiling"/>: articles above it, and
-/// actions raised from them, are counted (<paramref name="ArticlesAbove"/>, <paramref name="ActionsAbove"/>) but not named.
+/// A product with its history, newest first: its articles and its actions, every marking, as the article pages and the
+/// Actions list name them to the team edition's readers (a ceiling governs what leaves the app, not what's seen in it).
 /// </summary>
-public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions,
-    TlpLevel Ceiling, int ArticlesAbove = 0, int ActionsAbove = 0);
+public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions)
+{
+    /// <summary>Its open actions: what Our stack's row counts and its rail lists.</summary>
+    public IReadOnlyList<StackAction> OpenActions { get; } = [.. Actions.Where(a => !ActionItem.IsClosedStatus(a.Status))];
+}
 
 /// <summary>
 /// A product as present mode shows it over an article's slide (team edition only: its notes are internal): its facts, and
 /// the other articles about it, newest first, up to <see cref="StackService.CardArticles"/>.
 /// </summary>
 public sealed record StackCard(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Others);
+
+/// <summary>A product in use that some articles are about (<see cref="StackService.RunByArticlesAsync"/>), and how many of them.</summary>
+public sealed record StackRun(StackProduct Product, int Articles);
 
 /// <summary>An article's products: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
 public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyList<StackProduct> Suggested);
@@ -77,7 +177,7 @@ public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyL
 /// an article can be tagged with any number of them (optional), and each product's page lists the articles and actions
 /// about it, tagged or found by name. A name matches as whole words, ignoring case, in a title or the start of a summary.
 /// </summary>
-public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock, DistributionSettings editions,
+public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock,
     Briefs.IMeetingsInProgress? meetings = null) : IArticleTagSource
 {
     /// <summary>How much of a summary (an item's excerpt, an article's bottom line) is read for a name.</summary>
@@ -147,23 +247,159 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
 
     // --- reading ------------------------------------------------------------------------------------------------
 
+    /// <summary>How old a product's "Checked on" date may be before the list flags it. No setting holds it.</summary>
+    public const int CheckOldAfterDays = 90;
+
+    /// <summary>How many days back a brief counts as recent for the list's "Right now".</summary>
+    public const int RecentBriefDays = 7;
+
+    /// <summary>Whether a product's check is old: never made, or more than <see cref="CheckOldAfterDays"/> days before <paramref name="today"/>.</summary>
+    public static bool CheckIsOld(DateOnly? checkedOn, DateOnly today) => checkedOn is not { } on || on.AddDays(CheckOldAfterDays) < today;
+
+    /// <summary>
+    /// A product's "Right now" from the CVEs seen on its recent articles, each named once, whatever its articles' TLP.
+    /// </summary>
+    public static StackNow RightNow(IEnumerable<CveSighting> sightings, int? triageItems) =>
+        new([.. sightings.GroupBy(s => s.Cve, StringComparer.OrdinalIgnoreCase).Select(g => new StackCve(g.Key, g.First().Record))
+            .OrderByDescending(c => c.Record?.IsKev == true).ThenByDescending(c => c.Record?.CvssScore ?? -1).ThenByDescending(c => c.Record?.EpssScore ?? -1)
+            .ThenBy(c => c.Id, StringComparer.Ordinal)], triageItems);
+
+    /// <summary>
+    /// The products with their counts, by name, retired ones last: what the API lists. "Right now" isn't read (each
+    /// row's is empty), so a row's <see cref="StackRow.NeedsLook"/> here speaks only of its check and its team.
+    /// </summary>
     public async Task<IReadOnlyList<StackRow>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();
+        return await RowsAsync(includeRetired, rightNow: false, ct);
+    }
+
+    /// <summary>
+    /// The list page: each product with its counts and its "Right now"; those that need a look first, then by name,
+    /// retired ones last. Read in a fixed number of queries however many products there are: every article is matched
+    /// against every name in one pass (<see cref="StackNames"/>), and the new triage items once, as triage matches
+    /// them. The triage count is only for those who triage.
+    /// </summary>
+    public async Task<IReadOnlyList<StackRow>> OverviewAsync(bool includeRetired = false, CancellationToken ct = default)
+    {
+        RequireRead();
+        return MostPressingFirst(await RowsAsync(includeRetired, rightNow: true, ct));
+    }
+
+    /// <summary>
+    /// The list's order, for rows read by name with the retired last: by <see cref="StackRow.Urgency"/>; then the worst
+    /// CVSS score among the CVEs named, where one is known; then the more new triage items; then as they came, by name
+    /// (the sort is stable). A product that needs nothing is last, a retired one after those, whatever is written about
+    /// it. Someone who can't triage has no triage counts, so they play no part.
+    /// </summary>
+    public static IReadOnlyList<StackRow> MostPressingFirst(IEnumerable<StackRow> byName) =>
+        byName.OrderBy(r => r.Urgency)
+            .ThenByDescending(r => r.NeedsLook ? r.Now.Cves.Max(c => c.Record?.CvssScore) ?? -1 : 0)
+            .ThenByDescending(r => r.NeedsLook ? r.Now.TriageItems ?? 0 : 0).ToList();
+
+    // The rows by name, retired last; with "Right now" when it's asked for.
+    private async Task<List<StackRow>> RowsAsync(bool includeRetired, bool rightNow, CancellationToken ct)
+    {
+        var today = clock.Today;
         await using var db = await dbs.CreateAsync(ct);
         var products = await db.StackProducts.AsNoTracking().Include(p => p.Team).Where(p => includeRetired || !p.IsRetired)
             .OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToListAsync(ct);
-        var articles = await ArticlesAsync(db, ct);
-        var tags = await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct);
-        var open = await db.Actions.AsNoTracking().WhereOpen().Where(a => a.ArticleId != null)
-            .Select(a => a.ArticleId!.Value).ToListAsync(ct);
+
+        // Each product's articles: those naming it, then those tagged with it.
+        var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.CreatedAtUtc }).ToListAsync(ct);
+        var names = new StackNames(products.Select(Entry));
+        var mine = ArticlesByProduct(products, names, articles.Select(a => (a.Id, a.Title, a.Bluf)),
+            (await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct)).Select(t => (t.ArticleId, t.ProductId)));
+        // Each product's open actions, by the product page's rule (DetailAsync): raised from one of its articles, or naming
+        // it in their title, an action with no article included; read once and matched in one pass, as the articles are.
+        var byArticle = mine.SelectMany(m => m.Value.Select(a => (Article: a, Product: m.Key))).ToLookup(x => x.Article, x => x.Product);
+        var open = products.ToDictionary(p => p.Id, _ => 0);
+        foreach (var a in await db.Actions.AsNoTracking().WhereOpen().Select(a => new { a.ArticleId, a.Title }).ToListAsync(ct))
+        {
+            var about = names.In(Words(a.Title, null)).Select(e => e.Id);
+            if (a.ArticleId is { } article) about = about.Concat(byArticle[article]);
+            foreach (var product in about.Distinct()) open[product]++;
+        }
+
+        var sightings = Enumerable.Empty<(Guid ArticleId, CveSighting Cve)>().ToLookup(s => s.ArticleId, s => s.Cve);
+        Dictionary<Guid, int>? triage = null;
+        HashSet<Guid> briefedToday = [], written = [];
+        if (rightNow)
+        {
+            // The CVEs on the recent briefs' articles, each with what's known about it.
+            var from = today.AddDays(-RecentBriefDays);
+            var recent = db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate >= from)).Select(i => i.ArticleId);
+            // Today's brief's articles, and the articles written lately.
+            briefedToday = [.. await db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == today)).Select(i => i.ArticleId).ToListAsync(ct)];
+            var lately = DateTimeOffset.UtcNow.AddDays(-RecentBriefDays);
+            written = articles.Where(a => a.CreatedAtUtc >= lately).Select(a => a.Id).ToHashSet();
+            sightings = (await (from c in db.ArticleCves.AsNoTracking()
+                                where recent.Contains(c.ArticleId)
+                                join r in db.CveRecords.AsNoTracking() on c.CveId equals r.CveId into records
+                                from r in records.DefaultIfEmpty()
+                                select new { c.ArticleId, c.CveId, Record = r }).ToListAsync(ct))
+                .ToLookup(c => c.ArticleId, c => new CveSighting(c.CveId, c.Record));
+            if (user.Has(Permission.WriteArticles)) triage = await NewItemsNamingAsync(db, products.Where(p => !p.IsRetired).Select(Entry).ToList(), ct);
+        }
+
         return products.Select(p =>
         {
-            var e = Entry(p);
-            var ids = articles.Where(a => Names(e, a.Words)).Select(a => a.Id)
-                .Concat(tags.Where(t => t.ProductId == p.Id).Select(t => t.ArticleId)).ToHashSet();
-            return new StackRow(p, p.Team?.Name, ids.Count, open.Count(ids.Contains));
+            var ids = mine[p.Id];
+            var now = RightNow(ids.SelectMany(id => sightings[id]), triage?.GetValueOrDefault(p.Id)) with
+            {
+                BriefedToday = ids.Overlaps(briefedToday),
+                NotWrittenUp = triage?.GetValueOrDefault(p.Id) > 0 && !ids.Overlaps(written),
+            };
+            return new StackRow(p, p.Team?.Name, ids.Count, open[p.Id], now, !p.IsRetired && CheckIsOld(p.CheckedOn, today));
         }).ToList();
+    }
+
+    // How many new triage items name each product, as triage says it (NewItemsMarkedAsync).
+    private static async Task<Dictionary<Guid, int>> NewItemsNamingAsync(IAppDbContext db, IReadOnlyList<StackEntry> inUse, CancellationToken ct) =>
+        (await NewItemsMarkedAsync(db, inUse, ct)).GroupBy(m => m.Product).ToDictionary(g => g.Key, g => g.Count());
+
+    // A new triage item as it's matched and listed: the start of its excerpt only, and its CVEs as stored.
+    private sealed record NewItem(Guid Id, string Title, string? Excerpt, string? Cves, DateTimeOffset FetchedAtUtc);
+
+    // The new triage items that name a product in use, each with the product its "We run" mark goes to, as triage says it:
+    // the first product it names, matched once over the items. Items from a retired source aren't in the inbox, so they
+    // aren't here.
+    private static async Task<List<(NewItem Item, Guid Product)>> NewItemsMarkedAsync(IAppDbContext db, IReadOnlyList<StackEntry> inUse, CancellationToken ct)
+    {
+        if (inUse.Count == 0) return [];
+        var items = await db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired)
+            .Select(i => new NewItem(i.Id, i.Title, i.Excerpt == null ? null : i.Excerpt.Substring(0, SummaryStart), i.Cves, i.FetchedAtUtc)).ToListAsync(ct);
+        var match = Matcher(inUse);
+        return [.. items.Select(i => (Item: i, Entry: match(i.Title, i.Excerpt))).Where(m => m.Entry is not null).Select(m => (m.Item, m.Entry!.Id))];
+    }
+
+    /// <summary>
+    /// The new triage items marked "We run" for <paramref name="id"/> (the first product each names, as triage marks it),
+    /// newest first, each saying whether one of its CVEs is on KEV: the context rail's "In triage now". Only for those who
+    /// triage, as the list's count is. A retired product has none: triage no longer lifts it. Read in a fixed number of
+    /// queries, however many products and items there are.
+    /// </summary>
+    public async Task<IReadOnlyList<StackTriageItem>> InTriageAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireRead();
+        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only those who triage see what's in triage.");
+        await using var db = await dbs.CreateAsync(ct);
+        var items = (await NewItemsMarkedAsync(db, await EntriesAsync(db, ct), ct)).Where(m => m.Product == id).Select(m => m.Item).ToList();
+        var cves = items.SelectMany(i => CvesOf(i.Cves)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var kev = cves.Count == 0 ? []
+            : (await db.CveRecords.AsNoTracking().Where(r => cves.Contains(r.CveId) && r.IsKev).Select(r => r.CveId).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return [.. items.OrderByDescending(i => i.FetchedAtUtc).Select(i => new StackTriageItem(i.Id, i.Title, CvesOf(i.Cves).Any(kev.Contains)))];
+    }
+
+    // An item's CVEs, as FeedItem.CveList reads them.
+    private static string[] CvesOf(string? cves) => (cves ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>A product by itself, or null when it's gone: no history is read (a new Outreach action about it).</summary>
+    public async Task<StackProduct?> FindAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.StackProducts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
     }
 
     public async Task<StackDetail?> GetAsync(Guid id, CancellationToken ct = default)
@@ -190,38 +426,36 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return details;
     }
 
-    // What every product's page reads alike: the team edition's ceiling, the articles, those above it, and every action
-    // (only the columns shown: every action is read, to find those that name the product without an article).
-    private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate);
+    // What every product's page reads alike: the articles, and every action (only the columns shown: every action is read,
+    // to find those that name the product without an article).
+    private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate,
+        bool TeamExternal, string? TicketRef, string? TicketUrl);
 
-    private sealed record DetailFacts(TlpLevel Ceiling, List<ArticleFact> Articles, HashSet<Guid> Above, List<ActionFact> Actions);
+    private sealed record DetailFacts(List<ArticleFact> Articles, List<ActionFact> Actions);
 
     private async Task<DetailFacts> DetailFactsAsync(IAppDbContext db, CancellationToken ct)
     {
-        // The page is the team edition's readers': an article above its ceiling isn't named, as the brief leaves it out.
-        var ceiling = (await editions.GetAsync(ct)).Team;
         var articles = await ArticlesAsync(db, ct);
-        var aboveIds = (await db.Articles.AsNoTracking().Where(a => a.Tlp > ceiling).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
         var actions = await db.Actions.AsNoTracking()
-            .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate))
+            .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate,
+                a.Team!.IsExternal, a.TicketRef, a.TicketUrl))
             .ToListAsync(ct);
-        return new DetailFacts(ceiling, articles, aboveIds, actions);
+        return new DetailFacts(articles, actions);
     }
 
+    // Its articles and its actions, all named whatever their TLP: the page is the team edition's readers', who read every
+    // article and action in the app.
     private static async Task<StackDetail> DetailAsync(IAppDbContext db, StackProduct p, DetailFacts facts, CancellationToken ct)
     {
-        var (ceiling, aboveIds) = (facts.Ceiling, facts.Above);
         var e = Entry(p);
         var history = await HistoryAsync(db, p, facts.Articles, ct);
-        var ids = history.Select(h => h.Article.Id).ToList();
+        var ids = history.Select(h => h.Article.Id).ToHashSet();
         var actions = facts.Actions
             .Where(a => (a.ArticleId is { } aid && ids.Contains(aid)) || Names(e, Words(a.Title, null)))
-            .ToList();
-        var shownActions = actions.Where(a => a.ArticleId is not { } aid || !aboveIds.Contains(aid))
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
-            .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
-        var articles = history.Where(h => h.Tlp <= ceiling).Select(h => h.Article).ToList();
-        return new StackDetail(p, p.Team?.Name, articles, shownActions, ceiling, history.Count - articles.Count, actions.Count - shownActions.Count);
+            .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate,
+                a.TeamExternal, a.TicketRef, a.TicketUrl)).ToList();
+        return new StackDetail(p, p.Team?.Name, [.. history.Select(h => h.Article)], actions);
     }
 
     /// <summary>How many other articles a present-mode card lists.</summary>
@@ -286,6 +520,42 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return articles.Where(a => tagged.Contains(a.Id) || Names(e, a.Words))
             .Select(a => (Article: new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)), a.Tlp))
             .OrderByDescending(h => h.Article.On).ToList();
+    }
+
+    /// <summary>
+    /// The products in use that any of <paramref name="articleIds"/> is about, found as a product's page finds its
+    /// articles: tagged with it, or naming it (in the title or the start of the bottom line). Each with how many of those
+    /// articles; most first, then by name. A retired product isn't run any more, so it's left out. An adversary's "We
+    /// run": profiles aren't linked to products, so this goes through the profile's articles.
+    /// </summary>
+    public async Task<IReadOnlyList<StackRun>> RunByArticlesAsync(IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
+    {
+        RequireRead();
+        if (articleIds.Count == 0) return [];
+        await using var db = await dbs.CreateAsync(ct);
+        var products = await InUseAsync(db, ct);
+        if (products.Count == 0) return [];
+        var ids = articleIds.Distinct().ToList();
+        // Each product's articles among them, as Our stack's list finds them.
+        var articles = await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id)).Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart) }).ToListAsync(ct);
+        var tags = await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct);
+        var mine = ArticlesByProduct(products, new StackNames(products.Select(Entry)), articles.Select(a => (a.Id, a.Title, a.Bluf)),
+            tags.Select(t => (t.ArticleId, t.ProductId)));
+        return products.Select(p => new StackRun(p, mine[p.Id].Count)).Where(r => r.Articles > 0)
+            .OrderByDescending(r => r.Articles).ThenByName(r => r.Product.Name).ToList();
+    }
+
+    // Each product's articles among those given: those naming it (in the title or the start of the bottom line, every
+    // article matched against every name in one pass), then those tagged with it.
+    private static Dictionary<Guid, HashSet<Guid>> ArticlesByProduct(IEnumerable<StackProduct> products, StackNames names,
+        IEnumerable<(Guid Id, string Title, string Bluf)> articles, IEnumerable<(Guid ArticleId, Guid ProductId)> tags)
+    {
+        var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
+        foreach (var a in articles)
+            foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
+        foreach (var (article, product) in tags)
+            if (mine.TryGetValue(product, out var ids)) ids.Add(article);
+        return mine;
     }
 
     /// <summary>An article's products, and those it names but isn't tagged with.</summary>
@@ -483,6 +753,25 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         try { await db.SaveChangesAsync(ct); }
         // Someone untagged it first.
         catch (DbUpdateConcurrencyException) { }
+    }
+
+    /// <summary>
+    /// Marks a product checked today (the organization's day), from the context rail: only its check date changes, audited
+    /// as any change to it is. <paramref name="editVersion"/> is the version the person was shown: a colleague's save made
+    /// since is refused, as the product page's Save refuses it.
+    /// </summary>
+    public async Task MarkCheckedAsync(Guid id, Guid editVersion, CancellationToken ct = default)
+    {
+        RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var p = await db.StackProducts.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That product no longer exists.");
+        if (p.EditVersion != editVersion) throw new StaleEditException(Stale(p));
+        // A retired product isn't in use: bring it back first (its page's Bring back), then check it.
+        if (p.IsRetired) throw new ArgumentException($"{p.Name} is retired. Bring it back before marking it checked.");
+        p.CheckedOn = clock.Today;
+        p.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(p)); }
     }
 
     private void RequireRead()

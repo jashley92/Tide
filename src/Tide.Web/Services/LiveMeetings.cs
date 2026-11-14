@@ -78,9 +78,21 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     private readonly Lock _gate = new();
     private readonly Dictionary<DateOnly, Meeting> _meetings = [];
 
-    public LiveMeetings(TimeProvider time)
+    // Circuits whose browser has gone for now, seated or not (SetConnected): a page open before the meeting started whose
+    // tab closed or browser died keeps its circuit for minutes, and mustn't be seated by the start in the meantime.
+    private readonly HashSet<string> _away = new(StringComparer.Ordinal);
+
+    // The days each circuit has a present page open for (Watch), counted per page: a circuit back from away is told only
+    // of those days' meetings.
+    private readonly Dictionary<(string Circuit, DateOnly Day), int> _watching = [];
+
+    // The organization's day, for the rule that a meeting isn't held before its brief's day (MeetingDay); none in tests
+    // that don't need it.
+    private readonly Tide.Application.Org.OrgClock? _clock;
+
+    public LiveMeetings(TimeProvider time, Tide.Application.Org.OrgClock? clock = null)
     {
-        _time = time;
+        (_time, _clock) = (time, clock);
         _sweeper = time.CreateTimer(_ => Sweep(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
@@ -104,6 +116,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.Any(m => m.BriefId == briefId);
     }
 
+    public IReadOnlyList<string> PresentersOf(Guid briefId)
+    {
+        lock (_gate) return _meetings.Values.FirstOrDefault(m => m.BriefId == briefId)?.Presenters.ToList() ?? [];
+    }
+
     /// <summary>
     /// The meetings <paramref name="userId"/> is in now: a seat of theirs whose connection is up. A seat whose page left, or
     /// whose meeting ended, is gone at once, so a Visitor's reads through it stop with it (MeetingAccess).
@@ -112,7 +129,42 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         lock (_gate)
             return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
-                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card)).ToList();
+                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card, m.PresenterId == userId)).ToList();
+    }
+
+    /// <summary>
+    /// A present page on the circuit <paramref name="circuitId"/> is open on <paramref name="day"/>, seated or not, until
+    /// the result is disposed (or the circuit is given up on): back from away, the circuit is told of that day's meeting
+    /// (<see cref="SetConnected"/>). Nothing outside a circuit.
+    /// </summary>
+    public IDisposable Watch(DateOnly day, string circuitId)
+    {
+        var key = (circuitId, day);
+        if (circuitId.Length > 0)
+            lock (_gate) _watching[key] = _watching.GetValueOrDefault(key) + 1;
+        return new Watcher(this, key);
+    }
+
+    private void Unwatch((string Circuit, DateOnly Day) key)
+    {
+        if (key.Circuit.Length == 0) return;
+        lock (_gate)
+        {
+            if (!_watching.TryGetValue(key, out var n)) return;   // the circuit was given up on meanwhile
+            if (n > 1) _watching[key] = n - 1;
+            else _watching.Remove(key);
+        }
+    }
+
+    // A page's watch: disposing it (once) ends it.
+    private sealed class Watcher(LiveMeetings owner, (string Circuit, DateOnly Day) key) : IDisposable
+    {
+        private int _done;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0) owner.Unwatch(key);
+        }
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
@@ -121,9 +173,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.OrderBy(m => m.StartedAtUtc).Select(View).ToList();
     }
 
-    /// <summary>Starts <paramref name="day"/>'s meeting with me presenting. Refused when it's already going.</summary>
+    /// <summary>Starts <paramref name="day"/>'s meeting with me presenting. Refused when it's already going, and before
+    /// the brief's day (<see cref="MeetingDay"/>): ending it would be refused, so it would stay live until then.</summary>
     public IMeetingSeat Start(DateOnly day, Guid briefId, string userId, string name, string circuitId, Guid origin, int slide)
     {
+        if (TooEarly(day, _time.GetUtcNow())) throw new ArgumentException(MeetingDay.TooEarly);
         Seat seat;
         lock (_gate)
         {
@@ -142,7 +196,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         Seat seat;
         lock (_gate)
         {
-            if (!_meetings.TryGetValue(day, out var m)) return null;
+            // A page whose browser has gone isn't there to sit: it joins if it comes back (SetConnected).
+            if (!_meetings.TryGetValue(day, out var m) || _away.Contains(circuitId)) return null;
             seat = Sit(m, userId, name, canPresent, circuitId, origin, slide);
         }
         Notify(day, origin);
@@ -275,22 +330,35 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         if (circuitId.Length == 0) return;
         List<Seat> gone;
-        lock (_gate) gone = _meetings.Values.SelectMany(m => m.Seats.Values).Where(s => s.CircuitId == circuitId).ToList();
+        lock (_gate)
+        {
+            _away.Remove(circuitId);   // given up on: it won't be back
+            foreach (var key in _watching.Keys.Where(k => k.Circuit == circuitId).ToList()) _watching.Remove(key);
+            gone = _meetings.Values.SelectMany(m => m.Seats.Values).Where(s => s.CircuitId == circuitId).ToList();
+        }
         foreach (var s in gone) s.Dispose();
     }
 
     /// <summary>
     /// A circuit's connection dropped (a closed lid, lost Wi-Fi) or came back. While it's down its seats are away: not
     /// shown, not presenting, so a presenter's drop starts the grace period at once rather than when the circuit is given
-    /// up on, minutes later.
+    /// up on, minutes later. Told to every page, the circuit's own included: back, it may have missed what changed while
+    /// it was away (someone took over from it), so it reads the meeting again. A circuit that went with no seat (a page
+    /// open before the meeting started) is kept as away too, so the start doesn't seat it; back, each meeting it has no
+    /// seat in and a present page open for (<see cref="Watch"/>) is said, for that page to join. Any other page that comes
+    /// back changes no meeting, and isn't said.
     /// </summary>
     public void SetConnected(string circuitId, bool connected)
     {
         if (circuitId.Length == 0) return;
-        var changed = new List<(DateOnly, Guid)>();
+        var changed = new List<DateOnly>();
         lock (_gate)
         {
             var now = _time.GetUtcNow();
+            if (!connected) _away.Add(circuitId);
+            else if (_away.Remove(circuitId))
+                changed.AddRange(_meetings.Values
+                    .Where(m => _watching.ContainsKey((circuitId, m.Day)) && m.Seats.Values.All(s => s.CircuitId != circuitId)).Select(m => m.Day));
             foreach (var m in _meetings.Values)
             {
                 var seats = m.Seats.Values.Where(s => s.CircuitId == circuitId && s.Down == connected).ToList();
@@ -298,15 +366,16 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 foreach (var s in seats) (s.Down, s.DownSinceUtc) = (!connected, connected ? null : now);
                 if (!connected && Here(m).All(s => s.UserId != seats[0].UserId)) m.Hands.Remove(seats[0].UserId);
                 Settle(m, seats[0].UserId, now);
-                changed.Add((m.Day, seats[0].Origin));
+                changed.Add(m.Day);
             }
         }
-        foreach (var (day, origin) in changed) Notify(day, origin);
+        foreach (var day in changed) Notify(day, Guid.Empty);
     }
 
     /// <summary>
     /// Says so when a presenter's grace period runs out (the others can take over), and drops meetings nobody has been in
-    /// for <see cref="Abandoned"/>. Runs every few seconds.
+    /// for <see cref="Abandoned"/>, and any whose brief's day hasn't come (the organization's time zone moved under it):
+    /// it couldn't be ended until then. Runs every few seconds.
     /// </summary>
     public void Sweep()
     {
@@ -316,7 +385,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             var now = _time.GetUtcNow();
             foreach (var m in _meetings.Values.ToList())
             {
-                if (!Here(m).Any() && m.EmptySinceUtc is { } empty && now - empty >= Abandoned)
+                if (TooEarly(m.Day, now) || !Here(m).Any() && m.EmptySinceUtc is { } empty && now - empty >= Abandoned)
                 {
                     _meetings.Remove(m.Day);
                     changed.Add(m.Day);
@@ -330,6 +399,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         }
         foreach (var day in changed) Notify(day, Guid.Empty);
     }
+
+    private bool TooEarly(DateOnly day, DateTimeOffset nowUtc) => _clock is not null && MeetingDay.Before(_clock, day, nowUtc);
 
     // One change by someone seated (the presenter, when it's theirs to make), under the lock; said if it changed anything.
     private bool Change(IMeetingSeat seat, Func<Meeting, Seat, bool> change) => Change(seat, presenter: false, change);
@@ -351,6 +422,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
         (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Card) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
+        if (!m.Presenters.Contains(to.Name)) m.Presenters.Add(to.Name);
         m.Scroll = 0;   // a new slide starts at its top
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
@@ -457,6 +529,12 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
 
     private void Notify(DateOnly day, Guid origin) => Together.Notify(Changed, new MeetingChange(day, origin));
 
+    /// <summary>How many circuits are away (for tests: one given up on isn't kept).</summary>
+    internal int AwayCount
+    {
+        get { lock (_gate) return _away.Count; }
+    }
+
     public void Dispose() => _sweeper.Dispose();
 
     private sealed class Meeting(DateOnly day, Guid briefId, string presenterId, string presenterName, DateTimeOffset startedAtUtc)
@@ -466,6 +544,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         public DateTimeOffset StartedAtUtc { get; } = startedAtUtc;
         public string PresenterId { get; set; } = presenterId;
         public string PresenterName { get; set; } = presenterName;
+
+        /// <summary>Everyone who has presented it, by name, in the order they took it.</summary>
+        public List<string> Presenters { get; } = [presenterName];
         public int Slide { get; set; }
         public string? SlideKey { get; set; }
         public int Summons { get; set; }

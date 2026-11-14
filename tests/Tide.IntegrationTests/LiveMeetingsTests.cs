@@ -159,6 +159,55 @@ public sealed class LiveMeetingsTests : IDisposable
     }
 
     [Fact]
+    public void ACircuitThatWentBeforeTheStart_TakesNoSeat_UntilItsBack_ThenTheMeetingIsToldSo()
+    {
+        using var watching = _meetings.Watch(Day, "c-xavier");   // its present page, open on the day
+        _meetings.SetConnected("c-xavier", false);   // a page open before the start, its browser gone
+        _meetings.SetConnected("c-gone", false);
+        _meetings.RemoveCircuit("c-gone");           // given up on: forgotten, not kept as away
+        Start();
+        _meetings.Join(Day, "xavier", "Xavier", false, "c-xavier", Guid.NewGuid(), 0).Should().BeNull("its browser isn't there");
+        View.People.Select(p => p.Name).Should().Equal("Pat");
+
+        var heard = new List<MeetingChange>();
+        _meetings.Changed += heard.Add;
+        _meetings.SetConnected("c-xavier", true);
+        heard.Should().ContainSingle("back, its page hears the meeting is on and joins it").Which.Day.Should().Be(Day);
+        _meetings.Join(Day, "xavier", "Xavier", false, "c-xavier", Guid.NewGuid(), 0).Should().NotBeNull();
+        View.People.Select(p => p.Name).Should().Equal("Pat", "Xavier");
+        _meetings.AwayCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ACircuitBack_TellsOnlyTheMeetingsItHasAPresentPageOpenFor()
+    {
+        var other = new DateOnly(2026, 9, 2);
+        using var watching = _meetings.Watch(Day, "c-day");
+        var gone = _meetings.Watch(Day, "c-closed");
+        gone.Dispose();   // its present page was closed, the circuit kept
+        foreach (var c in new[] { "c-elsewhere", "c-day", "c-other-day", "c-closed" }) _meetings.SetConnected(c, false);
+        using var otherDay = _meetings.Watch(other, "c-other-day");
+        Start();
+
+        var heard = new List<MeetingChange>();
+        _meetings.Changed += heard.Add;
+        _meetings.SetConnected("c-elsewhere", true);
+        _meetings.SetConnected("c-other-day", true);
+        _meetings.SetConnected("c-closed", true);
+        heard.Should().BeEmpty("none of them has a present page open on the day of a live meeting");
+
+        _meetings.SetConnected("c-day", true);
+        heard.Should().ContainSingle().Which.Day.Should().Be(Day);
+
+        // Given up on, its watches go with it.
+        _meetings.SetConnected("c-day", false);
+        _meetings.RemoveCircuit("c-day");
+        heard.Clear();
+        _meetings.SetConnected("c-day", true);
+        heard.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ADroppedConnection_IsAway_AndAPresenterWhoseDropsStartsTheGrace_UntilTheyreBack()
     {
         var pat = Start();

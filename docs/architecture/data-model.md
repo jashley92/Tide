@@ -55,7 +55,7 @@ snapshot is right.
 | **Times are UTC** | Every moment is a `DateTimeOffset` named `…AtUtc`. It's `datetimeoffset` on SQL Server. SQLite can't order or compare `DateTimeOffset`, so on SQLite `OnModelCreating` stores UTC ticks (`long`) and the offset is lost. Code writes UTC from `TimeProvider` or `DateTimeOffset.UtcNow`. |
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
-| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries`, `Sources` and `Teams`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
+| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries`, `Sources`, `Teams` and `Stories`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
 | **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`, `Playbooks`) or `IsActive = false` (`ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.DeleteAsync` (refused for one an action was started from) and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
 | **Kept for the record** | An article that was briefed or had an action raised from it can't be deleted (`ArticleService.DeleteAsync`). Only a draft on no brief can. A story with articles is closed, not deleted (`StoryService.DeleteAsync`). Files on actions and comments are "removed": the record is hidden but its bytes, hash and row stay (`IRemovableFile` in `src/Tide.Domain/Entities/Actions.cs`). Sends, corrections, audit rows and action events are never deleted. |
 | **Pruned** | Two kinds of rows are deleted on a schedule by `IntakeHostedService`'s daily prune. `FeedItems` older than `Intake:RetentionDays` (minimum 7) are deleted if they're still New, Dismissed or Duplicate (`IntakeService.PruneAsync`). `FeedItemTexts` older than `Intake:ReadingDays` (1 to 30) are deleted by `ReadingService.PruneAsync`. Their `TriageSplits` rows and kept text go with them by cascade. |
@@ -116,6 +116,7 @@ erDiagram
         uuid Id PK
         string Name
         int Status "StoryStatus"
+        uuid EditVersion "concurrency"
     }
     CveRecords {
         string CveId PK
@@ -563,6 +564,10 @@ erDiagram
         string Holder
         datetimeoffset ExpiresAtUtc
     }
+    JobProcesses {
+        string Holder PK
+        datetimeoffset LastSeenAtUtc
+    }
     JobRuns {
         uuid Id PK
         string Job
@@ -688,7 +693,7 @@ Written by `IntakeService`.
 | `SplitAtUtc` | datetimeoffset | no | |
 | `SplitBy`, `SplitByName` | nvarchar(256) | no | The person's id, and their name at the time. |
 
-### `Stories` (S, A)
+### `Stories` (S, A, V)
 
 A threat story followed across days: a campaign, a vulnerability, an actor's run of activity. Its timeline is the
 articles linked to it. Written by `StoryService`. A story with no articles can be deleted; one with articles is
@@ -700,6 +705,7 @@ closed instead.
 | `Name` | nvarchar(200) | no | |
 | `Summary` | nvarchar(4000) | yes | |
 | `Status` | int | no | `StoryStatus`. Indexed. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token (from `StoryEditVersion`): moved by each save of the story's form, so a form opened before a colleague's save is refused. Linking an article doesn't move it. |
 | stamps | | | **S** columns. |
 
 ### `CveRecords` (not audited)
@@ -873,14 +879,15 @@ An article's place on a brief. An article can be carried onto a later brief. Wri
 
 ### `MeetingAttendees` (A)
 
-Someone at a brief's meeting. The row is made when they join in TIDE, or when the presenter adds someone in the room
-by name (no `UserId`, no times). Written by `MeetingService`.
+Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting (or, with none live, whoever presents) adds someone
+who was there by name (no `UserId`, no times). Written by `MeetingService`.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `Id`, `BriefId` | uniqueidentifier | no | `BriefId` FK → `Briefs`, **cascade**. |
 | `UserId`, `Name` | nvarchar(256) | no | `UserId` is empty for someone added by name. `(BriefId, UserId, Name)` is **unique**. |
 | `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. |
+| `AddedById` | nvarchar(256) | yes | Who added them by name: they, or the presenter, can take the row off. Null for someone who joined, or added before it was kept. |
 
 ### `MeetingNotes` (A)
 
@@ -1429,7 +1436,7 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 
 ## Background jobs
 
-The background jobs' own bookkeeping. Neither table is audited, holds anything a person typed, or links to another
+The background jobs' own bookkeeping. None of these tables is audited, holds anything a person typed, or links to another
 table. See [backend.md](backend.md#background-jobs).
 
 ### `JobLeases` (not audited)
@@ -1446,6 +1453,22 @@ by setting its expiry to now.
 | `Holder` | nvarchar(200) | no | The holding process: machine, process id and a value of its own, `WEB01/4312/9f0c…`. |
 | `AcquiredAtUtc` | datetimeoffset | no | When this holder took it; a renewal leaves it. |
 | `ExpiresAtUtc` | datetimeoffset | no | When it lapses unless renewed: 3 minutes after the last renewal. |
+
+A holder whose process is gone from the asking process's own machine (its process id isn't running there) is taken
+over at once, by one `ExecuteUpdateAsync` matched on that exact holder; a running process id is waited out.
+
+### `JobProcesses` (not audited)
+
+One row per TIDE process on the database: its heartbeat, written by `BackgroundJobLease` each time it checks the lease
+(every 30 seconds). A process that sees another's row raises the second-process alarm (TIDE runs as one process: see
+[ADR 0001](../decisions/0001-blazor-server-on-prem.md)). Rows not written for 3 minutes are deleted at the next
+heartbeat, and a process deletes its own when it shuts down cleanly.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Holder` | nvarchar(200) | no | Key. The process, as on the lease: `WEB01/4312/9f0c…`. |
+| `StartedAtUtc` | datetimeoffset | no | Its first heartbeat. |
+| `LastSeenAtUtc` | datetimeoffset | no | Its latest heartbeat. Indexed: the lapsed ones are deleted by it. |
 
 ### `JobRuns` (not audited)
 

@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 using Tide.IntegrationTests.Audit;
 using Tide.Web.Security;
 using Tide.Web.Services;
@@ -127,7 +128,7 @@ public class ToastServiceTests
     }
 }
 
-public class UserFacingErrorTests
+public partial class UserFacingErrorTests
 {
     [Fact]
     public void For_ALostSaveRace_SaysSomeoneElseChangedIt_NotSomethingWentWrong()
@@ -146,7 +147,7 @@ public class UserFacingErrorTests
         string message;
         using (AmbientUser.Begin(null, accessLog: null, errorLog: errors)) message = UserFacingError.For(boom, operation: "the send button");
 
-        var reference = System.Text.RegularExpressions.Regex.Match(message, @"\(reference ([0-9A-F]{8})\)").Groups[1].Value;
+        var reference = Reference().Match(message).Groups[1].Value;
         reference.Should().NotBeEmpty("the person is given a reference to quote");
         message.Should().StartWith("Something went wrong.").And.NotContain("relay");
         errors.Entries.Should().ContainSingle().Which.Should().Match<(LogLevel Level, Exception? Exception, string Message)>(e =>
@@ -195,4 +196,7 @@ public class UserFacingErrorTests
             Entries.Add((logLevel, exception, formatter(state, exception)));
         }
     }
+
+    [GeneratedRegex(@"\(reference ([0-9A-F]{8})\)")]
+    private static partial Regex Reference();
 }

@@ -11,7 +11,7 @@ public class BriefProgressTests
 {
     private static Article Ready(string title, TlpLevel tlp = TlpLevel.Clear)
     {
-        var a = new Article { Title = title, Tlp = tlp, Bluf = "x", Classification = Classification.Informational };
+        var a = new Article { Title = title, Tlp = tlp, Bluf = "x", Classification = Classification.Informational, Status = ArticleStatus.Ready };
         a.Bullets.Add(new ArticleBullet { Text = "a bullet", Tlp = tlp });
         return a;
     }
@@ -58,6 +58,19 @@ public class BriefProgressTests
         Step(ready, BriefStepKind.Triage).Should().Be((StepState.Todo, "Sorting the feed"), "someone who doesn't triage gets no count");
         Step(ready, BriefStepKind.Order).Should().Be((StepState.Attention, "Marked ready · 1 number missing"));
         Step(ready, BriefStepKind.Present).State.Should().Be(StepState.Current);
+    }
+
+    [Fact]
+    public void ADraftThatPassesItsChecks_IsntCountedReady()
+    {
+        var draft = Ready("c");
+        draft.Status = ArticleStatus.Draft;
+        Step(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b"), draft), 0, 0, "9:00 AM"), BriefStepKind.Write)
+            .Should().Be((StepState.Current, "2 of 3 ready"));
+        Step(BriefSteps.For(BriefWith(BriefStatus.Ready, Ready("a"), Ready("b"), draft), 0, 0, "9:00 AM"), BriefStepKind.Write)
+            .Should().Be((StepState.Attention, "2 of 3 ready"), "marked ready with a draft in it");
+        BriefSteps.Written(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b"), draft).Items).Should().Be(("2 of 3 ready", false),
+            "the running order's foot says what the strip says");
     }
 
     [Fact]
@@ -111,6 +124,43 @@ public class BriefProgressTests
     }
 
     [Fact]
+    public void OneEditionOfTwoSent_IsPartlySent_UntilTheOtherGoesOrHasNothingInIt()
+    {
+        var brief = BriefWith(BriefStatus.Sent, Ready("a"));
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2)]).Should().Be(Edition.Public);
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Team, SendStatus.Sent, 4)]).Should().Be(Edition.Public, "the same edition twice is still one");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Failed, 4)])
+            .Should().Be(Edition.Public, "a failed send of the other edition didn't go");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3, test: true)])
+            .Should().Be(Edition.Public, "a test copy isn't the edition going out");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3)]).Should().BeNull("both went");
+        BriefSteps.PartlySent([Sent(Edition.Team, SendStatus.Sent, 2)], [Edition.Public]).Should().BeNull("the other edition has nothing to send");
+        BriefSteps.PartlySent([]).Should().BeNull("nothing went");
+        BriefSteps.PartlySent(null).Should().BeNull("the log isn't known");
+
+        // The strip's Send step says the same words.
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2)]).Detail.Should().Be(BriefSteps.PartlySentLabel);
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Failed, 4)])
+            .Should().Match<BriefStep>(st => st.Detail == "Last send failed" && st.PartlySent, "the step still knows one edition went");
+        BriefSteps.Send(brief, [Sent(Edition.Team, SendStatus.Sent, 2), Sent(Edition.Public, SendStatus.Sent, 3)]).PartlySent.Should().BeFalse();
+        BriefSteps.PartlySentLabel.Should().Be("1 of 2 sent");
+    }
+
+    [Fact]
+    public void APartlySentBrief_IsLabelled1Of2Sent_AndItsNextStepIsStillSend()
+    {
+        // The brief is Sent once one edition goes, but the header says "Sent" only once both have.
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, false, partlySent: true).Should().Be("1 of 2 sent");
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, true, partlySent: true)
+            .Should().Be("1 of 2 sent", "the SharePoint copy waits for the brief to go out, which it hasn't wholly");
+        BriefSteps.StatusLabel(BriefStatus.Sent, false, false, false).Should().Be("Sent");
+
+        BriefSteps.Next(BriefStatus.Sent, 1, partlySent: true).Should().Be(BriefNext.Send);
+        BriefSteps.Next(BriefStatus.Sent, 1, sharePointDue: true, partlySent: true).Should().Be(BriefNext.Send);
+        BriefSteps.Next(BriefStatus.Sent, 1).Should().Be(BriefNext.ViewAsSent);
+    }
+
+    [Fact]
     public void AGapNoticedAfterMarkingReady_NeedsAttention()
     {
         Step(BriefSteps.For(BriefWith(BriefStatus.Ready, NoBluf("b")), 0, 0, "9:00 AM"), BriefStepKind.Write)
@@ -137,7 +187,6 @@ public class BriefProgressTests
         var company = EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green, hasNumbers: true);
         company.Select(r => (r.Title, r.Fit, r.Why)).Should().Equal(
             ("Title slide line", EditionFit.LeftOut, "The line is TLP:AMBER"),
-            ("Today's numbers", EditionFit.LeftOut, "Never in this edition"),
             ("open", EditionFit.Included, null),
             ("mixed", EditionFit.Part, "1 part above TLP:GREEN left out"),
             ("amber", EditionFit.LeftOut, "The article is TLP:AMBER"));
@@ -207,6 +256,165 @@ public class BriefProgressTests
             (EditionFit.Part, null));
         EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict).Should().OnlyContain(r => r.Warning == null,
             "the team edition is meant to carry it");
+    }
+
+    private static readonly DateTimeOffset KeptAt = new(2026, 11, 11, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void KeepingWhyItMatters_AnswersTheWarning_UntilItsTextOrMarkingChanges()
+    {
+        Article Kept()
+        {
+            var a = Threat();
+            a.KeepWhyItMatters("u", "Robin", KeptAt).Should().Be(TlpLevel.Clear, "it is kept at the marking it counts as");
+            return a;
+        }
+
+        ArticleChecks.For(Kept(), TlpLevel.Green).Should().BeEmpty("kept: the warning is answered");
+        (Kept().WhyItMattersKeptTlp, Kept().WhyItMattersKeptByName, Kept().WhyItMattersKeptAtUtc).Should().Be((TlpLevel.Clear, "Robin", KeptAt));
+
+        var text = Kept();
+        text.WhyItMatters += " And a third.";
+        ArticleChecks.WhyReachesCompany(text, TlpLevel.Green).Should().NotBeNull("the text changed since it was kept");
+
+        var marking = Kept();
+        marking.WhyItMattersTlp = TlpLevel.Green;
+        ArticleChecks.WhyReachesCompany(marking, TlpLevel.Green).Should().NotBeNull("its marking changed since it was kept");
+
+        var article = Kept();
+        article.Tlp = TlpLevel.Green;
+        ArticleChecks.WhyReachesCompany(article, TlpLevel.Green).Should().NotBeNull("the article's marking raised what it counts as");
+
+        var back = Kept();
+        back.WhyItMatters += "x";
+        back.WhyItMatters = back.WhyItMatters[..^1];
+        ArticleChecks.WhyReachesCompany(back, TlpLevel.Green).Should().BeNull("the same text and marking again are what was kept");
+
+        var forgotten = Kept();
+        forgotten.ForgetLapsedKeep();
+        forgotten.WhyItMattersKeptHash.Should().NotBeNull("a keep that still holds isn't forgotten");
+        text.ForgetLapsedKeep();
+        (text.WhyItMattersKeptTlp, text.WhyItMattersKeptHash, text.WhyItMattersKeptById, text.WhyItMattersKeptByName, text.WhyItMattersKeptAtUtc)
+            .Should().Be(((TlpLevel?)null, (string?)null, (string?)null, (string?)null, (DateTimeOffset?)null));
+    }
+
+    [Fact]
+    public void KeepingWhyItMatters_ChangesNothingAnEditionCarries()
+    {
+        static Brief Day() => BriefWith(BriefStatus.Draft, Threat(), Threat(TlpLevel.Amber), Ready("open"));
+        var before = Day();
+        var after = Day();
+        foreach (var item in after.Items) item.Article!.KeepWhyItMatters("u", "Robin", KeptAt);
+        for (var i = 0; i < after.Items.Count; i++) after.Items[i].ArticleId = after.Items[i].Article!.Id = before.Items[i].Article!.Id;
+
+        foreach (var (edition, ceiling) in new[] { (Edition.Public, TlpLevel.Green), (Edition.Team, TlpLevel.AmberStrict) })
+        {
+            string Cut(Brief b) => string.Join(" | ", BriefEditions.Build(b, edition, ceiling).Articles.Select(x =>
+                $"{x.Article.Title} {x.ShowWhy} {x.WithheldParts} {x.Marking} {x.Bullets.Count} {x.Screenshots.Count}"));
+            Cut(after).Should().Be(Cut(before), "keeping it changes no edition's contents");
+            EditionChecks.Rows(after, edition, ceiling).Select(r => (r.Title, r.Fit, r.Why))
+                .Should().Equal(EditionChecks.Rows(before, edition, ceiling).Select(r => (r.Title, r.Fit, r.Why)));
+        }
+        BriefSteps.NothingToSend(after, TlpLevel.AmberStrict, TlpLevel.Green).Should().Equal(BriefSteps.NothingToSend(before, TlpLevel.AmberStrict, TlpLevel.Green));
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Kept(TlpLevel.Amber)), TlpLevel.AmberStrict, TlpLevel.Green)
+            .Should().Equal([Edition.Public], "an article above the ceiling stays out, kept or not");
+        EditionChecks.Rows(before, Edition.Public, TlpLevel.Green)[0].Warning.Should().NotBeNull();
+        EditionChecks.Rows(after, Edition.Public, TlpLevel.Green)[0].Warning.Should().BeNull("the one warning it answers");
+
+        static Article Kept(TlpLevel tlp)
+        {
+            var a = Threat(tlp);
+            a.KeepWhyItMatters("u", "Robin", KeptAt);
+            return a;
+        }
+    }
+
+    [Fact]
+    public void TheTriageStep_SaysHowManyNewItemsAreOnKev()
+    {
+        var brief = BriefWith(BriefStatus.Draft, Ready("a"));
+        // The KEV count is a flag of its own beside the detail, not more words in it.
+        var triage = BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 2).Single(s => s.Kind == BriefStepKind.Triage);
+        (triage.State, triage.Detail, triage.Kev).Should().Be((StepState.Attention, "4 new in the feed", 2));
+        Step(BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Attention, "4 new in the feed"));
+        Step(BriefSteps.For(brief, 0, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Done, "Feed clear"));
+        Step(BriefSteps.For(brief, null, 0, "9:00 AM", newOnKev: 3), BriefStepKind.Triage).Detail.Should().Be("Sorting the feed", "someone who doesn't triage gets no count");
+    }
+
+    [Fact]
+    public void EditionCheck_ListsOnlyTheExceptions_AndSaysWhenEveryArticleGoesOutWhole()
+    {
+        var mixed = Ready("mixed");
+        mixed.Bullets.Add(new ArticleBullet { Text = "isac only", Tlp = TlpLevel.Amber, SortOrder = 1 });
+        var brief = BriefWith(BriefStatus.Draft, Ready("open"), mixed, Ready("amber", TlpLevel.Amber), Threat());
+        brief.Intro = "A quiet day.";
+
+        var team = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true);
+        EditionChecks.Exceptions(team).Should().BeEmpty("the title slide line, the numbers and all four articles go out whole");
+        EditionChecks.Whole(team).Should().Be("All 4 articles go out whole.");
+
+        var company = EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green, hasNumbers: true);
+        EditionChecks.Exceptions(company).Select(r => (r.Title, r.Fit)).Should().Equal(
+            ("mixed", EditionFit.Part), ("amber", EditionFit.LeftOut), ("threat", EditionFit.Included));
+        EditionChecks.Exceptions(company)[2].Warning.Should().NotBeNull("an article that goes out whole with a warning is still listed");
+        EditionChecks.Whole(company).Should().BeNull();
+        company.Should().HaveCount(5, "every article still has its row, for the counts")
+            .And.NotContain(r => r.Title == "Today's numbers", "the numbers never go to the company: said once under the check, not a row every day");
+
+        // Numbers still to enter, or a title slide line above the ceiling, are exceptions.
+        var late = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 2);
+        EditionChecks.Exceptions(late).Should().ContainSingle().Which.Title.Should().Be("Today's numbers");
+        EditionChecks.Whole(late).Should().Be("All 4 articles go out whole, but not everything else:",
+            "the line leads into what is listed under it, and doesn't say everything is whole above an exception");
+        var one = EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("only")), Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 1);
+        EditionChecks.Whole(one).Should().Be("The article goes out whole, but not everything else:");
+        brief.IntroTlp = TlpLevel.Amber;
+        EditionChecks.Exceptions(EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green))[0].Title.Should().Be("Title slide line");
+
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("only")), Edition.Team, TlpLevel.AmberStrict)).Should().Be("The article goes out whole.");
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b")), Edition.Team, TlpLevel.AmberStrict)).Should().Be("Both articles go out whole.");
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft), Edition.Team, TlpLevel.AmberStrict, hasNumbers: true)).Should().BeNull("there are no articles to speak of");
+    }
+
+    [Fact]
+    public void TheStepABriefIsOn_IsTheCurrentOne_ThenSendOnceNoneIs()
+    {
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a"), NoBluf("b")), 4, 2, "10:30 AM")).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 2 && on.Step.Kind == BriefStepKind.Write);
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a")), 0, 0, "10:30 AM")).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 3 && on.Step.Label == "Order");
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Ready, Ready("a"), NoBluf("b")), 0, 0, "10:30 AM")).Number.Should().Be(4, "a gap left behind doesn't hold the brief back");
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Presented, Ready("a")), 0, 0, "10:30 AM")).Number.Should().Be(5);
+
+        var sent = BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Sent, Ready("a")), 0, 0, "10:30 AM"));
+        sent.Should().Be((5, new BriefStep(BriefStepKind.Send, "Send", "Sent", StepState.Done)), "with nothing left to do, it's on the last step, done");
+        var failed = new BriefSend { Edition = Edition.Team, Status = SendStatus.Failed, SentAtUtc = DateTimeOffset.UtcNow };
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Presented, Ready("a")), 0, 0, "10:30 AM", [failed])).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 5 && on.Step.State == StepState.Attention);
+    }
+
+    [Theory]
+    [InlineData(BriefStatus.Draft)]
+    [InlineData(BriefStatus.Ready)]
+    [InlineData(BriefStatus.Presented)]
+    [InlineData(BriefStatus.Sent)]
+    public void TheStepABriefIsOn_IsTheSame_WithoutTheFeedsCountAndTheDaysNumbers(BriefStatus status)
+    {
+        // The top bar's chip reads the steps without them, and must name the step Today's strip marks.
+        foreach (var brief in new[] { BriefWith(status), BriefWith(status, Ready("a")), BriefWith(status, Ready("a"), NoBluf("b")) })
+        {
+            var asToday = BriefSteps.On(BriefSteps.For(brief, 7, 3, "10:30 AM", []));
+            var asTheChip = BriefSteps.On(BriefSteps.For(brief, null, 0, "10:30 AM", []));
+            (asTheChip.Number, asTheChip.Step.Kind).Should().Be((asToday.Number, asToday.Step.Kind));
+        }
+    }
+
+    [Fact]
+    public void AnEditionEveryArticleIsAbove_HasNothingToSend()
+    {
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft), TlpLevel.AmberStrict, TlpLevel.Green).Should().BeEmpty("no articles yet");
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Ready("a")), TlpLevel.AmberStrict, TlpLevel.Green).Should().BeEmpty();
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Ready("a", TlpLevel.Amber)), TlpLevel.AmberStrict, TlpLevel.Green).Should().Equal(Edition.Public);
     }
 
     [Fact]

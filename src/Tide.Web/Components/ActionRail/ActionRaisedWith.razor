@@ -1,0 +1,41 @@
+@* "Also raised from it": the other actions raised from the article an action came from (ActionDetail.RaisedWith), open
+   first, each as its number, its title over its team and due date, and its status at the right. The first few; the
+   article's Actions tab has them all, linked for someone who may open the article. *@
+@inject ActionService ActionSvc
+@inject ICurrentUser CurrentUser
+
+@if (Rows.Count > 0)
+{
+    <section class="tide-card" aria-labelledby="rail-raised-h">
+        <h2 id="rail-raised-h">Also raised from it <span class="tide-count tide-muted fw-normal">(@Rows.Count)</span></h2>
+        <ul class="tide-rail-list">
+            @foreach (var r in Rows.Take(Shown))
+            {
+                <li class="tide-rail-raised" @key="r.Id">
+                    <span class="tide-action-num">@Ui.ActionLabel(r.Number)</span>
+                    <span>
+                        <span class="tide-rail-list-title"><ActionRef Number="r.Number" Title="@r.Title" ShowNumber="false" /></span>
+                        <span class="tide-rail-list-meta">
+                            <span>@r.TeamName</span>
+                            @if (r.IsOpen) { <SlaBadge State="r.Sla(ActionSvc.Today, ActionSvc.Days)" Due="r.DueDate" Today="ActionSvc.Today" /> }
+                        </span>
+                    </span>
+                    <span class="tide-rail-raised-status"><ActionStatusBadge Status="r.Status" /></span>
+                </li>
+            }
+        </ul>
+        @if (Rows.Count > Shown && CurrentUser.Has(Permission.ReadTeamEdition))
+        {
+            <a class="small" href="@($"articles/{ArticleId}?side=actions")">All @Rows.Count on the article</a>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>How many are listed before "All N on the article".</summary>
+    public const int Shown = 6;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ActionRow> Rows { get; set; } = [];
+
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+}

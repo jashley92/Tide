@@ -9,7 +9,12 @@ using Tide.Domain.Enums;
 namespace Tide.Application.Search;
 
 /// <summary>An action still open on a related article: who has it, when it's due, and how many days late it is (0 when it isn't).</summary>
-public sealed record RelatedAction(int Number, string Title, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate, int DaysLate);
+public sealed record RelatedAction(int Number, string Title, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate, int DaysLate,
+    bool TeamExternal = false, string? TicketRef = null, string? TicketUrl = null)
+{
+    /// <summary>Who has it, in words (<see cref="HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public HolderLabel Holder(string nobody) => HolderLabel.Of(AssigneeName, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+}
 
 /// <summary>
 /// Another article about the same thing: why (the CVEs it shares, "Same link", "Same story"), the briefs it was on
@@ -115,7 +120,8 @@ public sealed class RelatedService(IAppDbContextFactory dbs, ICurrentUser user, 
                 .OrderByDescending(a => a.Number), ct))
             .GroupBy(a => a.ArticleId!.Value)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<RelatedAction>)g
-                .Select(a => new RelatedAction(a.Number, a.Title, a.Status, a.TeamName, a.AssigneeName, a.DueDate, ActionSla.DaysLate(a.DueDate, today)))
+                .Select(a => new RelatedAction(a.Number, a.Title, a.Status, a.TeamName, a.AssigneeName, a.DueDate, ActionSla.DaysLate(a.DueDate, today),
+                    a.TeamExternal, a.TicketRef, a.TicketUrl))
                 .ToList());
         var articles = rows.Select(r => new RelatedArticle(r.Id, r.Title, r.Status, r.AuthorName, r.CreatedAtUtc, dates.GetValueOrDefault(r.Id) ?? [],
             r.StoryId, r.StoryName, why[r.Id], open.GetValueOrDefault(r.Id) ?? [])).ToList();

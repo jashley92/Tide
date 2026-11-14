@@ -1,12 +1,17 @@
-@* The action page's tool drawer: one card in the side column whose tabs (TabBar with a panel; tabs.js) hold the existing
+@* The action page's tool drawer: one card (in the side column; in the wide one for a sweep or hunt) whose tabs (TabBar with a panel; tabs.js) hold the existing
    panels: the checklist, the parts' timeline on a parent with dated parts, hunt queries and outreach, where each belongs
    (ActionGuide.Tools). Which one shows comes from the address alone: the tool ?tool= asks for, else the kind's own
    (ActionGuide.Opening); a tab only asks the page to put its tool in the address. A panel is drawn the first time its
    tab shows and kept (hidden) after, so a half-written query or email survives a look at another tab. The panels' own
    card and heading fold into the drawer by CSS (.tide-drawer), so they're used as they are. *@
 
+@using Microsoft.AspNetCore.Components.Sections
 <section class="tide-card tide-drawer" aria-label="Tools">
-    <TabBar Items="Tabs" Label="Tools" Level="TabLevel.Page" Active="@ActionGuide.Key(Tool)" PanelId="tool-panel" OnSelect="SelectKey" Class="tide-drawer-tabs" />
+    @* The tab row: the tabs, and at its right the open tool's own controls (the hunt's language and window). *@
+    <div class="tide-drawer-head">
+        <TabBar Items="Tabs" Label="Tools" Level="TabLevel.Page" Active="@ActionGuide.Key(Tool)" PanelId="tool-panel" OnSelect="SelectKey" Class="tide-drawer-tabs" />
+        @if (Tool == ActionTool.Hunt) { <SectionOutlet SectionName="@HuntPanel.ToolsSection" /> }
+    </div>
     <div role="tabpanel" id="tool-panel" aria-labelledby="@TabBar.TabId("tool-panel", ActionGuide.Key(Tool))" data-tool="@ActionGuide.Key(Tool)">
         @if (_opened.Contains(ActionTool.Checklist))
         {
@@ -23,7 +28,7 @@
                         @if (A.Checklist.Count > 0) { <span class="tide-count tide-muted">@done of @A.Checklist.Count done</span> }
                         @if (A.PlaybookName is not null) { <Badge Class="ms-auto">@A.PlaybookName playbook</Badge> }
                     </div>
-                    <ActionChecklist @key="A.Id" ActionId="A.Id" Kind="A.Kind" CanWork="Detail.CanWork" Autofocus="_addingChecklist" OnChanged="Changed" />
+                    <ActionChecklist @key="A.Id" ActionId="A.Id" Kind="A.Kind" CanWork="Detail.CanWork" Open="A.IsOpen" Autofocus="_addingChecklist" OnChanged="Changed" />
                 }
                 else
                 {
@@ -40,7 +45,7 @@
         @if (_opened.Contains(ActionTool.Hunt))
         {
             <div hidden="@(Tool != ActionTool.Hunt)">
-                <HuntPanel @key="A.Id" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
+                <HuntPanel @key="A.Id" @ref="_hunt" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
             </div>
         }
         @if (_opened.Contains(ActionTool.Outreach))
@@ -74,6 +79,10 @@
     private readonly HashSet<ActionTool> _opened = [];
     private bool _addingChecklist;
     private OutreachPanel? _outreach;
+    private HuntPanel? _hunt;
+
+    /// <summary>The hunt panel, once its tab has shown.</summary>
+    internal HuntPanel? Hunt => _hunt;
 
     // What to do with the outreach panel once it's drawn (the page's Write the email or Record the reply).
     private Func<OutreachPanel, Task>? _onOutreach;

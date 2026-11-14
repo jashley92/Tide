@@ -435,7 +435,7 @@ committed save, so every save path through `SaveChangesAsync` is heard.
    (`Consequence`: refused where an edit version guards it) and a Reload button, as `ActionPage.razor`,
    `BriefPage.razor` and `OutreachTemplatesPage.razor` do. A form open in a list keeps what's typed and re-reads only
    the rest; when its row leaves the page (retired, deleted or renamed away by a colleague), the team libraries
-   (`LibraryPage.EditingOffPage`) show the form above the list instead, so it can still be saved or cancelled.
+   (`LibraryPage.EditingAway`) show the form above the list instead, so it can still be saved or cancelled.
 6. **Lists.** To mark rows that arrived, changed or left, use `LiveMarks` and `LiveDiff` (`src/Tide.Web/Services/LiveRows.cs`).
 7. **Tests:** a colleague's save reaches the page, and an open edit survives it (`LiveTests.cs`, `LivePagesTests.cs`,
    `LiveRowsTests.cs`).
@@ -453,7 +453,8 @@ keyed by user id and name). No migration is needed.
    (at most 200 characters), and a `Definition` in `Known` with the values (the default first) and the permission
    that opens its page. A notification choice is a `NotificationKind` instead (see the reminder recipe).
 2. **Read and save** through `UserPreferenceService.GetAsync` and `SetAsync`, as `ActionsBoard.razor` does for
-   `actions.layout`. A stored value that's no longer one of the values reads as the default.
+   `actions.layout` and `Search.razor` for `hunt.dialect`. A stored value that's no longer one of the values reads
+   as the default.
 3. It isn't audited (`AuditInterceptor.NotAudited`) and isn't in the configuration bundle: it's one person's.
 4. **Tests:** as `ActionsLayoutPreferenceTests.cs`: the default, a saved choice, a refused value, someone without the
    permission refused.

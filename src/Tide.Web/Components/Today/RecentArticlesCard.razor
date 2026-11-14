@@ -1,0 +1,29 @@
+@inject OrgClock Clock
+
+@* The latest articles presented, beside Today's brief, for someone who doesn't write it (the page reads them, every
+   marking, as Today's brief names them). *@
+
+<section class="tide-card" aria-labelledby="recent-h">
+    <h2 id="recent-h">Recently presented <span class="tide-count">(@Articles.Count)</span></h2>
+    @if (Articles.Count == 0)
+    {
+        <EmptyState Icon="bi-file-earmark-text" Title="Nothing presented yet." Compact="true" />
+    }
+    <ul class="list-unstyled mb-0">
+        @foreach (var r in Articles)
+        {
+            <li class="mb-2">
+                <a href="articles/@r.Id" class="fw-semibold text-decoration-none">@r.Title</a>
+                <div class="tide-run-meta">
+                    <ClassBadge Classification="r.Classification" Priority="r.Priority" />
+                    <StatusBadge Status="@r.Status.ToString()" />
+                    <span>@r.AuthorName &middot; @Ui.When(Clock, r.CreatedAtUtc)</span>
+                </div>
+            </li>
+        }
+    </ul>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ArticleSummary> Articles { get; set; } = default!;
+}

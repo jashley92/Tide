@@ -21,8 +21,15 @@ window.tidePresent = (function () {
         Home: 'first', End: 'last',
         f: 'fullscreen', F: 'fullscreen',
         d: 'discussed', D: 'discussed',
+        ']': 'rail',
         Escape: 'close'
     };
+    // The slide's keys heard while the presenter's rail is open over it (onKey).
+    const railKeys = { ArrowRight: 'next', ArrowLeft: 'prev', Home: 'first', End: 'last', d: 'discussed', D: 'discussed' };
+
+    // Whether the window has room to dock the presenter's rail beside the slide (.NET draws it there, or over the slide).
+    const railRoom = window.matchMedia('(min-width: 1500px)');
+    function onRailRoom() { if (ref) ref.invokeMethodAsync('OnRailRoom', railRoom.matches).catch(function () { }); }
 
     const FLOOR = 0.8;          // the smallest a slide is shrunk to fit, of its size
     const NEAR = 0.01;          // how far from its first guess the fit looks first
@@ -41,8 +48,10 @@ window.tidePresent = (function () {
 
     // What Space and Page Down page: the body of a panel open over the slide (an action, a product's card, the tag
     // panel), which is what's in view, rather than the slide hidden behind it; else the slide's body.
+    // An action beside the slide (a column of the page, not over it) leaves them to the slide, whose scroll the room shares.
     function pagedBody() {
-        const open = document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body');
+        const open = Array.from(document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body'))
+            .filter(function (body) { return getComputedStyle(body.parentElement).position === 'fixed'; });
         return open.length ? open[open.length - 1] : slideBody();
     }
 
@@ -254,7 +263,30 @@ window.tidePresent = (function () {
         el.scrollBy({ top: (forward ? 1 : -1) * el.clientHeight * PAGE, behavior: behavior(false) });
     }
 
+    // The button that last opened a card over the slide (data-card-opener: the indicators' chips and "+N more", the CVEs'
+    // "+N more"), so focus goes back to it when this page closes the card, rather than to the page. Found again by its
+    // value if it was drawn afresh meanwhile.
+    let opener = null, openerKey = null;
+
+    function backToOpener() {
+        const el = opener && opener.isConnected ? opener
+            : openerKey ? document.querySelector('[data-card-opener="' + CSS.escape(openerKey) + '"]') : null;
+        opener = openerKey = null;
+        if (el) el.focus({ preventScroll: true });
+    }
+
+    // .NET: the rail has stopped being drawn (closed with its own button, handed off, or taken over). Focus that was in
+    // it dropped to the page's body: it goes to Rail, or with no Rail any more (not presenting), the top bar's first button.
+    function refocus() {
+        const at = document.activeElement;
+        if (at && at !== document.body) return;
+        const to = document.getElementById('present-rail-toggle') || document.querySelector('.tide-present-top button:not([disabled])');
+        if (to) to.focus({ preventScroll: true });
+    }
+
     function onClick(e) {
+        const from = e.target.closest && e.target.closest('[data-card-opener]');
+        if (from) { opener = from; openerKey = from.getAttribute('data-card-opener'); }
         const pill = e.target.closest && e.target.closest('[data-slide-more]');
         if (!pill) return;
         e.preventDefault();
@@ -283,6 +315,23 @@ window.tidePresent = (function () {
     }
 
     function onKey(e) {
+        // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
+        // and Escape close it (not while typing). The slide's keys that press nothing in the rail still work, as its D
+        // hint says: D ticks the article, the arrows, Home and End move the slide under it, and focus stays in the rail.
+        // Enter, Space and Backspace are the rail's own; Tab is dialog.js's. A dialog open over it (a confirmation from
+        // Raise or Add) has the keys: its Escape cancels it alone.
+        const rail = ref && document.querySelector('#present-rail[aria-modal="true"]');
+        if (rail) {
+            if (document.querySelector('.tide-modal')) return;
+            if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+            const action = e.key === ']' || e.key === 'Escape' ? 'rail' : railKeys[e.key];
+            if (!action || action === 'discussed' && !window.tideShortcuts.on()) return;
+            e.preventDefault();
+            ref.invokeMethodAsync('OnPresentKey', action).then(function () {
+                if (action !== 'rail' && rail.isConnected && !rail.contains(document.activeElement)) rail.focus();
+            }).catch(function () { });
+            return;
+        }
         if (!ref || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || inMenu(e.target)) return;
         // A screenshot shown full size has the keys; the slide behind it doesn't move.
         if (document.querySelector('.tide-lightbox')) return;
@@ -326,6 +375,8 @@ window.tidePresent = (function () {
     return {
         start: function (dotnetRef) {
             ref = dotnetRef;
+            railRoom.addEventListener('change', onRailRoom);
+            onRailRoom();
             document.addEventListener('keydown', onKey);
             document.addEventListener('fullscreenchange', onFullscreenChange);
             document.addEventListener('scroll', onScroll, true);
@@ -341,6 +392,7 @@ window.tidePresent = (function () {
         },
         stop: function () {
             ref = null;
+            railRoom.removeEventListener('change', onRailRoom);
             document.removeEventListener('keydown', onKey);
             document.removeEventListener('fullscreenchange', onFullscreenChange);
             document.removeEventListener('scroll', onScroll, true);
@@ -356,12 +408,16 @@ window.tidePresent = (function () {
             shownContent = null;
             watched = [];
             cards = [];
+            opener = openerKey = null;
             frame = 0;
             sendTimer = 0;
             if (document.fullscreenElement) document.exitFullscreen().catch(function () { });
         },
         toggleFullscreen: toggleFullscreen,
         follow: follow,
+        // .NET: this page closed the card over the slide: focus back on the button that opened it.
+        backToOpener: backToOpener,
+        refocus: refocus,
         // .NET: this page has just become the presenter: where it is on the slide is now the room's.
         share: function () { if (ref) send(); }
     };

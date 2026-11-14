@@ -60,8 +60,8 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
         });
         var html = await r.Html();
         var columns = new[] { "Open", "InProgress", "Blocked", "Tracking", "Done", "Cancelled", "NotApplicable" }
-            .Select(s => html.IndexOf($"data-status=\"{s}\" aria-labelledby", StringComparison.Ordinal)).ToList();
-        columns.Should().OnlyContain(i => i >= 0).And.BeInAscendingOrder();
+            .Select(s => html.IndexOf($"data-status=\"{s}\"", StringComparison.Ordinal)).ToList();
+        columns.Should().OnlyContain(i => i >= 0).And.BeInAscendingOrder("a lane each for the working statuses, then a chip each for the closed ones");
     }
 
     [Fact]

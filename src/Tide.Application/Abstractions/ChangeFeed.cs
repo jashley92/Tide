@@ -6,7 +6,12 @@ namespace Tide.Application.Abstractions;
 /// One thing that changed: the topic ("article:{id}"), who changed it, and the circuit (or other scope) it came from, so
 /// a page can tell a colleague's save from its own.
 /// </summary>
-public sealed record Change(string Topic, string ActorId, string ActorName, Guid Origin);
+public sealed record Change(string Topic, string ActorId, string ActorName, Guid Origin)
+{
+    /// <summary>Triage: the items this change attached to an existing article. They read as promoted, as an item that
+    /// made an article does, so a colleague's inbox is told which were attached.</summary>
+    public IReadOnlyCollection<Guid> Attached { get; init; } = [];
+}
 
 /// <summary>
 /// Tells open pages that something they show changed elsewhere (a colleague's save, another analyst's triage, a poll that

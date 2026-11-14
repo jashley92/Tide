@@ -19,6 +19,7 @@
     <div class="tide-page-head">
         <div>
             <h1>Threat stories</h1>
+            <GuideLink />
         </div>
     </div>
     @if (_canWrite)
@@ -74,6 +75,7 @@ else
             @if (_editing)
             {
                 <div class="tide-card" data-submit-scope>
+                    <ChangedElsewhere By="@_changedBy" What="story" OnReload="ReloadTheirs" />
                     <div class="row g-2">
                         <div class="col-md-8"><label class="tide-field-label" for="st-name">Name</label><input id="st-name" class="form-control form-control-sm" maxlength="200" @bind="_name" /></div>
                         <div class="col-md-4">
@@ -168,6 +170,11 @@ else
     private string? _name, _summary;
     internal string? TypedName { get => _name; set => _name = value; }
     private StoryStatus _status;
+    // The story's edit version when Edit opened (its save is refused if a colleague's came since), and who saved it
+    // meanwhile, for the banner over the form.
+    private Guid _editVersion;
+    private string? _changedBy;
+    internal string? ChangedBy => _changedBy;
     private ConfirmDialog _confirm = default!;
     private Guid? _shownId;
 
@@ -195,7 +202,12 @@ else
         try
         {
             if (Id is null) _list = await StorySvc.ListAsync();
-            else await LoadStory();
+            else
+            {
+                await LoadStory();
+                // An open form keeps what's typed, and says who saved the story meanwhile: saving it now is refused.
+                if (_editing && _detail is { } now && now.Story.EditVersion != _editVersion) _changedBy = LiveChanges.Who(heard);
+            }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         Toasts.Show($"{LiveChanges.Who(heard)} updated {(Id is null ? "the stories" : "this story")}.");
@@ -213,7 +225,7 @@ else
         var listShown = _shownId == Id;   // the list was shown already (this is another of its pages)
         if (_shownId != Id)
         {
-            (_shownId, _editing, _name, _summary) = (Id, false, null, null);
+            (_shownId, _editing, _name, _summary, _changedBy) = (Id, false, null, null, null);
             _detail = null;
             _storyTopic = Id is { } shown ? ChangeFeed.Story(shown) : null;
             _articleTopics = new HashSet<string>();
@@ -254,6 +266,17 @@ else
         _name = _detail!.Story.Name;
         _summary = _detail.Story.Summary;
         _status = _detail.Story.Status;
+        _editVersion = _detail.Story.EditVersion;
+        _changedBy = null;
+    }
+
+    // The banner's Reload: their version in the form, and what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        await LoadStory();
+        if (_detail is null) _editing = false;
+        else StartEdit();
+        Toasts.Show("Reloaded. Your unsaved changes were dropped.");
     }
 
     internal Task Create() => Run(async () =>
@@ -266,8 +289,8 @@ else
 
     internal Task Save() => Run(async () =>
     {
-        await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status);
-        _editing = false;
+        await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status, _editVersion);
+        (_editing, _changedBy) = (false, null);
         await LoadStory();
     });
 

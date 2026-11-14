@@ -84,6 +84,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RotationOverride> RotationOverrides => Set<RotationOverride>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<JobLease> JobLeases => Set<JobLease>();
+    public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -179,6 +180,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Actors).HasMaxLength(500);
             e.Property(x => x.Sectors).HasMaxLength(500);
             Person(e, x => x.AuthorId, x => x.AuthorName);
+            e.Property(x => x.WhyItMattersKeptHash).HasMaxLength(64);
+            Person(e, x => x.WhyItMattersKeptById, x => x.WhyItMattersKeptByName);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasIndex(x => x.CreatedAtUtc);
             e.HasIndex(x => x.Status);
@@ -372,6 +375,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Person(e, x => x.AnalystId, x => x.AnalystName);
             e.Property(x => x.Intro).HasMaxLength(2000);
             e.Property(x => x.TeamNote).HasMaxLength(Tide.Application.Briefs.BriefService.TeamNoteMax);
+            e.Property(x => x.PresentedByName).HasMaxLength(Tide.Application.Briefs.BriefService.PresentedByMax);
             Person(e, x => x.DistributedById, x => x.DistributedByName);
             Person(e, x => x.NotSentById, x => x.NotSentByName);
             e.Property(x => x.NotSentReason).HasMaxLength(Tide.Application.Distribution.DistributionService.NotSentReasonMax);
@@ -393,6 +397,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.HasOne<Brief>().WithMany().HasForeignKey(x => x.BriefId).OnDelete(DeleteBehavior.Cascade);
             Person(e, x => x.UserId, x => x.Name);
+            e.Property(x => x.AddedById).HasMaxLength(256);
             e.HasIndex(x => new { x.BriefId, x.UserId, x.Name }).IsUnique();
         });
 
@@ -507,6 +512,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.HasIndex(x => x.Number).IsUnique();
             e.Property(x => x.Title).HasMaxLength(ActionItem.MaxTitle);
+            e.Property(x => x.RecommendationLine).HasMaxLength(ActionItem.MaxTitle);
             e.Property(x => x.Description).HasMaxLength(8000);
             Person(e, x => x.AssigneeId, x => x.AssigneeName);
             e.Property(x => x.OutcomeNote).HasMaxLength(2000);
@@ -715,6 +721,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Holder).HasMaxLength(JobLease.MaxHolder);
         });
 
+        // Each process's heartbeat: read and deleted by age.
+        b.Entity<JobProcess>(e =>
+        {
+            e.HasKey(x => x.Holder);
+            e.Property(x => x.Holder).HasMaxLength(JobLease.MaxHolder);
+            e.HasIndex(x => x.LastSeenAtUtc);
+        });
+
         // Diagnostics reads each job's latest runs; the prune deletes by age.
         b.Entity<JobRun>(e =>
         {
@@ -789,6 +803,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Summary).HasMaxLength(4000);
             e.HasIndex(x => x.Status);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
         });
 

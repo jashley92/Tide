@@ -14,6 +14,24 @@ public sealed class OrgOptions
 
     /// <summary>The name shown in the header and on slides ("Cyber Threat Intelligence").</summary>
     public string TeamName { get; set; } = "Cyber Threat Intelligence";
+
+    /// <summary>Whether an action opened in a meeting shows beside the slide, which narrows for it, rather than over it.
+    /// Off by default: it's switched on after a rehearsal in the meeting room.</summary>
+    public bool ActionBesideSlide { get; set; }
+
+    /// <summary>Business days an Open or In progress action may go without an update before the meeting's "Needs an
+    /// update" slide asks about it (1 to 30).</summary>
+    public int StaleOpenDays { get; set; } = Actions.StaleLimits.DefaultOpenDays;
+
+    /// <summary>Business days a Blocked action may go without an update before that slide asks about it (1 to 30).</summary>
+    public int StaleBlockedDays { get; set; } = Actions.StaleLimits.DefaultBlockedDays;
+
+    /// <summary>Days a page's "Show me around" link shows after a person's first sign-in, or after a release changed the
+    /// page (1 to 90; <see cref="Operations.GuideLinkService"/>).</summary>
+    public int GuideLinkDays { get; set; } = DefaultGuideLinkDays;
+
+    /// <summary>The least, default and most days for <see cref="GuideLinkDays"/>.</summary>
+    public const int MinGuideLinkDays = 1, DefaultGuideLinkDays = 5, MaxGuideLinkDays = 90;
 }
 
 /// <summary>
@@ -24,7 +42,8 @@ public sealed class OrgOptions
 /// </summary>
 public sealed class OrgClock : IDisposable
 {
-    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName);
+    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide, Actions.StaleLimits Stale,
+        int GuideLinkDays);
 
     private readonly TimeProvider _time;
     private readonly IDisposable? _listening;
@@ -47,15 +66,30 @@ public sealed class OrgClock : IDisposable
         _listening = options.OnChange(o =>
         {
             try { _now = Read(o); }
-            catch (InvalidOperationException) { /* keep the last good settings */ }
+            catch (InvalidOperationException) { return; /* keep the last good settings */ }
+            Changed?.Invoke();
         });
     }
+
+    /// <summary>The settings changed (one saved in Administration): what shows them now (a meeting's action beside the
+    /// slide or over it) is drawn again. Raised on the thread that saved them.</summary>
+    public event Action? Changed;
 
     public void Dispose() => _listening?.Dispose();
 
     public TimeZoneInfo Zone => _now.Zone;
     public TimeOnly MeetingTime => _now.MeetingTime;
     public string TeamName => _now.TeamName;
+
+    /// <summary>Whether a meeting's action opens beside the slide (<see cref="OrgOptions.ActionBesideSlide"/>).</summary>
+    public bool ActionBesideSlide => _now.ActionBesideSlide;
+
+    /// <summary>How long an open action may go without an update before the meeting asks about it
+    /// (<see cref="OrgOptions.StaleOpenDays"/>, <see cref="OrgOptions.StaleBlockedDays"/>).</summary>
+    public Actions.StaleLimits StaleLimits => _now.Stale;
+
+    /// <summary>Days a page's "Show me around" link shows (<see cref="OrgOptions.GuideLinkDays"/>).</summary>
+    public int GuideLinkDays => _now.GuideLinkDays;
 
     /// <summary>The working days, with the holidays as last loaded or saved.</summary>
     public WorkingDays Days => _days;
@@ -66,7 +100,12 @@ public sealed class OrgClock : IDisposable
     private static Snapshot Read(OrgOptions o) => new(
         FindZone(o.TimeZone),
         TimeOnly.TryParse(o.MeetingTime, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : new TimeOnly(10, 30),
-        string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim());
+        string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide,
+        new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)),
+        Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays));
+
+    // A server value out of range is held to it (a saved one can't be: the page checks it).
+    private static int StaleDays(int days) => Math.Clamp(days, Actions.StaleLimits.MinDays, Actions.StaleLimits.MaxDays);
 
     public DateTimeOffset Now => TimeZoneInfo.ConvertTime(_time.GetUtcNow(), Zone);
 
@@ -85,10 +124,13 @@ public sealed class OrgClock : IDisposable
     /// The first instant of a local <paramref name="day"/>: the day an instant falls on (<see cref="ToLocal"/>) is
     /// <paramref name="day"/> from here until the next day's start. A midnight a clock change skips starts at the change.
     /// </summary>
-    public DateTimeOffset StartOfDay(DateOnly day)
+    public DateTimeOffset StartOfDay(DateOnly day) => At(Zone, day, TimeOnly.MinValue);
+
+    /// <summary>The first instant <paramref name="day"/> shows <paramref name="time"/> in <paramref name="zone"/>: a time
+    /// the clocks skip that day is when they change, and one they show twice is its first.</summary>
+    public static DateTimeOffset At(TimeZoneInfo zone, DateOnly day, TimeOnly time)
     {
-        var zone = Zone;
-        var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var local = day.ToDateTime(time, DateTimeKind.Unspecified);
         while (zone.IsInvalidTime(local)) local = local.AddMinutes(1);
         var offsets = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local) : [zone.GetUtcOffset(local)];
         return offsets.Select(o => new DateTimeOffset(local, o)).Min();

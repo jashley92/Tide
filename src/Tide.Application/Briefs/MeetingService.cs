@@ -14,7 +14,7 @@ public sealed record MeetingRecord(IReadOnlyList<MeetingAttendee> Attendees, IRe
 }
 
 /// <summary>
-/// The record of a brief's meeting: attendance, as people join it in present mode or the presenter adds them, and the
+/// The record of a brief's meeting: attendance, as people join it in present mode or anyone in it adds them, and the
 /// notes each person takes. What's live (who's on which slide, raised hands) is the web app's and isn't kept.
 /// </summary>
 public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time, IMeetingsInProgress? meetings = null)
@@ -86,28 +86,62 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Adds someone who was there without joining in TIDE. Someone already listed by that name isn't added twice.</summary>
+    /// <summary>
+    /// Adds someone who was there without joining in TIDE, as mine to take off again (<see cref="CanAddAttendees"/>):
+    /// anyone seated in the brief's live meeting from the team edition, never a Visitor; or, with no meeting of it live,
+    /// whoever presents, correcting the record. Someone already listed by that name isn't added twice.
+    /// </summary>
     public async Task AddAttendeeAsync(Guid briefId, string name, CancellationToken ct = default)
     {
-        RequirePresent();
+        if (!CanAddAttendees(briefId)) throw new ForbiddenException("Only someone in the brief's live meeting, or with none live whoever presents, can add to who attended.");
         var clean = ArticleService.Clean(name, 256);
         if (clean.Length == 0) throw new ArgumentException("Enter a name.");
         await using var db = await dbs.CreateAsync(ct);
         await RequireBrief(db, briefId, ct);
         var names = await db.MeetingAttendees.Where(a => a.BriefId == briefId).Select(a => a.Name).ToListAsync(ct);
         if (names.Contains(clean, StringComparer.CurrentCultureIgnoreCase)) return;
-        db.MeetingAttendees.Add(new MeetingAttendee { BriefId = briefId, Name = clean });
+        db.MeetingAttendees.Add(new MeetingAttendee { BriefId = briefId, Name = clean, AddedById = user.UserId });
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Takes someone off who attended (<see cref="CanRemoveAttendee"/>). One already gone is left so, for someone
+    /// who could take anyone off; anyone else is refused as they would be for one still there.</summary>
     public async Task RemoveAttendeeAsync(Guid attendeeId, CancellationToken ct = default)
     {
-        RequirePresent();
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a) return;
+        const string refused = "Only the presenter can take someone off who attended, or whoever added a name, that name.";
+        if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a)
+        {
+            if (!MayAttend && !user.Has(Permission.PresentBriefs)) throw new ForbiddenException(refused);
+            return;
+        }
+        if (!CanRemoveAttendee(a)) throw new ForbiddenException(refused);
         db.MeetingAttendees.Remove(a);
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Whether I can add to who attended the brief's meeting: I'm seated in its live meeting, from the team
+    /// edition (the presenter is; a Visitor's seat isn't, as they don't read the team edition); or I correct its record
+    /// (<see cref="CorrectsRecord"/>). A rehearsal has no seat, and its page writes nothing.</summary>
+    public bool CanAddAttendees(Guid briefId) => SeatAt(briefId) is not null || CorrectsRecord(briefId);
+
+    /// <summary>Whether I can take <paramref name="row"/> off who attended: anyone, joined or added by name, while I
+    /// present the live meeting or correct the record (<see cref="CorrectsRecord"/>); following it, only a name I added.
+    /// A rehearsal has no seat, and its page writes nothing.</summary>
+    public bool CanRemoveAttendee(MeetingAttendee row) =>
+        CorrectsRecord(row.BriefId)
+        || SeatAt(row.BriefId) is { } seat && (seat.Presenting || row.UserId.Length == 0 && row.AddedById == user.UserId);
+
+    // Whoever presents, with no meeting of the brief live (getting ready, or after it): the record is theirs to correct,
+    // as it was before anyone following could add to it. While it's live, the meeting's own rules hold.
+    private bool CorrectsRecord(Guid briefId) => user.Has(Permission.PresentBriefs) && meetings?.IsLive(briefId) != true;
+
+    // On the team edition and able to join meetings: everyone but a Visitor (and a Reader, who joins none).
+    private bool MayAttend => user.Has(Permission.ReadTeamEdition) && user.Has(Permission.JoinMeetings);
+
+    // My seat in the brief's live meeting, if I may attend it from the team edition.
+    private SeatedMeeting? SeatAt(Guid briefId) =>
+        MayAttend ? MeetingAccess.SeatIn(user, meetings, briefId) : null;
 
     /// <summary>Adds my note, against <paramref name="articleId"/> (an article on the brief) or the meeting as a whole.</summary>
     public async Task<Guid> AddNoteAsync(Guid briefId, Guid? articleId, string text, CancellationToken ct = default)

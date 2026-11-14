@@ -55,8 +55,50 @@ lookup above the hits:
 
 | Query | The lookup shows |
 |---|---|
-| An IP, domain, URL, hash or email address (defanged or not) | every article carrying it (exact, case-insensitive, on the stored live value in its type family) and when it was briefed; indicators on the same host (`SearchText.HostOf`: subdomains, URLs and email addresses on the domain, a URL's domain); the actions raised from those articles with how their hunts went; a ready hunt query from `HuntQueryBuilder` |
-| A CVE | its `CveRecord` (CVSS, EPSS, KEV), how many articles are about it, and the actions raised from them |
+| An IP, domain, URL, hash or email address (defanged or not) | every article carrying it (exact, case-insensitive, on the stored live value in its type family) and when it was briefed; indicators on the same host (`SearchText.HostOf`: subdomains, URLs and email addresses on the domain, a URL's domain); the actions raised from those articles, or carrying the indicator themselves (`ActionIndicator`), with how their hunts went; the hunt query from `HuntQueryBuilder` |
+| A CVE | its `CveRecord` (CVSS, EPSS, KEV), the articles about it (newest first), and the actions raised from them |
+
+Both lookups open with one line (`LookupSummary`): how many articles the value is on, the last brief any of them
+was on, how many of the actions are open, and for an indicator how the hunts went. For someone who triages, a CVE's
+line also counts the new items in Triage's inbox that name it ("Not on any article yet · no action raised · 1 new in
+triage", linked to Triage). "Not seen before" is said only to someone who triages, and only when no article has the
+value, no action was raised and nothing new in Triage names it; anyone else reads "Not on any article yet", since
+Triage may have it. "Briefed" counts only a brief that was presented or sent
+(`Lookups.BriefsAsync`); an article on a brief that hasn't been reads "on today's brief, not presented yet" or "on
+the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". A CVE's line states no hunt
+result, because a hunt searches for indicators; the sweeps and hunts on its articles are named under it
+(`CveLookup.Sweeps`). The answer stays in the page: the first line, the articles (a table of the article, which
+value matched, when it was briefed and when it was written), *Actions raised* and *Seen with*. What you'd do with it is
+in the context rail, "Do something with it": the hunt query, who is sweeping for it, and the export. A word search has
+no rail. In detail:
+
+- **Who is sweeping** (`IndicatorLookup.Sweeping`, in the rail): the open IOC sweeps and threat hunts raised from an
+  article that carries the indicator, or carrying it themselves, each with its team, holder, status and hunt result,
+  and *Open A-n*; "Nobody has swept for it yet" when there are none. *Take it* shows only to someone who may work that
+  team's actions, and goes through `ActionService.TakeAsync(onlyIfNobodys: true)`, which checks permission and staleness
+  and records history.
+- **Seen with** (`SeenWith`): the other indicators, CVEs, techniques and stories on the articles that carry the value
+  (the newest 50 are read), the most shared first, at most 12 of each. Each is a link that looks that value up; a
+  story opens its page. It costs one query each for indicators, CVEs and techniques, whatever the number of articles.
+- **Each article once.** The page asks with `SearchPages.LookupOnce`, so the article hits leave out the articles the
+  lookup lists and count only the rest ("Also mentioned in"). Other callers (the Go to palette) get every hit.
+- **The hunt query** (in the rail, with XQL, KQL and Falcon) is built with the results, in memory
+  (`HuntQueryBuilder.BuildAsync`), in the person's
+  `hunt.dialect` preference (`UserPreferenceService`; the first dialect until they choose one on this page).
+  Building it writes no `HuntQuery`, no action event and no preference; only changing the language saves the
+  preference. Every value goes in as a quoted string literal (`QueryDialects.Quote`). When the dialect has no
+  template for the value's kind (`HuntQueryBuilder.SearchesNothing`), the page says the language can't search for
+  it and Copy is disabled. Copy puts the query on the clipboard as plain text with LF line breaks (`clipboard.js`).
+  *Include what it travels with* adds the indicators on the same articles (what *Seen with* lists). Long lines wrap on
+  screen; the copied text is exact.
+- **Export** (in the rail): STIX 2.1 or CSV of the lookup's own articles (those carrying the value, or about the CVE;
+  not those reached only through a related host), up to the TLP you choose. It's `ExportScope.Lookup` on the existing
+  `/exports/{scope}/{key}` endpoint, with its rules unchanged: team edition only, articles above the ceiling left out
+  whole, each STIX object marked with its article's TLP, and exports above GREEN audited (see
+  [indicator exports](#indicator-exports)).
+
+The lookup shows what the page shows: every TLP, to the team edition only (`ReadTeamEdition`), as the article pages
+do. Nobody below it gets the summary, "Seen with" or the query.
 
 ```mermaid
 sequenceDiagram
@@ -98,16 +140,20 @@ The indicators of an article, a day's brief (in running order) or a story downlo
 (`ExportIndicators.razor` on the article editor, the brief page and a story's page). The user picks the highest TLP to
 include.
 
-`GET /exports/{article|brief|story}/{key}?format=stix|csv&tlp=` (the key is the article's or story's id, or the
-brief's `yyyy-MM-dd`; `tlp` defaults to RED, every level):
+`GET /exports/{article|brief|story|lookup}/{key}?format=stix|csv&tlp=` (the key is the article's or story's id, the
+brief's `yyyy-MM-dd`, or a lookup's search as base64url; `tlp` is required, and the Export panel starts it at CLEAR;
+no `format` is STIX, and another than stix or csv is refused):
 
 1. `ExportService.GatherAsync` loads the articles with their indicators, CVEs and techniques and leaves out every article
    whose TLP is above the ceiling, whole, as the editions do.
 2. **STIX** (`Stix.Write`): a bundle with an `identity` for the team, a `report` per article (`report--{article id}`),
-   and the `indicator`, `vulnerability` and `attack-pattern` objects the reports point at. Those ids are UUIDv5s of what
-   the object is (`Stix.Uuid5`), so the same indicator has the same id in every export and a platform merges
-   re-imports. Each object carries the OASIS TLP 2.0 marking-definition id of its article; an object on several
-   articles takes the highest. An indicator kind STIX has no clean observable for (a host name, a process, a hash of no
+   and the `indicator`, `vulnerability` and `attack-pattern` objects the reports point at. Each object carries the
+   OASIS TLP 2.0 marking-definition id of its article; an object on several articles takes the highest. Those objects'
+   ids are UUIDv5s (`Stix.Uuid5`, in the STIX namespace) of `type|value|tlp`: the value is the indicator's STIX
+   pattern, the CVE id or the technique id, and the TLP is the object's marking in this export (`clear`, `green`,
+   `amber`, `amber-strict`, `red`). The same indicator at the same TLP has the same id in every export, so a platform
+   merges re-imports; at a different TLP it has a different id, so a platform never holds two versions of one object
+   that disagree about how it may be shared. An indicator kind STIX has no clean observable for (a host name, a process, a hash of no
    known length, "other") goes in the CSV only.
 3. **CSV** (`IndicatorCsv.Write`): a row per indicator per article: `type, value, defanged, note, tlp, article,
    article_url, source_url, written_utc, briefed, cves, techniques`, cells that a spreadsheet would read as a formula
@@ -156,6 +202,28 @@ Markdown kept internal, watched, retired, merged into).
   each technique is also coloured by whether a current, enabled rule is tagged with it;
 - the articles that name it but aren't tagged, for an analyst to check and tag (`LinkAsync`). Nothing is linked
   automatically.
+
+**The context rail.** On the list (`/adversaries`) a row is selected as on Our stack (a click, `J` and `K` or the
+arrows, `?row=`, `Enter` to open the profile; `DataTable.OnView` keeps the selection on what the table draws as it
+filters, sorts and pages). The rail is "About {name}": its badges (Watched, Retired or Merged, the MITRE id); *Open
+profile*, and *Watch* or *Stop watching* for analysts on a profile that isn't retired; kind, motivation and sectors;
+*Lately*, the three newest articles with their dates, then "+N more" and "N named but not tagged"; *Open actions*, up
+to three; *Top techniques*, up to five ("T1190 ×3"); and *We run*. On a profile's page the header's facts and buttons
+move to the rail: *Facts* (kind, MITRE id, motivation, sectors, "N briefs this quarter · last reported …", merged
+into), *Do* (Watch, the Navigator layer, Retire or Bring back), *To link* for analysts (the untagged articles that name
+it, and a link to the timeline where *Tag the N* is), *We run* and, for analysts once detection rules are imported,
+*Hunting* ("N of M techniques in its articles have an enabled detection rule tagged", linked to Coverage). The page
+keeps the timeline, the actions, the techniques and About it; beside the docked rail up to about 1760px it's one
+column.
+
+- **Same reads.** Both rails take their data from `AdversaryService.GetAsync`, the profile page's own query, so they list
+  the same articles and actions to the same people. The notes are AMBER and stay in About it; neither rail shows them.
+- **We run** is worked out from the profile's articles (`StackService.RunByArticlesAsync`): a product counts when one of
+  them is tagged with it or names it in its title or at the start of its bottom line, through `StackNames` as Our
+  stack's list matches. Retired products are left out. Profiles aren't linked to products, so it says only what the
+  articles say.
+- **No new save paths.** Watch and Retire call `SetWatchedAsync` and `SetRetiredAsync`, with the page's permission rules,
+  and are audited.
 
 **Changing profiles** (analysts, `WriteArticles`): save (a name no other live profile uses), add by name from the
 picker (`AddByNameAsync`), watch (triage marks items naming a watched profile), retire or bring back, and merge one into
@@ -225,6 +293,30 @@ retired). Analysts keep it; the team edition reads it.
 - **A product's page** (`GetAsync`) lists the articles tagged with it and the actions raised from them, but names only
   articles at or below the team edition's ceiling and counts the rest ("2 articles above TLP:AMBER"). Present mode's
   product card (`CardAsync`) follows the same rule. The list's counts name no titles, so they count every article.
+- **The list** (`OverviewAsync`) puts the products that need a look first, the most pressing at the top
+  (`StackService.MostPressingFirst`, by `StackRow.Urgency`: a CVE on KEV, any other CVE named or counted, new triage
+  items, then housekeeping; within those the worst CVSS score, then the more triage items, then the name). `StackRow.NeedsLook` is the one
+  definition, read by the order and by the page's "Needs a look" filter: the product is in use and has something in
+  "Right now", a check that is missing or more than `CheckOldAfterDays` (90) old, or no owning team. "Right now"
+  (`StackService.RightNow`) holds the CVEs on the product's articles from briefs of the last `RecentBriefDays` (7),
+  the worst first, and the number of new triage items that name it. It follows the ceiling too: a CVE seen only on an
+  article above it is counted and not named. The triage count is read only for someone with `WriteArticles`; for
+  anyone else it is absent and doesn't order the list. An item counts for the first product it names, as its "We run"
+  mark in Triage does.
+- **Cost of the list.** It runs a fixed number of queries whatever the number of products: every article's title
+  and the start of its bottom line are matched against all the names in one pass (`StackNames`, an index of the names
+  by first word), and the new triage items once with `StackService.Matcher`.
+  `StackListScaleTests` holds the query count. `ListAsync` (the API's read) is the same rows by name, without "Right now".
+- **The selected product and the context rail.** A row is selected (a click, `J` and `K` or the arrows, `?row=`,
+  `Enter` to open the product), and the rail, "About {product}", shows it once the selection settles, from the
+  product page's own read plus what's in triage for it (`InTriageAsync`): its versions, team, last check and contact;
+  *Edit*, *Start an outreach* and *Mark checked* for those with `WriteArticles`; *In triage now*; its articles (held to
+  the team edition's ceiling: those above it are counted, never named); its open actions; and its notes. *Mark
+  checked* (`StackService.MarkCheckedAsync`) refuses a stale edit version and is audited. *Start an outreach* opens a
+  new Outreach action with `?product=`, its title "Ask {contact} about {product}", or "Reach out about {product}" when
+  the product has no contact.
+- **Add a product** is a button that opens the form, which takes focus, gives it back on close, and closes once the
+  product is added.
 - **Outreach.** A product's contact is offered on an Outreach action's To line
   ([actions-and-hunting.md](actions-and-hunting.md#outreach)).
 - **Live.** The list and a product's page follow the `stack` topic; a product's edit form keeps what's typed in it and

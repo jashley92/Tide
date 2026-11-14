@@ -1,0 +1,20 @@
+@page "/hunts/saved"
+@page "/outreach/templates"
+@page "/playbooks"
+@page "/board-rules"
+@page "/admin/playbooks"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@inject NavigationManager Nav
+
+@* Saved queries, Outreach templates, Playbooks and Board rules were pages of their own (Playbooks an administrator's
+   page before that); they're tabs of Team › Library now. A bookmark or an old link goes to its tab, keeping its page
+   (a redirect when the page is first loaded, a navigation inside the app). Whoever couldn't open the page is refused
+   here as before. *@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var address = new Uri(Nav.Uri);
+        Nav.NavigateTo(LibraryTabs.Moved(Nav.ToBaseRelativePath(address.GetLeftPart(UriPartial.Path))) + address.Query, replace: true);
+    }
+}

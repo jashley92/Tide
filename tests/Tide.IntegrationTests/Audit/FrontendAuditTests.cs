@@ -2,6 +2,7 @@ using System.Reflection;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Briefs;
@@ -19,7 +20,7 @@ namespace Tide.IntegrationTests.Audit;
 /// Frontend audit: pages that stay open from one record to the next (the router keeps the component and hands it new
 /// parameters) start each record afresh, a confirmation acts on what it counted, and a step can't run twice at once.
 /// </summary>
-public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
+public partial class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
 {
     private static void SetField<T>(T target, string name, object? value) =>
         typeof(T).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
@@ -415,7 +416,7 @@ public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
         ImportButton(await r.Html()).Should().NotContain("disabled");
 
         static string ImportButton(string html) =>
-            System.Text.RegularExpressions.Regex.Match(html, "<button[^>]*>\\s*Import 1 change").Value;
+            ImportOneChangeButton().Match(html).Value;
     }
 
     // ---- Round 5 ----
@@ -437,4 +438,7 @@ public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
         }
         finally { System.Globalization.CultureInfo.CurrentCulture = was; }
     }
+
+    [GeneratedRegex("<button[^>]*>\\s*Import 1 change")]
+    private static partial Regex ImportOneChangeButton();
 }

@@ -13,7 +13,7 @@
         </select>
     </div>
     <div class="col-md-6">
-        <input class="form-control form-control-sm" placeholder="@(Cves ? "Add an indicator or CVE (defanged is fine)" : "Add an indicator (defanged is fine)")" aria-label="New indicator"
+        <input class="form-control form-control-sm" maxlength="2000" placeholder="@(Cves ? "Add an indicator or CVE (defanged is fine)" : "Add an indicator (defanged is fine)")" aria-label="New indicator"
                disabled="@Disabled" @bind="_newValue" @bind:event="oninput" @bind:after="GuessType" @onkeydown="NewIndicatorKey" />
     </div>
     <div class="col-md-3">
@@ -23,13 +23,20 @@
 <details class="mt-3" open="@_showExtract" data-submit-scope>
     <summary class="small fw-semibold">@(Cves ? "Find indicators and CVEs in pasted text" : "Find indicators in pasted text")</summary>
     <textarea class="form-control form-control-sm mt-2 tide-autogrow tide-grow-3" rows="5" aria-label="Text to search for indicators"
-              placeholder="Paste the article, a vendor report's IOC appendix, or an email. Nothing here is saved." @bind="_extractText" @bind:event="oninput"></textarea>
+              placeholder="Paste the article, a vendor report's IOC appendix, or an email. Nothing here is saved." maxlength="@ArticleService.MaxPaste"
+              @bind="_extractText" @bind:event="oninput"></textarea>
+    <LengthNote Value="@_extractText" Max="ArticleService.MaxPaste" />
     <button type="button" class="btn btn-outline-secondary btn-sm mt-2" data-submit @onclick="Extract"><span class="bi bi-search" aria-hidden="true"></span> Find</button>
-    @if (_found is not null)
+    @if (_refused is not null)
+    {
+        <p class="text-danger small mt-2 mb-0" role="alert">@_refused</p>
+    }
+    else if (_found is not null)
     {
         @if (_found.Indicators.Count == 0 && _found.Cves.Count == 0)
         {
-            <p class="tide-muted small mt-2 mb-0">Nothing new found.</p>
+            @* A paste cut at the box's limit was searched only as far as the cut: said so, not "nothing" for all of it. *@
+            <p class="tide-muted small mt-2 mb-0">@(_extractText?.Length >= ArticleService.MaxPaste ? $"Nothing new found in the first {ArticleService.MaxPaste:N0} characters." : "Nothing new found.")</p>
         }
         else
         {
@@ -68,7 +75,7 @@
     /// <summary>Holds the add buttons back while the parent's step runs.</summary>
     [Parameter] public bool Disabled { get; set; }
 
-    private string? _extractText, _newValue;
+    private string? _extractText, _newValue, _refused;
     private IndicatorType _newType = IndicatorType.IpAddress;
     private bool _showExtract;
     private Tide.Application.Indicators.IocExtractor.Found? _found;
@@ -104,13 +111,19 @@
 
     private void Extract()
     {
-        var found = ArticleService.Suggest(_extractText, Have, HaveCves);
-        _found = Cves ? found : found with { Cves = [] };
         _pickCves.Clear();
         _pickIndicators.Clear();
+        _showExtract = true;
+        Tide.Application.Indicators.IocExtractor.Found found;
+        try { found = ArticleService.Suggest(_extractText, Have, HaveCves); }
+        catch (ArgumentException ex)
+        {
+            (_found, _refused) = (null, ex.Message);
+            return;
+        }
+        (_found, _refused) = (Cves ? found : found with { Cves = [] }, null);
         foreach (var c in _found.Cves) _pickCves.Add(c);
         foreach (var i in _found.Indicators) _pickIndicators.Add(Key(i));
-        _showExtract = true;
     }
 
     private static string Key(IocObservable.ParsedIndicator i) => $"{(int)i.Type}|{i.Value}";

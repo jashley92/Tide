@@ -15,7 +15,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Tide.Domain.Entities.ActionCardRule", b =>
                 {
@@ -498,7 +498,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("RaisedOn")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RecommendationLine")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("StatusChangedAtUtc")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("TeamId")
@@ -925,6 +932,24 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("WhyItMatters")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("WhyItMattersKeptAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WhyItMattersKeptById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WhyItMattersKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WhyItMattersKeptHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("WhyItMattersKeptTlp")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("INTEGER");
 
@@ -1322,6 +1347,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<long?>("PresentedAtUtc")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
 
                     b.Property<long?>("SharePointPostedAtUtc")
                         .HasColumnType("INTEGER");
@@ -1942,6 +1971,25 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("JobLeases");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.JobProcess", b =>
+                {
+                    b.Property<string>("Holder")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastSeenAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("StartedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Holder");
+
+                    b.HasIndex("LastSeenAtUtc");
+
+                    b.ToTable("JobProcesses");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.JobRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1986,6 +2034,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Tide.Domain.Entities.MeetingAttendee", b =>
                 {
                     b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AddedById")
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("BriefId")
@@ -3261,6 +3313,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("ModifiedAtUtc")

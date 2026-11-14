@@ -16,7 +16,7 @@
     @if (_copy is not null && _held is null)
     {
         <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button type="button" class="btn btn-primary" data-copy-target="sp-copy" data-copy-status="sp-status"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+            <button type="button" class="btn btn-primary" data-copy-target="sp-copy" data-copy-status="sp-status" data-copy-rich data-copy-done="Copied. Paste it into the SharePoint page."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
             @if (_copy.Images.Count > 0)
             {
                 <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="Images"><span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Images (.zip, @_copy.Images.Count)</button>

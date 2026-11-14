@@ -37,10 +37,23 @@ window.tideNav = (function () {
         var btn = document.getElementById('nav-menu-toggle');
         if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
+    // In a window too short for the whole menu, it scrolls: the current page's link is scrolled into the part that shows
+    // (the nearest edge), on load and after each navigation (NavMenu calls this). Only the menu scrolls, never the page,
+    // which scrollIntoView could also move.
+    function reveal() {
+        var nav = document.getElementById('tide-nav-links'), menu = nav && nav.querySelector('.tide-nav');
+        var link = menu && menu.querySelector('a.active, a[aria-current="page"]');
+        if (!link || menu.scrollHeight <= menu.clientHeight) return;
+        var r = link.getBoundingClientRect(), box = menu.getBoundingClientRect();
+        if (r.top < box.top) menu.scrollTop -= box.top - r.top;
+        else if (r.bottom > box.bottom) menu.scrollTop += r.bottom - box.bottom;
+    }
     // The prerendered page, before the circuit renders: the collapse button says what the page shows.
     syncCollapse();
+    reveal();
     return {
-        toggle: function () { apply(!collapsed()); }, collapsed: collapsed, isOpen: isOpen, setOpen: setOpen, start: syncCollapse
+        toggle: function () { apply(!collapsed()); }, collapsed: collapsed, isOpen: isOpen, setOpen: setOpen, reveal: reveal,
+        start: function () { syncCollapse(); reveal(); }
     };
 })();
 
@@ -68,7 +81,11 @@ window.tideShortcuts = (function () {
     function inMenu(target) {
         return !!(target && target.closest && target.closest('[role="menu"], [role="dialog"], [role="alertdialog"]'));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu };
+    // A key for the context rail, not the page's list: pressed in the rail, or while the rail is open over the page.
+    function inRail(target) {
+        return document.documentElement.hasAttribute('data-rail-over') || !!(target && target.closest && target.closest('#tide-rail'));
+    }
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the
@@ -100,6 +117,128 @@ window.tidePrefs = (function () {
     return { get: get, set: set };
 })();
 
+// The context rail (ContextRail): the region on the right of a page that has one. Where the stylesheet docks it beside
+// the content (a wide window, a page held to the usual width), open or closed is remembered per browser as tide-rail
+// and applied before paint by theme-init.js as data-rail="closed". Elsewhere it's an overlay, opened with
+// data-rail-over and not remembered, as the phone menu isn't. The open overlay is modal, as a dialog is: the page under
+// it is inert until it closes, behind a backdrop (app.css) that closes it on a click.
+window.tideRail = (function () {
+    var root = document.documentElement;
+    // The page under the open overlay: everything in the layout but the rail. Toasts, the error bar and the reconnect
+    // dialog aren't the page's, and stay live.
+    var UNDER = '.tide-skip-link, .sidebar, .top-row, #main-content';
+    var held = false, watch = new MutationObserver(changed);
+    function rail() { return document.getElementById('tide-rail'); }
+    function toggleBtn() { return document.getElementById('tide-rail-toggle'); }
+    // app.css decides where the rail docks, and says so with --tide-rail-docks.
+    function docks() {
+        var r = rail();
+        return !!r && getComputedStyle(r).getPropertyValue('--tide-rail-docks').trim() === '1';
+    }
+    function over() { return root.hasAttribute('data-rail-over'); }
+    function isOpen() { return docks() ? root.getAttribute('data-rail') !== 'closed' : over(); }
+    // While the overlay is open, the page under it is inert: out of the tab order and hidden from assistive technology,
+    // so Tab stays in the rail. A docked rail leaves the page beside it as it is.
+    // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
+    // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
+    function hold() {
+        var r = rail(), on = !!r && over();
+        // Open over the page, the rail is a modal dialog, named as before; docked or closed it's the aside's own
+        // complementary landmark.
+        if (r) {
+            if (on) { r.setAttribute('role', 'dialog'); r.setAttribute('aria-modal', 'true'); }
+            else { r.removeAttribute('role'); r.removeAttribute('aria-modal'); }
+        }
+        if (on === held) return;
+        held = on;
+        document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
+        if (on) watch.observe(document.body, { childList: true, subtree: true });
+        else watch.disconnect();
+    }
+    // A change that adds or takes away an element: text changing in the page (a clock, a count) can't bring a dialog or
+    // take the rail away, so the dialogs aren't searched and measured for it.
+    function elements(nodes) {
+        return Array.prototype.some.call(nodes, function (n) { return n.nodeType === 1; });
+    }
+    function changed(records) {
+        if (records && !records.some(function (m) { return elements(m.addedNodes) || elements(m.removedNodes); })) return;
+        var r = rail();
+        // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
+        // A guide's step pointing into the rail (data-guide-card) isn't one: it's drawn over the rail it opened.
+        var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+            function (d) { return !r.contains(d) && !d.hasAttribute('data-guide-card') && d.getClientRects().length > 0; });
+        // A dialog opening over the page closes the overlay. Focus that was in it (or dropped to the body as it went) moves
+        // to the Context button first, so the dialog, when it closes, gives focus back there and not to the body.
+        var lost = dialogUnder && over() && (r.contains(document.activeElement) || document.activeElement === document.body);
+        if (!r || dialogUnder) root.removeAttribute('data-rail-over');
+        sync();
+        var btn = lost && toggleBtn();
+        if (btn) btn.focus();
+    }
+    // Blazor draws the button once, as closed; this keeps what it says right, and the page under the overlay inert:
+    // on load, when a page with a rail starts, on each toggle, and when the window's width changes where the rail sits.
+    function sync() {
+        if (over() && docks()) root.removeAttribute('data-rail-over');
+        var btn = toggleBtn();
+        if (btn) btn.setAttribute('aria-expanded', isOpen() ? 'true' : 'false');
+        hold();
+    }
+    // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
+    // as it closes.
+    function setOver(open) {
+        if (open) root.setAttribute('data-rail-over', '');
+        else root.removeAttribute('data-rail-over');
+        sync();
+        var to = open ? rail() : toggleBtn();
+        if (to) to.focus();
+    }
+    function toggle() {
+        var r = rail();
+        // A rail the page lays out in its own flow (the article editor's Preview on a narrow window) is the page's: there's
+        // nothing to show or hide, and an overlay would cover the switch that put it there.
+        if (!r || (!over() && getComputedStyle(r).position === 'static')) return;
+        if (!docks()) { setOver(!over()); return; }
+        var close = root.getAttribute('data-rail') !== 'closed', btn = toggleBtn();
+        // Focus inside a rail that's about to go would be lost: it goes to the button.
+        if (close && btn && r.contains(document.activeElement)) btn.focus();
+        if (close) root.setAttribute('data-rail', 'closed');
+        else root.removeAttribute('data-rail');
+        window.tidePrefs.set('rail', close ? 'closed' : 'open');
+        sync();
+    }
+    // Opens the rail if it's closed, to show something that came to it (files dropped on the page). Docked, that isn't
+    // remembered: the person didn't choose it.
+    function show() {
+        if (!rail() || isOpen()) return;
+        if (!docks()) { setOver(true); return; }
+        root.removeAttribute('data-rail');
+        sync();
+    }
+    // Shuts a rail show() opened, again without remembering it: the overlay closes; a docked rail goes back to closed.
+    function hide() {
+        if (!rail()) return;
+        if (over()) { setOver(false); return; }
+        if (docks() && root.getAttribute('data-rail') !== 'closed') { root.setAttribute('data-rail', 'closed'); sync(); }
+    }
+    // A page with a rail has started: an overlay left open on the page before doesn't open over this one.
+    function start() {
+        root.removeAttribute('data-rail-over');
+        sync();
+    }
+    window.addEventListener('resize', function () { if (rail()) sync(); });
+    // Something in the closed rail asks to be seen (files that came to its Files box: paste-drop.js).
+    document.addEventListener('tide:reveal', function (e) {
+        var r = rail();
+        if (!r || !r.contains(e.target)) return;
+        show();
+        e.target.scrollIntoView({ block: 'nearest' });
+    });
+    sync();
+    // Whether the page has a rail, so "]" does something (the "?" list names the key only then).
+    function has() { return !!rail(); }
+    return { toggle: toggle, show: show, hide: hide, start: start, over: over, has: has };
+})();
+
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.
 window.tideCopy = async function (text) {
     try { await navigator.clipboard.writeText(text); return true; }
@@ -111,6 +250,13 @@ document.addEventListener('click', function (e) {
     if (!e.target || !e.target.closest) return;
     if (e.target.closest('#nav-collapse-toggle')) { window.tideNav.toggle(); return; }
     if (e.target.closest('#nav-menu-toggle')) { window.tideNav.setOpen(!window.tideNav.isOpen()); return; }
+    // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it). A click on the
+    // overlay's backdrop (drawn by the rail itself, beside it) closes it too.
+    if (e.target.closest('#tide-rail-toggle, #tide-rail-close')) { window.tideRail.toggle(); return; }
+    if (e.target.id === 'tide-rail' && window.tideRail.over()) {
+        var box = e.target.getBoundingClientRect();
+        if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) { window.tideRail.toggle(); return; }
+    }
     // Choosing a link closes the phone menu, so the page it opens is what you see.
     if (window.tideNav.isOpen() && e.target.closest('#tide-nav-links a')) window.tideNav.setOpen(false);
     // The circuit-disconnect modal: retry the connection, or reload when the server lost the session.
@@ -132,4 +278,27 @@ document.addEventListener('keydown', function (e) {
     window.tideNav.setOpen(false);
     var btn = document.getElementById('nav-menu-toggle');
     if (btn) btn.focus();
+});
+
+// The context rail's keys. "]" shows or hides it: a single character, so it's off with the letter shortcuts and while
+// typing or in a menu or dialog (the top bar's Context button still works). AltGr counts as no modifier, for the
+// keyboards that type "]" with it. Escape closes the rail while it's an overlay, unless a menu or dialog has the key;
+// that Escape is the rail's alone, so the page under it (a list's Esc, Triage's reading pane) doesn't hear it as well.
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' && e.key !== ']') return;
+    // The open overlay is a dialog itself: only a menu or dialog inside it, or elsewhere, keeps the key.
+    var holder = e.target && e.target.closest && e.target.closest('[role="menu"], [role="dialog"], [role="alertdialog"]');
+    if (e.isComposing || e.defaultPrevented || (holder && holder.id !== 'tide-rail')) return;
+    if (e.key === 'Escape') {
+        if (!window.tideRail.over()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.tideRail.toggle();
+        return;
+    }
+    if (e.metaKey || ((e.ctrlKey || e.altKey) && !e.getModifierState('AltGraph'))) return;
+    if (!window.tideShortcuts.on() || window.tideShortcuts.typing(e.target)) return;
+    if (!document.getElementById('tide-rail')) return;
+    e.preventDefault();
+    window.tideRail.toggle();
 });

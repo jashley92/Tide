@@ -1,0 +1,136 @@
+@* "What's new": once per person, the first time they open TIDE after a release with highlights, the highlights for
+   their role groups (WhatsNewService), with "See all changes" to them in Help. OnboardingHost, in MainLayout, draws
+   and asks it, so never in present mode (BlankLayout); nor for a Reader or a Visitor, who read no highlights. A modal dialog: focus moves in
+   and back, Tab stays inside (dialog.js), Escape closes it. It's marked seen as it closes, so a reload while it's up shows it
+   again. Beside Got it, which stays the main button and takes focus, Take the tour closes it and starts the tour for the
+   person's role. *@
+@using Tide.Application.Operations
+@using Tide.Web.Components.Pages
+@inject WhatsNewService WhatsNew
+@inject TourService Tour
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<WhatsNewDialog> Log
+
+@if (_due.Count > 0)
+{
+    <div class="tide-modal-scrim" @onclick="CloseAsync">
+        <div class="tide-modal tide-modal-wide tide-whatsnew" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title"
+             @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <div class="tide-whatsnew-head">
+                <h2 class="tide-modal-title" id="@(_id)-title">What's new in TIDE @_due[0].Version</h2>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+            </div>
+            <div class="tide-whatsnew-body">
+                @foreach (var release in _due)
+                {
+                    @if (_due.Count > 1)
+                    {
+                        <h3 class="tide-whatsnew-release">@release.Version</h3>
+                    }
+                    @if (release.Intro.Length > 0)
+                    {
+                        <p class="tide-whatsnew-intro"><Md Text="@release.Intro" Inline="true" /></p>
+                    }
+                    @foreach (var (group, markdown) in release.For(WhatsNew.Groups))
+                    {
+                        <section class="tide-whatsnew-group" aria-label="@RoleGroups.Title(group)">
+                            <h4 class="tide-whatsnew-group-title">@RoleGroups.Title(group)</h4>
+                            <Md Text="@markdown" />
+                        </section>
+                    }
+                }
+            </div>
+            <div class="tide-modal-actions">
+                @* Two buttons, Take the tour and Got it (the main one); the rest are links in the line beside them. *@
+                <p class="tide-whatsnew-more">
+                    @if (OffersTour)
+                    {
+                        <text>Want a walkthrough? Take the tour,
+                            <button type="button" class="btn btn-link tide-inline-link" id="whatsnew-see-day" @onclick="SeeTheDayAsync">see the whole day</button>,
+                            or pick a guide in Help &middot; </text>
+                    }
+                    <a id="whatsnew-all" href="@HelpPage.WhatsNewHref(_due[0].Version)" @onclick="CloseAsync">See all changes</a>
+                </p>
+                @if (OffersTour)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="whatsnew-take-tour" @onclick="TakeTourAsync">Take the tour</button>
+                }
+                <button type="button" class="btn btn-primary btn-sm" @ref="_gotIt" @onclick="CloseAsync">Got it</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly string _id = "whatsnew-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<ReleaseHighlights> _due = [];
+    private bool _shown;
+    private ElementReference _gotIt;
+
+    /// <summary>Whether the dialog is open.</summary>
+    public bool IsOpen => _due.Count > 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (IsOpen == _shown) return;
+            _shown = IsOpen;
+            if (IsOpen) await JS.InvokeVoidAsync("tideDialog.open", _gotIt);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    /// <summary>Opens the highlights the person hasn't seen, if there are any. They're marked seen as it closes.</summary>
+    public async Task CheckAsync()
+    {
+        if (IsOpen || !OnboardingGate.AllowedAt(Nav.ToBaseRelativePath(Nav.Uri))) return;
+        var due = await WhatsNew.DueAsync();
+        if (due.Count == 0) return;
+        _due = due;
+        StateHasChanged();
+    }
+
+    /// <summary>Closes it (Got it, Escape, the close button, a click outside, See all changes) and marks what it showed
+    /// seen: a reload while it's up shows it again. A page's tip waits for the next page (OnboardingHost), so one
+    /// dialog isn't replaced by another at once.</summary>
+    public async Task CloseAsync()
+    {
+        if (!IsOpen) return;
+        _due = [];
+        StateHasChanged();
+        try { await WhatsNew.MarkSeenAsync(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "Couldn't save that the signed-in person saw what's new; it shows again next time.");
+        }
+    }
+
+    /// <summary>What's new's Take the tour (OnboardingHost: the tour for the person's role).</summary>
+    [Parameter] public EventCallback TakeTour { get; set; }
+
+    // Offered to whoever has a tour (a Reader or a Visitor gets neither it nor What's new).
+    private bool OffersTour => Tour.Steps.Count > 0;
+
+    /// <summary>Take the tour: What's new closes, marked seen as closing does, and the tour starts. The page's tip
+    /// waits.</summary>
+    public Task TakeTourAsync() => CloseThenAsync(TakeTour);
+
+    /// <summary>What's new's See the whole day (OnboardingHost: An analyst's day, or Following the brief).</summary>
+    [Parameter] public EventCallback SeeTheDay { get; set; }
+
+    /// <summary>See the whole day: What's new closes, marked seen as closing does, and the whole-day guide starts.</summary>
+    public Task SeeTheDayAsync() => CloseThenAsync(SeeTheDay);
+
+    // What's new closes, marked seen as closing does, and `next` starts.
+    private async Task CloseThenAsync(EventCallback next)
+    {
+        if (!IsOpen) return;
+        await CloseAsync();
+        await next.InvokeAsync();
+    }
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+}

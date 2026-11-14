@@ -9,7 +9,7 @@
 
 <PageTitle>Organization settings · TIDE</PageTitle>
 
-@* The time zone, meeting time and team name, saved in the app over the server's Org values (the installer's answers). *@
+@* The time zone, meeting time, team name, where a meeting's action opens and when an action needs review, saved in the app over the server's Org values (the installer's answers). *@
 <div class="tide-page-head">
     <div>
         <h1 class="tide-admin-title">Organization settings</h1>
@@ -37,8 +37,50 @@
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="org-meeting">The brief meets at</label>
-            <TimeBox Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" DescribedBy="org-meeting-help" />
+            <TimeBox @ref="MeetingBox" Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" Invalid="@(_meetingProblem is not null)"
+                     DescribedBy="@(_meetingProblem is null ? "org-meeting-help" : "org-meeting-error org-meeting-help")" />
+            @if (_meetingProblem is { } problem) { <div class="invalid-feedback d-block" id="org-meeting-error">@problem</div> }
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
+        </div>
+        <div class="col-12">
+            <div class="form-check">
+                <input id="org-beside" type="checkbox" class="form-check-input" @bind="ActionBeside" aria-describedby="org-beside-help" />
+                <label class="form-check-label" for="org-beside">In a meeting, an action opens beside the slide</label>
+            </div>
+            <div class="form-text" id="org-beside-help">The slide narrows so the room reads it and the action together; off, the action opens over the slide.
+                Try it in a rehearsal in the meeting room before turning it on.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-stale-open">An open action needs review after</label>
+            <div class="input-group input-group-sm tide-maxw-xs">
+                <input id="org-stale-open" type="number" class="form-control" min="@StaleLimits.MinDays" max="@StaleLimits.MaxDays" step="1"
+                       @bind="StaleOpen" aria-describedby="org-stale-open-help" />
+                <span class="input-group-text">business days</span>
+            </div>
+            <div class="form-text" id="org-stale-open-help">An Open or In progress action nobody has updated for this long is on the meeting's
+                Actions that need review slide. A comment, a status change, a checklist tick or any other edit is an update; reminders and
+                escalations aren't. 1 to 30.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-stale-blocked">A blocked action needs review after</label>
+            <div class="input-group input-group-sm tide-maxw-xs">
+                <input id="org-stale-blocked" type="number" class="form-control" min="@StaleLimits.MinDays" max="@StaleLimits.MaxDays" step="1"
+                       @bind="StaleBlocked" aria-describedby="org-stale-blocked-help" />
+                <span class="input-group-text">business days</span>
+            </div>
+            <div class="form-text" id="org-stale-blocked-help">The same for a Blocked action, which usually waits on someone else. Weekends and
+                the holidays below don't count. 1 to 30.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-guide-link-days">Show me around links show for</label>
+            <div class="input-group input-group-sm tide-maxw-xs">
+                <input id="org-guide-link-days" type="number" class="form-control" min="@OrgOptions.MinGuideLinkDays" max="@OrgOptions.MaxGuideLinkDays" step="1"
+                       @bind="GuideLinkDays" aria-describedby="org-guide-link-days-help" />
+                <span class="input-group-text">days</span>
+            </div>
+            <div class="form-text" id="org-guide-link-days-help">A page's Show me around link, under its title, shows for this long after
+                someone's first sign-in, and after a release changes the page, until they run its guide or close the link. The ? menu
+                always has it. 1 to 90.</div>
         </div>
     </div>
     <button type="button" class="btn btn-primary btn-sm mt-3" disabled="@_busy" @onclick="Save">Save</button>
@@ -113,6 +155,22 @@
     // The zone chosen (internal so a test can choose one).
     internal string Zone { get; set; } = "";
     private TimeOnly _meeting;
+
+    // The meeting's box, so a save can tell a cleared or half-typed time from the last whole one (internal so a test can
+    // type into it), and what's wrong with it, said on the field.
+    internal TimeBox? MeetingBox { get; private set; }
+    private string? _meetingProblem;
+
+    // Whether a meeting's action opens beside the slide (internal so a test can tick it).
+    internal bool ActionBeside { get; set; }
+
+    // The business days an open, and a blocked, action may go without an update before the meeting asks (internal so a
+    // test can set them). As typed, so the save refuses 2.5 rather than a number box reading it as 2.
+    internal string StaleOpen { get; set; } = "";
+    internal string StaleBlocked { get; set; } = "";
+
+    // The days a page's Show me around link shows (internal so a test can set it), as typed.
+    internal string GuideLinkDays { get; set; } = "";
     private bool _busy;
 
     // The holidays from this year on, how many are older, and the latest year to copy to the next (when that's empty).
@@ -190,6 +248,9 @@
         _teamName = Clock.TeamName;
         Zone = Clock.Zone.Id;
         _meeting = Clock.MeetingTime;
+        ActionBeside = Clock.ActionBesideSlide;
+        (StaleOpen, StaleBlocked) = (Clock.StaleLimits.OpenDays.ToString(System.Globalization.CultureInfo.InvariantCulture), Clock.StaleLimits.BlockedDays.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        GuideLinkDays = Clock.GuideLinkDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _zones = OperationalSettings.TimeZoneChoices(Zone);
         // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
@@ -199,6 +260,14 @@
     internal async Task Save()
     {
         if (_busy) return;
+        // A cleared box would otherwise save the last whole time, under "Saved.", as if it were what's shown.
+        _meetingProblem = MeetingBox is { Whole: false } ? "The brief meets at is a 24-hour time such as 10:30." : null;
+        StateHasChanged();
+        if (_meetingProblem is not null)
+        {
+            Toasts.Error("The settings weren't saved: " + _meetingProblem);
+            return;
+        }
         var zoneChanged = !string.Equals(Zone, Clock.Zone.Id, StringComparison.Ordinal)
                           && !(TimeZoneInfo.TryConvertWindowsIdToIanaId(Clock.Zone.Id, out var was) && was == Zone);
         if (zoneChanged && !await _confirm.Ask($"Change the time zone to {Zone}?",
@@ -212,6 +281,10 @@
                 [OperationalSettings.TeamName] = _teamName,
                 [OperationalSettings.TimeZone] = Zone,
                 [OperationalSettings.MeetingTime] = _meeting.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
+                [OperationalSettings.StaleOpenDays] = StaleOpen,
+                [OperationalSettings.StaleBlockedDays] = StaleBlocked,
+                [OperationalSettings.GuideLinkDays] = GuideLinkDays,
             });
             Load();
             Toasts.Show("Saved.");

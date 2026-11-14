@@ -59,7 +59,8 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
         var amber = await app.CreateClient().GetAsync($"/exports/article/{article}?format=csv&tlp=amber");
         amber.StatusCode.Should().Be(HttpStatusCode.OK);
         var size = (await amber.Content.ReadAsByteArrayAsync()).Length;
-        (await app.CreateClient().GetAsync($"/exports/article/{article}")).StatusCode.Should().Be(HttpStatusCode.OK, "no ceiling is every level");
+        (await app.CreateClient().GetAsync($"/exports/article/{article}")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "no ceiling is refused, not every level");
+        (await app.CreateClient().GetAsync($"/exports/article/{article}?tlp=red")).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var rows = await Downloads(key);
         rows.Should().HaveCount(2);
@@ -231,7 +232,7 @@ public class InactiveRecipientTests : IDisposable
     {
         await Person("S-GONE", "Analyst", daysSinceSeen: 90);
         await Person("S-NOROLE", "");
-        var team = await TeamOf("defense@example.org", "S-NOROLE");
+        var team = await TeamOf("defense@example.org", "S-NOROLE", "S-GONE");
         await _db.Actions().CreateAsync(new ActionForm { Title = "Gone's", TeamId = team, DueDate = _db.Clock.Today, AssigneeId = "S-GONE", AssigneeName = "Gone" });
         var log = new ReminderLog();
 
@@ -281,7 +282,7 @@ public class InactiveRecipientTests : IDisposable
     {
         await Person("S-ACTIVE", "ActionOwner");
         await Person("S-STALE", "ActionOwner", daysSinceSeen: 31);
-        var team = await TeamOf(null);
+        var team = await TeamOf(null, "S-ACTIVE", "S-STALE");
         await using (var ctx = _db.Context())
         {
             foreach (var who in new[] { "S-ACTIVE", "S-STALE" })

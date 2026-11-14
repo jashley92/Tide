@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Metrics;
@@ -17,7 +18,7 @@ namespace Tide.IntegrationTests;
 /// team edition only and only when it isn't blank; a meeting's followers landing on it by its key; a colleague's edit
 /// showing on the slides and the brief page as it lands. Its own app, since metrics are global.
 /// </summary>
-public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
+public partial class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:note-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:note-robin", "Robin Analyst", "Analyst");
@@ -80,7 +81,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
     // The slides' titles in order, as the progress bar lists them.
     private static List<string> Titles(string html) =>
-        System.Text.RegularExpressions.Regex.Matches(html, "<nav class=\"tide-progress\"[\\s\\S]*?</nav>").Single().Value
+        ProgressNav().Matches(html).Single().Value
             .Split("title=\"").Skip(1).Select(t => System.Net.WebUtility.HtmlDecode(t[..t.IndexOf('"')])).ToList();
 
     [Fact]
@@ -94,13 +95,13 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OnPresentKey("next"));
         var html = await r.Html();
-        html.Should().Contain("class=\"tide-slide-note\"").And.Contain("<h2>Before we start</h2>").And.Contain("team edition only")
+        html.Should().Contain("class=\"tide-slide-note\"").And.Contain("tabindex=\"-1\">Before we start</h2>").And.Contain("team edition only")
             .And.Contain("Slide 2 of").And.Contain(": Opening note");
-        System.Text.RegularExpressions.Regex.IsMatch(html, @"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>\s*</ul>\s*</li>")
+        NestedList().IsMatch(html)
             .Should().BeTrue("the sub-bullet is a list inside its bullet");
 
         await r.Click(p => p.OnPresentKey("next"));
-        (await r.Html()).Should().Contain("<h2>Note test numbers</h2>", "the numbers follow the note");
+        (await r.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>", "the numbers follow the note");
     }
 
     [Fact]
@@ -143,7 +144,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await Open(app, day);
         await r.Click(p => p.OnPresentKey("next"));
         await r.Click(p => p.OnPresentKey("next"));
-        (await r.Html()).Should().Contain("<h2>Note test numbers</h2>");
+        (await r.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>");
 
         await Edition(r, Domain.Enums.Edition.Public);
         (await r.Html()).Should().Contain("Slide 2 of 3").And.Contain("<h2>Note test article 65</h2>", "the first article, where the numbers were, not the wrap-up at slide 3");
@@ -162,12 +163,12 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
             await using var owner = await Open(app, day, Owner);
             await Do(owner, p => p.JoinIfLive());
-            (await owner.Html()).Should().Contain("<h2>Before we start</h2>").And.Contain("Invoice lures are up").And.Contain("Following Tester");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Before we start</h2>").And.Contain("Invoice lures are up").And.Contain("Following Tester");
 
             await pat.Click(p => p.OnPresentKey("next"));
             Meetings.Get(day)!.SlideKey.Should().StartWith(MetricSlides.KeyPrefix, "the numbers come after the note");
             await Do(owner, p => p.Follow());
-            (await owner.Html()).Should().Contain("<h2>Note test numbers</h2>");
+            (await owner.Html()).Should().Contain("tabindex=\"-1\">Note test numbers</h2>");
         }
         finally { await Do(pat, p => p.EndMeeting()); }
     }
@@ -180,7 +181,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnPresentKey("next"));
 
         await SaveAs(Robin, brief, "- Payroll lure wave\n  - Report it with the button");
-        (await r.HtmlOnce("Payroll lure wave")).Should().Contain("Report it with the button").And.Contain("<h2>Before we start</h2>")
+        (await r.HtmlOnce("Payroll lure wave")).Should().Contain("Report it with the button").And.Contain("tabindex=\"-1\">Before we start</h2>")
             .And.NotContain("Invoice lures");
 
         await SaveAs(Robin, brief, null);
@@ -197,13 +198,18 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         var path = $"/briefs/{day:yyyy-MM-dd}";
         await using var page = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         var html = await page.Html();
-        html.Should().Contain("id=\"team-note-h\"").And.Contain("id=\"team-note\"").And.Contain("Invoice lures are up").And.Contain("Save note");
+        // Read first, under the running order; Edit opens the editor.
+        html.Should().Contain("id=\"team-note-h\"").And.Contain("Invoice lures are up").And.Contain(">Edit</button>")
+            .And.NotContain("id=\"team-note\"").And.NotContain("Save note");
+        html.IndexOf("id=\"team-note-h\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"running-order-h\"", StringComparison.Ordinal));
+        await page.Click(p => p.EditTeamNote());
+        (await page.Html()).Should().Contain("id=\"team-note\"").And.Contain("Save note");
 
         await using (var owner = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner))
         {
             var theirs = await owner.Html();
             theirs.Should().Contain("id=\"team-note-h\"").And.NotContain("id=\"team-note\"", "an action owner reads it, and can't edit it");
-            System.Text.RegularExpressions.Regex.IsMatch(theirs, @"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>").Should().BeTrue();
+            NestedListStart().IsMatch(theirs).Should().BeTrue();
         }
 
         await SaveAs(Robin, brief, "- Tabletop exercise on Friday");
@@ -222,7 +228,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
         await using var page = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         var html = System.Net.WebUtility.HtmlDecode(await page.Html());
-        html.Should().Contain("Not updated").And.Contain("This is the last brief's note, not yet updated for").And.Contain("Still current</button>");
+        html.Should().Contain("Not updated").And.Contain("Still current</button>").And.Contain(">Edit</button>");
         await using (var owner = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner))
             (await owner.Html()).Should().NotContain("Not updated", "only those who can update it are asked to");
 
@@ -247,4 +253,13 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await using var scope = SignedIn(app, SignIn.Analyst);
         (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("- Typed and not saved");
     }
+
+    [GeneratedRegex(@"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>\s*</ul>\s*</li>")]
+    private static partial Regex NestedList();
+
+    [GeneratedRegex(@"<li>Invoice lures are up\s*<ul>\s*<li>Most spoof a payroll vendor</li>")]
+    private static partial Regex NestedListStart();
+
+    [GeneratedRegex("<nav class=\"tide-progress\"[\\s\\S]*?</nav>")]
+    private static partial Regex ProgressNav();
 }

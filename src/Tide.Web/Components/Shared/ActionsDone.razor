@@ -1,6 +1,6 @@
 @* What was done about an indicator or CVE: the actions raised from the articles it's on, and how their hunts went. *@
 
-<h3 class="tide-card-title mt-4">Actions raised</h3>
+<h3 class="tide-card-title">Actions raised</h3>
 @if (Actions.Items.Count == 0)
 {
     <p class="small tide-muted mb-0">None from these articles.</p>
@@ -14,7 +14,7 @@ else
             {
                 <tr @key="a.Id">
                     <td><ActionRef Number="a.Number" Title="@a.Title" Link="CanOpen" /></td>
-                    <td class="small">@a.TeamName<div class="tide-muted">@(a.AssigneeName ?? "Unassigned")</div></td>
+                    <td class="small">@a.TeamName<div class="tide-muted"><HolderText Label="@a.Holder("Unassigned")" Short="true" /></div></td>
                     <td class="small"><ActionStatusBadge Status="a.Status" /></td>
                     <td class="small">@if (a.Hunted is null) { <span class="tide-muted">None</span> } else { <HuntBadge Result="a.Hunted" /> }</td>
                 </tr>

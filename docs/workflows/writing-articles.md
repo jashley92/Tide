@@ -85,16 +85,21 @@ raises, never touches one already written, and isn't a column default, so saved 
 1. Section pills, which jump to each part of the article.
 2. Assessment: Threat or Informational, priority, the article's TLP, the source and its link, and other reports.
 3. Each bullet's own TLP. A part can be marked higher than its article, never lower.
-4. *What readers get*: switch between the team and company-wide editions to see the article as each carries it.
+4. *What readers get*, in the context rail: switch between the team and company-wide editions to see the article as
+   each carries it.
 5. Readiness checks: what's missing before the article can be marked ready.
-6. The sticky save bar: save state, *Save*, *Back to draft*, and whether the article is on today's brief.
+6. The sticky save bar: save state ("Saving…", "Saved at 10:12", or why it didn't save), *Save*, *Back to draft*,
+   and whether the article is on today's brief.
 
 The article page (`/articles/{id}`, `Components/Pages/ArticleEdit.razor`) has two halves:
 
-- **`ArticleEditorPanel`**: the form. Section pills jump to Assessment, Bottom line, Bullets, Why it matters,
-  Recommended, Indicators & CVEs, and Tags & ATT&CK. A sticky save bar along the bottom holds Save, Discard, Save and mark
+- **`ArticleEditorPanel`**: the form, one column in the order the sent brief reads: Assessment, Bottom line (with
+  *Draft from the sources* above it), Bullets, Why it matters, Recommended actions, Screenshots, Indicators & CVEs, and
+  last Tags & ATT&CK. Its text boxes keep a readable width on a wide screen. Section pills jump to each of these but
+  Screenshots. A sticky save bar along the bottom holds Save, Discard, Save and mark
   ready (on a draft) or Back to draft (on a ready article), and Add to today's brief.
-- **`ReaderPreview`**: beside the editor, whether it's ready ("Ready to brief", or how many things are missing in the
+- **`ReaderPreview`**: in the context rail ("Context · what readers get", docked from 1500px wide; below that
+  **Context** or `]` opens it over the page, and on a phone an Edit / Preview switch shows it), whether it's ready ("Ready to brief", or how many things are missing in the
   edition previewed and in the other, with Show, which goes to the first gap in the preview, focused), then three tabs (`?side=actions` or `?side=details`
   opens on one):
   - **Preview**, first: what readers get. The article as the team or company-wide edition carries it (`?edition=company`
@@ -103,6 +108,14 @@ The article page (`/articles/{id}`, `Components/Pages/ArticleEdit.razor`) has tw
   - **Actions**, its count on the tab: the article's follow-up actions, title first (`ActionRef`), New action, and how many
     recommended lines aren't raised yet (`RecommendedActions.Raised`, as the meeting slide matches them).
   - **Details**: both editions' verdicts, the briefs it's on, and CVE context.
+
+The section pills mark each part with ✓, a count, "Needed" or "check TLP".
+
+**"Why it matters" carries its TLP fix.** When the paragraph would reach the company-wide edition, its card offers
+**Set to AMBER** and **Keep it** beside the warning. On today's open brief with nothing unsaved in the form, they call
+the same audited methods Today does (`ArticleService.MarkWhyItMattersAmberAsync` and `KeepWhyItMattersAsync`; see
+[brief-and-meeting.md](brief-and-meeting.md#building-the-running-order)). Otherwise Set to AMBER changes the form, and
+Save saves it.
 
 On today's brief, `BriefStepper` walks to the article before or after this one in the running order.
 
@@ -161,6 +174,21 @@ What else moves `EditVersion`:
 | Adding or removing a screenshot (`ScreenshotService`) | No | It sets `ScreenshotsChangedAtUtc` instead. |
 | Tagging a product or adversary | No | Tags are their own rows, heard on `ChangeFeed.ArticleTags`, so a tag never makes an open editor stale. |
 | Clearing the earlier actors note (`AdversaryService.ClearEarlierNoteAsync`) | No | Only that column changes. |
+
+**Autosave.** After a two-second pause in typing the editor saves the form, and the save bar says "Saving…", then
+"Saved at 3:17 PM", or why it didn't. An analyst who closes the tab or loses the connection loses at most a few
+seconds. It keeps the same safety properties as an explicit save:
+
+- **Concurrency.** Every autosave goes through `ArticleService.SaveAsync`, with its permission, edit-version and audit
+  checks. When a colleague has saved meanwhile, autosave stops and says who; it never overwrites or merges, and the
+  typing stays in the form. A repeated save from the same copy is refused as stale.
+- **Markings.** Nothing is autosaved while a change to any TLP marking is pending, or an edit that would put a part
+  into the company-wide edition (a new bullet or screenshot, or a part written for the first time at or under its
+  ceiling). It waits for **Save**, and the bar says so, so a slip of the hand can't widen an audience.
+- **Audit and history.** The audit log keeps every save, each autosave marked `Autosaved`; the article's history shows
+  one editing session as one entry.
+- **When it's off.** An article on a sent brief is never autosaved (corrections stay deliberate), and it's off for
+  anyone who can't edit the article. `UnsavedGuard` stays honest: with nothing unsaved, leaving doesn't ask.
 
 **Marking ready while a colleague saved.** `ArticleService.SetStatusAsync` returns the version before and after. If the
 version before is the form's, only the status changed and the form carries on at the new version. If not, a colleague
@@ -222,7 +250,9 @@ Paste anywhere on the page (Ctrl+V) or drop files (`wwwroot/js/paste-drop.js` ha
    (`ImageSniffer.RasterContentType`), or over `Files:MaxImageMB`;
 2. writes each file to the on-disk store (`DiskFileStore`, under `Files:RootPath`, outside the web root) with its SHA-256
    in `StoredFile`;
-3. adds an `ArticleScreenshot` at the article's TLP, at the end of the order;
+3. adds an `ArticleScreenshot` at the end of the order, marked AMBER or the article's TLP when that's higher
+   (`ArticleScreenshot.NewFloor`; owner decision 2026-11-11). Lowering it is a marking change, held for an explicit
+   Save;
 4. stamps `Article.ScreenshotsChangedAtUtc`, before the save, so a failed save leaves an approval out of date rather
    than one standing that shouldn't.
 

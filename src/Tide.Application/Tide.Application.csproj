@@ -8,6 +8,9 @@
     <!-- Generated from MITRE ATT&CK Enterprise (see Mitre/AttackCatalog.cs). -->
     <EmbeddedResource Include="Mitre\attack-techniques.json" />
     <EmbeddedResource Include="Mitre\attack-retired.json" />
+    <!-- Each release's highlights, and the full notes, for "What's new" and Help (Operations/WhatsNew.cs). -->
+    <EmbeddedResource Include="..\..\docs\whats-new\v*.md" LogicalName="Tide.WhatsNew.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\docs\UPGRADE.md" LogicalName="Tide.Upgrade.md" />
   </ItemGroup>
 
   <ItemGroup>

@@ -249,8 +249,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// the model (EnsureCreated): the SQL Server migrations are proven by CI applying them, so a test needn't replay them.
     /// Each SQL Server context has its own connection, so <paramref name="connectionPerContext"/> doesn't apply there.
     /// </param>
-    public TestDb(bool retrying = true, bool connectionPerContext = false, string provider = Sqlite)
+    /// <param name="time">The clock the organization's day is read from (<see cref="Clock"/>): the system's unless given.</param>
+    public TestDb(bool retrying = true, bool connectionPerContext = false, string provider = Sqlite, TimeProvider? time = null)
     {
+        Clock = new(Options.Create(new OrgOptions()), time);
         (_retrying, _connectionPerContext) = (retrying, connectionPerContext);
         if (provider == SqlServer) _sqlServer = SqlServerFactAttribute.NewDatabase();
         else if (provider == Sqlite)
@@ -309,6 +311,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     private DbContextOptionsBuilder<AppDbContext> Configure(DbContextOptionsBuilder<AppDbContext> b, bool retrying)
     {
+        // A First or FirstOrDefault with neither a filter nor an order, or a Skip or Take with no order, picks any rows (SQL
+        // Server promises none): EF only warns of them, in the server's log, so a test that reads one fails instead.
+        b.ConfigureWarnings(w => w.Throw(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.FirstWithoutOrderByAndFilterWarning,
+            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.RowLimitingOperationWithoutOrderByWarning));
         if (_sqlServer is { } sql)
             return b.UseSqlServer(sql, o => { if (retrying) o.ExecutionStrategy(d => new RetryingStrategy(d)); });
         return _perContext is { } cs
@@ -453,7 +459,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Task<IAppDbContext> CreateAsync(CancellationToken ct = default) => Task.FromResult<IAppDbContext>(Context());
 
-    public OrgClock Clock { get; } = new(Options.Create(new OrgOptions()));
+    public OrgClock Clock { get; }
 
     /// <summary>The latest day whose brief can be sent now: today on a business day, else the last business day. A brief
     /// isn't sent before its day, and on a weekend the current brief day is the coming Monday.</summary>
@@ -467,7 +473,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live);
 
-    public ArticleService Articles() => new(this, User, Screenshots(), Clock);
+    public ArticleService Articles() => new(this, User, Screenshots(), Clock, Settings());
 
     public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 
@@ -494,7 +500,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public MetricsService Metrics() => new(this, User, meetings: Live);
 
-    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Settings(), Live);
+    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Live);
 
     public MetricImportService MetricImports(OrgClock? clock = null) => new(this, User, clock ?? Clock, TimeProvider.System);
 
@@ -508,7 +514,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public HuntQueryBuilder Queries() => new(this, User);
 
-    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Articles(), Live, Notices());
+    public ActionService Actions(OrgClock? clock = null) => new(this, User, Sla(), clock ?? Clock, Queries(), Screenshots(), Articles(), Live, Notices());
 
     /// <summary>Hand-offs and splits, telling teams by <see cref="Email"/> with links to tide.example.org.</summary>
     public HandoffService Handoffs() => new(this, User, Clock, Notices());
@@ -641,4 +647,15 @@ public static class ConfigBundleTestExtensions
         var preview = await service.PreviewAsync(bundle, ct);
         return await service.ImportAsync(bundle, preview.Fingerprint(), acknowledged: true, ct);
     }
+}
+
+/// <summary>A live meeting of <paramref name="brief"/>, as the services see it (<see cref="TestDb.Live"/>):
+/// <paramref name="presenter"/> presenting it, and <paramref name="others"/> seated in it too (everyone, when none are
+/// named).</summary>
+public sealed class InMeeting(Guid brief, string presenter = "", params string[] others) : IMeetingsInProgress
+{
+    public bool IsLive(Guid briefId) => briefId == brief;
+
+    public IReadOnlyList<SeatedMeeting> SeatedIn(string userId) =>
+        userId == presenter || others.Length == 0 || others.Contains(userId) ? [new SeatedMeeting(default, brief, null, null, userId == presenter)] : [];
 }

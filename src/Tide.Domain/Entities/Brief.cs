@@ -47,6 +47,10 @@ public class Brief : AuditableEntity
     /// <summary>When the meeting was recorded as over ("End the meeting"), by the clock.</summary>
     public DateTimeOffset? PresentedAtUtc { get; set; }
 
+    /// <summary>Who presented the live meeting, as said ("Pat" or "Pat and Sam" when it changed hands): whoever held the
+    /// presenter's seat. Null for a brief presented without a live meeting, which names <see cref="AnalystName"/>.</summary>
+    public string? PresentedByName { get; set; }
+
     /// <summary>When someone marked the brief distributed without email (email is off on the server), and who. Null for
     /// a brief that was emailed, or isn't finished.</summary>
     public DateTimeOffset? DistributedAtUtc { get; set; }
@@ -98,20 +102,24 @@ public class BriefItem : Entity
 }
 
 /// <summary>
-/// Someone at a brief's meeting: recorded when they join it in TIDE, or added by the presenter for someone in the room
+/// Someone at a brief's meeting: recorded when they join it in TIDE, or added by someone in the meeting for someone there
 /// without a laptop (no <see cref="UserId"/>, no times). One per person per brief; joining again keeps the first join.
 /// </summary>
 public class MeetingAttendee : Entity
 {
     public Guid BriefId { get; set; }
 
-    /// <summary>The user, or empty for someone the presenter added by name.</summary>
+    /// <summary>The user, or empty for someone added by name.</summary>
     public string UserId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
 
     /// <summary>When they first joined, and when they last left (null while they're there, or when added by name).</summary>
     public DateTimeOffset? JoinedAtUtc { get; set; }
     public DateTimeOffset? LeftAtUtc { get; set; }
+
+    /// <summary>Who added them by name (the presenter, or someone following the meeting), or null for someone who joined,
+    /// or added before this was kept. Whoever added a name may take it off; the presenter, any added by name.</summary>
+    public string? AddedById { get; set; }
 }
 
 /// <summary>One person's note at a brief's meeting, against the article on screen when they wrote it.</summary>

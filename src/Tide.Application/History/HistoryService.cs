@@ -98,11 +98,36 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
         return id => names.GetValueOrDefault(id);
     }
 
+    /// <summary>The longest pause between one person's autosaves that still reads as one editing session.</summary>
+    public static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(30);
+
+    // Each row as an entry, newest first, but one editing session's autosaves of the article as one entry
+    // (HistoryFormatter.Session), where its newest one was. A session is one person's autosaves with no more than
+    // SessionGap between them; a save by hand, or anyone else's change, ends it. The person's own tags and links added
+    // meanwhile stay entries of their own. The audit log itself keeps every save.
     private static HistoryPage Build(List<AuditLogEntry> rows, int skip, Func<Guid, string?> tagName)
     {
-        var entries = rows.Take(PageSize)
-            .Select(r => HistoryFormatter.Entry(r, tagName))
-            .OfType<HistoryEntry>().ToList();
+        var entries = new List<HistoryEntry>();
+        List<AuditLogEntry>? session = null;
+        var at = 0;
+        void Close()
+        {
+            if (session is not null && HistoryFormatter.Session(session) is { } entry) entries.Insert(at, entry);
+            session = null;
+        }
+        foreach (var r in rows.Take(PageSize))
+        {
+            var autosave = r.EntityType == nameof(Article) && HistoryFormatter.IsAutosave(r);
+            if (session is { } open && (r.UserId != open[0].UserId || (r.EntityType == nameof(Article) && !autosave) || (autosave && open[^1].AtUtc - r.AtUtc > SessionGap)))
+                Close();
+            if (autosave)
+            {
+                if (session is null) (session, at) = ([], entries.Count);
+                session.Add(r);
+            }
+            else if (HistoryFormatter.Entry(r, tagName) is { } entry) entries.Add(entry);
+        }
+        Close();
         return new HistoryPage(entries, rows.Count > PageSize, Math.Max(0, skip) + Math.Min(rows.Count, PageSize));
     }
 
@@ -125,10 +150,37 @@ public static class HistoryFormatter
         nameof(AuditableEntity.CreatedAtUtc), nameof(AuditableEntity.CreatedBy), nameof(Article.AuthorId), nameof(Brief.AnalystId),
         nameof(ArticleTag.ArticleId), nameof(ArticleTag.TagId), nameof(ArticleTechnique.TechniqueId), nameof(ArticleCve.CveId),
         nameof(ActionComment.EditedByName),
+        // A "Keep it" on "Why it matters" reads as the entry's own line (Entry): the row says who and when.
+        nameof(Article.WhyItMattersKeptHash), nameof(Article.WhyItMattersKeptByName), nameof(Article.WhyItMattersKeptAtUtc),
     };
+
+    // In a history, an autosave is said by its entry ("Autosaved 3 times"), not as a field.
+    private static readonly HashSet<string> HistoryNoise = new(Noise, StringComparer.Ordinal) { AuditVia.Field };
+
+    /// <summary>Whether <paramref name="row"/> was written by an autosave (<see cref="AuditVia"/>).</summary>
+    public static bool IsAutosave(AuditLogEntry row) =>
+        Changes(row.ChangesJson, Noise, null).Any(c => c.Field == Label(AuditVia.Field));
+
+    /// <summary>
+    /// One editing session's autosaves of an article (<paramref name="rows"/>, newest first) as one entry: each field from
+    /// before the first save to after the last, those that ended where they began left out, and how many saves it took.
+    /// Null when, all told, nothing changed.
+    /// </summary>
+    public static HistoryEntry? Session(IReadOnlyList<AuditLogEntry> rows)
+    {
+        var fields = new Dictionary<string, (string? Before, string? After, int Order)>();
+        foreach (var change in rows.Reverse().SelectMany(r => Changes(r.ChangesJson, HistoryNoise, null)))
+            fields[change.Field] = fields.TryGetValue(change.Field, out var f) ? (f.Before, change.After, f.Order) : (change.Before, change.After, fields.Count);
+        var changes = fields.Where(f => f.Value.Before != f.Value.After).OrderBy(f => f.Value.Order)
+            .Select(f => new HistoryChange(f.Key, f.Value.Before, f.Value.After)).ToList();
+        if (changes.Count == 0) return null;
+        var newest = rows[0];
+        return new HistoryEntry(newest.Id, newest.AtUtc, newest.UserName, rows.Count == 1 ? "Autosaved" : $"Autosaved {rows.Count} times", changes);
+    }
 
     private static readonly Dictionary<string, string> Labels = new(StringComparer.Ordinal)
     {
+        [AuditVia.Field] = "Saved automatically",
         [nameof(Article.Title)] = "Title",
         [nameof(Article.SourceName)] = "Source",
         [nameof(Article.SourceUrl)] = "Link",
@@ -139,6 +191,7 @@ public static class HistoryFormatter
         [nameof(Article.Bluf)] = "Bottom line",
         [nameof(Article.WhyItMatters)] = "Why it matters",
         [nameof(Article.WhyItMattersTlp)] = "Why it matters marking",
+        [nameof(Article.WhyItMattersKeptTlp)] = "Why it matters kept at",
         [nameof(Article.RecommendedActions)] = "Recommended actions",
         [nameof(Article.Actors)] = "Threat actors (earlier note)",
         [nameof(Article.Sectors)] = "Sectors",
@@ -147,6 +200,7 @@ public static class HistoryFormatter
         [nameof(Article.AuthorName)] = "Author",
         [nameof(Brief.BriefDate)] = "Date",
         [nameof(Brief.AnalystName)] = "Presenter",
+        [nameof(Brief.PresentedByName)] = "Presented by",
         [nameof(Brief.Intro)] = "Title slide line",
         [nameof(Brief.IntroTlp)] = "Title slide line marking",
         [nameof(Brief.TeamNote)] = "Team opening note",
@@ -196,12 +250,15 @@ public static class HistoryFormatter
         }
         var changes = Changes(row.ChangesJson);
         if (row.Action == "Modified" && changes.Count == 0) return null;
+        // "Keep it" changes nothing anyone wrote, so the entry says what it kept: "Kept “Why it matters” at TLP:CLEAR".
+        if (row.Action == "Modified" && changes is [{ After: { } kept } only] && only.Field == Label(nameof(Article.WhyItMattersKeptTlp)))
+            return new HistoryEntry(row.Id, row.AtUtc, row.UserName, $"Kept “Why it matters” at {kept}", []);
         var verb = row.Action switch { "Added" => "Created", "Deleted" => "Deleted", _ => "Changed" };
         return new HistoryEntry(row.Id, row.AtUtc, row.UserName, verb, row.Action == "Deleted" ? [] : changes);
     }
 
     /// <summary>The fields in an audit row's JSON, in a stable order (as the editor shows them), noise left out.</summary>
-    public static IReadOnlyList<HistoryChange> Changes(string? json) => Changes(json, Noise, null);
+    public static IReadOnlyList<HistoryChange> Changes(string? json) => Changes(json, HistoryNoise, null);
 
     // The whole-system audit log also leaves out the other records' stamps (a setting's or a mapping's UpdatedAtUtc and
     // UpdatedBy) and the keys a row is found by (a feed item's address hash): the row says who and when.

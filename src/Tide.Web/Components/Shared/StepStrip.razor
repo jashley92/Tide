@@ -27,8 +27,24 @@
                     {
                         <span class="tide-step-now" aria-hidden="true">Now</span>
                     }
+                    @* Where the strip is compact and the detail may be cut short, Triage's KEV flag sits by its name. *@
+                    @if (s.Kev > 0)
+                    {
+                        <span class="tide-step-flag-compact" aria-hidden="true">@KevFlag(s)</span>
+                    }
                 </span>
-                <span class="tide-step-detail">@s.Detail</span>
+                @* The detail, on up to two lines (cut short beyond that, where the strip is narrow: the title has it whole,
+                   and it describes the step's link). Triage's count of new items on the known exploited list is a flag held
+                   to the detail's last word, so it's never on a line of its own; the words "on KEV" are there for a screen
+                   reader. *@
+                <span class="tide-step-detail" id="@DetailId(s)" title="@Full(s)">@if (s.Kev > 0 && s.Detail.LastIndexOf(' ') is var cut and > 0)
+                    {
+                        @s.Detail[..(cut + 1)]<span class="text-nowrap">@s.Detail[(cut + 1)..]<span class="tide-step-flag-wide" aria-hidden="true">@KevFlag(s)</span></span><span class="visually-hidden">@($" · {s.Kev} on KEV")</span>
+                    }
+                    else
+                    {
+                        @s.Detail
+                    }</span>
                 <span class="visually-hidden">(@StateText(s.State))</span>
             </span>
         </li>
@@ -67,13 +83,21 @@
         _ => "not started",
     };
 
+    // The detail's id, which describes the step's link or button; and the detail in full, KEV included, for its title.
+    private static string DetailId(BriefStep s) => $"step-{s.Kind.ToString().ToLowerInvariant()}-detail";
+
+    private static string Full(BriefStep s) => s.Kev > 0 ? $"{s.Detail} · {s.Kev} on KEV" : s.Detail;
+
+    // Triage's KEV flag, drawn by its name or after the detail's last word, whichever the strip's width shows.
+    private static RenderFragment KevFlag(BriefStep s) => @<Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge>;
+
     private RenderFragment Label(BriefStep s) => s.Kind switch
     {
-        BriefStepKind.Triage when CanTriage => @<a href="triage">@s.Label</a>,
-        BriefStepKind.Write when FirstNeedingWork is { } id => @<a href="articles/@id" title="Open the first article that needs work">@s.Label</a>,
-        BriefStepKind.Order when CanMarkReady => @<button type="button" class="btn btn-link p-0 tide-step-btn" disabled="@Busy" @onclick="OnMarkReady" title="Mark the brief ready for the meeting">@s.Label</button>,
-        BriefStepKind.Present when CanPresent => @<a href="@Ui.PresentUrl(Day)">@s.Label</a>,
-        BriefStepKind.Send when CanPresent && OnSend.HasDelegate => @<button type="button" class="btn btn-link p-0 tide-step-btn" @onclick="OnSend" title="Send a test copy, then each edition">@s.Label</button>,
+        BriefStepKind.Triage when CanTriage => @<a href="triage" aria-describedby="@DetailId(s)">@s.Label</a>,
+        BriefStepKind.Write when FirstNeedingWork is { } id => @<a href="articles/@id" title="Open the first article that needs work" aria-describedby="@DetailId(s)">@s.Label</a>,
+        BriefStepKind.Order when CanMarkReady => @<button type="button" class="btn btn-link p-0 tide-step-btn" data-guide="strip-mark-ready" disabled="@Busy" @onclick="OnMarkReady" title="Mark the brief ready for the meeting" aria-describedby="@DetailId(s)">@s.Label</button>,
+        BriefStepKind.Present when CanPresent => @<a href="@Ui.PresentUrl(Day)" aria-describedby="@DetailId(s)">@s.Label</a>,
+        BriefStepKind.Send when CanPresent && OnSend.HasDelegate => @<button type="button" class="btn btn-link p-0 tide-step-btn" data-guide="strip-send" @onclick="OnSend" title="Send a test copy, then each edition" aria-describedby="@DetailId(s)">@s.Label</button>,
         _ => @<span>@s.Label</span>,
     };
 }

@@ -14,16 +14,22 @@
 @inject UserPreferenceService Prefs
 @inject SavedViewService SavedViews
 @inject PrerenderHandoff Handoff
+@inject IJSRuntime JS
+@using Tide.Web.Components.ActionRail
 
 <PageTitle>Actions · TIDE</PageTitle>
 
 <div class="tide-page-head">
-    <div>
-        <h1>Actions</h1>
+    <div class="tide-actions-title">
+        <h1 @ref="_heading" tabindex="-1">Actions</h1>
+        @* The list's and the board's keys (RowKeys, rows.js), as the ? overlay lists them: on the board the arrows also
+           move across its lanes. T only for someone who may take actions on. *@
+        <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd>@if (_asBoard) { @(" ")<kbd class="tide-kbd">←</kbd> <kbd class="tide-kbd">→</kbd> } move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
+        <GuideLink />
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
-        <a class="btn btn-outline-secondary" href="board-rules"><span class="bi bi-palette" aria-hidden="true"></span> Board rules</a>
+        <a class="btn btn-outline-secondary" href="library/board-rules"><span class="bi bi-palette" aria-hidden="true"></span> Board rules</a>
         @if (Teams.CanManageExternal)
         {
             <a class="btn btn-outline-secondary" href="teams/external"><span class="bi bi-building" aria-hidden="true"></span> External teams</a>
@@ -35,56 +41,59 @@
     </div>
 </div>
 
-<div class="d-flex flex-wrap align-items-end gap-2">
-    <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
-            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
-    @if (DefaultFor(_view) is { } shown)
-    {
-        @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
-        <div class="mb-2 small">
-            @if (shown == SavedView)
+@* The view tabs, then on their line (as the design has them): the tab this page opens on, Save view, and at the end List
+   or Board. The tabs scroll sideways inside themselves when they don't fit; the rest stays where it is. *@
+<div class="tide-actions-viewrow">
+    @* Each tab says how many open actions it shows under the filters set (one grouped count, ActionService.ViewCountsAsync),
+       the same on the list and the board. *@
+    <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString(), Count: _counts?.For(v.Item1))).ToList())"
+            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" Class="tide-actions-views" />
+    <div class="tide-actions-viewtools small">
+        @if (DefaultFor(_view) is { } shown)
+        {
+            @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
+            @if (shown == SavedView && _asBoard == SavedBoard)
             {
-                <span class="tide-muted" id="view-default"><span class="bi bi-star-fill" aria-hidden="true"></span> Opens here</span>
+                <span class="tide-muted" id="view-default" title="Actions opens on this tab when a link doesn't say which"><span class="bi bi-star-fill" aria-hidden="true"></span> <span class="tide-viewtool-text">Opens here</span></span>
             }
             else
             {
                 <button type="button" class="btn btn-link btn-sm p-0" id="view-default" disabled="@_busyDefault" @onclick="() => SetDefaultView(shown)"
-                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> Open here by default</button>
+                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> <span class="tide-viewtool-text">Open here by default</span></button>
             }
-        </div>
-    }
-    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
-       menu to rename, move or delete it; Save view keeps what's shown now. *@
-    <div class="tide-savedviews flex-grow-1 mb-2">
-        @if (_saved.Count > 0)
-        {
-            var current = ActiveSaved;
-            <nav class="tide-savedviews-list" aria-label="Saved views">
-                @foreach (var v in _saved)
-                {
-                    var on = v.Id == current?.Id;
-                    <span class="tide-savedview" @key="v.Id">
-                        <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
-                        <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
-                                    Items="@SavedMenu(v)" />
-                    </span>
-                }
-            </nav>
         }
         <button type="button" class="tide-filter-add" id="save-view" disabled="@(_saved.Count >= SavedViewService.MaxViews)" @onclick="StartSave"
-                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, beside the tabs")">
-            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save view
+                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, under the tabs")">
+            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> <span class="tide-viewtool-text">Save view</span>
         </button>
     </div>
-    <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
+    <TabBar Label="Layout" Level="TabLevel.Sub" Class="tide-actions-layout" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
+@if (_saved.Count > 0)
+{
+    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
+       menu of what can be done to it (its name says which: a view first or last can't move that way). *@
+    var current = ActiveSaved;
+    <nav class="tide-savedviews-list tide-actions-saved" aria-label="Saved views">
+        @foreach (var v in _saved)
+        {
+            var on = v.Id == current?.Id;
+            var menu = SavedMenu(v);
+            <span class="tide-savedview" @key="v.Id">
+                <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
+                <MenuButton Label="@SavedMenuLabel(v, menu)" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
+                            Items="@menu" />
+            </span>
+        }
+    </nav>
+}
 
 @* One bar for the list and the board (FilterBar): the words, the pills used most, a chip for each other filter and
    + Filter for the rest. They combine, go in the address as before, and a change starts the list again from its first
    page. Two pills on one parameter take turns (Overdue or Due this week, Blocked or Tracking); P1–P2 is the priority
    filter holding exactly those two. The board counts its cards here; the list counts its rows under its search. *@
-<FilterBar Pills="Pills" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
+<FilterBar Pills="PillsCounted" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
            Count="@(_asBoard ? $"{Count} action{(Count == 1 ? "" : "s")}" : null)">
     <Search>
         <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
@@ -105,6 +114,16 @@
     </ChildContent>
 </FilterBar>
 
+@if (UnownedInMyTeams is { } unowned)
+{
+    @* Mine is empty, but work in the person's teams has nobody: say so, with the way to it. *@
+    <p class="tide-actions-unowned" id="mine-unowned">
+        <span class="bi bi-person-dash" aria-hidden="true"></span>
+        Nothing open is assigned to you. Your teams have @unowned action@(unowned == 1 ? "" : "s") with no owner.
+        <a href="@NoOwnerLink" @onclick="ShowThemClicked">Show them</a>
+    </p>
+}
+
 @if (_asBoard)
 {
     @if (_board is null)
@@ -113,30 +132,68 @@
     }
     else
     {
-        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder" />
+        var order = BoardOrder;
+        <ActionKanban @ref="_kanban" Board="@ShownBoard" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
+                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" ClosedLink="ClosedLink" SelectedId="@SelectedCard?.Id" OnSelect="SelectCard" />
+        @* The board's selected card, as the list's row: J/K and the up and down arrows move it card by card, lane after
+           lane; left and right (on a card) to the next lane with cards; T takes it on; Enter opens it. *@
+        <RowKeys RowClass="tide-kcard" Count="order.Count" Selected="CardIndex" SelectedChanged="SelectCardAt" OnOpen="OpenCard"
+                 Keys="@(CanHold ? BoardTakeKeys : BoardLaneKeys)" OnKey="BoardKey" Follow="LaneKeys" OnRow="LaneKeys" />
     }
 }
 else
 {
 <div class="tide-card">
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
-    <ActionTable PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="Filtered"
-                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@_search" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+    <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="AnyFilter"
+                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Words" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+                 CanTake="_workers.CanTake" OnTake="Take" Busy="@(_taking || _mover?.Busy == true)" CanWork="CanWorkRow" OnMove="MoveFromMenu"
+                 SelectedId="@SelectedRow?.Id" OnSelect="SelectRow" GroupsUnowned="_groupsUnowned"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
     </ActionTable>
 </div>
+@* J/K and the arrows move the selected row (on to the next page at the end), T takes it on, Enter opens it. *@
+<RowKeys RowClass="@ActionTable.RowClassName" Count="_rows.Count" @bind-Selected="_selected" OnOpen="OpenRow" Keys="@(CanHold ? ListKeys : null)" OnKey="RowKey"
+         Page="_page" Pages="@TableView.Pages(_total, ActionService.ListPageSize)" OnPage="TurnPage" Address="RowAddress" />
+@* The Status menu's moves: checked, recorded and asked about as the board's are. *@
+<ActionMover @ref="_mover" Id="list-close" OnChanged="ReadAgain" />
 }
 
 @* Save view and Rename: the view's name. Kept open, saying why, when it's refused (a name already used, the 12th view). *@
 <ConfirmDialog @ref="_nameDialog" Form="true" Confirming="SaveName" ConfirmDisabled="@string.IsNullOrWhiteSpace(_newName)" ConfirmIcon="bi-bookmark-check">
     <label class="tide-field-label" for="saved-view-name">Name</label>
     <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
-           placeholder="My team's P1s" autocomplete="off" />
-    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters beside the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
+           placeholder="My team's P1s" autocomplete="off" @onkeydown="NameKey" />
+    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters under the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
     @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
 </ConfirmDialog>
 <ConfirmDialog @ref="_confirm" />
+
+@* The selected row or card, in the context rail; on the list, the pages beside this one. *@
+<ContextRail Title="@(RailRow is { } shownRow ? $"About {Ui.ActionLabel(shownRow.Number)}" : "About the selected action")">
+    @if (RailRow is { } row)
+    {
+        var canWork = _asBoard ? _board?.CanMove(row) == true : _workers.CanWork(row.TeamId);
+        <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="@(_asBoard ? _board?.CanTake(row) == true : _workers.CanTake(row))" Busy="@(_taking || _mover?.Busy == true)"
+                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" OnReopen="() => Reopen(row)" />
+    }
+    else
+    {
+        <section class="tide-card"><p class="small tide-muted mb-0">@(_loading ? "Loading…" : "Nothing is selected: the list is empty.")</p></section>
+    }
+    @if (!_asBoard)
+    {
+        <section class="tide-card" aria-labelledby="rail-about-h">
+            <h2 id="rail-about-h">About this page</h2>
+            <p class="tide-rail-links small mb-0">
+                <a href="workload">Workload</a>
+                <a href="library/board-rules">Board rules</a>
+                @if (Teams.CanManageExternal) { <a href="teams/external">External teams</a> }
+            </p>
+        </section>
+    }
+</ContextRail>
 
 @code {
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
@@ -153,15 +210,17 @@ else
     [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
     [SupplyParameterFromQuery(Name = "teams")] public string? TeamsParam { get; set; }
     [SupplyParameterFromQuery(Name = "raised")] public string? RaisedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "closed")] public string? ClosedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "on")] public string? OnParam { get; set; }
 
     /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
 
     /// <summary>
-    /// The layout this person last chose with the List / Board tab (the board until they choose), kept on the server so
-    /// it follows them. Read once when the page opens (and carried from the prerender to the interactive render, so not
-    /// read twice); it's what an address without <c>layout</c> shows. A link's own <c>layout</c> wins for that visit
-    /// without changing it.
+    /// The layout Actions opens in (the board until they choose): the one last chosen with the List / Board tab on the tab
+    /// Actions opens on, or with "Open here by default". Kept on the server so it follows them; read once when the page
+    /// opens (and carried from the prerender to the interactive render, so not read twice); it's what an address without
+    /// <c>layout</c> shows. A link's own <c>layout</c> wins for that visit without changing it.
     /// </summary>
     [PersistentState]
     public string? SavedLayout { get; set; }
@@ -210,15 +269,18 @@ else
     private string? _me;
     private string Me_ => _me ??= CurrentUser.UserId;
 
-    // "Open here by default": this tab, from now on, wherever they sign in.
+    // "Open here by default": this tab, in this layout, from now on, wherever they sign in.
     internal async Task SetDefaultView(string value)
     {
         if (_busyDefault) return;
         _busyDefault = true;
         try
         {
+            // The layout shown with it, so Actions opens as it's seen now.
+            var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
             await Prefs.SetAsync(UserPreferences.ActionsView, value);
-            SavedView = value;
+            await Prefs.SetAsync(UserPreferences.ActionsLayout, layout);
+            (SavedView, SavedLayout) = (value, layout);
             Toasts.Show($"Actions opens on {ViewLabel(_view)} from now on.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -240,8 +302,13 @@ else
         (ActionView.Mine, "Mine"), (ActionView.MyTeams, "My teams"), (ActionView.Open, "All open"), (ActionView.Overdue, "Overdue"), (ActionView.Closed, "Recently closed"),
     ];
 
-    // The status filter's choices: the open columns (closed actions are the Recently closed view's).
+    // The status filter's choices: the open columns, and on Recently closed the ways of closing.
     private static readonly ActionStatus[] OpenStatuses = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
+    private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
+
+    // A status the shown view has, or none.
+    private ActionStatus? StatusIn(ActionStatus? status) =>
+        status is { } s && (_view == ActionView.Closed ? ClosedStatuses : OpenStatuses).Contains(s) ? s : null;
 
     private bool _loading = true, _groupByKind, _asBoard;
     private ActionBoard? _board;
@@ -251,8 +318,8 @@ else
     private IReadOnlyList<ActionRow> Unfiltered => _asBoard ? _board?.Cards ?? [] : _rows;
     private IReadOnlyList<ActionRow> Shown => _asBoard ? Matching(Unfiltered) : _rows;
     private int Count => Shown.Count;
-    // Mine is grouped by when it's due, unless it's asked to be by kind.
-    private bool ByUrgency => _view == ActionView.Mine && !_groupByKind;
+    // Mine, My teams and All open are grouped by when they're due, unless asked to be by kind.
+    private bool ByUrgency => _view is ActionView.Mine or ActionView.MyTeams or ActionView.Open && !_groupByKind;
     private string ViewName => Views.First(v => v.Item1 == _view).Item2 + " actions";
 
     // The administrators' card rules, and the one chosen as a filter (?rule=), with how many each matches: the list's are
@@ -271,9 +338,18 @@ else
     private bool _raised;   // only the ones this person raised
     private IReadOnlyList<ActionHolder> _holders = [];
     private string? _search;
+
+    // The words searched for: none for an empty box or spaces (_search is the box as typed, so it isn't trimmed under the
+    // cursor). What filters, what the address says and what counts as a filter all read this.
+    private string? Words => string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
     private IReadOnlyList<Priority> _priorities = [];
     private ActionDue? _due;
     private ActionStatus? _status;
+
+    // Recently closed's reach in days (?closed=7, from the board's closed strip; none: its 90 days), and only the actions
+    // of the person's teams (?on=myteams, from My teams' strip).
+    private int? _closedWithin;
+    private bool _onMyTeams;
 
     // The parts of one action (?parent=12), and the team filtered to's active count against its limit, if it has one.
     private int? _parentNumber;
@@ -281,7 +357,7 @@ else
     private IReadOnlyList<Team> _teams = [];
 
     // The list: this page's rows, how many match in all, and in each group; its page and sort. The board: how far back
-    // its closed columns reach (Show older takes them to 30 days, for this visit).
+    // its closed strip counts ("Show the last 30 days" takes it to 30, for this visit).
     private IReadOnlyList<ActionRow> _rows = [];
     private int _total, _page = 1, _closedDays = ActionService.BoardClosedDays;
     private IReadOnlyDictionary<string, int>? _groups;
@@ -291,11 +367,8 @@ else
     private readonly TypingPause _typing = new(300);
 
     // The filters besides the card rule and the bar's Team, Kind and Held by.
-    private bool Narrowed => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
-        || _side is not null || _raised;
-
-    // What the list's own empty state counts as filtered.
-    private bool Filtered => Narrowed || _ruleId is not null;
+    private bool Narrowed => Words is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
+        || _side is not null || _raised || _closedWithin is not null || _onMyTeams;
 
     // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
     private bool FilteredBesidesRule => Narrowed || _teamId is not null || _kind is not null || _assignee is not null;
@@ -361,11 +434,12 @@ else
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
     // text and parsed here (FilterValues), so a value that isn't one ("?team=network") is ignored rather than failing the page.
     private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
-        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null, string? Teams = null, string? Raised = null);
+        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null, string? Teams = null, string? Raised = null,
+        string? Closed = null, string? On = null);
 
     private Address FromAddress() =>
         new(ViewParam, FilterValues.Id(TeamParam), AssigneeParam, LayoutParam, FilterValues.Id(RuleParam), GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam,
-            FilterValues.Number(ParentParam), TeamsParam, RaisedParam);
+            FilterValues.Number(ParentParam), TeamsParam, RaisedParam, ClosedParam, OnParam);
 
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
     // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
@@ -378,14 +452,16 @@ else
         if (_applied == query) return;
         var was = _applied;
         _applied = query;
-        _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? OpeningView();
+        _view = ViewFrom(ViewParam) ?? OpeningView();
+        // A view named otherwise than the tabs write it ("all", or one it doesn't know) has the address put right below,
+        // so it says what's shown.
+        var misnamed = !string.IsNullOrEmpty(ViewParam) && !string.Equals(ViewParam, _view.ToString(), StringComparison.OrdinalIgnoreCase);
         _groupByKind = string.Equals(GroupParam, "kind", StringComparison.OrdinalIgnoreCase);
         // No layout in the address: the person's own. A link to a view the board doesn't have (Overdue, Recently
         // closed) or to the list grouped by kind asks for the list, so it opens as the list.
         _asBoard = LayoutParam is not null ? string.Equals(LayoutParam, "board", StringComparison.OrdinalIgnoreCase)
             : SavedBoard && OnBoard(_view) && !_groupByKind;
         _sayLayout = LayoutParam is null;
-        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
         _ruleId = _rules.Any(r => r.Id == query.Rule && r.ShowAsFilter) ? query.Rule : null;
         _teamId = query.Team;
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
@@ -393,17 +469,40 @@ else
         _kind = EnumNames.OrNull<ActionKind>(KindParam, ignoreCase: true);
         _priorities = PrioritiesOf(FilterValues.Split(PriorityParam));
         _due = DueFrom(DueParam);
-        _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
+        _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true);
+        _closedWithin = ReachFrom(ClosedParam);
+        _onMyTeams = string.Equals(OnParam, OnMine, StringComparison.OrdinalIgnoreCase);
+        FitFilters();
         _page = TableView.PageFrom(PageParam);
+        _selected = RowSelection.From(RowParam);
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
         _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
         _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
+        (_cardId, _cardAt, _cardAsked) = (null, 0, CardNumber(CardParam));
+        _addressedCard = _cardAsked;
+        // The board from a link to a view it hasn't: Overdue shows as All open with the Overdue pill, the same actions.
+        if (_asBoard && !OnBoard(_view)) FitBoard(say: false);
+        var heldToMine = HoldMine();
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
-        if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
+        if (was is null || heldToMine || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
+        // The address then says what's shown, in place (a prerender shows it, and the circuit that follows writes it).
+        if ((heldToMine || misnamed) && RendererInfo.IsInteractive) Remember();
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
+        FocusIfArrived();
     }
+
+    /// <summary>The view an address's <c>?view=</c> names: as the tabs write it (mine, myteams, open, overdue, closed), in
+    /// any case, or as a link may say it (all or all-open for All open, my-teams, recently-closed); null for none, or a
+    /// name it doesn't know.</summary>
+    internal static ActionView? ViewFrom(string? text) => text is null ? null : new string([.. text.Where(char.IsLetter)]).ToLowerInvariant() switch
+    {
+        "" => null,
+        "all" or "allopen" => ActionView.Open,
+        "recentlyclosed" => ActionView.Closed,
+        var name => EnumNames.OrNull<ActionView>(name, ignoreCase: true),
+    };
 
     private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
     {
@@ -428,8 +527,10 @@ else
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
         (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
         (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
+        (_closedWithin, _onMyTeams) = (p._closedWithin, p._onMyTeams);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
-        (_saved, _loading, _adopted) = (p._saved, false, true);
+        (_saved, _loading, _adopted, _counts, _workers) = (p._saved, false, true, p._counts, p._workers);
+        (_selected, _groupsUnowned) = (p._selected, p._groupsUnowned);
     }
 
     // The priorities in the address ("p1,p2"), each once, in order; a name that isn't one is dropped.
@@ -441,7 +542,22 @@ else
     private static readonly IReadOnlyList<FilterOption> PriorityOptions = FilterOption.ForEnum<Priority>();
     private static readonly IReadOnlyList<FilterOption> DueOptions =
         [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
-    private static readonly IReadOnlyList<FilterOption> StatusOptions = [.. OpenStatuses.Select(s => new FilterOption(s.ToString(), ActionService.StatusName(s)))];
+    private static readonly IReadOnlyList<FilterOption> OpenStatusOptions = StatusOptionsOf(OpenStatuses), ClosedStatusOptions = StatusOptionsOf(ClosedStatuses);
+
+    private static IReadOnlyList<FilterOption> StatusOptionsOf(IEnumerable<ActionStatus> statuses) =>
+        [.. statuses.Select(s => new FilterOption(s.ToString(), ActionService.StatusName(s)))];
+
+    // Recently closed's reach: the board strip's week and month (the list's own 90 days is no filter at all).
+    private static readonly IReadOnlyList<FilterOption> ReachOptions =
+        [.. new[] { ActionService.BoardClosedDays, ActionService.BoardOlderDays }.Select(d => new FilterOption(Invariant(d), $"Last {d} days"))];
+
+    // A reach from the address: a whole number of days within the list's 90, or none.
+    private static int? ReachFrom(string? text) => FilterValues.Number(text) is >= 1 and <= ActionService.ClosedListDays and var days ? days : null;
+
+    private static string Invariant(int n) => n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // on=myteams: the only value the Your teams filter takes.
+    private const string OnMine = "myteams";
     private IReadOnlyList<FilterOption> _teamOptions = [];
 
     private static IReadOnlyList<FilterOption> TeamOptions(IEnumerable<Team> teams) => [.. teams.Select(t => new FilterOption(t.Id.ToString(), t.Name))];
@@ -457,7 +573,13 @@ else
         new("blocked", "Blocked", "status", [nameof(ActionStatus.Blocked)]),
         new("tracking", "Tracking", "status", [nameof(ActionStatus.Tracking)]) { Title = "Handed to others and followed until it's done" },
         new("raised", "Raised by me", "raised", [Me]) { Title = "The actions you raised, wherever they are now: what you asked others for" },
+        // Held by: nobody, as a pill. From Mine (the person's own) it shows their teams' instead (Refilter).
+        new("noowner", "No owner", "assignee", [ActionFilter.Unassigned]) { Title = "Open work nobody has taken on yet" },
     ];
+
+    // The pills as drawn: No owner says how many it would show (counted with the tabs).
+    private IReadOnlyList<FilterPill> PillsCounted => _counts is not { } counts ? Pills
+        : [.. Pills.Select(p => p.Key == "noowner" ? p with { Count = counts.NoOwner(_view) } : p)];
 
     // raised=me: the only value the Raised by filter takes.
     private const string Me = "me";
@@ -511,11 +633,23 @@ else
                 new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()), Section = "What" },
                 new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())], Section = "What" },
                 new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()), Section = "When" },
-                new("status", "Status", FilterKind.Single, v => _status = FilterValues.Enum<ActionStatus>(v) is { } st && OpenStatuses.Contains(st) ? st : null)
+                new("status", "Status", FilterKind.Single, v => _status = StatusIn(FilterValues.Enum<ActionStatus>(v)))
                 {
-                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
+                    Options = _view == ActionView.Closed ? ClosedStatusOptions : OpenStatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
                 },
             };
+            // Recently closed's own: how far back, and only the person's teams' (the board's closed chips link to both).
+            if (_view == ActionView.Closed)
+                defs.Add(new("closed", "Closed in", FilterKind.Single, v => _closedWithin = ReachFrom(FilterValues.First(v)))
+                {
+                    Options = ReachOptions, Values = _closedWithin is { } within ? [Invariant(within)] : [], Section = "When",
+                    ChipText = _closedWithin is { } days ? $"Closed in the last {days} days" : null,
+                });
+            if (_view == ActionView.Closed || _onMyTeams)
+                defs.Add(new("on", "Your teams", FilterKind.Single, v => _onMyTeams = FilterValues.First(v) == OnMine)
+                {
+                    Options = [new(OnMine, "Only your teams'")], Values = _onMyTeams ? [OnMine] : [], ChipText = _onMyTeams ? "On your teams" : null, Section = "Where",
+                });
             // An administrator's card rules shown as filters, each with how many it matches (counted as the list or board is read).
             var rules = _rules.Where(r => r.ShowAsFilter).ToList();
             if (rules.Count > 0)
@@ -531,21 +665,34 @@ else
         }
     }
 
-    // Clear shows while anything narrows the list: a pill, a filter, the words.
+    // Clear shows while anything narrows the list: a pill, a filter, the words. The list's count then says "matching".
     private bool AnyFilter => FilteredBesidesRule || _ruleId is not null;
 
     // Clear: every filter and the words; the view, layout and grouping stay.
     internal Task ClearFilters()
     {
         (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber, _side, _raised) = (null, null, null, null, null, null, null, null, null, false);
+        (_closedWithin, _onMyTeams) = (null, false);
         _priorities = [];
         return Refilter();
     }
 
-    // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so.
+    // Mine from an address, held to the rule choosing it keeps (Refilter, SetView): nobody's is the person's teams' work
+    // nobody has (My teams), and another holder is let go. Whether it changed anything.
+    private bool HoldMine()
+    {
+        if (_view != ActionView.Mine || _assignee is null) return false;
+        if (_assignee == ActionFilter.Unassigned) _view = ActionView.MyTeams;
+        else _assignee = null;
+        return true;
+    }
+
+    // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so. Nobody's
+    // actions are never Mine: No owner chosen on Mine shows the person's teams' work nobody has.
     internal async Task Refilter()
     {
-        _page = 1;
+        if (_view == ActionView.Mine && _assignee == ActionFilter.Unassigned) (_view, _sort) = (ActionView.MyTeams, DefaultSort(ActionView.MyTeams));
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         await Load();
         Remember();
     }
@@ -563,14 +710,32 @@ else
     {
         _view = view;
         if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
-        _page = 1;
+        FitFilters();
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         _sort = DefaultSort(view);
         Remember();
         await Load();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    // The view whose tab was last brought into view (the tab row scrolls sideways inside itself when it doesn't fit).
+    private ActionView? _revealed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_revealed != _view)
+        {
+            _revealed = _view;
+            try { await JS.InvokeVoidAsync("tideTabs.revealCurrent"); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+            catch (JSException) { /* an older tabs.js still cached: the row just doesn't scroll to it */ }
+        }
+        if (_refocus && !_loading)
+        {
+            var row = FocusRow;
+            _refocus = false;
+            if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
+        }
+        if (_asBoard && !_loading && RendererInfo.IsInteractive) await SayCard();
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -579,17 +744,40 @@ else
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", layout), replace: true);
     }
 
-    // The tab is the one place the preference changes; a link's layout only applies to its visit.
+    // The tab is the one place the preference changes, and only on the tab Actions opens on (the person's default): the
+    // layout chosen on another tab is for this visit, so a default set with "Open here by default" keeps its layout. A
+    // link's layout only applies to its visit.
     private async Task SetLayout(string? layout)
     {
         _asBoard = layout == "board";
-        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
-        _page = 1;
-        SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
-        try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        if (_asBoard && !OnBoard(_view)) FitBoard(say: true);
+        (_page, _addressedCard) = (1, null);
+        if (_view == OpeningView())
+        {
+            SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
+            try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        }
         Remember();
         await Load();
+    }
+
+    // The board has no Overdue or Recently closed tab. Overdue becomes All open with the Overdue pill, which shows the same
+    // actions; Recently closed becomes All open, and the person is told why (the board shows open actions).
+    private void FitBoard(bool say)
+    {
+        if (_view == ActionView.Overdue) _due = ActionDue.Overdue;
+        else if (say) Toasts.Show("The board shows open actions: Recently closed is on the list.");
+        _view = ActionView.Open;
+        _sort = DefaultSort(_view);
+        FitFilters();
+    }
+
+    // Another view keeps the filters it has: a status only if it's one of its own, and the reach only on Recently closed.
+    private void FitFilters()
+    {
+        _status = StatusIn(_status);
+        if (_view != ActionView.Closed) _closedWithin = null;
     }
 
     // The address of what's shown: every filter, and the page when it isn't the first. Recorded first, so writing it
@@ -597,8 +785,8 @@ else
     private void Remember()
     {
         var shown = ShownParameters();
-        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), _search, Text("kind"), Text("priority"), Text("due"),
-            Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"));
+        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), Words, Text("kind"), Text("priority"), Text("due"),
+            Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"), Text("closed"), Text("on"));
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", shown), replace: true);
 
         string? Text(string name) => (string?)shown[name];
@@ -612,17 +800,18 @@ else
         var view = _view.ToString().ToLowerInvariant();
         var group = !_asBoard && _groupByKind ? "kind" : null;
         var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), FilterValues.Join(_priorities.Select(p => p.ToString().ToLowerInvariant())), _status?.ToString().ToLowerInvariant());
-        var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+        var page = !_asBoard && _page > 1 ? Invariant(_page) : null;
         var (teams, raised) = (_side?.ToString().ToLowerInvariant(), _raised ? Me : null);
+        var (closed, on) = (_closedWithin is { } within ? Invariant(within) : null, _onMyTeams ? OnMine : null);
         return new()
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
-            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
-            ["teams"] = teams, ["raised"] = raised,
+            ["q"] = Words, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
+            ["teams"] = teams, ["raised"] = raised, ["closed"] = closed, ["on"] = on,
         };
     }
 
-    // --- Saved views (SavedViewService): the person's own, beside the tabs --------------------------------------------
+    // --- Saved views (SavedViewService): the person's own, under the tabs ---------------------------------------------
 
     private IReadOnlyList<ActionsSavedView> _saved = [];
     private ConfirmDialog _nameDialog = default!;
@@ -635,7 +824,10 @@ else
 
     /// <summary>The query a view of what's shown keeps (what the address says, but never the list's page), in the order a
     /// stored one has; null when it's more than a view can hold (a link's very long search).</summary>
-    internal string? ShownQuery() => SavedViewService.TryNormalize(string.Join('&', ShownParameters()
+    internal string? ShownQuery() => QueryOf(ShownParameters());
+
+    // These parameters as a view keeps them (SavedViewService's order, no blanks); null when too long for one.
+    private static string? QueryOf(Dictionary<string, object?> parameters) => SavedViewService.TryNormalize(string.Join('&', parameters
         .Select(p => p.Key + "=" + Uri.EscapeDataString(Convert.ToString(p.Value, System.Globalization.CultureInfo.InvariantCulture)!))));
 
     /// <summary>The saved view that is what's shown, if one is: the first, when two keep the same filters.</summary>
@@ -648,6 +840,19 @@ else
         if (_saved[^1] != v) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
         items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, () => DeleteSaved(v))));
         return items;
+    }
+
+    // The menu button's name says what its menu offers: "Weekly: rename, move later or delete".
+    internal static string SavedMenuLabel(ActionsSavedView v, IReadOnlyList<MenuButton.Item> menu)
+    {
+        var what = menu.Select(i => i.Label.ToLowerInvariant()).ToList();
+        return $"{v.Name}: {(what.Count < 2 ? string.Concat(what) : string.Join(", ", what[..^1]) + " or " + what[^1])}";
+    }
+
+    // Enter in the Name box saves, as in a form (the dialog's button is held back while it's empty).
+    private async Task NameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.Repeat && !string.IsNullOrWhiteSpace(_newName)) await _nameDialog.Confirm();
     }
 
     internal async Task StartSave()
@@ -676,7 +881,7 @@ else
             else
             {
                 var saved = await SavedViews.SaveAsync(_newName ?? "", ShownQuery() ?? throw new ArgumentException("These filters are too long to keep as a view."));
-                Toasts.Show($"Saved \"{saved.Name}\" beside the tabs.");
+                Toasts.Show($"Saved \"{saved.Name}\" under the tabs.");
             }
             _saved = await SavedViews.ListAsync();
             return true;
@@ -712,20 +917,329 @@ else
 
     private ConfirmDialog _confirm = default!;
 
+    // --- The selected row, its keys, and the Status menu ----------------------------------------------------------------
+
+    /// <summary>The selected row's place on the list's page, from 0 (?row=; RowSelection).</summary>
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
+
+    private int _selected;
+    private ActionMover? _mover;
+    private IReadOnlyDictionary<string, int> _groupsUnowned = new Dictionary<string, int>();
+
+    internal int Selected => _selected;
+    private ActionRow? SelectedRow => _selected < _rows.Count ? _rows[_selected] : null;
+
+    // T takes the selected row on (rows.js leaves it alone while typing, in the rail, or with letter keys off).
+    private static readonly IReadOnlyDictionary<string, string> ListKeys = new Dictionary<string, string> { ["t"] = "take" };
+
+    private bool CanWorkRow(ActionRow r) => _workers.CanWork(r.TeamId);
+
+    internal void SelectRow(ActionRow r)
+    {
+        for (var i = 0; i < _rows.Count; i++)
+            if (_rows[i].Id == r.Id) _selected = i;
+    }
+
+    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere): the action's
+    // number (?card=, as the board names its card), so a link finds the same action once the rows have moved. The first
+    // row is left out.
+    internal string RowAddress(int selected) => Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        [RowSelection.Param] = null,
+        ["card"] = selected > 0 && selected < _rows.Count ? _rows[selected].Number : null,
+    });
+
+    private int IndexOfNumber(int number)
+    {
+        for (var i = 0; i < _rows.Count; i++)
+            if (_rows[i].Number == number) return i;
+        return -1;
+    }
+
+    private void OpenRow(int at)
+    {
+        if (at < _rows.Count) Nav.NavigateTo(Ui.ActionUrl(_rows[at].Number));
+    }
+
+    /// <summary>A key of the list's own on the selected row: T takes it on, where taking is allowed.</summary>
+    internal async Task RowKey(string action)
+    {
+        if (action == "take" && SelectedRow is { } row && _workers.CanTake(row)) await Take(row);
+    }
+
+    // --- The board's selected card, its keys, and the rail ----------------------------------------------------------------
+
+    /// <summary>The selected card's number in the address (?card=12): a card, unlike a row, keeps its number as it moves.</summary>
+    [SupplyParameterFromQuery(Name = "card")] public string? CardParam { get; set; }
+
+    // The selected card, and its place among the cards when it was chosen: a card that has left (closed, or moved off the
+    // view by a colleague) gives its place to the one now there. The number the address asked for, until the board is read.
+    private Guid? _cardId;
+    private int _cardAt;
+    private int? _cardAsked, _addressedCard;
+    private bool _revealCard;
+    private ActionKanban? _kanban;
+    private ActionRowRail? _rail;
+
+    internal ActionRowRail? Rail => _rail;
+
+    // The board as drawn (the card rule chosen applies), and its cards lane by lane, top to bottom: the order J and K
+    // move through. Worked out again only when the board is read again or the rule changes.
+    private (ActionBoard? Read, Guid? Rule, ActionBoard? Shown, IReadOnlyList<ActionRow> Order) _arranged;
+
+    private (ActionBoard? Shown, IReadOnlyList<ActionRow> Order) Arranged
+    {
+        get
+        {
+            if (_board is null) return (null, []);
+            if (!ReferenceEquals(_arranged.Read, _board) || _arranged.Rule != _ruleId)
+            {
+                var shown = _board with { Cards = Matching(_board.Cards) };
+                _arranged = (_board, _ruleId, shown, [.. ActionKanban.Lanes.SelectMany(shown.In)]);
+            }
+            return (_arranged.Shown, _arranged.Order);
+        }
+    }
+
+    private ActionBoard ShownBoard => Arranged.Shown!;
+    private IReadOnlyList<ActionRow> BoardOrder => Arranged.Order;
+
+    /// <summary>The board's selected card: the one chosen, else the one now in its place (the first, to begin with).</summary>
+    internal ActionRow? SelectedCard
+    {
+        get
+        {
+            var order = BoardOrder;
+            if (order.Count == 0) return null;
+            return order.FirstOrDefault(c => c.Id == _cardId) ?? order[RowSelection.Clamp(_cardAt, order.Count)];
+        }
+    }
+
+    private int CardIndex => SelectedCard is { } card ? IndexOf(card) : 0;
+
+    private int IndexOf(ActionRow card)
+    {
+        var order = BoardOrder;
+        for (var i = 0; i < order.Count; i++)
+            if (order[i].Id == card.Id) return i;
+        return -1;
+    }
+
+    // What the rail shows: the list's selected row, or the board's selected card.
+    private ActionRow? RailRow => _asBoard ? SelectedCard : SelectedRow;
+
+    private void SelectCard(ActionRow card) => SelectCardAt(IndexOf(card));
+
+    private void SelectCardAt(int at)
+    {
+        var order = BoardOrder;
+        if (at < 0 || at >= order.Count) return;
+        (_cardId, _cardAt) = (order[at].Id, at);
+    }
+
+    private void OpenCard(int at)
+    {
+        if (at < BoardOrder.Count) Nav.NavigateTo(Ui.ActionUrl(BoardOrder[at].Number));
+    }
+
+    /// <summary>The card an address names: its number, as 63 or A-63; null for anything else.</summary>
+    internal static int? CardNumber(string? text) =>
+        FilterValues.Number(text?.Trim() is { } t && t.StartsWith("A-", StringComparison.OrdinalIgnoreCase) ? t[2..] : text);
+
+    // Once drawn: a card the address named takes focus; and whatever moved the selection (a key, a click, a card that
+    // left the board and gave its place to the next), this history entry's address names the card now selected, in
+    // place (rows.js), navigating nowhere. The first card, selected by default, isn't written until the selection moves.
+    private async Task SayCard()
+    {
+        try
+        {
+            if (_revealCard)
+            {
+                _revealCard = false;
+                await JS.InvokeVoidAsync("tideBoard.reveal");
+            }
+            if (SelectedCard is not { } card || card.Number == _addressedCard) return;
+            var first = _addressedCard is null && _cardId is null;
+            _addressedCard = card.Number;
+            if (!first) await JS.InvokeVoidAsync("tideRows.remember", Nav.GetUriWithQueryParameter("card", card.Number));
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    // The board's own keys: left and right move to the next lane with cards (only with focus on a card, so they keep
+    // their meaning elsewhere), and T takes the selected card on, for someone who may take actions on.
+    private static readonly IReadOnlyList<string> LaneKeys = ["left", "right"];
+    private static readonly IReadOnlyDictionary<string, string> BoardLaneKeys = new Dictionary<string, string> { ["ArrowLeft"] = "left", ["ArrowRight"] = "right" };
+    private static readonly IReadOnlyDictionary<string, string> BoardTakeKeys = new Dictionary<string, string>(BoardLaneKeys) { ["t"] = "take" };
+
+    /// <summary>A key of the board's own on the selected card: T takes it on, where taking is allowed; left and right move
+    /// to the card at the same place (or the last) in the next lane that has cards that way.</summary>
+    internal async Task BoardKey(string action)
+    {
+        if (SelectedCard is not { } card || _board is null) return;
+        if (action == "take")
+        {
+            if (_board.CanTake(card)) await Take(card);
+            return;
+        }
+        var step = action switch { "left" => -1, "right" => 1, _ => 0 };
+        if (step == 0) return;
+        var lanes = ActionKanban.Lanes.Select(s => BoardOrder.Where(c => c.Status == s).ToList()).ToList();
+        var lane = lanes.FindIndex(l => l.Contains(card));
+        var place = lanes[lane].IndexOf(card);
+        for (var i = lane + step; i >= 0 && i < lanes.Count; i += step)
+        {
+            if (lanes[i].Count == 0) continue;
+            SelectCard(lanes[i][Math.Min(place, lanes[i].Count - 1)]);
+            return;
+        }
+    }
+
+    // The rail's Move to on the board: the statuses the card can go to, each moved as its Move menu moves it.
+    private IReadOnlyList<MenuButton.Item> RailMoves(ActionRow card) =>
+        [.. ActionItem.StatusOrder.Where(s => s != card.Status)
+            .Select(s => new MenuButton.Item(ActionService.StatusName(s), null, EventCallback.Factory.Create(this, () => _kanban?.MoveFromRail(card, s) ?? Task.CompletedTask)))];
+
+    // J past the page's last row, or K before its first: the next or previous page, its first or last row selected.
+    private async Task TurnPage(RowMove move)
+    {
+        _page += move == RowMove.NextPage ? 1 : -1;
+        await Read(quiet: true);
+        _selected = move == RowMove.NextPage ? 0 : RowSelection.Last(_rows.Count);
+        Remember();
+    }
+
+    private Task MoveFromMenu((ActionRow Row, ActionStatus To) move) => MoveRow(move.Row, move.To);
+
+    /// <summary>The Status menu's choice: the action moves there as the board's Move menu moves it (ActionMover).</summary>
+    internal async Task MoveRow(ActionRow row, ActionStatus to)
+    {
+        if (_mover is null) return;
+        var was = _rows;
+        await _mover.MoveAsync(row, to);
+        KeepPlace(was, row);
+    }
+
+    // After a move from the list, or one refused as stale: the list is read again in place.
+    private Task ReadAgain() => Read(quiet: true);
+
+    /// <summary>The rail's Reopen on a closed row: back to Open, moved as the Status menu moves it (ActionMover).</summary>
+    internal Task Reopen(ActionRow row) => MoveRow(row, ActionStatus.Open);
+
+    /// <summary>
+    /// A closed chip's link under the board: Recently closed on the list, at that status and the strip's reach, with the
+    /// board's filters. The strip counts Mine's closed actions as the person's and My teams' as their teams', so the list
+    /// is held by them, or on their teams.
+    /// </summary>
+    internal string ClosedLink(ActionStatus status)
+    {
+        var shown = ShownParameters();
+        (shown["view"], shown["layout"], shown["group"], shown["page"]) = (ActionView.Closed.ToString().ToLowerInvariant(), UserPreferences.List, null, null);
+        (shown["status"], shown["closed"]) = (status.ToString().ToLowerInvariant(), Invariant(_closedDays));
+        if (_view == ActionView.Mine) shown["assignee"] = Me_;
+        if (_view == ActionView.MyTeams) shown["on"] = OnMine;
+        return "actions?" + (QueryOf(shown) ?? $"view=closed&layout=list&status={shown["status"]}&closed={shown["closed"]}");
+    }
+
+    // --- Counts, No owner and Take it ---------------------------------------------------------------------------------
+
+    // How many each tab shows (read with the list or board), and which teams' actions this person works (the list's Take it).
+    private ActionViewCounts? _counts;
+    private ActionWorkers _workers = ActionWorkers.None;
+    private bool _taking;
+
+    internal IReadOnlyList<ActionRow> Rows => _rows;
+    internal ActionViewCounts? Counts => _counts;
+
+    // Once the list is drawn again, focus goes to a row (_focusId's, or else the first), or with none, to the heading: the
+    // person keeps their place.
+    private bool _refocus;
+    private Guid? _focusId;
+    private ActionTable? _table;
+    private ElementReference _heading;
+
+    private ActionRow? FocusRow => _rows.FirstOrDefault(r => r.Id == _focusId) ?? _rows.FirstOrDefault();
+
+    /// <summary>Where focus is going next ("A-12", or "heading"), until it has gone there.</summary>
+    internal string? Focusing => !_refocus ? null : FocusRow is { } row ? Ui.ActionLabel(row.Number) : "heading";
+
+    // "Show them" on an empty Mine is a link the browser follows as it would any other: Ctrl, Cmd or Shift+click and the
+    // middle button open it elsewhere and leave this page alone. A plain click or Enter brings the list here, and focus
+    // goes to its first row once it has arrived (the click and the new address reach the page in either order).
+    private bool _focusOnArrival;
+
+    internal void ShowThemClicked(MouseEventArgs e)
+    {
+        if (e.Button != 0 || e.CtrlKey || e.MetaKey || e.ShiftKey || e.AltKey) return;
+        _focusOnArrival = true;
+        FocusIfArrived();
+    }
+
+    // Once My teams with No owner is shown after a plain click on Show them, focus goes to its first row.
+    private void FocusIfArrived()
+    {
+        if (_focusOnArrival && _view == ActionView.MyTeams && _assignee == ActionFilter.Unassigned) (_focusOnArrival, _refocus, _focusId) = (false, true, null);
+    }
+
+    // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.
+    private int? UnownedInMyTeams => _view == ActionView.Mine && _counts is { Mine: 0, MyTeamsUnowned: > 0 and var n } ? n : null;
+
+    // Those actions: My teams with No owner, the other filters as they are.
+    private string NoOwnerLink
+    {
+        get
+        {
+            var shown = ShownParameters();
+            (shown["view"], shown["assignee"], shown["page"]) = (ActionView.MyTeams.ToString().ToLowerInvariant(), ActionFilter.Unassigned, null);
+            return "actions?" + (QueryOf(shown) ?? "view=myteams&assignee=none");
+        }
+    }
+
+    // Take it on a row: the action is this person's, through the same checked and recorded take as its page's; refused
+    // when someone took it since the list was read. The list is read again either way.
+    internal async Task Take(ActionRow row)
+    {
+        if (_taking) return;
+        _taking = true;
+        try
+        {
+            await ActionSvc.TakeAsync(row.Id, onlyIfNobodys: true);
+            if (row.Status == ActionStatus.Open) _kanban?.Moving(row.Id);   // taking it starts it: not news on the board
+            Toasts.Show($"You took {Ui.ActionLabel(row.Number)} on.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _taking = false; }
+        var was = _rows;
+        await Read(quiet: true);
+        // On the board the card stays selected wherever it went (it's still there: taking it starts it).
+        if (!_asBoard) KeepPlace(was, row);
+    }
+
+    // After a row's action was taken or moved and the list read again: focus stays on the row, or when it has left the
+    // list (No owner, a status filter), goes to the next row, else the one before, else the heading.
+    private void KeepPlace(IReadOnlyList<ActionRow> was, ActionRow row)
+    {
+        var at = was.ToList().FindIndex(r => r.Id == row.Id);
+        bool Still(ActionRow r) => _rows.Any(x => x.Id == r.Id);
+        var next = was.Skip(at).FirstOrDefault(Still) ?? was.Take(at).LastOrDefault(Still);
+        (_refocus, _focusId) = (true, next?.Id);
+        if (next is not null) SelectRow(next);
+    }
+
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
     private async Task Query(TableQuery q)
     {
         _sort = q.Sort;
         _search = string.IsNullOrWhiteSpace(q.Filter) ? null : q.Filter.Trim();
-        _page = 1;
+        (_page, _selected) = (1, 0);
         await Load();
         Remember();
     }
 
-    // Show older under the board's Done: the closed columns reach back 30 days, for this visit.
+    // "Show the last 30 days" under the board, or "the last 7 days" back again: how far its closed strip counts, for this visit.
     private async Task ShowOlder()
     {
-        _closedDays = ActionService.BoardOlderDays;
+        _closedDays = _closedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays;
         await Load();
     }
 
@@ -733,7 +1247,8 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
+        Search = Words, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
+        ClosedDays = _closedWithin, OnMyTeams = _onMyTeams,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch
@@ -751,25 +1266,33 @@ else
     private async Task Fetch()
     {
         var filter = Filter();
-        // The team's count against its limit is read alongside, on its own context.
+        // The team's count against its limit and the tabs' counts are read alongside, each on its own context.
         var active = _teamId is { } team ? ActionSvc.TeamActiveAsync(team) : Task.FromResult<TeamActive?>(null);
+        var counts = ActionSvc.ViewCountsAsync(filter, _rules.FirstOrDefault(r => r.Id == _ruleId), _asBoard ? _closedDays : null);
         if (_asBoard)
         {
-            var board = ActionSvc.BoardAsync(filter, _closedDays);
-            await Task.WhenAll(active, board);
-            (_board, _active) = (board.Result, active.Result);
+            var board = ActionSvc.BoardAsync(filter);
+            await Task.WhenAll(active, board, counts);
+            (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
+            // A card the address named (?card=12), once.
+            if (_cardAsked is { } number && _board.Cards.FirstOrDefault(c => c.Number == number) is { } named) (_cardId, _revealCard) = (named.Id, true);
+            _cardAsked = null;
             _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
             return;
         }
         var grouping = _groupByKind ? ActionGrouping.Kind : ByUrgency ? ActionGrouping.Urgency : ActionGrouping.None;
         var read = ActionSvc.PageAsync(filter with { RuleId = _ruleId }, SortOf(_sort), _sort?.Descending ?? false, grouping, _page);
-        await Task.WhenAll(active, read);
+        await Task.WhenAll(active, read, counts);
         var page = read.Result;
-        _active = active.Result;
+        (_active, _counts, _workers) = (active.Result, counts.Result, page.Workers);
         // A page past the end (an old link, or the list shrank) shows the last one; the pager says which, and so does the
         // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
         var asked = _page;
-        (_rows, _total, _page, _groups) = (page.Rows, page.Total, page.Page, page.Groups);
+        (_rows, _total, _page, _groups, _groupsUnowned) = (page.Rows, page.Total, page.Page, page.Groups, page.GroupsUnowned);
+        // The action the address named (?card=12, as on the board), once, where it's on this page; else ?row='s place.
+        if (_cardAsked is { } inAddress && IndexOfNumber(inAddress) is >= 0 and var at) _selected = at;
+        _cardAsked = null;
+        _selected = RowSelection.Clamp(_selected, _rows.Count);
         if (_page != asked && _applied is { } applied)
         {
             _applied = applied with { Page = _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };

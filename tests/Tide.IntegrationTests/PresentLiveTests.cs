@@ -89,7 +89,8 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.ToggleHand());
         Meetings.Get(day)!.Hands.Single().Should().Match<RaisedHand>(h => h.Name == "Olive Owner" && h.ArticleId != null);
         await Do(pat, p => p.Follow());
-        (await pat.Html()).Should().Contain("Lower Olive Owner&#x27;s hand");
+        await Do(pat, p => p.ToggleHandsList());
+        (await pat.Html()).Should().Contain("Lower Olive Owner&#x27;s hand", "the presenter lowers it from the list of hands");
 
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
@@ -119,7 +120,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.JoinIfLive());
 
         await Do(pat, p => p.ToggleLock());
-        (await pat.Html()).Should().Contain("Unlock").And.Contain("aria-pressed=\"true\"");
+        (await pat.Html()).Should().Contain("id=\"present-rail-lock\" class=\"btn btn-sm btn-primary\" aria-pressed=\"true\"");
         await Do(owner, p => p.Follow());
         PresentFollowPillTests.Heard(await owner.Html()).Should().Be("Following Tester · locked by the presenter");
         (await owner.Html()).Should().Contain("disabled aria-label=\"Next slide\"", "the slide buttons are off");
@@ -149,7 +150,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Sweep the proxy logs", ActionKind.IocSweep, team, null, day);
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Sweep the proxy logs", ActionKind.IocSweep, team, null, day)).Number;
         }
         var label = Ui.ActionLabel(number);
         await using var pat = await Open(app, day);
@@ -214,7 +215,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Block the domain", ActionKind.Other, team, null, day);
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Block the domain", ActionKind.Other, team, null, day)).Number;
         }
         await using var pat = await Open(app, day);
         await FirstArticle(pat);
@@ -258,7 +259,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         note.Should().Match<Tide.Domain.Entities.MeetingNote>(n => n.AuthorName == "Olive Owner" && n.ArticleId == first);
 
         await pat.Click(p => p.OnPresentKey("last"));
-        (await pat.Html()).Should().Contain("Attended (2)").And.Contain("Someone in the room");
+        (await pat.HtmlOnce("Attended (2)")).Should().Contain("Attended (2)", "who joined is listed once the record says so").And.Contain("Someone in the room");
         EndMeeting(app, day);
     }
 
@@ -315,7 +316,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         {
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await actions.QuickAddAsync(first, "Raised elsewhere", ActionKind.PatchRemediate, team, future, day);
+            number = (await actions.QuickAddAsync(first, "Raised elsewhere", ActionKind.PatchRemediate, team, future, day)).Number;
             id = (await actions.GetAsync(number))!.Action.Id;
         }
         Tide.Application.Abstractions.Change Heard(string topic) => new(topic, "x", "Robin", Guid.NewGuid());

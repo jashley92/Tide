@@ -18,11 +18,15 @@ public interface IMeetingsInProgress
     /// connection up): each one's day and brief, and what its presenter has open over the slide.
     /// </summary>
     IReadOnlyList<SeatedMeeting> SeatedIn(string userId) => [];
+
+    /// <summary>Who has presented the brief <paramref name="briefId"/>'s live meeting so far, by name, in the order they
+    /// took it; none when it isn't live.</summary>
+    IReadOnlyList<string> PresentersOf(Guid briefId) => [];
 }
 
 /// <summary>A live meeting someone is seated in: its day and brief, and the action (its number) or the card the
-/// presenter has open over the slide for the room, if any.</summary>
-public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, MeetingCard? Card);
+/// presenter has open over the slide for the room, if any; and whether the one seated is presenting it.</summary>
+public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, MeetingCard? Card, bool Presenting = false);
 
 /// <summary>What a card opened over a slide in present mode shows.</summary>
 public enum MeetingCardKind
@@ -50,6 +54,20 @@ public sealed record MeetingCard(MeetingCardKind Kind, Guid Id)
     public static MeetingCard ForCves(Guid articleId) => new(MeetingCardKind.Cves, articleId);
 }
 
+/// <summary>
+/// When a brief's meeting may be held: on the brief's day or later, in the organization's zone. Starting it in present
+/// mode and marking it presented (<see cref="BriefService.MarkPresentedAsync"/>) keep to this one rule, so a meeting that
+/// could start can always be ended.
+/// </summary>
+public static class MeetingDay
+{
+    /// <summary>Why a meeting before its brief's day is refused.</summary>
+    public const string TooEarly = "The meeting can't be held before the brief's day.";
+
+    /// <summary>Whether <paramref name="atUtc"/> falls before <paramref name="day"/> in the organization's zone.</summary>
+    public static bool Before(Org.OrgClock clock, DateOnly day, DateTimeOffset atUtc) => clock.DayOf(atUtc) < day;
+}
+
 /// <summary>No meeting is ever running: where present mode isn't (a test, a tool).</summary>
 public sealed class NoMeetingsInProgress : IMeetingsInProgress
 {
@@ -73,6 +91,11 @@ public static class MeetingAccess
     /// <summary>The live meetings a meeting-only user is seated in now; none for anyone else.</summary>
     public static IReadOnlyList<SeatedMeeting> Seats(ICurrentUser user, IMeetingsInProgress? meetings) =>
         meetings is null || !MeetingOnly(user) || !user.IsAuthenticated ? [] : meetings.SeatedIn(user.UserId);
+
+    /// <summary><paramref name="user"/>'s seat in the live meeting of brief <paramref name="briefId"/>, whatever their
+    /// role, or null. Callers decide what a seat lets them do.</summary>
+    public static SeatedMeeting? SeatIn(ICurrentUser user, IMeetingsInProgress? meetings, Guid briefId) =>
+        meetings is null || !user.IsAuthenticated ? null : meetings.SeatedIn(user.UserId).FirstOrDefault(s => s.BriefId == briefId);
 
     /// <summary>Whether a meeting-only user is seated in the live meeting of brief <paramref name="briefId"/>.</summary>
     public static bool SeatedFor(ICurrentUser user, IMeetingsInProgress? meetings, Guid briefId) =>

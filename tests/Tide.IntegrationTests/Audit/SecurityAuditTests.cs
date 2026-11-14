@@ -436,6 +436,7 @@ public sealed class TrailAuditTests : IDisposable
     {
         _db.User.Roles = new HashSet<AppRole> { AppRole.Admin, AppRole.Analyst };
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        await _db.Teams().AddMemberAsync(team, "S-1-5-21-OWNER", "Jordan Rivera");
         var svc = _db.Actions();
         var number = await svc.CreateAsync(new ActionForm { Title = "Sweep", TeamId = team });
         var action = (await svc.GetAsync(number))!.Action;
@@ -933,8 +934,8 @@ public class InlineImageAuditTests(TideApp app) : IClassFixture<TideApp>
 
     // A5-1 (Agent 5's acceptance test).
     [Theory]
-    [InlineData("/exports/brief/{day}?format=csv")]
-    [InlineData("/exports/brief/{day}")]
+    [InlineData("/exports/brief/{day}?format=csv&tlp=clear")]
+    [InlineData("/exports/brief/{day}?tlp=clear")]
     [InlineData("/metrics/export.csv")]
     [InlineData("/trends/export.csv")]
     [InlineData("/trends/articles.csv")]

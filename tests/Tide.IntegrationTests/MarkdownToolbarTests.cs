@@ -47,8 +47,8 @@ public partial class MarkdownToolbarTests(TideApp app) : IClassFixture<TideApp>
         bar.Should().Contain("title=\"Bold (Ctrl&#x2B;B)\"").And.Contain("title=\"Italic (Ctrl&#x2B;I)\"")
             .And.Contain("title=\"Indent list item (Tab)\"").And.Contain("title=\"Outdent list item (Shift&#x2B;Tab)\"");
         bar.Should().Contain("class=\"bi bi-type-bold\"").And.Contain("class=\"bi bi-list-ul\"");
-        Regex.Matches(bar, "tabindex=\"0\"").Should().HaveCount(1, "the toolbar is one Tab stop; the arrow keys move inside it");
-        Regex.Matches(bar, "<button type=\"button\"").Should().HaveCount(Names.Length);
+        bar.Should().Contain("tabindex=\"0\"", Exactly.Once(), "the toolbar is one Tab stop; the arrow keys move inside it");
+        bar.Should().Contain("<button type=\"button\"", Exactly.Times(Names.Length));
     }
 
     [Fact]
@@ -93,7 +93,10 @@ public partial class MarkdownToolbarTests(TideApp app) : IClassFixture<TideApp>
         var path = $"/briefs/{day:yyyy-MM-dd}";
 
         await using (var analyst = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }))
+        {
+            await analyst.Click(p => p.EditTeamNote());
             HasTheButtons(Toolbar(await analyst.Html(), "team-note")!, "Opening note", "team-note");
+        }
 
         await using var owner = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner);
         var theirs = await owner.Html();

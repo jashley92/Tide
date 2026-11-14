@@ -22,7 +22,8 @@ public partial class SubmitKeysTests(TideApp app) : IClassFixture<TideApp>
         { "Pages/Stories.razor", 1 },
         { "Pages/AdversariesPage.razor", 1 },
         { "Pages/StackPage.razor", 1 },
-        { "Pages/BriefPage.razor", 2 },
+        { "Pages/BriefPage.razor", 1 },
+        { "Today/MeetingCard.razor", 1 },
         { "Pages/ExternalTeams.razor", 2 },
         { "Pages/Admin/AccessAdmin.razor", 2 },
         { "Pages/Admin/SourcesAdmin.razor", 4 },
@@ -106,7 +107,7 @@ public partial class SubmitKeysTests(TideApp app) : IClassFixture<TideApp>
         managers.Should().BePositive();
         var card = html[html.LastIndexOf("<div", managers, StringComparison.Ordinal)..];
         card.Should().StartWith("<div class=\"tide-card\" data-submit-scope");
-        Regex.IsMatch(card, @"<button[^>]*\sdata-submit(?![-\w])[^>]*>Save</button>").Should().BeTrue();
+        SaveSubmitButton().IsMatch(card).Should().BeTrue();
     }
 
     [Fact]
@@ -131,4 +132,8 @@ public partial class SubmitKeysTests(TideApp app) : IClassFixture<TideApp>
     private static partial Regex ScopeTag();
 
     [GeneratedRegex(@"\sdata-submit(?![-\w])")]
-    private static partial Regex SubmitAttr();}
+    private static partial Regex SubmitAttr();
+
+    [GeneratedRegex(@"<button[^>]*\sdata-submit(?![-\w])[^>]*>Save</button>")]
+    private static partial Regex SaveSubmitButton();
+}

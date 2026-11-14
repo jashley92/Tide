@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Actions;
 using Tide.Application.Preferences;
 using Tide.Application.Settings;
@@ -15,7 +16,7 @@ namespace Tide.IntegrationTests;
 /// are, until a test turns one on): a kind that's off shows so, disabled; a switch saves at once; an administrator sees
 /// how many chose, and who, but changes nothing.
 /// </summary>
-public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideApp>
+public partial class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideApp>
 {
     private static SignIn Person(string role = "Analyst") => new($"dev:notify-{Guid.NewGuid():N}", "Notify tester", role);
 
@@ -113,7 +114,7 @@ public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideA
         await r.Click(c => c.ShowChoosers(UserPreferences.NotifyRotationReminders, ReminderKind.Presenting));
         var html = await r.Html();
 
-        System.Text.RegularExpressions.Regex.Matches(html, "<table[^>]*tide-optlist").Should().HaveCount(1, "the other row with the same choice stays closed");
+        OptionList().Matches(html).Should().HaveCount(1, "the other row with the same choice stays closed");
         html.Should().Contain("id=\"optlist-notify-rotationReminders-Presenting\"");
     }
 
@@ -123,4 +124,7 @@ public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideA
     [InlineData(UserPreferences.NotifyDigest, 0, "No one gets a personal digest")]
     [InlineData(UserPreferences.NotifyDigest, 5, "5 people get a personal digest")]
     public void TheCounts_ReadAsTheySay(string pref, int n, string text) => TeamsAdmin.CountText(pref, n).Should().Be(text);
+
+    [GeneratedRegex("<table[^>]*tide-optlist")]
+    private static partial Regex OptionList();
 }

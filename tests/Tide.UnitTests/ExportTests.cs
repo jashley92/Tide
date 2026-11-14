@@ -81,13 +81,81 @@ public class ExportTests
     {
         using var doc = JsonDocument.Parse(Stix.Write(Fixture(), "CTI"));
         var objects = doc.RootElement.GetProperty("objects").EnumerateArray().ToList();
-        objects.All(o => o.GetProperty("type").GetString() == "identity" || o.TryGetProperty("object_marking_refs", out _)).Should().BeTrue("every object but the identity is marked");
+        objects.All(o => o.GetProperty("type").GetString() is "identity" or "marking-definition" || o.TryGetProperty("object_marking_refs", out _)).Should().BeTrue("every object but the identity and the markings is marked");
         var ip = objects.Single(o => o.GetProperty("type").GetString() == "indicator" && o.GetProperty("name").GetString() == "203.0.113.45");
         ip.GetProperty("object_marking_refs")[0].GetString().Should().Be(Stix.Marking(TlpLevel.Amber));
         ip.GetProperty("description").GetString().Should().Be("C2\nStill up");
         objects.Where(o => o.GetProperty("type").GetString() == "report")
             .Should().OnlyContain(r => r.GetProperty("object_refs").EnumerateArray().Any(x => x.GetString() == ip.GetProperty("id").GetString()));
         objects.Any(o => o.TryGetProperty("name", out var n) && n.GetString() == "WS-0142").Should().BeFalse("a host name has no STIX observable");
+    }
+
+    [Fact]
+    public void Stix_CarriesEachTlpMarkingItRefersTo_AsTheTlp20ExtensionDefinesIt()
+    {
+        // The TLP 2.0 marking definitions aren't among STIX 2.1's own: a bundle that refers to them carries them.
+        using var doc = JsonDocument.Parse(Stix.Write(Fixture(), "CTI"));
+        var objects = doc.RootElement.GetProperty("objects").EnumerateArray().ToList();
+        var used = objects.Where(o => o.TryGetProperty("object_marking_refs", out _))
+            .SelectMany(o => o.GetProperty("object_marking_refs").EnumerateArray().Select(r => r.GetString())).Distinct().Order().ToList();
+        var defined = objects.Where(o => o.GetProperty("type").GetString() == "marking-definition").ToList();
+
+        defined.Select(d => d.GetProperty("id").GetString()).Order().Should().Equal(used, "each marking used, once, and no other");
+        var amber = defined.Single(d => d.GetProperty("id").GetString() == Stix.Marking(TlpLevel.Amber));
+        amber.GetProperty("name").GetString().Should().Be("TLP:AMBER");
+        amber.GetProperty("spec_version").GetString().Should().Be("2.1");
+        amber.GetProperty("created").GetString().Should().Be("2022-10-01T00:00:00.000Z");
+        var ext = amber.GetProperty("extensions").GetProperty("extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d");
+        ext.GetProperty("extension_type").GetString().Should().Be("property-extension");
+        ext.GetProperty("tlp_2_0").GetString().Should().Be("amber");
+    }
+
+    // An export of one article at tlp, pointing at one IP, one CVE and one technique.
+    private static ExportSet OneArticle(TlpLevel tlp, string stem, Guid id) => new(stem,
+    [
+        new Article
+        {
+            Id = id, Title = "One", Tlp = tlp, Classification = Classification.Threat, CreatedAtUtc = Day1,
+            Indicators = [new() { Type = IndicatorType.IpAddress, Value = "198.51.100.7" }],
+            Cves = [new() { CveId = "CVE-2026-0002" }],
+            Techniques = [new() { TechniqueId = "T1566" }],
+        },
+    ], new Dictionary<Guid, IReadOnlyList<DateOnly>>());
+
+    private static Dictionary<string, string> SharedIds(ExportSet set)
+    {
+        using var doc = JsonDocument.Parse(Stix.Write(set, "CTI"));
+        return doc.RootElement.GetProperty("objects").EnumerateArray()
+            .Where(o => o.GetProperty("type").GetString() is "indicator" or "vulnerability" or "attack-pattern")
+            .ToDictionary(o => o.GetProperty("type").GetString()!, o => o.GetProperty("id").GetString()!);
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_AreTheirTypeValueAndTlp()
+    {
+        // uuid5 of "type|value|tlp": the value is the pattern for an indicator, the CVE id, the technique id.
+        var ids = SharedIds(OneArticle(TlpLevel.AmberStrict, "a", Guid.NewGuid()));
+        ids["indicator"].Should().Be($"indicator--{Stix.Uuid5("indicator|[ipv4-addr:value = '198.51.100.7']|amber-strict")}");
+        ids["vulnerability"].Should().Be($"vulnerability--{Stix.Uuid5("vulnerability|CVE-2026-0002|amber-strict")}");
+        ids["attack-pattern"].Should().Be($"attack-pattern--{Stix.Uuid5("attack-pattern|T1566|amber-strict")}");
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_DifferByTlp_SoTwoMarkingsAreNeverOneObject()
+    {
+        // One export has the IP at CLEAR, another at AMBER: a platform importing both must see two objects, not two
+        // conflicting versions of one.
+        var clear = SharedIds(OneArticle(TlpLevel.Clear, "a", Guid.NewGuid()));
+        var amber = SharedIds(OneArticle(TlpLevel.Amber, "a", Guid.NewGuid()));
+        foreach (var type in clear.Keys) clear[type].Should().NotBe(amber[type], $"the {type} is marked differently");
+    }
+
+    [Fact]
+    public void Stix_SharedObjectIds_StayTheSame_AcrossExportsAtTheSameTlp()
+    {
+        // A different export (another file, another article) at the same TLP: re-imports still merge.
+        SharedIds(OneArticle(TlpLevel.Green, "brief-1", Guid.NewGuid()))
+            .Should().Equal(SharedIds(OneArticle(TlpLevel.Green, "story-2", Guid.NewGuid())));
     }
 
     [Theory]

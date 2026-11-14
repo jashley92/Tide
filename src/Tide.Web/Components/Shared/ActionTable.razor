@@ -1,46 +1,93 @@
 @inject OrgClock Clock
 
-@* A list of actions: title (its number after it, and its article), kind and priority, team and assignee, due date and SLA, status.
-   One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. *@
+@* A list of actions: title (its number after it, and its article), kind and priority, team and assignee (with Take it on
+   a row the person may take), progress (its checklist, then how its hunt went or how long since anything happened to
+   it), due date and SLA, and status (a menu to change it, for whoever may work the action).
+   One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. A page that
+   gives Selected has a selected row (RowSelection), which its keys move (RowKeys). *@
 
 <DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
            FilterLabel="Filter actions" FilterPlaceholder="Title, A-number, team, person or article" Filter="@Filter" DefaultSort="DefaultSort"
            RowClass="RuleClass" GroupBy="Grouping" GroupOrder="GroupNames" Toolbar="Toolbar" Empty="Empty" PageInAddress="PageInAddress"
-           ServerSide="ServerSide" Total="Total" OnQuery="OnQuery" GroupTotals="GroupTotals" PageSize="PageSize" Filtered="Filtered" FilterBox="!ServerSide">
+           ServerSide="ServerSide" Total="Total" OnQuery="OnQuery" GroupTotals="GroupTotals" PageSize="PageSize" Filtered="Filtered" FilterBox="!ServerSide"
+           Selected="@(SelectedId is null ? null : r => r.Id == SelectedId)" OnSelect="OnSelect" GroupNote="GroupNote">
     <RowTemplate Context="r">
         <td>
             @if (r.ParentNumber is { } parent)
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
             }
-            <ActionRef Number="r.Number" Title="@r.Title" />
-            <EscalatedBadge At="r.EscalatedSince" />
-            <FileCount Count="r.Files" />
+            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title">
+                @* The Escalated badge and the paperclip stay on the number's line; the title wraps before them. *@
+                <AfterNumber>
+                    <EscalatedBadge At="r.EscalatedSince" />
+                    <FileCount Count="r.Files" />
+                </AfterNumber>
+            </ActionRef>
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
+            @* Its kind and priority, shown here in place of the Kind column where that folds away (beside the docked rail). *@
+            <div class="small tide-action-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></div>
             @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
             {
                 <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
             }
-            @if (r.ChecklistTotal > 0)
-            {
-                <div class="small tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @r.ChecklistDone/@r.ChecklistTotal on the checklist</div>
-            }
             @if (r.ArticleTitle is not null)
             {
-                <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> @r.ArticleTitle</div>
+                <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> @r.ArticleTitle
+                    @if (r.ArticleKev)
+                    {
+                        <span class="tide-kev" title="Its article names a CVE on CISA's known exploited list">KEV</span>
+                    }
+                    <SourceTlpBadge Level="r.ArticleTlp" />
+                </div>
             }
             @if (r.Children > 0)
             {
                 <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
             }
         </td>
-        <td class="small text-nowrap">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
-        <td class="small">@r.TeamName<div class="tide-muted">@(r.AssigneeName ?? "Unassigned")</div></td>
+        <td class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
+        <td class="small">
+            @r.TeamName<div class="tide-muted"><HolderText Label="@r.Holder("Unassigned")" Short="true" /></div>
+            @if (CanTake?.Invoke(r) == true)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap tide-row-take" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(r)"
+                        aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+            }
+        </td>
+        <td class="small tide-col-progress">
+            @if (r.ChecklistTotal > 0)
+            {
+                <div>Checklist @r.ChecklistDone of @r.ChecklistTotal</div>
+            }
+            @if (ActionGuide.IsHunt(r.Kind))
+            {
+                @* As the board's card says it: a sweep with no query yet hasn't been run either. *@
+                <div class="tide-muted">@HuntBadge.Text(r.Hunted ?? HuntResult.NotRun)</div>
+            }
+            else if (r.IsOpen && Quiet(r) is { } quiet)
+            {
+                <div class="tide-muted">@quiet</div>
+            }
+        </td>
         <td class="small text-nowrap">
             @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
             <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
         </td>
-        <td class="small"><ActionStatusBadge Status="r.Status" />@if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }</td>
+        <td class="small">
+            @if (CanWork?.Invoke(r) == true)
+            {
+                @* The status, as a menu of the others to move it to (the board's Move menu, in place). *@
+                <MenuButton Label="@ActionService.StatusName(r.Status)" AriaLabel="@($"Status of {Ui.ActionLabel(r.Number)}: {ActionService.StatusName(r.Status)}")"
+                            MenuLabel="@($"Move {Ui.ActionLabel(r.Number)} to")" ButtonClass="@Badge.Css(ActionStatusBadge.Tone(r.Status), extra: "tide-status-menu")"
+                            Disabled="Busy" Items="@StatusItems(r)" />
+            }
+            else
+            {
+                <ActionStatusBadge Status="r.Status" />
+            }
+            @if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }
+        </td>
     </RowTemplate>
 </DataTable>
 
@@ -77,6 +124,55 @@
     [Parameter] public bool Filtered { get; set; }
 
     [Parameter] public RenderFragment? Toolbar { get; set; }
+
+    /// <summary>Whether a row offers Take it (the page asks the service's rule); none when not set.</summary>
+    [Parameter] public Func<ActionRow, bool>? CanTake { get; set; }
+
+    /// <summary>Take it on a row: the page takes the action on for the person.</summary>
+    [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    /// <summary>While a take or a move is under way, the buttons wait.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Whether the person may work a row's action: its status is then a menu to move it (none when not set).</summary>
+    [Parameter] public Func<ActionRow, bool>? CanWork { get; set; }
+
+    /// <summary>A status chosen from a row's menu: the page moves the action there.</summary>
+    [Parameter] public EventCallback<(ActionRow Row, ActionStatus To)> OnMove { get; set; }
+
+    /// <summary>The selected row's action, on a page with a selected row; the row focus moves to is chosen through
+    /// <see cref="OnSelect"/>.</summary>
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public EventCallback<ActionRow> OnSelect { get; set; }
+
+    /// <summary>How many in each group nobody holds, said after its heading when there are any.</summary>
+    [Parameter] public IReadOnlyDictionary<string, int>? GroupsUnowned { get; set; }
+
+    private string? GroupNote(string group) =>
+        GroupsUnowned?.GetValueOrDefault(group) is > 0 and var n ? $"{n} {(n == 1 ? "has" : "have")} no owner" : null;
+
+    private IReadOnlyList<MenuButton.Item> StatusItems(ActionRow r) =>
+        [.. ActionItem.StatusOrder.Where(s => s != r.Status).Select(to => new MenuButton.Item(ActionService.StatusName(to), Run: EventCallback.Factory.Create(this, () => OnMove.InvokeAsync((r, to)))))];
+
+    // Each row's title, to put focus on (the page keeps the person's place when a row changes or leaves). Blazor hands a
+    // title over once, when it's first drawn, so a new list of rows drops only the ones that went.
+    private readonly Dictionary<Guid, ActionRef> _refs = [];
+    private IReadOnlyList<ActionRow>? _refsFor;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Rows, _refsFor)) return;
+        _refsFor = Rows;
+        foreach (var gone in _refs.Keys.Except(Rows?.Select(r => r.Id) ?? []).ToList()) _refs.Remove(gone);
+    }
+
+    /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>
+    public async Task<bool> FocusRowAsync(Guid id)
+    {
+        if (!_refs.TryGetValue(id, out var row)) return false;
+        await row.FocusAsync();
+        return true;
+    }
     [Parameter] public RenderFragment? Empty { get; set; }
 
     /// <summary>The list's order: soonest due first (no date last), as the open views come.</summary>
@@ -88,7 +184,8 @@
     [
         new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + Ui.ActionLabel(r.Number) + " " + r.ArticleTitle },
         new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind) },
-        new("team", "Team") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + (r.AssigneeName ?? "Unassigned") },
+        new("team", "Team and owner") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + r.Holder("Unassigned").Short },
+        new("progress", "Progress"),
         new("due", "Due") { SortBy = r => r.DueDate },
         new("status", "Status") { SortBy = r => r.Status },
     ];
@@ -99,15 +196,23 @@
     private IReadOnlyList<string> GroupNames => GroupByKind ? KindOrder : UrgencyOrder;
 
     private static string KindOf(ActionRow r) => ActionService.KindName(r.Kind);
+
+    // "No update for 3 days": the organization's days since anything last happened to it; nothing within the day.
+    private string? Quiet(ActionRow r) => ActionRow.QuietText(r.QuietDays(Today, Clock.DayOf)) is { } quiet ? "N" + quiet[1..] : null;
     private string UrgencyOf(ActionRow r) => ActionSla.UrgencyName(r.Urgency(Today, Clock.Days));
 
     /// <summary>The rows a colleague's change just brought or changed, highlighted a moment (the page marks them).</summary>
     [Parameter] public LiveMarks<Guid>? Live { get; set; }
 
-    private string? RuleClass(ActionRow r)
+    // Every row is a tide-action-row (the selected row's keys find it so), coloured by its first card rule, and marked a
+    // moment when a colleague's change brought it.
+    private string RuleClass(ActionRow r)
     {
-        var rule = ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : null;
+        var rule = ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched ? " tide-ruled " + Ui.RuleClass(matched[0].Colour) : "";
         var live = Live?.Css(r.Id);
-        return string.IsNullOrEmpty(live) ? rule : rule is null ? live : rule + " " + live;
+        return RowClassName + rule + (string.IsNullOrEmpty(live) ? "" : " " + live);
     }
+
+    /// <summary>The class each row carries (RowKeys's RowClass).</summary>
+    public const string RowClassName = "tide-action-row";
 }

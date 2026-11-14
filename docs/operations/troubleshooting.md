@@ -99,9 +99,21 @@ jobs. Run it there." on such a server.
 
 - **Cause:** another process on the same database holds the job lease: another server pointed at this database (a
   standby started by mistake), or a second worker in the pool.
-- **Where to look:** Diagnostics › "Job lease" names the holder (machine and process id).
+- **Where to look:** Diagnostics › "Job lease" names the holder (machine and process id), and "Second process" says
+  both are running.
 - **Fix:** stop the other server, or set the pool's Maximum Worker Processes to 1 (rerun `Install-Tide.ps1` or
-  `Upgrade-Tide.ps1`, which set it). If the holder died, this process takes over within 3 minutes by itself.
+  `Upgrade-Tide.ps1`, which set it). If the holder died, this process takes over within 3 minutes by itself, or at
+  its next check when the holder was on the same server.
+
+### A banner says "Second process running", or `/health/jobs` is `Degraded` with no failing job
+
+- **Cause:** another TIDE process on the same database has written a heartbeat in the last 3 minutes: a second worker
+  in the pool (a web garden), another server pointed at this database, or an overlapping recycle that hasn't finished.
+  TIDE runs as one process, and some of its locks are the process's own, so two can make conflicting changes.
+- **Where to look:** the banner (administrators only) and Diagnostics › "Second process" name both processes
+  (machine and process id).
+- **Fix:** stop the extra one, as above. The alarm clears within 3 minutes of it stopping, and at once when it shuts
+  down cleanly. A brief alarm during a recycle needs nothing.
 
 ## Sign-in and access
 
@@ -201,7 +213,8 @@ jobs. Run it there." on such a server.
 - **Cause:**
   - A dropped connection (sleep, network blip). The session is kept for 20 minutes, so reconnecting picks up where it
     was.
-  - A message from the browser over 256 KB drops the circuit (an enormous field). Screenshots don't count.
+  - A message from the browser over 1 MB drops the circuit. Every text box has a limit well under it; screenshots
+    don't count.
   - Behind a reverse proxy that rewrites the host, the browser's `Origin` isn't the request's host, so
     `CircuitOriginMiddleware` refuses the circuit with 403.
   - The app pool recycled without a persisted key ring (`DataProtection:KeyPath` blank), so every session ended.

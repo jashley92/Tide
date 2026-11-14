@@ -17,6 +17,7 @@ public sealed class HeldLease : IJobLease
 {
     public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(true);
     public LeaseStatus Status { get; } = new(LeaseState.Held, "TEST/1/held", null, null, null, null);
+    public event Action? AlarmChanged { add { } remove { } }
 }
 
 /// <summary>A lease another process holds.</summary>
@@ -31,6 +32,7 @@ public sealed class StandbyLease : IJobLease
     }
 
     public LeaseStatus Status { get; } = new(LeaseState.StandingBy, "OTHER/2/held", null, null, null, null);
+    public event Action? AlarmChanged { add { } remove { } }
 }
 
 /// <summary>The test database, made to fail on demand (the database down).</summary>
@@ -46,7 +48,8 @@ public class JobLeaseTests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 9, 9, 0, 0, TimeSpan.Zero);
 
-    private static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder)
+    /// <summary>A lease on <paramref name="dbs"/> as <paramref name="holder"/>, with the provider it makes its scopes from.</summary>
+    internal static (BackgroundJobLease Lease, ServiceProvider Provider) Lease(IAppDbContextFactory dbs, TimeProvider clock, string holder)
     {
         var provider = new ServiceCollection().AddSingleton(dbs).BuildServiceProvider();
         return (new BackgroundJobLease(provider.GetRequiredService<IServiceScopeFactory>(), clock, NullLogger<BackgroundJobLease>.Instance, holder), provider);

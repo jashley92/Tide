@@ -28,6 +28,7 @@ public class DialogTabTests
             e.getAttribute = n => (n in e.attrs ? e.attrs[n] : null);
             e.hasAttribute = n => n in e.attrs;
             e.focus = () => { document.activeElement = e; };
+            e.getClientRects = () => [{}];
             e.matches = sel => sel.split(',').some(one => compound(e, one.trim()));
             e.closest = sel => { for (let x = e; x; x = x.parentElement) if (x.matches(sel)) return x; return null; };
             e.querySelectorAll = sel => { const out = []; (function walk(x) { x.children.forEach(k => { if (k.matches(sel)) out.push(k); walk(k); }); })(e); return out; };
@@ -41,7 +42,7 @@ public class DialogTabTests
                 : p.startsWith('.') ? e.cls.includes(p.slice(1)) : e.tagName === p.toUpperCase());
         }
         const listeners = [];
-        global.document = { addEventListener: (t, f) => listeners.push(f), activeElement: null, querySelector: sel => page.querySelector(sel) };
+        global.document = { addEventListener: (t, f) => listeners.push(f), activeElement: null, querySelector: sel => page.querySelector(sel), querySelectorAll: sel => page.querySelectorAll(sel) };
         global.window = global;
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
         // A key on the focused element: where focus is after dialog.js has handled it ("browser" when dialog.js left the
@@ -63,11 +64,13 @@ public class DialogTabTests
             apply,
             el('foldedLast', 'div', 'tide-atkm-col tide-atkm-col-hidden', { inert: '' }, [cell('c3'), cell('c4')]),
         ]);
-        // A confirmation open on the page, its first part inert, with focus outside it.
+        // A confirmation open on the page, its first part inert, with focus outside it; a rail open over the page before it
+        // in the markup is modal too, but the confirmation is the one on top.
         const ok = el('ok', 'button', 'btn btn-primary');
         const modal = el('modal', 'div', 'tide-modal', { tabindex: '-1' }, [el('busy', 'div', '', { inert: '' }, [el('x', 'button', 'btn')]), ok]);
         const outside = el('outside', 'button', 'btn');
-        const page = el('page', 'div', '', {}, [outside, modal]);
+        const rail = el('rail', 'aside', 'tide-rail', { 'aria-modal': 'true' }, [el('railButton', 'button', 'btn')]);
+        const page = el('page', 'div', '', {}, [outside, rail, modal]);
         const out = {
             tabFromApply: press(apply, 'Tab'),
             shiftTabFromBox: press(box, 'Tab', true),
@@ -99,14 +102,14 @@ public class DialogTabTests
                 var stdout = await p.StandardOutput.ReadToEndAsync();
                 p.WaitForExit(60_000).Should().BeTrue("node finishes");
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
-                var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+                var said = System.Text.Json.JsonElement.Parse(stdout);
                 string At(string name) => said.GetProperty(name).GetString()!;
                 At("tabFromApply").Should().Be("box", "Tab from the last control that can take focus goes round to the first, not out of the dialog");
                 At("shiftTabFromBox").Should().Be("apply", "Shift+Tab from the first goes round to the last, not to a folded cell");
                 At("tabFromPanel").Should().Be("box", "with the dialog itself focused, Tab goes to its first control");
                 At("shiftTabFromPanel").Should().Be("apply", "and Shift+Tab to its last");
                 At("tabInTheMiddle").Should().Be("browser", "between the ends, the browser's own Tab moves on");
-                At("tabIntoConfirmation").Should().Be("ok", "Tab from behind an open confirmation goes to its first control that can take focus");
+                At("tabIntoConfirmation").Should().Be("ok", "Tab from behind an open confirmation goes to its first control that can take focus, not to a rail under it");
             }
         }
         finally { File.Delete(script); }

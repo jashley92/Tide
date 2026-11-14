@@ -183,6 +183,11 @@ public class ReaderOverHttpTests(ReaderApp app) : IClassFixture<ReaderApp>
     [InlineData("/workload")]
     [InlineData("/hunts/saved")]
     [InlineData("/outreach/templates")]
+    [InlineData("/library")]
+    [InlineData("/library/queries")]
+    [InlineData("/library/templates")]
+    [InlineData("/library/playbooks")]
+    [InlineData("/library/board-rules")]
     [InlineData("/admin")]
     [InlineData("/admin/access")]
     [InlineData("/admin/scorecard")]
@@ -370,7 +375,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/files/00000000-0000-0000-0000-000000000000/inline")]
     [InlineData("/metrics/export.csv")]
     [InlineData("/trends/export.csv")]
-    [InlineData("/exports/brief/{day}?format=csv")]
+    [InlineData("/exports/brief/{day}?format=csv&tlp=clear")]
     [InlineData("/access-denied")]
     public async Task EveryResponse_CarriesTheHardeningHeaders(string path)
     {
@@ -456,10 +461,13 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
         // The limiter has no configuration seam (its numbers are literals in Program.cs), and its bucket refills on a
         // timer, so under a loaded run some requests past the 300th get through again. What's provable without a seam:
         // the first 250 are always answered, a 429 arrives within a bounded headroom, and another user is unaffected.
+        // Asked 50 at a time, in order: one at a time, a loaded machine answered about as slowly as the bucket refills,
+        // so it took minutes to run dry, or might not within the headroom.
         var client = app.CreateClient();
         var statuses = new List<HttpStatusCode>();
         while (statuses.Count < 1500 && !statuses.Contains(HttpStatusCode.TooManyRequests))
-            statuses.Add((await client.GetAsync($"/files/{Guid.Empty}/inline?as=Rate%20Limit%20Probe")).StatusCode);
+            statuses.AddRange((await Task.WhenAll(Enumerable.Range(0, 50)
+                .Select(_ => client.GetAsync($"/files/{Guid.Empty}/inline?as=Rate%20Limit%20Probe")))).Select(r => r.StatusCode));
         statuses.Take(250).Should().AllBeEquivalentTo(HttpStatusCode.NotFound, "the first requests are answered");
         statuses.Should().Contain(HttpStatusCode.TooManyRequests, "the bucket holds 300 a minute and runs dry within the headroom");
         statuses.IndexOf(HttpStatusCode.TooManyRequests).Should().BeGreaterThanOrEqualTo(250);
@@ -481,7 +489,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
         var id = await WebSeed.ArticleAsync(app, "=HYPERLINK(\"http://evil.example/\",\"click\")", TlpLevel.Clear,
             (IndicatorType.Other, "+cmd|' /C calc'!A0"), (IndicatorType.Other, "@SUM(1+1)"), (IndicatorType.Other, "-2+3+cmd|' /C calc'!A0"),
             (IndicatorType.Domain, "evil.example"));
-        var csv = await app.CreateClient().GetStringAsync($"/exports/article/{id}?format=csv");
+        var csv = await app.CreateClient().GetStringAsync($"/exports/article/{id}?format=csv&tlp=clear");
         csv.Should().NotContain("\n=HYPERLINK").And.NotContain(",=HYPERLINK").And.Contain("'=HYPERLINK");
         csv.Should().NotContain(",+cmd").And.Contain("'+cmd");
         csv.Should().NotContain(",@SUM").And.Contain("'@SUM");
@@ -725,8 +733,8 @@ public sealed class ServiceWorld : IDisposable
         await using (var ctx = db.Context())
         {
             ctx.Users.AddRange(
-                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", LastSeenUtc = DateTimeOffset.UtcNow },
-                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", LastSeenUtc = DateTimeOffset.UtcNow });
+                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow },
+                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow });
             await ctx.SaveChangesAsync();
         }
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
@@ -887,7 +895,7 @@ public sealed class ServiceWorld : IDisposable
             ("Intake.Attach", () => db.Intake().AttachAsync(FeedItem, Article)),
             ("Cves.EnrichNow", () => db.Cves().EnrichNowAsync()),
             ("Stories.Create", () => db.Stories().CreateAsync("x", null)),
-            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active)),
+            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active, Guid.Empty)),
             ("Stories.Link", () => db.Stories().LinkAsync(Article, Story)),
             ("Stories.Delete", () => db.Stories().DeleteAsync(Story)),
             ("Rotation.AddMember", () => db.Rotation().AddMemberAsync("eve", "Eve")),
@@ -1077,8 +1085,9 @@ public class ActionOwnerAgainstTheServicesTests : IAsyncLifetime
             "Actions.AddSavedHunt", "Actions.AddIndicators", "SavedQueries.Save", "SavedQueries.SaveFromHunt", "SavedQueries.SetRetired", "SavedQueries.Delete",
             // So are the outreach templates, and an Outreach action's emails are its team's.
             "OutreachTemplates.Save", "OutreachTemplates.SetRetired", "OutreachTemplates.Delete", "Outreach.Write", "Outreach.MarkSent",
-            // At the meeting they join it and take notes like anyone on the team edition (their own notes only).
-            "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote",
+            // At the meeting they join it and take notes like anyone on the team edition (their own notes only), and take
+            // off a name they added there (MeetingServiceTests: only theirs, and only from a seat in the live meeting).
+            "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote", "Meetings.RemoveAttendee",
         };
         var leaks = await ServiceWorld.NotForbidden(_w.AllMutations().Where(m => !ownActions.Contains(m.Item1)));
         leaks.Should().BeEmpty();
@@ -1916,7 +1925,7 @@ public class RateLimitChallengeTests(RateLimitApp app) : IClassFixture<RateLimit
     {
         var client = app.CreateClient();
         var day = WebSeed.Day(app);
-        var paths = new[] { "/metrics/export.csv", $"/exports/brief/{day}?format=csv", "/trends/export.csv", $"/briefs/{day}/email/team", $"/briefs/{day}/sharepoint-images.zip", "/rotation/my.ics" };
+        var paths = new[] { "/metrics/export.csv", $"/exports/brief/{day}?format=csv&tlp=clear", "/trends/export.csv", $"/briefs/{day}/email/team", $"/briefs/{day}/sharepoint-images.zip", "/rotation/my.ics" };
         var statuses = new List<HttpStatusCode>();
         for (var i = 0; i < 400 && !statuses.Contains(HttpStatusCode.TooManyRequests); i++)
             statuses.Add((await client.GetAsync(paths[i % paths.Length] + (paths[i % paths.Length].Contains('?') ? "&" : "?") + "as=Export%20Probe")).StatusCode);
@@ -2030,6 +2039,7 @@ public class DataIntegrityChallengeTests : IAsyncLifetime
         saves.Count(e => e is null).Should().Be(1);
         saves.Where(e => e is not null).Should().OnlyContain(e => e is StaleEditException);
 
+        await db.Teams().AddMemberAsync(_w.TeamB, db.User.UserId, db.User.DisplayName);   // only a member takes it on
         var takes = await Task.WhenAll(Try(() => db.Actions().TakeAsync(_w.OtherTeamAction)), Try(() => db.Actions().TakeAsync(_w.OtherTeamAction)));
         takes.Where(e => e is not null).Should().OnlyContain(e => e is StaleEditException);
 

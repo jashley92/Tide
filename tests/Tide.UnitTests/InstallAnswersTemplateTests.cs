@@ -28,11 +28,14 @@ public partial class InstallAnswersTemplateTests
         var text = InstallAnswers.Write(new InstallFacts { AppPath = "tide" }).ReplaceLineEndings("\n");
         text.Should().MatchRegex(@"\n    InstallWebSockets\s+= \$false\n");
         var template = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "deploy", "tide.config.template.psd1")).ReplaceLineEndings("\n");
-        var comment = Regex.Match(template, @"((?:    #[^\n]*\n)+)    InstallWebSockets = \$false").Groups[1].Value;
+        var comment = WebSocketsComment().Match(template).Groups[1].Value;
         comment.Should().NotBeEmpty();
         text.Should().Contain(comment + "    InstallWebSockets");
     }
 
     [GeneratedRegex(@"^\s{4}([A-Za-z]+)\s*=")]
     private static partial Regex Key();
+
+    [GeneratedRegex(@"((?:    #[^\n]*\n)+)    InstallWebSockets = \$false")]
+    private static partial Regex WebSocketsComment();
 }

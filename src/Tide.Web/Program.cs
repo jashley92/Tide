@@ -55,11 +55,14 @@ builder.Services.AddSingleton(transportCounts);
 // so coming back to an article being edited picks up where it was, unsaved changes and all.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(20))
-    // A message from the browser over SignalR's 32 KB default drops the circuit; a long article field read back from the
-    // Markdown editor can pass that. Screenshots don't count: InputFile streams them.
+    // A message from the browser over this limit drops the circuit, and what it carried is lost without a word. A text box
+    // sends all its text in one message, so the limit is set by the longest box: every box has a maxlength, the longest
+    // 200,000 characters (a paste to search for indicators, a query TIDE wrote), and a character is sent in at most 3 bytes
+    // (UTF-8; a quote, backslash or line break escaped in JSON takes 2). 1 MB holds that with room; past a box's
+    // maxlength the browser cuts a paste, and the box says so (LengthNote). Screenshots don't count: InputFile streams them.
     .AddHubOptions(o =>
     {
-        o.MaximumReceiveMessageSize = 256 * 1024;
+        o.MaximumReceiveMessageSize = 1024 * 1024;
         // Which transport (WebSockets, or a fallback) each connection and circuit is on, for Diagnostics.
         o.AddFilter(new TransportHubFilter(transportCounts));
     });
@@ -133,6 +136,18 @@ builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
 builder.Services.AddSingleton<PrerenderStore>();
 builder.Services.AddScoped<PrerenderHandoff>();
+// What the top bar's brief chip says, kept per circuit so a navigation reads nothing for it.
+builder.Services.AddScoped<BriefChipSource>();
+// Whether what's new, tips and the tour are offered unasked (off on the screenshot tools' demo).
+builder.Services.AddSingleton<OnboardingGate>();
+// Help's Take the tour, to the layout's OnboardingHost in the same circuit.
+builder.Services.AddScoped<TourRequests>();
+// Where a guide started from Help opens: a real article or action for those pages.
+builder.Services.AddScoped<GuideStarts>();
+// Which circuit shows each person their tour, so a second tab doesn't start a second one.
+builder.Services.AddSingleton<TourClaims>();
+// The Library's one search, over the tabs the person may open.
+builder.Services.AddScoped<LibrarySearch>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
 // Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with. It also keeps the
 // transport the circuit is on, for Diagnostics.
@@ -140,6 +155,18 @@ builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
 // The circuit's user is ambient during each of its activities, so a refusal can be logged with who asked.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, AmbientUserCircuitHandler>();
+// Whether the circuit's browser is still connected: a Pull all stops when it vanishes.
+builder.Services.AddScoped<CircuitConnection>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<CircuitConnection>());
+// Development only, for the screenshot tool (tools/screenshots), when Demo:Seed is set: its fuller demo data (below), and
+// the circuit work in hand for it to wait on (/demo/activity, below).
+var demoMode = builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Demo:Seed");
+var demoActivity = demoMode ? new DemoActivity() : null;
+if (demoActivity is not null)
+    builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(demoActivity);
+// With Demo:WorkingDay too (the layout checks), the app's clock is a working day's on a weekend (DemoWorkingDayClock).
+if (demoMode && DemoWorkingDayClock.From(builder.Configuration) is { } workingDay)
+    builder.Services.AddSingleton<TimeProvider>(workingDay);
 // First, so it stops last: it writes the jobs' last runs and lets the job lease go once they've stopped.
 builder.Services.AddHostedService<JobUpkeepHostedService>();
 builder.Services.AddHostedService<ReminderHostedService>();
@@ -202,7 +229,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
-if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Demo:Seed"))
+if (demoMode)
     await DemoSeeder.SeedAsync(app.Services, app.Configuration, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Demo"));
 
 if (!app.Environment.IsDevelopment())
@@ -407,18 +434,24 @@ app.MapGet("/trends/articles.csv", async (string? p, string? line, bool? subs, T
     return CsvFile(TrendsService.ArticlesCsv(articles, appOptions.Value.BaseUrl), $"tide-articles-{period.Key}{stem}.csv");
 }).AsExport();
 
-// Indicators from an article, a brief or a story, as STIX 2.1 or CSV, with the articles above the TLP ceiling (?tlp=,
-// default every level) left out. One with a ceiling above TLP:GREEN is in the audit log as well as the access log.
+// Indicators from an article, a brief, a story or a lookup, as STIX 2.1 (?format=stix, or none) or CSV (?format=csv), with
+// the articles above the TLP ceiling (?tlp=) left out. The ceiling is always named: a request without one is refused, never
+// given the most sensitive one, and so is a format it doesn't write. One with a ceiling above TLP:GREEN is in the audit log
+// as well as the access log.
 app.MapGet("/exports/{scope}/{key}", async (string scope, string key, string? format, string? tlp, ExportService exports,
     OrgClock clock, IOptions<AppOptions> appOptions, HttpContext http, CancellationToken ct) =>
 {
     if (!EnumNames.TryParse<ExportScope>(scope, out var s, ignoreCase: true)) return Results.NotFound();
-    if ((tlp is null ? TlpLevel.Red : Tlp.Parse(tlp)) is not { } ceiling) return Results.BadRequest("Unknown TLP.");
+    if (tlp is null) return Results.BadRequest("Choose the highest TLP to include (?tlp=).");
+    if (Tlp.Parse(tlp) is not { } ceiling) return Results.BadRequest("Unknown TLP.");
+    var csv = string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase);
+    if (!csv && format is not null && !string.Equals(format, "stix", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest("Unknown format: stix or csv.");
     NoteCeiling(http, ceiling);
     var set = await exports.GatherAsync(s, key, ceiling, ct);
     if (set is null) return Results.NotFound();
     var name = $"tide-{set.FileStem}-{Tlp.Key(ceiling)}";
-    return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
+    return csv
         ? CsvFile(IndicatorCsv.Write(set, appOptions.Value.BaseUrl), name + ".csv")
         : Results.File(Stix.Write(set, clock.TeamName), "application/stix+json;version=2.1", name + ".stix.json");
 }).AsExport(audited: AuditedWhen.AboveGreen);
@@ -477,6 +510,8 @@ app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = c => c.Tags.
 // Diagnostics.
 app.MapHealthChecks("/health/jobs", new HealthCheckOptions { Predicate = c => c.Tags.Contains("jobs"), ResponseWriter = StatusWord("Background jobs") })
     .AllowAnonymous().RequireRateLimiting("health");
+if (demoActivity is not null)
+    app.MapGet("/demo/activity", () => demoActivity.Now()).AllowAnonymous();
 
 await app.RunAsync();
 
@@ -486,7 +521,9 @@ await app.RunAsync();
 static IResult EmailPage(HttpContext http, string html)
 {
     var headers = http.Response.Headers;
+#pragma warning disable S7039 // above: the analyzer reports it in the build despite NOSONAR
     headers.ContentSecurityPolicy = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-same-origin allow-popups"; // NOSONAR S7039, above
+#pragma warning restore S7039
     headers.XFrameOptions = "SAMEORIGIN";
     headers.CacheControl = "no-store";
     return Results.Content(html, "text/html; charset=utf-8");

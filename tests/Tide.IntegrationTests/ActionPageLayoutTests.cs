@@ -35,9 +35,15 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     private Task As(Func<ActionService, Task> what, SignIn? who = null) =>
         As(async sp => { await what(sp.GetRequiredService<ActionService>()); return true; }, who);
 
-    private Task<Guid> Team(string name, bool external = false) => As(sp => external
-        ? sp.GetRequiredService<TeamService>().AddExternalAsync(name, "noc@provider.example", confirmOutside: true)
-        : sp.GetRequiredService<TeamService>().AddAsync(name, null, null));
+    // A team; with onIt, the tester is on it, so may take its actions on.
+    private Task<Guid> Team(string name, bool external = false, bool onIt = false) => As(async sp =>
+    {
+        var teams = sp.GetRequiredService<TeamService>();
+        if (external) return await teams.AddExternalAsync(name, "noc@provider.example", confirmOutside: true);
+        var team = await teams.AddAsync(name, null, null);
+        if (onIt) await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        return team;
+    });
 
     private Task<int> Raise(Guid team, string title, ActionKind kind = ActionKind.Block, DateOnly? due = null, Guid? parent = null,
         Priority priority = Priority.P3, string? description = null) =>
@@ -79,12 +85,12 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         return html[at..html.IndexOf(end, at, StringComparison.Ordinal)];
     }
 
-    private static string Header(string html) => Section(html, "<div class=\"tide-page-head tide-action-head\">", "class=\"tide-action-layout\"");
+    private static string Header(string html) => Section(html, "<div class=\"tide-page-head tide-action-head\">", "class=\"tide-action-main\"");
 
     [Fact]
     public async Task TheHeader_HasTheTitle_OneLineOfBadges_WhoHasIt_AndOnePrimaryButton()
     {
-        var team = await Team("Layout header team");
+        var team = await Team("Layout header team", onIt: true);
         var number = await Raise(team, "Layout patch the gateways", ActionKind.PatchRemediate, Today.AddDays(-2), priority: Priority.P2);
         await Escalate(number);
 
@@ -94,13 +100,13 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         var badges = Section(head, "<div class=\"tide-action-badges\">", "<div class=\"tide-sub tide-action-who\">");
         badges.Should().Contain("class=\"tide-status-badge\" aria-expanded=\"false\" aria-controls=\"status-choices\"")
             .And.Contain("aria-label=\"Status: Open. Change it\"").And.Contain("title=\"Priority P2\"")
-            .And.Contain("Due " + Ui.ShortDay(Today.AddDays(-2))).And.Contain("Overdue · 2 days").And.Contain(">Escalated</span>");
+            .And.Contain("Due " + Ui.ShortDay(Today.AddDays(-2)) + " · overdue · 2 days", "the date and how it stands, one badge").And.Contain(">Escalated</span>");
         badges.IndexOf("tide-status-badge", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf("Priority P2", StringComparison.Ordinal),
             "status, then priority, then the due date, then escalated");
-        badges.IndexOf("Overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
+        badges.IndexOf("overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
         head.Should().Contain("<span>Layout header team</span> · <span>Unassigned</span>");
 
-        Regex.Matches(head, "btn btn-primary").Should().HaveCount(1, "one primary button");
+        head.Should().Contain("btn btn-primary", Exactly.Once(), "one primary button");
         head.Should().Contain("data-primary=\"TakeIt\"").And.Contain("Take it</button>");
         page.Component.Primary.Should().Be(ActionFlow.TakeIt, "open and nobody has it");
     }
@@ -200,7 +206,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TakeIt_IsUnderMore_WhenSomeoneElseHasIt_AndThePrimaryIsTheStatusMoveThatFits()
     {
-        var team = await Team("Layout take team");
+        var team = await Team("Layout take team", onIt: true);
         await As(async sp => { await sp.GetRequiredService<TeamService>().AddMemberAsync(team, Owner.UserId, Owner.Name); return true; });
         var number = await Raise(team, "Layout someone else's");
         await As(async actions => await actions.TakeAsync((await actions.GetAsync(number))!.Action.Id), Owner);
@@ -286,7 +292,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheNextLine_SaysEscalatedBlockedOrOverdue_RunsItsLinks_AndIsntThereWhenNothingNeedsDoing()
     {
-        var team = await Team("Layout next team");
+        var team = await Team("Layout next team", onIt: true);
         var escalated = await Raise(team, "Layout escalated", due: Today.AddDays(-1));
         await Escalate(escalated);
         var blocked = await Raise(team, "Layout blocked", due: Today.AddDays(5));
@@ -385,7 +391,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using (var page = await Open(number))
         {
             var html = WebUtility.HtmlDecode(await page.Html());
-            var feed = Section(html, "<section class=\"tide-card tide-feed tide-ord-5\"", "</section>");
+            var feed = Section(html, "<section class=\"tide-card tide-feed\"", "</section>");
             feed.Should().Contain("What's happened").And.NotContain("Show ", "nothing to fold yet");
             var first = feed.IndexOf("Layout first comment", StringComparison.Ordinal);
             var moved = feed.IndexOf("Status: Open → In progress.", StringComparison.Ordinal);
@@ -394,7 +400,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             moved.Should().BeGreaterThan(first, "oldest first: the history line comes between the comments");
             second.Should().BeGreaterThan(moved);
             feed.Should().Contain("<span class=\"tide-avatar tide-feed-mark\" aria-hidden=\"true\" title=\"Tester\">T</span>", "a comment carries its author's initials")
-                .And.Contain("<span class=\"tide-avatar tide-feed-mark tide-feed-sys\" aria-hidden=\"true\" title=\"From its history\">T</span>", "a history line TIDE's mark")
+                .And.Contain("<li class=\"tide-feed-item tide-feed-line\"><span class=\"tide-avatar tide-feed-mark\" aria-hidden=\"true\" title=\"Tester\">T</span>", "a history line its person's, as their comments are")
                 .And.Contain("class=\"tide-feed-item tide-feed-line\"").And.Contain("class=\"tide-feed-item tide-comment\"");
 
             var box = feed[feed.IndexOf("<div id=\"comment-zone\"", StringComparison.Ordinal)..];
@@ -467,10 +473,37 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             await drawer.Click(d => EventCallback.Factory.Create(d, () => d.Select(ActionTool.Hunt)).InvokeAsync());
             keyAsked.Should().Be("hunt");
             drawer.Component.Tool.Should().Be(ActionTool.Checklist, "the address hasn't changed yet");
-            (await drawer.Html()).Should().Contain("aria-label=\"Query language\"", "the hunt panel is drawn, hidden, ready to show");
+            (await drawer.Html()).Should().Contain("<h2>Hunt queries", "the hunt panel is drawn, hidden, ready to show")
+                .And.NotContain("aria-label=\"Query language\"", "its language and window are on the tab row only while its tab shows");
         }
         await using (var missing = await Open(block, tool: "outreach"))
             (await missing.Html()).Should().Contain("data-tool=\"checklist\"", "a tool it hasn't got falls back to the kind's own");
+    }
+
+    [Fact]
+    public async Task TheTools_AreInThePageAboveWhatsHappened_FirstForASweepOrAHunt_AndAfterTheDetailsForEveryOtherKind()
+    {
+        var team = await Team("Layout tools place team");
+        const string drawer = "class=\"tide-card tide-drawer\"", main = "<div class=\"tide-action-main\">", rail = "<aside id=\"tide-rail\"";
+        foreach (var kind in Enum.GetValues<ActionKind>())
+        {
+            var wide = kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
+            await using var page = await Open(await Raise(team, $"Layout tools place {kind}", kind, description: "Layout tools place details"));
+            var html = await page.Html();
+            int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
+            At(drawer).Should().BeGreaterThan(At(main)).And.BeLessThan(At(rail), $"a {kind}'s tools are in the page, not the rail")
+                .And.BeLessThan(At("id=\"feed-h\""), "above what's happened");
+            html.Should().NotContain("tide-action-side", "the page has one column; what was beside it is in the rail");
+            if (wide)
+            {
+                At(drawer).Should().BeLessThan(At("Layout tools place details"), "above its details, so Copy is on the first screen");
+                html.Should().Contain("data-tool=\"hunt\"", "opened on its hunt queries");
+            }
+            else
+            {
+                At(drawer).Should().BeGreaterThan(At("Layout tools place details"), $"a {kind}'s tools follow its details");
+            }
+        }
     }
 
     [Fact]

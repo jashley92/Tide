@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Intake;
@@ -37,7 +36,15 @@ internal static partial class FilterBarHtml
     /// <summary>Sets the filter <paramref name="key"/>, as choosing in the menu or removing its chip does.</summary>
     public static void Set(IReadOnlyList<FilterDef> filters, string key, params string[] values) => filters.Single(f => f.Key == key).Apply(values);
 
-    [GeneratedRegex("<button type=\"button\" class=\"tide-chip tide-chip-pick[^\"]*\" aria-pressed=\"(true|false)\"[^>]*>(?:<span class=\"bi bi-check2\" aria-hidden=\"true\"></span>)?([^<]*)</button>")]
+    /// <summary>The count the pill named <paramref name="label"/> says it would show; null when it says none.</summary>
+    public static int? PillCount(string html, string label)
+    {
+        var pill = Pill().Matches(html).FirstOrDefault(m => m.Groups[2].Value == label);
+        pill.Should().NotBeNull($"a pill named {label} is in the bar");
+        return pill!.Groups[3].Success ? int.Parse(pill.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) : null;
+    }
+
+    [GeneratedRegex("<button type=\"button\" class=\"tide-chip tide-chip-pick[^\"]*\" aria-pressed=\"(true|false)\"[^>]*>(?:<span class=\"bi bi-check2\" aria-hidden=\"true\"></span>)?([^<]*?)\\s*(?:<span class=\"tide-chip-count\"[^>]*>(\\d+)</span>)?</button>")]
     private static partial Regex Pill();
 }
 
@@ -215,10 +222,8 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, b => { b.Show(null); return Task.CompletedTask; });
         r.Component.Step.Should().BeNull("back to the list of filters");
         r.Component.IsOpen.Should().BeTrue();
-        await Do(r, b => { b.Key(new KeyboardEventArgs { Key = "Enter" }); return Task.CompletedTask; });
-        r.Component.IsOpen.Should().BeTrue("only Esc closes it");
-        await Do(r, b => { b.Key(new KeyboardEventArgs { Key = "Escape" }); return Task.CompletedTask; });
-        r.Component.IsOpen.Should().BeFalse();
+        await Do(r, b => b.Dismissed());
+        r.Component.IsOpen.Should().BeFalse("Esc, or a press or focus outside it, closes it");
         await Do(r, b => { b.Toggle(); b.Toggle(); return Task.CompletedTask; });
         r.Component.IsOpen.Should().BeFalse("+ Filter again closes it");
         await Do(r, b => b.Pick("x"));
@@ -356,9 +361,10 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         menu.Should().NotContain("parent", "set by a link, so a chip only");
         r.Component.Defs.Single(d => d.Key == "assignee").Options.Take(2).Select(o => o.Label).Should().Equal("You", "Nobody (the team's)");
         r.Component.Defs.Single(d => d.Key == "team").Options.Should().Contain(o => o.Value == teamId.ToString() && o.Label == teamName, "built as the teams are read");
-        foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12", "Held by nobody (the team's)" })
+        foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12" })
             html.Should().Contain($"aria-label=\"Remove filter {chip}\"");
         FilterBarHtml.Pressed(html, "P1–P2").Should().BeFalse();
+        FilterBarHtml.Pressed(html, "No owner").Should().BeTrue("Held by: nobody is the No owner pill, which says it in place of a chip");
 
         Task Set(ActionsBoard a, string key, params string[] values)
         {
@@ -420,45 +426,6 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, t => t.ClearFilters());
         Address().Should().Be("triage?tab=dismissed");
         r.Component.Pills.Should().OnlyContain(p => !p.OnFor(r.Component.Defs.Single(d => d.Key == p.FilterKey)));
-    }
-
-    [Fact]
-    public async Task SavedQueries_APillPerLanguage_OneAtATime_AndClear()
-    {
-        await using var r = await ComponentHarness.RenderAsync<SavedQueriesPage>(app, "/hunts/saved?page=2");
-        SavedQueriesPage.Pills.Select(p => p.Label).Should().Equal("XQL", "KQL", "Falcon");
-        bool On(string key) => SavedQueriesPage.Pills.Single(p => p.Key == key).OnFor(r.Component.Defs.Single());
-        Task Press(SavedQueriesPage p, string key)
-        {
-            FilterBarHtml.Press(SavedQueriesPage.Pills, p.Defs, key);
-            p.Refilter();
-            return Task.CompletedTask;
-        }
-        await Do(r, p => Press(p, "kql"));
-        r.Component.Page.Should().Be(1);
-        r.Component.Shown.Should().OnlyContain(q => q.Query.Dialect == "kql");
-        var html = WebUtility.HtmlDecode(await r.Html());
-        FilterBarHtml.Pressed(html, "KQL").Should().BeTrue();
-        FilterBarHtml.Pressed(html, "XQL").Should().BeFalse();
-        html.Should().Contain("id=\"sq-retired\"", "Show retired stays a switch");
-        await Do(r, p => Press(p, "fql"));
-        On("fql").Should().BeTrue();
-        On("kql").Should().BeFalse("one language at a time");
-        await Do(r, p => Press(p, "fql"));
-        On("fql").Should().BeFalse();
-        await Do(r, p => { FilterBarHtml.Press(SavedQueriesPage.Pills, p.Defs, "kql"); p.ClearFilters(); return Task.CompletedTask; });
-        On("kql").Should().BeFalse();
-        WebUtility.HtmlDecode(await r.Html()).Should().NotContain("tide-filterbar-clear");
-    }
-
-    [Fact]
-    public async Task OutreachTemplates_ClearEmptiesTheWords()
-    {
-        await using var r = await ComponentHarness.RenderAsync<OutreachTemplatesPage>(app, "/outreach/templates");
-        typeof(OutreachTemplatesPage).GetField("_words", Private)!.SetValue(r.Component, "zzqx");
-        WebUtility.HtmlDecode(await r.Html()).Should().Contain("id=\"ot-retired\"");
-        await Do(r, p => { p.ClearFilters(); return Task.CompletedTask; });
-        typeof(OutreachTemplatesPage).GetField("_words", Private)!.GetValue(r.Component).Should().BeNull();
     }
 
     [Fact]

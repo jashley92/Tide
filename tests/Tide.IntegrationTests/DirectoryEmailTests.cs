@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Options;
+using Tide.Application.Operations;
+using Tide.Application.Org;
 using System.Security.Claims;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components.Server;
@@ -165,7 +168,9 @@ public class DirectoryEmailTests
         using var release = new ManualResetEventSlim(initialState: true);
         var answer = new DirectoryPerson("Jordan Rivera", "jordan.rivera@contoso.com");
         var names = new WindowsNames(_ => { release.Wait(TimeSpan.FromSeconds(10)); return answer; }, TimeSpan.FromMilliseconds(50), clock);
-        names.Resolve(Account).Should().Be("Jordan Rivera");
+        // The first answer is kept once it lands: on a loaded machine the lookup's thread can start after the 50 ms wait
+        // (the bare username for now), so this waits for the answer, not the clock.
+        (await Resolved(names, "Jordan Rivera")).Should().Be("Jordan Rivera");
 
         release.Reset();
         answer = new DirectoryPerson("Jordan Rivera-Lee", "jordan.lee@contoso.com");
@@ -174,14 +179,20 @@ public class DirectoryEmailTests
         (await names.EmailAsync(Account)).Should().Be("jordan.rivera@contoso.com");
 
         release.Set();
+        (await Resolved(names, "Jordan Rivera-Lee")).Should().Be("Jordan Rivera-Lee", "the answer that lands later is kept");
+    }
+
+    // The account's name once it is <paramref name="expected"/>, or whatever it is after 15 seconds.
+    private static async Task<string?> Resolved(WindowsNames names, string expected)
+    {
         var deadline = DateTime.UtcNow.AddSeconds(15);
-        string? name = null;
-        while (name != "Jordan Rivera-Lee" && DateTime.UtcNow < deadline)
+        var name = await names.ResolveAsync(Account);
+        while (name != expected && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
             name = await names.ResolveAsync(Account);
         }
-        name.Should().Be("Jordan Rivera-Lee", "the answer that lands later is kept");
+        return name;
     }
 
     // --- the principal --------------------------------------------------------------------------------------------
@@ -282,7 +293,7 @@ public class DirectoryEmailTests
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => db.Context());
-        return new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        return new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, new OrgClock(Options.Create(new OrgOptions())));
     }
 
     [Fact]
@@ -308,5 +319,23 @@ public class DirectoryEmailTests
             row.Email.Should().Be("jordan.rivera@contoso.com");
             row.DisplayName.Should().Be("jdoe");
         }
+    }
+
+    // 8:30 PM in New York is already the next day in UTC: a first sign-in then starts the Show me around window on the
+    // organization's day, the one the window is counted in, not a day late.
+    [Fact]
+    public async Task AFirstSignIn_InAUsEvening_StartsTheGuideLinkWindowOnTheOrganizationsDay()
+    {
+        using var db = new TestDb();
+        var evening = new TestClock(new DateTimeOffset(2026, 11, 14, 1, 30, 0, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddScoped(_ => db.Context());
+        var mirror = new UserDirectory(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), evening,
+            new OrgClock(Options.Create(new OrgOptions { TimeZone = "America/New_York" }), evening));
+
+        await mirror.TouchAsync("S-1-5-21-1-2-3-501", "Jordan Rivera", null, null, "Viewer");
+
+        await using var ctx = db.Context();
+        (await ctx.UserPreferences.SingleAsync(p => p.Name == GuideLinkService.Since)).Value.Should().Be("2026-11-13");
     }
 }

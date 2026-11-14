@@ -1,8 +1,8 @@
 @page "/articles/{Id:guid}"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 
-@* An article: the editor (ArticleEditorPanel holds the fields, saving and everything around them) and, beside it,
-   ReaderPreview's tabs: Preview (the article as an edition will carry it, its gaps, its related work, whose "Mention"
+@* An article: the editor (ArticleEditorPanel holds the fields, saving and everything around them) and, in its context
+   rail (or as the page, for someone who can't edit), ReaderPreview's tabs: Preview (the article as an edition will carry it, its gaps, its related work, whose "Mention"
    writes into the editor's why it matters), Actions and Details.
    ?edition=company opens the preview on the company-wide edition; ?side=actions or ?side=details opens that tab (in a
    narrow window, on the preview pane). On today's brief, BriefStepper walks to the article

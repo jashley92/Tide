@@ -48,7 +48,45 @@ public class ActionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Outstanding_LeavesOutAnActionRaisedFromAnArticleAboveTheCeiling_ButCountsIt()
+    public async Task AStatusMove_IsDatedByTheAppsClock_AndClosingAtTheSameMoment()
+    {
+        var team = await Team();
+        var at = new DateTimeOffset(2026, 3, 2, 15, 0, 0, TimeSpan.Zero);
+        var time = new TestClock(at);
+        var svc = _db.Actions(new OrgClock(Options.Create(new OrgOptions()), time));
+        await _db.Teams().AddMemberAsync(team, _db.User.UserId, _db.User.DisplayName);
+        var number = await svc.CreateAsync(new ActionForm { Title = "Dated by the clock", Kind = ActionKind.PatchRemediate, TeamId = team });
+        var id = (await svc.GetAsync(number))!.Action.Id;
+
+        await svc.TakeAsync(id);
+        (await svc.GetAsync(number))!.Action.StatusChangedAtUtc.Should().Be(at, "taking it on started it, at the app's time");
+
+        time.Now = at.AddHours(3);
+        await svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.Remediated, null);
+        var closed = (await svc.GetAsync(number))!.Action;
+        (closed.StatusChangedAtUtc, closed.ClosedAtUtc).Should().Be((at.AddHours(3), at.AddHours(3)), "closed, and in its Closed lane, at one time");
+    }
+
+    [Fact]
+    public async Task Outstanding_AnActionSomeoneHolds_IsTheirs_EvenOnATeamWithNoMembers()
+    {
+        var empty = await Team("Fraud Operations");
+        var svc = _db.Actions();
+        var today = svc.Today;
+        var held = await svc.CreateAsync(new ActionForm { Title = "Held on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
+        await svc.CreateAsync(new ActionForm { Title = "Nobody's on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
+        // Held by Sam, who isn't on the team (it has no members): given before holders had to be members.
+        await using (var ctx = _db.PlainContext())
+            await ctx.Actions.Where(a => a.Number == held)
+                .ExecuteUpdateAsync(u => u.SetProperty(a => a.AssigneeId, "dev:sam").SetProperty(a => a.AssigneeName, "Sam"));
+
+        var rows = (await svc.OutstandingAsync(today, TlpLevel.AmberStrict)).Rows;
+        rows.Single(o => o.Row.Title == "Held on an empty team").NoOneToOwn.Should().BeFalse("Sam holds it, as the action page says");
+        rows.Single(o => o.Row.Title == "Nobody's on an empty team").NoOneToOwn.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Outstanding_LeavesOutAnActionRaisedFromAnArticleAboveTheCeiling_AndDoesntCountIt()
     {
         var team = await Team();
         var svc = _db.Actions();
@@ -61,7 +99,7 @@ public class ActionServiceTests : IDisposable
 
         var atTeam = await svc.OutstandingAsync(today, TlpLevel.AmberStrict);
         atTeam.Rows.Select(o => o.Row.Title).Should().BeEquivalentTo(new[] { "Reset partner keys", "Rotate the VPN cert" });
-        atTeam.Overdue.Should().Be(3, "the withheld one is counted, not named");
+        atTeam.Overdue.Should().Be(2, "the withheld one isn't counted either: the count would tell the room it exists");
         atTeam.Marking.Should().Be(TlpLevel.Amber, "an action is marked at its article's TLP");
 
         var atRed = await svc.OutstandingAsync(today, TlpLevel.Red);
@@ -121,6 +159,7 @@ public class ActionServiceTests : IDisposable
         var wrongOutcome = () => svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.Remediated, null);
         await wrongOutcome.Should().ThrowAsync<ArgumentException>().WithMessage("*no hits*");
 
+        await svc.RanCleanAsync(id);   // a query run clean, on record: what "no hits" needs
         await svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.NoHits, "30 days of proxy logs");
         var done = (await svc.GetAsync(n))!.Action;
         done.ClosedDate.Should().Be(_db.Clock.Today);
@@ -225,13 +264,18 @@ public class ActionServiceTests : IDisposable
         await wrongOutcome.Should().ThrowAsync<ArgumentException>().WithMessage("*no hits*");
         ActionService.OutcomesFor(ActionKind.IocSweep, ActionStatus.Done).Should().Equal(ActionOutcome.NoHits, ActionOutcome.HitsEscalated, ActionOutcome.Other);
 
+        await svc.RanCleanAsync(id);
         await svc.MoveAsync(id, ActionStatus.InProgress, ActionStatus.Done, ActionOutcome.NoHits, "Clean");
         var done = (await svc.GetAsync(n))!.Action;
         done.Outcome.Should().Be(ActionOutcome.NoHits);
         done.ClosedDate.Should().Be(_db.Clock.Today);
 
+        var counts = await svc.ViewCountsAsync(new ActionFilter(ActionView.Overdue), closedDays: ActionService.BoardClosedDays);
+        counts.ClosedAs(ActionStatus.Done).Should().Be(1, "a recently closed action is counted under the board, and Overdue shows all there");
+        (await svc.BoardAsync(new ActionFilter(ActionView.Overdue))).Cards.Should().BeEmpty("it isn't drawn");
+        var open = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Another", Kind = ActionKind.Block, TeamId = team })))!.Action.Number;
         var board = await svc.BoardAsync(new ActionFilter(ActionView.Overdue));
-        board.In(ActionStatus.Done).Select(c => c.Number).Should().Equal([n], "recently closed actions stay on the board, and Overdue shows all there");
+        board.Cards.Single().Number.Should().Be(open);
         board.CanMove(board.Cards[0]).Should().BeTrue("an analyst works every action");
 
         await svc.MoveAsync(id, ActionStatus.Done, ActionStatus.Cancelled);
@@ -296,7 +340,7 @@ public class ActionServiceTests : IDisposable
         var pastDay = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(today));
         var plain = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Now", Kind = ActionKind.Block, Priority = Priority.P2, TeamId = team })))!.Action;
 
-        var n = await svc.QuickAddAsync(await ArticleWithIndicators(), "Block the C2", ActionKind.Block, team, null, raisedOn: pastDay);
+        var n = (await svc.QuickAddAsync(await ArticleWithIndicators(), "Block the C2", ActionKind.Block, team, null, raisedOn: pastDay)).Number;
 
         var a = (await svc.GetAsync(n))!.Action;
         a.RaisedOn.Should().Be(pastDay);
@@ -349,7 +393,7 @@ public class ActionServiceTests : IDisposable
         var svc = _db.Actions();
         var action = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Hunt", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = first })))!.Action;
 
-        (await svc.HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(0, 2, 2));
+        (await svc.HuntSourcesAsync(action.Id) with { Own = [], Story = [], Days = HuntQueryBuilder.DefaultDays, StoryDays = HuntQueryBuilder.DefaultDays }).Should().Be(new HuntSources(0, 2, 2));
         var own = () => svc.GenerateHuntAsync(action.Id, "kql");
         await own.Should().ThrowAsync<InvalidOperationException>().WithMessage("*build it from the story*");
 
@@ -557,6 +601,7 @@ public class ActionServiceTests : IDisposable
     public async Task Workload_CountsOpenOverdueAndClosures()
     {
         var team = await Team();
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
         var svc = _db.Actions();
         var today = _db.Clock.Today;
         await svc.CreateAsync(new ActionForm { Title = "late", TeamId = team, DueDate = today.AddDays(-10) });
@@ -579,6 +624,8 @@ public class ActionServiceTests : IDisposable
     public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
     {
         var team = await Team();
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
+        await _db.Teams().AddMemberAsync(team, "u2", "Alex");
         var outside = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example", confirmOutside: true);
         var svc = _db.Actions();
         var me = _db.User.UserId;
@@ -607,6 +654,8 @@ public class ActionServiceTests : IDisposable
         var svc = _db.Actions();
         var today = _db.Clock.Today;
         var me = _db.User.UserId;
+        await _db.Teams().AddMemberAsync(team, me, "Me");
+        await _db.Teams().AddMemberAsync(team, "u1", "Robin");
         await svc.CreateAsync(new ActionForm { Title = "mine, late", TeamId = team, DueDate = today.AddDays(-3), AssigneeId = me, AssigneeName = "Me" });
         await svc.CreateAsync(new ActionForm { Title = "mine, due today", TeamId = team, DueDate = today, AssigneeId = me, AssigneeName = "Me" });
         await svc.CreateAsync(new ActionForm { Title = "theirs, late", TeamId = team, DueDate = today.AddDays(-3), AssigneeId = "u1", AssigneeName = "Robin" });
@@ -688,19 +737,19 @@ public class ActionServiceTests : IDisposable
         var p1 = await ArticleAt(Priority.P1);
         var info = await ArticleAt(null);
 
-        var patch = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Patch GitLab", ActionKind.PatchRemediate, team, null)))!.Action;
+        var patch = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Patch GitLab", ActionKind.PatchRemediate, team, null)).Number))!.Action;
         patch.Priority.Should().Be(Priority.P1);
         patch.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 1));
 
-        var notice = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Tell the service desk", ActionKind.Awareness, team, null)))!.Action;
+        var notice = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Tell the service desk", ActionKind.Awareness, team, null)).Number))!.Action;
         notice.Priority.Should().Be(Priority.P2, "telling people is never above P2");
         notice.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 3));
 
-        var sweep = (await svc.GetAsync(await svc.QuickAddAsync(p1, "Sweep for the IOCs", ActionKind.IocSweep, team, null)))!.Action;
+        var sweep = (await svc.GetAsync((await svc.QuickAddAsync(p1, "Sweep for the IOCs", ActionKind.IocSweep, team, null)).Number))!.Action;
         sweep.Priority.Should().Be(Priority.P1);
         sweep.DueDate.Should().Be(ActionSla.DueDate(_db.Clock.Today, 5), "a kind's own SLA target still wins (ADR 0008)");
 
-        var fromInfo = (await svc.GetAsync(await svc.QuickAddAsync(info, "Block the domain", ActionKind.Block, team, null)))!.Action;
+        var fromInfo = (await svc.GetAsync((await svc.QuickAddAsync(info, "Block the domain", ActionKind.Block, team, null)).Number))!.Action;
         fromInfo.Priority.Should().Be(Priority.P2, "an informational article has no priority, so the kind's stands");
     }
 
@@ -837,6 +886,7 @@ public class ReminderTests : IDisposable
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
         await Person("S-ROBIN", "robin@example.org");
+        await _db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
         var today = _db.Clock.Today;
         var svc = _db.Actions();
         await svc.CreateAsync(new ActionForm { Title = "Robin first", TeamId = team, DueDate = today, AssigneeId = "S-ROBIN", AssigneeName = "Robin" });
@@ -876,6 +926,7 @@ public class ReminderTests : IDisposable
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
         await Person("S-ROBIN", "robin@example.org");
+        await _db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
         var today = _db.Clock.Today;
         await _db.Actions().CreateAsync(new ActionForm { Title = "Robin's", TeamId = team, DueDate = today, AssigneeId = "S-ROBIN", AssigneeName = "Robin" });
         await _db.Actions().CreateAsync(new ActionForm { Title = "The team's", TeamId = team, DueDate = today });

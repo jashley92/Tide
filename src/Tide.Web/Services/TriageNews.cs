@@ -2,6 +2,7 @@ using System.Globalization;
 using Tide.Application.Intake;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Web.Components.Shared;
 
 namespace Tide.Web.Services;
 
@@ -23,12 +24,13 @@ public static class TriageNews
     /// The line a row leaves as it goes from <paramref name="tab"/>: who did what to it (by the item as it is now), or
     /// that it left the list (it's still in this state but no longer shown, or it was pruned). <paramref name="colleagues"/>
     /// names who's heard when the item doesn't say (an item put back keeps no name).
+    /// <paramref name="attached"/>: the item went to an existing article, not a new one (Change.Attached).
     /// </summary>
-    public static string Left(FeedItemStatus tab, string title, FeedItem? now, string colleagues)
+    public static string Left(FeedItemStatus tab, string title, FeedItem? now, string colleagues, bool attached = false)
     {
         var quoted = $"“{Short(title)}”";
         if (now is null || now.Status == tab) return $"{quoted} left this list";
-        return $"{Who(now, colleagues)} {Did(now.Status, quoted, 1)}";
+        return $"{Who(now, colleagues)} {Did(now.Status, quoted, 1, attached)}";
     }
 
     /// <summary>
@@ -38,14 +40,15 @@ public static class TriageNews
     /// by how many more New holds (<paramref name="newElsewhere"/>). <paramref name="entered"/>, when known, is how many
     /// items really entered the tab (its count's rise, plus those that left it): a row that only came into the shown
     /// page because one above it left isn't news.
+    /// <paramref name="attached"/> holds the items that went to an existing article rather than made one.
     /// </summary>
     public static string? Summary(FeedItemStatus tab, IReadOnlyList<FeedItem?> left, IReadOnlyList<FeedItem> arrived,
-        DateTimeOffset readAt, string colleagues, int newElsewhere = 0, int? entered = null)
+        DateTimeOffset readAt, string colleagues, int newElsewhere = 0, int? entered = null, IReadOnlySet<Guid>? attached = null)
     {
         if (entered is { } n && n < arrived.Count) arrived = arrived.OrderByDescending(i => i.FetchedAtUtc).Take(Math.Max(0, n)).ToList();
         var parts = left.OfType<FeedItem>().Where(i => i.Status != tab)
-            .GroupBy(i => (Who: Who(i, colleagues), i.Status))
-            .Select(g => $"{g.Key.Who} {Did(g.Key.Status, Items(g.Count()), g.Count())}").ToList();
+            .GroupBy(i => (Who: Who(i, colleagues), i.Status, Attached: attached?.Contains(i.Id) == true))
+            .Select(g => $"{g.Key.Who} {Did(g.Key.Status, Items(g.Count()), g.Count(), g.Key.Attached)}").ToList();
         int feeds;
         if (tab == FeedItemStatus.New)
         {
@@ -55,22 +58,35 @@ public static class TriageNews
         }
         else
         {
-            parts.AddRange(arrived.GroupBy(i => Who(i, colleagues)).Select(g => $"{g.Key} {Did(tab, Items(g.Count()), g.Count())}"));
+            parts.AddRange(arrived.GroupBy(i => Who(i, colleagues)).Select(g => $"{g.Key} {Did(tab, Items(g.Count()), g.Count(), attached: false)}"));
             feeds = Math.Max(0, newElsewhere);
         }
         if (feeds > 0) parts.Add(parts.Count == 0 ? $"{feeds} new {(feeds == 1 ? "item" : "items")} from the feeds" : $"{feeds} new from the feeds");
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
+    /// <summary>
+    /// When the article covering an item was briefed, as Search says it: "briefed Mon Nov 9" once a brief with it was
+    /// presented or sent, else "on today's brief, not presented yet" (or "on the brief for Fri Nov 13, …"); null when
+    /// it's on no brief.
+    /// </summary>
+    public static string? BriefedSaid(Coverage c, DateOnly today) =>
+        c.BriefDate is { } briefed ? $"briefed {Ui.ShortDay(briefed)}"
+        : c.OnBrief == today ? "on today's brief, not presented yet"
+        : c.OnBrief is { } planned ? $"on the brief for {Ui.ShortDay(planned)}, not presented yet"
+        : null;
+
     private static string Who(FeedItem item, string colleagues) =>
         item.Status != FeedItemStatus.New && !string.IsNullOrWhiteSpace(item.StatusByName) ? item.StatusByName : colleagues;
 
-    // "dismissed 3 items", "marked “…” as a duplicate": what was done, to what.
-    private static string Did(FeedItemStatus status, string what, int n) => status switch
+    // "dismissed 3 items", "marked “…” as a duplicate": what was done, to what. An item attached to an existing article
+    // reads as promoted, as one that made an article does; the change heard says which it was (Change.Attached).
+    private static string Did(FeedItemStatus status, string what, int n, bool attached) => status switch
     {
         FeedItemStatus.Shortlisted => $"shortlisted {what}",
         FeedItemStatus.Dismissed => $"dismissed {what}",
         FeedItemStatus.Duplicate => n == 1 ? $"marked {what} as a duplicate" : $"marked {what} as duplicates",
+        FeedItemStatus.Promoted when attached => $"added {what} to an article",
         FeedItemStatus.Promoted => $"promoted {what}",
         _ => $"put back {what}",
     };

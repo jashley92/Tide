@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Sections
 
 <a class="tide-skip-link" href="#main-content">Skip to content</a>
 
@@ -20,6 +21,10 @@
             <AuthorizeView>
                 <Authorized>
                     <div class="tide-top-end">
+                        @* When the brief meets and the step it's on, for those who make it; nothing for anyone else. *@
+                        <BriefChip />
+                        @* The Context button, when the page has a context rail (ContextRail). *@
+                        <SectionOutlet SectionId="ContextRail.ToggleSection" />
                         <ShortcutsOverlay />
                         <ProfileMenu />
                     </div>
@@ -28,13 +33,23 @@
         </div>
 
         <article id="main-content" tabindex="-1" class="content">
+            <SecondProcessBanner />
             <LiveMeetingJoin />
             <PageBoundary>@Body</PageBoundary>
         </article>
+        @* The page's context rail, when it has one: nothing is drawn here otherwise. *@
+        <SectionOutlet SectionId="ContextRail.RegionSection" />
     </main>
 </div>
 
 <ToastHost />
+
+@* What's new after an upgrade, then a changed page's tip; never in present mode (BlankLayout). *@
+<AuthorizeView>
+    <Authorized>
+        <OnboardingHost />
+    </Authorized>
+</AuthorizeView>
 
 <div id="blazor-error-ui">
     Something went wrong. Reload the page to continue.

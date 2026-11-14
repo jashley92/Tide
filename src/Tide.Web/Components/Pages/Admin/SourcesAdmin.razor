@@ -256,9 +256,16 @@
             <label class="tide-field-label" for="intake-pull">Analyst pull-now window (minutes)</label>
             <input id="intake-pull" type="number" min="1" max="1440" class="form-control form-control-sm" @bind="_intake.PullNowMinutes" aria-describedby="intake-pull-help" />
         </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="intake-pulled-by">Feeds pulled by (each working day)</label>
+            <TimeBox @ref="PulledByBox" Id="intake-pulled-by" @bind-Value="PulledBy" Invalid="@(_pulledByProblem is not null)"
+                     DescribedBy="@(_pulledByProblem is null ? "intake-pulled-by-help" : "intake-pulled-by-error intake-pulled-by-help")" />
+            @if (_pulledByProblem is { } problem) { <div class="invalid-feedback d-block" id="intake-pulled-by-error">@problem</div> }
+        </div>
     </div>
     <div class="form-text" id="intake-read-help">Reading an article's page, in triage or for the editor, stops after this long and says so. 6 suits most servers; give a slow one longer.</div>
     <div class="form-text" id="intake-pull-help">Analysts can pull a source now from Triage's Sources tab, once in this window: a source pulled within it, on schedule or by hand, waits until it's passed. Poll now here isn't held to it.</div>
+    <div class="form-text" id="intake-pulled-by-help">From this time on each working day (in the organization's time zone; not on weekends or holidays), while polling is on, Today's Triage step tells analysts how many feeds haven't been pulled since, with Pull all.</div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveIntake">Save polling</button>
 </section>
 
@@ -275,11 +282,11 @@
     <div class="row g-3">
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-markers">Markers</label>
-            <textarea id="sponsored-markers" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="Markers" @bind:event="oninput"></textarea>
+            <textarea id="sponsored-markers" class="form-control form-control-sm tide-autogrow tide-grow-3" maxlength="4000" rows="6" @bind="Markers" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-exceptions">Exceptions (not sponsorship)</label>
-            <textarea id="sponsored-exceptions" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="Exceptions" @bind:event="oninput"></textarea>
+            <textarea id="sponsored-exceptions" class="form-control form-control-sm tide-autogrow tide-grow-3" maxlength="4000" rows="6" @bind="Exceptions" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-test">Test a title, author or tag</label>
@@ -303,11 +310,11 @@
     <div class="row g-3">
         <div class="col-md-6">
             <label class="tide-field-label" for="ad-selectors">Selectors to remove</label>
-            <textarea id="ad-selectors" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="6" @bind="AdSelectors" @bind:event="oninput"></textarea>
+            <textarea id="ad-selectors" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" maxlength="4000" rows="6" @bind="AdSelectors" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="ad-labels">Label lines to remove</label>
-            <textarea id="ad-labels" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
+            <textarea id="ad-labels" class="form-control form-control-sm tide-autogrow tide-grow-3" maxlength="4000" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
         </div>
     </div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveAds">Save adverts</button>
@@ -340,7 +347,7 @@
         </div>
         <div class="col-md-8">
             <label class="tide-field-label" for="group-words">Extra words to ignore</label>
-            <textarea id="group-words" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" @bind="IgnoredWords" @bind:event="oninput" aria-describedby="group-words-help group-words-built-in"></textarea>
+            <textarea id="group-words" class="form-control form-control-sm tide-autogrow tide-grow-3" maxlength="4000" rows="5" @bind="IgnoredWords" @bind:event="oninput" aria-describedby="group-words-help group-words-built-in"></textarea>
             <div class="form-text" id="group-words-help">One word per line: letters, digits and hyphens, up to @TriageGroups.MaxWordLength characters, at most @TriageGroups.MaxWords.
                 Endings are trimmed as they are for the built-in words, so "webinar" also ignores "webinars". A hyphenated word is ignored as each of its parts.</div>
             <div class="small tide-muted" id="group-words-built-in" role="status">
@@ -423,6 +430,8 @@
     private ConfirmDialog _confirm = default!;
     private IReadOnlyList<Source> _sources = [];
     private (bool Enabled, int MinPollMinutes, int RetentionDays, int ReadSeconds, int PullNowMinutes) _intake;
+    // When the feeds should have been pulled by each working day; internal for the render tests.
+    internal TimeOnly PulledBy { get; set; }
     private (bool Enabled, int RefreshHours) _cve;
     private bool _skipSponsored;
     // The sponsored lists as typed (one phrase per line), and the Test box's text; internal for the render tests.
@@ -451,6 +460,7 @@
     {
         var i = IntakeOptionsMonitor.CurrentValue;
         _intake = (i.Enabled, i.MinPollMinutes, i.RetentionDays, (int)i.ReadBudget.TotalSeconds, i.PullNowMinutes);   // as the reader takes it
+        PulledBy = i.PulledByTime;
         _skipSponsored = i.SkipSponsored;
         Markers = Lines(i.SponsoredMarkers ?? SponsoredFilter.DefaultMarkers);
         Exceptions = Lines(i.SponsoredExceptions ?? SponsoredFilter.DefaultExceptions);
@@ -465,7 +475,21 @@
 
     private static string Switch(bool on) => on ? "true" : "false";
 
-    internal Task SaveIntake() => Run(async () =>
+    // The box, to know it holds a whole time (a cleared or impossible one leaves the last whole time bound), and why
+    // what's in it was refused; internal for the render tests.
+    internal TimeBox? PulledByBox { get; private set; }
+    private string? _pulledByProblem;
+
+    internal Task SaveIntake()
+    {
+        _pulledByProblem = PulledByBox is { Whole: false } ? "Feeds pulled by is a 24-hour time such as 08:00." : null;
+        StateHasChanged();
+        if (_pulledByProblem is null) return SaveIntakeSettings();
+        Toasts.Error("Polling wasn't saved: " + _pulledByProblem);
+        return Task.CompletedTask;
+    }
+
+    private Task SaveIntakeSettings() => Run(async () =>
     {
         await Settings.SaveAsync(new Dictionary<string, string?>
         {
@@ -474,6 +498,7 @@
             [OperationalSettings.RetentionDays] = _intake.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
             [OperationalSettings.ReadSeconds] = _intake.ReadSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             [OperationalSettings.PullNowMinutes] = _intake.PullNowMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [OperationalSettings.PulledBy] = PulledBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
         });
         ReadSettings();
         Toasts.Show(_intake.Enabled ? "Polling is on. Due sources are polled within a minute." : "Polling settings saved; polling is off.");

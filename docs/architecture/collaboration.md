@@ -153,6 +153,7 @@ What pages do with it:
 |---|---|---|
 | Article editor (`ArticleEditorPanel`) | `article:{id}` | re-reads with nothing unsaved; otherwise keeps the edits and shows `ChangedElsewhere` with Reload |
 | Brief page and Today (`BriefPage`) | `brief:{id}`, `brief-day:`, `meeting:{id}`, `metrics-day:`, `actions`, `articles`, `rotation` | the brief's details and team note keep what's typed and say who changed them; numbers and actions re-read in place; Coming up for you follows the rotation |
+| The top bar's brief chip (`BriefChip`, on every page of the main layout) | `brief-day:`, `brief:{id}`, `article:{id}` for each article on today's brief (`BriefPage.Follow`) | re-reads where the brief stands (`BriefChipSource`, kept per circuit). Unlike a page, it hears its own circuit's saves too: Today marking the brief ready moves the chip |
 | Today's numbers (`MetricEntry`) | `metrics-day:{date}`, `metrics` | re-reads in place, keeping a box being typed in or holding a non-number, and names who changed that row |
 | Present mode | the brief, meeting and article topics | follows the deck; a follower's slide is kept |
 | Actions board and list, Workload | `actions`, `action:` | re-read the rows, with LiveMarks |

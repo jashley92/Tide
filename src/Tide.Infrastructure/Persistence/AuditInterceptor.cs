@@ -23,11 +23,11 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
     // Detection rules and kept article text are bookkeeping, not people's changes: each push or import sets every rule's
     // LastSeenAtUtc (a row per rule each time), and each read or prune of a publisher's text would copy it into the log.
     // An administrator's removal of a pushed set is recorded by DetectionService as one entry.
-    // A person's own preferences (List or Board) and saved Actions views change nothing anyone else sees. The job lease and
-    // job runs are the background jobs' own bookkeeping.
+    // A person's own preferences (List or Board) and saved Actions views change nothing anyone else sees. The job lease, the
+    // processes' heartbeats and the job runs are the background jobs' own bookkeeping.
     private static readonly HashSet<Type> NotAudited =
         [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(SavedActionView), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText),
-         typeof(JobLease), typeof(JobRun)];
+         typeof(JobLease), typeof(JobProcess), typeof(JobRun)];
 
     // Changing on every save, so recording them is noise.
     private static readonly HashSet<string> SkippedProperties =
@@ -74,6 +74,8 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
             if (NotAudited.Contains(entry.Entity.GetType())) continue;
             var changes = Changes(entry);
             if (entry.State == EntityState.Modified && changes.Count == 0) continue;
+            // A save the article editor made by itself says so (AuditVia), on every row it wrote.
+            if (AuditVia.Autosaving) changes[AuditVia.Field] = [null, AuditVia.Yes];
             entries.Add(new AuditLogEntry
             {
                 AtUtc = now,

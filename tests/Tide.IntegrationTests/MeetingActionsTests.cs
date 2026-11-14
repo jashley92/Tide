@@ -59,36 +59,73 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheArticleSlide_ListsEachRecommendedLine_WithAGuessedKind_AndARaisedOneShowsItsAction()
     {
         var (day, article) = await BriefWithRecommendations(12);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         await r.Click(p => p.OnPresentKey("last"));
         var wrap = await r.Html();
         wrap.Should().Contain("Recommended, with no action raised yet").And.Contain("<li>Patch GitLab to 17.3.2</li>").And.Contain("<li>Notify the service desk</li>");
 
         await r.Click(p => p.OnPresentKey("prev"));
         var slide = await r.Html();
-        slide.Should().Contain("class=\"tide-reco\"").And.Contain("aria-label=\"Kind for: Patch GitLab to 17.3.2\" value=\"PatchRemediate\"")
-            .And.Contain("aria-label=\"Kind for: Notify the service desk\" value=\"Awareness\"").And.Contain("Raise</button>")
-            .And.Contain("Another action: what needs doing", "the free-text add stays for anything else");
+        // Each line's guessed kind, on its chip in the rail.
+        string Chip(string line) => slide[slide.IndexOf($"aria-label=\"Change the kind and team for: {line}\"", StringComparison.Ordinal)..][..300];
+        Chip("Patch GitLab to 17.3.2").Should().Contain($"<span>{ActionService.KindName(ActionKind.PatchRemediate)} &#xB7;");
+        Chip("Notify the service desk").Should().Contain($"<span>{ActionService.KindName(ActionKind.Awareness)} &#xB7;");
+        slide.Should().Contain("class=\"tide-reco\"").And.Contain("Raise</button>")
+            .And.Contain("Another action</button>", "the free-text add stays for anything else");
 
         int number;
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
-            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day);
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            var team = await teams.AddAsync("Recommended lines team", null, null);
+            await teams.AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+            number = (await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2")).Number;
             var made = (await actions.GetAsync(number))!.Action;
             made.Priority.Should().Be(Priority.P1, "the article's priority");
-            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
+            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting, on its team, holds it");
         }
-        await using var again = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var again = await PresentHarness.Open(app, day);
         await again.Click(p => p.OnPresentKey("last"));
         await again.Click(p => p.OnPresentKey("prev"));
         var raised = await again.Html();
-        raised.Should().Contain($"Raised as <button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\">A-{number}</button>").And.Contain("disabled aria-describedby")
-            .And.NotContain("aria-label=\"Kind for: Patch GitLab to 17.3.2\"");
+        raised.Should().Contain($"<button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\" data-card-opener=\"action:{number}\">A-{number}</button> &#xB7; Open &#xB7; Tester")
+            .And.NotContain("Change the kind and team for: Patch GitLab to 17.3.2");
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
             .And.Contain("<li>Notify the service desk</li>");
+    }
+
+    [Fact]
+    public async Task TheSlidesTakeIt_IsOnlyForAMemberOfTheActionsTeam()
+    {
+        var (day, article) = await BriefWithRecommendations(14);
+        Guid team;
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            team = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync("Take on the slide team", null, null);
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2")).Number;
+        }
+        var take = $"aria-label=\"Take A-{number}\"";
+
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            var slide = await r.Html();
+            slide.Should().Contain($"A-{number}</button>", "the raised action is on its line").And.NotContain(take, "the presenter isn't on its team");
+        }
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<TeamService>().AddMemberAsync(team, SignIn.Analyst.UserId, SignIn.Analyst.Name);
+        await using (var r = await PresentHarness.Open(app, day))
+        {
+            await r.Click(p => p.OnPresentKey("last"));
+            await r.Click(p => p.OnPresentKey("prev"));
+            (await r.Html()).Should().Contain(take, "on the team now, the presenter may take it");
+        }
     }
 
     [Fact]
@@ -97,7 +134,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         // A stylesheet edit once dropped the quick add's grid, and its five controls stacked one per line: each row of
         // controls on an article slide keeps its own layout rule.
         var css = await app.CreateClient().GetStringAsync("/app.css");
-        css.Should().Contain(".tide-quick-add { display: grid;", "the quick add: what needs doing, kind, team, due date, Add, in a row")
+        css.Should().Contain(".tide-quick-add { display: grid;", "the quick add: what needs doing, then kind, team, due date and Add")
             .And.Contain(".tide-reco li { display: grid;", "a recommended line with what to raise it as")
             .And.Contain(".tide-slide-actlist { display: grid;", "the article's actions, one line each");
     }
@@ -111,7 +148,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             external = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = name });
 
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         await r.Click(p => p.OnPresentKey("last"));
         await r.Click(p => p.OnPresentKey("prev"));
         var slide = await r.Html();
@@ -123,6 +160,10 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             (await refused.Should().ThrowAsync<ArgumentException>()).WithMessage("*split off an action as a part*");
         }
     }
+
+    // The team the quick add's select has chosen, as picking it would.
+    private static void QuickAddTeam(Present page, Guid team) =>
+        typeof(Present).GetField("_qaTeam", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(page, team);
 
     [Fact]
     public async Task AnActionAddedInTheMeeting_ToATeamThatWarnsAtItsLimit_AsksWhy_AndGoesAhead()
@@ -136,10 +177,9 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             await teams.SetLimitAsync(team, 1, ActiveLimitMode.Warn);
             await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "At the limit", TeamId = team });
         }
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
-        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        await using var r = await PresentHarness.Open(app, day);
         r.Component.TypeQuickAddTitle(article, "Sweep the proxy logs");
-        typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
+        QuickAddTeam(r.Component, team);
 
         // The add waits on the dialog: start it as a click would, and keep hold of it to wait for it once it's answered.
         Task adding = Task.CompletedTask;
@@ -162,11 +202,40 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task AnActionAddedInTheMeeting_OverALimit_CancelledAtTheQuestion_IsntAdded_AndFocusGoesBackToAdd()
+    {
+        var (day, article) = await BriefWithRecommendations(18);
+        Guid team;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            team = await teams.AddAsync("Meeting cancel team " + Guid.NewGuid().ToString("N")[..6], null, null);
+            await teams.SetLimitAsync(team, 1, ActiveLimitMode.Warn);
+            await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "At the limit", TeamId = team });
+        }
+        await using var r = await PresentHarness.Open(app, day);
+        r.Component.TypeQuickAddTitle(article, "Not after all");
+        QuickAddTeam(r.Component, team);
+
+        Task adding = Task.CompletedTask;
+        await r.Renderer.Dispatcher.InvokeAsync(() => { adding = r.Pressed(p => p.QuickAdd(article)); });
+        await r.HtmlOnce("Why go over the limit?");
+        await r.Renderer.Dispatcher.InvokeAsync(r.Component.OverLimit.Cancel);
+        await adding.WaitAsync(TimeSpan.FromSeconds(30));
+
+        r.Component.FocusingQuickAdd.Should().BeTrue("Add was disabled while it asked, so focus had left it");
+        r.Component.QuickAddTitle(article).Should().Be("Not after all", "what was typed stays, to change the team or add it later");
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter(ActionView.Open, team)))
+                .Should().NotContain(x => x.Title == "Not after all");
+    }
+
+    [Fact]
     public async Task AnotherDayInTheAddress_StartsFromItsOwnFirstSlide_AndOneThatIsntADayShowsNoBrief()
     {
         var (first, _) = await BriefWithRecommendations(21);
         var (second, _) = await BriefWithRecommendations(22);
-        await using var r = await RenderAsync<Present>(app, $"/present/{first:yyyy-MM-dd}", new() { ["Day"] = $"{first:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, first);
         await r.Click(p => p.OnPresentKey("last"));
         (await r.Html()).Should().Contain("Recommended, with no action raised yet");
 
@@ -185,7 +254,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     {
         // A past day's brief with an article nobody ticked off: the wrap-up has to be seen before the meeting ends.
         var (day, _) = await BriefWithRecommendations(24);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         var endFromTop = typeof(Present).GetMethod("EndFromTop", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         var redraw = typeof(ComponentBase).GetMethod("StateHasChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         // As the button's click would: run it, then draw the page again.
@@ -218,7 +287,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
 
     private static string Header(string html)
     {
-        var start = html.IndexOf("<div class=\"tide-page-head\">", StringComparison.Ordinal);
+        var start = html.IndexOf("<div class=\"tide-page-head tide-brief-head\">", StringComparison.Ordinal);
         var end = html.IndexOf("aria-label=\"Brief progress\"", StringComparison.Ordinal);
         start.Should().BeGreaterThanOrEqualTo(0);
         return html[start..(end < 0 ? html.Length : end)];

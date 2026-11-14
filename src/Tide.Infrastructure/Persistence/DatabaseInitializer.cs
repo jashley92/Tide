@@ -50,7 +50,46 @@ public sealed class DatabaseInitializer(
         await scorecard.SeedStarterSetAsync(ct);
         await SeedStarterLibrariesAsync(db, ct);
         await CanonicalizeIndicatorsAsync(db, log, ct);
+        await LinkRecommendationsAsync(db, log, ct);
         if (env.IsDevelopment()) await SeedSamplesAsync(ct);
+    }
+
+    /// <summary>The setting that says the one-time pass linking actions to their recommended lines has run.</summary>
+    public const string RecommendationLinksKey = "Data:RecommendationLinks";
+
+    /// <summary>
+    /// Links the actions raised before the link was stored to the recommended line each was raised from, once: the slide
+    /// used to put an action under a line when its title was the line's words (RecommendedActions.Raised), so an action
+    /// whose title is one of its article's lines (as the slide reads them: Markdown emphasis aside) gets that line, as
+    /// the article writes it. One action per line: the oldest open one, else the oldest closed; cancelled ones none.
+    /// Logged, and skipped after the marker is written. Returns the actions linked.
+    /// </summary>
+    public static async Task<int> LinkRecommendationsAsync(AppDbContext db, ILogger log, CancellationToken ct = default)
+    {
+        if (await db.Settings.AnyAsync(s => s.Key == RecommendationLinksKey, ct)) return 0;
+        var articles = await db.Articles.Where(a => a.RecommendedActions != null)
+            .Select(a => new { a.Id, a.RecommendedActions }).ToListAsync(ct);
+        var ids = articles.Select(a => a.Id).ToList();
+        var actions = await db.Actions.Where(a => a.ArticleId != null && ids.Contains(a.ArticleId.Value) && a.Status != ActionStatus.Cancelled)
+            .ToListAsync(ct);
+        var linked = 0;
+        foreach (var article in articles)
+        {
+            var theirs = actions.Where(a => a.ArticleId == article.Id).OrderBy(a => a.IsOpen ? 0 : 1).ThenBy(a => a.Number).ToList();
+            var held = theirs.Where(a => a.RecommendationLine != null).Select(a => a.RecommendationLine!).ToList();
+            foreach (var line in RecommendedActions.Lines(article.RecommendedActions))
+            {
+                if (held.Any(h => RecommendedActions.Raised(line, h))) continue;
+                if (theirs.FirstOrDefault(a => a.RecommendationLine == null && RecommendedActions.Raised(line, a.Title)) is not { } first) continue;
+                first.RecommendationLine = line;
+                held.Add(line);
+                linked++;
+            }
+        }
+        db.Settings.Add(new AppSetting { Key = RecommendationLinksKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+        await db.SaveChangesAsync(ct);
+        if (linked > 0) log.LogInformation("Linked {Linked} action(s) to the recommended line each was raised from.", linked);
+        return linked;
     }
 
     /// <summary>The setting that says the one-time pass over stored indicators has run.</summary>
@@ -234,23 +273,27 @@ public sealed class DatabaseInitializer(
             {
                 Number = 2, Title = "Apply the vendor hotfix to both remote-access gateways", Kind = ActionKind.PatchRemediate, Priority = Priority.P1,
                 TeamId = vulnerability.Id, ArticleId = vpn.Id, DueDate = clock.Days.Next(clock.Today), Status = ActionStatus.InProgress,
+                RecommendationLine = "Apply the vendor hotfix to both gateways today.",
             });
 
-        // Intake: a paused sample source with a few items (one repeating another under a new headline, one about a CVE
+        // Intake: two paused sample sources with a few items (one repeating another under a new headline, one about a CVE
         // already briefed), a story, and made-up CVE context, so triage and enrichment have something to show offline.
+        // The repeat comes from a second outlet's feed, as it would: two feeds telling one event is what triage offers as
+        // one group, so the pair can be attached to the article that covers it in one step.
         var feed = new Source { Name = "Sample security news", Url = "https://example.com/feed.xml", Enabled = false, Reliability = SourceReliability.B };
-        db.Sources.Add(feed);
+        var wire = new Source { Name = "Sample news wire", Url = "https://example.org/feed.xml", Enabled = false, Reliability = SourceReliability.B };
+        db.Sources.AddRange(feed, wire);
         var now = DateTimeOffset.UtcNow;
-        FeedItem Item(string title, string url, string excerpt, int hoursAgo, string? cves = null) => new()
+        FeedItem Item(string title, string url, string excerpt, int hoursAgo, string? cves = null, Source? from = null) => new()
         {
-            SourceId = feed.Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            SourceId = (from ?? feed).Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
             TitleKey = Application.Intake.TitleMatch.Key(title), Excerpt = excerpt, Cves = cves,
             PublishedAtUtc = now.AddHours(-hoursAgo), FetchedAtUtc = now.AddHours(-hoursAgo + 1),
         };
         var first = Item("Ransomware gang exploits edge VPN zero-day against manufacturers", "https://example.com/news/vpn-ransomware",
             "Researchers tie a ransomware affiliate to exploitation of CVE-2026-0001 in remote-access gateways.", 3, "CVE-2026-0001");
         var again = Item("Manufacturers hit as ransomware gang exploits edge VPN zero-day", "https://example.org/story/edge-vpn-ransomware",
-            "The same campaign, reported by a second outlet.", 2);
+            "The same campaign, reported by a second outlet.", 2, from: wire);
         again.SimilarToId = first.Id;
         db.FeedItems.AddRange(first, again,
             Item("Browser vendor ships fix for actively exploited type confusion bug", "https://example.com/news/browser-fix",
@@ -273,7 +316,9 @@ public sealed class DatabaseInitializer(
         for (var i = 0; i < roster.Length; i++)
         {
             db.RotationMembers.Add(new RotationMember { UserId = roster[i].Item1, DisplayName = roster[i].Item2, SortOrder = i });
-            if (i > 0) db.Users.Add(new AppUser { Sid = roster[i].Item1, DisplayName = roster[i].Item2, Email = roster[i].Item2.ToLowerInvariant() + "@example.com", LastSeenUtc = now });
+            // Analysts, as they sign in in development, so an action can be given to them (holders work actions).
+            if (i > 0) db.Users.Add(new AppUser { Sid = roster[i].Item1, DisplayName = roster[i].Item2, Email = roster[i].Item2.ToLowerInvariant() + "@example.com",
+                RolesCsv = nameof(AppRole.Analyst), LastSeenUtc = now });
         }
         var monday = Application.Rotation.RotationService.WeekStart(clock.CurrentBriefDate);
         for (var w = 0; w < 8; w++)

@@ -24,7 +24,7 @@ public partial class StyleTokenTests
         // A comment or an action's details quoting a long URL or a SHA-256 ran out of its card and scrolled the page
         // sideways on a narrow window: .tide-md (the Md component's wrapper) set no wrapping.
         var css = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "app.css"));
-        Regex.Match(css, @"(?m)^\.tide-md\s*\{([^}]*)\}").Groups[1].Value.Should().MatchRegex(@"overflow-wrap:\s*anywhere");
+        MarkdownRule().Match(css).Groups[1].Value.Should().MatchRegex(@"overflow-wrap:\s*anywhere");
     }
 
     [GeneratedRegex(@"(--tide-[a-z0-9-]+)\s*:")]
@@ -32,4 +32,7 @@ public partial class StyleTokenTests
 
     [GeneratedRegex(@"var\(\s*(--tide-[a-z0-9-]+)")]
     private static partial Regex Used();
+
+    [GeneratedRegex(@"(?m)^\.tide-md\s*\{([^}]*)\}")]
+    private static partial Regex MarkdownRule();
 }

@@ -107,10 +107,10 @@ else
                     else
                     {
                         <label class="tide-field-label" for="etpl-cc">Always copy (CC) <span class="fw-normal">: every recipient sees these</span></label>
-                        <textarea id="etpl-cc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="1" @bind="_cc"></textarea>
+                        <textarea id="etpl-cc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" maxlength="4000" rows="1" @bind="_cc"></textarea>
                     }
                     <label class="tide-field-label mt-2" for="etpl-bcc">Always blind-copy (BCC) <span class="fw-normal">: no recipient sees these</span></label>
-                    <textarea id="etpl-bcc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="1" @bind="_bcc"></textarea>
+                    <textarea id="etpl-bcc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" maxlength="4000" rows="1" @bind="_bcc"></textarea>
                     @if (_copyError is not null) { <p class="text-danger small mt-2 mb-0" role="alert">@_copyError</p> }
                     <button class="btn btn-outline-secondary btn-sm mt-2" data-submit disabled="@_busy" @onclick="() => SaveCopies(false)">Save copies</button>
                 </section>

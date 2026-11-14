@@ -13,7 +13,7 @@ namespace Tide.Infrastructure.Security;
 /// Mirrors signed-in users into <see cref="AppUser"/>. A user is written at most once per <see cref="TouchEvery"/>
 /// (unless their name, email or roles changed), so calling this on every request is cheap.
 /// </summary>
-public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time) : IUserDirectory
+public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time, Application.Org.OrgClock clock) : IUserDirectory
 {
     public static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(30);
 
@@ -32,7 +32,21 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var row = await db.Users.FirstOrDefaultAsync(u => u.Sid == userId, ct);
-        if (row is null) db.Users.Add(row = new AppUser { Sid = userId });
+        if (row is null)
+        {
+            db.Users.Add(row = new AppUser { Sid = userId });
+            // A first sign-in: the tour is due (someone already recorded, who used TIDE before, gets What's new instead),
+            // and the pages' Show me around links show for a while (GuideLinkService). A preference already kept stays.
+            const string tour = Application.Preferences.UserPreferences.TourState, since = Application.Operations.GuideLinkService.Since;
+            var kept = await db.UserPreferences.Where(p => p.UserId == userId && (p.Name == tour || p.Name == since)).Select(p => p.Name).ToListAsync(ct);
+            void Start(string name, string value)
+            {
+                if (!kept.Contains(name)) db.UserPreferences.Add(new UserPreference { UserId = userId, Name = name, Value = value, UpdatedAtUtc = now });
+            }
+            Start(tour, Application.Preferences.UserPreferences.TourDue);
+            // The organization's day, as the window is counted in (not UTC's, a day ahead in a US evening).
+            Start(since, Application.Operations.GuideLinkService.Day(clock.Today));
+        }
         // A stand-in name (the bare username: AD didn't answer in time) keeps the real one recorded, as for the address.
         if (!nameIsStandIn || string.IsNullOrWhiteSpace(row.DisplayName)) row.DisplayName = Cut(displayName);
         row.UserPrincipalName = Cut(upn ?? "");

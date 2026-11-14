@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js (the actions list's and the Library's too), triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts
@@ -32,8 +32,13 @@ public static class Shortcuts
         new(["Esc"], "Close, back where you were"),
     ]);
 
-    /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath)
+    /// <summary>"]" (theme.js): listed among Everywhere's on a page that has a context rail, where it does something.</summary>
+    public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
+
+    /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
+    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
+    /// someone who <paramref name="canTake"/> actions on.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -46,8 +51,20 @@ public static class Shortcuts
             case "present":
                 groups.Add(Present);
                 break;
+            case "stack" when segments.Length == 1:
+                groups.Add(Stack);
+                break;
+            case "adversaries":
+                groups.Add(Adversaries);
+                break;
+            // A tab that lists entries (the first, when the address names none).
+            case LibraryTabs.Root when LibraryTabs.All.FirstOrDefault(t => segments.Length == 1 || t.Key.Equals(segments[1], StringComparison.OrdinalIgnoreCase)) is { Topic: not null }:
+                groups.Add(Library);
+                break;
+            // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
-                groups.Add(Board);
+                var group = !relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board : ActionsList;
+                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey)] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -60,7 +77,8 @@ public static class Shortcuts
                 groups.Add(Charts);
                 break;
         }
-        groups.Add(Everywhere);
+        // After "?", as the two single keys that work on every page that has what they act on.
+        groups.Add(rail ? Everywhere with { Keys = [.. Everywhere.Keys.Take(2), RailKey, .. Everywhere.Keys.Skip(2)] } : Everywhere);
         groups.Add(Palette);
         return groups;
     }
@@ -76,10 +94,18 @@ public static class Shortcuts
         new(["P"], "Promote to an article", Letter: true),
         new(["Esc"], "Close the promote form or the reading pane"),
         new(["O"], "Open the source in a new tab", Letter: true),
-        new(["V"], "Read it here", Letter: true),
+        new(["V"], "Read it here (fetched from its site only when nothing is kept); pressed again, close the reading pane", Letter: true),
         new(["R"], "Put back in New", Letter: true),
         new(["Enter", "→"], "On a group: open it"),
         new(["←"], "Close the group"),
+    ]);
+
+    private static readonly ShortcutGroup Library = new("Library",
+    [
+        new(["↓", "↑"], "Next and previous entry"),
+        new(["J"], "Next entry, on to the next page at the end", Letter: true),
+        new(["K"], "Previous entry, back a page at the start", Letter: true),
+        new(["Enter"], "Go into the selected entry"),
     ]);
 
     private static readonly ShortcutGroup Present = new("Present mode",
@@ -91,11 +117,46 @@ public static class Shortcuts
         new(["Home", "End"], "First and last slide"),
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
+        new(["]"], "Presenting: show or hide the presenter's controls", Letter: true),
         new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
+    ]);
+
+    private static readonly ShortcutGroup Stack = new("Our stack",
+    [
+        new(["↓", "↑"], "Next and previous product"),
+        new(["J"], "Next product", Letter: true),
+        new(["K"], "Previous product", Letter: true),
+        new(["Enter"], "Open the selected product"),
+    ]);
+
+    private static readonly ShortcutGroup Adversaries = new("Adversaries",
+    [
+        new(["↓", "↑"], "Next and previous profile"),
+        new(["J"], "Next profile", Letter: true),
+        new(["K"], "Previous profile", Letter: true),
+        new(["Enter"], "Open the selected profile"),
+    ]);
+
+    private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
+
+    private static readonly ShortcutGroup ActionsList = new("Actions list",
+    [
+        new(["↓", "↑"], "Next and previous action"),
+        new(["J"], "Next action, on to the next page at the end", Letter: true),
+        new(["K"], "Previous action, back a page at the start", Letter: true),
+        TakeKey,
+        new(["Enter"], "Open the selected action"),
+        new(["Tab", "Enter"], "A row's status opens the statuses it can move to"),
     ]);
 
     private static readonly ShortcutGroup Board = new("Actions board",
     [
+        new(["↓", "↑"], "Next and previous card, lane after lane"),
+        new(["J"], "Next card, on to the next lane at the end of one", Letter: true),
+        new(["K"], "Previous card", Letter: true),
+        new(["←", "→"], "On a card: the card beside it, in the next lane with cards"),
+        TakeKey,
+        new(["Enter"], "Open the selected card"),
         new(["Tab", "Enter"], "A card's Move button opens the columns it can go to; Enter on one moves it"),
         new(["Esc"], "Close the Move menu"),
     ]);

@@ -51,10 +51,8 @@ public static class NavPages
         new("reports", "Reports", "bi-file-earmark-bar-graph", "reports", Insight, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "weekly monthly quarterly board report"),
         new("rotation", "Brief rotation", "bi-calendar3", "rotation", Team, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "rota schedule"),
         new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
-        new("saved-queries", "Saved queries", "bi-bookmark", "hunts/saved", Team, [Permission.ReadActions], Keywords: "hunt query library siem kql xql"),
-        new("outreach-templates", "Outreach templates", "bi-envelope-paper", "outreach/templates", Team, [Permission.ReadActions], Keywords: "email vendor partner isac ask template library"),
-        new("playbooks", "Playbooks", "bi-journal-check", "playbooks", Team, [Permission.ReadActions], Keywords: "checklist steps runbook library"),
-        new("board-rules", "Board rules", "bi-palette", "board-rules", Team, [Permission.ReadActions], Keywords: "card rules colour color label"),
+        // One entry; the Library page's tabs reach its four parts, and the palette lists each by its own words (LibraryTabs).
+        new("library", "Library", "bi-collection", LibraryTabs.Root, Team, [Permission.ReadActions], Keywords: "team shared reuse"),
         new("published", "Published briefs", "bi-megaphone", "published", CompanyWide, [Permission.ReadPublished], Keywords: "archive company"),
         // One entry; the Administration page's tabs reach every admin page (AdminLayout).
         new("admin", "Administration", "bi-sliders", "admin", Administration, [Permission.Administer], Keywords: "settings admin"),

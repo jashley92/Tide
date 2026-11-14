@@ -404,7 +404,7 @@ Endpoints that serve content of their own override it:
 - **The circuit.** Every write in the app goes through the Blazor Server circuit. `CircuitOriginMiddleware` refuses
   any `/_blazor` request (negotiate, WebSocket upgrade, long polling) whose `Origin` is neither the request's host nor
   `App:BaseUrl`'s authority (scheme not compared, default ports equal). Starting a circuit also needs data-protected
-  component markers from a page the other site can't read. The hub's largest message is 256 KB.
+  component markers from a page the other site can't read. The hub's largest message is 1 MB.
 - **Antiforgery.** `UseAntiforgery` validates form tokens for Razor component forms. The API group calls
   `DisableAntiforgery`: it takes JSON bodies, and TIDE registers no CORS policy, so a browser won't send a cross-site
   JSON `PATCH` or `POST`.
@@ -579,7 +579,7 @@ AI drafting help is opt-in and capped by TLP (ADR [0004](../decisions/0004-opt-i
   `AsExport`, and on the file and configuration endpoints): a line in the access log (`Tide.Access`) with who, the
   route, the record it names, the TLP ceiling and the size. Some are also written to the audit log
   (`DownloadAudit`, kind `Download`, action `Downloaded`, keyed by the record): an indicator export
-  (`/exports/{scope}/{key}`) whose ceiling is above TLP:GREEN (no `?tlp=` means every level, so RED), every file
+  (`/exports/{scope}/{key}`) whose ceiling is above TLP:GREEN (a request with no `?tlp=` is refused), every file
   download (`/files/{id}/download`, `/files/{id}/zip`, the API's), the configuration bundle and install answers
   (`/admin/system/config-bundle.json`, `/admin/system/tide.config.psd1`) and the audit log's own CSV. The row is
   written before the answer is sent, so a download the log can't record isn't sent. A refusal, a redirect or a "not

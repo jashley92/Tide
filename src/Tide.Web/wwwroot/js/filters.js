@@ -4,10 +4,11 @@
 // force, or a text filter's box): focusIn. The arrows and Home/End move between the choices (tideRoving, in theme.js).
 // Tab leaves it closed (its backdrop is clicked, which .NET hears), except in a typed filter's form, which Tab moves
 // through until focus is past either end. Esc is .NET's: it closes it and focus goes back to + Filter. The down arrow on
-// + Filter opens it, as on a menu button.
+// + Filter opens it, as on a menu button. The account menu (ProfileMenu) takes the arrows the same way.
 // One listener on the page for every bar, so there's nothing to start or stop.
 window.tideFilters = (function () {
-    const choices = '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])';
+    // A menu's choices, and the account menu's settings (radios).
+    const choices = '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled]), [role="radio"]:not([disabled])';
 
     function focusIn(pop) {
         if (!pop || !pop.querySelector) return;
@@ -15,21 +16,33 @@ window.tideFilters = (function () {
         const all = Array.prototype.slice.call(pop.querySelectorAll(choices));
         const first = all.find(function (c) { return !c.classList.contains('tide-filter-back'); }) || all[0];
         const target = pop.querySelector('input') || pop.querySelector('[aria-checked="true"]') || first;
-        if (target) target.focus();
+        if (!target) return;
+        // The popout is placed in view already (tidePopout): only a long list inside it scrolls to the choice.
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     function onKey(e) {
         if (e.ctrlKey || e.metaKey || e.altKey || !e.target || !e.target.closest) return;
-        const trigger = e.target.closest('.tide-filter-add, .tide-menubutton-btn');
+        const trigger = e.target.closest('.tide-filter-add, .tide-menubutton-btn, .tide-profile-btn');
         if (trigger) {
-            if (e.key === 'ArrowDown' && trigger.getAttribute('aria-expanded') !== 'true') {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            // Open, the arrows go into its menu (a list under the page, Triage's, would take them otherwise); closed, the
+            // down arrow opens it.
+            if (trigger.getAttribute('aria-expanded') === 'true') {
+                e.preventDefault();
+                focusIn(document.getElementById(trigger.getAttribute('aria-controls')));
+            } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 trigger.click();
             }
             return;
         }
-        const pop = e.target.closest('.tide-filter-pop, .tide-menubutton-pop');
+        const pop = e.target.closest('.tide-filter-pop, .tide-menubutton-pop, .tide-profile-pop');
         if (!pop) return;
+        // A popover whose controls are Tab stops of their own (the account menu's settings) is tabbed through; Tab moving
+        // out of it closes it (tidePopout).
+        if (e.key === 'Tab' && pop.hasAttribute('data-tab-through')) return;
         if (e.key === 'Tab') {
             const backdrop = pop.parentElement.querySelector('.tide-popover-backdrop');
             // A typed filter's form (its box, Remove, Apply) is moved through with Tab, as any form is, and left closed

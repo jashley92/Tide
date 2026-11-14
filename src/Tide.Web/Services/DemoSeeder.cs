@@ -11,6 +11,7 @@ using Tide.Application.Distribution;
 using Tide.Application.Files;
 using Tide.Application.Metrics;
 using Tide.Application.Org;
+using Tide.Application.Scorecard;
 using Tide.Application.Security;
 using Tide.Application.Settings;
 using Tide.Domain.Entities;
@@ -24,7 +25,9 @@ namespace Tide.Web.Services;
 /// <see cref="DatabaseInitializer"/> adds. Turned on with <c>Demo:Seed=true</c>, and run once per database. Six months
 /// of briefed articles (for Trends), a year of opening metrics, actions in every state with a hunt, adversaries, more
 /// triage items with their text kept for the reading pane, API tokens, and yesterday's brief sent in both editions
-/// through the app's own send. Its random choices come from a fixed seed, so two runs on the same day match.
+/// through the app's own send. Also products on Our stack, a metric group with a number left to enter, two actions
+/// still open from the brief before yesterday's, and a second person to follow a live meeting. Its random choices come
+/// from a fixed seed, so two runs on the same day match.
 /// <para><c>Demo:InfoFile</c>, when set, gets a small JSON file naming the days and numbers the tool needs.</para>
 /// </summary>
 public static class DemoSeeder
@@ -42,8 +45,9 @@ public static class DemoSeeder
 
         await using (var db = await dbs.CreateAsync(ct))
         {
-            if (await db.Settings.AnyAsync(s => s.Key == MarkerKey, ct))
+            if (await db.Settings.FirstOrDefaultAsync(s => s.Key == MarkerKey, ct) is { } marker)
             {
+                NotStale(marker.Value, clock.CurrentBriefDate);
                 log.LogInformation("Demo data is already in this database; not seeded again.");
                 return;
             }
@@ -57,9 +61,14 @@ public static class DemoSeeder
         try
         {
             var seeded = await new Run(sp, dbs, clock, dev).AllAsync(ct);
+            await TriageFillerAsync(dbs, config.GetValue<int>("Demo:TriageFiller"), ct);
+            if (config.GetValue<bool>("Demo:SlideFiller")) await SlideFillerAsync(dbs, clock.CurrentBriefDate, ct);
+            var staleFeeds = config.GetValue<bool>("Demo:StaleFeeds");
+            if (staleFeeds) await StaleFeedsAsync(dbs, ct);
             if (!string.IsNullOrWhiteSpace(info))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(info))!);
+                seeded = seeded with { FeedsDue = staleFeeds && clock.Days.IsWorkingDay(clock.Today) };
                 await File.WriteAllTextAsync(info, JsonSerializer.Serialize(seeded, Indented), ct);
             }
             log.LogInformation("Seeded the demo data: today {Today}, sent {Sent}.", seeded.Today, seeded.Sent);
@@ -68,6 +77,95 @@ public static class DemoSeeder
         {
             accessor.HttpContext = null;
         }
+    }
+
+    /// <summary>
+    /// A demo database is seeded for a day (the marker's value; "1" from before it said): its today's brief, the numbers
+    /// left to enter and the day before's sent brief are that day's. Started on a later day (a reused database), today's
+    /// brief isn't there, and the one it calls today may have been presented or sent since, so the tools would check a day
+    /// that's gone. It's refused, saying so.
+    /// </summary>
+    internal static void NotStale(string seededFor, DateOnly today)
+    {
+        if (seededFor == "1" || seededFor == Iso(today)) return;
+        throw new InvalidOperationException(
+            $"This demo database was seeded for {seededFor}, and today's brief is {Iso(today)}: its pages would show a day that's gone. Start on a fresh one (without REUSE).");
+    }
+
+    private static string Iso(DateOnly day) => Tide.Web.Components.Shared.Ui.IsoDay(day);
+
+    /// <summary>
+    /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
+    /// own, from one feed so they never group, for the layout checks that need Triage to have a second page; and one
+    /// event told by two feeds that the Edge VPN article covers (a CVE it names), for the checks on a covered group.
+    /// </summary>
+    private static async Task TriageFillerAsync(IAppDbContextFactory dbs, int count, CancellationToken ct)
+    {
+        if (count <= 0) return;
+        await using var db = await dbs.CreateAsync(ct);
+        var source = new Source { Name = "Example filler feed", Url = "https://example.com/filler.xml", Enabled = false };
+        var wire = new Source { Name = "Example filler wire", Url = "https://example.net/filler.xml", Enabled = false };
+        db.Sources.AddRange(source, wire);
+        var now = DateTimeOffset.UtcNow;
+        void Add(Source from, string title, string url, DateTimeOffset at, string? cves = null) => db.FeedItems.Add(new FeedItem
+        {
+            Source = from, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = at, FetchedAtUtc = at, Cves = cves,
+        });
+        for (var n = 1; n <= Math.Min(count, 500); n++) Add(source, $"Filler k{n:000}", $"https://example.com/filler/k{n:000}", now.AddHours(-8).AddMinutes(-10 * n));
+        const string cve = "CVE-2026-0098";
+        var vpn = await db.Articles.FirstAsync(a => a.Title.StartsWith("Edge VPN"), ct);
+        db.ArticleCves.Add(new ArticleCve { ArticleId = vpn.Id, CveId = cve });
+        Add(source, $"Quillon Bank confirms $3.7 million theft ({cve})", "https://example.com/filler/quillon-theft", now.AddHours(-7), cve);
+        Add(wire, "Quillon Bank $3.7 million heist traced to stolen gateway keys", "https://example.net/filler/quillon-heist", now.AddHours(-7).AddMinutes(-20));
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>Demo:StaleFeeds=true</c>: three polled feeds last pulled the day before, one of them failing, for the layout
+    /// checks on Today's word about feeds not pulled since the morning and on the Sources tab's Pull all. Their interval is
+    /// a week, so the scheduled pass leaves them alone, and their addresses are on this machine, which is never fetched
+    /// from: pressing Pull all reaches nothing outside.
+    /// </summary>
+    private static async Task StaleFeedsAsync(IAppDbContextFactory dbs, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var yesterday = DateTimeOffset.UtcNow.AddHours(-26);
+        Source Feed(string name, string? error = null) => new()
+        {
+            Name = name, Url = $"http://127.0.0.1/demo/{name.Replace(' ', '-').ToLowerInvariant()}.xml", PollMinutes = 7 * 24 * 60, Enabled = true,
+            LastPolledAtUtc = yesterday, LastSuccessAtUtc = error is null ? yesterday : null, LastNewItems = error is null ? 4 : 0, LastError = error,
+            ConsecutiveFailures = error is null ? 0 : 1,
+        };
+        db.Sources.AddRange(Feed("Morning wire (demo)"), Feed("Vendor advisories (demo)"),
+            Feed("Research blog (demo)", "The server answered 503 Service Unavailable."));
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>Demo:SlideFiller=true</c>: a dozen indicators (a long hash and a long address among them) and a dozen CVEs on the
+    /// last article of today's brief, for the layout checks on a slide that holds many; and an opening note carried over
+    /// from the last brief and not yet looked at, for the presenter's Still current and Edit on its slide. And a third
+    /// recommended line on the first article, beside its two actions: two lines still to raise, the presenter's rail as
+    /// full as an article's gets.
+    /// </summary>
+    private static async Task SlideFillerAsync(IAppDbContextFactory dbs, DateOnly today, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).FirstAsync(b => b.BriefDate == today, ct);
+        var last = brief.Items.OrderBy(i => i.SortOrder).Last().ArticleId;
+        var first = brief.Items.OrderBy(i => i.SortOrder).First().Article!;
+        first.RecommendedActions = (first.RecommendedActions ?? "").TrimEnd() + "\n- Reset the passwords of the accounts the gateways' admin console uses.";
+        brief.TeamNote ??= "Payroll lures are up again: treat any request to change bank details as suspect.";
+        brief.TeamNoteReviewedAtUtc = null;
+        db.ArticleIndicators.AddRange([
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.FileHash, Value = "9f2c4e8a1b7d3f6e0a5c9b2d8e4f1a7c3b6d0e9f2a5c8b1d4e7f0a3c6b9d2e5f8a" },
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.Url, Value = "https://payments-processor-status.example.com/portal/session/renew?ref=partner-notice-2026-11" },
+            new ArticleIndicator { ArticleId = last, Type = IndicatorType.EmailAddress, Value = "security-notice@processor-alerts.example.net" },
+            .. Enumerable.Range(1, 9).Select(n => new ArticleIndicator { ArticleId = last, Type = IndicatorType.IpAddress, Value = $"198.51.100.{20 + n}" }),
+        ]);
+        db.ArticleCves.AddRange(Enumerable.Range(11, 12).Select(n => new ArticleCve { ArticleId = last, CveId = $"CVE-2026-00{n}" }));
+        await db.SaveChangesAsync(ct);
     }
 
     private static ClaimsPrincipal Principal(DevAuthOptions dev)
@@ -83,8 +181,11 @@ public static class DemoSeeder
         return new ClaimsPrincipal(new ClaimsIdentity(claims, DevAuthenticationHandler.SchemeName, ClaimTypes.Name, ClaimTypes.Role));
     }
 
-    /// <summary>What the screenshot tool needs to find its pages.</summary>
-    public sealed record Seeded(string Today, string Sent, int HuntAction, int DetailAction, string VpnArticle, string SentArticle);
+    /// <summary>What the screenshot tool needs to find its pages, and <paramref name="Follower"/>: who to sign a second
+    /// browser in as (<c>?as=</c>) to follow a live meeting.
+    /// <para><paramref name="FeedsDue"/>: Today says the feeds aren't pulled (<c>Demo:StaleFeeds</c>, on a working day).</para></summary>
+    public sealed record Seeded(string Today, string Sent, int HuntAction, int DetailAction, string VpnArticle, string SentArticle,
+        string StackProduct, string Follower, string Adversary, bool FeedsDue = false);
 
     // One seeding pass. Everything random comes from one fixed seed.
     private sealed class Run(IServiceProvider sp, IAppDbContextFactory dbs, OrgClock clock, DevAuthOptions dev)
@@ -95,21 +196,33 @@ public static class DemoSeeder
 
         private static readonly (string Id, string Name)[] Analysts = [("dev:robin", "Robin"), ("dev:sam", "Sam")];
 
+        // Follows a live meeting from a second browser: the dev sign-in's ?as=Jordan&roles=Viewer is this person.
+        private const string Follower = "Jordan";
+
         public async Task<Seeded> AllAsync(CancellationToken ct)
         {
             await using var db = await dbs.CreateAsync(ct);
             var tags = await db.ScorecardTags.ToDictionaryAsync(t => t.Key, t => t.Id, ct);
-            var teams = await TeamsAsync(db, ct);
+            var teams = await TeamsAsync(db, dev, ct);
             var vpn = await db.Articles.FirstAsync(a => a.Title.StartsWith("Edge VPN"), ct);
             var adversaries = Adversaries(db);
             var sources = Sources(db);
             await db.SaveChangesAsync(ct);
 
             Triage(db, sources);
+            StoryFollowUp(db, vpn);
             await HistoryAsync(db, tags, teams, ct);
             var sent = SentBriefArticles(db, tags, adversaries);
             db.ArticleAdversaries.Add(new ArticleAdversary { ArticleId = vpn.Id, AdversaryId = adversaries[0].Id });
             var detail = CurrentActions(db, teams, sent);
+            EarlierBrief(db, tags, teams);
+            var edgeVpn = Stack(db, teams, vpn);
+            var login = Follower.ToLowerInvariant();   // as the dev sign-in names a ?as= person
+            db.Users.Add(new AppUser
+            {
+                Sid = "dev:" + login, DisplayName = Follower, UserPrincipalName = login + "@example.com", Email = login + "@example.com",
+                RolesCsv = nameof(AppRole.Viewer), LastSeenUtc = DateTimeOffset.UtcNow,
+            });
             // Today's brief is the dev sign-in's.
             var todays = await db.Briefs.FirstAsync(b => b.BriefDate == _today, ct);
             todays.AnalystId = dev.UserId;
@@ -120,18 +233,36 @@ public static class DemoSeeder
                 ("ISAC member's implant listing", TlpLevel.Amber, Red)], ct);
             await ScreenshotsAsync(sent[0].Id, [("Remote monitoring console seen in the intrusion", TlpLevel.Green, Teal)], ct);
             await MetricsAsync(ct);
+            await ExposureMetricsAsync(ct);
             await HuntAsync(db, ct);
             await TokensAsync(ct);
             await SendAsync(sent, ct);
 
-            db.Settings.Add(new AppSetting { Key = MarkerKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+            db.Settings.Add(new AppSetting { Key = MarkerKey, Value = Iso(_today), UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
             await db.SaveChangesAsync(ct);
-            return new Seeded(_today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Sent.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString());
+            await CreatedWhenRaisedAsync(db, ct);
+            return new Seeded(Iso(_today), Iso(Sent), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
+                edgeVpn.Id.ToString(), Follower, adversaries[0].Id.ToString());
+        }
+
+        // A seeded action is made now with its past written in (saving it dates it now): it was created when that past
+        // starts, at the meeting of the day it was raised on or its first line of history, whichever is earlier. Written
+        // straight to the row: the save would date it now again.
+        private async Task CreatedWhenRaisedAsync(IAppDbContext db, CancellationToken ct)
+        {
+            foreach (var a in db.Actions.Local.ToList())
+            {
+                var at = new[] { a.StatusChangedAtUtc, a.RaisedOn is { } day ? clock.MeetingStart(day).ToUniversalTime() : null }
+                    .Concat(a.Events.Select(e => (DateTimeOffset?)e.AtUtc)).OfType<DateTimeOffset>().Append(a.CreatedAtUtc).Min();
+                if (at < a.CreatedAtUtc) await db.Actions.Where(x => x.Id == a.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.CreatedAtUtc, at), ct);
+            }
         }
 
         // --- reference data ----------------------------------------------------------------------------------------
 
-        private static async Task<Dictionary<string, Team>> TeamsAsync(IAppDbContext db, CancellationToken ct)
+        // The sample teams and two more, with the dev sign-in on each: only a team's members take its actions on, and the
+        // pages the screenshot tools check take them.
+        private static async Task<Dictionary<string, Team>> TeamsAsync(IAppDbContext db, DevAuthOptions dev, CancellationToken ct)
         {
             var teams = await db.Teams.ToDictionaryAsync(t => t.Key, ct);
             var identity = new Team { Key = "identity-access", Name = "Identity & Access", SortOrder = 2 };
@@ -139,6 +270,8 @@ public static class DemoSeeder
             db.Teams.AddRange(identity, fraud);
             teams[identity.Key] = identity;
             teams[fraud.Key] = fraud;
+            foreach (var team in teams.Values)
+                db.TeamMembers.Add(new TeamMember { TeamId = team.Id, UserId = dev.UserId, DisplayName = dev.DisplayName, AddedAtUtc = DateTimeOffset.UtcNow });
             return teams;
         }
 
@@ -157,6 +290,24 @@ public static class DemoSeeder
             ];
             db.Adversaries.AddRange(list);
             return list;
+        }
+
+        // A later report in the edge VPN story with indicators the first article lacks, not on any brief: a sweep raised
+        // from the first article can then hunt for the whole story's.
+        private static void StoryFollowUp(IAppDbContext db, Article vpn)
+        {
+            var later = new Article
+            {
+                Title = "Second staging host seen in the edge VPN exploitation", SourceName = "Research blog",
+                SourceUrl = "https://example.org/research/edge-vpn-second-wave", Tlp = TlpLevel.Clear, Classification = Classification.Threat,
+                Priority = Priority.P2, Bluf = "The group behind the edge VPN zero-day now stages tools on a second host.",
+                Status = ArticleStatus.Draft, AuthorId = "system", AuthorName = "Sample data", StoryId = vpn.StoryId,
+            };
+            later.Indicators.AddRange([
+                new ArticleIndicator { Type = IndicatorType.IpAddress, Value = "198.51.100.61" },
+                new ArticleIndicator { Type = IndicatorType.Domain, Value = "cdn-sync.example.net" },
+            ]);
+            db.Articles.Add(later);
         }
 
         private static List<Source> Sources(IAppDbContext db)
@@ -190,6 +341,12 @@ public static class DemoSeeder
                     "Researchers describe a loader that installs a legitimately signed but vulnerable driver, then uses it to stop endpoint protection processes.\n\n" +
                     "The loader arrives in archives named like invoices and is linked to an affiliate of the Ember Lynx ransomware operation.\n\n" +
                     "The report lists the driver's hash and a staging server at 203.0.113.77."),
+                // The briefed edge VPN article's own advisory, revised: one report on its own (no other headline shares its
+                // words), covered by that article through its link, so Attach is its main button.
+                (0, "Vendor revises guidance for its remote-access gateway flaw", "https://example.com/advisories/vpn-zero-day",
+                    "The advisory now lists a second fixed firmware build and drops one workaround.", 5,
+                    "The vendor has revised its advisory for the remote-access gateway flaw: a second fixed firmware build is listed, and the " +
+                    "workaround of disabling the web portal is withdrawn because it did not block the attack."),
                 (2, "ISAC members report help-desk calls asking to reset MFA", "https://example.net/isac/helpdesk-mfa-resets",
                     "Several member organizations received calls to their help desks from people posing as employees who had lost their phones.", 6,
                     "Several member organizations have received calls to their IT help desks from people posing as employees who say they have lost their phones and need multi-factor authentication reset.\n\n" +
@@ -239,6 +396,9 @@ public static class DemoSeeder
             ("QR-code phishing reaches executive mailboxes", "Industry ISAC", Classification.Threat, ["phishing"], ["T1566.002"]),
         ];
 
+        // How many of the past briefs' latest stories a new one can't repeat: fewer than the pool holds.
+        private const int RecentlyDrawn = 10;
+
         private async Task HistoryAsync(IAppDbContext db, Dictionary<string, Guid> tags, Dictionary<string, Team> teams, CancellationToken ct)
         {
             var number = await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).Select(a => (int?)a.Number).MaxAsync(ct) ?? 0;   // a deleted one's number isn't reused
@@ -246,6 +406,7 @@ public static class DemoSeeder
             var start = _today.AddDays(-190);
             var people = new[] { (dev.UserId, dev.DisplayName) }.Concat(Analysts).ToArray();
             var seen = 0;
+            var recent = new Queue<int>();
             for (var day = start; day < clock.Days.Previous(Sent); day = day.AddDays(1))
             {
                 if (!clock.Days.IsWorkingDay(day) || _rng.NextDouble() < 0.35) continue;
@@ -260,11 +421,17 @@ public static class DemoSeeder
                 var count = _rng.Next(1, 4);
                 for (var i = 0; i < count; i++)
                 {
-                    var (title, source, kind, tagKeys, techniques) = Pool[_rng.Next(Pool.Length)];
+                    // A story the recent briefs carried isn't drawn again so soon, so lists of the latest articles
+                    // (Recently presented) don't show the same title twice.
+                    int pick;
+                    do pick = _rng.Next(Pool.Length); while (recent.Contains(pick));
+                    recent.Enqueue(pick);
+                    if (recent.Count > RecentlyDrawn) recent.Dequeue();
+                    var (title, source, kind, tagKeys, techniques) = Pool[pick];
                     var article = new Article
                     {
                         Title = title, SourceName = source, Classification = kind, Status = ArticleStatus.Presented,
-                        Tlp = (TlpLevel)_rng.Next(0, 3), Priority = kind == Classification.Threat ? (Priority)_rng.Next(0, 4) : null,
+                        Tlp = (TlpLevel)_rng.Next(0, 3), Priority = kind == Classification.Threat ? (Priority)_rng.Next((int)Priority.P1, (int)Priority.P4 + 1) : null,
                         Bluf = "Sample data for the trends page.", AuthorId = who.Item1, AuthorName = who.Item2,
                     };
                     article.Bullets.Add(new ArticleBullet { Text = "Sample data: a past article, briefed and sent.", Tlp = TlpLevel.Clear });
@@ -279,13 +446,14 @@ public static class DemoSeeder
                     var due = clock.Days.Next(clock.Days.Next(day));
                     var closed = _rng.NextDouble() < 0.8 ? due : clock.Days.Next(clock.Days.Next(due));
                     var owner = people[_rng.Next(people.Length)];
+                    var closedAt = clock.MeetingStart(closed).ToUniversalTime().AddHours(4);
                     db.Actions.Add(new ActionItem
                     {
                         Number = ++number, Title = "Check exposure: " + title.ToLowerInvariant(), Kind = (ActionKind)_rng.Next(0, 5),
                         Priority = article.Priority ?? Priority.P3, TeamId = teamList[_rng.Next(teamList.Count)].Id, ArticleId = article.Id,
                         AssigneeId = owner.Item1, AssigneeName = owner.Item2, RaisedOn = day, DueDate = due,
                         Status = ActionStatus.Done, Outcome = ActionOutcome.None, ClosedDate = closed,
-                        ClosedAtUtc = clock.MeetingStart(closed).ToUniversalTime().AddHours(4),
+                        ClosedAtUtc = closedAt, StatusChangedAtUtc = closedAt,
                     });
                 }
                 db.Briefs.Add(brief);
@@ -367,33 +535,40 @@ public static class DemoSeeder
             var (rmm, token, helpdesk) = (sent[0], sent[1], sent[3]);
             var day = Sent;
             DateOnly Bd(int n) { var d = _today; for (var i = 0; i < Math.Abs(n); i++) d = n > 0 ? clock.Days.Next(d) : clock.Days.Previous(d); return d; }
+            // Each in its status since it was raised at that day's meeting, unless a later move is given (a seeded action is made
+            // now with its past written in, so the time the Status setter gives it isn't its own).
+            var meeting = clock.MeetingStart(day).ToUniversalTime();
             ActionItem Add(string title, ActionKind kind, Priority p, string team, Article? article, (string Id, string Name)? who, DateOnly due,
-                ActionStatus status, string? description = null)
+                ActionStatus status, string? description = null, DateTimeOffset? movedAt = null)
             {
                 var a = new ActionItem
                 {
                     Number = ++number, Title = title, Kind = kind, Priority = p, TeamId = teams[team].Id, ArticleId = article?.Id,
                     AssigneeId = who?.Id, AssigneeName = who?.Name, RaisedOn = day, DueDate = due, Status = status, Description = description,
                 };
+                a.StatusChangedAtUtc = movedAt ?? meeting;
                 db.Actions.Add(a);
                 return a;
             }
             var robin = Analysts[0];
             var sam = Analysts[1];
             var me = (dev.UserId, dev.DisplayName);
+            // Raised at the sent brief's meeting, as the day it was raised on says; started on this morning, before its
+            // checklist's first box was ticked.
+            var started = DateTimeOffset.UtcNow.AddHours(-4);
             var detail = Add("Block the remote monitoring relay and alert on unapproved agents", ActionKind.Block, Priority.P2, "cyber-defense", rmm, robin,
                 Bd(1), ActionStatus.InProgress,
-                "Block **rmm-relay.example.org** at the proxy and add a detection for remote monitoring agents other than the two we approve.");
+                "Block **rmm-relay.example.org** at the proxy and add a detection for remote monitoring agents other than the two we approve.",
+                movedAt: started);
             detail.Checklist.AddRange([
                 new ActionChecklistItem { SortOrder = 0, Text = "Block the relay domain at the proxy", IsDone = true, DoneByName = robin.Name, DoneAtUtc = DateTimeOffset.UtcNow.AddHours(-3) },
                 new ActionChecklistItem { SortOrder = 1, Text = "Add the detection rule for unapproved agents" },
                 new ActionChecklistItem { SortOrder = 2, Text = "Confirm no hits in the last 30 days of proxy logs" },
             ]);
-            var raised = DateTimeOffset.UtcNow.AddHours(-20);
             detail.Events.AddRange([
-                new ActionEvent { AtUtc = raised, ByName = robin.Name, Text = "Raised from the brief." },
-                new ActionEvent { AtUtc = raised.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
-                new ActionEvent { AtUtc = raised.AddHours(17), ByName = robin.Name, Text = "Status: Open → In progress." },
+                new ActionEvent { AtUtc = meeting, ByName = robin.Name, Text = "Raised from the brief." },
+                new ActionEvent { AtUtc = meeting.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
+                new ActionEvent { AtUtc = started, ByName = robin.Name, Text = "Status: Open → In progress." },
             ]);
             detail.Comments.Add(new ActionComment
             {
@@ -403,9 +578,99 @@ public static class DemoSeeder
             Add("Rotate integration tokens for the cloud storage tenants", ActionKind.ConfigChange, Priority.P3, "identity-access", token, sam, Bd(3), ActionStatus.Open);
             Add("Require call-back verification before MFA resets", ActionKind.ConfigChange, Priority.P2, "identity-access", helpdesk, null, Bd(2), ActionStatus.Open);
             Add("Brief the service desk on MFA reset pretexting", ActionKind.Awareness, Priority.P3, "fraud-operations", helpdesk, me, Bd(-1), ActionStatus.Open);
-            Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked);
+            // Blocked three days ago: the board says how long it has waited there.
+            var blockedAt = DateTimeOffset.UtcNow.AddDays(-3);
+            var blocked = Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked,
+                movedAt: blockedAt);
+            blocked.Events.Add(new ActionEvent { AtUtc = blockedAt, ByName = sam.Name, Text = "Status: Open → Blocked: waiting on the vendor's window." });
             Add("Hunt for unapproved remote monitoring agents on servers", ActionKind.ThreatHunt, Priority.P2, "cyber-defense", rmm, me, Bd(2), ActionStatus.Open);
             return detail.Number;
+        }
+
+        // --- the brief before yesterday's, with work still open -------------------------------------------------------
+
+        // Runs after CurrentActions, so its actions take the next numbers.
+        private void EarlierBrief(IAppDbContext db, Dictionary<string, Guid> tags, Dictionary<string, Team> teams)
+        {
+            var day = clock.Days.Previous(Sent);
+            var sam = Analysts[1];
+            var held = clock.MeetingStart(day).ToUniversalTime();
+            var article = new Article
+            {
+                Title = "Identity provider session tokens replayed from unmanaged devices", SourceName = "Vendor advisory",
+                SourceUrl = "https://example.com/advisories/session-token-replay", Tlp = TlpLevel.Green, Classification = Classification.Threat,
+                Priority = Priority.P2, Status = ArticleStatus.Presented, AuthorId = sam.Id, AuthorName = sam.Name,
+                Bluf = "Stolen session tokens for a cloud identity provider are being replayed from unmanaged devices, which skips the sign-in checks.",
+                WhyItMatters = "Our sessions last twelve hours and aren't tied to a managed device.",
+                RecommendedActions = "- Shorten session lifetime for unmanaged devices.\n- Review sign-ins from unmanaged devices over the last 14 days.",
+            };
+            article.Bullets.Add(new ArticleBullet { Text = "The tokens come from information-stealing malware on personal devices.", Tlp = TlpLevel.Green });
+            if (tags.TryGetValue("cloud-saas-provider", out var tag)) article.Tags.Add(new ArticleTag { TagId = tag });
+            article.Techniques.Add(new ArticleTechnique { TechniqueId = "T1550.004" });
+            db.Articles.Add(article);
+            var brief = new Brief
+            {
+                BriefDate = day, AnalystId = sam.Id, AnalystName = sam.Name, Status = BriefStatus.Sent,
+                MeetingHeldAtUtc = held, PresentedAtUtc = held.AddMinutes(25), DistributedAtUtc = held.AddMinutes(40),
+                DistributedById = sam.Id, DistributedByName = sam.Name,
+            };
+            brief.Items.Add(new BriefItem { ArticleId = article.Id, Discussed = true });
+            db.Briefs.Add(brief);
+
+            var number = db.Actions.Local.Max(a => a.Number);
+            ActionItem Add(string title, ActionKind kind, Priority p, (string Id, string Name)? who, DateOnly due)
+            {
+                var a = new ActionItem
+                {
+                    Number = ++number, Title = title, Kind = kind, Priority = p, TeamId = teams["identity-access"].Id, ArticleId = article.Id,
+                    AssigneeId = who?.Id, AssigneeName = who?.Name, RaisedOn = day, DueDate = due,
+                };
+                a.StatusChangedAtUtc = held.AddMinutes(10);
+                a.Events.Add(new ActionEvent { AtUtc = a.StatusChangedAtUtc.Value, ByName = sam.Name, Text = "Raised from the brief." });
+                db.Actions.Add(a);
+                return a;
+            }
+            // Due the day it was raised and not done: the ladder flagged it the next morning. The other is a day late.
+            var escalated = Add("Shorten session lifetime for unmanaged devices", ActionKind.ConfigChange, Priority.P1, null, day);
+            escalated.EscalatedForDue = escalated.DueDate;
+            escalated.EscalatedAtUtc = clock.MeetingStart(Sent).ToUniversalTime().AddHours(-2);
+            escalated.Events.Add(new ActionEvent
+            {
+                AtUtc = escalated.EscalatedAtUtc.Value, ByName = ReminderService.EscalatedBy,
+                Text = $"Escalated, {EscalationLadder.Lateness(day, Sent, clock.Days)}: flagged escalated.",
+            });
+            Add("Review sign-ins from unmanaged devices over the last 14 days", ActionKind.ThreatHunt, Priority.P2, sam, Sent);
+        }
+
+        // --- Our stack ---------------------------------------------------------------------------------------------------
+
+        /// <summary>Five products: one tagged on the edge VPN article (returned), one a triage item names, one not checked
+        /// for over a year, one with no owning team and one never checked.</summary>
+        private StackProduct Stack(IAppDbContext db, Dictionary<string, Team> teams, Article vpn)
+        {
+            StackProduct Add(string name, string? otherNames, string versions, string notes, string? team, int? checkedDaysAgo,
+                (string Name, string Email)? contact = null)
+            {
+                var p = new StackProduct
+                {
+                    Name = name, OtherNames = otherNames, Versions = versions, Notes = notes, TeamId = team is null ? null : teams[team].Id,
+                    CheckedOn = checkedDaysAgo is { } days ? _today.AddDays(-days) : null, ContactName = contact?.Name, ContactEmail = contact?.Email,
+                };
+                db.StackProducts.Add(p);
+                return p;
+            }
+            var edgeVpn = Add("Edge VPN", "Remote access gateway", "9.1R4 on both gateways",
+                "Two gateways in front of remote access. Change window: Tuesdays, 02:00 to 04:00.", "vulnerability-management", 6,
+                ("Example vendor support", "support@example.com"));
+            Add("File Transfer Server", "MFT", "2025.3", "One server in the partner zone; the web interface is reachable from partner networks only.",
+                "vulnerability-management", 40);
+            Add("Identity Provider", "Single sign-on; SSO", "Cloud tenant", "Sign-in for staff and contractors. Sessions last twelve hours.",
+                "identity-access", 420);
+            Add("Payment Processor", null, "Hosted service", "Card payments for the online shop. Nobody has claimed it since the reorganization.",
+                null, 14, ("Processor security desk", "security@example.net"));
+            Add("Email Security Gateway", "Secure email gateway", "Cloud service", "Filters inbound mail before it reaches mailboxes.", "cyber-defense", null);
+            db.ArticleProducts.Add(new ArticleProduct { ArticleId = vpn.Id, ProductId = edgeVpn.Id });
+            return edgeVpn;
         }
 
         // --- files, metrics, hunts, tokens -------------------------------------------------------------------------------
@@ -446,6 +711,46 @@ public static class DemoSeeder
                     db.MetricValues.Add(new MetricValue
                     {
                         DefinitionId = defs[m].Id, BriefDate = day, Value = value, EnteredById = dev.UserId, EnteredByName = dev.DisplayName,
+                    });
+                }
+            }
+            await db.SaveChangesAsync(ct);
+        }
+
+        // A group of three with six weeks of numbers; today leaves its last one to be entered. After MetricsAsync, which
+        // gives a year of values to every metric there is when it runs.
+        private async Task ExposureMetricsAsync(CancellationToken ct)
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            const string name = "Exposed services";
+            (string Name, MetricDirection Direction, decimal? Warn, decimal? Critical, int Level)[] metrics =
+            [
+                ("Internet-facing hosts", MetricDirection.Neutral, null, null, 212),
+                ("With a critical finding", MetricDirection.LowerIsBetter, 3, 6, 2),
+                ("No owner on record", MetricDirection.LowerIsBetter, 5, 15, 7),
+            ];
+            var group = new MetricGroup
+            {
+                Key = ScorecardService.KeyFor(name), Name = name,
+                SortOrder = await db.MetricGroups.MaxAsync(g => g.SortOrder, ct) + 1,
+            };
+            db.MetricGroups.Add(group);
+            for (var m = 0; m < metrics.Length; m++)
+            {
+                var (metric, direction, warn, critical, level) = metrics[m];
+                var def = new MetricDefinition
+                {
+                    Key = ScorecardService.KeyFor(name + " " + metric), Name = metric, Direction = direction,
+                    WarnThreshold = warn, CriticalThreshold = critical, SortOrder = m,
+                };
+                group.Metrics.Add(def);
+                for (var day = _today.AddDays(-42); day <= _today; day = day.AddDays(1))
+                {
+                    if (!clock.Days.IsWorkingDay(day) || (day == _today && m == metrics.Length - 1)) continue;
+                    db.MetricValues.Add(new MetricValue
+                    {
+                        DefinitionId = def.Id, BriefDate = day, Value = Math.Max(0, level + _rng.Next(-2, 3)),
+                        EnteredById = dev.UserId, EnteredByName = dev.DisplayName,
                     });
                 }
             }

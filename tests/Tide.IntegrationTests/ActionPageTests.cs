@@ -88,6 +88,7 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         html.Should().NotContain("tide-status-prompt").And.Contain("aria-pressed=\"true\" data-status=\"Open\"");
         r.Component.IsPrompting.Should().BeFalse();
 
+        await As((actions, _) => actions.RanCleanAsync(a.Id));   // "no hits" needs a query run clean on record
         await r.Click(c => c.Pick(ActionStatus.Done));
         await r.Click(c => { c.Choose(ActionOutcome.NoHits); c.Write("30 days of proxy logs"); return c.Confirm(); });
         var done = await Reread(a);
@@ -193,7 +194,7 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("<h2>Hunt queries", "a sweep's queries are its work: the panel is open, ready to generate one")
             .And.Contain("aria-label=\"Query language\"").And.NotContain("Split off a part for a team");
         html.IndexOf("aria-label=\"Facts\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal),
-            "the facts are in the side column, after the work");
+            "the facts are in the context rail, after the page");
         r.Component.MoreItems.Should().Contain(i => i.Label == "Split off a part" && i.Href == $"actions/new?parent={a.Id}");
 
         // Its checklist tab: empty, the button that starts one.
@@ -212,5 +213,21 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         var a = await NewAction("Block the sender");
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
         (await r.Html()).Should().Contain("Add checklist item").And.NotContain("Add hunt query").And.NotContain("<h2>Hunt queries");
+    }
+
+    [Fact]
+    public async Task AHistoryLineByAPerson_ShowsTheirInitials_AndOnlyTidesOwnLinesShowT()
+    {
+        // Every history line showed "T" (TIDE's mark), even one naming Robin, beside Robin's own "R" comments.
+        var robin = new SignIn("dev:hist-robin", "Robin Hale", "Analyst", "Admin");
+        var teamId = await TeamId("Cyber Defense");
+        var number = await As((actions, _) => actions.CreateAsync(new ActionForm { Title = "History initials", Kind = ActionKind.Block, TeamId = teamId }), robin);
+
+        await using var page = await RenderAsync<ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number }, robin);
+        var html = System.Net.WebUtility.HtmlDecode(await page.HtmlOnce("History initials"));
+
+        var line = html[html.IndexOf("tide-feed-line", StringComparison.Ordinal)..];
+        line = line[..line.IndexOf("</li>", StringComparison.Ordinal)];
+        line.Should().Contain("Robin Hale").And.Contain(">RH</span>").And.NotContain("tide-feed-sys");
     }
 }

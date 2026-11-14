@@ -158,7 +158,9 @@ a SQLite file in its own temp folder (`Pooling=False`), and `Files:RootPath` and
 too. So it runs `DatabaseInitializer`, migrations and the sample data exactly as `dotnet run` does. Subclasses change
 who is signed in by overriding `Role`: `ReaderApp` (Reader) and `ActionOwnerApp` (ActionOwner) beside it, and in
 `Audit/AdversarialTests.cs` `AnalystApp` and others. Reuse one of these rather than declaring another with the same
-role. `PathBase` runs it under a sub-path. Use it as a class fixture
+role. `CountingApp` (`BriefChipTests.cs`) counts the app's SQL commands with `TestDb.CommandLog` and runs none of the
+background jobs, for a test that something drawn on every page reads nothing the second time. `PathBase` runs it under
+a sub-path. Use it as a class fixture
 (`IClassFixture<TideApp>`); `WebAppTests.Pages_Render_ForTheDevUser` reads every main page.
 
 `ComponentHarness` renders one component in the real app's services, signed in as someone (`SignIn`), and hands the
@@ -267,7 +269,7 @@ TIDE's central promise is that nothing leaves the app above the ceiling of the a
 | Exports | `ExportTests` (integration and unit) |
 | The API and webhooks | `ApiTests.ABrief_IsCutAsTheTeamEditionIs_AtTheLowerCeiling`, `ActionsFromAnArticleAboveTheTokensCeiling_AreWithheld`, `Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach emails and AI drafting | `OutreachTests.WritingTheEmail_HoldsTheArticleToTheTemplatesCeiling_…`, `AssistTests.AboveTheLimit_NothingIsSent_NorCopied` |
-| Our stack | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest` |
+| Our stack | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`, `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling` (the list) |
 | Screenshots for a Reader | `ReaderTests` in `WebAppTests.cs` (a Reader never gets the sample brief's unsent screenshots) |
 
 A change to anything that renders or sends a brief, an export, the API or a webhook should add a case here.
@@ -291,14 +293,14 @@ Two workflows live in `.github/workflows`. Scripts they call live in `tools/ci` 
 
 ```mermaid
 flowchart TD
-    PR["Pull request or push to main<br/>(not docs-only)"] --> CI["ci.yml"]
+    PR["Pull request, or push to main<br/>or ux/option-e (not docs-only)"] --> CI["ci.yml"]
     Tag["Push a v* tag"] --> REL["release.yml"]
     REL --> G["gates: runs ci.yml<br/>on the tagged commit"]
     G --> CI
     CI --> BT["build-test job"]
     CI --> SQL["sql-server job"]
     CI --> LAY["layout job"]
-    BT --> B1["Sonar begin, build, test<br/>with coverage, Sonar end"]
+    BT --> B1["Sonar begin, build (any warning<br/>fails it), test with coverage, Sonar end"]
     BT --> B2["Released migrations immutable"]
     BT --> B5["No class the markup uses<br/>loses its style"]
     BT --> B3["No un-migrated model changes<br/>for both providers"]
@@ -312,18 +314,19 @@ flowchart TD
 
 ### `ci.yml`
 
-Runs on pull requests and pushes to `main`, and is called by the release workflow. Changes that touch only `**/*.md`,
+Runs on pull requests and on pushes to `main` and `ux/option-e`, and is called by the release workflow. Changes that touch only `**/*.md`,
 `docs/**`, `LICENSE` or `.gitignore` don't trigger it. A newer run for the same ref cancels an older one.
 
 **`build-test`** (Ubuntu, .NET `10.0.x`):
 
 | Step | Fails when |
 |---|---|
-| SonarQube Cloud analysis begin and end (project `jashley92_Tide2`), around the build and test | The quality gate fails (`sonar.qualitygate.wait=true`). Skipped when `SONAR_TOKEN` is absent (forks) and on tags. |
-| Build (`-c Release`) | The build or an analyzer error fails. `AnalysisLevel` is `latest-recommended`. |
+| SonarQube Cloud analysis begin and end (project `jashley92_Tide2`), around the build and test | The quality gate fails (`sonar.qualitygate.wait=true`). Skipped when `SONAR_TOKEN` is absent (forks) and on tags. A push is analysed as its branch (`sonar.branch.name`); a pull request as a pull request. |
+| Build (`-c Release -warnaserror`) | The build fails, or anything in it warns: a compiler or analyzer warning, a NuGet warning (see [Warnings and the analysis level](#warnings-and-the-analysis-level)). |
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
 | No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
+| Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh ux/option-e` (or your base). |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
 | Deprecated package report | Never; informational. |
@@ -339,6 +342,32 @@ Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of ana
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);
 `xml:S5734` is ignored for `web.config`, because `SecurityHeadersMiddleware` sends `X-Content-Type-Options` on every
 response.
+
+### Warnings and the analysis level
+
+The build has no warnings, and CI keeps it that way: its build step passes `-warnaserror`, so any warning fails it.
+A local `dotnet build` still shows them as warnings, so work in progress isn't blocked; before pushing, check with
+`dotnet build -c Release --no-incremental -warnaserror`. `-warnaserror` is MSBuild's own switch rather than the
+`TreatWarningsAsErrors` property, because the SonarQube scanner sets that property to false in the builds it wraps.
+Under the scanner, SonarQube's own analyzers run in the build too, and their warnings count the same.
+
+Fix a warning rather than silencing it. Where it's a deliberate trade-off, suppress the one line with
+`#pragma warning disable <id> // why` and `#pragma warning restore <id>`, and say why. A rule that is noise across the
+codebase goes in `NoWarn` in `Directory.Build.props`, or in `.editorconfig` for the tests only, with the reason
+beside it.
+
+The .NET analyzers run at a pinned level, `<AnalysisLevel>10.0-recommended</AnalysisLevel>` in
+`Directory.Build.props`. `latest-recommended` would follow the SDK, and a new SDK would add rules, failing CI without a
+change to the code. To raise it, for example to `11.0-recommended` once the SDK is .NET 11:
+
+1. Change `AnalysisLevel` in `Directory.Build.props`.
+2. Run `dotnet build -c Release --no-incremental -warnaserror` and fix what it finds (or add a rule to `NoWarn`, with
+   the reason).
+3. Make it a change of its own, so the fixes are reviewed together.
+
+A newer SDK in the same band can still bring rules at the same level (CI installs the newest `10.0.x`), and CI then
+names them as errors; fix them the same way. `SYSLIB1045` (a fixed pattern in `Regex.Match` and the like, rather than
+a `[GeneratedRegex]` method) is a suggestion by default; `.editorconfig` makes it a warning, so it's held too.
 
 **`sql-server`** (Ubuntu, a SQL Server 2022 service container with a throwaway `sa` password):
 

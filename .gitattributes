@@ -1,0 +1,3 @@
+# EF Core generates these with each migration; GitHub collapses them in diffs and leaves them out of language stats.
+**/Migrations/*.Designer.cs linguist-generated=true
+**/Migrations/*ModelSnapshot.cs linguist-generated=true

@@ -1,0 +1,11 @@
+@using Microsoft.AspNetCore.Components.Sections
+@* A Library tab's buttons (its New button, the board rules' links), drawn in the Library page's one header, where its
+   outlet is, rather than under the tabs. *@
+<SectionContent SectionName="@Section">@ChildContent</SectionContent>
+
+@code {
+    /// <summary>The name of the Library header's outlet.</summary>
+    public const string Section = "library-head";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

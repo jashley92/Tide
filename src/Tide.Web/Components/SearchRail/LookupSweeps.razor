@@ -1,0 +1,71 @@
+@* Who is sweeping for what a lookup found, in Search's context rail: the open sweeps and hunts that search for the
+   indicator (for a CVE, the sweeps of its articles' indicators, since a hunt doesn't search for a CVE). Each with its
+   team, who has it and how its hunts went, Open, and Take it where the reader may take it on. "Nobody has swept for it
+   yet" while none has an owner or a result. *@
+
+<section class="tide-card" aria-labelledby="lookup-sweeps-h">
+    <h2 id="lookup-sweeps-h" tabindex="-1" @ref="_heading">@(Swept ? "Who is sweeping for it" : "Nobody has swept for it yet")</h2>
+    @if (Cve)
+    {
+        <p class="small tide-muted">A hunt doesn't search for a CVE. These sweep the indicators on its articles.</p>
+    }
+    @if (Actions.Count == 0)
+    {
+        <p class="small tide-muted mb-0">@(Cve ? "None of its articles' indicators has a sweep or a hunt." : "No open sweep or hunt searches for it.")</p>
+    }
+    else
+    {
+        <ul id="@(Cve ? "lookup-swept" : "lookup-sweeping")" class="tide-rail-list">
+            @foreach (var a in Actions)
+            {
+                var take = Takeable.Contains(a.Id);
+                <li @key="a.Id">
+                    <span class="tide-rail-list-title"><ActionRef Number="a.Number" Title="@a.Title" Link="false" /></span>
+                    <span class="tide-rail-list-meta">
+                        <span>@a.TeamName</span>
+                        <span><HolderText Label="@a.Holder("no owner")" Short="true" /></span>
+                        <ActionStatusBadge Status="a.Status" />
+                        @if (a.Hunted is null) { <span>no hunt yet</span> } else { <HuntBadge Result="a.Hunted" /> }
+                    </span>
+                    @if (CanOpen || take)
+                    {
+                        <span class="tide-lookup-sweep-do">
+                            @if (CanOpen) { <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(a.Number)">Open @Ui.ActionLabel(a.Number)</a> }
+                            @if (take)
+                            {
+                                <button type="button" class="btn btn-outline-secondary btn-sm tide-lookup-take" disabled="@Busy" aria-label="Take @Ui.ActionLabel(a.Number) on"
+                                        @onclick="() => OnTake.InvokeAsync(a)">Take it</button>
+                            }
+                        </span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    /// <summary>The sweeps and hunts, as the lookup found them.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ActionHit> Actions { get; set; } = [];
+
+    /// <summary>A CVE's lookup: its articles' sweeps, not sweeps for it.</summary>
+    [Parameter] public bool Cve { get; set; }
+
+    /// <summary>Whether the reader may open actions (Open is a link to the action's page).</summary>
+    [Parameter] public bool CanOpen { get; set; }
+
+    /// <summary>The ones the reader may take on (nobody has them, and the reader may work their team's).</summary>
+    [Parameter] public IReadOnlySet<Guid> Takeable { get; set; } = new HashSet<Guid>();
+
+    [Parameter] public EventCallback<ActionHit> OnTake { get; set; }
+
+    [Parameter] public bool Busy { get; set; }
+
+    private ElementReference _heading;
+
+    // Someone has one, or one has been run.
+    private bool Swept => Actions.Any(a => a.AssigneeName is not null || a.Hunted is HuntResult.Hits or HuntResult.NoHits);
+
+    /// <summary>Puts focus on the heading: a Take it button that had it has gone.</summary>
+    public Task FocusAsync() => _heading.Context is null ? Task.CompletedTask : _heading.TryFocusAsync(orGone: true);
+}

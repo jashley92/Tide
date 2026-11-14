@@ -33,6 +33,9 @@ public sealed record FilterPill(string Key, string Label, string FilterKey, IRea
     public string? Title { get; init; }
     public bool Disabled { get; init; }
 
+    /// <summary>How many it would show, said beside its label; none when the page doesn't count it.</summary>
+    public int? Count { get; init; }
+
     /// <summary>Whether it's on: the filter holds its values, in any order.</summary>
     public bool OnFor(FilterDef? filter) => filter is not null && filter.Values.Count == Values.Count && !Values.Except(filter.Values, StringComparer.Ordinal).Any();
 

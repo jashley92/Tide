@@ -44,7 +44,7 @@ Decisions: ADR [0005](../decisions/0005-editions-from-one-model.md) (editions fr
 |---|---|---|
 | An article | `Article.Tlp` | The source's `DefaultTlp` when promoted from triage; CLEAR otherwise |
 | A bullet (key point) | `ArticleBullet.Tlp` | The article's |
-| A screenshot (and its caption) | `ArticleScreenshot.Tlp` | The article's, when added |
+| A screenshot (and its caption) | `ArticleScreenshot.Tlp` | AMBER, or the article's when higher, when added (see below) |
 | "Why it matters to us" | `Article.WhyItMattersTlp` | See below |
 | The brief's title slide line | `Brief.IntroTlp` | CLEAR for briefs written before it existed |
 | A feed source | `Source.DefaultTlp` | Set by an administrator; what promoted items start at |
@@ -79,6 +79,20 @@ when that's higher (`Article.DefaultWhyItMattersTlp`, floor `Article.ThreatWhyIt
 It only ever raises, never touches one already written, and isn't a column default, so saved articles keep what they
 have. An informational article's starts at CLEAR. The editor shows a "starts at AMBER" hint while the value sits at the
 default untouched (`ArticleForm.WhyItMattersAtThreatDefault`).
+
+### The screenshot default
+
+A screenshot is often a capture of our own console, mail or logs, so a new one is marked AMBER, or the article's TLP
+when that's higher (`ArticleScreenshot.NewFloor`, applied in `ScreenshotService.AddAsync`, the one path every paste,
+drop and upload in the editor takes). Owner decision 2026-11-11: until then it took the article's TLP, which put a
+screenshot on a CLEAR or GREEN article straight into the company-wide edition with no deliberate choice.
+
+- AMBER+STRICT and RED articles keep their own marking on a new screenshot; a part is never below its article.
+- The editor shows the marking on the new screenshot at once, and its preview and the company-wide view leave it out of
+  an edition whose ceiling is below AMBER (counted as a withheld part).
+- The analyst can lower it to the article's TLP in the editor. That's a marking change, so autosave holds it for an
+  explicit Save, which is permission-checked, concurrency-checked and audited like any other.
+- It isn't a column default and nothing was migrated: screenshots added before keep their marking.
 
 ## The cut: `BriefEditions.Build`
 
@@ -161,7 +175,7 @@ GREEN and an outreach template at CLEAR:
 | Webhook `action.raised` | AMBER+STRICT (team) | A-12 posted, marked GREEN | A-13 never posted | n/a | n/a | n/a |
 | Outreach email from A-12 | CLEAR (template) | Left out whole, its indicators with it, and said so | n/a | n/a | n/a | n/a |
 | Export `?tlp=green` | GREEN (chosen) | Its indicators, marked GREEN | Left out | n/a | n/a | n/a |
-| Export with no `tlp` | RED (default) | Its indicators | Its indicators, marked RED | n/a | n/a | n/a |
+| Export with no `tlp` | none: refused (400) | Nothing | Nothing | n/a | n/a | n/a |
 
 ## Ceilings
 
@@ -172,7 +186,7 @@ GREEN and an outreach template at CLEAR:
 | An API token | `ApiToken.MaxTlp`, capped by the team ceiling | Administrator, per token | Chosen at issue | `ApiTokenService`, `ApiService` |
 | Webhooks | The team ceiling | (follows it) | AMBER+STRICT | `WebhookService` |
 | An outreach email | `OutreachTemplate.Ceiling` | Whoever works actions, per template | Chosen | `OutreachFill.Cut` |
-| An indicator export | `?tlp=` | The person exporting | RED (every level) | `ExportService.GatherAsync` |
+| An indicator export | `?tlp=` (required) | The person exporting | CLEAR in the Export panel; none on the address (refused) | `ExportService.GatherAsync` |
 | AI drafting | `Ai:MaxTlp` | Server configuration | GREEN | `AssistService` ([security.md](security.md#ai-data-handling)) |
 
 ### The edition ceilings
@@ -209,8 +223,9 @@ TLP of what it filled in, and each thing left out is named for the analyst.
 
 ### Exports
 
-`GET /exports/{article|brief|story}/{key}?format=stix|csv&tlp=` (team edition and above) leaves out every article
-marked above the chosen TLP, whole, as the editions do. With no `tlp` it's RED, so everything. Every STIX object
+`GET /exports/{article|brief|story|lookup}/{key}?format=stix|csv&tlp=` (team edition and above) leaves out every article
+marked above the chosen TLP, whole, as the editions do. The ceiling is required: with no `tlp`, or a format other than
+stix or csv, the request is refused (400), and the Export panel starts at TLP:CLEAR, so a wider ceiling is always chosen. Every STIX object
 carries its article's OASIS TLP 2.0 marking-definition (an object shared by several articles takes the highest), each
 CSV row its article's TLP, and the file name carries the ceiling (`tide-brief-2026-11-06-green.csv`)
 (ADR [0012](../decisions/0012-exports-carry-tlp-and-stable-ids.md)). The person exporting decides who it's for.
@@ -219,8 +234,10 @@ CSV row its article's TLP, and the file name carries the ceiling (`tide-brief-20
 
 A ceiling governs what leaves the app, not what people see in it. Signed in, an Analyst, an Action owner or a Viewer
 (all `ReadTeamEdition`) sees articles, and the actions raised from them, at every marking: the article pages, search,
-the actions pages, History (analysts only) and reports don't filter by TLP. The team edition's ceiling applies to the
-edition as it's sent, previewed and presented, to API tokens and to webhooks.
+the actions pages, Today (its brief and "Recently presented"), Our stack (a product's page and context rail, the
+article editor's product card, and the list's "Right now" CVEs), History (analysts only) and reports don't filter by
+TLP. The team edition's ceiling applies to the edition as it's sent, previewed and presented, to API tokens and to
+webhooks. Readers and Visitors read none of those pages.
 
 That's deliberate (an owner decision on 2026-11-03): anyone mapped to the Action owner role is trusted with RED inside
 TIDE, so map only the teams that should be.
@@ -229,11 +246,11 @@ Two internal emails go to named people and are marked rather than cut: the remin
 digests) list action titles with each article's TLP beside it and the highest in the subject
 (`ReminderService.MarkingOf`).
 
-### The Our stack exception
-
-Our stack is the exception inside the app. A product's page (`StackService.GetAsync`) and present mode's product card
-(`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and the actions raised from
-them, and count the rest ("2 articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
+Our stack follows the same rule (owner decision 2026-11-13; it used to name only the articles within the team ceiling
+and count the rest). Its pages (`StackService.GetAsync`, `DetailsAsync`, `OverviewAsync`) name every article and every
+CVE on one, as they name every action (owner decision 2026-11-11). Present mode's product card
+(`StackService.CardAsync`) is on the meeting's screen, which Visitors may share, so it stays held to the team edition's
+ceiling, as the slides are.
 
 ## Readiness checks
 
@@ -241,12 +258,15 @@ them, and count the rest ("2 articles above TLP:AMBER+STRICT"), even for an anal
 blocking gaps (bottom line, a bullet, a threat's priority) and warnings, it calls `ArticleChecks.WhyReachesCompany`:
 a threat whose "why it matters" has text and an effective marking at or below the company-wide ceiling is warned
 about, because it will reach everyone. The warning carries a one-click fix (`ArticleFix.WhyItMattersAmber`, offered
-only when AMBER is above the ceiling, so marking it does leave it out) that the editor applies to its form. The
-warning shows in the editor's preview, the running order, and the company-wide column of the edition check
+only when AMBER is above the ceiling, so marking it does leave it out). The editor applies it to its form, saved with
+the rest; the running order saves it at once (`ArticleService.MarkWhyItMattersAmberAsync`), which only ever raises that
+one marking, refuses a stale edit version and a sent brief, and is audited as the article's own save. The warning
+shows in the editor's preview, the running order, and the company-wide column of the edition check
 (`EditionChecks.Rows`).
 
 The edition check itself is the edition's own cut (`BuildArticle`), so what it says goes in can't disagree with what's
-sent: each article is In, Part ("2 parts above TLP:GREEN left out") or Left out ("The article is TLP:RED").
+sent: each article is In, Part ("2 parts above TLP:GREEN left out") or Left out ("The article is TLP:RED"). Today
+lists only the rows that aren't whole or carry a warning (`EditionChecks.Exceptions`); the counts are of every row.
 
 ## The leak tests
 
@@ -275,7 +295,7 @@ sent: each article is In, Part ("2 parts above TLP:GREEN left out") or Left out 
 | Webhooks hold to the team ceiling | `ApiTests.Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach holds to the template's ceiling | `tests/Tide.UnitTests/OutreachFillTests.cs` `AnArticleAboveTheCeiling_IsLeftOutWhole_IndicatorsWithIt_AndSaidSo`, `APartAboveTheCeiling_IsLeftOutAlone_ByItsOwnTlp_AsTheEditionsCutIt` |
 | Exports leave out articles above the ceiling | `tests/Tide.IntegrationTests/ExportTests.cs` `Brief_InRunningOrder_LeavesOutArticlesAboveTheCeiling` |
-| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling` |
+| Present mode's product card names only articles within the team ceiling | `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `CommentsAndStackDecisionServiceTests.AProductsPage_NamesEveryArticleAndAction_ToTheTeamEditionsReaders_AndNoneToAReader` |
 | An undefined TLP is never stored | `ArticleAndBriefTests.Save_AnUndefinedTlp_IsRefused_NotStoredBelowEveryCeiling`; `DistributionTests.Ceilings_AnUndefinedTlp_IsRefused` |
 | The "why it matters" default | `tests/Tide.UnitTests/WhyItMattersDefaultTests.cs`; `IntakeTests.Promote_AsAThreat_StartsWhyItMattersAtAmber_OrTheArticlesTlp_AndInformationalKeepsClear` |
 
@@ -312,7 +332,7 @@ out. Before merging one:
 | API and webhooks | `src/Tide.Application/Api/ApiService.cs`, `Webhooks.cs`, `src/Tide.Web/Security/ApiTokenAuthentication.cs` (`Ceiling`) |
 | Outreach | `src/Tide.Application/Actions/OutreachFill.cs` (`Cut`) |
 | Exports | `src/Tide.Application/Exports/ExportService.cs`, `Stix.cs`, `IndicatorCsv.cs` |
-| Our stack | `src/Tide.Application/Stack/StackService.cs` (`GetAsync`, `CardAsync`) |
+| Our stack | `src/Tide.Application/Stack/StackService.cs` (`GetAsync`, `CardAsync`, `OverviewAsync`) |
 
 Related: [security.md](security.md), [distribution.md](../workflows/distribution.md),
 [writing-articles.md](../workflows/writing-articles.md), [business-rules.md](../reference/business-rules.md).

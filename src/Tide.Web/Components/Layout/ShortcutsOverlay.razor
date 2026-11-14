@@ -5,6 +5,9 @@
 @implements IAsyncDisposable
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject ICurrentUser CurrentUser
+@inject TourRequests Asked
+@using Tide.Application.Operations
 
 @if (ShowButton)
 {
@@ -29,6 +32,13 @@
             <p class="tide-shortcuts-hint">
                 Letter keys (and <kbd>?</kbd>) don't fire while typing in a field. Turn them off for speech input or screen reader quick keys; arrows and Ctrl shortcuts still work. Also in the account menu; saved in this browser.
             </p>
+            @* The page's guide, always here (the link under a page's subtitle only shows for a while: GuideLink). *@
+            @if (PageGuide is { } guide)
+            {
+                <button type="button" id="tide-guide-menu" class="btn btn-outline-secondary btn-sm tide-shortcuts-guide" @onclick="() => ShowMeAround(guide)">
+                    <span class="bi bi-signpost-2" aria-hidden="true"></span> Show me around this page
+                </button>
+            }
             <div class="tide-shortcuts-body">
                 @foreach (var group in _groups)
                 {
@@ -52,6 +62,10 @@
                     </table>
                 }
             </div>
+            @if (ShowButton && CurrentUser.Has(Permission.ReadTeamEdition))
+            {
+                <p class="tide-shortcuts-help"><a href="help" @onclick="Close">Help and what's new</a></p>
+            }
         </div>
     </div>
 }
@@ -71,15 +85,34 @@
     public async Task Open()
     {
         if (_open) return;
-        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri));
-        try { _letters = await JS.InvokeAsync<bool>("tideShortcuts.on"); }
-        catch (JSException) { /* the default stands */ }
+        // "]" is listed where it does something: on a page with a context rail, as theme.js decides it.
+        var rail = false;
+        try
+        {
+            // Both asked at once: neither waits on the other.
+            var (letters, hasRail) = (JS.InvokeAsync<bool>("tideShortcuts.on").AsTask(), JS.InvokeAsync<bool>("tideRail.has").AsTask());
+            await Task.WhenAll(letters, hasRail);
+            (_letters, rail) = (letters.Result, hasRail.Result);
+        }
+        catch (JSException) { /* the defaults stand */ }
         catch (JSDisconnectedException) { return; }
+        // T on the Actions list is listed for whoever may be given actions (WorkActions, or WriteArticles for all of them).
+        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail, CurrentUser.Has(Permission.WorkActions) || CurrentUser.Has(Permission.WriteArticles));
         _open = true;
         StateHasChanged();
     }
 
     private void Close() => _open = false;
+
+    // The guide for the page open, if there's one the person can use (none in present mode: Learn to present is Help's).
+    private Guide? PageGuide => ShowButton ? Guides.ForPage(Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0], CurrentUser.Has) : null;
+
+    // Show me around this page: the overlay closes and the page's guide starts, focus coming back to "?" as it ends.
+    private void ShowMeAround(Guide guide)
+    {
+        Close();
+        Asked.AskGuide(guide.Key);
+    }
 
     private void OnKey(KeyboardEventArgs e)
     {

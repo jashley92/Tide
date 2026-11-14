@@ -12,6 +12,32 @@
       "identity_class": "organization"
     },
     {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487",
+      "created": "2022-10-01T00:00:00.000Z",
+      "name": "TLP:CLEAR",
+      "extensions": {
+        "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d": {
+          "extension_type": "property-extension",
+          "tlp_2_0": "clear"
+        }
+      }
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421",
+      "created": "2022-10-01T00:00:00.000Z",
+      "name": "TLP:AMBER",
+      "extensions": {
+        "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d": {
+          "extension_type": "property-extension",
+          "tlp_2_0": "amber"
+        }
+      }
+    },
+    {
       "type": "report",
       "spec_version": "2.1",
       "id": "report--11111111-1111-4111-8111-111111111111",
@@ -29,10 +55,10 @@
         "p1"
       ],
       "object_refs": [
-        "indicator--ab9bc9b1-a997-5de1-8d1e-4de63254732a",
-        "indicator--7100b8fc-59c9-58f9-9b77-0737599e0e92",
-        "vulnerability--c3f5656a-9e59-583b-ba08-c4f8ded98f68",
-        "attack-pattern--fbf982d1-1d23-5d89-9b55-a0531ea92e52"
+        "indicator--e3a5f840-90e9-5bb8-945d-0ce2d2dbc799",
+        "indicator--717a2c38-3c9b-5e19-87a3-9cb8218a0059",
+        "vulnerability--e1b836bf-0f6d-5a53-8594-1d7eb9a3a81d",
+        "attack-pattern--af8f7acc-a7b4-54e9-b620-affffc1106e9"
       ],
       "external_references": [
         {
@@ -60,9 +86,9 @@
         "informational"
       ],
       "object_refs": [
-        "indicator--ab9bc9b1-a997-5de1-8d1e-4de63254732a",
-        "indicator--79ce2820-3078-5ae0-8367-18625a288a11",
-        "indicator--f4b4e2ad-ed89-55a7-8216-d5cb904d5bda"
+        "indicator--e3a5f840-90e9-5bb8-945d-0ce2d2dbc799",
+        "indicator--4b6a3d63-d401-599e-a07d-d558f0744427",
+        "indicator--dac58b71-b1c3-542e-bb94-f511d3c57bf2"
       ],
       "object_marking_refs": [
         "marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421"
@@ -71,7 +97,7 @@
     {
       "type": "indicator",
       "spec_version": "2.1",
-      "id": "indicator--ab9bc9b1-a997-5de1-8d1e-4de63254732a",
+      "id": "indicator--e3a5f840-90e9-5bb8-945d-0ce2d2dbc799",
       "created": "2026-10-26T13:00:00.000Z",
       "modified": "2026-10-28T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",
@@ -88,7 +114,7 @@
     {
       "type": "indicator",
       "spec_version": "2.1",
-      "id": "indicator--7100b8fc-59c9-58f9-9b77-0737599e0e92",
+      "id": "indicator--717a2c38-3c9b-5e19-87a3-9cb8218a0059",
       "created": "2026-10-26T13:00:00.000Z",
       "modified": "2026-10-26T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",
@@ -104,7 +130,7 @@
     {
       "type": "indicator",
       "spec_version": "2.1",
-      "id": "indicator--79ce2820-3078-5ae0-8367-18625a288a11",
+      "id": "indicator--4b6a3d63-d401-599e-a07d-d558f0744427",
       "created": "2026-10-27T13:00:00.000Z",
       "modified": "2026-10-28T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",
@@ -120,7 +146,7 @@
     {
       "type": "indicator",
       "spec_version": "2.1",
-      "id": "indicator--f4b4e2ad-ed89-55a7-8216-d5cb904d5bda",
+      "id": "indicator--dac58b71-b1c3-542e-bb94-f511d3c57bf2",
       "created": "2026-10-27T13:00:00.000Z",
       "modified": "2026-10-28T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",
@@ -136,7 +162,7 @@
     {
       "type": "vulnerability",
       "spec_version": "2.1",
-      "id": "vulnerability--c3f5656a-9e59-583b-ba08-c4f8ded98f68",
+      "id": "vulnerability--e1b836bf-0f6d-5a53-8594-1d7eb9a3a81d",
       "created": "2026-10-26T13:00:00.000Z",
       "modified": "2026-10-26T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",
@@ -154,7 +180,7 @@
     {
       "type": "attack-pattern",
       "spec_version": "2.1",
-      "id": "attack-pattern--fbf982d1-1d23-5d89-9b55-a0531ea92e52",
+      "id": "attack-pattern--af8f7acc-a7b4-54e9-b620-affffc1106e9",
       "created": "2026-10-26T13:00:00.000Z",
       "modified": "2026-10-26T13:00:00.000Z",
       "created_by_ref": "identity--8c09f2b7-be06-59e3-87db-87149775fcba",

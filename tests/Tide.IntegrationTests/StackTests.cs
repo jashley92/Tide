@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
@@ -8,6 +9,7 @@ using Tide.Application.Stack;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tide.IntegrationTests;
@@ -86,7 +88,7 @@ public class StackServiceTests : IDisposable
         d.Articles.Select(a => (a.Title, a.Tagged)).Should().BeEquivalentTo([("GitLab patches a max-severity RCE", false), ("Runner token leak in CI", true)]);
         d.Actions.Select(a => a.Title).Should().BeEquivalentTo("Patch the hosts", "Rotate GitLab runner tokens");
         var row = (await stack.ListAsync()).Single();
-        (row.Articles, row.OpenActions).Should().Be((2, 1), "one open action raised from its articles; the other names it");
+        (row.Articles, row.OpenActions).Should().Be((2, 2), "the row counts what the product's page lists: one raised from its articles, one naming it with no article");
     }
 
     [Fact]
@@ -210,9 +212,156 @@ public class StackServiceTests : IDisposable
         inNew[^1].WeRun.Should().BeNull();
         (await intake.OlderCountAsync()).Should().Be(1, "only the stale story aged; the GitLab one never does");
     }
+
+    // Puts an article on the brief of daysAgo days ago, carrying the CVEs given.
+    private async Task BriefAsync(Guid article, int daysAgo, params string[] cves)
+    {
+        await using var ctx = _db.Context();
+        var day = _db.Clock.Today.AddDays(-daysAgo);
+        var brief = await ctx.Briefs.FirstOrDefaultAsync(b => b.BriefDate == day);
+        if (brief is null) ctx.Briefs.Add(brief = new Brief { BriefDate = day, AnalystId = "a", AnalystName = "A" });
+        ctx.BriefItems.Add(new BriefItem { BriefId = brief.Id, ArticleId = article });
+        ctx.ArticleCves.AddRange(cves.Select(c => new ArticleCve { ArticleId = article, CveId = c }));
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task NewItemsAsync(params string[] titles)
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "News", Url = "https://news.example.com/feed.xml", PollMinutes = 30 });
+        await using var ctx = _db.Context();
+        var now = DateTimeOffset.UtcNow;
+        ctx.FeedItems.AddRange(titles.Select(t => new FeedItem { SourceId = source, Title = t, Url = "https://x.example/" + t.Replace(' ', '-'), UrlHash = t, PublishedAtUtc = now, FetchedAtUtc = now }));
+        await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task TheList_SaysWhatIsHappeningRightNow_AndPutsWhatNeedsALookFirst()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var stack = _db.Stack();
+        var today = _db.Clock.Today;
+        var team = await _db.Teams().AddAsync("Platform", null, null);
+        var gitlab = await stack.SaveAsync(new StackForm { Name = "GitLab", TeamId = team, CheckedOn = today });
+        await stack.SaveAsync(new StackForm { Name = "Aardvark Mail", TeamId = team, CheckedOn = today });
+        await stack.SaveAsync(new StackForm { Name = "Okta", TeamId = team, CheckedOn = today.AddDays(-StackService.CheckOldAfterDays - 1) });
+        await stack.SaveAsync(new StackForm { Name = "Pillow", CheckedOn = today });
+        await stack.SaveAsync(new StackForm { Name = "Zebra Proxy", TeamId = team });
+        var gone = await stack.SaveAsync(new StackForm { Name = "Beta Old" });
+        await stack.SetRetiredAsync(gone, true);
+
+        var articles = _db.Articles();
+        var named = await articles.CreateAsync("GitLab patches a max-severity RCE", "Vendor", null, TlpLevel.Clear);
+        var tagged = await articles.CreateAsync("Runner token leak in CI", "Vendor", null, TlpLevel.Clear);
+        var old = await articles.CreateAsync("GitLab flaw from last quarter", "Vendor", null, TlpLevel.Clear);
+        await stack.TagArticleAsync(tagged, gitlab);
+        await BriefAsync(named, 1, "CVE-2026-0001", "CVE-2026-0002");
+        await BriefAsync(tagged, 2, "CVE-2026-0002", "CVE-2026-0003");
+        await BriefAsync(old, StackService.RecentBriefDays + 1, "CVE-2025-9999");
+        await using (var ctx = _db.Context())
+        {
+            ctx.CveRecords.AddRange(new CveRecord { CveId = "CVE-2026-0002", CvssScore = 9.8m, EpssScore = 0.4m },
+                new CveRecord { CveId = "CVE-2026-0003", CvssScore = 7.5m, EpssScore = 0.9m, IsKev = true, KevAddedDate = today });
+            await ctx.SaveChangesAsync();
+        }
+        await NewItemsAsync("new GitLab advisory", "GitLab runner fix", "Nothing we run", "Aardvark Mail and GitLab both patched");
+
+        var list = await stack.OverviewAsync(includeRetired: true);
+
+        list.Select(r => r.Product.Name).Should().Equal(["GitLab", "Aardvark Mail", "Okta", "Pillow", "Zebra Proxy", "Beta Old"],
+            "the product with a CVE on KEV, then the one new in triage, then the housekeeping by name; the retired one is last");
+        var row = list.Single(r => r.Product.Id == gitlab);
+        row.Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0003", "CVE-2026-0002", "CVE-2026-0001"], "this week's, each once, the worst first; not last quarter's");
+        (row.Now.Cves[0].Record!.IsKev, row.Now.Cves[1].Record!.CvssScore, row.Now.Cves[2].Record).Should().Be((true, 9.8m, null));
+        (row.Now.TriageItems, row.Articles, row.CheckOld, row.NeedsLook).Should().Be((2, 3, false, true));
+        list.Single(r => r.Product.Name == "Aardvark Mail").Now.TriageItems.Should().Be(1, "an item goes to the first product it names, as its We run mark in triage says");
+        list.Where(r => r.CheckOld).Select(r => r.Product.Name).Should().Equal("Okta", "Zebra Proxy");
+        list.Where(r => r.NoTeam).Select(r => r.Product.Name).Should().Equal("Pillow");
+        list[^1].Should().Match<StackRow>(r => !r.NeedsLook && !r.CheckOld && !r.NoTeam && !r.Now.Any, "a retired product asks for nothing");
+
+        // Once triage is cleared, the one product that's owned, checked and quiet drops below the rest.
+        await using (var ctx = _db.Context()) await ctx.FeedItems.ExecuteUpdateAsync(s => s.SetProperty(i => i.Status, FeedItemStatus.Dismissed));
+        var after = (await stack.OverviewAsync());
+        after.Select(r => r.Product.Name).Should().Equal("GitLab", "Okta", "Pillow", "Zebra Proxy", "Aardvark Mail");
+        after.Where(r => r.NeedsLook).Should().HaveCount(4).And.BeEquivalentTo(after.Take(4), "the filter's count and the order read one rule");
+
+        // The plain list (the API's) stays by name, and reads no "Right now".
+        var plain = await stack.ListAsync();
+        plain.Select(r => r.Product.Name).Should().Equal("Aardvark Mail", "GitLab", "Okta", "Pillow", "Zebra Proxy");
+        plain.Should().OnlyContain(r => !r.Now.Any && r.Now.TriageItems == null);
+        plain.Single(r => r.Product.Id == gitlab).Articles.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task RightNow_SaysBriefedToday_OrNotWrittenUp_WithinTheTeamEditionsCeiling()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var stack = _db.Stack();
+        await stack.SaveAsync(new StackForm { Name = "Halo Router" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Keep" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Quiet" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Idle" });
+        var articles = _db.Articles();
+        await BriefAsync(await articles.CreateAsync("Halo Router flaw exploited", "Vendor", null, TlpLevel.Clear), 0);
+        await BriefAsync(await articles.CreateAsync("Halo Keep breach at a partner", "Vendor", null, TlpLevel.Red), 0);
+        await NewItemsAsync("Halo Router advisory", "Halo Quiet patch out");
+
+        var rows = (await stack.OverviewAsync()).ToDictionary(r => r.Product.Name, r => r.Now);
+        (rows["Halo Router"].BriefedToday, rows["Halo Router"].NotWrittenUp).Should().Be((true, false), "an article on today's brief names it");
+        rows["Halo Keep"].BriefedToday.Should().BeTrue("its article on today's brief is RED, which the team edition's readers see in the app");
+        (rows["Halo Quiet"].BriefedToday, rows["Halo Quiet"].NotWrittenUp).Should().Be((false, true), "triage names it and no article does");
+        (rows["Halo Idle"].BriefedToday, rows["Halo Idle"].NotWrittenUp).Should().Be((false, false), "nothing is happening to it");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
+        (await stack.OverviewAsync()).Should().OnlyContain(r => !r.Now.NotWrittenUp, "the triage count, and what it says, is only for those who triage");
+    }
+
+    [Fact]
+    public async Task RightNow_NamesEveryCve_WhateverItsArticlesTlp_ForTheTeamEditionsReaders()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
+        var stack = _db.Stack();
+        await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway" });
+        var articles = _db.Articles();
+        var open = await articles.CreateAsync("Contoso VPN Gateway patch out", "Vendor", null, TlpLevel.Amber);
+        var red = await articles.CreateAsync("Contoso VPN Gateway breach at a partner", "Vendor", null, TlpLevel.Red);
+        await BriefAsync(open, 0, "CVE-2026-0001");
+        await BriefAsync(red, 0, "CVE-2026-0001", "CVE-2026-0666");
+        await using (var ctx = _db.Context())
+        {
+            ctx.CveRecords.Add(new CveRecord { CveId = "CVE-2026-0666", CvssScore = 10m, IsKev = true });
+            await ctx.SaveChangesAsync();
+        }
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
+        (await stack.OverviewAsync()).Single().Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0666", "CVE-2026-0001"],
+            "the RED article's CVE is named, worst first, as its article is to a Viewer everywhere in the app");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
+        await FluentActions.Invoking(() => stack.OverviewAsync()).Should().ThrowAsync<ForbiddenException>("a Reader never reads Our stack");
+    }
+
+    [Fact]
+    public async Task TheTriageCount_IsOnlyForThoseWhoTriage_AndDoesNotOrderTheListForAnyoneElse()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var stack = _db.Stack();
+        var team = await _db.Teams().AddAsync("Platform", null, null);
+        await stack.SaveAsync(new StackForm { Name = "Aardvark Mail", TeamId = team, CheckedOn = _db.Clock.Today });
+        await stack.SaveAsync(new StackForm { Name = "GitLab", TeamId = team, CheckedOn = _db.Clock.Today });
+        await NewItemsAsync("new GitLab advisory");
+
+        (await stack.OverviewAsync()).Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal(("GitLab", 1, true), ("Aardvark Mail", 0, false));
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
+        _db.Commands.Record = true;
+        _db.Commands.Reset();
+        (await stack.OverviewAsync()).Select(r => (r.Product.Name, r.Now.TriageItems, r.NeedsLook)).Should().Equal([("Aardvark Mail", null, false), ("GitLab", null, false)],
+            "an action owner doesn't see triage, so nothing on the list may tell them what's in it");
+        _db.Commands.Sql.Should().NotContain(s => s.Contains("FeedItems", StringComparison.Ordinal), "the items aren't read for them at all");
+    }
 }
 
-public class StackPageTests(TideApp app) : IClassFixture<TideApp>
+public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
 {
     [Fact]
     public async Task OurStack_ListsTheProducts_AndAProductsPageEditsAndShowsItsHistory()
@@ -227,6 +376,147 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await ComponentHarness.RenderAsync<StackPage>(app, $"/stack/{id}", new() { ["Id"] = id });
         var html = await page.Html();
         html.Should().Contain("id=\"f-versions\"").And.Contain("id=\"f-notes\"").And.Contain(">Articles <span class=\"tide-count\">(0)</span>").And.Contain(">Retire</button>");
+    }
+
+    private static readonly ComponentHarness.SignIn Owner = new("dev:stack-owner", "Olu Owner", "ActionOwner");
+
+    // Does what a control on the page would, draws the page again as an event would, and reads it.
+    private static async Task<string> After(ComponentHarness.Rendered<StackPage> page, Action<StackPage> what)
+    {
+        await page.Renderer.Dispatcher.InvokeAsync(() =>
+        {
+            what(page.Component);
+            typeof(Microsoft.AspNetCore.Components.ComponentBase).GetMethod("StateHasChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(page.Component, null);
+        });
+        return await page.Html();
+    }
+
+    // The product names in the order the list shows them.
+    private static List<string> Names(string html) =>
+        [.. StackName().Matches(html).Select(m => m.Groups[1].Value)];
+
+    [Fact]
+    public async Task TheAddForm_IsBehindItsButton_AndOnlyForThoseWhoKeepTheList()
+    {
+        await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+        var closed = await page.Html();
+        closed.Should().Contain("aria-expanded=\"false\">Add a product</button>").And.NotContain("id=\"new-name\"", "the form isn't shown until it's asked for");
+
+        var open = await After(page, p => p.ToggleAdd());
+        open.Should().Contain("aria-expanded=\"true\">Add a product</button>").And.Contain("id=\"new-name\"").And.Contain("id=\"new-others\"").And.Contain(">Add</button>");
+        (await After(page, p => p.ToggleAdd())).Should().NotContain("id=\"new-name\"");
+
+        await using var owner = await ComponentHarness.RenderAsync<StackPage>(app, "/stack", @as: Owner);
+        (await owner.Html()).Should().Contain(">Our stack</h1>").And.NotContain("Add a product");
+    }
+
+    [Fact]
+    public async Task TheList_PutsWhatNeedsALookFirst_FlagsOldChecks_AndItsFiltersNarrowItWithCounts()
+    {
+        Guid team;
+        DateOnly today;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
+            team = await sp.GetRequiredService<TeamService>().AddAsync("Stack Filter Team", null, null);
+            var stack = sp.GetRequiredService<StackService>();
+            await stack.SaveAsync(new StackForm { Name = "Sift Alpha Fresh", TeamId = team, CheckedOn = today, Versions = "7.7-sift" });
+            await stack.SaveAsync(new StackForm { Name = "Sift Beta Never", TeamId = team, OtherNames = "Siftware" });
+            await stack.SaveAsync(new StackForm { Name = "Sift Mid Orphan", CheckedOn = today });
+            await stack.SaveAsync(new StackForm { Name = "Sift Zeta Old", TeamId = team, CheckedOn = today.AddYears(-1) });
+        }
+        await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+
+        var html = await After(page, p => p.SetWords("sift"));
+        Names(html).Should().Equal(["Sift Beta Never", "Sift Mid Orphan", "Sift Zeta Old", "Sift Alpha Fresh"], "those that need a look, by name, then the rest");
+        html.Should().Contain("<th scope=\"col\">Right now</th>").And.Contain("Never checked").And.Contain($"Over {StackService.CheckOldAfterDays} days ago").And.Contain("Nothing new");
+        var lastYear = today.AddYears(-1);
+        html.Should().Contain($"{Ui.ShortDay(lastYear)}, {lastYear.Year}", "a check from another year says which").And.NotContain($"{Ui.ShortDay(today)}, {today.Year}", "this year's doesn't");
+        Ui.ShortDay(new DateOnly(2025, 9, 16), new DateOnly(2026, 11, 10)).Should().Be("Tue Sep 16, 2025");
+        Ui.ShortDay(new DateOnly(2026, 1, 2), new DateOnly(2026, 11, 10)).Should().Be("Fri Jan 2");
+        var all = page.Component.List!;
+        foreach (var q in StackPage.Quick)
+            html.Should().MatchRegex($"aria-pressed=\"false\"[^>]*>{q.Label} \\({all.Count(q.Matches)}\\)</button>", "each quick filter says how many it would leave");
+        all.Count(StackPage.Quick[0].Matches).Should().Be(all.Count(r => r.NeedsLook)).And.BeGreaterThanOrEqualTo(3);
+        html.Should().Contain($"Showing 4 of {all.Count} products");
+
+        Names(await After(page, p => p.SetWords("7.7-SIFT"))).Should().Equal(["Sift Alpha Fresh"], "a version matches, whatever its case");
+        Names(await After(page, p => p.SetWords("siftware"))).Should().Equal(["Sift Beta Never"], "another name matches");
+
+        var old = await After(page, p => { p.SetWords("sift"); p.SetQuick("old", true); });
+        Names(old).Should().Equal("Sift Beta Never", "Sift Zeta Old");
+        old.Should().MatchRegex("aria-pressed=\"true\"[^>]*><span class=\"bi bi-check2\" aria-hidden=\"true\"></span>Check is old");
+        Names(await After(page, p => { p.SetQuick("old", false); p.SetQuick("noteam", true); })).Should().Equal("Sift Mid Orphan");
+        Names(await After(page, p => { p.SetQuick("noteam", false); p.SetQuick("look", true); })).Should().Equal("Sift Beta Never", "Sift Mid Orphan", "Sift Zeta Old");
+        Names(await After(page, p => { p.SetQuick("look", false); p.SetWords(""); p.SetTeam(team.ToString()); })).Should().Equal("Sift Beta Never", "Sift Zeta Old", "Sift Alpha Fresh");
+        (await After(page, p => p.SetWords("no such product"))).Should().Contain("No product matches these filters.").And.Contain("Show retired products");
+    }
+
+    [Fact]
+    public async Task RightNow_ShowsTheCvesAndTheTriageCount_ButNoTriageCountToSomeoneWhoCannotTriage()
+    {
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
+            var product = await sp.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Nowcast Gateway", CheckedOn = today });
+            var article = await sp.GetRequiredService<ArticleService>().CreateAsync("Nowcast Gateway flaw exploited", "Vendor", null, TlpLevel.Clear);
+            var secret = await sp.GetRequiredService<ArticleService>().CreateAsync("Nowcast Gateway breach at a partner", "Vendor", null, TlpLevel.Red);
+            await using var db = await sp.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
+            var brief = await db.Briefs.FirstOrDefaultAsync(b => b.BriefDate == today);
+            if (brief is null) db.Briefs.Add(brief = new Brief { BriefDate = today, AnalystId = "a", AnalystName = "A" });
+            db.BriefItems.AddRange(new BriefItem { BriefId = brief.Id, ArticleId = article, SortOrder = 90 }, new BriefItem { BriefId = brief.Id, ArticleId = secret, SortOrder = 91 });
+            db.ArticleCves.AddRange(new ArticleCve { ArticleId = article, CveId = "CVE-2026-4141" }, new ArticleCve { ArticleId = secret, CveId = "CVE-2026-4666" });
+            db.CveRecords.Add(new CveRecord { CveId = "CVE-2026-4141", CvssScore = 9.1m, EpssScore = 0.62m, IsKev = true });
+            var source = new Source { Name = "Nowcast News", Url = "https://nowcast.example.com/feed.xml" };
+            db.Sources.Add(source);
+            var now = DateTimeOffset.UtcNow;
+            db.FeedItems.Add(new FeedItem { SourceId = source.Id, Title = "Patch out for Nowcast Gateway", Url = "https://nowcast.example.com/1", UrlHash = "nowcast-1", PublishedAtUtc = now, FetchedAtUtc = now });
+            await db.SaveChangesAsync();
+        }
+
+        await using var analyst = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+        var seen = await After(analyst, p => p.SetWords("nowcast"));
+        seen.Should().Contain("CVE-2026-4141").And.Contain("<span class=\"tide-kev\">KEV</span>").And.Contain(">9.1</span>").And.Contain("62 %")
+            .And.Contain("<a href=\"triage?named=true\">1 new in triage</a>");
+        seen.Should().Contain("CVE-2026-4666", "a CVE seen only on the RED article is named, as the article is in the app").And.NotContain(" above TLP:");
+
+        await using var owner = await ComponentHarness.RenderAsync<StackPage>(app, "/stack", @as: Owner);
+        var theirs = await After(owner, p => p.SetWords("nowcast"));
+        theirs.Should().Contain("CVE-2026-4141").And.Contain("CVE-2026-4666");
+        theirs.Should().NotContain("in triage", "triage is the analysts': its count isn't shown to anyone else").And.NotContain("href=\"triage");
+    }
+
+    [Fact]
+    public async Task AProductWithNoTeam_ShowsANoTeamFlag_AndRightNowSaysBriefedToday()
+    {
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync("Flagged Owners", null, null);
+            var stack = sp.GetRequiredService<StackService>();
+            await stack.SaveAsync(new StackForm { Name = "Flagpole Orphan", CheckedOn = today });
+            await stack.SaveAsync(new StackForm { Name = "Flagpole Owned", TeamId = team, CheckedOn = today });
+            var article = await sp.GetRequiredService<ArticleService>().CreateAsync("Flagpole Owned flaw exploited", "Vendor", null, TlpLevel.Clear);
+            await using var db = await sp.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
+            var brief = await db.Briefs.FirstOrDefaultAsync(b => b.BriefDate == today);
+            if (brief is null) db.Briefs.Add(brief = new Brief { BriefDate = today, AnalystId = "a", AnalystName = "A" });
+            db.BriefItems.Add(new BriefItem { BriefId = brief.Id, ArticleId = article, SortOrder = 95 });
+            await db.SaveChangesAsync();
+        }
+
+        await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+        var html = await After(page, p => p.SetWords("flagpole"));
+        var orphan = html[html.IndexOf(">Flagpole Orphan</a>", StringComparison.Ordinal)..];
+        orphan = orphan[..orphan.IndexOf("</tr>", StringComparison.Ordinal)];
+        orphan.Should().Contain("<span class=\"tide-badge tide-badge-neutral tide-badge-off\">No team</span>", "a product no team owns says so as a flag, as the No owning team filter does")
+            .And.NotContain("<td>—</td>");
+        var owned = html[html.IndexOf(">Flagpole Owned</a>", StringComparison.Ordinal)..];
+        owned = owned[..owned.IndexOf("</tr>", StringComparison.Ordinal)];
+        owned.Should().Contain("<td data-label=\"Team\">Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
     }
 
     // An article's open "we run" card shows a colleague's tag and untag: they're heard on the article's tags topic.
@@ -252,4 +542,7 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
         for (var i = 0; i < 50 && (await robin.Html()).Contains("Untag Card Test Gateway", StringComparison.Ordinal); i++) await Task.Delay(100);
         (await robin.Html()).Should().NotContain("Untag Card Test Gateway");
     }
+
+    [GeneratedRegex("<td><a href=\"stack/[0-9a-f-]+\">([^<]+)</a>")]
+    private static partial Regex StackName();
 }

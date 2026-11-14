@@ -32,7 +32,7 @@ else
 {
     <section class="tide-card" aria-labelledby="diag-checks">
         <h2 id="diag-checks"><span class="bi bi-heart-pulse" aria-hidden="true"></span> Health checks</h2>
-        <table class="tide-table">
+        <table class="tide-table tide-diag-checks">
             <tbody>
                 @foreach (var c in report.Checks)
                 {
@@ -166,53 +166,56 @@ else
             @if (report.Sources.Enabled > 0) { <text>@report.Sources.Enabled source@(report.Sources.Enabled == 1 ? " is" : "s are") turned on; @report.Sources.Failing failing. </text> }
             @if (report.LastCveRun is { } cve) { <text>The last CVE refresh was @Ui.When(Clock, cve.AtUtc).</text> }
         </p>
-        <table class="tide-table">
-            <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th><th class="text-end">Runs</th></tr></thead>
-            <tbody>
-                @foreach (var j in report.Jobs)
-                {
-                    <tr>
-                        <td>
-                            <div class="fw-semibold">@j.Job.Name</div>
-                            <div class="small tide-muted">@j.Job.Schedule</div>
-                        </td>
-                        <td class="text-nowrap">
-                            @if (report.JobHealth.For(j.Job) is { } finding)
-                            {
-                                <Badge Tone="@(finding.Level == JobHealthLevel.Unhealthy ? BadgeTone.Danger : BadgeTone.Warn)">@(finding.Problem switch { JobProblem.Hung => "Hung", JobProblem.Overdue => "Overdue", _ => "Failing" })</Badge>
-                                <div class="small tide-muted text-wrap">@finding.Text</div>
-                            }
-                            else if (report.JobHealth.StandingBy) { <Badge>Standing by</Badge> }
-                            else if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
-                            else if (!j.Enabled) { <Badge>Off</Badge> }
-                            else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }
-                            else if (j.LastSucceeded == true) { <CheckBadge Level="CheckLevel.Ok" /> }
-                            else { <Badge>Not run yet</Badge> }
-                        </td>
-                        <td>
-                            @if (j.LastFinishedUtc is { } done)
-                            {
-                                <div class="text-nowrap">@Ui.When(Clock, done)</div>
-                                @if (j.LastSucceeded == true && j.LastDetail is { } detail) { <div class="small tide-muted">@detail</div> }
-                            }
-                            else { <span class="tide-muted">—</span> }
-                            @if (j.LastError is { } error)
-                            {
-                                <div class="small text-danger">@(j.LastSucceeded == false ? "" : $"Earlier, {Ui.When(Clock, j.LastErrorAtUtc!.Value)}: ")@error</div>
-                            }
-                        </td>
-                        <td class="text-nowrap">@(j.Enabled && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
-                        <td class="text-end text-nowrap">
-                            @if (report.JobHistory.For(j.Job) is { } h)
-                            {
-                                @h.Runs @if (h.Failed > 0) { <span class="small text-danger d-block">@h.Failed failed</span> }
-                            }
-                            else { <span class="tide-muted">—</span> }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        @* At a narrow width the jobs table scrolls within its card rather than widening the page. *@
+        <div class="tide-card-scroll">
+            <table class="tide-table">
+                <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th><th class="text-end">Runs</th></tr></thead>
+                <tbody>
+                    @foreach (var j in report.Jobs)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@j.Job.Name</div>
+                                <div class="small tide-muted">@j.Job.Schedule</div>
+                            </td>
+                            <td class="text-nowrap">
+                                @if (report.JobHealth.For(j.Job) is { } finding)
+                                {
+                                    <Badge Tone="@(finding.Level == JobHealthLevel.Unhealthy ? BadgeTone.Danger : BadgeTone.Warn)">@(finding.Problem switch { JobProblem.Hung => "Hung", JobProblem.Overdue => "Overdue", _ => "Failing" })</Badge>
+                                    <div class="small tide-muted text-wrap">@finding.Text</div>
+                                }
+                                else if (report.JobHealth.StandingBy) { <Badge>Standing by</Badge> }
+                                else if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
+                                else if (!j.Enabled) { <Badge>Off</Badge> }
+                                else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }
+                                else if (j.LastSucceeded == true) { <CheckBadge Level="CheckLevel.Ok" /> }
+                                else { <Badge>Not run yet</Badge> }
+                            </td>
+                            <td>
+                                @if (j.LastFinishedUtc is { } done)
+                                {
+                                    <div class="text-nowrap">@Ui.When(Clock, done)</div>
+                                    @if (j.LastSucceeded == true && j.LastDetail is { } detail) { <div class="small tide-muted">@detail</div> }
+                                }
+                                else { <span class="tide-muted">—</span> }
+                                @if (j.LastError is { } error)
+                                {
+                                    <div class="small text-danger">@(j.LastSucceeded == false ? "" : $"Earlier, {Ui.When(Clock, j.LastErrorAtUtc!.Value)}: ")@error</div>
+                                }
+                            </td>
+                            <td class="text-nowrap">@(j.Enabled && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
+                            <td class="text-end text-nowrap">
+                                @if (report.JobHistory.For(j.Job) is { } h)
+                                {
+                                    @h.Runs @if (h.Failed > 0) { <span class="small text-danger d-block">@h.Failed failed</span> }
+                                }
+                                else { <span class="tide-muted">—</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
         @if (report.JobHistory.RecentFailures.Count > 0)
         {
             <h3 class="h6 mt-3">Recent failures</h3>

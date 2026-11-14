@@ -15,7 +15,7 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>Owner decisions on comments and Our stack, against the services: a comment edit from an older copy is refused
-/// and says who changed it, and a product's history is held to the team edition's ceiling.</summary>
+/// and says who changed it, and a product's history names every article to the team edition's readers.</summary>
 public class CommentsAndStackDecisionServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
@@ -49,7 +49,7 @@ public class CommentsAndStackDecisionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest()
+    public async Task AProductsPage_NamesEveryArticleAndAction_ToTheTeamEditionsReaders_AndNoneToAReader()
     {
         var stack = _db.Stack();
         var vpn = await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway" });
@@ -61,27 +61,22 @@ public class CommentsAndStackDecisionServiceTests : IDisposable
         await _db.Actions().CreateAsync(new ActionForm { Title = "Call the partner", TeamId = team, ArticleId = red });
         await _db.Actions().CreateAsync(new ActionForm { Title = "Check Contoso VPN Gateway logs", TeamId = team });
 
+        // A Viewer reads a RED article everywhere in the app (a ceiling governs what leaves it): Our stack names it too.
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
         var d = (await stack.GetAsync(vpn))!;
-        d.Ceiling.Should().Be(TlpLevel.AmberStrict, "the team edition's default ceiling");
-        d.Articles.Select(a => a.Id).Should().Equal(open);
-        d.ArticlesAbove.Should().Be(1);
-        d.Actions.Select(a => a.Title).Should().BeEquivalentTo("Patch the gateways", "Check Contoso VPN Gateway logs");
-        d.ActionsAbove.Should().Be(1, "an action raised from the RED article isn't named either");
-        (await stack.ListAsync()).Single().Articles.Should().Be(2, "the list counts every article; it names none");
+        d.Articles.Select(a => a.Id).Should().BeEquivalentTo([open, red]);
+        d.Actions.Select(a => a.Title).Should().BeEquivalentTo(["Patch the gateways", "Call the partner", "Check Contoso VPN Gateway logs"],
+            "an action is named wherever actions are shown, the one raised from the RED article too, as the Actions list names it");
+        (await stack.ListAsync()).Single().Articles.Should().Be(2);
+        (await stack.DetailsAsync([vpn]))[vpn].Articles.Should().HaveCount(2, "the article editor's card reads the same");
 
-        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Amber);
-        (await stack.GetAsync(vpn))!.Ceiling.Should().Be(TlpLevel.Amber);
-        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Red);
-        var all = (await stack.GetAsync(vpn))!;
-        all.Articles.Select(a => a.Id).Should().BeEquivalentTo([open, red]);
-        (all.ArticlesAbove, all.ActionsAbove, all.Actions.Count).Should().Be((0, 0, 3));
-    }
+        // The present-mode card, on a screen Visitors may see, stays held to the team edition's ceiling.
+        (await stack.CardAsync(vpn, TlpLevel.AmberStrict))!.Others.Select(a => a.Id).Should().Equal(open);
 
-    [Fact]
-    public void TheAboveLine_CountsAndNamesTheCeiling()
-    {
-        StackPage.AboveLine(2, "article", TlpLevel.Amber).Should().Be("2 articles above TLP:AMBER");
-        StackPage.AboveLine(1, "action", TlpLevel.AmberStrict, "from articles ").Should().Be("1 action from articles above TLP:AMBER+STRICT");
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
+        await FluentActions.Invoking(() => stack.GetAsync(vpn)).Should().ThrowAsync<Tide.Application.Security.ForbiddenException>();
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Visitor };
+        await FluentActions.Invoking(() => stack.GetAsync(vpn)).Should().ThrowAsync<Tide.Application.Security.ForbiddenException>();
     }
 
     [Fact]
@@ -136,6 +131,10 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await Open(a);
         await r.Click(async p => { await p.EditComment(comment); p.CommentEditDraft = "My second go"; });
 
+        // The save lands before the page hears Robin's change through its live feed (the next test is the one where it
+        // has): the feed is closed, so on a loaded machine its pause can't run out between Robin's save and this one.
+        await r.Renderer.Dispatcher.InvokeAsync(() => ((IDisposable)typeof(ActionPage)
+            .GetField("_live", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r.Component)!).Dispose());
         await As((actions, _) => actions.EditCommentAsync(comment.Id, "Robin's fix"), Colleague);
         await r.Click(p => p.SaveComment(comment));
 
@@ -253,7 +252,7 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
     }
 
     [Fact]
-    public async Task AProductsPage_SaysHowManyArticlesAreAboveTheCeiling()
+    public async Task AProductsPage_NamesARedArticle_ToAViewer()
     {
         Guid id;
         await using (var scope = SignedIn(app, SignIn.Analyst))
@@ -264,9 +263,28 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
             await articles.CreateAsync("Ceiling Decision Appliance flaw", "Vendor", null, TlpLevel.Clear);
             await articles.CreateAsync("Ceiling Decision Appliance breach at a partner", "Vendor", null, TlpLevel.Red);
         }
-        await using var page = await RenderAsync<StackPage>(app, $"/stack/{id}", new() { ["Id"] = id });
+        await using var page = await RenderAsync<StackPage>(app, $"/stack/{id}", new() { ["Id"] = id }, new SignIn("dev:viewer", "Robin", "Viewer"));
         var html = await page.Html();
-        html.Should().Contain("Ceiling Decision Appliance flaw").And.NotContain("breach at a partner")
-            .And.Contain($"1 article above {System.Net.WebUtility.HtmlEncode(Tlp.Label(page.Component.Detail!.Ceiling)).Replace("+", "&#x2B;")}").And.Contain(">Articles <span class=\"tide-count\">(2)</span>");
+        html.Should().Contain("Ceiling Decision Appliance flaw").And.Contain("Ceiling Decision Appliance breach at a partner")
+            .And.NotContain(" above TLP:").And.Contain(">Articles <span class=\"tide-count\">(2)</span>");
+    }
+
+    [Fact]
+    public async Task OurStack_AProductAdded_ClosesTheAddForm_SoBackDoesntOpenItAgain()
+    {
+        // The list and a product's page are one component: Add goes to the product, and Back returns to the same one.
+        await using var page = await RenderAsync<StackPage>(app, "/stack");
+        var adding = typeof(StackPage).GetField("_adding", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await page.Click(p =>
+        {
+            p.ToggleAdd();
+            typeof(StackPage).GetField("_newName", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(p, $"Back Button Gateway {Guid.NewGuid():N}"[..30]);
+            return Task.CompletedTask;
+        });
+        ((bool)adding.GetValue(page.Component)!).Should().BeTrue();
+
+        await page.Click(p => p.Add());   // here the move to the product's page throws, as navigating outside a circuit does
+
+        ((bool)adding.GetValue(page.Component)!).Should().BeFalse("the product was added: the form's work is done");
     }
 }

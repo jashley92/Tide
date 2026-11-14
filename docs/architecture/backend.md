@@ -184,7 +184,7 @@ correctly (`ExportEndpoints.CsvFile`).
 | GET `/trends/articles.csv?p=&line=&subs=` | `TrendsService.ArticlesAsync` | `AsExport` | `exports` | `private, no-store` | The articles one trend line counted. |
 | GET `/reports/export.csv?p=` | `ReportService.BuildAsync` | `AsExport` | `exports` | `private, no-store` | The period report. |
 | GET `/reports/teams/export.csv?days=&parts=&external=` | `TeamScorecardService.BuildAsync`, `ToCsv` | `AsExport(ReadActions)` | `exports` | `private, no-store` | The team commitments scorecard, a row per team. |
-| GET `/exports/{scope}/{key}?format=&tlp=` | `ExportService.GatherAsync`, `Stix.Write`, `IndicatorCsv.Write` | `AsExport` | `exports` | `private, no-store` | `scope` is `article`, `brief` or `story`; STIX 2.1 (`application/stix+json;version=2.1`) or `format=csv`; `tlp` is the ceiling, every level by default. |
+| GET `/exports/{scope}/{key}?format=&tlp=` | `ExportService.GatherAsync`, `Stix.Write`, `IndicatorCsv.Write` | `AsExport` | `exports` | `private, no-store` | `scope` is `article`, `brief`, `story` or `lookup`; STIX 2.1 (`application/stix+json;version=2.1`, no `format` or `format=stix`) or `format=csv`, any other 400; `tlp` is the ceiling, required (400 without it). |
 | GET `/admin/system/tide.config.psd1` | `InstallAnswers.Write` | Administer | none | `no-store` | The install answers file for this server. No secrets. |
 | GET `/admin/system/config-bundle.json` | `ConfigBundleService.ExportAsync` | Administer | none | `no-store` | The administered settings. No secrets. |
 | GET `/admin/system/audit.csv` | `AuditLogService.ExportAsync` | `AsExport(Administer)` | `exports` | `private, no-store` | The audit rows the page's filters match, secrets masked. |
@@ -246,13 +246,20 @@ None of them can stop the app.
   Triage's **Pull now**, the CVE refresh and the update check's **Check now**. On a standby each is refused with
   `StandingByException` ("This server is standing by: … runs the background jobs. Run it there."), shown as the
   page's error toast. Within the holder, the in-process locks (the reminder scans' `SemaphoreSlim`) still keep a
-  **Run now** and the poller apart.
+  **Run now** and the poller apart. A holder whose process is gone from this machine is taken over at the next check
+  (`BackgroundJobLease.IsGoneFromThisMachine`, conservative: a running process id is waited out).
+- **A second process is an alarm.** Each check also writes this process's heartbeat to `JobProcesses` and reads the
+  others' that haven't lapsed (3 minutes). Any other makes `LeaseStatus.Alarm`: the `SecondProcessBanner` for
+  administrators, a "Second process" Problem on Diagnostics and `/health/jobs` Degraded, naming both processes. The
+  in-process locks (`RotationService.Deciding`, `MetricImportService.Gate`, `ReminderService.Running`) rely on one
+  process ([ADR 0001](../decisions/0001-blazor-server-on-prem.md)).
 - **Reporting.** Each run is reported to `JobMonitor` (Administration › System › Diagnostics, `/health/jobs`), which
   logs a failure as a Warning under the job's event id (7101 to 7107) and queues the run for the job history.
 - **Upkeep.** `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`), registered first so it
   stops last, renews the lease every 30 seconds whatever the jobs are doing, writes the queued runs to `JobRuns`, and
   prunes runs older than 30 days daily while it holds the lease. At shutdown it writes what's left and lets the lease
-  go, so a standby takes over within 30 seconds. At start-up `JobRunLog.RestoreAsync` reads each job's latest run back into
+  go (and deletes its heartbeat), so a standby takes over within 30 seconds. The release never throws but to cancel,
+  even when the host has disposed the container and the loggers around it. At start-up `JobRunLog.RestoreAsync` reads each job's latest run back into
   the monitor.
 
 ```mermaid

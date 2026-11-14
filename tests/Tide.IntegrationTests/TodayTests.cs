@@ -2,6 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -12,7 +13,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>Today, the start page: today's brief as the analyst, action owner and reader each get it, and the other days
 /// at /briefs/{day}. The sample data has today's brief with three articles, one of them TLP:AMBER.</summary>
-public class TodayTests(TideApp app) : IClassFixture<TideApp>
+public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
 {
     private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 
@@ -35,8 +36,9 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("id=\"running-order-h\"").And.Contain("draggable=\"true\"")
             .And.Contain("data-move=\"up\"").And.Contain("data-move=\"down\"").And.Contain("off this brief")
             .And.Contain("Add article").And.Contain("New article");
-        html.Should().Contain("id=\"edition-check-h\"").And.Contain("id=\"meeting-h\"").And.Contain("Presenting analyst")
-            .And.Contain("Title slide line (optional)").And.Contain("meets at");
+        html.Should().Contain("id=\"edition-check-h\"").And.Contain("id=\"meeting-h\"").And.Contain(">Change presenter</button>")
+            .And.Contain(">Title slide line</button>").And.Contain("meets at");
+        html.Should().NotContain("Presenting analyst", "the meeting's form opens from its buttons");
         html.Should().Contain("id=\"my-actions-h\"").And.Contain("id=\"coming-up-h\"").And.Contain("id=\"recent-h\"");
         html.Should().NotContain("id=\"team-queue-h\"", "an analyst on no team has no team queue");
         // The preview of both editions stays on the brief's own address, linked from here; no tabs on Today.
@@ -48,7 +50,7 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheStepStrip_CountsTheFeedAndTheRunningOrder()
     {
-        int newItems, onBrief, needWork;
+        int newItems, onBrief, needWork, ready;
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -56,6 +58,7 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
             var brief = await Tide.Application.Briefs.BriefService.Load(db.Briefs.AsNoTracking()).SingleAsync(b => b.BriefDate == Today);
             onBrief = brief.Items.Count;
             needWork = brief.Items.Count(i => Tide.Application.Articles.ArticleChecks.For(i.Article!).Any(c => c.Blocking));
+            ready = brief.Items.Count(i => i.Article!.Status != ArticleStatus.Draft && !Tide.Application.Articles.ArticleChecks.For(i.Article!).Any(c => c.Blocking));
         }
         newItems.Should().BePositive();
 
@@ -63,7 +66,7 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
 
         var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
         strip.Should().Contain($"{newItems} new in the feed").And.Contain("href=\"triage\"");
-        strip.Should().Contain(needWork > 0 ? $"{needWork} of {onBrief} need work" : $"{onBrief} of {onBrief} ready");
+        strip.Should().Contain(needWork > 0 ? $"{needWork} of {onBrief} need work" : $"{ready} of {onBrief} ready");
         strip.Should().Contain("Not marked ready").And.Contain("Meets ").And.Contain("2 editions");
         strip.Should().Contain("Mark the brief ready", "Order is the button that marks it ready");
     }
@@ -74,10 +77,111 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         var html = await app.CreateClient().GetStringAsync("/");
 
         var check = html[At(html, "id=\"edition-check-h\"")..At(html, "id=\"meeting-h\"")];
-        var team = check[At(check, "Team edition")..At(check, "Company-wide edition")];
-        var company = check[At(check, "Company-wide edition")..];
+        var team = check[At(check, "?tab=team\">Team")..At(check, "?tab=company\">Company-wide")];
+        var company = check[At(check, "?tab=company\">Company-wide")..];
         team.Should().Contain("3 of 3 articles").And.NotContain("The article is TLP:AMBER");
         company.Should().Contain("2 of 3 articles").And.Contain(">Left out<").And.Contain("The article is TLP:AMBER");
+    }
+
+    [Fact]
+    public async Task TheEditionCheck_ListsOnlyTheExceptions_NotEveryArticleAgain()
+    {
+        var html = await app.CreateClient().GetStringAsync("/");
+
+        var check = html[At(html, "id=\"edition-check-h\"")..At(html, "id=\"meeting-h\"")];
+        var team = check[At(check, "?tab=team\">Team")..At(check, "?tab=company\">Company-wide")];
+        var company = check[At(check, "?tab=company\">Company-wide")..];
+        team.Should().Contain("3 of 3 articles").And.Contain("All 3 articles go out whole.")
+            .And.NotContain("href=\"articles/", "an article that goes out whole is named by the running order, not again here");
+        company.Should().Contain("2 of 3 articles").And.NotContain("go out whole")
+            .And.NotContain("Never in this edition", "the standing rule is the note under the check");
+        ArticleHref().Count(company)
+            .Should().BePositive("the AMBER article is left out").And.BeLessThan(3, "only what is cut or warned about is listed");
+        Included().Count(company)
+            .Should().BeLessThanOrEqualTo(EditorWarning().Count(company), "an article that goes out whole is listed only with a warning");
+        check.Should().Contain("never carries the numbers, indicators or actions");
+    }
+
+    [Fact]
+    public async Task TheTriageStep_CountsTheNewItemsOnKev()
+    {
+        int expected;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var source = await db.Sources.FirstAsync(s => !s.IsRetired);
+            db.CveRecords.Add(new CveRecord { CveId = "CVE-2026-7701", IsKev = true });
+            db.FeedItems.Add(new FeedItem { SourceId = source.Id, Title = "Exploited edge device flaw", Url = "https://news.example.com/kev-step", UrlHash = "kev-step", FetchedAtUtc = DateTimeOffset.UtcNow, Cves = "CVE-2026-7701, CVE-2026-7702" });
+            db.FeedItems.Add(new FeedItem { SourceId = source.Id, Title = "Same flaw, already dismissed", Url = "https://news.example.com/kev-step-2", UrlHash = "kev-step-2", FetchedAtUtc = DateTimeOffset.UtcNow, Cves = "CVE-2026-7701", Status = FeedItemStatus.Dismissed });
+            await db.SaveChangesAsync();
+            var kev = (await db.CveRecords.Where(c => c.IsKev).Select(c => c.CveId).ToListAsync()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            expected = (await db.FeedItems.Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired).ToListAsync()).Count(i => i.CveList.Any(kev.Contains));
+        }
+        expected.Should().BePositive();
+
+        var html = await app.CreateClient().GetStringAsync("/");
+
+        var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
+        strip.Should().MatchRegex(@"\d+ new in the <span class=""text-nowrap"">feed<span class=""tide-step-flag-wide"" aria-hidden=""true""><span class=""tide-badge tide-badge-danger tide-step-flag"">"
+            + expected + " KEV</span>", "the flag held to the last word");
+        // The whole of it, KEV included, in the title and in what the step's link is described by.
+        strip.Should().MatchRegex($@"<a href=""triage"" aria-describedby=""step-triage-detail"">Triage</a>")
+            .And.MatchRegex($@"id=""step-triage-detail"" title=""\d+ new in the feed &#xB7; {expected} on KEV""")
+            .And.Contain($"<span class=\"visually-hidden\"> &#xB7; {expected} on KEV</span>");
+
+        // Another day's brief keeps the feed's count, as it always had, without the KEV count: that is today's work.
+        var past = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(Today))));
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<Tide.Application.Briefs.BriefService>().GetOrStartAsync(past);
+        html = await app.CreateClient().GetStringAsync($"/briefs/{past:yyyy-MM-dd}");
+        strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
+        strip.Should().MatchRegex(@"\d+ new in the feed<").And.NotContain(" KEV</span>");
+    }
+
+    [Fact]
+    public async Task TheMeeting_ShowsWhenAndWhoPresents_AndOpensItsFormFromItsButtons()
+    {
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true });
+        var meeting = Section(await r.Html(), "meeting-h");
+        meeting.Should().Contain("<dt>When</dt>").And.Contain("<dt>Presenter</dt>").And.Contain(">Change presenter</button>")
+            .And.NotContain("id=\"analyst\"").And.NotContain("id=\"intro\"");
+
+        await r.Click(p => p.OpenMeeting());
+        Section(await r.Html(), "meeting-h").Should().Contain("id=\"analyst\"").And.Contain("id=\"intro\"").And.Contain(">Save</button>");
+    }
+
+    [Fact]
+    public async Task ReviewsMyActionsAndTheMeeting_AreLaidOutAsDesigned()
+    {
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true },
+            new ComponentHarness.SignIn("dev:layout-analyst", "Layout Analyst", "Analyst"));
+        var html = await r.Html();
+        Section(html, "reviews-h").Should().Contain("Reviews asked of you").And.Contain("<p class=\"small tide-muted mb-0\">None waiting.</p>",
+            "the section is there when none are waiting");
+        Section(html, "my-actions-h").Should().Contain("<p class=\"small tide-muted mb-0\">Nothing assigned to you.").And.NotContain("tide-empty-state",
+            "an empty card says so in a line");
+        Section(html, "recent-h").Should().MatchRegex(@"(?s)<h2 id=""recent-h""[^>]*>Not on a brief yet.*href=""articles\?new=1"".*</h2>", "New article is in the heading");
+        Section(html, "meeting-h").Should().Contain("<dl class=\"tide-facts tide-facts-side tide-meeting-facts\"><div class=\"tide-fact\"><dt>When</dt>")
+            .And.Contain("<div class=\"tide-fact\"><dt>Presenter</dt>").And.Contain("<div class=\"tide-fact tide-fact-wide\">");
+    }
+
+    [Fact]
+    public async Task TodaysPage_RunsOrderNoteCardsThenNumbers()
+    {
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true });
+        var html = await r.Html();
+        var rail = At(html, "<aside id=\"tide-rail\"");
+        // The running order, the opening note, then My actions beside Not on a brief yet (the day's numbers after them is
+        // the layout check's: this app has no metrics to show).
+        new[] { "id=\"running-order-h\"", "id=\"team-note-h\"", "id=\"my-actions-h\"", "id=\"recent-h\"" }
+            .Select(h => At(html, h)).Should().BeInAscendingOrder().And.OnlyContain(at => at < rail);
+    }
+
+    // The section headed by the heading with this id, whole.
+    private static string Section(string html, string headingId)
+    {
+        var at = html.LastIndexOf("<section", At(html, $"id=\"{headingId}\""), StringComparison.Ordinal);
+        return html[at..(html.IndexOf("</section>", at, StringComparison.Ordinal) + "</section>".Length)];
     }
 
     [Fact]
@@ -136,6 +240,15 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         BriefPage.ReadyWarning(0, 3, false).Should().Be("3 numbers not entered.");
         BriefPage.ReadyWarning(2, 3, true).Should().BeNull("a blocking gap is refused with its own reason");
     }
+
+    [GeneratedRegex("tide-ed-warn")]
+    private static partial Regex EditorWarning();
+
+    [GeneratedRegex("is-included")]
+    private static partial Regex Included();
+
+    [GeneratedRegex("href=\"articles/")]
+    private static partial Regex ArticleHref();
 }
 
 public class ActionOwnerTodayTests(ActionOwnerApp app) : IClassFixture<ActionOwnerApp>
@@ -222,27 +335,107 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
         var queue = html[At(html, "id=\"team-queue-h\"")..At(html, "id=\"todays-brief-h\"")];
         At(queue, $"{team}: the owner's").Should().BeLessThan(At(queue, $"{team}: nobody's, overdue"), "theirs come first");
         queue.Should().NotContain($"{team}: the colleague's", "a colleague's is in hand").And.NotContain($"{team}: Robin's");
-        queue.Should().Contain("IOC sweep · Queue Team A · Unassigned").And.Contain("<span class=\"tide-queue-late\">3 days late</span>")
-            .And.Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
-            .And.Contain("href=\"actions?view=myteams\">My teams</a>");
+        // Each row: its title, a row of badges (number, status, priority, how late), then whose it is.
+        var row = queue[At(queue, $"{team}: nobody's, overdue")..];
+        row = row[..At(row, ">Take it</button>")];
+        row.Should().MatchRegex(@"<div class=""tide-queue-badges""><span class=""tide-action-num"">A-\d+</span>")
+            .And.Contain(">Open</span>").And.Contain("Overdue").And.Contain("3 days")
+            .And.Contain("<div class=\"tide-queue-meta\">Queue Team A · nobody has it</div>");
+        queue.Should().Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
+            .And.Contain("href=\"actions?view=myteams\">My teams</a>").And.Contain("Queue Team A · yours");
+        // A row not yet late says when it's due, by its date.
+        var theirs = queue[At(queue, $"{team}: the owner's")..];
+        theirs[..At(theirs, "tide-queue-meta")].Should().MatchRegex(@">Due (Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} \d{1,2}</span>")
+            .And.NotContain("On track").And.NotContain("Due soon");
         html.Should().NotContain("aria-label=\"Brief progress\"").And.NotContain("id=\"edition-check-h\"");
     }
 
     [Fact]
-    public async Task AnAnalystOnATeam_KeepsTheWholeBrief_WithOneActionsCardBesideIt()
+    public async Task TakeIt_OnAnActionAColleagueTookMeanwhile_IsRefused_AndTheQueueIsReadAgain()
+    {
+        var team = await TeamWithActions("Queue Team C");
+        var today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{today:yyyy-MM-dd}", ["AsToday"] = true }, Robin);
+        Tide.Application.Actions.ActionRow shown;
+        await using (var asRobin = ComponentHarness.SignedIn(app, Robin))
+            shown = (await asRobin.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().TeamQueueAsync()).Rows
+                .Single(x => x.Title == $"{team}: nobody's, overdue");
+        await using (var asColleague = ComponentHarness.SignedIn(app, Colleague))
+            await asColleague.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().TakeAsync(shown.Id);
+
+        // Robin's Today still shows it as nobody's: Take it there.
+        await r.Click(p => p.Take(shown));
+
+        await using (var check = ComponentHarness.SignedIn(app, Robin))
+            (await check.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().GetAsync(shown.Number))!.Action.AssigneeName
+                .Should().Be(Colleague.Name, "the colleague who took it first keeps it");
+        var label = Tide.Web.Components.Shared.Ui.ActionLabel(shown.Number);
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>();
+        toasts.Toasts.Should().Contain(t => t.IsError && t.Message == $"{Colleague.Name} took {label} on a moment ago.");
+        (await r.Html()).Should().NotContain($"Take {label} on", "the queue was read again, without it");
+
+        // A colleague's change heard a moment later says so without pushing the refusal out.
+        await using (var asColleague = ComponentHarness.SignedIn(app, Colleague))
+        {
+            var actions = asColleague.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>();
+            var theirs = (await actions.ListAsync(new Tide.Application.Actions.ActionFilter(Tide.Application.Actions.ActionView.Mine)))[0];
+            await actions.SetDueAsync(theirs.Id, actions.Today.AddDays(9));
+        }
+        (await r.Until(_ => toasts.Toasts.Any(t => !t.IsError && t.Message.EndsWith("updated an action.", StringComparison.Ordinal)))).Should().BeTrue("the colleague's change is heard");
+        toasts.Toasts.Should().Contain(t => t.IsError && t.Message.Contains(label, StringComparison.Ordinal), "a notice doesn't clear an error");
+    }
+
+    [Fact]
+    public async Task AnAnalystOnATeam_HasMyActionsInThePage_AndTheirTeamsUnownedWorkInTheRail()
     {
         var team = await TeamWithActions("Queue Team B");
 
         await using var r = await ComponentHarness.RenderAsync<Home>(app, "/", null, Robin);
         var html = System.Net.WebUtility.HtmlDecode(await r.Html());
+        var rail = At(html, "<aside id=\"tide-rail\"");
 
         html.Should().Contain("aria-label=\"Brief progress\"").And.Contain("id=\"running-order-h\"").And.Contain("Add article")
-            .And.NotContain("id=\"todays-brief-h\"");
-        At(html, "id=\"edition-check-h\"").Should().BeLessThan(At(html, "id=\"actions-card-h\""));
-        html.Should().NotContain("id=\"my-actions-h\"").And.NotContain("id=\"team-queue-h\"", "one card, not the same rows listed twice");
-        var card = html[At(html, "id=\"actions-card-h\"")..At(html, "id=\"coming-up-h\"")];
-        card.Should().Contain("aria-pressed=\"true\">Mine").And.Contain(">Team, unassigned <span class=\"tide-count\">")
-            .And.Contain($"{team}: Robin's").And.NotContain($"{team}: the owner's");
+            .And.NotContain("id=\"todays-brief-h\"").And.NotContain("id=\"actions-card-h\"", "no tabs: each list is shown");
+        At(html, "id=\"my-actions-h\"").Should().BeLessThan(rail, "My actions is in the page");
+        html[At(html, "id=\"my-actions-h\"")..rail].Should().Contain($"{team}: Robin's");
+        // The rail: the edition check, the teams' queue, the meeting, then what's coming up.
+        var order = new[] { "edition-check-h", "teams-queue-h", "meeting-h", "coming-up-h" }.Select(h => At(html, $"id=\"{h}\"")).ToList();
+        order.Should().BeInAscendingOrder().And.OnlyContain(at => at > rail);
+        var queue = html[At(html, "id=\"teams-queue-h\"")..At(html, "id=\"meeting-h\"")];
+        queue.Should().Contain($"{team}: nobody's, overdue").And.Contain(">Take it</button>")
+            .And.NotContain($"{team}: Robin's", "only the work nobody has").And.NotContain($"{team}: the owner's");
+    }
+
+    [Theory]
+    [InlineData(5, 3, 0)]   // fewer than the cap: every one listed
+    [InlineData(6, 11, 3)]  // more: the first eight, and a link to the rest
+    public async Task TheTeamsQueue_ListsItsUnownedWork_UpToTheCap_AndLinksToTheRest(int mine, int unowned, int more)
+    {
+        var name = $"Queue Cap {mine}-{unowned}";
+        var who = new ComponentHarness.SignIn($"dev:cap-{mine}-{unowned}", $"Cap {mine}-{unowned}", "Analyst");
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var teams = scope.ServiceProvider.GetRequiredService<Tide.Application.Actions.TeamService>();
+            var actions = scope.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>();
+            var team = await teams.AddAsync(name, null, null);
+            await teams.AddMemberAsync(team, who.UserId, who.Name);
+            for (var i = 0; i < mine + unowned; i++)
+                await actions.CreateAsync(new Tide.Application.Actions.ActionForm
+                {
+                    Title = $"{name}: {i}", Kind = ActionKind.Block, TeamId = team, DueDate = actions.Today.AddDays(i + 1),
+                    AssigneeId = i < mine ? who.UserId : null, AssigneeName = i < mine ? who.Name : null,
+                });
+        }
+
+        await using var r = await ComponentHarness.RenderAsync<Home>(app, "/", null, who);
+        var html = System.Net.WebUtility.HtmlDecode(await r.Html());
+        var queue = html[At(html, "id=\"teams-queue-h\"")..At(html, "id=\"meeting-h\"")];
+
+        var listed = queue.Split(">Take it</button>").Length - 1;
+        listed.Should().Be(unowned - more);
+        queue.Should().Contain($"<span class=\"tide-count\">({unowned})</span>", "the count is every one");
+        if (more == 0) queue.Should().NotContain("assignee=none");
+        else queue.Should().Contain($"href=\"actions?view=myteams&assignee=none\">{more} more</a>");
     }
 }
 
@@ -391,7 +584,15 @@ public class SendFromTodayRealSendTests(TideApp app) : IClassFixture<TideApp>
             var html = await r.Html();
             html.Should().Contain("Sent to 2 recipients.").And.Contain("Already sent", "the team edition's confirmation now says it went");
             r.Component.Ticked(Edition.Team).Should().BeFalse("a send clears the tick");
-            TeamSend(html).Should().Contain(held);
+
+            // The edition that went offers neither its tick nor its send: the company-wide edition is the one ready to go,
+            // and sending the team edition again is a choice of its own, under its warning.
+            TeamSend(html).Should().NotContain("id=\"send-team-checked\"").And.NotContain("Send to 2</button>").And.Contain("id=\"send-team-again\"");
+            html.Should().Contain("id=\"send-public-checked\"").And.NotContain("id=\"send-public-again\"");
+            await r.Click(d => { d.SendAgain(Edition.Team); return Task.CompletedTask; });
+            var again = TeamSend(await r.Html());
+            again.Should().Contain("Already sent").And.Contain("Everyone on the list gets it again").And.Contain("id=\"send-team-checked\"")
+                .And.Contain(held, "chosen, it still waits for its tick").And.NotContain("id=\"send-team-again\"");
         }
 
         var page = await app.CreateClient().GetStringAsync($"/briefs/{today:yyyy-MM-dd}");

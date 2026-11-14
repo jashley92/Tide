@@ -110,10 +110,10 @@ public class OpenApiUnderThePathBaseTests(SubPathApp app) : IClassFixture<SubPat
     public async Task TheServer_IsTheApiUnderThePathBase()
     {
         var json = await app.CreateClient().GetStringAsync("/tide/api/v1/openapi.json");
-        JsonDocument.Parse(json).RootElement.GetProperty("servers")[0].GetProperty("url").GetString().Should().Be("/tide/api/v1");
+        JsonElement.Parse(json).GetProperty("servers")[0].GetProperty("url").GetString().Should().Be("/tide/api/v1");
     }
 
     [Fact]
     public void AtTheRoot_TheServerIsTheApi() =>
-        JsonDocument.Parse(Tide.Web.Api.OpenApi.For(default)).RootElement.GetProperty("servers")[0].GetProperty("url").GetString().Should().Be("/api/v1");
+        JsonElement.Parse(Tide.Web.Api.OpenApi.For(default)).GetProperty("servers")[0].GetProperty("url").GetString().Should().Be("/api/v1");
 }
