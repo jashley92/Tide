@@ -43,7 +43,9 @@ public partial class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp
     private Task Move(int number, ActionStatus to, ActionOutcome outcome = ActionOutcome.None) => As(async sp =>
     {
         var svc = sp.GetRequiredService<ActionService>();
-        await svc.SetStatusAsync((await svc.GetAsync(number))!.Action.Id, to, outcome, null);
+        var id = (await svc.GetAsync(number))!.Action.Id;
+        if (outcome == ActionOutcome.NoHits) await svc.RanCleanAsync(id);   // "no hits" needs a query run clean on record
+        await svc.SetStatusAsync(id, to, outcome, null);
         return true;
     });
 
@@ -248,6 +250,7 @@ public partial class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp
         var d = await Detail(number);
         (d.Action.Status, d.Action.DueDate, d.Action.Comments.Count).Should().Be((ActionStatus.Tracking, Today.AddDays(5), 0), "nothing refused was saved");
 
+        await As(async sp => { await sp.GetRequiredService<ActionService>().RanCleanAsync(id); return true; });
         await Record(new TeamUpdate { ActionId = id, From = ActionStatus.Tracking, Status = ActionStatus.Done, Outcome = ActionOutcome.NoHits, Note = "Rule in place" });
         d = await Detail(number);
         (d.Action.Status, d.Action.Outcome, d.Action.OutcomeNote, d.Action.ClosedDate).Should().Be((ActionStatus.Done, ActionOutcome.NoHits, "Rule in place", Today));

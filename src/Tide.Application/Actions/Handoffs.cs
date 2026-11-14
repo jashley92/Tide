@@ -22,7 +22,8 @@ public sealed record SplitPart(Guid TeamId, DateOnly? DueDate = null, string? Ti
 /// that's handed an action is told by email (<see cref="HandoffNotices"/>), unless it's external: an external team hears
 /// only through its own reminders. A team changed in the action's editor is a hand-off too (<see cref="ActionService.SaveAsync"/>).
 /// </summary>
-public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, HandoffNotices notices)
+public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, HandoffNotices notices,
+    Microsoft.Extensions.Logging.ILogger<HandoffService>? log = null)
 {
     /// <summary>The most teams one split makes parts for.</summary>
     public const int MaxParts = 20;
@@ -73,8 +74,9 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (to.Id, a.Status), a.Id, overLimitReason, to, ct);
         var from = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? "another team";
 
-        // Someone not on the receiving team can't go on working it there, so it goes to the team, unassigned.
-        var dropped = a.AssigneeId is { } held && to.Members.All(m => m.UserId != held) ? a.AssigneeName ?? held : null;
+        // Someone not on the receiving team, or on it but unable to work actions (a Reader kept on it), can't go on working
+        // it there, so it goes to the team, unassigned.
+        var dropped = a.AssigneeId is { } held && (await TeamMemberRoles.OfAsync(db, to.Id, held, ct))?.CanHold != true ? a.AssigneeName ?? held : null;
         if (dropped is not null) (a.AssigneeId, a.AssigneeName) = (null, null);
         (a.HandedFromTeamId, a.TeamId) = (a.TeamId, to.Id);
         (a.HandedById, a.HandedByName, a.HandedAtUtc, a.HandoffReason) = (user.UserId, user.DisplayName, DateTimeOffset.UtcNow, why);
@@ -108,7 +110,7 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
             var over = await ActiveLimits.CheckNewAsync(db, teams.Values, overLimitReason, ct);
             return [.. parts.Select(p => Part(parent, teams[p.TeamId], p, over[p.TeamId]))];
         }, (db, made) => db.ActionEvents.Add(ActionService.Event(user, parent!.Id, "Split into "
-            + string.Join(", ", made.Select(m => $"A-{m.Number} ({teams[m.TeamId].Name})")) + ".")), ct);
+            + string.Join(", ", made.Select(m => $"A-{m.Number} ({teams[m.TeamId].Name})")) + ".")), ct, log);
     }
 
     // The parent (open and top-level) and the teams (live), checked.

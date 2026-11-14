@@ -160,6 +160,7 @@ public class DeleteActionTests : IDisposable
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var (parent, parentNumber) = await Raise(team, "Parent");
         var (part, partNumber) = await Raise(team, "Part", parent: parent);
+        await Svc.RanCleanAsync(part);
         await Svc.SetStatusAsync(part, ActionStatus.Done, ActionOutcome.NoHits, null);
         await Svc.DeleteAsync(part, "Raised twice");
         await Svc.DeleteAsync(parent, "A mistake");

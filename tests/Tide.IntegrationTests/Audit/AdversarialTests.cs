@@ -730,8 +730,8 @@ public sealed class ServiceWorld : IDisposable
         await using (var ctx = db.Context())
         {
             ctx.Users.AddRange(
-                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", LastSeenUtc = DateTimeOffset.UtcNow },
-                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", LastSeenUtc = DateTimeOffset.UtcNow });
+                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow },
+                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow });
             await ctx.SaveChangesAsync();
         }
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };

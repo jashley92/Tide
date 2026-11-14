@@ -159,6 +159,7 @@ public class ActionServiceTests : IDisposable
         var wrongOutcome = () => svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.Remediated, null);
         await wrongOutcome.Should().ThrowAsync<ArgumentException>().WithMessage("*no hits*");
 
+        await svc.RanCleanAsync(id);   // a query run clean, on record: what "no hits" needs
         await svc.SetStatusAsync(id, ActionStatus.Done, ActionOutcome.NoHits, "30 days of proxy logs");
         var done = (await svc.GetAsync(n))!.Action;
         done.ClosedDate.Should().Be(_db.Clock.Today);
@@ -263,6 +264,7 @@ public class ActionServiceTests : IDisposable
         await wrongOutcome.Should().ThrowAsync<ArgumentException>().WithMessage("*no hits*");
         ActionService.OutcomesFor(ActionKind.IocSweep, ActionStatus.Done).Should().Equal(ActionOutcome.NoHits, ActionOutcome.HitsEscalated, ActionOutcome.Other);
 
+        await svc.RanCleanAsync(id);
         await svc.MoveAsync(id, ActionStatus.InProgress, ActionStatus.Done, ActionOutcome.NoHits, "Clean");
         var done = (await svc.GetAsync(n))!.Action;
         done.Outcome.Should().Be(ActionOutcome.NoHits);

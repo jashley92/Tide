@@ -1407,6 +1407,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
    primary button and More. */
 .tide-action-head { align-items: flex-start; }
 .tide-action-title { flex: 1 1 32rem; min-width: 0; }
+/* A title of one long unbroken word (a hash, a pasted URL) wraps rather than widening the page. */
+.tide-action-title h1 { overflow-wrap: anywhere; }
 .tide-action-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 /* The due date and how it stands, one badge (SlaBadge WithDate): kept on one line. */
 .tide-action-due { white-space: nowrap; }
@@ -1983,6 +1985,16 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-col-sm { width: 8rem; }
 .tide-col-md { width: 9.5rem; }
 .tide-col-lg { width: 12rem; }
+/* Diagnostics' health checks: a check's detail (a long folder path, say) wraps within the card; narrower, each check is two
+   lines, its name and badge, then the detail across the card, rather than a column crushed to a few letters. */
+.tide-diag-checks td:last-child { overflow-wrap: anywhere; }
+@media (max-width: 899.98px) {
+    .tide-diag-checks, .tide-diag-checks tbody { display: block; }
+    .tide-diag-checks tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--tide-space-2); border-bottom: 1px solid var(--tide-border); }
+    .tide-diag-checks tr:last-child { border-bottom: 0; }
+    .tide-diag-checks td { display: block; width: auto; border-bottom: 0; }
+    .tide-diag-checks td:last-child { grid-column: 1 / -1; padding-top: 0; }
+}
 .tide-col-third { width: 30%; }
 .tide-w-count { width: 7rem; }
 .tide-page-head-main { flex: 1; min-width: 18.75rem; }

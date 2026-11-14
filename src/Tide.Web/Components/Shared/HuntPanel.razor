@@ -22,7 +22,7 @@
 @inject PrerenderHandoff Handoff
 @inject ICurrentUser CurrentUser
 
-@{ var (generate, addersOnTop, addersOnHunt) = (_preview is null && (_sources.Indicators > 0 || StoryOffersMore), AddersOnTop, AddersOnHunt); }
+@{ var (generate, addersOnTop, addersOnHunt) = (Adding && _preview is null && (_sources.Indicators > 0 || StoryOffersMore), AddersOnTop, AddersOnHunt); }
 <div class="tide-card">
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
     @if (CanWork)
@@ -68,7 +68,11 @@
                 @if (addersOnTop) { @Adders }
             </div>
         }
-        @if (_sources.StoryIndicators == 0)
+        @if (!Action.IsOpen)
+        {
+            <p class="small tide-muted" id="hunt-closed">@Closed</p>
+        }
+        else if (_sources.StoryIndicators == 0)
         {
             <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators yet. Add some, or write a query by hand." : "No indicators on the article. Add some, or write a query by hand.")</p>
         }
@@ -272,17 +276,20 @@
     // Where the ways to add a query (Write one by hand, Add a saved query, Add indicators) sit: beside the first Copy, the
     // preview's (which always has them) or the first query's, with their panels under that row; else above, by the
     // Generate buttons, while there's nothing to copy (or the first query is being edited).
-    private Guid? AddersOnHunt => CanWork && _preview is null && Action.Hunts.FirstOrDefault() is { } first && _editingHunt != first.Id ? first.Id : null;
+    // None of them on a closed action, nor Generate: it takes no new query or indicator (ActionService refuses them), and
+    // the card says so (Closed).
+    private Guid? AddersOnHunt => Adding && _preview is null && Action.Hunts.FirstOrDefault() is { } first && _editingHunt != first.Id ? first.Id : null;
 
-    private bool AddersOnTop => CanWork && _preview is null && AddersOnHunt is null;
+    private bool AddersOnTop => Adding && _preview is null && AddersOnHunt is null;
+
+    private bool Adding => CanWork && Action.IsOpen;
+
+    /// <summary>What the card says in place of the ways to add, on a closed action.</summary>
+    internal const string Closed = "It's closed, so it takes no new query or indicator. Reopen it to add one.";
 
     private RenderFragment Adders => @<text>
         <button id="hunt-write" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_writing)" @ref="_writeBtn" @onclick="ToggleWriting">Write one by hand</button>
-        @* A closed action takes no saved query (ActionService refuses it). *@
-        @if (Action.IsOpen)
-        {
-            <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_picking)" aria-controls="hunt-saved-picker" @ref="_pickBtn" @onclick="TogglePicker">Add a saved query</button>
-        }
+        <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_picking)" aria-controls="hunt-saved-picker" @ref="_pickBtn" @onclick="TogglePicker">Add a saved query</button>
         <button id="hunt-add-iocs" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_addingIndicators)" aria-controls="hunt-indicators" @ref="_iocsBtn" @onclick="ToggleIndicators">Add indicators</button>
     </text>;
 
@@ -823,6 +830,8 @@
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
+            // Closed meanwhile (this card hadn't heard): the action is read again, so the card says so and offers no more.
+            if (ex is ActionClosedException) await Changed.InvokeAsync();
             return false;
         }
         finally { _busy = false; }

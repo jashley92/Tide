@@ -462,7 +462,7 @@ public class EscalationTests : IDisposable
     public async Task AnInternalTeamsContact_IsAnAdministrators_AnExternalTeamsWhoeverWorksActions_AndEachChangeIsAudited()
     {
         var inside = await Internal();
-        var outside = await External();
+        var outside = await External("Network Engineering partner");   // a name of its own: no two teams share one
         (await _db.Teams().ListAsync()).Single(t => t.Id == inside).Should().Match<Team>(t => t.EscalationName == "Pat Lee" && t.EscalationEmail == "pat.lee@example.org");
         ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside)).EscalationEmail.Should().Be("duty-manager@network.example");
 
