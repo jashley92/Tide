@@ -234,7 +234,7 @@ window.tideTips = (function () {
         at = at || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
         // A control in the top bar, above the rail, keeps its card under it: moved off the rail it couldn't point at it.
         var overTheRail = r && rail && r.bottom <= rail.top + 1;
-        var onTheRail = rail && !overTheRail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top;
+        var onTheRail = rail && !overTheRail && covers(at, rail);
         // Narrowed for a rail that has since gone or moved: back to its own width, measured again. (Narrowed, it may fit
         // beside the rail with no overlap: that's what narrowing was for, not a reason to widen.)
         var narrowedFor = rail ? String(Math.round(rail.left)) : '';
@@ -254,6 +254,7 @@ window.tideTips = (function () {
                 at.top = sideTop(r, high);
             }
         }
+        keepClear(at, high);
         card.hidden = false;
         card.style.top = at.top + 'px';
         card.style.left = at.left + 'px';
@@ -263,6 +264,26 @@ window.tideTips = (function () {
         if (r && !target.classList.contains('tide-tip-target')) target.classList.add('tide-tip-target');
         ringAt(at.side === 'none' ? null : r);
         arrowAt(r && at, r, high);
+    }
+
+    // Whether the card, placed at `at`, would cover the box `b`.
+    function covers(at, b) {
+        return at.left + size.width > b.left && at.left < b.right && at.top < b.bottom && at.top + size.height > b.top;
+    }
+
+    // A tip never covers a page's own main buttons ([data-tip-clear]: an action's Take it and More): where it would, it
+    // moves down past them, else up above them, on the same side of its control. A step is a dialog the page waits on,
+    // and may be about those very buttons, so it stays where it is.
+    function keepClear(at, high) {
+        if (dialog) return;
+        var clears = document.querySelectorAll('[data-tip-clear]');
+        for (var i = 0; i < clears.length; i++) {
+            if (!shown(clears[i])) continue;
+            var b = clears[i].getBoundingClientRect();
+            if (!covers(at, b)) continue;
+            if (b.bottom + GAP + size.height <= innerHeight - EDGE) at.top = b.bottom + GAP;
+            else if (b.top - GAP - size.height >= high) at.top = b.top - GAP - size.height;
+        }
     }
 
     // An element of tips.js's own drawn over the page (the ring, the arrow): at the end of the page, or of what's full

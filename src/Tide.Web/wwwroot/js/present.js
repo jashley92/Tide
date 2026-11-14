@@ -24,8 +24,10 @@ window.tidePresent = (function () {
         ']': 'rail',
         Escape: 'close'
     };
-    // The slide's keys heard while the presenter's rail is open over it (onKey).
-    const railKeys = { ArrowRight: 'next', ArrowLeft: 'prev', Home: 'first', End: 'last', d: 'discussed', D: 'discussed' };
+    // The slide's keys heard while a step of Learn to present (rehearsal) is up: the ones that move the slides (onKey).
+    const stepKeys = { ArrowRight: 'next', ArrowLeft: 'prev', Home: 'first', End: 'last' };
+    // The slide's keys heard while the presenter's rail is open over it (onKey): those, and D.
+    const railKeys = Object.assign({ d: 'discussed', D: 'discussed' }, stepKeys);
 
     // Whether the window has room to dock the presenter's rail beside the slide (.NET draws it there, or over the slide).
     const railRoom = window.matchMedia('(min-width: 1500px)');
@@ -315,6 +317,16 @@ window.tidePresent = (function () {
     }
 
     function onKey(e) {
+        // A step of Learn to present (rehearsal) is a dialog over the slides, and over the presenter's rail when a step
+        // opened it: the keys that move the slides still do, as its first step says, and focus stays in the step. The
+        // rest (Enter, Space, Escape, Tab) are the step's; a field's are its own; a dialog over the step has them all.
+        if (ref && document.querySelector('.tide-modal[data-guide-card]')) {
+            const move = stepKeys[e.key];
+            if (!move || document.querySelector('.tide-modal:not([data-guide-card])') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+            e.preventDefault();
+            ref.invokeMethodAsync('OnPresentKey', move).catch(function () { });
+            return;
+        }
         // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
         // and Escape close it (not while typing). The slide's keys that press nothing in the rail still work, as its D
         // hint says: D ticks the article, the arrows, Home and End move the slide under it, and focus stays in the rail.

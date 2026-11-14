@@ -73,7 +73,7 @@
             <button type="button" class="btn btn-link btn-sm" disabled="@Busy" @onclick="() => Closing(OnCancel)">Cancel</button>
         </div>
     }
-    @if (Meeting.Attendees.Count > 0)
+    @if (ShowAttendance && Meeting.Attendees.Count > 0)
     {
         <h3 class="tide-subhead">Attended</h3>
         <div class="small">@string.Join(", ", Meeting.Attendees.Select(a => a.Name))</div>
@@ -133,6 +133,9 @@
 
     /// <summary>Who attended and the notes, as the meeting recorded them.</summary>
     [Parameter, EditorRequired] public MeetingRecord Meeting { get; set; } = default!;
+
+    /// <summary>Who attended is shown: the meeting has been held or is running, or its day has gone.</summary>
+    [Parameter] public bool ShowAttendance { get; set; }
 
     /// <summary>The page is saving: Save waits.</summary>
     [Parameter] public bool Busy { get; set; }

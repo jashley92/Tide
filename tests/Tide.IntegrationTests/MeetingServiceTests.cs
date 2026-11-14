@@ -279,6 +279,29 @@ public class MeetingServiceTests : IDisposable
         (await svc.GetAsync(brief)).Notes.Select(n => n.AuthorName).Should().Equal("Test Analyst", "Owner");
     }
 
+    // An older version let a meeting start before its brief's day and refused to end it. Who joined that meeting didn't
+    // attend the brief's: they count once they join on its day. A name added by hand is kept, as anything typed is.
+    [Fact]
+    public async Task AJoinBeforeTheBriefsDay_IsntAttendance_UntilTheyJoinOnItsDay()
+    {
+        var (brief, _) = await Brief();
+        var time = new TestClock(new(2026, 8, 29, 16, 0, 0, TimeSpan.Zero));   // the Saturday before
+        var svc = _db.Meetings(time);
+        await svc.JoinedAsync(brief);
+        As(Andy, "Andy", AppRole.Analyst);
+        await svc.JoinedAsync(brief);
+        await svc.AddAttendeeAsync(brief, "Sam from the SOC");
+
+        (await svc.GetAsync(brief)).Attendees.Select(a => a.Name).Should().Equal("Sam from the SOC");
+        (await Attendees(brief)).Should().HaveCount(3, "the rows are kept");
+
+        time.Now = new(2026, 9, 1, 14, 30, 0, TimeSpan.Zero);   // the brief's day: Andy comes, the other doesn't
+        await svc.JoinedAsync(brief);
+        var andy = (await svc.GetAsync(brief)).Attendees.Should().Contain(a => a.Name == "Andy").Subject;
+        andy.JoinedAtUtc.Should().Be(time.Now, "the join that counts is the one on its day");
+        (await svc.GetAsync(brief)).Attendees.Select(a => a.Name).Should().Equal("Andy", "Sam from the SOC");
+    }
+
     [Fact]
     public async Task SomeoneAddedByName_WhoThenJoins_IsListedOnce()
     {

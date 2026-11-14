@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
+using Tide.Application.Org;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -17,7 +18,8 @@ public sealed record MeetingRecord(IReadOnlyList<MeetingAttendee> Attendees, IRe
 /// The record of a brief's meeting: attendance, as people join it in present mode or anyone in it adds them, and the
 /// notes each person takes. What's live (who's on which slide, raised hands) is the web app's and isn't kept.
 /// </summary>
-public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time, IMeetingsInProgress? meetings = null)
+public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time, IMeetingsInProgress? meetings = null,
+    OrgClock? clock = null)
 {
     /// <summary>The longest note.</summary>
     public const int MaxNote = 2000;
@@ -29,12 +31,25 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         var visitor = MeetingAccess.SeatedFor(user, meetings, briefId);
         if (!visitor) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => a.BriefId == briefId).ToListAsync(ct);
+        var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => a.BriefId == briefId)
+            .Join(db.Briefs, a => a.BriefId, b => b.Id, (a, b) => new { Row = a, b.BriefDate }).ToListAsync(ct);
         var notes = visitor ? [] : await db.MeetingNotes.AsNoTracking().Where(n => n.BriefId == briefId).ToListAsync(ct);
         return new MeetingRecord(
-            attendees.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
+            attendees.Where(a => !JoinedBefore(a.Row, a.BriefDate)).Select(a => a.Row)
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
             notes.OrderBy(n => n.AtUtc).ThenBy(n => n.Id).ToList());
     }
+
+    /// <summary>
+    /// Whether someone who joined (at <paramref name="joinedAtUtc"/>) joined a meeting of the brief for <paramref name="day"/> before that
+    /// day: an older version let a meeting start ahead of its day and refused to end it, so they attended no meeting of
+    /// it. The row is kept (and counts again once they join on its day, <see cref="JoinedAsync"/>); a name added by hand,
+    /// with no join, always counts.
+    /// </summary>
+    public static bool JoinedBefore(OrgClock clock, DateTimeOffset? joinedAtUtc, DateOnly day) =>
+        joinedAtUtc is { } at && MeetingDay.Before(clock, day, at);
+
+    private bool JoinedBefore(MeetingAttendee row, DateOnly day) => clock is not null && JoinedBefore(clock, row.JoinedAtUtc, day);
 
     /// <summary>Records that I joined the meeting: the first time, when; again after leaving, that I'm back. Anyone who may
     /// join meetings: a Visitor only from a seat in that brief's live meeting, recorded as attending as everyone else is.</summary>
@@ -58,6 +73,9 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         }
         else
         {
+            // Joined only a meeting started ahead of the brief's day (JoinedBefore): this join is the first that counts.
+            if (me.JoinedAtUtc is not null && JoinedBefore(me, await db.Briefs.Where(b => b.Id == briefId).Select(b => b.BriefDate).FirstAsync(ct)))
+                me.JoinedAtUtc = null;
             me.JoinedAtUtc ??= time.GetUtcNow();
             me.LeftAtUtc = null;
         }

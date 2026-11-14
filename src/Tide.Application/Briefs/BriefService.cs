@@ -54,6 +54,23 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// presenter's seat, else (presented without a live meeting, or not yet) the presenter it was given.</summary>
     public static string PresentedBy(Brief brief) => brief.PresentedByName ?? brief.AnalystName;
 
+    /// <summary>Whether <paramref name="brief"/>'s meeting has been held: recorded as held or ended, or the brief presented
+    /// or sent. Back to ready (<see cref="ReopenAsync"/>) makes it not held again.</summary>
+    public static bool MeetingHeld(Brief brief) =>
+        brief.MeetingHeldAtUtc is not null || brief.PresentedAtUtc is not null || brief.Status is BriefStatus.Presented or BriefStatus.Sent;
+
+    /// <summary>Whether a page shows who attended <paramref name="brief"/>'s meeting: while it's <paramref name="live"/>,
+    /// once it's been held (<see cref="MeetingHeld"/>), or on a <paramref name="past"/> day (a meeting that ran and was never
+    /// ended, as after a restart, still had who it had). Not before: an older version let a meeting start before its day
+    /// and refused to end it, leaving people recorded at one that hadn't happened.</summary>
+    public static bool AttendanceShown(Brief brief, bool past, bool live) => live || past || MeetingHeld(brief);
+
+    /// <summary>What a past day's brief says when it names someone other than the rotation's <paramref name="rotaName"/>:
+    /// who presented it once that's recorded (<see cref="PresentedBy"/>), else only whom it names.</summary>
+    public static string OffTheRota(string? rotaName, Brief brief) =>
+        $"The brief rotation has {rotaName} for this day, but "
+        + (MeetingHeld(brief) ? $"{PresentedBy(brief)} presented it." : $"the brief names {brief.AnalystName} to present it.");
+
     // "Pat", "Pat and Sam", "Pat, Sam and Robin".
     private static string Names(IReadOnlyList<string> names) =>
         names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
