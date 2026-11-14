@@ -789,9 +789,10 @@ An analyst can also add articles from the story's page (a Viewer sees neither bu
   above it names is left out (the form says how many such articles there are), so raising the TLP brings it in.
   Threat actors and ATT&CK techniques aren't copied, and retired tags and products aren't. *Create and edit* starts a
   draft on the story and opens it in the editor. It isn't put on a brief: that's the editor's choice.
-- **Add an existing article** searches the articles not on this story by title, bottom line or CVE, newest first, a
-  few at a time. Each shows its TLP, status and when it was written, and the story it's on now, if any (adding it
-  moves it here). Picking one adds it; the search stays open for another.
+- **Add an existing article** searches the articles not on this story as the article list's search does (titles,
+  bottom lines, sources, CVEs, indicators), newest first, a few at a time. Each shows its TLP, status and when it was
+  written, and the story it's on now, if any (adding it moves it here). Picking one adds it; the search stays open
+  for another.
 
 ## Our stack
 

@@ -3842,11 +3842,11 @@ const everyIndicatorSweep = async page => {
 };
 
 /** Setup: wider letters (LETTER_SPACING), then a story page's `button` pressed (New article on this story, or Add an
- *  existing article) and its card drawn: the add-existing one with its list of articles. */
-const storyAdding = button => async page => {
+ *  existing article), waiting for `ready`: what its card draws once read. */
+const storyAdding = (button, ready) => async page => {
   await wideFont(page);
   await page.getByRole('button', { name: button, exact: true }).click();
-  await page.locator(button === 'New article on this story' ? '#sn-copies' : '.tide-story-attach .tide-story-results li').first().waitFor();
+  await page.locator(ready).first().waitFor();
 };
 
 /** Setup: that entry, then the rail opened where it's an overlay (the Context button). */
@@ -4596,11 +4596,11 @@ const pages = [
     rules: [noSidewaysScroll, hidden('.tide-page-head .btn-primary')] },
   // New article on this story: the title and its TLP side by side where there's room, what it copies under them, and
   // Create and edit beside Cancel.
-  { name: 'story-new-article', route: '/stories/{story}', setup: storyAdding('New article on this story'), widths: [1920, 1440, 780, 400],
+  { name: 'story-new-article', route: '/stories/{story}', setup: storyAdding('New article on this story', '#sn-copies'), widths: [1920, 1440, 780, 400],
     rules: [noSidewaysScroll, fits('.tide-story-new'), visible('#sn-copies'), [780, sameLine('#sn-title', '#sn-tlp')], oneRow('.tide-story-new .d-flex')] },
   // Add an existing article: the search and the articles it lists stay within the card, each one's marking, status and
   // story wrapping inside it.
-  { name: 'story-add-existing', route: '/stories/{story}', setup: storyAdding('Add an existing article'), widths: [1920, 1440, 780, 400],
+  { name: 'story-add-existing', route: '/stories/{story}', setup: storyAdding('Add an existing article', '.tide-story-attach .tide-story-results li'), widths: [1920, 1440, 780, 400],
     rules: [noSidewaysScroll, fits('.tide-story-attach'), fits('.tide-story-attach .tide-story-results'), visible('.tide-story-attach .tide-story-result-meta'),
       insidePage('.tide-story-attach .tide-story-results li')] },
   { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },

@@ -109,7 +109,7 @@ else
                     <div class="row g-2">
                         <div class="col-md-9">
                             <label class="tide-field-label" for="sn-title">Title</label>
-                            <input id="sn-title" class="form-control form-control-sm" maxlength="300" placeholder="What happened, in a headline" @bind="_newTitle" />
+                            <input id="sn-title" class="form-control form-control-sm" maxlength="300" placeholder="What happened, in a headline" @bind="NewTitle" />
                         </div>
                         <div class="col-md-3">
                             <label class="tide-field-label" for="sn-tlp">TLP</label>
@@ -127,7 +127,7 @@ else
             {
                 <div class="tide-card tide-story-attach">
                     <h2><label for="sa-find">Add an existing article</label></h2>
-                    <SearchCombobox TItem="StoryCandidate" Id="sa-find" Type="search" Open="true" Placeholder="Find an article by title, bottom line or CVE" ListLabel="Articles"
+                    <SearchCombobox TItem="StoryCandidate" Id="sa-find" Type="search" Open="true" Placeholder="Titles, sources, CVEs, indicators" ListLabel="Articles"
                                     Help="Articles not on this story are listed below. Choose one to add it." Disabled="_busy"
                                     @bind-Text="_find" @bind-Text:after="Typed" Items="Candidates" Key="c => c.Id" OnPick="Attach" Empty="@NoCandidates">
                         <ItemTemplate Context="c">
@@ -352,8 +352,7 @@ else
     // Add an existing article (a search over the articles not on the story). One at a time, and never beside Edit.
     private enum Adding { None, New, Existing }
     private Adding _adding;
-    internal string? NewTitle { get => _newTitle; set => _newTitle = value; }
-    private string? _newTitle;
+    internal string? NewTitle { get; set; }
     private TlpLevel _newTlp = TlpLevel.Clear;
     private StoryPrefill? _prefill;
     private string? _find;
@@ -362,7 +361,7 @@ else
 
     private static readonly RenderFragment NoCandidates = @<text>No other articles match.</text>;
 
-    private void StopAdding() => (_adding, _newTitle, _newTlp, _prefill, _find, Candidates) = (Adding.None, null, TlpLevel.Clear, null, null, []);
+    private void StopAdding() => (_adding, NewTitle, _newTlp, _prefill, _find, Candidates) = (Adding.None, null, TlpLevel.Clear, null, null, []);
 
     internal Task StartNew() => Run(async () =>
     {
@@ -387,22 +386,20 @@ else
             var at = Tlp.Label(_newTlp);
             var parts = new List<string>();
             if (p.Cves.Count > 0) parts.Add(p.Cves.Count <= 4 ? string.Join(", ", p.Cves) : $"{string.Join(", ", p.Cves.Take(3))} and {p.Cves.Count - 3} more CVEs");
-            if (p.TagIds.Count > 0) parts.Add(Count(p.TagIds.Count, "scorecard tag", "scorecard tags"));
-            if (p.ProductIds.Count > 0) parts.Add(Count(p.ProductIds.Count, "product we run", "products we run"));
+            if (p.TagIds.Count > 0) parts.Add(Ui.Plural(p.TagIds.Count, "scorecard tag"));
+            if (p.ProductIds.Count > 0) parts.Add(Ui.Plural(p.ProductIds.Count, "product we run", "products we run"));
             var copies = parts.Count == 0
                 ? $"Starts empty: the story's articles at or below {at} name no CVEs, scorecard tags or products we run."
                 : $"Starts with {string.Join("; ", parts)}, from the story's articles at or below {at}. Threat actors and techniques aren't copied.";
             return p.LeftOut == 0 ? copies
-                : $"{copies} {Count(p.LeftOut, "article", "articles")} above {at} {(p.LeftOut == 1 ? "is" : "are")} left out: raise the TLP to bring in what {(p.LeftOut == 1 ? "it names" : "they name")}.";
+                : $"{copies} {Ui.Plural(p.LeftOut, "article")} above {at} {(p.LeftOut == 1 ? "is" : "are")} left out: raise the TLP to bring in what {(p.LeftOut == 1 ? "it names" : "they name")}.";
         }
     }
-
-    private static string Count(int n, string one, string many) => n == 1 ? $"1 {one}" : $"{n} {many}";
 
     // Starts the draft on the story and opens it in the editor; putting it on a brief stays the editor's choice.
     internal Task CreateNew() => Run(async () =>
     {
-        var id = await StoryArticles.NewArticleAsync(Id!.Value, _newTitle ?? "", _newTlp);
+        var id = await StoryArticles.NewArticleAsync(Id!.Value, NewTitle ?? "", _newTlp);
         StopAdding();
         Nav.NavigateTo($"articles/{id}");
     });

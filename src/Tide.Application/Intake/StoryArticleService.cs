@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
-using Tide.Application.Search;
 using Tide.Application.Security;
 using Tide.Domain.Enums;
 
@@ -73,30 +72,24 @@ public sealed class StoryArticleService(IAppDbContextFactory dbs, ICurrentUser u
 
     /// <summary>
     /// The articles the story's page offers to add: every article the person may read that isn't on this story (one on
-    /// another story moves), newest first, at most <see cref="StoryService.PickLimit"/>. Words narrow them to titles,
-    /// bottom lines and CVEs that hold every word.
+    /// another story moves), newest first, at most <see cref="StoryService.PickLimit"/>. Words narrow them as the article
+    /// list's search does.
     /// </summary>
     public async Task<IReadOnlyList<StoryCandidate>> CandidatesAsync(Guid storyId, string? words, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
-        var q = db.Articles.AsNoTracking().Where(a => a.StoryId == null || a.StoryId != storyId);
-        foreach (var word in (words ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var p = SearchText.Contains(word);
-            q = q.Where(a => EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
-                             || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape)));
-        }
+        var q = ArticleService.Matching(db, words, null).Where(a => a.StoryId != storyId);
         return await q.OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(StoryService.PickLimit)
             .Select(a => new StoryCandidate(a.Id, a.Title, a.Tlp, a.Status, a.CreatedAtUtc,
                 db.Stories.Where(s => s.Id == a.StoryId).Select(s => s.Name).FirstOrDefault()))
             .ToListAsync(ct);
     }
 
-    // Reading the team edition comes with writing articles, so who may add one may read every article the picker lists.
+    // As the story and article services' own writes: reading the team edition comes with writing articles, so who may
+    // add one may read every article the picker lists.
     private void RequireWrite()
     {
-        if (!user.Has(Permission.WriteArticles) || !user.Has(Permission.ReadTeamEdition))
-            throw new ForbiddenException("Only analysts can add articles to a story.");
+        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only analysts can add articles to a story.");
     }
 }

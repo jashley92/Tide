@@ -27,7 +27,7 @@ public class StoryArticleTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private sealed record Seeded(Guid Story, Guid Clear, Guid Amber, Guid Ransomware, Guid Phishing, Guid RetiredTag, Guid EdgeVpn, Guid Mail, Guid Retired);
+    private sealed record Seeded(Guid Story, Guid Ransomware, Guid Phishing, Guid EdgeVpn, Guid Mail);
 
     // A story with a CLEAR article (CVE-2026-0001, Ransomware, Edge VPN, a technique, an actor) and an AMBER one
     // (CVE-2026-0002, Phishing, Mail gateway); a retired tag and a retired product on the CLEAR one.
@@ -63,7 +63,7 @@ public class StoryArticleTests : IDisposable
         await stack.SetRetiredAsync(retired, true);
         await _db.Stories().LinkAsync(clear, story);
         await _db.Stories().LinkAsync(amber, story);
-        return new Seeded(story, clear, amber, ransomware.Id, phishing.Id, retiredTag.Id, edgeVpn, mail, retired);
+        return new Seeded(story, ransomware.Id, phishing.Id, edgeVpn, mail);
     }
 
     private async Task<Guid> ArticleAsync(string title, TlpLevel tlp, string[] cves, Guid[] tags, string[] techniques)
