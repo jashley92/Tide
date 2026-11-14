@@ -176,6 +176,7 @@ public static class AuditKinds
         [nameof(RotationWeek)] = "Rotation week",
         [nameof(RotationChange)] = "Rotation change",
         [nameof(RotationOverride)] = "Rotation cover",
+        [nameof(BriefExcuse)] = "Late brief excused",
         [nameof(StoredFile)] = "File",
         [DownloadAudit.EntityType] = "Download",
     };
@@ -469,7 +470,8 @@ internal static class AuditRecords
     // The value a row recorded for one field: the new one, or the old one on a delete.
     private static string? Field(string? json, string field) => Values(json, field) is { Length: 2 } v ? v[1] ?? v[0] : null;
 
-    private static string?[]? Values(string? json, string field)
+    /// <summary>A field's [before, after] as an audit row's changes recorded them, or null when the row doesn't have it.</summary>
+    internal static string?[]? Values(string? json, string field)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<Dictionary<string, string?[]>>(json)?.GetValueOrDefault(field); }

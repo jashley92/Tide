@@ -82,6 +82,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RotationWeek> RotationWeeks => Set<RotationWeek>();
     public DbSet<RotationChange> RotationChanges => Set<RotationChange>();
     public DbSet<RotationOverride> RotationOverrides => Set<RotationOverride>();
+    public DbSet<BriefExcuse> BriefExcuses => Set<BriefExcuse>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<JobLease> JobLeases => Set<JobLease>();
     public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
@@ -855,6 +856,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasOne<RotationChange>().WithMany().HasForeignKey(x => x.ChangeId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.AnalystId);
             e.HasIndex(x => x.ChangeId);
+        });
+
+        b.Entity<BriefExcuse>(e =>
+        {
+            Audited(e);
+            e.HasIndex(x => x.BriefDate).IsUnique();
+            Person(e, x => x.AnalystId, x => x.AnalystName);
+            Person(e, x => x.ExcusedById, x => x.ExcusedByName);
+            e.Property(x => x.Reason).HasMaxLength(BriefExcuse.MaxReason);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
+            e.HasIndex(x => x.AnalystId);
         });
 
         b.Entity<Holiday>(e =>

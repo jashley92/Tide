@@ -138,6 +138,7 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         "/coverage",
         "/reports",
         "/reports/teams",
+        "/reports/timeliness",
         "/stack",
         "/trends",
         "/briefs/{day}",

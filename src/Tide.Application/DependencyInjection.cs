@@ -137,6 +137,7 @@ public static class DependencyInjection
         services.AddScoped<TrendsService>();
         services.AddScoped<Trends.ReportService>();
         services.AddScoped<Trends.TeamScorecardService>();
+        services.AddScoped<Trends.BriefTimelinessService>();
         services.AddScoped<Stack.StackService>();
         services.AddScoped<HistoryService>();
         services.AddScoped<AuditLogService>();

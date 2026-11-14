@@ -1,0 +1,18 @@
+@inject ICurrentUser CurrentUser
+
+@* The Reports pages' tabs (ReportsTabs): links to each page the reader may open, the current one marked. Drawn under
+   each page's header; a reader with only one of them gets no bar. *@
+@if (_tabs.Count > 1)
+{
+    <TabBar Items="@_tabs" Active="@Active" Label="Reports" Class="tide-noprint" />
+}
+
+@code {
+    /// <summary>The key of the page drawing it (<see cref="ReportsTabs"/>).</summary>
+    [Parameter, EditorRequired] public string Active { get; set; } = "";
+
+    private IReadOnlyList<TabBarItem> _tabs = [];
+
+    protected override void OnParametersSet() =>
+        _tabs = [.. ReportsTabs.For(CurrentUser).Select(t => new TabBarItem(t.Label, t.Href, t.Icon, t.Key))];
+}

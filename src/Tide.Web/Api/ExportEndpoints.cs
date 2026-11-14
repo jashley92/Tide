@@ -35,10 +35,18 @@ public static class ExportEndpoints
     private const string CeilingItem = "Tide.Download.Ceiling", BytesItem = "Tide.Download.Bytes";
 
     /// <summary>Held to <paramref name="policy"/> and the exports rate limit, never kept by a cache, and recorded (in the
-    /// audit log too as <paramref name="audited"/> says).</summary>
+    /// audit log too as <paramref name="audited"/> says). A service's refusal (<see cref="ForbiddenException"/>: someone
+    /// else's records, say) answers 403, which sends nothing and so isn't recorded as a download.</summary>
     public static RouteHandlerBuilder AsExport(this RouteHandlerBuilder endpoint, string policy = Policies.ReadTeamEdition,
         AuditedWhen audited = AuditedWhen.Never) =>
-        endpoint.RequireAuthorization(policy).RequireRateLimiting(RateLimit).AddEndpointFilter(NoStore).Recorded(audited);
+        endpoint.RequireAuthorization(policy).RequireRateLimiting(RateLimit).AddEndpointFilter(NoStore).Recorded(audited).AddEndpointFilter(Refused);
+
+    // Innermost, so the download's record sees the refusal rather than the exception.
+    private static async ValueTask<object?> Refused(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        try { return await next(context); }
+        catch (ForbiddenException) { return Results.StatusCode(StatusCodes.Status403Forbidden); }
+    }
 
     /// <summary>Each download sent from <paramref name="endpoint"/> is in the access log, and in the audit log as
     /// <paramref name="when"/> says.</summary>

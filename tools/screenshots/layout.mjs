@@ -1655,6 +1655,14 @@ const triageLines = {
   cve: '.tide-triage-row:not(.tide-triage-group):has(.tide-cvss)',
 };
 
+/** Setup: the scorecard's first team opened by person, with wider letters (LETTER_SPACING). */
+const byPerson = async page => {
+  await page.locator('a:text-is("By person")').first().click();
+  await page.waitForURL(/\/reports\/teams\/[0-9a-f-]{36}/);
+  await idle(page);
+  await wideFont(page);
+};
+
 /** Setup: wider letters (LETTER_SPACING), then the first line of `kind` (triageLines) selected by a click on its source's
  *  name; the rail follows it. */
 const railOn = kind => async page => {
@@ -4126,7 +4134,7 @@ const pages = [
   // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
   // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
   ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
-    '/reports', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
+    '/reports', '/reports/timeliness', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
     .map(route => ({ name: `narrow ${route}`, route, setup: wideFont, widths: [700, 641], rules: [noSidewaysScroll] })),
   // Each step's detail stays within two lines at every width (the strip compact where it's narrow), and Triage's KEV
   // flag sits on the line of its words where there's room.
@@ -4747,9 +4755,24 @@ const pages = [
   // every detail stays readable (stacked under its check at a narrow width, not crushed to a few letters a line).
   { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
     rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)'), everyAtLeast('.tide-diag-checks td:last-child', 120)] },
-  // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
-  { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
-    rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),
+  // Reports' tabs (Monthly report, Team commitments, Brief timeliness) on one row under each page's header (wrapping only
+  // where it's narrow), wider letters
+  // too; and Brief timeliness for a manager (the team summary, the rate by week, every day with its excuse button) and an
+  // analyst (their own days), each table in its card, never a sideways scroll.
+  ...['/reports', '/reports/teams', '/reports/timeliness'].map(route => ({ name: `reports-tabs ${route}`, route, setup: wideFont, widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, visible('nav[aria-label="Reports"]'), [1100, oneRow('nav[aria-label="Reports"]')], fits('.tide-card')] })),
+  // A team's commitments by person, opened from the scorecard's first By person link: the team's line and each person's
+  // in the card, wider letters too.
+  { name: 'team-people', route: '/reports/teams', setup: byPerson, widths: [1920, 1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tp-title'), visible('nav[aria-label="Reports"]')] },
+  { name: 'timeliness-manager', route: '/reports/timeliness?by=week&as=Lee&roles=Manager', setup: wideFont, widths: [1920, 1440, 1100, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-team'), visible('#tl-over-time'), visible('#tl-days')] },
+  { name: 'timeliness-analyst', route: '/reports/timeliness?roles=Analyst', setup: wideFont, widths: [1440, 780, 400],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#tl-days'), hidden('#tl-team')] },
+  // The organization's settings: the two business-day limits for Actions that need review, each box with its unit, and
+  // the brief's sent-by and posted-by times, with wider letters too.
+  { name: 'admin-organization', route: '/admin/organization', setup: wideFont, widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'), visible('#org-sent-by'), visible('#org-posted-by'),
       oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
   // Help: each release's highlights for the reader's roles, the full notes folded under them, linked to as "See all
   // changes" (that release's notes open).

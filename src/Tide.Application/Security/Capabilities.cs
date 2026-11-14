@@ -43,7 +43,7 @@ public static class Capabilities
 
     /// <summary>The roles' columns, most access first.</summary>
     public static readonly IReadOnlyList<AppRole> Columns =
-        [AppRole.Admin, AppRole.Analyst, AppRole.ActionOwner, AppRole.Viewer, AppRole.Visitor, AppRole.Reader];
+        [AppRole.Admin, AppRole.Analyst, AppRole.Manager, AppRole.ActionOwner, AppRole.Viewer, AppRole.Visitor, AppRole.Reader];
 
     private static Grant G(params Permission[] needs) => new(needs);
     private static Grant Q(string qualifier, params Permission[] needs) => new(needs, qualifier);
@@ -113,6 +113,11 @@ public static class Capabilities
 
         new(Reports, "Reports, trends and exports", "Policies.ReadTeamEdition; ExportService", [G(Permission.ReadTeamEdition)]),
         new(Reports, "Team commitments scorecard and its CSV", "Policies.ReadActions; TeamScorecardService.BuildAsync", [G(Permission.ReadActions)]),
+        new(Reports, "Team commitments by person (who held each action on its due date)", "TeamScorecardService.PeopleAsync",
+            [G(Permission.ReadActions, Permission.ManagePeople), Q("own line only", Permission.ReadActions)]),
+        new(Reports, "Brief timeliness: every analyst's days and the team summary, and the CSV", "BriefTimelinessService.BuildAsync",
+            [G(Permission.ManagePeople), Q("own days only", Permission.PresentBriefs)]),
+        new(Reports, "Excuse a late brief day the analyst warned of, or undo that", "BriefTimelinessService.ExcuseAsync", [G(Permission.ManagePeople)]),
         new(Reports, "Coverage of detection rules", "Policies.WriteArticles (Coverage)", [G(Permission.WriteArticles)]),
 
         new(Administration, "Organization, holidays, teams and SLAs, rotation", "Policies.Administer", [G(Permission.Administer)]),

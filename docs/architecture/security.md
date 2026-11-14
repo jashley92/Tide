@@ -207,29 +207,32 @@ enums in `src/Tide.Domain/Enums/AppEnums.cs`.
 | 7 | `ReadActions` | Read every action (its page, the board, Workload, the lists, Team commitments) without working any. |
 | 8 | `MeetingNotes` | Add notes to a meeting, and change or delete one's own. |
 | 9 | `JoinMeetings` | Join and follow a live meeting in present mode, and raise a hand. |
+| 10 | `ManagePeople` | See every analyst's brief timeliness and each person's commitments, and excuse a late brief day (or undo that). |
 
 ### Roles and their bundles
 
 `RoleDefinitions.SystemRoles` is the whole mapping. Admin holds `Enum.GetValues<Permission>()`, so it gets any
 permission added later.
 
-| Permission | Administrator | Analyst | Action owner | Viewer | Visitor | Reader |
-|---|---|---|---|---|---|---|
-| `ReadPublished` | Yes | Yes | Yes | Yes | Yes | Yes |
-| `ReadTeamEdition` | Yes | Yes | Yes | Yes | No | No |
-| `WriteArticles` | Yes | Yes | No | No | No | No |
-| `PresentBriefs` | Yes | Yes | No | No | No | No |
-| `WorkActions` | Yes | Yes | Yes | No | No | No |
-| `Administer` | Yes | No | No | No | No | No |
-| `EnterMetrics` | Yes | Yes | No | No | No | No |
-| `ReadActions` | Yes | Yes | Yes | Yes | No | No |
-| `MeetingNotes` | Yes | Yes | Yes | Yes | No | No |
-| `JoinMeetings` | Yes | Yes | Yes | Yes | Yes | No |
+| Permission | Administrator | Analyst | Manager | Action owner | Viewer | Visitor | Reader |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `ReadPublished` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `ReadTeamEdition` | Yes | Yes | Yes | Yes | Yes | No | No |
+| `WriteArticles` | Yes | Yes | No | No | No | No | No |
+| `PresentBriefs` | Yes | Yes | No | No | No | No | No |
+| `WorkActions` | Yes | Yes | No | Yes | No | No | No |
+| `Administer` | Yes | No | No | No | No | No | No |
+| `EnterMetrics` | Yes | Yes | No | No | No | No | No |
+| `ReadActions` | Yes | Yes | Yes | Yes | Yes | No | No |
+| `MeetingNotes` | Yes | Yes | Yes | Yes | Yes | No | No |
+| `JoinMeetings` | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| `ManagePeople` | Yes | No | Yes | No | No | No | No |
 
 What each role is (`RoleDefinitions.Describe`): an **Analyst** is the CTI team; an **Action owner** is another team's
 member who reads the team edition and works their team's actions; a **Reader** is anyone else in the company; a
 **Viewer** reads everything the team does and changes nothing but their own meeting notes; a **Visitor** reads the
-published archive and sees a live meeting only while seated in it. A person holding several roles gets the union
+published archive and sees a live meeting only while seated in it; a **Manager** reads what a Viewer reads and holds
+`ManagePeople`: every analyst's brief timeliness and each person's commitments, where an analyst sees only their own. A person holding several roles gets the union
 (`RoleDefinitions.PermissionsFor`).
 
 ### Policies

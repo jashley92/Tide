@@ -100,6 +100,8 @@ public static class SettingsCatalog
         new("Organization", "Needs an update: open actions, after business days", OperationalSettings.StaleOpenDays, EditedIn: OrganizationPage),
         new("Organization", "Needs an update: blocked actions, after business days", OperationalSettings.StaleBlockedDays, EditedIn: OrganizationPage),
         new("Organization", "Show me around links: days shown", OperationalSettings.GuideLinkDays, EditedIn: OrganizationPage),
+        new("Organization", "Brief sent by", OperationalSettings.SentBy, EditedIn: OrganizationPage),
+        new("Organization", "SharePoint copy posted by", OperationalSettings.PostedBy, EditedIn: OrganizationPage),
 
         new("Reminders", "Reminder time", OperationalSettings.ReminderTime, EditedIn: TeamsPage),
         new("Reminders", "Due soon", OperationalSettings.DueSoon, EditedIn: TeamsPage),

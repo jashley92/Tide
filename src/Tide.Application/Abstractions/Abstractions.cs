@@ -85,6 +85,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<RotationWeek> RotationWeeks { get; }
     DbSet<RotationChange> RotationChanges { get; }
     DbSet<RotationOverride> RotationOverrides { get; }
+    DbSet<BriefExcuse> BriefExcuses { get; }
     DbSet<Holiday> Holidays { get; }
     DbSet<JobLease> JobLeases { get; }
     DbSet<JobProcess> JobProcesses { get; }

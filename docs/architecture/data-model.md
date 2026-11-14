@@ -502,6 +502,12 @@ erDiagram
         date Date PK
         string Name
     }
+    BriefExcuses {
+        uuid Id PK
+        date BriefDate UK
+        string AnalystId
+        string Reason
+    }
 ```
 
 ### Administration, settings, security and the API
@@ -1270,6 +1276,7 @@ tables, and every change to them is published on the `rotation` change-feed topi
 | `RotationChanges` (A) | `Id` | `Kind` (`RotationChangeKind`), `RequesterId`/`Name` (indexed), `PartnerId`/`Name`, `GiveFrom`/`GiveTo` date, `TakeFrom`/`TakeTo` date null, `Note` nvarchar(500), `Status` (`RotationChangeStatus`, indexed with `PartnerId`), `CreatedById`/`Name`/`AtUtc`, `DecidedAtUtc`, `DecidedByName`, `DecisionNote` nvarchar(500) | A cover or swap request. Only the partner approves it. |
 | `RotationOverrides` (A) | `Date` date | `AnalystId`/`AnalystName` (indexed), `ChangeId` (nullable FK → `RotationChanges`, **cascade**, indexed) | One business day's presenter when it differs from the week's: created by an approved change, or, with `ChangeId` null, a presented day kept for its presenter when its week was given to someone else (`RotationService.SetWeekAsync`). |
 | `Holidays` (A) | `Date` date | `Name` nvarchar(100) | A non-working day besides weekends. No brief is held, nothing is sent, and the day doesn't count towards deadlines. Written by `HolidayService` and `ConfigBundleService`, and loaded into `OrgClock` at startup and on save. |
+| `BriefExcuses` (A) | `Id` | `BriefDate` date (unique), `AnalystId`/`AnalystName` (indexed: whose day it was), `Reason` nvarchar(300), `ExcusedAtUtc`, `ExcusedById`/`ExcusedByName`, `EditVersion` (concurrency token), **S** columns | A brief day a manager or administrator marked as one its analyst warned would be late (`BriefTimelinessService.ExcuseAsync`): **Reports › Brief timeliness** doesn't count it against them. Undoing it deletes the row; the audit trail keeps both. Nothing else about timeliness is stored: each day is judged from `Briefs`, `BriefSends` and the rotation when the report is read. |
 
 ## Reference data: scorecard, stack, adversaries
 

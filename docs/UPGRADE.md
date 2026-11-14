@@ -178,12 +178,33 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
 
 ### Unreleased
 
-No migrations.
+Upgrade as usual. It adds one migration, `BriefExcuses` (a new, empty table of brief days excused as late). None of
+the earlier ones change. On a DbaApplies install, the DBA applies it first.
 
+**New**
+- **A Manager role.** Map an AD group to it on Role mappings (Administration › Access & distribution), as for Viewer
+  and Visitor, or name it in `RoleMapping:Groups:Manager` before the first start. A Manager reads what a Viewer reads,
+  sees every analyst's brief timeliness, and can mark a day *proactively notified of late*, with a reason, so it
+  doesn't count against the analyst. Administrators can too. In development, `?roles=Manager` signs in as one.
+- **Brief timeliness.** Each business day's brief owner (the rotation's analyst, or whoever the day was handed or
+  covered to) is due to have both editions sent by **11:30** and, where posting to SharePoint is required, the copy
+  confirmed posted by **12:00**, in the organization's time zone. Holidays don't count; test copies don't count.
+  Every brief already sent is judged from the send log and the SharePoint records, so the history is there after the
+  upgrade. An analyst sees only their own days; Managers and administrators see everyone's.
+- **Reports has tabs**: Monthly report, Team commitments and Brief timeliness, each at the address it had
+  (`/reports`, `/reports/teams`) or its own (`/reports/timeliness`, with a CSV). They replace the Team commitments
+  link in the report's subtitle. Reports is now in the sidebar for Managers too.
+- **Team commitments by person.** *By person* beside a team splits its actions by who held each on its due date, from
+  the actions' history (a hand-off before the due date moves it). Managers and administrators see everyone's lines;
+  anyone else who reads actions sees only their own. Team lines are unchanged.
 - **Add an article from a story.** A story's page has *New article on this story*, which starts a draft on the story
   with the CVEs, scorecard tags and products we run that its articles at or below the new article's TLP name (never
   threat actors or techniques, and never what only a more restricted article says), and *Add an existing article*, a
   search over the articles not on the story. Analysts only; a new article isn't put on a brief by itself.
+
+**New settings**
+- `Org:SentBy` (`11:30`) and `Org:PostedBy` (`12:00`), on **Organization settings**. Changing either judges every
+  day by the new time, past days too: nothing about a day's timeliness is stored but an excuse.
 
 ### v1.13.0
 

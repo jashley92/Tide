@@ -120,6 +120,9 @@ builder.Services.AddAuthorization(options =>
 {
     foreach (var (policy, permission) in Policies.Required)
         options.AddPolicy(policy, p => p.RequireClaim(AppClaimTypes.Permission, permission.ToString()));
+    // A policy any one of several permissions meets: a claim with any of their values.
+    foreach (var (policy, permissions) in Policies.AnyOf)
+        options.AddPolicy(policy, p => p.RequireClaim(AppClaimTypes.Permission, permissions.Select(x => x.ToString())));
     // Everything requires a signed-in user unless it says otherwise.
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
 });
@@ -420,6 +423,14 @@ app.MapGet("/reports/teams/export.csv", async (int? days, bool? parts, bool? ext
     var stem = (card.PartsOnly ? "-parts" : "") + (card.ExternalOnly ? "-external" : "");
     return CsvFile(TeamScorecardService.ToCsv(card), $"tide-team-commitments-{card.To:yyyy-MM-dd}-{card.Days}d{stem}.csv");
 }).AsExport(Policies.ReadActions);
+
+// Brief timeliness (Reports > Brief timeliness), ?by=week|month, ?who= one analyst, as CSV: the days the service lets the
+// reader see (an analyst their own, and asking for anyone else's is refused; a manager or administrator anyone's).
+app.MapGet("/reports/timeliness/export.csv", async (string? by, string? who, BriefTimelinessService timeliness, OrgClock clock, CancellationToken ct) =>
+{
+    var report = await timeliness.BuildAsync(BriefTimelinessService.ParseBy(by), who, ct);   // someone else's days: refused, a 403
+    return CsvFile(BriefTimelinessService.ToCsv(report, clock), $"tide-brief-timeliness-{report.To:yyyy-MM-dd}-{(report.By == PeriodKind.Week ? "weeks" : "months")}.csv");
+}).AsExport(Policies.BriefTimeliness, AuditedWhen.Always);
 
 // The articles one trend line (?line=, default all) counted in period ?p=, for writing the report, as CSV. ?subs=true
 // counts sub-techniques separately, as Trends does with it, so a technique line is the one the page showed.
