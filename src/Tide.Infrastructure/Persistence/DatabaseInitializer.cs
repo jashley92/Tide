@@ -316,7 +316,9 @@ public sealed class DatabaseInitializer(
         for (var i = 0; i < roster.Length; i++)
         {
             db.RotationMembers.Add(new RotationMember { UserId = roster[i].Item1, DisplayName = roster[i].Item2, SortOrder = i });
-            if (i > 0) db.Users.Add(new AppUser { Sid = roster[i].Item1, DisplayName = roster[i].Item2, Email = roster[i].Item2.ToLowerInvariant() + "@example.com", LastSeenUtc = now });
+            // Analysts, as they sign in in development, so an action can be given to them (holders work actions).
+            if (i > 0) db.Users.Add(new AppUser { Sid = roster[i].Item1, DisplayName = roster[i].Item2, Email = roster[i].Item2.ToLowerInvariant() + "@example.com",
+                RolesCsv = nameof(AppRole.Analyst), LastSeenUtc = now });
         }
         var monday = Application.Rotation.RotationService.WeekStart(clock.CurrentBriefDate);
         for (var w = 0; w < 8; w++)

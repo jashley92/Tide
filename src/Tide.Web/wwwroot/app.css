@@ -318,11 +318,13 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 
 /* ---- Page parts ---- */
 .tide-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
-.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; }
+/* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
+   widening the page. */
+.tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
-/* Breadcrumbs: "Actions › A-12". */
-.tide-crumbs { margin: 0 0 .25rem; }
+/* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
+.tide-crumbs { margin: 0 0 .25rem; overflow-wrap: anywhere; }
 .tide-crumbs ol { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: .85rem; }
 .tide-crumbs li { display: inline-flex; align-items: center; min-width: 0; }
 .tide-crumbs li + li::before { content: "\203A"; color: var(--tide-text-muted); padding: 0 .5rem; }
@@ -654,6 +656,8 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-edition article:last-child { border-bottom: 0; }
 .tide-edition h3 { font-size: 1.08rem; font-weight: var(--tide-weight-semibold); margin: .3rem 0; }
 .tide-edition .tide-bluf { font-weight: var(--tide-weight-medium); }
+/* An article as an edition carries it: a long unbroken run (a hash list, a blob) wraps rather than widening the page. */
+.tide-edition-article { min-width: 0; overflow-wrap: anywhere; }
 .tide-edition ul { margin: .4rem 0; }
 .tide-edition img { max-width: calc(100% - .4rem); max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
 .tide-withheld { font-size: .86rem; color: var(--tide-text-muted); font-style: italic; }
@@ -1403,6 +1407,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
    primary button and More. */
 .tide-action-head { align-items: flex-start; }
 .tide-action-title { flex: 1 1 32rem; min-width: 0; }
+/* A title of one long unbroken word (a hash, a pasted URL) wraps rather than widening the page. */
+.tide-action-title h1 { overflow-wrap: anywhere; }
 .tide-action-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 /* The due date and how it stands, one badge (SlaBadge WithDate): kept on one line. */
 .tide-action-due { white-space: nowrap; }
@@ -1668,7 +1674,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-tabbar-count.tide-live-tick { animation-name: tide-live-tick-count-colour; }
     .tide-live-pill { animation: none; }
 }
-.tide-triage-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); }
+.tide-triage-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); min-width: 0; overflow-wrap: anywhere; }
 /* The title and, beside it, the icon that opens the source in a new tab. In New and Shortlisted the title is a button
    that opens the promote form; it reads as the title, and underlines on hover as a link would. */
 .tide-triage-head { display: flex; align-items: baseline; gap: var(--tide-space-2); }
@@ -1979,6 +1985,16 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-col-sm { width: 8rem; }
 .tide-col-md { width: 9.5rem; }
 .tide-col-lg { width: 12rem; }
+/* Diagnostics' health checks: a check's detail (a long folder path, say) wraps within the card; narrower, each check is two
+   lines, its name and badge, then the detail across the card, rather than a column crushed to a few letters. */
+.tide-diag-checks td:last-child { overflow-wrap: anywhere; }
+@media (max-width: 899.98px) {
+    .tide-diag-checks, .tide-diag-checks tbody { display: block; }
+    .tide-diag-checks tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--tide-space-2); border-bottom: 1px solid var(--tide-border); }
+    .tide-diag-checks tr:last-child { border-bottom: 0; }
+    .tide-diag-checks td { display: block; width: auto; border-bottom: 0; }
+    .tide-diag-checks td:last-child { grid-column: 1 / -1; padding-top: 0; }
+}
 .tide-col-third { width: 30%; }
 .tide-w-count { width: 7rem; }
 .tide-page-head-main { flex: 1; min-width: 18.75rem; }
@@ -1999,8 +2015,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }
 .tide-empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .35rem; padding: 2rem 1rem; color: var(--tide-text-muted); }
 .tide-empty-state-icon { font-size: 2rem; color: var(--tide-accent); opacity: .8; margin-bottom: .2rem; }
-.tide-empty-state-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); }
-.tide-empty-state-msg { max-width: 32rem; font-size: .92rem; }
+.tide-empty-state-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); max-width: 100%; overflow-wrap: anywhere; }
+.tide-empty-state-msg { max-width: min(32rem, 100%); font-size: .92rem; overflow-wrap: anywhere; }
 .tide-empty-state-actions { margin-top: .6rem; display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
 .tide-empty-state-compact { padding: var(--tide-space-4) var(--tide-space-2); gap: var(--tide-space-1); }
 .tide-empty-state-compact .tide-empty-state-icon { font-size: var(--tide-text-lg); margin-bottom: 0; }
@@ -2308,6 +2324,10 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 @media (max-width: 1000px) {
   .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
   .tide-reading { position: static; max-height: none; order: -1; }
+  /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
+  .tide-reading-head { flex-wrap: wrap; }
+  /* Brought into view after V (triage.js), it stops below the top bar, which sticks. */
+  .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
 }
 @media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
 
@@ -2736,13 +2756,22 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 
 /* ---- Brief chip (BriefChip, in the top bar): when the brief meets and the step it's on, a link to Today ----
-   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps
-   or shrinks, so the top bar stays one row, and the search box matters more than it does: the chip shows only where the
-   search box keeps about 200px beside it. Under 1100px that takes the team's name giving way (only for those who have
-   a chip), and under 900px the chip itself is gone and the name is back. */
-.tide-brief-chip { flex: none; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
+   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps,
+   so the top bar stays one row, and the search box matters more than it does: the chip shows only where the search box
+   keeps 200px beside it, with Go to whole after it. Under 1100px that takes the team's name giving way (only for those
+   who have a chip), and under 900px the chip itself is gone and the name is back. Its wording is longer on a day off
+   ("Brief Mon 10:30 AM · ..."), or with a long step: where that's more than the bar has room for, the chip is cut
+   short (its title and name have the whole wording) rather than crowding the search box or Go to. */
+.tide-brief-chip { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
     border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text-muted);
     font-size: var(--tide-text-sm); white-space: nowrap; text-decoration: none; }
+.tide-brief-chip > .bi, .tide-brief-chip > .tide-live-dot { flex: none; }
+.tide-brief-chip-full, .tide-brief-chip-short { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 900px) {
+    .top-row:has(.tide-brief-chip) .tide-top-search { min-width: 200px; }
+    .top-row:has(.tide-brief-chip) .tide-top-find { min-width: auto; }
+    .top-row:has(.tide-brief-chip) .tide-top-end { flex: 0 1 auto; min-width: 0; }
+}
 .tide-brief-chip:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
 .tide-brief-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-brief-chip.is-live { border-color: var(--tide-accent); background: var(--tide-accent-soft); color: var(--tide-text); }
@@ -2957,13 +2986,23 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kchip:has(.tide-kchip-link:hover) { border-color: var(--tide-accent); }
 .tide-kchip-link:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 3px; }
 /* The hint takes what room is left on the strip's row, cut short with an ellipsis rather than wrapping the row (its
-   title holds it whole); it goes to the next line only below 8rem. */
-.tide-kstrip-hint { flex: 1 1 0; min-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+   title holds it whole); in a narrower window it goes to the next line below 8rem. From 1200px the strip is one row
+   whatever the fonts: the hint gives way entirely, its words hidden once there's too little room for more than a stub. */
+.tide-kstrip-hint { flex: 1 1 0; min-width: 8rem; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-kstrip-hint > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 1200px) {
+    .tide-kstrip-hint { min-width: 0; container-type: inline-size; }
+    @container (max-width: 5rem) { .tide-kstrip-hint > span { visibility: hidden; } }
+}
 .tide-kstrip-more { margin-left: auto; padding: 0; }
 .tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-col-progress { min-width: 7.5rem; }
 /* A card's number at its head's end, small and muted, to quote. */
 .tide-kcard-head .tide-action-num { flex: none; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); }
+/* On a narrow card with wider fonts, once the kind has given way, a badge with an icon (Escalated) gives way to its icon
+   rather than the head spilling out of the card; its title says it whole. The kind shrinks far faster, so it goes first. */
+.tide-kcard-head > .tide-badge:has(> .bi) { min-width: calc(1em + 2 * var(--tide-space-2)); overflow: clip; overflow-clip-margin: content-box; }
+.tide-kcard-head > .text-truncate { flex-shrink: 1000; }
 /* KEV on a card and a row: the design's outlined pill. */
 .tide-kcard .tide-kev, .tide-action-row .tide-kev { display: inline-block; padding: 0 var(--tide-space-1); border: 1px solid currentColor;
     border-radius: var(--tide-radius-pill); line-height: 1.5; }
@@ -3018,7 +3057,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    title in Attach gives way, the dismiss reason narrows, and the pane's text gives way so the bar stays in the pane.
    Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row, one row
    while there's room (below). ---- */
-.tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
+@media (min-width: 1000.02px) {
+    .tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
+}
 .tide-triage-decide { display: grid; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 .tide-triage-why { margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-triage-acts, .tide-triage-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; }
@@ -3043,11 +3084,20 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
        a second row, together. */
     .tide-reading .tide-triage-acts > .tide-triage-main { display: contents; }
     .tide-reading .tide-triage-end { flex: 1 1 0; min-width: min-content; justify-content: flex-end; }
-    /* Attach is a grid of its icon, its verb and the title, the title's column at least 3em: the button's least width
+    /* Attach is a grid of its icon, its verb and the title, the title's column at least 2em: the button's least width
        is its verb and the start of the title. It takes the room the others leave, up to its full width. */
-    .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(3em, 1fr);
+    .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(2em, 1fr);
         flex: 4 1 0; min-width: auto; max-width: max-content; }
     .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { display: none; }
+    /* Last of all, before the row wraps (fonts wider than this machine's), the key hint on a button before the end gives
+       way: its label then its key, the key's column able to close to nothing. Each such button is as wide as its label
+       when the row is laid out, then takes the room back for its key before Attach or the end take any (as the buttons
+       kept it when they didn't give way at all): with room to spare, it's as it was. */
+    .tide-reading :is(.tide-triage-acts, .tide-triage-main) > .btn:not(.btn-primary, .tide-triage-attach):has(> .tide-kbd) {
+        display: inline-grid; grid-auto-flow: column; grid-template-columns: auto minmax(0, max-content); column-gap: .3em; align-items: center;
+        flex: 100 1 0; max-width: max-content; overflow: clip; overflow-clip-margin: content-box; }
+    .tide-reading :is(.tide-triage-acts, .tide-triage-main) > .btn:not(.btn-primary, .tide-triage-attach):has(> .bi):has(> .tide-kbd) {
+        grid-template-columns: auto auto minmax(0, max-content); }
     /* The reason's least width 5rem, so the end goes to a second row only when even that won't fit. */
     .tide-reading .tide-triage-end > select { flex: 1 1 0; width: 5rem; min-width: 5rem; max-width: max-content; }
     /* With the pane beside it, the page is a column the window's height under the top bar, as the board's is: the list
@@ -3326,6 +3376,7 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
             position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         & .tide-actions-views .tide-tabbar-item { padding-left: .45rem; padding-right: .45rem; }
         & .tide-table:has(.tide-action-row) > * > tr > :is(th, td) { padding-left: .4rem; padding-right: .4rem; }
+        & .tide-table:has(.tide-action-row) > thead > tr > th { white-space: normal; }
         & .tide-col-kind { white-space: normal; }
         & .tide-col-progress { min-width: 0; }
     }

@@ -126,10 +126,10 @@ public class MeetingServiceTests : IDisposable
 
         As(Presenter, "Test Analyst", AppRole.Analyst);
         svc.CanRemoveAttendee(rows["Kim from IT"]).Should().BeTrue("anyone added by name, whoever added them");
-        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeFalse("never someone who joined");
+        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeTrue("and anyone who joined: the record is theirs to correct");
         await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);
         await svc.RemoveAttendeeAsync(rows["Old Entry"].Id);
-        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>();
+        await svc.RemoveAttendeeAsync(rows["Olive Owner"].Id);
 
         // This brief's meeting live, and not seated in it: the follower's rules, not the record's.
         _db.Live = new InMeeting(brief, Owner, Owner);
@@ -138,7 +138,7 @@ public class MeetingServiceTests : IDisposable
         await FluentActions.Invoking(() => svc.AddAttendeeAsync(brief, "Pat")).Should().ThrowAsync<ForbiddenException>();
         await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Sam from the SOC"].Id)).Should().ThrowAsync<ForbiddenException>();
 
-        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Olive Owner", "Sam from the SOC");
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Sam from the SOC");
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public class MeetingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AFollower_RemovesOnlyWhomTheyAdded_ThePresenterAnyoneAdded_AndNoOneSomeoneWhoJoined()
+    public async Task AFollower_RemovesOnlyWhomTheyAdded_ThePresenterAnyone_JoinedOrAdded()
     {
         var (brief, _) = await Brief();
         _db.Live = new InMeeting(brief, Presenter);
@@ -180,17 +180,17 @@ public class MeetingServiceTests : IDisposable
         await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Pat from HR"].Id)).Should().ThrowAsync<ForbiddenException>("the presenter's");
         await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>("joined");
 
-        // The presenter: anyone added by name, but not someone who joined.
+        // The presenter: anyone, added by name or joined.
         As(Presenter, "Test Analyst", AppRole.Analyst);
         svc.CanRemoveAttendee(rows["Kim from IT"]).Should().BeTrue();
-        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeFalse();
+        svc.CanRemoveAttendee(rows["Olive Owner"]).Should().BeTrue();
         await svc.RemoveAttendeeAsync(rows["Dana from Legal"].Id);
         await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);
         await svc.RemoveAttendeeAsync(rows["Kim from IT"].Id);   // gone already: nothing to do
-        await FluentActions.Invoking(() => svc.RemoveAttendeeAsync(rows["Olive Owner"].Id)).Should().ThrowAsync<ForbiddenException>("joined");
+        await svc.RemoveAttendeeAsync(rows["Olive Owner"].Id);
 
-        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Olive Owner", "Pat from HR", "Test Analyst");
-        (await AuditedBy("Deleted")).Should().BeEquivalentTo(["Val Viewer", "Test Analyst", "Test Analyst"], "the audit says who removed each");
+        (await Attendees(brief)).Select(a => a.Name).Should().Equal("Pat from HR", "Test Analyst");
+        (await AuditedBy("Deleted")).Should().BeEquivalentTo(["Val Viewer", "Test Analyst", "Test Analyst", "Test Analyst"], "the audit says who removed each");
     }
 
     [Fact]

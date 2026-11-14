@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Actions;
+using Tide.Application.Articles;
 using Tide.Domain.Enums;
 
 namespace Tide.IntegrationTests;
@@ -139,11 +140,13 @@ public class ActionAssigneeRuleTests : IDisposable
         var svc = _db.Actions();
 
         var notOnIt = await svc.QuickAddAsync(article, "Patch the VPN", ActionKind.PatchRemediate, team, null);
-        (await svc.GetAsync(notOnIt))!.Action.AssigneeId.Should().BeNull("the analyst raising it isn't on the team");
+        (await svc.GetAsync(notOnIt.Number))!.Action.AssigneeId.Should().BeNull("the analyst raising it isn't on the team");
+        notOnIt.Yours.Should().BeFalse("the caller is told it was left with the team");
 
         await _db.Teams().AddMemberAsync(team, _db.User.UserId, _db.User.DisplayName);
         var onIt = await svc.QuickAddAsync(article, "Sweep for the C2", ActionKind.IocSweep, team, null);
-        (await svc.GetAsync(onIt))!.Action.AssigneeId.Should().Be(_db.User.UserId);
+        (await svc.GetAsync(onIt.Number))!.Action.AssigneeId.Should().Be(_db.User.UserId);
+        onIt.Yours.Should().BeTrue();
     }
 
     // Whether the actions list offers the reader Take it on the action.
@@ -165,7 +168,8 @@ public class ActionAssigneeRuleTests : IDisposable
         var detail = (await svc.GetAsync(number))!;
         (detail.CanWork, detail.OnTeam).Should().Be((true, false), "an analyst works every team's actions");
         (await ListOffersTake(id)).Should().BeFalse("the list offers Take it only to the team's members");
-        await svc.Invoking(s => s.TakeAsync(id)).Should().ThrowAsync<ArgumentException>().WithMessage("*isn't on the action's team*");
+        await svc.Invoking(s => s.TakeAsync(id)).Should().ThrowAsync<StaleEditException>()
+            .WithMessage($"You're not on Cyber Defense, so you can't take A-{number} on.");
         (await svc.GetAsync(number))!.Action.AssigneeId.Should().BeNull("nothing was taken");
 
         await _db.Teams().AddMemberAsync(team, _db.User.UserId, "Tester On The Team");
@@ -192,7 +196,7 @@ public class ActionAssigneeRuleTests : IDisposable
         (await ListOffersTake(id)).Should().BeFalse();
         var board = await svc.BoardAsync(new ActionFilter());
         board.CanTake(board.Cards.Single(c => c.Id == id)).Should().BeFalse("nor does the board");
-        await svc.Invoking(s => s.TakeAsync(id)).Should().ThrowAsync<ArgumentException>();
+        await svc.Invoking(s => s.TakeAsync(id)).Should().ThrowAsync<StaleEditException>().WithMessage("You're not on Vulnerability Management*");
     }
 
     [Fact]
@@ -208,6 +212,6 @@ public class ActionAssigneeRuleTests : IDisposable
         (await svc.GetAsync(held))!.Action.AssigneeId.Should().Be("dev:outsider", "working it doesn't take it from them");
 
         var other = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Another", TeamId = team })))!.Action.Id;
-        await svc.Invoking(s => s.TakeAsync(other)).Should().ThrowAsync<ArgumentException>();
+        await svc.Invoking(s => s.TakeAsync(other)).Should().ThrowAsync<StaleEditException>().WithMessage("You're not on Cyber Defense*");
     }
 }

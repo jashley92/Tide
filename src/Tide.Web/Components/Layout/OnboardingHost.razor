@@ -17,6 +17,7 @@
 @inject TourService Tour
 @inject TourRequests TourAsked
 @inject TourClaims Claims
+@inject PresenceCircuit Circuit
 @inject GuideStarts Starts
 @inject GuideLinkService GuideLinks
 @inject ToastService Toasts
@@ -28,7 +29,7 @@
 @inject IJSRuntime JS
 @inject ILogger<OnboardingHost> Log
 
-<WhatsNewDialog @ref="WhatsNew" Closed="CheckTipSafelyAsync" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
+<WhatsNewDialog @ref="WhatsNew" TakeTour="TakeTourFromWhatsNew" SeeTheDay="SeeTheWholeDayAsync" />
 
 <div class="visually-hidden" role="status" aria-live="polite">@Announce</div>
 @if (Step is { } step)
@@ -263,7 +264,7 @@ else if (Tip is { } tip)
     // ago and not yet gone, is showing.
     private Task StartAsync(IReadOnlyList<TourStep> steps, Guide? guide, bool first, bool navigate, int at = 0)
     {
-        if (steps.Count == 0 || Current is not null || first && !Claims.TryClaim(CurrentUser.UserId, this)) return Task.CompletedTask;
+        if (steps.Count == 0 || Current is not null || first && !Claims.TryClaim(CurrentUser.UserId, this, Circuit.CircuitId)) return Task.CompletedTask;
         (_firstTour, _guide) = (first, guide);
         Tip = null;
         _tour = steps;

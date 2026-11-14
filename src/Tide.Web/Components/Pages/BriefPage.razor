@@ -341,9 +341,21 @@ else
 
     private int Count(Classification c) => _brief?.Items.Count(i => i.Article?.Classification == c) ?? 0;
 
-    private int ReadyCount => Ordered().Count(i => !Blocked(i.ArticleId));
-    // What "Add article (N available)" counts: articles still to be briefed, not ones already presented.
-    private int Available => _candidates.Count(c => c.Available);
+    /// <summary>
+    /// What "Add article" says its picker offers, as the picker shows it at first: articles still to be briefed
+    /// (<see cref="BriefCandidate.Available"/>), not ones already presented, ready ones and drafts said apart ("(1 ready,
+    /// 2 drafts)"), so the count doesn't seem to contradict Not on a brief yet, which lists ready ones only. Empty with none.
+    /// </summary>
+    internal static string AvailableLabel(IEnumerable<BriefCandidate> candidates)
+    {
+        var offered = candidates.Where(c => c.Available).ToList();
+        var ready = offered.Count(c => c.Status == ArticleStatus.Ready);
+        var drafts = offered.Count - ready;
+        var parts = new List<string>();
+        if (ready > 0) parts.Add($"{ready} ready");
+        if (drafts > 0) parts.Add(Ui.Plural(drafts, "draft"));
+        return parts.Count == 0 ? "" : $" ({string.Join(", ", parts)})";
+    }
 
     private bool Blocked(Guid articleId) => _readiness.GetValueOrDefault(articleId)?.Any(c => c.Blocking) ?? false;
 
@@ -920,7 +932,7 @@ else
     // was recorded as over, if that's another day) or when it meets.
     private IEnumerable<string> MeetingLine()
     {
-        if (_brief is not null) yield return $"Presented by {_brief.AnalystName}";
+        if (_brief is not null) yield return $"Presented by {BriefService.PresentedBy(_brief)}";
         if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
         {
             yield return $"met {Ui.When(Clock, held)}";
@@ -999,11 +1011,11 @@ else
                         @if (_canWrite && _brief.Status != BriefStatus.Sent)
                         {
                             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskAdd">
-                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add article@(Available > 0 ? $" ({Available} available)" : "")
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> @("Add article" + AvailableLabel(_candidates))
                             </button>
                             <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }
-                        @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
+                        @if (_canWrite) { <span class="small tide-muted ms-auto">@BriefSteps.Written(Ordered(), a => Blocked(a.Id)).Said</span> }
                     </div>
                 </section>
                 @TeamNoteCard()

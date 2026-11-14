@@ -36,9 +36,9 @@
                 {
                     <ChangedElsewhere By="@_changedBy" What="team" OnReload="ReloadTheirs" />
                     <div class="row g-2 mb-2">
-                        <div class="col-md-5"><input class="form-control form-control-sm" @bind="_form.Name" aria-label="Team name" /></div>
-                        <div class="col-md-7"><input class="form-control form-control-sm" @bind="_form.Email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
-                        <div class="col-12"><input class="form-control form-control-sm" @bind="_form.Description" placeholder="What the team does (optional)" aria-label="Team description" /></div>
+                        <div class="col-md-5"><input class="form-control form-control-sm" maxlength="100" @bind="_form.Name" aria-label="Team name" /></div>
+                        <div class="col-md-7"><input class="form-control form-control-sm" maxlength="256" @bind="_form.Email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
+                        <div class="col-12"><input class="form-control form-control-sm" maxlength="500" @bind="_form.Description" placeholder="What the team does (optional)" aria-label="Team description" /></div>
                         <div class="col-12"><EscalationContactFields Id="@($"esc-contact-{t.Id}")" @bind-Name="_form.EscalationName" @bind-Email="_form.EscalationEmail" /></div>
                         <div class="col-12"><ActiveLimitFields Id="@($"limit-{t.Id}")" @bind-Limit="_form.ActiveLimit" @bind-Mode="_form.LimitMode" /></div>
                     </div>
@@ -98,8 +98,8 @@
         <div class="tide-card" data-submit-scope>
             <h2>New team</h2>
             <div class="row g-2">
-                <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
-                <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
+                <div class="col-md-5"><input class="form-control form-control-sm" maxlength="100" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
+                <div class="col-md-5"><input class="form-control form-control-sm" maxlength="256" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
                 <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="() => AddTeam()">Add team</button></div>
             </div>
         </div>
@@ -216,7 +216,7 @@
                 </div>
                 <div class="col-12">
                     <label class="tide-field-label" for="rem-bnr-to">Told when there's no brief yet</label>
-                    <textarea id="rem-bnr-to" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="2" @bind="_rem.Recipients" placeholder="cti-lead@example.org" aria-describedby="rem-bnr-to-help"></textarea>
+                    <textarea id="rem-bnr-to" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" maxlength="4000" rows="2" @bind="_rem.Recipients" placeholder="cti-lead@example.org" aria-describedby="rem-bnr-to-help"></textarea>
                     <div class="form-text" id="rem-bnr-to-help">The team lead or a team mailbox, when the day has no brief or its analyst has no address. Separate addresses with commas or lines.</div>
                 </div>
                 <div class="col-sm-6">

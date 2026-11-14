@@ -77,7 +77,7 @@ at these volumes; running the same calls against a populated SQL Server database
 | Any other file on an action or comment | 25 MB (`Files:MaxEvidenceMB`) | `FileStoreOptions`, `ActionFileService` |
 | Files per action, per upload, per comment | 100, 10, 10 | `ActionFile.MaxPerAction`, `MaxPerUpload`; `ActionCommentFile.MaxPerComment` (`src/Tide.Domain/Entities/Actions.cs`) |
 | Screenshots and bullets per article | 10 and 30 | `Article.MaxScreenshots`, `MaxBullets` |
-| A message from the browser over the circuit | 256 KB | `MaximumReceiveMessageSize` in `Program.cs` (SignalR's default is 32 KB). Files stream separately. |
+| A message from the browser over the circuit | 1 MB | `MaximumReceiveMessageSize` in `Program.cs` (SignalR's default is 32 KB): the longest text box (200,000 characters) at up to 3 bytes a character. Files stream separately. |
 | A feed or page fetched | 8,192 KB (`Intake:MaxResponseKB`) | `IntakeOptions` |
 | Items read from one feed | 200 | `FeedParsing.MaxItems` |
 | Metric CSV | 1 MB and 10,000 rows; 50 problems listed | `MetricCsv.MaxBytes`, `MaxRows`; `MetricImportService.MaxProblems` |

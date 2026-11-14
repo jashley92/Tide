@@ -39,6 +39,11 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     public const int MaxBullet = 2000;
     public const int MaxLongText = 8000;
 
+    /// <summary>The most a paste box takes: text searched for indicators, lines turned into bullets, an assistant's answer.
+    /// As long as the longest query TIDE writes (HuntQuery.MaxText): a vendor's IOC appendix of thousands of lines fits.
+    /// Program.cs sizes what the browser may send in one message for it.</summary>
+    public const int MaxPaste = 200_000;
+
     public async Task<IReadOnlyList<ArticleSummary>> ListAsync(string? search = null, ArticleStatus? status = null,
         int take = 200, CancellationToken ct = default)
     {
@@ -56,7 +61,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var values = await Matching(db, null, null).Where(a => a.Tlp <= ceiling).OrderByDescending(a => a.CreatedAtUtc).Take(newest)
-            .Select(a => a.Cves.Select(c => c.CveId).FirstOrDefault() ?? a.Indicators.Select(i => i.Value).FirstOrDefault())
+            // First as the article lists them (its editor's order), so the same one is picked every time.
+            .Select(a => a.Cves.OrderBy(c => c.CveId).Select(c => c.CveId).FirstOrDefault()
+                         ?? a.Indicators.OrderBy(i => i.Type).ThenBy(i => i.Value).Select(i => i.Value).FirstOrDefault())
             .ToListAsync(ct);
         return values.FirstOrDefault(v => v is not null);
     }
@@ -576,6 +583,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <paramref name="haveCves"/> (an article's, or an action's on its Hunt queries card).</summary>
     public static IocExtractor.Found Suggest(string? text, IEnumerable<IndicatorForm> have, IEnumerable<string> haveCves)
     {
+        // Refused whole rather than searched in part, so "nothing new found" never stands for text that wasn't read.
+        if (text?.Length > MaxPaste) throw new ArgumentException($"Paste up to {MaxPaste:N0} characters at a time, then the rest.");
         var found = IocExtractor.Extract(text);
         var had = have.Select(i => $"{(int)i.Type}|{i.Value}").ToHashSet(StringComparer.OrdinalIgnoreCase);
         var hadCves = haveCves.ToHashSet(StringComparer.OrdinalIgnoreCase);

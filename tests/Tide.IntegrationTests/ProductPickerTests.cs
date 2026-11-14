@@ -217,16 +217,18 @@ public class ProductPickerRenderTests(TideApp app) : IClassFixture<TideApp>
         await Type(r, "werun-r1 puls");
         var html = await r.Html();
         html.Should().Contain("role=\"listbox\"").And.Contain("werun-r1 Connect Secure<span class=\"fw-normal tide-muted\"> (also werun-r1 Pulse)</span>")
-            .And.Contain("Add “werun-r1 puls” to Our stack").And.Contain("aria-activedescendant=\"stack-pick-" + article + "-opt-0\"");
+            .And.Contain("Add “werun-r1 puls” to Our stack").And.NotContain("aria-activedescendant", "nothing is highlighted until an arrow moves to it");
 
         await r.Click(c => c.Pick(c.Listed[0]));
         r.Component._text.Should().BeNull("the box clears for another");
         r.Component.Listed.Should().NotContain(p => p.Id == ids["werun-r1 Connect Secure"], "a tagged product isn't offered again");
         (await r.Html()).Should().Contain("Untag werun-r1 Connect Secure").And.Contain("Mention in Why it matters");
 
+        // Down to the first, down to Add, and back up to the first: Enter tags it.
         await Type(r, "werun-r1");
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowDown" }));
         r.Component._combo!._reveal.Should().BeTrue("the highlighted option is scrolled into view once drawn");
+        await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowDown" }));
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowUp" }));
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "Enter" }));
         (await Tagged(article)).Should().BeEquivalentTo(["werun-r1 Connect Secure", "werun-r1 Portal"]);

@@ -22,7 +22,7 @@ namespace Tide.IntegrationTests;
 /// card opened over or beside a slide (an action's, a product's, the indicators'). Every component present mode can
 /// draw that injects a service that saves is accounted for here.
 /// </summary>
-public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp>
+public partial class RehearsalReadOnlyTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 
@@ -38,7 +38,7 @@ public partial class RehearsalReadOnlyTests(TideApp app) : IClassFixture<TideApp
         var brief = await sp.GetRequiredService<BriefService>().GetOrStartAsync(day);
         var article = await sp.GetRequiredService<ArticleService>().CreateAsync($"Rehearsed article {daysBack}", "Vendor", null, TlpLevel.Clear);
         await sp.GetRequiredService<BriefService>().AddArticleAsync(brief.Id, article);
-        var number = await sp.GetRequiredService<ActionService>().QuickAddAsync(article, $"Rehearsed sweep {daysBack}", ActionKind.IocSweep, team, null, day);
+        var number = (await sp.GetRequiredService<ActionService>().QuickAddAsync(article, $"Rehearsed sweep {daysBack}", ActionKind.IocSweep, team, null, day)).Number;
         return (day, number);
     }
 

@@ -131,6 +131,10 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await Open(a);
         await r.Click(async p => { await p.EditComment(comment); p.CommentEditDraft = "My second go"; });
 
+        // The save lands before the page hears Robin's change through its live feed (the next test is the one where it
+        // has): the feed is closed, so on a loaded machine its pause can't run out between Robin's save and this one.
+        await r.Renderer.Dispatcher.InvokeAsync(() => ((IDisposable)typeof(ActionPage)
+            .GetField("_live", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r.Component)!).Dispose());
         await As((actions, _) => actions.EditCommentAsync(comment.Id, "Robin's fix"), Colleague);
         await r.Click(p => p.SaveComment(comment));
 

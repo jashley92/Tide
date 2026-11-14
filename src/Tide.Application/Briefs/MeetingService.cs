@@ -104,13 +104,18 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Takes off someone added by name (<see cref="CanRemoveAttendee"/>). One already gone is left so.</summary>
+    /// <summary>Takes someone off who attended (<see cref="CanRemoveAttendee"/>). One already gone is left so, for someone
+    /// who could take anyone off; anyone else is refused as they would be for one still there.</summary>
     public async Task RemoveAttendeeAsync(Guid attendeeId, CancellationToken ct = default)
     {
-        if (!MayAttend && !user.Has(Permission.PresentBriefs)) throw new ForbiddenException("You can't change who attended a meeting.");
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a) return;
-        if (!CanRemoveAttendee(a)) throw new ForbiddenException("Only whoever added a name, or the presenter, can take it off.");
+        const string refused = "Only the presenter can take someone off who attended, or whoever added a name, that name.";
+        if (await db.MeetingAttendees.FirstOrDefaultAsync(a => a.Id == attendeeId, ct) is not { } a)
+        {
+            if (!MayAttend && !user.Has(Permission.PresentBriefs)) throw new ForbiddenException(refused);
+            return;
+        }
+        if (!CanRemoveAttendee(a)) throw new ForbiddenException(refused);
         db.MeetingAttendees.Remove(a);
         await db.SaveChangesAsync(ct);
     }
@@ -120,11 +125,12 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// (<see cref="CorrectsRecord"/>). A rehearsal has no seat, and its page writes nothing.</summary>
     public bool CanAddAttendees(Guid briefId) => SeatAt(briefId) is not null || CorrectsRecord(briefId);
 
-    /// <summary>Whether I can take <paramref name="row"/> off who attended: someone added by name (never someone who
-    /// joined), that I added, from a seat in the live meeting; or any such while I present it, or correct the record.</summary>
+    /// <summary>Whether I can take <paramref name="row"/> off who attended: anyone, joined or added by name, while I
+    /// present the live meeting or correct the record (<see cref="CorrectsRecord"/>); following it, only a name I added.
+    /// A rehearsal has no seat, and its page writes nothing.</summary>
     public bool CanRemoveAttendee(MeetingAttendee row) =>
-        row.UserId.Length == 0
-        && (CorrectsRecord(row.BriefId) || SeatAt(row.BriefId) is { } seat && (seat.Presenting || row.AddedById == user.UserId));
+        CorrectsRecord(row.BriefId)
+        || SeatAt(row.BriefId) is { } seat && (seat.Presenting || row.UserId.Length == 0 && row.AddedById == user.UserId);
 
     // Whoever presents, with no meeting of the brief live (getting ready, or after it): the record is theirs to correct,
     // as it was before anyone following could add to it. While it's live, the meeting's own rules hold.

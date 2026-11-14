@@ -89,6 +89,8 @@ else
                     <ActionStatusBadge Status="a.Status" />
                 }
                 <PriorityBadge Priority="a.Priority" />
+                @* The marking of the article it was raised from, AMBER and above, so the header says so without the rail. *@
+                <SourceTlpBadge Level="a.Article?.Tlp" />
                 @* Its due date and how it stands, said together ("Due Thu Nov 12 · due soon"); then what kind of work it is. *@
                 <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" Date="SlaDate.Before" Class="tide-action-due" />
                 <Badge Class="tide-action-head-kind">@ActionService.KindName(a.Kind)</Badge>
@@ -497,7 +499,7 @@ else
         }
         else _loaded = false;
         if (adopted && current) return;
-        _teams = await TeamSvc.ListAsync(includeRetired: true);
+        _teams = await TeamSvc.ListAsync(includeRetired: true, holdersOnly: true);
         // A new action's form is kept as the prerender left it: built again, the editor would start over in front of them.
         if (Number is null)
         {
@@ -828,13 +830,15 @@ else
         if (_detail is not null && ((_editing is not null && _detail.Action.EditVersion != _editing.EditVersion) || (_prompting && _detail.Action.Status != status)))
             _changedBy = who;
         else if (editing is not null && _editingComment is null)
-            Toasts.Show($"{who} deleted the comment you were editing.");
+            Toasts.Tell($"{who} deleted the comment you were editing.");
         else if (edited is not null && edited.EditVersion != _commentEditVersion)
         {
             ShowTheirs(edited);
-            Toasts.Show($"{who} changed the comment you're editing. Their text is shown above yours.");
+            Toasts.Tell($"{who} changed the comment you're editing. Their text is shown above yours.");
         }
-        else Toasts.Show($"{who} updated this action.");
+        // Told, not confirmed: news of a colleague's change leaves a refusal of this person's own attempt on screen (an
+        // add to the action the colleague closed meanwhile).
+        else Toasts.Tell($"{who} updated this action.");
         StateHasChanged();
     }
 

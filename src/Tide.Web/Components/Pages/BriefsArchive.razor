@@ -19,7 +19,7 @@
         <Empty><EmptyState Icon="bi-archive" Title="No briefs yet" /></Empty>
         <RowTemplate Context="r">
             <td><a href="@Ui.BriefUrl(r.BriefDate)">@Ui.Day(r.BriefDate)</a></td>
-            <td>@r.AnalystName</td>
+            <td>@r.PresentedBy</td>
             <td class="tide-table-num">@r.Articles</td>
             <td class="tide-table-num">@r.Threats</td>
             <td>
@@ -42,7 +42,7 @@
     private IReadOnlyList<TableColumn<BriefSummary>> Columns => _columns ??=
     [
         new("day", "Day") { SortBy = r => r.BriefDate, DescendingFirst = true, FilterBy = r => Ui.Day(r.BriefDate) + " " + Ui.IsoDay(r.BriefDate) },
-        new("presenter", "Presented by") { SortBy = r => r.AnalystName, FilterBy = r => r.AnalystName },
+        new("presenter", "Presented by") { SortBy = r => r.PresentedBy, FilterBy = r => r.PresentedBy },
         new("articles", "Articles") { SortBy = r => r.Articles, DescendingFirst = true, Class = "tide-table-num" },
         new("threats", "Threats") { SortBy = r => r.Threats, DescendingFirst = true, Class = "tide-table-num" },
         new("status", "Status") { SortBy = r => r.Status, FilterBy = r => r.Status + " " + Label(r) + (NotSent(r) ? " " + r.NotSentReason : "") },

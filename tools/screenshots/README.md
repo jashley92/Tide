@@ -137,6 +137,10 @@ check:
 | `Demo:SlideFiller=true` | A slide with a dozen indicators and CVEs, a long hash and a long URL, and an opening note carried over. |
 | `Demo:StaleFeeds=true` | Three enabled feeds on loopback addresses that are never fetched, last pulled the day before, so Today says the feeds aren't pulled (with `Intake:Enabled=true` and `Intake:PulledBy=00:00`). |
 | `Org:ActionBesideSlide=true` | A meeting's action beside the slide; only the `present-beside` pages open one. |
+| `Demo:WorkingDay=true` | On a weekend the app's clock is moved on to Monday, the time of day kept (`DemoWorkingDayClock`), so today's brief is today's and present mode's pages can start its meeting (a meeting isn't held before its brief's day). On a working day it changes nothing. The top bar is checked with a day off's brief chip as well (`dayOffChip`), whatever the day. |
+
+A setup that can't be done (a page that won't load, a meeting that won't start) fails that page at once, with why, and
+its other widths aren't tried: they would only wait out the same timeouts.
 
 `ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages, in order, on
 its own fresh demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after

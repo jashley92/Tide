@@ -461,10 +461,13 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
         // The limiter has no configuration seam (its numbers are literals in Program.cs), and its bucket refills on a
         // timer, so under a loaded run some requests past the 300th get through again. What's provable without a seam:
         // the first 250 are always answered, a 429 arrives within a bounded headroom, and another user is unaffected.
+        // Asked 50 at a time, in order: one at a time, a loaded machine answered about as slowly as the bucket refills,
+        // so it took minutes to run dry, or might not within the headroom.
         var client = app.CreateClient();
         var statuses = new List<HttpStatusCode>();
         while (statuses.Count < 1500 && !statuses.Contains(HttpStatusCode.TooManyRequests))
-            statuses.Add((await client.GetAsync($"/files/{Guid.Empty}/inline?as=Rate%20Limit%20Probe")).StatusCode);
+            statuses.AddRange((await Task.WhenAll(Enumerable.Range(0, 50)
+                .Select(_ => client.GetAsync($"/files/{Guid.Empty}/inline?as=Rate%20Limit%20Probe")))).Select(r => r.StatusCode));
         statuses.Take(250).Should().AllBeEquivalentTo(HttpStatusCode.NotFound, "the first requests are answered");
         statuses.Should().Contain(HttpStatusCode.TooManyRequests, "the bucket holds 300 a minute and runs dry within the headroom");
         statuses.IndexOf(HttpStatusCode.TooManyRequests).Should().BeGreaterThanOrEqualTo(250);
@@ -730,8 +733,8 @@ public sealed class ServiceWorld : IDisposable
         await using (var ctx = db.Context())
         {
             ctx.Users.AddRange(
-                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", LastSeenUtc = DateTimeOffset.UtcNow },
-                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", LastSeenUtc = DateTimeOffset.UtcNow });
+                new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow },
+                new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow });
             await ctx.SaveChangesAsync();
         }
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
@@ -892,7 +895,7 @@ public sealed class ServiceWorld : IDisposable
             ("Intake.Attach", () => db.Intake().AttachAsync(FeedItem, Article)),
             ("Cves.EnrichNow", () => db.Cves().EnrichNowAsync()),
             ("Stories.Create", () => db.Stories().CreateAsync("x", null)),
-            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active)),
+            ("Stories.Update", () => db.Stories().UpdateAsync(Story, "x", null, StoryStatus.Active, Guid.Empty)),
             ("Stories.Link", () => db.Stories().LinkAsync(Article, Story)),
             ("Stories.Delete", () => db.Stories().DeleteAsync(Story)),
             ("Rotation.AddMember", () => db.Rotation().AddMemberAsync("eve", "Eve")),

@@ -106,6 +106,8 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTimeOffset _askedAt = DateTimeOffset.MinValue;
     private volatile LeaseStatus _status = LeaseStatus.NotChecked;
+    // Whether the last heartbeat failed, so a failing one is warned of once until it works again (under the gate).
+    private bool _heartbeatFailing;
 
     /// <summary>This process's id on the lease: the machine, the process id, and a value of its own (a recycled process
     /// can be given the same id).</summary>
@@ -160,8 +162,30 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     {
         await using var scope = scopes.CreateAsyncScope();
         var dbs = scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>();
-        var others = await HeartbeatAsync(dbs, now, ct);
-        return await LeaseAsync(dbs, before, now, ct) with { Self = Holder, Others = others };
+        var lease = await LeaseAsync(dbs, before, now, ct);
+        return lease with { Self = Holder, Others = await TryHeartbeatAsync(dbs, before.Others, now, ct) };
+    }
+
+    /// <summary>The heartbeat, best-effort: the lease is what runs the jobs, so a heartbeat that fails (a deadlock on its
+    /// table, the table missing) never stops them. The other processes last seen are kept meanwhile, and it's warned of
+    /// once until it works again.</summary>
+    private async Task<IReadOnlyList<string>> TryHeartbeatAsync(IAppDbContextFactory dbs, IReadOnlyList<string> lastSeen, DateTimeOffset now,
+        CancellationToken ct)
+    {
+        try
+        {
+            var others = await HeartbeatAsync(dbs, now, ct);
+            if (_heartbeatFailing) log.LogInformation("This process's heartbeat is written again.");
+            _heartbeatFailing = false;
+            return others;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            if (!_heartbeatFailing)
+                log.LogWarning(ex, "Couldn't write this process's heartbeat; the background jobs' lease is kept, and other processes are as last seen until it can.");
+            _heartbeatFailing = true;
+            return lastSeen;
+        }
     }
 
     /// <summary>Writes this process's heartbeat, deletes the lapsed ones, and says which other processes are running: those

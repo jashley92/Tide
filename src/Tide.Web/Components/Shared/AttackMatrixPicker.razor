@@ -18,7 +18,7 @@
         <div class="tide-atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
             @* Bound (not value= with @oninput) so a render never sends older text over newer keystrokes; see OnFilter. *@
-            <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by id or name: T1566, phishing"
+            <input @ref="_filterBox" class="form-control form-control-sm" maxlength="200" placeholder="Filter by id or name: T1566, phishing"
                    @bind:get="_text" @bind:set="OnFilter" @bind:event="oninput" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
             @if (_text.Length > 0)
             {

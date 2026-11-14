@@ -1353,6 +1353,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("PresentedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<DateTimeOffset?>("SharePointPostedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3315,6 +3319,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");

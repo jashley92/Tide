@@ -200,6 +200,7 @@ public static class HistoryFormatter
         [nameof(Article.AuthorName)] = "Author",
         [nameof(Brief.BriefDate)] = "Date",
         [nameof(Brief.AnalystName)] = "Presenter",
+        [nameof(Brief.PresentedByName)] = "Presented by",
         [nameof(Brief.Intro)] = "Title slide line",
         [nameof(Brief.IntroTlp)] = "Title slide line marking",
         [nameof(Brief.TeamNote)] = "Team opening note",

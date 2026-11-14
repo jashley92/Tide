@@ -78,6 +78,17 @@ const widerThan = (selector, px) => ({
   }, [selector, px]),
 });
 
+/** Every shown match of `selector` is at least `px` wide: a column of text that stays readable rather than crushed to a
+ *  few letters a line. */
+const everyAtLeast = (selector, px) => ({
+  name: `each at least ${px}px wide: ${selector}`,
+  check: page => page.$$eval(selector, (els, [selector, px]) => {
+    const widths = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0).map(r => Math.round(r.width));
+    if (!widths.length) return [`nothing shown matches ${selector}`];
+    return widths.flatMap((w, i) => w >= px ? [] : [`${selector} #${i + 1} is ${w}px wide, under ${px}px`]);
+  }, [selector, px]),
+});
+
 /** While a match of `beside` is shown, the first match of `selector` is at least `px` wide: what `beside` adds to a
  *  row mustn't squeeze what matters more (the brief chip and the search box). Holds when `beside` isn't shown. */
 const roomBeside = (selector, px, beside) => ({
@@ -151,7 +162,7 @@ const lanesTallEnough = {
   check: page => page.evaluate(() => {
     const lanes = [...document.querySelectorAll('.tide-board .tide-kcol-cards')].filter(l => l.getClientRects().length);
     if (!lanes.length) return ['no lanes shown'];
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
     return lanes.flatMap(l => l.clientHeight >= 8 * rem - 1 ? []
       : [`the ${l.closest('.tide-kcol')?.dataset.status} lane shows ${l.clientHeight}px of its cards`]);
   }),
@@ -351,7 +362,7 @@ const kevPill = selector => ({
     const shown = els.filter(e => e.getBoundingClientRect().height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
     const cs = getComputedStyle(shown[0]);
-    return parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
+    return Number.parseFloat(cs.borderTopWidth) > 0 && Number.parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
   }, selector),
 });
 
@@ -598,7 +609,7 @@ const oneLine = (selector, most = 1) => ({
   check: page => page.$$eval(selector, (els, [selector, most]) => els.flatMap((el, i) => {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return [];
-    const s = getComputedStyle(el), line = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+    const s = getComputedStyle(el), line = Number.parseFloat(s.lineHeight) || Number.parseFloat(s.fontSize) * 1.5;
     return r.height < line * (most + .5) ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
   }), [selector, most]),
 });
@@ -608,7 +619,7 @@ const flat = selector => ({
   name: `flat: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
     const s = getComputedStyle(el);
-    const box = ['Left', 'Right', 'Bottom'].some(side => parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
+    const box = ['Left', 'Right', 'Bottom'].some(side => Number.parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
     return el.getBoundingClientRect().height > 0 && box ? [`${selector} #${i + 1} is drawn as a card (border or background)`] : [];
   }), selector),
 });
@@ -643,8 +654,8 @@ const ringOnFocus = selector => ({
         const s = getComputedStyle(e);
         // A shadow counts when it's drawn: a colour that isn't transparent, and a spread.
         const shadow = /^(rgba?\([^)]*\)) [\d.]+px [\d.]+px [\d.]+px ([\d.]+)px/.exec(s.boxShadow);
-        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0)
-          || (!!shadow && parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
+        return (s.outlineStyle !== 'none' && Number.parseFloat(s.outlineWidth) > 0)
+          || (!!shadow && Number.parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
       });
       if (!ring) found.push(`${selector}: no focus ring when focused from the keyboard`);
     }
@@ -865,8 +876,15 @@ const onboardingAs = (how, people, ...keys) => async page => {
 /** Setup: What's new over Today, as someone who used TIDE before. */
 const whatsNewAs = (people, ...keys) => onboardingAs('returning', people, ...keys);
 
-/** Setup: as whatsNewAs, with What's new closed (Escape), so Today's tip shows; then `keys`. */
-const tipAs = (people, ...keys) => whatsNewAs(people, 'Escape', ...keys);
+/** Setup: as whatsNewAs, with What's new closed (Escape) and Today opened again, so its tip shows (a tip waits for the
+ *  next page after What's new closes); then `keys`; wider letters. */
+const tipAs = (people, ...keys) => async page => {
+  await whatsNewAs(people, 'Escape')(page);
+  await page.reload({ waitUntil: 'load' });
+  await idle(page);
+  for (const key of keys) { await page.keyboard.press(key); await idle(page); }
+  await wideFont(page);
+};
 
 /** Setup: a first-ever sign-in, so the tour opens on Today at its first step; then `keys`. */
 const tourAs = (people, ...keys) => onboardingAs('on', people, ...keys);
@@ -996,6 +1014,25 @@ const longTicket = async page => {
       icon.after(' ', ticket());
     });
     document.querySelectorAll('.tide-action-row td[class="small"] > div.tide-muted').forEach(cell => cell.replaceChildren(ticket()));
+  });
+};
+
+/** Setup: the action's title made the longest the field takes (300 characters) and one word, as a pasted hash or
+ *  address is, with wider letters. */
+const longActionTitle = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const h1 = document.querySelector('.tide-action-title h1');
+    h1.lastChild.textContent = ' ' + 'a3f9c2e17b'.repeat(30);
+  });
+};
+
+/** Setup: a health check's detail made a server's long folder path, one word to the browser, with wider letters. */
+const longCheckDetail = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const cell = document.querySelector('.tide-diag-checks tr:first-child td:last-child');
+    cell.textContent = 'Writes to D:\\inetpub\\tide\\App_Data\\pickup\\' + 'OutgoingMailFolder\\'.repeat(6) + 'tide.eml';
   });
 };
 
@@ -1324,9 +1361,44 @@ const railControlsUnscrolled = {
 /** This page starts today's meeting, or takes it up again (the dev analyst presented it last), and waits for it. */
 const startOrTakeUp = async p => {
   const button = p.getByRole('button', { name: 'Start the meeting' });
-  if (await button.count()) await button.click();
-  await p.locator('.tide-present-people').waitFor();
+  if (await button.count()) {
+    // Disabled before the brief's day (the demo's clock is a working day's, Demo:WorkingDay, so this shouldn't be):
+    // said at once, rather than waiting out a click that can't happen.
+    if (await button.isDisabled()) {
+      const why = await p.locator('#present-start-when').textContent({ timeout: 1000 }).catch(() => null);
+      throw new Error(`today's meeting can't be started${why ? `: ${why}` : ''}`);
+    }
+    await button.click();
+  }
+  await p.locator('.tide-present-people').waitFor({ timeout: 15_000 }).catch(async () => {
+    const toast = await p.locator('.tide-toast').first().textContent({ timeout: 1000 }).catch(() => null);
+    throw new Error(`the meeting didn't go live within 15s${toast ? `: ${toast.trim()}` : ''}`);
+  });
 };
+
+/**
+ * Setup: the top bar's brief chip worded as on a day off, when Today shows the next working day's brief and the chip
+ * puts the day before the time ("Brief Mon 10:30 AM · step 3 of 5 · Order"). The narrow chip gets the day before its
+ * time too ("Mon 10:30 AM · 3/5"), longer than BriefChipView makes it ("Mon · 3/5"), so the bar is checked with the
+ * chip at its longest. The demo's clock is always a working day's (Demo:WorkingDay): without this a run would see only
+ * a working day's wording.
+ */
+const dayOffChip = async page => {
+  await page.evaluate(() => {
+    for (const text of document.querySelectorAll('.tide-brief-chip-full, .tide-brief-chip-short'))
+      text.textContent = text.textContent.replace(/^(Brief )?(\d{1,2}:\d{2} [AP]M)/, '$1Mon $2');
+  });
+};
+
+/** The top bar: one row from a narrow window up, nothing pushed out of its group (the Go to button under the chip), and
+ *  the search box never squeezed for the chip: the chip is in view from 900px, and wherever it shows the search box keeps
+ *  200px. On a phone nothing pushes the page sideways. */
+const topBarRules = [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
+  [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')];
+
+/** The top bar on Today, wider letters: each control in its own room, whatever the width. */
+const topBarTodayRules = [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
+  oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')];
 
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
@@ -1904,7 +1976,7 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
   return rows.flatMap(r => [...r.children].flatMap((cell, i) => {
     const box = cell.getBoundingClientRect();
     if (box.width === 0) return [];
-    const start = box.left + parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
+    const start = box.left + Number.parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
     return start >= px ? [] : [`cell ${i + 1}'s text starts ${Math.round(start)}px from the row's edge, under its accent`];
   }));
 }, [row, px]);
@@ -2138,16 +2210,32 @@ const railSelectsWhole = holds('the rail\'s lists show their longest choice whol
     return needs > has + 1 ? [`${el.getAttribute('aria-label')}: ${Math.round(has)}px wide, its longest choice needs ${Math.round(needs)}px`] : [];
   }));
 
-/** While the rail is open over the slide, the slide's keys aren't heard: an arrow doesn't move the slide. */
-const slideKeysHeld = {
-  name: 'the slide stays put while the rail is open over it',
+/** While the rail is open over the slide, the slide's own keys still work, as its D hint says: → moves the slide under
+ *  it, and focus stays in the rail. Typed in the rail's note, the same key moves nothing. Last: it moves the slide (and
+ *  back). */
+const slideKeysUnderRail = {
+  name: 'the slide\'s keys work while the rail is open over it, and focus stays in the rail',
   check: async page => {
-    const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    await page.evaluate(() => document.activeElement?.blur());
+    const key = () => page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    const before = await key();
+    const out = [];
+    const note = page.locator('#present-rail textarea').first();
+    if (await note.count()) {
+      await note.focus();
+      await page.keyboard.press('ArrowRight');
+      await idle(page);
+      if (await key() !== before) out.push('an arrow typed in the rail\'s note moved the slide');
+    }
+    await page.locator('#present-rail').focus();
     await page.keyboard.press('ArrowRight');
     await idle(page);
-    const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
-    return before === after ? [] : [`the slide moved from ${before} to ${after}`];
+    const after = await key();
+    if (after === before) out.push(`→ with the rail open over it didn't move the slide from ${before}`);
+    if (!(await page.evaluate(() => !!document.activeElement?.closest('#present-rail')))) out.push('focus left the rail');
+    if (!(await page.locator('#present-rail[aria-modal="true"]').count())) out.push('the rail closed');
+    await page.keyboard.press('ArrowLeft');
+    await idle(page);
+    return out;
   },
 };
 
@@ -2180,7 +2268,7 @@ const titleTakesRoom = holds('the title is cut only when there\'s no room', () =
   if (!title || !people) return ['no title or people in the top bar'];
   if (title.scrollWidth <= title.clientWidth + 1) return [];
   const kids = [...people.children].filter(e => e.getBoundingClientRect().width > 0);
-  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
+  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + Number.parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
   const spare = people.getBoundingClientRect().width - used;
   return spare <= 2 ? [] : [`the title is cut by ${title.scrollWidth - title.clientWidth}px while who is here has ${Math.round(spare)}px to spare`];
 });
@@ -2207,7 +2295,7 @@ const shownCount = (selector, n) => holds(`${n} shown: ${selector}`, ([selector,
 const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
   const body = document.querySelector('[data-slide-body]');
   if (!body) return ['no slide body'];
-  const fit = parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
+  const fit = Number.parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
   const over = body.scrollHeight - body.clientHeight;
   if (fit < 0.799) return [`the slide is shrunk to ${fit}, below 80%`];
   return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
@@ -2321,7 +2409,7 @@ const besideGeometry = beside => {
   const range = body ? body.scrollHeight - body.clientHeight : 0;
   return {
     slide: slide && Math.round(slide.width), cardLeft: card && Math.round(card.left), card: card && Math.round(card.width),
-    fit: body ? parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1') : null,
+    fit: body ? Number.parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1') : null,
     // A few pixels of range is the fit's rounding (present.js stops within half a percent), not a slide that scrolls.
     scrolls: range > 8, at: range > 8 ? body.scrollTop / range : 0,
   };
@@ -2411,7 +2499,7 @@ const matchesPresenter = {
 /** Each of the action's facts beside the slide has room for its words (Due, Assignee, Team...): none narrower than 7em. */
 const besideFactsRoomy = holds('the action facts beside the slide have room', beside =>
   [...document.querySelectorAll(`${beside} .tide-fact`)].flatMap((el, i) => {
-    const w = el.getBoundingClientRect().width, em = parseFloat(getComputedStyle(el).fontSize);
+    const w = el.getBoundingClientRect().width, em = Number.parseFloat(getComputedStyle(el).fontSize);
     return w > 0 && w < 7 * em ? [`fact #${i + 1} ("${el.querySelector('dt')?.textContent}") is ${Math.round(w)}px wide`] : [];
   }), BESIDE);
 
@@ -2579,10 +2667,10 @@ const weRunBesideTheCves = holds('the We run chip is on the CVEs\' line where th
     // What ends the CVEs' line: the rightmost of what comes before the flags on it.
     const before = kids.slice(0, kids.indexOf(box)).map(e => e.getBoundingClientRect())
       .filter(r => r.height > 0 && r.top < cve.bottom && r.bottom > cve.top);
-    const room = meta.getBoundingClientRect().right - Math.max(...before.map(r => r.right)) - (parseFloat(getComputedStyle(meta).columnGap) || 0);
+    const room = meta.getBoundingClientRect().right - Math.max(...before.map(r => r.right)) - (Number.parseFloat(getComputedStyle(meta).columnGap) || 0);
     // The chips' own width (with the gaps between them), not their box's, which may hold more.
     const chips = [...box.querySelectorAll('.tide-werun-chip')];
-    const need = chips.reduce((w, c) => w + c.getBoundingClientRect().width, 0) + (chips.length - 1) * (parseFloat(getComputedStyle(box).columnGap) || 0);
+    const need = chips.reduce((w, c) => w + c.getBoundingClientRect().width, 0) + (chips.length - 1) * (Number.parseFloat(getComputedStyle(box).columnGap) || 0);
     return room >= need ? [`line #${i + 1}: We run is on a line of its own, with ${Math.round(room)}px free beside the CVEs for its ${Math.round(need)}px`] : [];
   });
 });
@@ -2673,7 +2761,7 @@ const excerptMeasure = lines => holds(`the selected row's excerpt is at most 80c
   const measure = probe.getBoundingClientRect().width;
   probe.remove();
   const style = getComputedStyle(ex), r = ex.getBoundingClientRect();
-  const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+  const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
   const problems = [];
   if (r.width > measure + 2) problems.push(`the excerpt is ${Math.round(r.width)}px wide, more than 80ch (${Math.round(measure)}px)`);
   if (r.height > lines * line + 2) problems.push(`the excerpt is ${Math.round(r.height)}px tall, more than ${lines} lines of ${Math.round(line)}px`);
@@ -2837,6 +2925,47 @@ const clickFocusesNextRow = label => ({
 async function selectReport(page) {
   await page.locator('.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member) .tide-triage-meta > span').first().click();
   await page.locator('.tide-reading .tide-triage-acts').waitFor();
+}
+
+/**
+ * Setup: one long unbroken word (a hash list joined without spaces, a pasted blob) in place of the first match of
+ * `selector`'s text, as no seeded text has; with `last`, in place of its last part only (a crumb after its links),
+ * after `prefix`.
+ */
+const longWord = (selector, { last = false, prefix = '' } = {}) => async page => {
+  await page.locator(selector).first().waitFor({ state: 'attached' });
+  await page.$eval(selector, (el, [last, prefix]) => { (last ? el.lastChild : el).textContent = prefix + '9f86d081884c7d65'.repeat(18); }, [last, prefix]);
+  await idle(page);
+};
+
+/** On a narrow window the reading pane is above the list and as wide as it, not a column beside it. */
+const paneOverList = holds('the reading pane over the list, as wide as it', () => {
+  const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+  const pane = box('.tide-triage-layout.reading > .tide-reading'), list = box('.tide-triage-layout.reading > .tide-card:first-child');
+  if (!pane || !list) return [`nothing visible: ${pane ? 'the list' : 'the reading pane'}`];
+  return [
+    ...pane.bottom > list.top + 1 ? [`the pane (to ${Math.round(pane.bottom)}px) isn't above the list (from ${Math.round(list.top)}px)`] : [],
+    ...Math.abs(pane.width - list.width) > 2 ? [`the pane is ${Math.round(pane.width)}px wide beside a list ${Math.round(list.width)}px wide`] : [],
+  ];
+});
+
+/** Setup: the selection moved `times` rows down the list with J, then V. */
+const vAfterJ = times => async page => {
+  await page.locator('.tide-triage-row.selected').focus();
+  for (let i = 0; i < times; i++) await pressJ(page);
+  await pressV(1)(page);
+  // Any smooth scroll done: the page hasn't moved for a fifth of a second.
+  await page.waitForFunction(() => new Promise(done => { const y = scrollY; setTimeout(() => done(scrollY === y), 200); }));
+};
+
+/** Setup: the profile's "Merge into another profile" open, offering a profile with a long name. */
+async function longMergeOption(page) {
+  await page.locator('#merge-into').waitFor({ state: 'attached' });
+  await page.$eval('#merge-into', select => {
+    select.closest('details').open = true;
+    select.add(new Option('A profile whose long name runs on and on '.repeat(4)));
+  });
+  await idle(page);
 }
 
 /**
@@ -3414,7 +3543,7 @@ const bulletGrows = {
     await page.mouse.up();
     const measure = async text => {
       await box.fill(text);
-      return box.evaluate(e => ({ inline: e.style.height, client: e.clientHeight, scroll: e.scrollHeight, line: parseFloat(getComputedStyle(e).lineHeight) }));
+      return box.evaluate(e => ({ inline: e.style.height, client: e.clientHeight, scroll: e.scrollHeight, line: Number.parseFloat(getComputedStyle(e).lineHeight) }));
     };
     const short = await measure('Short.'), long = await measure('A bullet long enough to take several lines of its box. '.repeat(8));
     await box.fill(was);
@@ -3964,9 +4093,7 @@ const pages = [
   { name: 'nav-very-short', route: '/admin', widths: [[1440, 600], [1920, 500]], rules: [navTargets, navScrollsToActive] },
   { name: 'nav-very-short-navigate', route: '/', setup: navigateToAdmin, widths: [[1440, 600]], rules: [navScrollsToActive] },
   // The top bar keeps each control in its own room, whatever the width and the fonts.
-  { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
-    rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
-      oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')] },
+  { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400], rules: topBarTodayRules },
   // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
   // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
   ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
@@ -4018,9 +4145,11 @@ const pages = [
   // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
   // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
   // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
-  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375],
-    rules: [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
-      [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
+  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375], rules: topBarRules },
+  // The same two with the chip as a day off has it (dayOffChip), whatever day the check runs: its wording is longer.
+  { name: 'top-bar-day-off', route: '/articles', setup: dayOffChip, widths: [1440, 1200, 1100, 1000, 900, 780], rules: topBarRules },
+  { name: 'top-bar-today-day-off', route: '/', setup: async page => { await wideFont(page); await dayOffChip(page); },
+    widths: [1920, 1440, 1200, 1100, 900, 780], rules: [...topBarTodayRules, roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-reader-sum'), visible('#tide-rail [role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1920, 800],
@@ -4186,6 +4315,9 @@ const pages = [
       visible('.tide-hunt-story'), startsAbove('.tide-hunt [data-copy-target]', 900),
       // A-1's query is KQL: the control says the language of the query on the action, on the live page too.
       later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'))] },
+  // A title of one long word (a pasted hash) wraps in the header rather than widening the page, at every width.
+  { name: 'action-long-title', route: '/actions/{huntAction}', setup: longActionTitle, widths: [1920, 1440, 780, [400, 800]],
+    rules: [noSidewaysScroll, fits('.tide-action-title')] },
   // The action page's context rail. From 1500px it's docked open beside the page, which has about 873px for the sweep's
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
@@ -4304,7 +4436,17 @@ const pages = [
   { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440],
     rules: [hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-promote')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
-  { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
+  // On a narrow window the pane V opens is over the list, as wide as it, its title a readable line: not a column
+  // squeezed beside the list with its title a letter a line. Pressed on the first row, the second, or one far down the
+  // list, V brings the pane's head into view below the top bar, rather than leaving it above the window; with motion
+  // allowed, so the page's smooth scrolling is in play. Each signs in as its own person, as the pane's state is kept.
+  ...[780, 400].flatMap(w => [0, 1, 12].map(down => ({ name: `triage-v-narrow-${w}-row${down + 1}`, route: `/triage?as=v3${w}r${down}${run}`,
+    setup: vAfterJ(down), widths: [w], context: { reducedMotion: 'no-preference' },
+    rules: [visible('.tide-reading'), paneOverList, oneLine('.tide-reading-title', 4), fits('.tide-reading-head'), noSidewaysScroll,
+      onFirstScreen('.tide-reading-head'), belowTopBar('.tide-reading-head')] }))),
+  // A title of one long unbroken word wraps inside its row rather than widening the page.
+  { name: 'triage-long-title', route: '/triage', setup: longWord('.tide-triage-row .tide-triage-title'), widths: [1440, 400],
+    rules: [noSidewaysScroll, fits('.tide-triage-row')] },
   // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
@@ -4431,6 +4573,16 @@ const pages = [
       visible('#tide-rail a[href$="/navigator.json"]'), visible('.content #adv-timeline-h'), visible('.content #adv-about-h'), fits('.content .tide-adv-heat')] },
   { name: 'adversary-rail-over', route: '/adversaries/{adversary}', setup: toggleRail, widths: [1440],
     rules: adversaryRailOverHolds },
+  // Long unbroken text, and long names, stay inside the page: Merge into's choice of a profile with a long name, a
+  // search for a very long word, and a bottom line of one long word in what readers get.
+  { name: 'adversary-merge-long-name', route: '/adversaries/{adversary}', setup: longMergeOption, widths: [1440, 400],
+    rules: [noSidewaysScroll, insidePage('#merge-into')] },
+  { name: 'adversary-long-name', route: '/adversaries/{adversary}', widths: [1440, 780, 400],
+    setup: async page => { await longWord('.tide-page-head h1')(page); await longWord('.tide-crumbs', { last: true, prefix: ' › ' })(page); },
+    rules: [noSidewaysScroll, fits('.tide-page-head'), fits('.tide-crumbs')] },
+  { name: 'search-long-query', route: `/search?q=${'a'.repeat(3000)}`, widths: [1440, 400], rules: [noSidewaysScroll] },
+  { name: 'reader-long-bottom-line', route: '/articles/{vpnArticle}', setup: longWord('#tide-rail .tide-edition-article .tide-bluf'), widths: [1600],
+    rules: [noSidewaysScroll, fits('#tide-rail .tide-reader'), fits('.tide-rail-body')] },
   // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
   // tab by tab, for a search's words.
   { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],
@@ -4546,6 +4698,10 @@ const pages = [
   // An action opened from its row and closed with Escape: focus is back on that row's title.
   { name: 'slide-open-actions-closed', route: '/present/{today}', setup: reviewActionClosed, widths: [1920],
     rules: [hidden('#present-action-title'), focusOn('.tide-slide-open tbody tr:first-child .tide-slide-row-open')] },
+  // Diagnostics: a health check's long detail (a server's folder path) wraps within its card, as the sidebar's open, and
+  // every detail stays readable (stacked under its check at a narrow width, not crushed to a few letters a line).
+  { name: 'admin-system-long-detail', route: '/admin/system', setup: longCheckDetail, widths: [1440, 1100, 780, [400, 800]],
+    rules: [noSidewaysScroll, fits('.tide-card:has(.tide-diag-checks)'), everyAtLeast('.tide-diag-checks td:last-child', 120)] },
   // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
   { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),
@@ -4747,7 +4903,7 @@ const pages = [
       buttonsNamed('Take it', 'Take A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
     rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
-      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysHeld] },
+      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysUnderRail] },
   // A click on the scrim beside the rail open over the slide closes it, and focus goes back to Rail.
   { name: 'present-rail-scrim', route: '/present/{today}', setup: railScrimClicked, widths: [1440],
     rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
@@ -4889,9 +5045,11 @@ try {
   // Enough more new items for Triage to have a second page (the paging keys' rules), a slide with a dozen indicators
   // and CVEs (the slide's fit), and a meeting's action beside the slide (only the present-beside pages open one). Polling
   // on, with feeds the scheduled pass leaves alone (never fetched) last pulled the day before, and a cutoff at midnight,
-  // so Today says the feeds aren't pulled whenever the run is on a working day.
+  // so Today says the feeds aren't pulled. The app's clock is a working day's on a weekend too (Demo:WorkingDay), so
+  // today's brief is today's, its meeting can start and the feeds are due whatever day the checks run; the top bar is
+  // checked with a day off's chip as well (dayOffChip).
   server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true', '--Org:ActionBesideSlide=true',
-    '--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=00:00']);
+    '--Demo:StaleFeeds=true', '--Intake:Enabled=true', '--Intake:PulledBy=00:00', '--Demo:WorkingDay=true']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);
@@ -4920,7 +5078,16 @@ async function check(list, demo) {
         let context;
         try {
           let page;
-          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo, p.context));
+          try {
+            ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo, p.context));
+          } catch (e) {
+            // A page that couldn't be loaded or set up (a meeting that wouldn't start) fails once, at once: its other
+            // widths would only wait out the same timeouts again.
+            const left = p.widths.length - p.widths.indexOf(size) - 1;
+            problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}${left ? ` (its other ${left} width${left === 1 ? '' : 's'} not checked)` : ''}`);
+            console.log(`  ${p.name} at ${width}x${height}: couldn't be set up`);
+            break;
+          }
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);

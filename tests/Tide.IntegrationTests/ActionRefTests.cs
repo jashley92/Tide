@@ -62,8 +62,8 @@ public class ActionRefTests(TideApp app) : IClassFixture<TideApp>
         }
         int number;
         await using (var scope = SignedIn(app, SignIn.Analyst))
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, "Patch the gateways", ActionKind.PatchRemediate, team, null,
-                recommendation: "Patch the gateways");
+            number = (await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, "Patch the gateways", ActionKind.PatchRemediate, team, null,
+                recommendation: "Patch the gateways")).Number;
 
         var html = System.Net.WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/articles/{article}?side=actions"));
         html.Should().Contain($"href=\"actions/{number}\">Patch the gateways</a>").And.Contain($"A-{number}</span>")

@@ -95,17 +95,25 @@ public sealed class StoryService(IAppDbContextFactory dbs, ICurrentUser user)
         return story.Id;
     }
 
-    public async Task UpdateAsync(Guid id, string name, string? summary, StoryStatus status, CancellationToken ct = default)
+    /// <summary>Saves a story's form. <paramref name="editVersion"/> is the story's <see cref="Story.EditVersion"/> when the
+    /// form opened: a save over a colleague's since is refused, rather than putting back what they changed.</summary>
+    public async Task UpdateAsync(Guid id, string name, string? summary, StoryStatus status, Guid editVersion, CancellationToken ct = default)
     {
         RequireWrite();
         if (!Enum.IsDefined(status)) throw new ArgumentException("Choose a status.");
         await using var db = await dbs.CreateAsync(ct);
         var story = await db.Stories.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That story no longer exists.");
+        if (story.EditVersion != editVersion) throw new StaleEditException(Stale(story));
         story.Name = Name(name);
         story.Summary = ArticleService.CleanOrNull(summary, 4000, multiline: true);
         story.Status = status;
-        await db.SaveChangesAsync(ct);
+        story.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(story)); }
     }
+
+    private static string Stale(Story s) =>
+        $"Someone else saved {s.Name} since you opened it. Reload to see their changes, then make yours again.";
 
     /// <summary>Links an article to a story, or (null) takes it off its story.</summary>
     public Task LinkAsync(Guid articleId, Guid? storyId, CancellationToken ct = default)

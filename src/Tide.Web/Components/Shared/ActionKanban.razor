@@ -60,7 +60,7 @@
                 }
             </div>
         }
-        <span class="tide-kstrip-hint" title="Drop a card on one to close it that way">Drop a card on one to close it that way</span>
+        <span class="tide-kstrip-hint" title="Drop a card on one to close it that way"><span>Drop a card on one to close it that way</span></span>
         @* The strip's reach, a week or a month, either way. *@
         <button type="button" class="btn btn-link btn-sm tide-kstrip-more" @onclick="ShowOlder">Show the last @(ClosedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays) days</button>
     </section>

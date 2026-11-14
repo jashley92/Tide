@@ -312,7 +312,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var (type, value, family) = looked;
         var exact = SearchText.Literal(value);
         var matching = Lookups.Carrying(db, looked);
-        var rows = await matching.Take(MaxSightings + 1).ToListAsync(ct);
+        var rows = await matching.OrderBy(i => i.Id).Take(MaxSightings + 1).ToListAsync(ct);
         var exactTotal = rows.Count > MaxSightings ? await matching.CountAsync(ct) : rows.Count;
 
         // The same host under another indicator: a subdomain, a URL or email address on the domain, the domain of a URL.
@@ -325,7 +325,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             var seen = rows.Select(r => r.Id).ToHashSet();
             related = (await db.ArticleIndicators.AsNoTracking()
                     .Where(i => hostTypes.Contains(i.Type) && EF.Functions.Like(i.Value, near, SearchText.Escape))
-                    .Take(MaxSightings * 3).ToListAsync(ct))
+                    .OrderBy(i => i.Id).Take(MaxSightings * 3).ToListAsync(ct))
                 .Where(i => !seen.Contains(i.Id) && SearchText.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
                 .ToList();
         }
@@ -344,7 +344,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         // An action can carry indicators of its own (one raised with no article): it's on this one too.
         var carrying = await db.ActionIndicators.AsNoTracking()
             .Where(i => family.Contains(i.Type) && EF.Functions.Like(i.Value, exact, SearchText.Escape))
-            .Select(i => i.ActionId).Distinct().Take(MaxHits).ToListAsync(ct);
+            .Select(i => i.ActionId).Distinct().OrderBy(id => id).Take(MaxHits).ToListAsync(ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, carrying, MaxHits, ct);
         var sweeping = actions.Items
             .Where(a => a.IsOpen && a.Hunts && (carrying.Contains(a.Id) || on.Any(x => x.Id == a.ArticleId)))
@@ -384,7 +384,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         db.FeedItems.AsNoTracking()
             .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired
                         && EF.Functions.Like("," + i.Cves + ",", SearchText.Contains("," + cveId + ","), SearchText.Escape))
-            .Take(MaxSightings).CountAsync(ct);
+            .OrderBy(i => i.Id).Take(MaxSightings).CountAsync(ct);   // ordered only so the capped read is one EF doesn't warn of
 
     // The articles of <paramref name="q"/> as a lookup lists them, in its order.
     private static async Task<List<LookupArticle>> LookupArticlesAsync(IAppDbContext db, IQueryable<Article> q, CancellationToken ct)
@@ -411,12 +411,12 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         if (read.Count == 0) return SeenWith.None;
         var ids = read.Select(a => a.Id).ToList();
         var indicators = (await db.ArticleIndicators.AsNoTracking().Where(i => ids.Contains(i.ArticleId))
-                .Select(i => new { i.Type, i.Value }).Take(SeenWithRows).ToListAsync(ct))
+                .OrderBy(i => i.ArticleId).ThenBy(i => i.Id).Select(i => new { i.Type, i.Value }).Take(SeenWithRows).ToListAsync(ct))
             .Select(i => new SeenIndicator(i.Type, i.Value.Trim()))
             .Where(i => i.Value.Length > 0 && lookedUp?.Invoke(i) != true);
-        var cves = (await db.ArticleCves.AsNoTracking().Where(c => ids.Contains(c.ArticleId)).Select(c => c.CveId).Take(SeenWithRows).ToListAsync(ct))
+        var cves = (await db.ArticleCves.AsNoTracking().Where(c => ids.Contains(c.ArticleId)).OrderBy(c => c.ArticleId).ThenBy(c => c.CveId).Select(c => c.CveId).Take(SeenWithRows).ToListAsync(ct))
             .Where(c => c != cveId);
-        var techniques = await db.ArticleTechniques.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => t.TechniqueId).Take(SeenWithRows).ToListAsync(ct);
+        var techniques = await db.ArticleTechniques.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).OrderBy(t => t.ArticleId).ThenBy(t => t.TechniqueId).Select(t => t.TechniqueId).Take(SeenWithRows).ToListAsync(ct);
         return new SeenWith(
             MostShared(indicators, i => (i.Type, i.Value.ToLowerInvariant()), i => i.Value),
             MostShared(cves, c => c, c => c),

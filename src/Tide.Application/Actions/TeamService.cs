@@ -38,14 +38,23 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     private const string ContactGets = "Their reminders go there. " + HeldToCeiling;
     private const string EscalationGets = "The escalation ladder emails slipping requests there. " + HeldToCeiling;
     private const string MailboxGets = "The team's reminders and digests go there, with everything they list.";
-    /// <summary>Every team with its members, in order; retired ones too when <paramref name="includeRetired"/>.</summary>
-    public async Task<IReadOnlyList<Team>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
+    /// <summary>
+    /// Every team with its members, in order; retired ones too when <paramref name="includeRetired"/>. With
+    /// <paramref name="holdersOnly"/>, each team's members are only those an action may be given to, for the assignee
+    /// pickers: a member whose roles, as last seen at sign-in, don't let them work actions (a Reader or Viewer kept on a
+    /// team) stays on it, but isn't offered, as ActionService refuses them as holders (<see cref="TeamMemberRoles.CanHold"/>).
+    /// </summary>
+    public async Task<IReadOnlyList<Team>> ListAsync(bool includeRetired = false, bool holdersOnly = false, CancellationToken ct = default)
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members)
             .Where(t => includeRetired || !t.IsRetired).ToListAsync(ct);
-        foreach (var t in teams) t.Members = t.Members.OrderByName(m => m.DisplayName).ToList();
+        var cant = holdersOnly
+            ? (await db.Users.AsNoTracking().Where(u => db.TeamMembers.Any(m => m.UserId == u.Sid)).Select(u => new { u.Sid, u.RolesCsv }).ToListAsync(ct))
+                .Where(u => !TeamMemberRoles.HoldsActions(u.RolesCsv)).Select(u => u.Sid).ToHashSet()
+            : [];
+        foreach (var t in teams) t.Members = t.Members.Where(m => !cant.Contains(m.UserId)).OrderByName(m => m.DisplayName).ToList();
         return teams.InOrder(t => t.SortOrder, t => t.Name).ToList();
     }
 
@@ -74,6 +83,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     // A new team gets a unique key from its name and goes last.
     private static async Task AddTeamAsync(IAppDbContext db, Team team, CancellationToken ct)
     {
+        await NameFreeAsync(db, team, null, ct);
         team.Key = await AdminLists.UniqueKeyAsync(ScorecardService.KeyFor(team.Name), k => db.Teams.AnyAsync(t => t.Key == k, ct));
         team.SortOrder = (await db.Teams.Select(t => (int?)t.SortOrder).MaxAsync(ct) ?? -1) + 1;
         db.Teams.Add(team);
@@ -148,11 +158,11 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         var team = await TeamAsync(db, id, ct);
         if (!team.IsExternal) throw new ForbiddenException("Only an administrator can change an internal team.");
         NotStale(team, form.EditVersion);
-        var (contactWas, escalationWas) = (team.ContactEmail, team.EscalationEmail);
+        var (contactWas, escalationWas, nameWas) = (team.ContactEmail, team.EscalationEmail, team.Name);
         form.ApplyTo(team);
         CheckOutside(form.ConfirmOutside, (contactWas, team.ContactEmail, ContactGets), (escalationWas, team.EscalationEmail, EscalationGets));
         if (admin) (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
-        await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct, nameWas);
     }
 
     /// <summary>
@@ -170,10 +180,11 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         var team = await TeamAsync(db, id, ct);
         NotStale(team, form.EditVersion);
         CheckOutside(form.ConfirmOutside, (team.Email, email, MailboxGets), (team.EscalationEmail, escalation.Email, EscalationGets));
+        var nameWas = team.Name;
         (team.Name, team.Description, team.Email) = (name, description, email);
         (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
         (team.EscalationName, team.EscalationEmail) = escalation;
-        await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct, nameWas);
     }
 
     /// <summary>Sets a team's active limit (null: none) and what happens at it. Administrators only, for any team.</summary>
@@ -213,10 +224,11 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         var team = await TeamAsync(db, id, ct);
         var mailbox = Email(email);
         Boundary.CheckAdded(mailbox is null ? [] : [mailbox], team.Email is null ? [] : [team.Email], confirmOutside, MailboxGets);
+        var nameWas = team.Name;
         team.Name = AdminLists.Name(name);
         team.Description = AdminLists.Description(description);
         team.Email = mailbox;
-        await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct, nameWas);
     }
 
     /// <summary>
@@ -279,10 +291,25 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         if (began is { } v && v != team.EditVersion) throw new StaleEditException(Stale(team));
     }
 
-    // Every change to the team's own fields moves its version, so EF's UPDATE ... WHERE EditVersion = @old also refuses
-    // a save that lost a race the read didn't see.
-    private static async Task SaveMovedAsync(IAppDbContext db, Team team, CancellationToken ct)
+    // A team's name is its own: one another team has, in any case (names are kept on one line, single-spaced), is
+    // refused, a retired or external team's included, so no two teams read the same in a picker. Checked only when the
+    // name changes, so a pair named alike before this rule can still have their other details saved.
+    private static async Task NameFreeAsync(IAppDbContext db, Team team, string? was, CancellationToken ct)
     {
+        if (team.Name == was) return;
+        // Matched ignoring case on both providers (LIKE, as search does: ADR 0011); SQL Server's collation would, SQLite wouldn't.
+        var exact = Search.SearchText.Literal(team.Name);
+        var taken = await db.Teams.AsNoTracking().Where(t => t.Id != team.Id && EF.Functions.Like(t.Name, exact, Search.SearchText.Escape))
+            .Select(t => new { t.Name, t.IsRetired }).FirstOrDefaultAsync(ct);
+        if (taken is not null)
+            throw new ArgumentException($"There's already a team called “{taken.Name}”{(taken.IsRetired ? " (retired)" : "")}. Choose another name.");
+    }
+
+    // Every change to the team's own fields moves its version, so EF's UPDATE ... WHERE EditVersion = @old also refuses
+    // a save that lost a race the read didn't see. A changed name is checked first (NameFreeAsync).
+    private static async Task SaveMovedAsync(IAppDbContext db, Team team, CancellationToken ct, string? nameWas = null)
+    {
+        if (nameWas is not null) await NameFreeAsync(db, team, nameWas, ct);
         team.EditVersion = Guid.NewGuid();
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(team)); }
@@ -356,6 +383,28 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change the teams.");
     }
+}
+
+/// <summary>A team member as the actions rule reads them: the name the team has for them, and their roles as last seen at
+/// sign-in (null when TIDE has no record of them signing in).</summary>
+internal sealed record TeamMemberRoles(string Name, string? Roles)
+{
+    /// <summary>Whether actions may be given to them: their roles let them work actions (an analyst, an action owner or an
+    /// administrator), as Take it asks of whoever takes one. A member with no sign-in on record isn't refused for want of
+    /// roles to read.</summary>
+    public bool CanHold => Roles is null || HoldsActions(Roles);
+
+    /// <summary>Why <see cref="CanHold"/> refuses them.</summary>
+    public string CantHold => $"{Name} can't work actions (their role doesn't allow it), so an action can't be given to them.";
+
+    /// <summary>Whether stored roles (<c>RolesCsv</c>) let their holder work actions.</summary>
+    public static bool HoldsActions(string rolesCsv) => StoredRoles.Has(rolesCsv, Permission.WorkActions);
+
+    /// <summary>The member <paramref name="userId"/> of <paramref name="teamId"/>, or null when they aren't on it.</summary>
+    public static Task<TeamMemberRoles?> OfAsync(IAppDbContext db, Guid teamId, string userId, CancellationToken ct) =>
+        db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == userId)
+            .Select(m => new TeamMemberRoles(m.DisplayName, db.Users.Where(u => u.Sid == m.UserId).Select(u => u.RolesCsv).FirstOrDefault()))
+            .FirstOrDefaultAsync(ct);
 }
 
 /// <summary>An internal team's form on Teams &amp; SLA, saved whole by <see cref="TeamService.UpdateAsync(Guid, TeamForm, CancellationToken)"/>.</summary>

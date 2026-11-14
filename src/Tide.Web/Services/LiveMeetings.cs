@@ -82,6 +82,10 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     // tab closed or browser died keeps its circuit for minutes, and mustn't be seated by the start in the meantime.
     private readonly HashSet<string> _away = new(StringComparer.Ordinal);
 
+    // The days each circuit has a present page open for (Watch), counted per page: a circuit back from away is told only
+    // of those days' meetings.
+    private readonly Dictionary<(string Circuit, DateOnly Day), int> _watching = [];
+
     // The organization's day, for the rule that a meeting isn't held before its brief's day (MeetingDay); none in tests
     // that don't need it.
     private readonly Tide.Application.Org.OrgClock? _clock;
@@ -112,6 +116,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.Any(m => m.BriefId == briefId);
     }
 
+    public IReadOnlyList<string> PresentersOf(Guid briefId)
+    {
+        lock (_gate) return _meetings.Values.FirstOrDefault(m => m.BriefId == briefId)?.Presenters.ToList() ?? [];
+    }
+
     /// <summary>
     /// The meetings <paramref name="userId"/> is in now: a seat of theirs whose connection is up. A seat whose page left, or
     /// whose meeting ended, is gone at once, so a Visitor's reads through it stop with it (MeetingAccess).
@@ -121,6 +130,41 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate)
             return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
                 .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card, m.PresenterId == userId)).ToList();
+    }
+
+    /// <summary>
+    /// A present page on the circuit <paramref name="circuitId"/> is open on <paramref name="day"/>, seated or not, until
+    /// the result is disposed (or the circuit is given up on): back from away, the circuit is told of that day's meeting
+    /// (<see cref="SetConnected"/>). Nothing outside a circuit.
+    /// </summary>
+    public IDisposable Watch(DateOnly day, string circuitId)
+    {
+        var key = (circuitId, day);
+        if (circuitId.Length > 0)
+            lock (_gate) _watching[key] = _watching.GetValueOrDefault(key) + 1;
+        return new Watcher(this, key);
+    }
+
+    private void Unwatch((string Circuit, DateOnly Day) key)
+    {
+        if (key.Circuit.Length == 0) return;
+        lock (_gate)
+        {
+            if (!_watching.TryGetValue(key, out var n)) return;   // the circuit was given up on meanwhile
+            if (n > 1) _watching[key] = n - 1;
+            else _watching.Remove(key);
+        }
+    }
+
+    // A page's watch: disposing it (once) ends it.
+    private sealed class Watcher(LiveMeetings owner, (string Circuit, DateOnly Day) key) : IDisposable
+    {
+        private int _done;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0) owner.Unwatch(key);
+        }
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
@@ -289,6 +333,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate)
         {
             _away.Remove(circuitId);   // given up on: it won't be back
+            foreach (var key in _watching.Keys.Where(k => k.Circuit == circuitId).ToList()) _watching.Remove(key);
             gone = _meetings.Values.SelectMany(m => m.Seats.Values).Where(s => s.CircuitId == circuitId).ToList();
         }
         foreach (var s in gone) s.Dispose();
@@ -300,7 +345,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// up on, minutes later. Told to every page, the circuit's own included: back, it may have missed what changed while
     /// it was away (someone took over from it), so it reads the meeting again. A circuit that went with no seat (a page
     /// open before the meeting started) is kept as away too, so the start doesn't seat it; back, each meeting it has no
-    /// seat in is said to it, for its page to join.
+    /// seat in and a present page open for (<see cref="Watch"/>) is said, for that page to join. Any other page that comes
+    /// back changes no meeting, and isn't said.
     /// </summary>
     public void SetConnected(string circuitId, bool connected)
     {
@@ -311,7 +357,8 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             var now = _time.GetUtcNow();
             if (!connected) _away.Add(circuitId);
             else if (_away.Remove(circuitId))
-                changed.AddRange(_meetings.Values.Where(m => m.Seats.Values.All(s => s.CircuitId != circuitId)).Select(m => m.Day));
+                changed.AddRange(_meetings.Values
+                    .Where(m => _watching.ContainsKey((circuitId, m.Day)) && m.Seats.Values.All(s => s.CircuitId != circuitId)).Select(m => m.Day));
             foreach (var m in _meetings.Values)
             {
                 var seats = m.Seats.Values.Where(s => s.CircuitId == circuitId && s.Down == connected).ToList();
@@ -375,6 +422,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
         (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Card) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
+        if (!m.Presenters.Contains(to.Name)) m.Presenters.Add(to.Name);
         m.Scroll = 0;   // a new slide starts at its top
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
@@ -496,6 +544,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         public DateTimeOffset StartedAtUtc { get; } = startedAtUtc;
         public string PresenterId { get; set; } = presenterId;
         public string PresenterName { get; set; } = presenterName;
+
+        /// <summary>Everyone who has presented it, by name, in the order they took it.</summary>
+        public List<string> Presenters { get; } = [presenterName];
         public int Slide { get; set; }
         public string? SlideKey { get; set; }
         public int Summons { get; set; }

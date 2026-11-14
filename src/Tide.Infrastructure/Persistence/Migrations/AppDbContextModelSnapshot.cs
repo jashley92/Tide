@@ -1348,6 +1348,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<long?>("PresentedAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PresentedByName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("SharePointPostedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -3309,6 +3313,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("ModifiedAtUtc")

@@ -239,16 +239,17 @@ public class AdversaryPickerRenderTests(TideApp app) : IClassFixture<TideApp>
         await Type(r, "pick-r1 coz");
         var html = await r.Html();
         html.Should().Contain("role=\"listbox\"").And.Contain("pick-r1 Midnight<span class=\"fw-normal tide-muted\"> (also pick-r1 Cozy)</span>")
-            .And.Contain("Add “pick-r1 coz” as a new adversary").And.Contain("aria-activedescendant=\"adv-pick-" + article + "-opt-0\"");
+            .And.Contain("Add “pick-r1 coz” as a new adversary").And.NotContain("aria-activedescendant", "nothing is highlighted until an arrow moves to it");
 
         await r.Click(c => c.Pick(c.Listed[0]));
         r.Component._text.Should().BeNull("the box clears for another");
         r.Component.Listed.Should().NotContain(p => p.Id == ids["pick-r1 Midnight"], "a tagged profile isn't offered again");
         (await r.Html()).Should().Contain("Untag pick-r1 Midnight");
 
-        // The keyboard: down to the second result, Enter tags it.
+        // The keyboard: down to the first result, down to Add, back up to the first: Enter tags it.
         await Type(r, "pick-r1");
         r.Component.Listed.Select(p => p.Name).Should().Equal("pick-r1 Kitten");
+        await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowDown" }));
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowDown" }));
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "ArrowUp" }));
         await r.Click(c => c._combo!.OnKey(new KeyboardEventArgs { Key = "Enter" }));

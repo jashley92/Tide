@@ -82,7 +82,7 @@ public class PageTipPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task WhatsNew_ComesFirst_AndATipWaitsUntilItsClosed()
+    public async Task WhatsNew_ComesFirst_AndATipWaitsForTheNextPage()
     {
         var who = Person("Analyst");
         await using var r = await RenderAsync<OnboardingHost>(app, "/", @as: who);
@@ -90,6 +90,8 @@ public class PageTipPagesTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
         html.Should().Contain("tide-whatsnew").And.NotContain("class=\"tide-tip\"", "one thing at a time");
         await r.Click(c => c.WhatsNew!.CloseAsync());
-        (await r.HtmlOnce("class=\"tide-tip\"")).Should().Contain("class=\"tide-tip\"").And.Contain("context rail");
+        (await r.Html()).Should().NotContain("class=\"tide-tip\"", "closing it doesn't bring up a tip at once, as one dialog replacing another");
+        await r.Click(c => c.CheckTipAsync());   // as the next page opening does (PageChangedAsync)
+        (await r.HtmlOnce("class=\"tide-tip\"")).Should().Contain("class=\"tide-tip\"");
     }
 }

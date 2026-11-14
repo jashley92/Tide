@@ -269,6 +269,12 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
     private Task<Rendered<ArticleEditorPanel>> Editor(Guid id, SignIn? who = null) =>
         RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id }, who);
 
+    /// <summary>Closes the editor's live feed, for a test of what its own save is told before any notice of another save
+    /// arrives: on a loaded machine the feed's pause can run out first, and then the notice speaks instead.</summary>
+    private static Task Unheard(Rendered<ArticleEditorPanel> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
+        ((IDisposable)typeof(ArticleEditorPanel).GetField("_live", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(r.Component)!).Dispose());
+
     private static string Bar(string html)
     {
         var bar = html[html.IndexOf("class=\"tide-sticky-save", StringComparison.Ordinal)..];
@@ -328,6 +334,7 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         var id = await NewArticle();
         await using var r = await Editor(id);
         await r.Click(p => p.MentionAsync("My paragraph."));
+        await Unheard(r);
         var theirs = await Form(id);
         theirs.Bluf = "Sam's bottom line.";
         await As(sp => sp.GetRequiredService<ArticleService>().SaveAsync(theirs), Colleague);
@@ -379,6 +386,7 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         var id = await NewArticle();
         await using var r = await Editor(id);
         await r.Click(p => p.MentionAsync("Typed in this tab."));
+        await Unheard(r);
         var other = await Form(id);
         other.Bluf = "Saved in the other tab.";
         await As(sp => sp.GetRequiredService<ArticleService>().SaveAsync(other));

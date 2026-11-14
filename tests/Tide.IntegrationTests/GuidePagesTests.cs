@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
+using Tide.Application.Briefs;
 using Tide.Application.Operations;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
@@ -20,7 +21,7 @@ namespace Tide.IntegrationTests;
 /// present mode in rehearsal: no meeting, nobody following, nothing shared or saved, never while the day's meeting is
 /// live, and never for a follower or a Visitor.
 /// </summary>
-public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
+public partial class GuidePagesTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private static SignIn Person(params string[] roles) => new($"dev:guide-{Guid.NewGuid():N}", "Guide tester", roles);
 
@@ -77,6 +78,53 @@ public class GuidePagesTests(TideApp app) : IClassFixture<TideApp>
         // Start the meeting and Copy link are shown, for the guide to point at, and can't be used.
         html.Should().Contain("id=\"present-start\"").And.Contain("Starts the real meeting; not in a rehearsal").And.Contain("id=\"present-copy-link\"");
         html.Should().Contain("aria-modal=\"true\"").And.Contain("End guide");
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("<span class=\"tide-tour-title\">(?<t>[^<]+)</span>")]
+    private static partial System.Text.RegularExpressions.Regex StepTitle();
+
+    // The guide's steps, by title, walked from the first to the last, and the page's markup at each.
+    private static async Task<List<(string Title, string Html)>> Walk(Rendered<Present> r)
+    {
+        var seen = new List<(string, string)>();
+        for (var i = 0; i < 40; i++)
+        {
+            var html = await r.Html();
+            var title = System.Net.WebUtility.HtmlDecode(StepTitle().Match(html).Groups["t"].Value);
+            if (title.Length == 0 || seen.Count > 0 && seen[^1].Item1 == title) break;
+            seen.Add((title, html));
+            await Do(r, p => p.GuideNext());
+        }
+        return seen;
+    }
+
+    [Fact]
+    public async Task LearnToPresent_PointsWhosHereAndWhoAttendedAtTheirPlaces_AndLeavesOutStartAndEnd_OnceItsPresented()
+    {
+        var day = await Day(304);
+        await using (var r = await Rehearse(app, day, Person("Analyst")))
+        {
+            var steps = await Walk(r);
+            steps.Select(s => s.Title).Should().Contain("Going live").And.Contain("Ending the meeting");
+            steps.Single(s => s.Title == "Who's here").Html.Should().Contain("<span class=\"tide-present-here\">Nobody here: a rehearsal</span>");
+            steps.Single(s => s.Title == "Who attended").Html.Should().Contain("id=\"wrap-attendance\"").And.Contain("Attended (");
+        }
+
+        async Task AsAnalyst(Func<BriefService, Task> what)
+        {
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            await what(scope.ServiceProvider.GetRequiredService<BriefService>());
+        }
+        var brief = Guid.Empty;
+        await AsAnalyst(async b => await b.MarkPresentedAsync(brief = (await b.GetAsync(day))!.Id));
+        try
+        {
+            await using var r = await Rehearse(app, day, Person("Analyst"));
+            var titles = (await Walk(r)).Select(s => s.Title).ToList();
+            titles.Should().NotContain("Going live", "Start the meeting isn't drawn once it's presented").And.NotContain("Inviting the room").And.NotContain("Ending the meeting");
+            titles.Should().Contain("Who attended");
+        }
+        finally { await AsAnalyst(b => b.ReopenAsync(brief)); }
     }
 
     [Fact]

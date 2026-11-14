@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
@@ -76,6 +77,10 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     /// <summary>Its ticket elsewhere, and the ticket's link (<see cref="ActionItem.TicketRef"/>, <see cref="ActionItem.TicketUrl"/>).</summary>
     public string? TicketRef { get; init; }
     public string? TicketUrl { get; init; }
+
+    /// <summary>The marking of the article it was raised from (null with none): the list shows AMBER and above beside the
+    /// article's title. Shown only; who sees the action doesn't follow it.</summary>
+    public TlpLevel? ArticleTlp { get; init; }
 
     /// <summary>Who has it, in words (<see cref="HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
     public HolderLabel Holder(string nobody) => HolderLabel.Of(AssigneeId, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
@@ -503,7 +508,8 @@ public sealed record HuntSources(int Indicators, int StoryIndicators, int StoryA
 /// </para>
 /// </summary>
 public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, SlaSettings sla, OrgClock clock, HuntQueryBuilder queries,
-    ScreenshotService files, ArticleService articles, Briefs.IMeetingsInProgress? meetings = null, HandoffNotices? notices = null)
+    ScreenshotService files, ArticleService articles, Briefs.IMeetingsInProgress? meetings = null, HandoffNotices? notices = null,
+    ILogger<ActionService>? log = null)
 {
     public DateOnly Today => clock.Today;
 
@@ -646,7 +652,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             Done = g.Count(x => x.OnStrip && x.Status == ActionStatus.Done),
             Cancelled = g.Count(x => x.OnStrip && x.Status == ActionStatus.Cancelled),
             NotApplicable = g.Count(x => x.OnStrip && x.Status == ActionStatus.NotApplicable),
-        }).FirstOrDefaultAsync(ct);
+        }).SingleOrDefaultAsync(ct);   // one group at most, so Single: a First with no order is warned of
         return c is null ? ActionViewCounts.None : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned)
         {
             OpenUnowned = c.OpenUnowned, OverdueUnowned = c.OverdueUnowned, ClosedUnowned = c.ClosedUnowned,
@@ -1110,7 +1116,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // Each is read once, and the later picked here.
         LastActivity(a.Comments.Max(c => (DateTimeOffset?)c.AtUtc),
             a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc), a.CreatedAtUtc))
-        { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl });
+        { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl,
+          ArticleTlp = a.Article == null ? null : (TlpLevel?)a.Article.Tlp });
 
     // The later of an action's last comment and its last line by a person, or with neither, when it was raised.
     private static DateTimeOffset LastActivity(DateTimeOffset? commented, DateTimeOffset? updated, DateTimeOffset created) =>
@@ -1414,7 +1421,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             return [new NewAction(a, $"Created for {await TeamName(db, a.TeamId, ct)}{(a.DueDate is { } d ? $", due {Day(d)}" : "")}"
                 + (a.RaisedOn is { } r ? $"; raised for {Day(r)}'s brief" : "")
                 + (playbook is not null ? $", with the {playbook.Name} playbook's checklist." : ".") + over)];
-        }, null, ct);
+        }, null, ct, log);
         return made[0];
     }
 
@@ -1425,37 +1432,56 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// Adds new actions (one raised, or a split's parts): numbers them from the next free number, writes each one's first
     /// history line, gives a part of a parent with no article the parent's own indicators, and saves.
     /// <paramref name="build"/> makes them, checked, on the context given; <paramref name="numbered"/>, if any, then sees
-    /// their numbers before the save (a split's line on its parent). Two creates at once can take the same number: the
-    /// second's save fails on the unique index and it's built and numbered again, three times at most.
+    /// their numbers before the save (a split's line on its parent). Creates on this server are built, numbered and saved
+    /// one at a time (<see cref="Numbering"/>), so they don't take the same number, and each one's checks see the last;
+    /// two on different servers still can: the second's save fails on the number's unique index and it's built and
+    /// numbered again, three times at most, said in the log at debug, as it's expected. Any other failure isn't retried.
     /// </summary>
     internal static async Task<IReadOnlyList<int>> AddActionsAsync(IAppDbContextFactory dbs, ICurrentUser user,
-        Func<IAppDbContext, Task<IReadOnlyList<NewAction>>> build, Action<IAppDbContext, IReadOnlyList<ActionItem>>? numbered, CancellationToken ct)
+        Func<IAppDbContext, Task<IReadOnlyList<NewAction>>> build, Action<IAppDbContext, IReadOnlyList<ActionItem>>? numbered, CancellationToken ct,
+        ILogger? log = null)
     {
         for (var attempt = 0; ; attempt++)
         {
-            await using var db = await dbs.CreateAsync(ct);
-            var made = await build(db);
-            // Deleted ones included: a number is never reused.
-            var number = (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
-            foreach (var (a, line) in made)
-            {
-                a.Number = number++;
-                db.Actions.Add(a);
-                if (a.ParentId is { } parentId && a.ArticleId is null) await CopyParentIndicatorsAsync(db, user, parentId, a.Id, ct);
-                db.ActionEvents.Add(Event(user, a.Id, line));
-            }
-            numbered?.Invoke(db, [.. made.Select(m => m.Action)]);
+            await Numbering.WaitAsync(ct);
+            IReadOnlyList<NewAction> made = [];
             try
             {
+                await using var db = await dbs.CreateAsync(ct);
+                // Built inside too: its checks (a team's limit) then see what the create before it saved.
+                made = await build(db);
+                // Deleted ones included: a number is never reused.
+                var number = (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
+                foreach (var (a, line) in made)
+                {
+                    a.Number = number++;
+                    db.Actions.Add(a);
+                    if (a.ParentId is { } parentId && a.ArticleId is null) await CopyParentIndicatorsAsync(db, user, parentId, a.Id, ct);
+                    db.ActionEvents.Add(Event(user, a.Id, line));
+                }
+                numbered?.Invoke(db, [.. made.Select(m => m.Action)]);
                 await db.SaveChangesAsync(ct);
                 return [.. made.Select(m => m.Action.Number)];
             }
-            catch (DbUpdateException) when (attempt < 3)
+            catch (DbUpdateException e) when (attempt < 3 && NumberTaken(e))
             {
-                // Two actions created at once took the same number; take the next one.
+                log?.LogDebug("A-{Number} was taken by another server's create at the same moment; numbering again (try {Try}).", made[0].Action.Number, attempt + 2);
             }
+            finally { Numbering.Release(); }
         }
     }
+
+    /// <summary>A quick action's number, and whether it went to whoever raised it (<see langword="false"/>: they aren't on
+    /// its team, so it's the team's to give out).</summary>
+    public readonly record struct QuickAdded(int Number, bool Yours);
+
+    // One create at a time is built, takes its action numbers and saves on this server.
+    private static readonly SemaphoreSlim Numbering = new(1, 1);
+
+    // The save failed on the action number's unique index, and on nothing else: SQLite names the column
+    // ("UNIQUE constraint failed: Actions.Number"), SQL Server the index (IX_Actions_Number).
+    internal static bool NumberTaken(DbUpdateException e) => e is not DbUpdateConcurrencyException && e.InnerException?.Message is { } m
+        && (m.Contains("Actions.Number", StringComparison.Ordinal) || m.Contains("IX_Actions_Number", StringComparison.Ordinal));
 
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
@@ -1465,7 +1491,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
-    public async Task<int> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
+    public async Task<QuickAdded> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
         string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
@@ -1479,7 +1505,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             member = team?.Member == true;
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
         }
-        return await CreateAsync(new ActionForm
+        var number = await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
             RaisedOn = raisedOn, OverLimitReason = overLimitReason, RecommendationLine = recommendation,
@@ -1487,6 +1513,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             // they can hand it on. Otherwise it's the team's, as a holder is always one of its members.
             AssigneeId = member ? user.UserId : null,
         }, ct);
+        return new QuickAdded(number, member);
     }
 
     /// <summary>
@@ -1550,14 +1577,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (form.TeamId != a.TeamId)
         {
             var to = await HandoffService.ReceivingTeamAsync(db, form.TeamId, ct);
-            if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) form.AssigneeId = null;
+            // Someone not on that team, or on it but unable to work actions, isn't its holder there.
+            if (form.AssigneeId is { } held && (await TeamMemberRoles.OfAsync(db, to.Id, held, ct))?.CanHold != true) form.AssigneeId = null;
             handover = await HandoffService.HandOverAsync(db, user, a, to,
                 string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, form.TurnRemindersOn, ct);
         }
         var before = (a.Title, a.Kind, a.Priority, a.AssigneeName, a.DueDate, a.TicketRef);
         await Apply(db, a, form, ct);
         var changes = new List<string>();
-        if (before.Title != a.Title) changes.Add("title");
+        // Both titles, as the audit log has them: whoever reads this history could read the action under either.
+        if (before.Title != a.Title) changes.Add($"title: “{before.Title}” → “{a.Title}”");
         if (before.Kind != a.Kind) changes.Add($"kind: {KindName(before.Kind)} → {KindName(a.Kind)}");
         if (before.Priority != a.Priority) changes.Add($"priority: {before.Priority} → {a.Priority}");
         if (before.AssigneeName != a.AssigneeName) changes.Add($"assignee: {before.AssigneeName ?? "nobody"} → {a.AssigneeName ?? "nobody"}");
@@ -1605,11 +1634,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
-        var external = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct);
-        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external, OnTeam: true)))
-            throw new StaleEditException(external
+        var team = await db.Teams.Where(t => t.Id == a.TeamId)
+            .Select(t => new { t.IsExternal, t.Name, Member = t.Members.Any(m => m.UserId == user.UserId) }).FirstAsync(ct);
+        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, team.IsExternal, OnTeam: true)))
+            throw new StaleEditException(team.IsExternal
                 ? $"A-{a.Number} is with an external team now, so nobody here takes it on."
                 : $"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
+        // A holder is one of the team's members: an analyst who isn't on it, or someone whose team handed it on, is told
+        // so. Whoever holds it already (from before the rule) keeps it.
+        if (!team.Member && a.AssigneeId != user.UserId)
+            throw new StaleEditException($"You're not on {team.Name}, so you can't take A-{a.Number} on.");
         // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
         if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
             throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");
@@ -1666,6 +1700,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!Enum.IsDefined(status) || !Enum.IsDefined(outcome)) throw new ArgumentException("Choose a status and an outcome.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        await RequireNoHitsOnRecordAsync(db, a, outcome, ct);
         var over = await OverLimit(db, a, status, overLimitReason, ct);
         var was = a.Status;
         var line = ApplyStatus(db, a, status, outcome, note);
@@ -1720,6 +1755,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await WorkableAsync(db, id, ct);
         RequireAt(a, from);
         if (from == to) return;
+        await RequireNoHitsOnRecordAsync(db, a, outcome, ct);
         var over = await OverLimit(db, a, to, overLimitReason, ct);
         var line = ApplyStatus(db, a, to, outcome, note);
         line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, from, ct));
@@ -1737,8 +1773,26 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
         RequireAt(a, at);
+        await RequireNoHitsOnRecordAsync(db, a, outcome, ct);
         ApplyStatus(db, a, at, outcome, note);
         await SaveEditAsync(db, ct);
+    }
+
+    /// <summary>
+    /// A sweep or hunt says it found nothing only with a query on record that was run and found nothing, as its Hunt
+    /// queries card's "No hits, close" (<see cref="CloseWithNoHitsAsync"/>) holds it: at least one query, every one run,
+    /// none with hits. Asked whichever way no hits is newly said (Change status, the board, a team's update, a changed
+    /// outcome); not of an external team's action, whose queries run where that team works, outside TIDE.
+    /// </summary>
+    private static async Task RequireNoHitsOnRecordAsync(IAppDbContext db, ActionItem a, ActionOutcome outcome, CancellationToken ct)
+    {
+        if (outcome != ActionOutcome.NoHits || a.Outcome == ActionOutcome.NoHits || !ActionGuide.IsHunt(a.Kind)) return;
+        if (await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct)) return;
+        var results = await db.HuntQueries.Where(h => h.ActionId == a.Id).Select(h => h.Result).ToListAsync(ct);
+        if (results.Contains(HuntResult.Hits)) throw new InvalidOperationException("A query on this action found hits, so it can't close as no hits.");
+        if (results.Contains(HuntResult.NotRun)) throw new InvalidOperationException("A query on this action hasn't been run: record its result, or remove it, first.");
+        if (results.Count == 0)
+            throw new InvalidOperationException("No query on this action has been kept and run, so it can't close as no hits yet. Copy or keep one on its Hunt queries card, then use No hits, close there.");
     }
 
     /// <summary>
@@ -1770,6 +1824,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var lead = TeamUpdates.Line(team, closing ? null : note, due, reply is not null);
         if (moves)
         {
+            await RequireNoHitsOnRecordAsync(db, a, update.Outcome, ct);
             var over = await OverLimit(db, a, update.Status, update.OverLimitReason, ct);
             var was = a.Status;
             var line = ApplyStatus(db, a, update.Status, update.Outcome, closing ? note : null, lead);
@@ -2148,13 +2203,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// Generates a hunt query in <paramref name="dialect"/> from the source article's indicators, or (<paramref name="fromStory"/>)
     /// every article's in its story, with any added on the action itself, over <paramref name="days"/> when the analyst
-    /// chose a window (1 to <see cref="MaxHuntDays"/>), else the window <see cref="HuntInputsAsync"/> sets.
+    /// chose a window (1 to <see cref="MaxHuntDays"/>), else the window <see cref="HuntInputsAsync"/> sets. A closed action
+    /// takes no new query, as it takes no saved one (<see cref="ActionClosedException"/>): reopen it first.
     /// </summary>
     public async Task<HuntQuery> GenerateHuntAsync(Guid actionId, string dialect, bool fromStory = false, int? days = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
+        RequireOpen(a);
         var inputs = Over(await HuntInputsAsync(db, a, fromStory, ct), days);
         if (inputs.Indicators.Count == 0)
             throw new InvalidOperationException(fromStory ? "No article in the story has indicators to hunt for."
@@ -2196,7 +2253,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// Adds a query the analyst wrote (a behavioural hunt, say, "php-fpm spawning sh") rather than one built from
-    /// indicators. It's recorded like a generated one; with no generated text, it's shown as hand-written.
+    /// indicators. It's recorded like a generated one; with no generated text, it's shown as hand-written. Refused on a
+    /// closed action, as Generate is.
     /// </summary>
     public async Task<HuntQuery> AddHandWrittenHuntAsync(Guid actionId, string dialect, string text, CancellationToken ct = default)
     {
@@ -2204,6 +2262,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var clean = HuntText((text ?? "").Replace("\r\n", "\n"));
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, actionId, ct);
+        RequireOpen(a);
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = d.Key, GeneratedText = "", Text = clean, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -2278,13 +2337,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// from an article adds them to the article (<see cref="ArticleService.AddIndicators"/>, as its editor would, so the
     /// brief, exports and other actions have them too), which takes writing articles as well as working the action; one
     /// with no article keeps them itself. Either way they're added by the same rule
-    /// (<see cref="ArticleService.NewIndicators"/>), and the action's history says so.
+    /// (<see cref="ArticleService.NewIndicators"/>), and the action's history says so. A closed action takes none, as it
+    /// takes no new query.
     /// </summary>
     public async Task<int> AddIndicatorsAsync(Guid actionId, IEnumerable<IndicatorForm> indicators, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await HuntActionAsync(db, actionId, tracked: true, ct);
         await RequireWork(db, user, a, ct);
+        RequireOpen(a);
         int added;
         if (a.ArticleId is not null)
         {
@@ -2535,9 +2596,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// Who holds <paramref name="a"/> once it's on <paramref name="teamId"/> and given to <paramref name="assigneeId"/>
-    /// (nobody when blank), and their name. A holder is a member of the team, under the name the team has for them, so
-    /// an external team's action (no members) is nobody's. Whoever holds it already keeps it while it stays on its team,
-    /// member or not (one given it before the rule, or an analyst who took it on): only a change of holder is checked.
+    /// (nobody when blank), and their name. A holder is a member of the team who can work actions
+    /// (<see cref="TeamMemberRoles.CanHold"/>: the people Take it is offered to), under the name the team has for them, so
+    /// an external team's action (no members) is nobody's, and a Reader or Viewer kept on a team is never given one.
+    /// Whoever holds it already keeps it while it stays on its team, member or not (one given it before the rule, or an
+    /// analyst who took it on): only a change of holder is checked.
     /// </summary>
     private static async Task<(string? Id, string? Name)> HolderAsync(IAppDbContext db, ActionItem a, Guid teamId, string? assigneeId,
         CancellationToken ct)
@@ -2545,8 +2608,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var id = string.IsNullOrWhiteSpace(assigneeId) ? null : assigneeId.Trim();
         if (id is null) return (null, null);
         if (id == a.AssigneeId && teamId == a.TeamId) return (id, a.AssigneeName);
-        return (id, await db.TeamMembers.Where(m => m.TeamId == teamId && m.UserId == id).Select(m => m.DisplayName).FirstOrDefaultAsync(ct)
-                    ?? throw new ArgumentException("That person isn't on the action's team."));
+        var member = await TeamMemberRoles.OfAsync(db, teamId, id, ct) ?? throw new ArgumentException("That person isn't on the action's team.");
+        return member.CanHold ? (id, member.Name) : throw new ArgumentException(member.CantHold);
     }
 
     /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a

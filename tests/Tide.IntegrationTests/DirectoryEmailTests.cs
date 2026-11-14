@@ -168,7 +168,9 @@ public class DirectoryEmailTests
         using var release = new ManualResetEventSlim(initialState: true);
         var answer = new DirectoryPerson("Jordan Rivera", "jordan.rivera@contoso.com");
         var names = new WindowsNames(_ => { release.Wait(TimeSpan.FromSeconds(10)); return answer; }, TimeSpan.FromMilliseconds(50), clock);
-        names.Resolve(Account).Should().Be("Jordan Rivera");
+        // The first answer is kept once it lands: on a loaded machine the lookup's thread can start after the 50 ms wait
+        // (the bare username for now), so this waits for the answer, not the clock.
+        (await Resolved(names, "Jordan Rivera")).Should().Be("Jordan Rivera");
 
         release.Reset();
         answer = new DirectoryPerson("Jordan Rivera-Lee", "jordan.lee@contoso.com");
@@ -177,14 +179,20 @@ public class DirectoryEmailTests
         (await names.EmailAsync(Account)).Should().Be("jordan.rivera@contoso.com");
 
         release.Set();
+        (await Resolved(names, "Jordan Rivera-Lee")).Should().Be("Jordan Rivera-Lee", "the answer that lands later is kept");
+    }
+
+    // The account's name once it is <paramref name="expected"/>, or whatever it is after 15 seconds.
+    private static async Task<string?> Resolved(WindowsNames names, string expected)
+    {
         var deadline = DateTime.UtcNow.AddSeconds(15);
-        string? name = null;
-        while (name != "Jordan Rivera-Lee" && DateTime.UtcNow < deadline)
+        var name = await names.ResolveAsync(Account);
+        while (name != expected && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
             name = await names.ResolveAsync(Account);
         }
-        name.Should().Be("Jordan Rivera-Lee", "the answer that lands later is kept");
+        return name;
     }
 
     // --- the principal --------------------------------------------------------------------------------------------

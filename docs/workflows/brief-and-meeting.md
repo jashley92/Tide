@@ -93,6 +93,7 @@ it when an analyst first opens it:
 |---|---|
 | `BriefDate` | The day. Refused on a weekend or holiday (`OrgClock.Days.DayOffReason`, ADR [0018](../decisions/0018-holidays-are-days-off-like-weekends.md)). |
 | `AnalystId`, `AnalystName` | Who the rotation names for that day (`IPresenterLookup`), else the analyst starting it. A past day's brief is presented by whoever starts it. |
+| `PresentedByName` | Set as the live meeting ends: whoever held its presenter's seat ("Pat", or "Pat and Sam" when it changed hands). The brief page and the editions say "Presented by" this, else `AnalystName` (presented without a live meeting). Back to ready clears it. |
 | `TeamNote` | The latest earlier brief's note, so standing items roll forward. A note cleared on that brief stays cleared. |
 | `Status` | Draft. |
 
@@ -106,7 +107,7 @@ with removal you can undo.
 
 | Action | Code | Rule |
 |---|---|---|
-| Add article (N available) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
+| Add article (N ready, M drafts) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
 | Remove | `RemoveItemAsync` | Undo re-adds it at its old position (`AddArticleAsync(…, at)`), on the brief it came off even if the page has since moved to another day. |
 | Move, reorder | `MoveItemAsync`, `ReorderAsync` | Positions are renumbered from 0. |
 | Add to today's brief from the editor | `ArticleEditorPanel.AddToTodaysBrief` | Saves the article first if it has unsaved edits, then `GetOrStartAsync` and `AddArticleAsync`. |
@@ -131,7 +132,7 @@ The **edition check**, in the context rail, counts the articles each edition wil
 exceptions (`EditionChecks.Exceptions`): what is partly included, left out, or goes out with a warning. How the
 editions are cut is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
 
-Colleagues see changes live: the brief's topic on `ChangeFeed` re-reads the page, the "Add article (N available)" count
+Colleagues see changes live: the brief's topic on `ChangeFeed` re-reads the page, the "Add article (N ready, M drafts)" count
 and an open Add articles picker (which keeps what's ticked).
 
 ## The title slide line and the team's opening note
@@ -313,7 +314,10 @@ narrows for it, so the room reads the two together:
 ## The live meeting
 
 **Start the meeting** makes it live for the team: a banner on every page and a Join button on the brief invite anyone
-on the team edition in, or they paste the copied link.
+on the team edition in, or they paste the copied link. It can't start before the brief's day (`MeetingDay`): on a weekend
+or holiday, when Today shows the next working day's brief, present mode shows Start the meeting disabled, with "The
+meeting can start on Mon Nov 16, the brief's day." beside it and in the wrap-up's place for End the meeting. The brief
+can still be prepared and rehearsed.
 
 `LiveMeetings` (a singleton in `Tide.Web`, implementing `IMeetingsInProgress`) holds one live meeting per brief day, in
 memory (ADR [0001](../decisions/0001-blazor-server-on-prem.md)): who presents, their slide and its key, how far they've
@@ -365,7 +369,7 @@ What people in the meeting can do:
 | With `JoinMeetings` and the team edition (Analyst, Action owner, Viewer, Admin; never a Visitor) | Add someone who was there by name, from the box under *Attended* on the wrap-up slide (the presenter, from their rail), and take off a name they added (`MeetingService.AddAttendeeAsync`, `RemoveAttendeeAsync`). Not in a rehearsal, which has no seat in a meeting, nor on the company-wide edition, which shows no attendance. |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
 | The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it when they're on that team, else the team's (they can hand it on), and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take them (when on their team) or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
-| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), take off anyone added by name (`MeetingService.RemoveAttendeeAsync`), mark articles discussed, end the meeting. |
+| The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), take off anyone who attended, joined or added by name (`MeetingService.RemoveAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 
 **Connections.** A circuit whose connection drops is "away": not shown and not presenting, so a presenter's drop starts
@@ -380,9 +384,9 @@ joining again keeps the first join and clears the leaving time. Someone the pres
 in TIDE becomes them, not a second entry. As the meeting ends, `LeftAsync` writes each person's last leaving time.
 While the meeting is live, names are added and taken off only from a seat in it on the team edition
 (`MeetingService.CanAddAttendees`, from `IMeetingsInProgress.SeatedIn`): each added row keeps who added it
-(`AddedById`), and only they, or whoever presents the meeting, can take it off (`CanRemoveAttendee`). With no meeting
-of the brief live, before or after it, anyone with `PresentBriefs` corrects the record from the rail: adding, or taking
-off anyone added. A rehearsal changes none of it. No one takes off someone who joined. Each add and removal is in the
+(`AddedById`), and only they can take it off; whoever presents the meeting can take off anyone, joined or added
+(`CanRemoveAttendee`). With no meeting of the brief live, before or after it, anyone with `PresentBriefs` corrects the
+record from the rail: adding, or taking off anyone. A rehearsal changes none of it. Each add and removal is in the
 audit log under whoever made it.
 
 **Notes and attendance publish `ChangeFeed.Meeting(briefId)`**, not the brief's own topic, so a note doesn't show as an

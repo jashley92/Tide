@@ -22,7 +22,7 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>The app with its SQL commands counted, and its background jobs off so only what a test does is counted.</summary>
-public sealed class CountingApp : TideApp
+public sealed class CountingApp : WeekdayApp
 {
     public TestDb.CommandLog Commands { get; } = new();
 
@@ -31,7 +31,10 @@ public sealed class CountingApp : TideApp
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(s =>
         {
-            foreach (var job in s.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Namespace == typeof(LiveMeetings).Namespace).ToList())
+            // Every one of the app's own, wherever it lives: the webhook sender (in the API's namespace) reads the job lease
+            // and its due events once a minute, and on a loaded machine those reads landed inside a page's count.
+            foreach (var job in s.Where(d => d.ServiceType == typeof(IHostedService)
+                         && d.ImplementationType?.Assembly == typeof(LiveMeetings).Assembly).ToList())
                 s.Remove(job);
             s.ConfigureDbContext<AppDbContext>(o => o.AddInterceptors(Commands));
         });
@@ -85,7 +88,7 @@ internal static partial class BriefChipPage
 /// The brief chip in the top bar: when today's brief meets and which of the five steps it's on, read off the same steps
 /// as Today's strip, as a link to Today. The sample data has today's brief as a draft with three articles.
 /// </summary>
-public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
+public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 {
     private string Meets => BriefChipPage.Meets(app);
 
@@ -97,7 +100,7 @@ public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var brief = await BriefService.Load(db.Briefs.AsNoTracking()).SingleAsync(b => b.BriefDate == BriefChipPage.Day(app));
-            needsWork = brief.Items.Any(i => ArticleChecks.For(i.Article!).Any(c => c.Blocking));
+            needsWork = brief.Items.Any(i => i.Article!.Status == ArticleStatus.Draft || ArticleChecks.For(i.Article!).Any(c => c.Blocking));
         }
         await BriefChipPage.Change(app, b => b.Status = BriefStatus.Draft);
 
@@ -121,6 +124,19 @@ public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         current.Should().Contain(needsWork ? ">Write<" : ">Order<");
         BriefChipPage.In(today).Should().Contain(" aria-current=\"page\"", "on Today the chip is the current page's link, as the sidebar's is");
         BriefChipPage.In(await app.CreateClient().GetStringAsync("/?tab=distribute")).Should().Contain(" aria-current=\"page\"");
+    }
+
+    [Fact]
+    public void OnADayOff_TheNarrowChipNamesTheDay_NotTheTime_SoItIsNoLongerThanAWorkingDays()
+    {
+        // A weekend: Today shows Monday's brief. The wide chip and its name say the day and the time.
+        var step = new BriefStep(BriefStepKind.Order, "Order", "Not marked ready", StepState.Current);
+        var monday = new BriefChipView(new DateOnly(2026, 11, 16), Guid.NewGuid(), "Mon 10:30 AM", 3, 5, step);
+        monday.Short.Should().Be("Mon · 3/5");
+        monday.Full.Should().Be("Brief Mon 10:30 AM · step 3 of 5 · Order");
+        monday.Name.Should().Be("Brief at Mon 10:30 AM, step 3 of 5, Order");
+        (monday with { Meets = "10:30 AM" }).Short.Should().Be("10:30 AM · 3/5", "on the brief's own day it's the time");
+        (monday with { Step = null }).Short.Should().Be("Mon 10:30 AM", "not started, the chip has no step to give room to");
     }
 
     [Fact]
@@ -238,8 +254,8 @@ public partial class BriefChipTests(TideApp app) : IClassFixture<TideApp>
 
         var today = await app.CreateClient().GetStringAsync("/");
         var current = CurrentStepLabel().Match(today).Groups[1].Value;
-        var step = current.Contains(">Write<", StringComparison.Ordinal) ? "step 2 of 5 · Write" : "step 3 of 5 · Order";
-        current.Should().MatchRegex(">(Write|Order)<", "a draft is on Write or Order");
+        var step = current.Contains("Write", StringComparison.Ordinal) ? "step 2 of 5 · Write" : "step 3 of 5 · Order";
+        current.Should().MatchRegex(">(Write|Order)(<|$)", "a draft is on Write or Order");
         BriefChipPage.In(today).Should().Contain(BriefChipPage.Full($"Brief {Meets} · {step}"));
     }
 

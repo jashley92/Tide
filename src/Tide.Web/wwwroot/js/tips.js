@@ -26,6 +26,8 @@ window.tideTips = (function () {
     var TALL = 0.6;
     // Whether this step's control, pushed out of the window after it was found, has been brought back already.
     var brought = false;
+    // Whether this step's page has been scrolled to make room for its card beside its control (place), once a step.
+    var nudged = false;
     var root = document.documentElement;
 
     function shown(el) { return !!el && el.isConnected && el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'); }
@@ -57,8 +59,10 @@ window.tideTips = (function () {
         // before the mark is written, so this costs no extra layout.)
         var tall = target.getBoundingClientRect().height > innerHeight * TALL;
         brought = false;
+        nudged = false;
         target.classList.add('tide-tip-target');
         sizeWatch.observe(target);
+        watchPage();
         target.scrollIntoView({ block: tall ? 'start' : 'nearest', inline: 'nearest' });
     }
 
@@ -215,8 +219,19 @@ window.tideTips = (function () {
             target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             r = target.getBoundingClientRect();
         }
-        var at = r && beside(r, w, high)
-            || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
+        var at = r && beside(r, w, high);
+        // Nowhere beside it fits where the page has it (a tall control, or a card that wider letters made taller), though
+        // the window can show both: for a step, once, the page is scrolled just enough for the card to fit under it, else
+        // over it. A control too tall for that keeps the card in the middle.
+        if (dialog && r && !at && !nudged && r.height + GAP + size.height <= innerHeight - EDGE - high) {
+            nudged = true;
+            // In whole pixels, rounded up: the page scrolls by whole pixels.
+            var down = Math.ceil(r.bottom + GAP + size.height - (innerHeight - EDGE));
+            if (down > 0) { scrollBy({ top: down, behavior: 'instant' }); r = target.getBoundingClientRect(); at = beside(r, w, high); }
+            var up = Math.ceil(high + size.height + GAP - r.top);
+            if (!at && up > 0) { scrollBy({ top: -up, behavior: 'instant' }); r = target.getBoundingClientRect(); at = beside(r, w, high); }
+        }
+        at = at || { side: 'none', top: Math.max(high, (innerHeight - size.height) / 2), left: Math.max(EDGE, (w - size.width) / 2) };
         // A control in the top bar, above the rail, keeps its card under it: moved off the rail it couldn't point at it.
         var overTheRail = r && rail && r.bottom <= rail.top + 1;
         var onTheRail = rail && !overTheRail && at.left + size.width > rail.left && at.left < rail.right && at.top < rail.bottom && at.top + size.height > rail.top;
@@ -306,12 +321,29 @@ window.tideTips = (function () {
     var barWatch = new ResizeObserver(soon);
 
     // A step's control not found yet, or gone, or the page moving under it: the page changing (a stylesheet added
-    // included) may draw it or move it. Read without a layout (place, in the next frame, measures). A text, style or
-    // class change moves it too, with no node added and no size changed (a count growing beside it, a popout placed
-    // against its button again): the ring follows. Not this script's own placing of the card, its arrow and ring.
+    // included) may draw it or move it. Read without a layout (place, in the next frame, measures). A style or class
+    // change to the control or anything it's in moves it too, with no node added and no size changed (a popout placed
+    // against its button again), and so does text changing beside it (a count growing): the ring follows. Only those
+    // are watched for (watchPage), not every style and text change on the page. Not this script's own placing of the
+    // card, its arrow and ring.
     var pageWatch = new MutationObserver(function (records) {
         if (records.some(function (m) { return m.type !== 'attributes' || [card, ring, arrow].indexOf(m.target) < 0; })) soon();
     });
+    var MOVES = ['style', 'class', 'hidden'];
+
+    // What pageWatch watches: nodes added or removed anywhere; and, once the control is found, style, class and hidden on
+    // it and on each element it's in, and text in what holds it. Again whenever the control is found anew.
+    function watchPage() {
+        pageWatch.disconnect();
+        pageWatch.observe(root, { childList: true, subtree: true });
+        if (!shown(target)) return;
+        var holder = target.parentElement;
+        for (var el = target; el && el !== root; el = el.parentElement) {
+            pageWatch.observe(el, el === holder
+                ? { attributes: true, attributeFilter: MOVES, characterData: true, subtree: true }
+                : { attributes: true, attributeFilter: MOVES });
+        }
+    }
 
     // The control or the page changing size (letters widening, a list growing) moves the card, its arrow and the ring.
     var sizeWatch = new ResizeObserver(soon);
@@ -371,7 +403,7 @@ window.tideTips = (function () {
                 if (shown(target)) sizeWatch.observe(target);
             }
             // The page changing (a step's control drawn, a list growing above a tip's control) places it again.
-            pageWatch.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+            watchPage();
             sizeWatch.observe(document.body);
             // Measured where it starts, and again if its size changes (cardWatch).
             var box = card.getBoundingClientRect();
