@@ -113,7 +113,7 @@ else
         <h2 id="tl-over-time">On-time rate by @Unit</h2>
         <div class="table-responsive">
             <table class="tide-table tide-report-table">
-                <caption class="visually-hidden">Each analyst's share of brief days on time, @Unit by @Unit</caption>
+                <caption class="visually-hidden">@(report.Everyone ? "Each analyst's" : "Your") share of brief days on time, @Unit by @Unit</caption>
                 <thead>
                     <tr>
                         <th scope="col">Analyst</th>
@@ -159,7 +159,7 @@ else
                     @foreach (var d in report.Days)
                     {
                         <tr @key="d.Date">
-                            <th scope="row"><a href="@Ui.BriefUrl(d.Date)">@Ui.ShortDay(d.Date)</a></th>
+                            <th scope="row" class="align-top"><a href="@Ui.BriefUrl(d.Date)">@Ui.ShortDay(d.Date)</a></th>
                             @if (report.Everyone) { <td>@d.AnalystName</td> }
                             <td>@At(d.Date, d.SentAtUtc)</td>
                             <td>@(d.PostBy is null ? "Not required" : At(d.Date, d.PostedAtUtc))</td>

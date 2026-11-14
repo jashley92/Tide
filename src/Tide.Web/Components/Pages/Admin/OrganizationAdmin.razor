@@ -291,8 +291,8 @@
         if (_busy) return;
         // A cleared box would otherwise save the last whole time, under "Saved.", as if it were what's shown.
         _meetingProblem = TimeProblem(MeetingBox, "The brief meets at", "10:30");
-        _sentByProblem = TimeProblem(SentByBox, "The brief is due sent by", "11:30");
-        _postedByProblem = TimeProblem(PostedByBox, "Its SharePoint copy is due posted by", "12:00");
+        _sentByProblem = TimeProblem(SentByBox, "The sent-by time", "11:30");
+        _postedByProblem = TimeProblem(PostedByBox, "The posted-by time", "12:00");
         StateHasChanged();
         if ((_meetingProblem ?? _sentByProblem ?? _postedByProblem) is { } problem)
         {
