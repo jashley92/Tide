@@ -102,12 +102,7 @@ public class SignInAuditTests
     }
 
     // A Windows sign-in as the Negotiate handler hands it over: the account name, and the groups as SIDs.
-    private static ClaimsPrincipal WindowsSignIn(params string[] groupSids)
-    {
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "CORP\\jdoe")], "Negotiate", ClaimTypes.Name, ClaimTypes.GroupSid);
-        foreach (var sid in groupSids) identity.AddClaim(new Claim(ClaimTypes.GroupSid, sid));
-        return new ClaimsPrincipal(identity);
-    }
+    private static ClaimsPrincipal WindowsSignIn(params string[] groupSids) => DirectoryEmailTests.WindowsSignIn("CORP\\jdoe", null, groupSids);
 
     private static SidNames Names(IReadOnlyDictionary<string, string> names) => new(_ => names, TimeSpan.FromSeconds(5));
 
@@ -320,6 +315,9 @@ public class DevSignInAuditTests(TideApp app) : IClassFixture<TideApp>
 public sealed class CapturingLogger : ILogger, ILoggerProvider
 {
     public List<(LogLevel Level, string Category, string Message)> Lines { get; } = [];
+
+    /// <summary>The messages logged so far, without their level or category.</summary>
+    public List<string> Messages { get { lock (Lines) return Lines.Select(l => l.Message).ToList(); } }
     private readonly string _category;
 
     public CapturingLogger(string category = "") => _category = category;
