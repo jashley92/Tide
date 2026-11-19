@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Tide.Application.Indicators;
 
 namespace Tide.Application.Intake;
 
@@ -115,9 +116,6 @@ public static partial class FeedParser
     // Runs of space, and the control characters a feed can carry as references ("&#x1B;").
     [GeneratedRegex(@"[\s\p{Cc}]+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Space();
-
-    [GeneratedRegex(@"\bCVE-\d{4}-\d{4,7}\b", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex Cve();
 
     // "The post <title> appeared first on <site>." as the whole text or its last sentence: after the start or a sentence's
     // end, a title of up to 300 characters, a site name (a dot only inside one, as in "example.com"), and nothing after it.
@@ -240,7 +238,7 @@ public static partial class FeedParser
 
     /// <summary>The CVE ids in <paramref name="text"/>, upper-cased, in order, once each.</summary>
     public static IReadOnlyList<string> CvesIn(string? text) =>
-        Cve().Matches(text ?? "").Select(m => m.Value.ToUpperInvariant()).Distinct().Take(50).ToList();
+        IocExtractor.CveIds(text).Take(50).ToList();
 
     /// <summary>HTML (or plain text) as one line of plain text: scripts and tags removed, entities decoded, cut short.</summary>
     public static string PlainText(string? html, int max)
@@ -319,7 +317,7 @@ public static partial class FeedParser
             foreach (var v in list.EnumerateArray())
             {
                 var id = Str(v, "cveID")?.Trim().ToUpperInvariant();
-                if (id is null || !Cve().IsMatch(id)) continue;
+                if (id is null || !IocExtractor.Cve().IsMatch(id)) continue;
                 entries.Add(new KevEntry(id, Str(v, "vendorProject") ?? "", Str(v, "product") ?? "", Str(v, "vulnerabilityName") ?? id,
                     Str(v, "shortDescription"), Day(Str(v, "dateAdded")), Day(Str(v, "dueDate")),
                     string.Equals(Str(v, "knownRansomwareCampaignUse"), "Known", StringComparison.OrdinalIgnoreCase)));

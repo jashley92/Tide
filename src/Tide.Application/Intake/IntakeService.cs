@@ -719,14 +719,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                     .ThenByDescending(i => likely[i.Id]?.Score ?? 0.5).ToList();
             }
             total = all.Count;
-            page = Math.Min(page, Pages(total, take));
+            page = Math.Min(page, Content.Words.Pages(total, take));
             pageItems = all.Skip((page - 1) * take).Take(take).ToList();
             all = view;
         }
         else
         {
             total = await q.CountAsync(ct);
-            page = Math.Min(page, Pages(total, take));
+            page = Math.Min(page, Content.Words.Pages(total, take));
             all = pageItems = await Light(q.Skip((page - 1) * take).Take(take)).ToListAsync(ct);
             named = all.ToDictionary(i => i.Id, i => weRun(i.Title, i.Excerpt));
         }
@@ -768,9 +768,6 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         }).ToList();
         return new InboxPage(rows, total, page);
     }
-
-    // How many pages of take rows total items make (at least one).
-    private static int Pages(int total, int take) => Math.Max(1, (total + take - 1) / take);
 
     // Each split among the items shown, noted on its newest report (where the group's line was): the latest split there.
     private static Dictionary<Guid, SplitNote> SplitNotes(List<FeedItem> items, List<List<TriageSplit>> splits)
@@ -1281,7 +1278,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         Guid? articleId = null;
         try
         {
-            var title = chosenTitle ?? (lead.Title.Length > ArticleService.MaxTitle ? lead.Title[..(ArticleService.MaxTitle - 1)] + "…" : lead.Title);
+            var title = chosenTitle ?? Content.Words.Ellipsis(lead.Title, ArticleService.MaxTitle);
             articleId = await articles.CreateAsync(title, lead.Source!.Name, lead.Url, chosenTlp ?? items.Max(i => i.Source!.DefaultTlp), ct);
             await using var db = await dbs.CreateAsync(ct);
             var article = await db.Articles.Include(a => a.Cves).FirstAsync(a => a.Id == articleId, ct);
@@ -1454,7 +1451,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (known.Add(item.Url))
             db.ArticleLinks.Add(new ArticleLink
             {
-                ArticleId = articleId, Url = item.Url, Title = item.Title.Length > 500 ? item.Title[..499] + "…" : item.Title,
+                ArticleId = articleId, Url = item.Url, Title = Content.Words.Ellipsis(item.Title, ArticleLink.MaxTitle),
                 SourceName = item.Source?.Name, PublishedAtUtc = item.PublishedAtUtc, AddedAtUtc = time.GetUtcNow(), AddedByName = user.DisplayName,
             });
         var added = item.CveList.Where(c => !cves.Contains(c)).Distinct(StringComparer.OrdinalIgnoreCase).Take(Math.Max(0, 50 - cves.Count)).ToList();

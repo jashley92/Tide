@@ -359,11 +359,11 @@ public class EscalationTests : IDisposable
         foreach (var a in new[] { teams, assigned, part, closed }) await Flag(a);
 
         As("S-1-5-21-NET", "Nat", AppRole.ActionOwner);
-        (await _db.Actions().EscalatedAsync()).Select(r => r.Title).Should().Equal(["Network's"], "their team's; not a closed one, nor one not escalated");
+        (await _db.Actions().TeamQueueAsync(ladderOn: true)).Escalated.Select(r => r.Title).Should().Equal(["Network's"], "their team's; not a closed one, nor one not escalated");
         (await _db.Actions().TeamQueueAsync()).Escalated.Select(r => r.Title).Should().Equal(["Network's"],
             "Today reads them with its queue, even with the ladder off while any is still flagged");
         As("S-1-5-21-ROBIN", "Robin", AppRole.ActionOwner);
-        var robins = await _db.Actions().EscalatedAsync();
+        var robins = (await _db.Actions().TeamQueueAsync(ladderOn: true)).Escalated;
         robins.Select(r => r.Title).Should().Equal(["Robin's on Identity", "A part of it"], "theirs, and a part of theirs; soonest due first");
         robins.Should().OnlyContain(r => r.Escalated);
         (await _db.Actions().TeamQueueAsync(ladderOn: true)).Should().Match<TeamQueue>(q => !q.OnATeam && q.Escalated.Count == 2, "on no team, still theirs");

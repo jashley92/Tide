@@ -103,5 +103,5 @@ public sealed class JobRunLog(JobMonitor jobs, TimeProvider time, ILogger<JobRun
 
     private static FinishedRun Finished(JobRun r) => new(r.Job, r.StartedAtUtc, r.FinishedAtUtc, r.Succeeded, r.Detail, r.Error);
 
-    private static string? Cut(string? s, int max) => s is null || s.Length <= max ? s : s[..(max - 1)] + "…";
+    private static string? Cut(string? s, int max) => s is null ? null : Content.Words.Ellipsis(s, max);
 }

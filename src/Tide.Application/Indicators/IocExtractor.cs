@@ -39,7 +39,7 @@ public static partial class IocExtractor
     {
         if (string.IsNullOrWhiteSpace(text)) return new Found([], []);
 
-        var cves = CveRx().Matches(text).Select(m => m.Value.ToUpperInvariant()).Distinct().ToList();
+        var cves = CveIds(text).ToList();
 
         // Each raw token, refanged on its own, so we know which ones the author defanged.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -127,14 +127,19 @@ public static partial class IocExtractor
             : 0;
     }
 
-    [GeneratedRegex(@"\bCVE-\d{4}-\d{4,7}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex CveRx();
+    /// <summary>A CVE id anywhere in text: the one pattern the extractor, the feeds and the reading pane share.</summary>
+    [GeneratedRegex(@"\bCVE-\d{4}-\d{4,7}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    internal static partial Regex Cve();
+
+    /// <summary>The CVE ids in <paramref name="text"/>, upper-cased, in order, once each.</summary>
+    internal static IEnumerable<string> CveIds(string? text) =>
+        Cve().Matches(text ?? "").Select(m => m.Value.ToUpperInvariant()).Distinct();
 
     /// <summary>A CVE id in its canonical form ("CVE-2026-1234"), or null when <paramref name="text"/> isn't one.</summary>
     public static string? NormalizeCve(string? text)
     {
         var t = (text ?? "").Trim();
-        var m = CveRx().Match(t);
+        var m = Cve().Match(t);
         return m.Success && m.Length == t.Length ? t.ToUpperInvariant() : null;
     }
 }

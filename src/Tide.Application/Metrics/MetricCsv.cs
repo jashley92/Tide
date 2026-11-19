@@ -60,7 +60,7 @@ public static class MetricCsv
 
     // The export puts an apostrophe before a cell a spreadsheet would read as a formula (Csv.Cell); take it off again.
     private static string Unguard(string cell) =>
-        cell.Length > 1 && cell[0] == '\'' && cell[1] is '=' or '+' or '-' or '@' or '\t' or '\r' ? cell[1..] : cell;
+        cell.Length > 1 && cell[0] == '\'' && Content.Csv.IsFormulaStart(cell[1]) ? cell[1..] : cell;
 
     /// <summary>Splits the text into records of cells; returns why it can't, or null.</summary>
     internal static string? Split(string text, List<(int Row, List<string> Cells)> records)

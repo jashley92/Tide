@@ -36,7 +36,7 @@ public sealed record ReadingText(Guid ItemId, IReadOnlyList<ReadingSpan> Spans, 
 /// colleagues and the editor reuse it. Analysts only, one item per request, never in bulk. A source set to Never isn't
 /// fetched. The AI provider isn't asked: reading is TIDE's own fetch.
 /// </summary>
-public sealed partial class ReadingService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, IOptionsMonitor<IntakeOptions> options, TimeProvider time)
+public sealed class ReadingService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, IOptionsMonitor<IntakeOptions> options, TimeProvider time)
 {
     /// <summary>The item's text if it's kept and still fresh; null when it has to be fetched.</summary>
     public async Task<ReadingText?> KeptAsync(Guid itemId, CancellationToken ct = default)
@@ -102,7 +102,7 @@ public sealed partial class ReadingService(IAppDbContextFactory dbs, ICurrentUse
     {
         var found = IocExtractor.Extract(text);
         var marks = new List<(int At, int Length, ReadingMark Mark)>();
-        foreach (Match m in CveRx().Matches(text)) marks.Add((m.Index, m.Length, ReadingMark.Cve));
+        foreach (Match m in IocExtractor.Cve().Matches(text)) marks.Add((m.Index, m.Length, ReadingMark.Cve));
         foreach (var indicator in found.Indicators)
             foreach (Match m in Regex.Matches(text, AsWritten(indicator.Value), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)))
                 marks.Add((m.Index, m.Length, ReadingMark.Indicator));
@@ -149,9 +149,6 @@ public sealed partial class ReadingService(IAppDbContextFactory dbs, ICurrentUse
         }
         return sb.ToString();
     }
-
-    [GeneratedRegex(@"\bCVE-\d{4}-\d{4,7}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex CveRx();
 
     private void RequireTriage()
     {

@@ -551,7 +551,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         }
     }
 
-    private static string Clip(string value) => value.Length <= 80 ? value : value[..79] + "…";
+    private static string Clip(string value) => Content.Words.Ellipsis(value, 80);
 
     private void RequireAdmin()
     {

@@ -108,7 +108,7 @@ public sealed class TeamScorecardService(IAppDbContextFactory dbs, ICurrentUser 
         var overdue = await CountByTeam(actions.WhereOverdue(today), ct);
         // Each late one's days, from its due date to its close, or to today while open (reopening clears the close).
         var late = (await due.WhereLate(today).Select(a => new { a.TeamId, a.DueDate, a.ClosedDate }).ToListAsync(ct))
-            .ToLookup(a => a.TeamId, a => ActionSla.Late(a.DueDate, a.ClosedDate ?? today));
+            .ToLookup(a => a.TeamId, a => ActionSla.DaysLate(a.DueDate, a.ClosedDate ?? today));
         // The same against the date each was first given, over those first due in the window: a team that moves its dates
         // doesn't move them out of here, or turn a broken commitment into a kept one.
         var first = actions.Where(a => a.OriginalDueDate >= from && a.OriginalDueDate <= today);
@@ -170,7 +170,7 @@ public sealed class TeamScorecardService(IAppDbContextFactory dbs, ICurrentUser 
             .Select(key =>
             {
                 var theirs = dueBy[key].ToList();
-                var lateDays = theirs.Where(h => late.Contains(h.Id)).Select(h => ActionSla.Late(h.Due, h.Closed ?? today)).ToList();
+                var lateDays = theirs.Where(h => late.Contains(h.Id)).Select(h => ActionSla.DaysLate(h.Due, h.Closed ?? today)).ToList();
                 var open = openBy[key].ToList();
                 return new PersonScore(key.Length == 0 ? null : key, key.Length == 0 ? "Nobody (the team's)" : names.GetValueOrDefault(key, key),
                     theirs.Count, theirs.Count(h => met.Contains(h.Id)), lateDays.Count, lateDays.Count == 0 ? null : Math.Round(lateDays.Average(), 1),

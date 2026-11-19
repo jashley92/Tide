@@ -64,7 +64,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         if (uploads.Count > room)
             throw new ArgumentException(room <= 0
                 ? $"An article can have at most {Article.MaxScreenshots} screenshots."
-                : $"Only {room} more screenshot{(room == 1 ? "" : "s")} fit on this article (the most is {Article.MaxScreenshots}).");
+                : $"Only {Content.Words.Plural(room, "more screenshot")} fit on this article (the most is {Article.MaxScreenshots}).");
 
         var checkedFiles = uploads.Select(u => (Upload: u, Type: Checked(u))).ToList();
 

@@ -113,7 +113,11 @@ public sealed partial class MarkdownService : IMarkdownService
         return html.StartsWith("<p>", StringComparison.Ordinal) && html.EndsWith("</p>", StringComparison.Ordinal) ? html[3..^4] : html;
     }
 
-    public string ToPlainText(string? markdown)
+    public string ToPlainText(string? markdown) => PlainText(markdown);
+
+    /// <summary>The text of <paramref name="markdown"/> without its formatting; Markdown too deeply nested to parse comes
+    /// back as it was typed, on one line.</summary>
+    internal static string PlainText(string? markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
         try { return Markdown.ToPlainText(markdown, Pipeline).Trim(); }

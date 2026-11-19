@@ -78,7 +78,7 @@ public sealed class MetricImportService(IAppDbContextFactory dbs, ICurrentUser u
     {
         var record = new MetricImport
         {
-            FileName = fileName, Origin = origin, ReadAtUtc = time.GetUtcNow(), ImportedByName = Trim(byName, 256), Rows = file.Rows.Count,
+            FileName = fileName, Origin = origin, ReadAtUtc = time.GetUtcNow(), ImportedByName = Content.Words.Ellipsis(byName, 256), Rows = file.Rows.Count,
         };
         await using var db = await dbs.CreateAsync(ct);
         db.MetricImports.Add(record);
@@ -98,7 +98,7 @@ public sealed class MetricImportService(IAppDbContextFactory dbs, ICurrentUser u
         var today = clock.Today;
         var seen = new Dictionary<(Guid, DateOnly), int>();
         var problems = new List<string>();
-        var name = Trim("Import: " + fileName, 256);
+        var name = Content.Words.Ellipsis("Import: " + fileName, 256);
 
         foreach (var row in file.Rows)
         {
@@ -155,21 +155,19 @@ public sealed class MetricImportService(IAppDbContextFactory dbs, ICurrentUser u
         if (problems.Count == 0) return null;
         var text = string.Join('\n', problems.Take(MaxProblems))
                    + (problems.Count > MaxProblems ? $"\n…and {problems.Count - MaxProblems} more." : "");
-        return text.Length > 4000 ? text[..3999] + "…" : text;
+        return Content.Words.Ellipsis(text, 4000);
     }
 
     private static DateOnly? ParseDate(string text) =>
         DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
 
     // A cell quoted back in a problem: one line, and short.
-    private static string Show(string text) => Trim(Content.MarkdownService.OneLine(text), 40);
-
-    private static string Trim(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+    private static string Show(string text) => Content.Words.Ellipsis(Content.MarkdownService.OneLine(text), 40);
 
     private static string Clean(string fileName)
     {
         var name = Path.GetFileName(fileName ?? "");
         name = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
-        return name.Length == 0 ? "metrics.csv" : Trim(name, 260);
+        return name.Length == 0 ? "metrics.csv" : Content.Words.Ellipsis(name, 260);
     }
 }

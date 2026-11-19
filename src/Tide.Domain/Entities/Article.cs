@@ -238,6 +238,9 @@ public class ArticleIndicator : Entity
 /// </summary>
 public class ArticleLink : Entity
 {
+    /// <summary>The longest title kept; a longer one is cut, ending in "…".</summary>
+    public const int MaxTitle = 500;
+
     public Guid ArticleId { get; set; }
     public string Url { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;

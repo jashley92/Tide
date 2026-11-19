@@ -74,11 +74,6 @@ public static class ActionSla
         return d;
     }
 
-    /// <summary>How many days past <paramref name="due"/> <paramref name="today"/> is (calendar days, as people say "3 days
-    /// late"); 0 when it isn't past, or either is unknown.</summary>
-    public static int Late(DateOnly? due, DateOnly? today) =>
-        due is { } d && today is { } t && t > d ? t.DayNumber - d.DayNumber : 0;
-
     /// <summary>Where an action stands on <paramref name="today"/>.</summary>
     public static SlaState StateOf(ActionStatus status, DateOnly? due, DateOnly? closed, DateOnly today, WorkingDays? workingDays = null)
     {
@@ -106,8 +101,10 @@ public static class ActionSla
         return d;
     }
 
-    /// <summary>How many days past its due date an action is on <paramref name="today"/> (0 when it isn't late or has none).</summary>
-    public static int DaysLate(DateOnly? due, DateOnly today) => due is { } d && d < today ? today.DayNumber - d.DayNumber : 0;
+    /// <summary>How many days past <paramref name="due"/> <paramref name="today"/> is (calendar days, as people say "3 days
+    /// late"); 0 when it isn't past, or either is unknown.</summary>
+    public static int DaysLate(DateOnly? due, DateOnly? today) =>
+        due is { } d && today is { } t && t > d ? t.DayNumber - d.DayNumber : 0;
 
     /// <summary>"3 days late", "1 day late", or null when it isn't.</summary>
     public static string? LateText(DateOnly? due, DateOnly today) => LateText(DaysLate(due, today));

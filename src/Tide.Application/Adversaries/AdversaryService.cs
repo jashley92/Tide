@@ -374,8 +374,8 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
             domain = "enterprise-attack",
             description = $"Techniques in TIDE's articles about {d.Adversary.Name}, scored by how many articles show each.",
             techniques = d.Techniques.Select(t => rules?.GetValueOrDefault(t.Id) is { } r
-                ? (object)new { techniqueID = t.Id, score = t.Articles, color = r.Enabled > 0 ? Tagged : Untagged, comment = $"{t.Articles} article{(t.Articles == 1 ? "" : "s")}; {r.Label} tagged" }
-                : new { techniqueID = t.Id, score = t.Articles, comment = $"{t.Articles} article{(t.Articles == 1 ? "" : "s")}" }),
+                ? (object)new { techniqueID = t.Id, score = t.Articles, color = r.Enabled > 0 ? Tagged : Untagged, comment = $"{Words.Plural(t.Articles, "article")}; {r.Label} tagged" }
+                : new { techniqueID = t.Id, score = t.Articles, comment = Words.Plural(t.Articles, "article") }),
             gradient = new { colors = new[] { "#d8eef1", "#0f7c8c" }, minValue = 0, maxValue = max },
             legendItems = rules is null ? Array.Empty<object>() : [new { label = "A rule is tagged with it", color = Tagged }, new { label = "No enabled rule tagged", color = Untagged }],
         };

@@ -49,9 +49,6 @@ internal static class ActionQueries
     public static IQueryable<ActionItem> WhereEscalated(this IQueryable<ActionItem> q) =>
         q.Where(a => a.EscalatedForDue != null && a.EscalatedForDue == a.DueDate).WhereOpen();
 
-    /// <summary>The closed actions: done, cancelled or not applicable.</summary>
-    public static IQueryable<ActionItem> WhereClosed(this IQueryable<ActionItem> q) => q.Where(a => ActionItem.ClosedStatuses.Contains(a.Status));
-
     /// <summary>The actions that count toward their team's active limit (<see cref="ActionItem.IsActiveStatus"/>).</summary>
     public static IQueryable<ActionItem> WhereActive(this IQueryable<ActionItem> q) => q.Where(a => ActionItem.ActiveStatuses.Contains(a.Status));
 

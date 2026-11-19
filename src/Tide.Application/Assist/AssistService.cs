@@ -288,7 +288,7 @@ public sealed class AssistService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (products.Count > 0) parts.Add("our notes on " + string.Join(", ", products.Select(p => p.Name)));
         else if (!status.SendsOurNotes) parts.Add($"not our notes ({Tlp.Label(NotesTlp)}, above the limit)");
         var line = parts.Count == 0 ? "the title only" : string.Join(" · ", parts);
-        return line.Length > AiDraft.MaxBasedOn ? line[..(AiDraft.MaxBasedOn - 1)] + "…" : line;
+        return Content.Words.Ellipsis(line, AiDraft.MaxBasedOn);
     }
 
     private async Task<Guid> StoreAsync(Guid articleId, string provider, string model, string hash, AssistStatus status, string basedOn,

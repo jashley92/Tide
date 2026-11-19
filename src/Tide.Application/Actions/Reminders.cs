@@ -261,7 +261,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
     /// <summary>What a run's note says of people left out as inactive.</summary>
     public static string InactiveNote(int n, int days) =>
-        $"{n} skipped as inactive (no access now, or not signed in for {days} day{(days == 1 ? "" : "s")})";
+        $"{n} skipped as inactive (no access now, or not signed in for {Words.Plural(days, "day")})";
 
     // Who this scan may still remind: roles (as last seen) granting what the email shows, and a sign-in within the
     // setting's days.
@@ -276,7 +276,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
     /// <summary>What a run's note says of emails that may not have arrived.</summary>
     public static string UnsureNote(int n) =>
-        $"{n} email{(n == 1 ? "" : "s")} may not have arrived (the relay didn't answer in time or dropped the connection): check with the recipients before sending again";
+        $"{Words.Plural(n, "email")} may not have arrived (the relay didn't answer in time or dropped the connection): check with the recipients before sending again";
 
     // Every scan's emails go through here, so one the relay may not have taken is counted for the run's note wherever
     // it's sent. Its MayHaveGone is what the scan marks by: gone or maybe gone, it isn't sent again by itself.
@@ -421,8 +421,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     {
         var t = _templates.Render(overdue ? EmailTemplateCatalog.Overdue : EmailTemplateCatalog.DueSoon, new Dictionary<string, string>
         {
-            ["Actions"] = $"{list.Count} action{S(list.Count)}",
-            ["OverdueActions"] = $"{list.Count} overdue action{S(list.Count)}",
+            ["Actions"] = Words.Plural(list.Count, "action"),
+            ["OverdueActions"] = Words.Plural(list.Count, "overdue action"),
             ["ActionList"] = Table(list, today),
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
@@ -532,7 +532,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         else to.AddRange(Options.BriefNotReady.Recipients.Where(r => System.Net.Mail.MailAddress.TryCreate(r, out _)));
         if (to.Count == 0) return new Scan(0, optedOut ? 1 : 0);
 
-        var what = brief is null ? "There's no brief for today yet." : $"Today's brief has {brief.Items.Count} article{S(brief.Items.Count)} and isn't marked ready.";
+        var what = brief is null ? "There's no brief for today yet." : $"Today's brief has {Words.Plural(brief.Items.Count, "article")} and isn't marked ready.";
         var link = string.IsNullOrWhiteSpace(app.Value.BaseUrl) ? "" :
             $" <a style=\"color:{Palette.Link};\" href=\"{Esc(app.Value.BaseUrl.TrimEnd('/') + "/briefs/" + key)}\">Open it in TIDE</a>.";
         var meeting = clock.MeetingTime.ToString("h:mm tt", CultureInfo.InvariantCulture);
@@ -726,8 +726,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             var list = emails.Select(m => open[m.ActionId]).DistinctBy(a => a.Id).OrderBy(a => a.Number).ToList();
             var t = _templates.Render(EmailTemplateCatalog.OutreachFollowUp, new Dictionary<string, string>
             {
-                ["Actions"] = $"{list.Count} action{S(list.Count)}",
-                ["Days"] = $"{days} business day{S(days)}",
+                ["Actions"] = Words.Plural(list.Count, "action"),
+                ["Days"] = Words.Plural(days, "business day"),
                 ["ActionList"] = Table(list, today),
                 ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, OutreachDates.SentOn(m.SentAtUtc, clock)))),
             });
@@ -764,8 +764,6 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         Encoding.UTF8.GetBytes(text.Trim().ToLowerInvariant())))[..HashLength];
 
     // --- shared -------------------------------------------------------------------------------------------------
-
-    private static string S(int n) => n == 1 ? "" : "s";
 
     /// <summary>The digest's overdue count: bold, and red when there are any.</summary>
     internal static string OverdueCount(int overdue) =>

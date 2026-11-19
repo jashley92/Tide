@@ -259,8 +259,8 @@ public class ActionItem : AuditableEntity
     public static bool EscalatedFor(ActionStatus status, DateOnly? due, DateOnly? escalatedForDue) =>
         escalatedForDue is not null && escalatedForDue == due && !IsClosedStatus(status);
 
-    /// <summary>The closed statuses: Done, Cancelled and Not applicable. The one list; the queries use it too
-    /// (<c>ActionQueries.WhereClosed</c>), so open and closed mean the same in C# and in the database.</summary>
+    /// <summary>The closed statuses: Done, Cancelled and Not applicable. The one list; the database queries use it too, so
+    /// open and closed mean the same in C# and in the database.</summary>
     public static readonly ActionStatus[] ClosedStatuses = [ActionStatus.Done, ActionStatus.Cancelled, ActionStatus.NotApplicable];
 
     /// <summary>The statuses that count toward a team's active limit: Open, In progress and Blocked (not Tracking, which
