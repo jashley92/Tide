@@ -99,7 +99,7 @@ same as draft / Analyst Side Analyst / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === draft / ActionOwner Side Owner / day (17 commands)
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
@@ -124,7 +124,7 @@ same as draft / Analyst Side Analyst / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === draft / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
 === ready / Analyst Side Analyst / today (46 commands)
@@ -231,7 +231,7 @@ same as draft / Analyst Side Analyst / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === live meeting / ActionOwner Side Owner / day (17 commands)
 same as draft / ActionOwner Side Owner / day
 === live meeting / Viewer Side Viewer / today (21 commands)
@@ -248,7 +248,7 @@ same as draft / ActionOwner Side Owner / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === live meeting / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
 === presented / Analyst Side Analyst / today (46 commands)
@@ -400,7 +400,7 @@ same as no brief yet / Analyst Side Analyst / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === no brief yet / ActionOwner Side Owner / day (4 commands)
 same as no brief yet / Analyst Side Analyst / day
 === no brief yet / Viewer Side Viewer / today (10 commands)
@@ -408,6 +408,6 @@ same as no brief yet / Analyst Side Analyst / day
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
+<h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === no brief yet / Viewer Side Viewer / day (4 commands)
 same as no brief yet / Analyst Side Analyst / day
