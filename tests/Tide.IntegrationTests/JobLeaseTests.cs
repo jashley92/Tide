@@ -260,6 +260,14 @@ public class JobHealthEndpointTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await ComponentHarness.RenderAsync<DiagnosticsAdmin>(app, "/admin/system");
         var html = await page.HtmlOnce("Recent failures");
         html.Should().Contain("runs them").And.Contain("the release feed did not answer");
+
+        // Once a run goes well, the job's row says only when it last failed; the error stays in Recent failures.
+        jobs.Succeeded(JobMonitor.UpdateCheck, DateTimeOffset.UtcNow, "up to date");
+        await using var after = await ComponentHarness.RenderAsync<DiagnosticsAdmin>(app, "/admin/system");
+        var html2 = await after.HtmlOnce("Recent failures");
+        html2.Should().Contain("Last failed");
+        var row = html2[html2.IndexOf("up to date", StringComparison.Ordinal)..html2.IndexOf("Recent failures", StringComparison.Ordinal)];
+        row.Should().NotContain("the release feed did not answer");
     }
 }
 
