@@ -43,10 +43,10 @@ public sealed class JobRunLog(JobMonitor jobs, TimeProvider time, ILogger<JobRun
         try
         {
             await using var db = await dbs.CreateAsync(ct);
-            var machine = Cut(Environment.MachineName, JobRun.MaxMachine)!;
+            var machine = Content.Words.Ellipsis(Environment.MachineName, JobRun.MaxMachine);
             db.JobRuns.AddRange(runs.Select(r => new JobRun
             {
-                Job = Cut(r.Job, JobRun.MaxJob)!, Machine = machine, StartedAtUtc = r.StartedUtc, FinishedAtUtc = r.FinishedUtc,
+                Job = Content.Words.Ellipsis(r.Job, JobRun.MaxJob), Machine = machine, StartedAtUtc = r.StartedUtc, FinishedAtUtc = r.FinishedUtc,
                 Succeeded = r.Succeeded, Detail = Cut(r.Detail, JobRun.MaxDetail), Error = Cut(r.Error, JobRun.MaxError),
             }));
             await db.SaveChangesAsync(ct);

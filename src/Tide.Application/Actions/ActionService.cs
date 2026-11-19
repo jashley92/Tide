@@ -2528,7 +2528,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         hunt.RunAtUtc = DateTimeOffset.UtcNow;
     }
 
-
     public async Task RemoveHuntAsync(Guid huntId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);

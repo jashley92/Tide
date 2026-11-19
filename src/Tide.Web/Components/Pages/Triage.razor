@@ -1748,7 +1748,7 @@ else
             : null;
         _pf = new PromoteForm
         {
-            Title = item.Title.Length > ArticleService.MaxTitle ? item.Title[..(ArticleService.MaxTitle - 1)] + "…" : item.Title,
+            Title = Words.Ellipsis(item.Title, ArticleService.MaxTitle),
             Classification = threat ? Classification.Threat : Classification.Informational,
             Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
             Tlp = row.Source.DefaultTlp,
@@ -1771,7 +1771,7 @@ else
             : null;
         _pf = new PromoteForm
         {
-            Title = lead.Title.Length > ArticleService.MaxTitle ? lead.Title[..(ArticleService.MaxTitle - 1)] + "…" : lead.Title,
+            Title = Words.Ellipsis(lead.Title, ArticleService.MaxTitle),
             Classification = threat ? Classification.Threat : Classification.Informational,
             Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
             Tlp = GroupTlp(line),

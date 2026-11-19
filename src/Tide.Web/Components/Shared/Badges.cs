@@ -195,7 +195,7 @@ public sealed class SlaBadge : ComponentBase
             Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when Date == SlaDate.Instead && Due is { } due => "Due " + Ui.ShortDay(due),
             Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.DaysLate(Due, Today) switch
             {
-                > 0 and var days => $" · {days} day{(days == 1 ? "" : "s")}",
+                > 0 and var days => " · " + Ui.Plural(days, "day"),
                 _ => "",
             },
             Application.Actions.SlaState.DueSoon => "Due soon",

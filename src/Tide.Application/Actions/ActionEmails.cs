@@ -35,7 +35,7 @@ internal static class ActionEmails
             var label = $"A-{a.Number}";
             var number = string.IsNullOrWhiteSpace(baseUrl) ? Esc(label) : $"<a style=\"color:{Palette.Link};\" href=\"{Esc(baseUrl + "/actions/" + a.Number)}\">{Esc(label)}</a>";
             var state = ActionSla.StateOf(a, today, workingDays);
-            var due = a.ClosedDate is { } c ? $"closed {c.ToString("MMM d", CultureInfo.InvariantCulture)} ({ActionService.OutcomeName(a.Outcome)})"
+            var due = a.ClosedDate is { } c ? $"closed {Content.Words.MonthDay(c)} ({ActionService.OutcomeName(a.Outcome)})"
                 : a.DueDate is { } d ? "due " + d.ToString("ddd MMM d", CultureInfo.InvariantCulture) : "no due date";
             var color = state == SlaState.Overdue || state == SlaState.Missed ? Palette.Threat : state == SlaState.DueSoon ? Palette.Warn : Palette.Muted;
             sb.Append(CultureInfo.InvariantCulture, $"""

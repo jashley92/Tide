@@ -345,7 +345,7 @@ public sealed class BriefRenderer(IMarkdownService markdown)
 
     /// <summary>"Cyber Defense · due Oct 28 · Open": an action's team, due date and status.</summary>
     public static string ActionMeta(EditionAction x) =>
-        $"{x.TeamName}{(x.DueDate is { } d ? " · due " + d.ToString("MMM d", Invariant) : "")} · {ActionService.StatusName(x.Status)}";
+        $"{x.TeamName}{(x.DueDate is { } d ? " · due " + Content.Words.MonthDay(d) : "")} · {ActionService.StatusName(x.Status)}";
 
     private static string WithheldParts(int n) => $"{n} restricted {(n == 1 ? "part was" : "parts were")} left out of this edition.";
 

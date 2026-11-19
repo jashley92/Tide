@@ -414,7 +414,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
                 Tlp.Label(a.Tlp), a.Classification.ToString(), a.Priority?.ToString() ?? "", a.SourceName ?? "", a.SourceUrl ?? "", a.Bluf,
                 string.Join("; ", a.Tags), string.Join(' ', a.Techniques), string.Join("; ", tactics), a.Actions.ToString(CultureInfo.InvariantCulture),
             ];
-            sb.AppendJoin(',', cells.Select(c => Csv.Cell(c))).Append('\n');
+            sb.AppendJoin(',', cells.Select(Csv.Cell)).Append('\n');
         }
         return sb.ToString();
     }

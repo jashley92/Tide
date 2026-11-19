@@ -86,7 +86,9 @@ window.tideShortcuts = (function () {
         return document.documentElement.hasAttribute('data-rail-over') || !!(target && target.closest && target.closest('#tide-rail'));
     }
     // The person asks for less motion: scroll and slide at once, not smoothly.
-    function still() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    // Read once; .matches follows a change to the system setting.
+    var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    function still() { return !!(motion && motion.matches); }
     return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still };
 })();
 

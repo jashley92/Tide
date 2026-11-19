@@ -158,7 +158,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 : [];
             var risks = new[] { Widens(s.Key, row?.Value ?? ServerValue(s.Key), value), outside.Count > 0 ? $"Outside the organization: {string.Join("; ", outside)}." : null }
                 .OfType<string>().ToList();
-            changes.Add(new(SettingsArea, s.Key, kind, risks.Count > 0 ? string.Join(" ", risks) : Clip(value), Warning: risks.Count > 0));
+            changes.Add(new(SettingsArea, s.Key, kind, risks.Count > 0 ? string.Join(" ", risks) : Content.Words.Ellipsis(value, 80), Warning: risks.Count > 0));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;
@@ -241,7 +241,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         }
         if (Distribution.EmailTemplateCatalog.Parse(key) is { } t && Distribution.EmailCopyRules.GoesOutside(t.Template)
             && Distribution.EmailTemplateCatalog.Normalize(t.Part, current) != value)
-            return $"Changes the {t.Part.ToString().ToLowerInvariant()} of the {t.Template.Title} email, which goes to people outside TIDE: {Clip(value)}";
+            return $"Changes the {t.Part.ToString().ToLowerInvariant()} of the {t.Template.Title} email, which goes to people outside TIDE: {Content.Words.Ellipsis(value, 80)}";
         return null;
     }
 
@@ -550,8 +550,6 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             row.Name = name;
         }
     }
-
-    private static string Clip(string value) => Content.Words.Ellipsis(value, 80);
 
     private void RequireAdmin()
     {

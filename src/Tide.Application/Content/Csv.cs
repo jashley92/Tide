@@ -7,10 +7,15 @@ public static class Csv
 {
     /// <summary>
     /// A cell: quoted when it holds a comma, quote or line break, and with a leading apostrophe when a spreadsheet would
-    /// read it as a formula (=, +, -, @, tab, carriage return). With <paramref name="numbersAsIs"/>, a number keeps its
-    /// leading minus or plus without one: a spreadsheet reads it as the number it is.
+    /// read it as a formula (=, +, -, @, tab, carriage return).
     /// </summary>
-    public static string Cell(string? text, bool numbersAsIs = false)
+    public static string Cell(string? text) => Quoted(text, numbersAsIs: false);
+
+    /// <summary><see cref="Cell"/>, except that a number keeps its leading minus or plus without an apostrophe: a
+    /// spreadsheet reads it as the number it is.</summary>
+    public static string NumberOrCell(string? text) => Quoted(text, numbersAsIs: true);
+
+    private static string Quoted(string? text, bool numbersAsIs)
     {
         var t = text ?? "";
         if (t.Length > 0 && IsFormulaStart(t[0])

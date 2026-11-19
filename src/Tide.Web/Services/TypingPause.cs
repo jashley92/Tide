@@ -1,12 +1,14 @@
 namespace Tide.Web.Services;
 
 /// <summary>
-/// A pause before acting on what's typed: a word typed is one search, not one a letter. Each keystroke awaits
-/// <see cref="Settled"/>; only the last one before typing stops for <see cref="DelayMs"/> gets true. <see cref="Now"/>
+/// A pause before acting on the last of a run of inputs: a word typed is one search, not one a letter, and a row the
+/// selection passes over on its way down a list isn't read. Each input awaits
+/// <see cref="Settled"/>; only the last one before input stops for <see cref="DelayMs"/> gets true. <see cref="Now"/>
 /// drops a pending one, for what applies at once (Clear, Enter, closing, a search run straight away), and hands back a
 /// mark that <see cref="IsLatest"/> checks, so a slower answer to an earlier search is dropped when a later one started.
 /// Everything that searches as you type uses one: the ATT&amp;CK picker, the tag cards (Threat actors, We run) and the
-/// story picker at <see cref="SearchMs"/>; a table's filter and triage's search at their own longer pauses. (The command
+/// story picker at <see cref="SearchMs"/>; a table's filter and triage's search at their own longer pauses; the action,
+/// adversary and stack row rails before they read the selected row. (The command
 /// palette keeps its own: its pause also cancels the search it started.)
 /// </summary>
 /// <param name="delayMs">How long typing must stop; <see cref="SearchMs"/> unless the caller says otherwise.</param>

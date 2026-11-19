@@ -490,7 +490,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             var t = _templates.Render(EmailTemplateCatalog.Digest, new Dictionary<string, string>
             {
                 ["Team"] = team.Name,
-                ["WeekOf"] = weekStart.ToString("MMM d", CultureInfo.InvariantCulture),
+                ["WeekOf"] = Content.Words.MonthDay(weekStart),
                 ["OpenCount"] = open.Count.ToString(CultureInfo.InvariantCulture),
                 ["OverdueCount"] = OverdueCount(overdue),
                 ["ClosedCount"] = closed.Count.ToString(CultureInfo.InvariantCulture),

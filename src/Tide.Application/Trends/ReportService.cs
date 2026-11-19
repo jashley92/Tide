@@ -90,7 +90,7 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
     {
         var sb = new StringBuilder("section,name,current,previous").Append('\n');
         void Row(string section, string name, object? current, object? previous) =>
-            sb.Append(Field(section)).Append(',').Append(Field(name)).Append(',').Append(Field(Num(current))).Append(',').Append(Field(Num(previous))).Append('\n');
+            sb.Append(Csv.NumberOrCell(section)).Append(',').Append(Csv.NumberOrCell(name)).Append(',').Append(Csv.NumberOrCell(Num(current))).Append(',').Append(Csv.NumberOrCell(Num(previous))).Append('\n');
         foreach (var f in r.Headlines) Row("Headlines", f.Name, f.Current, f.Previous);
         foreach (var f in r.Outcomes) Row("Outcomes", f.Name, f.Current, f.Previous);
         foreach (var m in r.Metrics) Row("Opening metrics", $"{m.Group}: {m.Metric.Name} (latest; average {Num(m.Average)}; {m.Missing} days missing)", m.Latest, null);
@@ -108,7 +108,4 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
         IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
         _ => v.ToString() ?? "",
     };
-
-    // A field as CSV (Csv.Cell): a number, which a leading minus or plus is fine on, is left as it is.
-    private static string Field(string value) => Csv.Cell(value, numbersAsIs: true);
 }

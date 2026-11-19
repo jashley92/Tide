@@ -348,7 +348,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             OfArticle(e, x => x.ArticleId);
             e.Property(x => x.Url).HasMaxLength(2000);
-            e.Property(x => x.Title).HasMaxLength(500);
+            e.Property(x => x.Title).HasMaxLength(ArticleLink.MaxTitle);
             e.Property(x => x.SourceName).HasMaxLength(200);
             e.Property(x => x.AddedByName).HasMaxLength(256);
         });

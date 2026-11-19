@@ -701,7 +701,7 @@ else
     // Copies the publisher's excerpt in as a starting point, on purpose: the analyst rewrites it from there.
     private Task StartFromExcerpt()
     {
-        _form!.Bluf = _excerpt!.Length > 600 ? _excerpt[..599] + "…" : _excerpt;
+        _form!.Bluf = Words.Ellipsis(_excerpt!, ArticleService.MaxBluf);
         return Touch();
     }
 
