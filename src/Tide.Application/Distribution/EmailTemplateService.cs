@@ -279,7 +279,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["OverdueActions"] = "2 overdue actions",
             ["ActionList"] = ActionEmails.ActionTable(sample, today, baseUrl, clock.Days),
             ["Team"] = "Detection engineering",
-            ["WeekOf"] = SampleMonday.ToString("MMM d", CultureInfo.InvariantCulture),
+            ["WeekOf"] = Content.Words.MonthDay(SampleMonday),
             ["OpenCount"] = "2",
             ["OverdueCount"] = ReminderService.OverdueCount(1),
             ["ClosedCount"] = "1",

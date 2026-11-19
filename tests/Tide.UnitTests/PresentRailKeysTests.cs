@@ -25,7 +25,7 @@ public class PresentRailKeysTests
         global.matchMedia = media;
         global.requestAnimationFrame = () => 1;
         global.MutationObserver = function () { this.observe = () => {}; this.disconnect = () => {}; };
-        global.tideShortcuts = { typing: () => false, inMenu: () => false, on: () => true, isLetter: () => false };
+        global.tideShortcuts = { typing: () => false, inMenu: () => false, on: () => true, isLetter: () => false, still: () => true };
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
         const said = [];
         tidePresent.start({ invokeMethodAsync: (m, k) => { if (k !== undefined) said.push(k); return Promise.resolve(); } });

@@ -43,10 +43,10 @@ public sealed class JobRunLog(JobMonitor jobs, TimeProvider time, ILogger<JobRun
         try
         {
             await using var db = await dbs.CreateAsync(ct);
-            var machine = Cut(Environment.MachineName, JobRun.MaxMachine)!;
+            var machine = Content.Words.Ellipsis(Environment.MachineName, JobRun.MaxMachine);
             db.JobRuns.AddRange(runs.Select(r => new JobRun
             {
-                Job = Cut(r.Job, JobRun.MaxJob)!, Machine = machine, StartedAtUtc = r.StartedUtc, FinishedAtUtc = r.FinishedUtc,
+                Job = Content.Words.Ellipsis(r.Job, JobRun.MaxJob), Machine = machine, StartedAtUtc = r.StartedUtc, FinishedAtUtc = r.FinishedUtc,
                 Succeeded = r.Succeeded, Detail = Cut(r.Detail, JobRun.MaxDetail), Error = Cut(r.Error, JobRun.MaxError),
             }));
             await db.SaveChangesAsync(ct);
@@ -103,5 +103,5 @@ public sealed class JobRunLog(JobMonitor jobs, TimeProvider time, ILogger<JobRun
 
     private static FinishedRun Finished(JobRun r) => new(r.Job, r.StartedAtUtc, r.FinishedAtUtc, r.Succeeded, r.Detail, r.Error);
 
-    private static string? Cut(string? s, int max) => s is null || s.Length <= max ? s : s[..(max - 1)] + "…";
+    private static string? Cut(string? s, int max) => s is null ? null : Content.Words.Ellipsis(s, max);
 }

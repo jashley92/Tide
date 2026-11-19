@@ -7,7 +7,8 @@ using Tide.Application.Distribution;
 namespace Tide.Infrastructure.Notifications;
 
 /// <summary>
-/// The one email path, kept to what a brief send needs. It reads its options on every send,
+/// The one email path: briefs and corrections, reminders, rotation and handoff notices and template test sends all go
+/// through it. It reads its options on every send,
 /// so a corrected relay setting applies without a restart. A message is multipart/alternative (plain text, then HTML),
 /// and the HTML part carries the screenshots as linked resources (<c>cid:</c>), which Outlook shows inline without
 /// fetching anything. A send is watched by the analyst who made it, so nothing is held and retried behind their back:
@@ -47,11 +48,8 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
 
         var target = Target(o);
         if (!circuit.TryEnter(target))
-        {
-            var wait = circuit.RetryIn(target);
             return new EmailSendResult(EmailSendStatus.Failed,
-                $"The mail relay hasn't been answering; try again in {Math.Max(1, (int)Math.Ceiling(wait.TotalMinutes))} minute(s).");
-        }
+                $"The mail relay hasn't been answering; try again in {circuit.MinutesLeft(target)} minute(s).");
 
         MailMessage message;
         int valid;

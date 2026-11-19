@@ -103,8 +103,9 @@
     /// <summary>After Mark checked (done or refused): the list reads the products again.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    /// <summary>How long the selection rests before the rest of the product is read.</summary>
-    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+    /// <summary>The selection resting a moment before the rest of the product is read, and the mark that drops a read
+    /// another selection overtook.</summary>
+    private readonly TypingPause _rest = new(150);
 
     /// <summary>How many of each list the rail shows; the rest are on the product's page (or in triage).</summary>
     internal const int Shown = 5;
@@ -112,7 +113,6 @@
     private StackDetail? _detail;
     private IReadOnlyList<StackTriageItem>? _triage;
     private StackRow? _for;
-    private int _ticket;
     private bool _marking;
 
     // Analysts both keep the list and triage: they change it and see what's in triage (StackService's own rules).
@@ -134,22 +134,21 @@
     // selection is dropped.
     private async Task Load(bool rest)
     {
-        var ticket = ++_ticket;
         var row = Row;
+        if (rest && !await _rest.Settled()) return;
+        var ticket = _rest.Now();
         try
         {
-            if (rest) await Task.Delay(Rest);
-            if (ticket != _ticket) return;
             // The two at once: each read is on a context of its own.
             var detail = Stack.GetAsync(row.Product.Id);
             var triage = CanWrite && !row.Product.IsRetired ? Stack.InTriageAsync(row.Product.Id) : Task.FromResult<IReadOnlyList<StackTriageItem>>([]);
             await Task.WhenAll(detail, triage);
-            if (ticket != _ticket) return;
+            if (!_rest.IsLatest(ticket)) return;
             (_detail, _triage) = (await detail, await triage);
         }
         catch (Exception ex)
         {
-            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+            if (_rest.IsLatest(ticket)) Toasts.Error(UserFacingError.For(ex));
         }
     }
 

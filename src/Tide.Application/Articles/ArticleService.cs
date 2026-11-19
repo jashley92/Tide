@@ -263,7 +263,7 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (known.Contains(canonical)) throw new ArgumentException("That report is already on the article.");
         var link = new ArticleLink
         {
-            ArticleId = articleId, Url = clean, Title = clean.Length > 500 ? clean[..499] + "…" : clean,
+            ArticleId = articleId, Url = clean, Title = Content.Words.Ellipsis(clean, ArticleLink.MaxTitle),
             SourceName = CleanOrNull(sourceName, 200), AddedAtUtc = DateTimeOffset.UtcNow, AddedByName = user.DisplayName,
         };
         db.ArticleLinks.Add(link);

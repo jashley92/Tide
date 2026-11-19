@@ -293,13 +293,13 @@ Two workflows live in `.github/workflows`. Scripts they call live in `tools/ci` 
 
 ```mermaid
 flowchart TD
-    PR["Pull request, or push to main<br/>or ux/option-e (not docs-only)"] --> CI["ci.yml"]
+    PR["Pull request, or push to main<br/>(not docs-only)"] --> CI["ci.yml"]
     Tag["Push a v* tag"] --> REL["release.yml"]
     REL --> G["gates: runs ci.yml<br/>on the tagged commit"]
     G --> CI
     CI --> BT["build-test job"]
     CI --> SQL["sql-server job"]
-    CI --> LAY["layout job"]
+    CI --> LAY["layout-build, 8 layout-shard jobs,<br/>layout gate"]
     BT --> B1["Sonar begin, build (any warning<br/>fails it), test with coverage, Sonar end"]
     BT --> B2["Released migrations immutable"]
     BT --> B5["No class the markup uses<br/>loses its style"]
@@ -308,13 +308,13 @@ flowchart TD
     SQL --> S1["Apply SQL Server migrations twice"]
     SQL --> S2["SQL Server tests"]
     SQL --> S3["Upgrade from recent releases<br/>and the first release"]
-    LAY --> L1["Layout rules in Chromium<br/>on a seeded demo, at several widths"]
+    LAY --> L1["Layout rules in Chromium<br/>on a seeded demo, at several widths,<br/>4 slices × 2 letter spacings"]
     G --> R["release job: version tag on main,<br/>Sonar gate passed on main,<br/>immutable migrations, release notes,<br/>build, publish, bundle, GitHub Release"]
 ```
 
 ### `ci.yml`
 
-Runs on pull requests and on pushes to `main` and `ux/option-e`, and is called by the release workflow. Changes that touch only `**/*.md`,
+Runs on pull requests and on pushes to `main`, and is called by the release workflow. Changes that touch only `**/*.md`,
 `docs/**`, `LICENSE` or `.gitignore` don't trigger it. A newer run for the same ref cancels an older one.
 
 **`build-test`** (Ubuntu, .NET `10.0.x`):
@@ -326,16 +326,19 @@ Runs on pull requests and on pushes to `main` and `ux/option-e`, and is called b
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
 | No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
-| Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh ux/option-e` (or your base). |
+| Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh origin/main` (or your base). |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
 | Deprecated package report | Never; informational. |
 
-**`layout`** (Ubuntu, .NET `10.0.x`, Chromium through Playwright): `tools/screenshots/layout.mjs` builds TIDE, seeds the
-demo database as the screenshot capture does, and checks each page's layout rules at the widths it's used at: rows of
+**`layout-build`, `layout-shard` and `layout`** (Ubuntu, .NET `10.0.x`, Chromium through Playwright): `layout-build`
+publishes TIDE once; eight `layout-shard` jobs (four slices of the pages, each at the default letter spacing and at
+`.12em`) each start that build, seed the demo database as the screenshot capture does, and run
+`tools/screenshots/layout.mjs`, which checks each page's layout rules at the widths it's used at: rows of
 controls that must stay one line (the meeting's quick add, a recommended line, an action on a slide), columns that must
-line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). It fails naming
-the page, the width and the rule, and prints TIDE's log. Run it locally with `node tools/screenshots/layout.mjs`
+line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). A shard fails naming
+the page, the width and the rule, and prints TIDE's log; `layout`, the check the branch rules name, passes when all
+eight do. Run it locally with `node tools/screenshots/layout.mjs`
 (`tools/screenshots/README.md`).
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
@@ -435,7 +438,7 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | IIS hosting, the installer and the upgrader end to end | `DeployScriptTests` parses every script and runs the pure functions in PowerShell; the IIS and SQL steps aren't run. `ReleaseSigningTests` runs the bundle checks and `Test-TideBundle.ps1` with throwaway keys, on Windows PowerShell 5.1 and PowerShell 7 where each is installed, and signs with openssl when it's on PATH; `Upgrade-Tide.ps1` itself is checked only for the order it does things in. |
 | A real SMTP relay with TLS or sign-in | `FakeSmtpServer` speaks plain SMTP on loopback; the relay is checked from Diagnostics after install. |
 | Real feeds, CVE services, GitHub releases, Azure OpenAI | `FakeHttp` and `FakeAssistant` answer from canned responses. |
-| Browser behaviour: the JavaScript in `wwwroot/js`, layout, focus, keyboard, drag and drop | No browser runs in CI. Component tests check markup and semantics (`AccessibilityTests`, `MarkdownToolbarTests`), not script behaviour. Three scripts' logic runs in Node over a small stand-in for the page (`FilterMenuKeysTests` for `filters.js`, `AutogrowTests` for `autogrow.js`, `DialogTabTests` for `dialog.js`'s Tab cycle; Node must be on the PATH); the rest of the JavaScript has no tests, and none has coverage. |
+| Browser behaviour: the JavaScript in `wwwroot/js`, layout, focus, keyboard, drag and drop | Only the layout check runs a browser in CI, and it checks layout rules, not script behaviour. Component tests check markup and semantics (`AccessibilityTests`, `MarkdownToolbarTests`), not script behaviour. Three scripts' logic runs in Node over a small stand-in for the page (`FilterMenuKeysTests` for `filters.js`, `AutogrowTests` for `autogrow.js`, `DialogTabTests` for `dialog.js`'s Tab cycle; Node must be on the PATH); the rest of the JavaScript has no tests, and none has coverage. |
 | How the email looks in mail clients | Render tests check its structure; open the `.eml` from development in Outlook. |
 | Long polling, reconnection after sleep, several server processes | Not simulated. TIDE runs as one process ([reference/known-issues.md](../reference/known-issues.md)). |
 | Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. See [reference/performance.md](../reference/performance.md). |

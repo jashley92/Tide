@@ -14,16 +14,12 @@ namespace Tide.IntegrationTests;
 /// of the page, its loading state, then the page again.</summary>
 public class PrerenderHandoffTests
 {
-    private sealed class Clock : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = new(2026, 11, 6, 9, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
+    private static TestClock Clock() => new(new DateTimeOffset(2026, 11, 6, 9, 0, 0, TimeSpan.Zero));
 
     [Fact]
     public void WhatsKept_IsTakenOnce_ByTheSameUser_WhileItsFresh()
     {
-        var clock = new Clock();
+        var clock = Clock();
         var handoff = new PrerenderStore(clock);
         var state = new object();
 
@@ -53,7 +49,7 @@ public class PrerenderHandoffTests
     [Fact]
     public void TheStore_KeepsAtMostItsCapacity_DroppingTheOldest_AndNeverHandsOnAnExpiredOne()
     {
-        var clock = new Clock();
+        var clock = Clock();
         var store = new PrerenderStore(clock);
         var first = store.Keep("S-1-5-21-A", "first");
         for (var i = 1; i < PrerenderStore.Capacity; i++) store.Keep("S-1-5-21-A", "more");
@@ -72,7 +68,7 @@ public class PrerenderHandoffTests
     [Fact]
     public void TheHandoff_KeepsOncePerPrerender_AndTakesOnlyOnceInteractive()
     {
-        var store = new PrerenderStore(new Clock());
+        var store = new PrerenderStore(Clock());
         var handoff = new PrerenderHandoff(store, new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" }, new ChangeFeed());
         RendererInfo prerendering = new("Static", isInteractive: false), interactive = new("Server", isInteractive: true);
         var state = new object();
@@ -89,7 +85,7 @@ public class PrerenderHandoffTests
     [Fact]
     public void TheHandoff_SaysWhetherAnythingWasSaved_SinceThePrerenderBeganReading()
     {
-        var store = new PrerenderStore(new Clock());
+        var store = new PrerenderStore(Clock());
         var feed = new ChangeFeed();
         var user = new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" };
         RendererInfo prerendering = new("Static", isInteractive: false), interactive = new("Server", isInteractive: true);

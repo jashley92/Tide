@@ -212,8 +212,7 @@
     {
         _side = Tab(key);
         _sideSeen = _side == PreviewTab ? null : _side;
-        try { await JS.InvokeVoidAsync("tideEditor.showParam", "side", _sideSeen); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideEditor.showParam", "side", _sideSeen);
         await SideChanged.InvokeAsync(_sideSeen);
     }
 
@@ -397,8 +396,7 @@
         if (_edition == edition) return;
         _edition = edition;
         _keySeen = ArticlePreview.EditionKey(edition);
-        try { await JS.InvokeVoidAsync("tideEditor.showEdition", _keySeen); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideEditor.showEdition", _keySeen);
         await EditionChanged.InvokeAsync(_keySeen);
     }
 
@@ -424,19 +422,16 @@
         if (_revealSimilar)
         {
             _revealSimilar = false;
-            try { await JS.InvokeVoidAsync("tideEditor.jump", _similarHead, null); }
-            catch (JSDisconnectedException) { /* the tab has gone */ }
+            await JS.StopAsync("tideEditor.jump", _similarHead, null);
         }
         if (_showGap)
         {
             _showGap = false;
-            try { await JS.InvokeVoidAsync("tideEditor.firstGap"); }
-            catch (JSDisconnectedException) { /* the tab has gone */ }
+            await JS.StopAsync("tideEditor.firstGap");
         }
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        try { await JS.InvokeVoidAsync("tideEditor.editionKeys", _self); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideEditor.editionKeys", _self);
     }
 
     public async ValueTask DisposeAsync()

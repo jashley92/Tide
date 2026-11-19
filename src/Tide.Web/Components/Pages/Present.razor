@@ -1397,8 +1397,7 @@ else
         if (_focusOpener)
         {
             _focusOpener = false;
-            try { await JS.InvokeVoidAsync("tidePresent.backToOpener"); }
-            catch (JSDisconnectedException) { /* the tab has gone */ }
+            await JS.StopAsync("tidePresent.backToOpener");
         }
         if (_focusEditTags)
         {
@@ -1433,8 +1432,7 @@ else
         // still stops the clock when it's disposed.
         _clock = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
         _ref = DotNetObjectReference.Create(this);
-        try { await JS.InvokeVoidAsync("tidePresent.start", _ref); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tidePresent.start", _ref);
         // Joined once the page is live, not while it's prerendered: a prerendered page would sit in the meeting unseen.
         await GoLive();
         StateHasChanged();
@@ -1622,8 +1620,7 @@ else
 
     private async Task ToggleFullscreen()
     {
-        try { await JS.InvokeVoidAsync("tidePresent.toggleFullscreen"); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tidePresent.toggleFullscreen");
     }
 
     [JSInvokable]

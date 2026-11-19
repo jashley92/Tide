@@ -9,12 +9,11 @@ namespace Tide.Web.Components.Shared;
 public enum BadgeTone { Neutral, Info, Ok, Warn, Danger, Purple }
 
 /// <summary>A badge, the one shape every pill in the app takes (TLP markings aside): a tone, tinted by default or
-/// <see cref="Solid"/> for what wants doing now. The badges below are this with their meaning built in; use it
+/// solid (<see cref="Css"/>) for what wants doing now. The badges below are this with their meaning built in; use it
 /// directly for a one-off label ("Retired").</summary>
 public sealed class Badge : ComponentBase
 {
     [Parameter] public BadgeTone Tone { get; set; }
-    [Parameter] public bool Solid { get; set; }
 
     /// <summary>A Bootstrap icon ("bi-lock-fill") before the words.</summary>
     [Parameter] public string? Icon { get; set; }
@@ -24,7 +23,7 @@ public sealed class Badge : ComponentBase
     [Parameter] public string? Class { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    protected override void BuildRenderTree(RenderTreeBuilder b) => Write(b, Tone, Solid, null, Icon, Title, Class, ChildContent);
+    protected override void BuildRenderTree(RenderTreeBuilder b) => Write(b, Tone, false, null, Icon, Title, Class, ChildContent);
 
     /// <summary>The classes for a badge: <c>tide-badge tide-badge-{tone}</c>, and <c>tide-badge-solid</c> when filled.</summary>
     public static string Css(BadgeTone tone, bool solid = false, string? extra = null) =>
@@ -194,9 +193,9 @@ public sealed class SlaBadge : ComponentBase
         var text = State switch
         {
             Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when Date == SlaDate.Instead && Due is { } due => "Due " + Ui.ShortDay(due),
-            Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.Late(Due, Today) switch
+            Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.DaysLate(Due, Today) switch
             {
-                > 0 and var days => $" · {days} day{(days == 1 ? "" : "s")}",
+                > 0 and var days => " · " + Ui.Plural(days, "day"),
                 _ => "",
             },
             Application.Actions.SlaState.DueSoon => "Due soon",
@@ -318,6 +317,9 @@ public static class Ui
 {
     /// <summary>"1 tag", "3 tags" (<see cref="Words.Plural"/>).</summary>
     public static string Plural(int n, string one, string? many = null) => Words.Plural(n, one, many);
+
+    /// <summary>An element id of its own for one copy of a component ("menu-1a2b3c4d"), for its aria references.</summary>
+    public static string NewId(string prefix) => prefix + "-" + Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>How many avatar colours there are: the <c>--tide-avatar-1</c> to <c>-8</c> tokens in app.css.</summary>
     public const int AvatarSwatches = 8;

@@ -7,7 +7,7 @@
 // A <textarea> takes part anywhere; a single-line box only inside a [data-submit-scope] (in a form, Enter already
 // submits). A DOM click() is what Blazor's @onclick hears. A disabled button is never pressed.
 (function () {
-    var dialogs = 'dialog[open], .modal.show, [role="dialog"]';
+    var dialogs = '[role="dialog"]';
     var lineTypes = ['text', 'search', 'url', 'email', 'tel', 'number', 'date', 'time', 'datetime-local'];
 
     // What .NET last heard of a box's value: as drawn when it got focus, then each change event.

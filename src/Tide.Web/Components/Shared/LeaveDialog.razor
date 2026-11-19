@@ -30,7 +30,7 @@
     /// <summary>What to do with the unsaved changes.</summary>
     public enum Choice { Stay, Save, Discard }
 
-    private readonly string _titleId = "leave-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _titleId = Ui.NewId("leave");
     private string _bodyId => _titleId + "-body";
     private bool _open, _shown, _canSave = true;
     private string _message = "";

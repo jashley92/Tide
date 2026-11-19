@@ -182,7 +182,7 @@
 
     [Parameter] public EventCallback OnClear { get; set; }
 
-    private readonly string _id = "filters-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("filters");
     private ElementReference _holder, _trigger, _pop;
     private Popout? _popout;
     private bool _open, _focusPop, _focusTrigger;
@@ -294,9 +294,7 @@
         if (_focusPop && _open)
         {
             _focusPop = false;
-            try { await JS.InvokeVoidAsync("tideFilters.focusIn", _pop); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { /* closed meanwhile */ }
+            await JS.BestEffortAsync("tideFilters.focusIn", _pop);
         }
         if (_focusTrigger)
         {

@@ -428,7 +428,8 @@ public sealed record TeamQueue(IReadOnlyList<ActionRow> Rows, int Mine, int Unas
     /// <summary>How many there are in all, shown or not.</summary>
     public int Total => Mine + Unassigned;
 
-    /// <summary>The escalated actions that are theirs to chase (<see cref="ActionService.EscalatedAsync"/>), when asked for.</summary>
+    /// <summary>The escalated actions that are theirs to chase, soonest due first, at most <see cref="ActionService.EscalatedSize"/>: read
+    /// with the queue by <see cref="ActionService.TeamQueueAsync"/>, when the ladder is on or anything is still flagged.</summary>
     public IReadOnlyList<ActionRow> Escalated { get; init; } = [];
 }
 
@@ -558,7 +559,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var q = await ListQuery(db, filter, ct);
         var total = await q.CountAsync(ct);
         size = Math.Clamp(size, 1, 500);
-        page = Math.Clamp(page, 1, Math.Max(1, (total + size - 1) / size));
+        page = Math.Clamp(page, 1, Words.Pages(total, size));
         var today = clock.Today;
         var urgency = UrgencyOf(today, ActionSla.EndOfBusinessWeek(today, clock.Days));
         IReadOnlyDictionary<string, int> groups = new Dictionary<string, int>(), unowned = groups;
@@ -1030,13 +1031,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// to them, on a team of theirs, or a part of an action assigned to them. Soonest due first, at most
     /// <see cref="EscalatedSize"/>.
     /// </summary>
-    public async Task<IReadOnlyList<ActionRow>> EscalatedAsync(CancellationToken ct = default)
-    {
-        RequireRead(user);
-        await using var db = await dbs.CreateAsync(ct);
-        return await EscalatedRowsAsync(db, ct);
-    }
-
     private async Task<IReadOnlyList<ActionRow>> EscalatedRowsAsync(IAppDbContext db, CancellationToken ct)
     {
         var me = user.UserId;
@@ -1952,8 +1946,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var evidence = written.Count - shots;
             db.ActionEvents.Add(Event(user, a.Id, "Attached " + string.Join(" and ", new[]
             {
-                shots > 0 ? $"{shots} screenshot{(shots == 1 ? "" : "s")}" : null,
-                evidence > 0 ? $"{evidence} evidence file{(evidence == 1 ? "" : "s")}" : null,
+                shots > 0 ? Words.Plural(shots, "screenshot") : null,
+                evidence > 0 ? Words.Plural(evidence, "evidence file") : null,
             }.Where(s => s is not null)) + " to a comment."));
         }
         try { await db.SaveChangesAsync(ct); }
@@ -2103,7 +2097,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             db.ActionChecklistItems.AddRange(added);
             db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
                 ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
-                : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
+                : $"Applied the {playbook.Name} playbook: {Words.Plural(added.Count, "step")} added to the checklist."));
             return added.Count;
         }, ct);
     }
@@ -2149,7 +2143,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var room = Math.Max(0, ActionChecklistItem.MaxPerAction - a.Checklist.Count);
         if (added.Count > room)
             throw new ArgumentException($"A checklist can have at most {ActionChecklistItem.MaxPerAction} items, and this one has room for "
-                + (room == 0 ? "no more items" : $"{room} more item{(room == 1 ? "" : "s")}")
+                + (room == 0 ? "no more items" : Words.Plural(room, "more item"))
                 + $"; the {playbook.Name} playbook would add {added.Count} steps. Take some items off first.");
         a.PlaybookId ??= playbook.Id;
         a.PlaybookName ??= playbook.Name;
@@ -2515,9 +2509,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (others.Contains(HuntResult.NotRun)) throw new InvalidOperationException("Another query on this action hasn't been run: record its result, or remove it, first.");
         var leftOut = HuntQueryBuilder.LeftOut(hunt.GeneratedText);
         if (leftOut > 0 && !checkedLeftOut)
-            throw new ArgumentException($"The query left out {Values(leftOut)}: check them another way first, and say so.");
-        var searched = $"{windowDays} day{(windowDays == 1 ? "" : "s")}";
-        var missed = leftOut > 0 ? $"; {Values(leftOut)} not included, checked separately" : "";
+            throw new ArgumentException($"The query left out {Words.Plural(leftOut, "value")}: check them another way first, and say so.");
+        var searched = Words.Plural(windowDays, "day");
+        var missed = leftOut > 0 ? $"; {Words.Plural(leftOut, "value")} not included, checked separately" : "";
         hunt.Result = HuntResult.NoHits;
         hunt.ResultCount = 0;
         hunt.Notes = $"Searched {searched}{missed}.";
@@ -2533,8 +2527,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         hunt.RunByName = user.DisplayName;
         hunt.RunAtUtc = DateTimeOffset.UtcNow;
     }
-
-    private static string Values(int n) => $"{n} value{(n == 1 ? "" : "s")}";
 
     public async Task RemoveHuntAsync(Guid huntId, CancellationToken ct = default)
     {

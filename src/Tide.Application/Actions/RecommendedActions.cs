@@ -1,4 +1,3 @@
-using Markdig;
 using Tide.Application.Content;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -12,11 +11,9 @@ namespace Tide.Application.Actions;
 /// </summary>
 public static class RecommendedActions
 {
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().DisableHtml().Build();
-
     /// <summary>The lines of <paramref name="markdown"/> as action titles: plain text, at most an action title's length.</summary>
     public static IReadOnlyList<string> Lines(string? markdown) => MarkdownService.BulletLines(markdown)
-        .Select(l => MarkdownService.OneLine(Markdown.ToPlainText(l, Pipeline)))
+        .Select(l => MarkdownService.OneLine(MarkdownService.PlainText(l)))
         .Where(l => l.Length > 0)
         .Select(l => l.Length > ActionItem.MaxTitle ? l[..ActionItem.MaxTitle].TrimEnd() : l)
         .Distinct(StringComparer.OrdinalIgnoreCase)

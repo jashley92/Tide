@@ -1,6 +1,5 @@
 @page "/reports/teams"
 @attribute [Authorize(Policy = Policies.ReadActions)]
-@using System.Globalization
 @inject TeamScorecardService ScorecardSvc
 @inject NavigationManager Nav
 @inject ToastService Toasts
@@ -169,7 +168,7 @@ else
     internal static string ActionsHref(Team team, string view) => $"actions?view={view}&team={team.Id}&layout=list";
 
     internal static string Range(TeamScorecard c) =>
-        $"Due {c.From.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)} to {c.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
+        $"Due {Words.MonthDayYear(c.From)} to {Words.MonthDayYear(c.To)}";
 
     private static string OnTime(TeamScore r) => Share(r.OnTimePercent, r.OnTime, r.Late);
 

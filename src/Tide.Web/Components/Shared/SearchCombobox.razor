@@ -165,8 +165,7 @@
         if (!_reveal) return;
         _reveal = false;
         if (!Expanded || _active < 0 || _active >= Count) return;
-        try { await JS.InvokeVoidAsync("tideCombo.reveal", OptionId(_active)); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideCombo.reveal", OptionId(_active));
     }
 
     /// <summary>Puts focus back in the box (after a step that took it, such as a confirmation).</summary>

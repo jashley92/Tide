@@ -29,4 +29,15 @@ public static class Words
 
     /// <summary>"Nov 20": a day in the short form lists, scales and rollups use.</summary>
     public static string MonthDay(DateOnly d) => d.ToString("MMM d", CultureInfo.InvariantCulture);
+
+    /// <summary>"Nov 20, 2026": <see cref="MonthDay"/> with its year.</summary>
+    public static string MonthDayYear(DateOnly d) => d.ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
+
+    /// <summary><paramref name="text"/> cut to at most <paramref name="max"/> characters, the last of them "…" when it
+    /// was cut: for text shown or stored where a cut should be visible.</summary>
+    public static string Ellipsis(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+
+    /// <summary>How many pages of <paramref name="size"/> rows <paramref name="total"/> rows fill: at least 1, and never
+    /// a division by zero.</summary>
+    public static int Pages(int total, int size) => Math.Max(1, (total + size - 1) / Math.Max(1, size));
 }

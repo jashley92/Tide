@@ -270,7 +270,7 @@ public static class EditionChecks
             {
                 null => new(a.Id, a.Title, EditionFit.LeftOut, $"The article is {Tlp.Label(a.Tlp)}"),
                 { WithheldParts: > 0 } cut => new(a.Id, a.Title, EditionFit.Part,
-                    $"{cut.WithheldParts} part{(cut.WithheldParts == 1 ? "" : "s")} above {Tlp.Label(ceiling)} left out", warning),
+                    $"{Content.Words.Plural(cut.WithheldParts, "part")} above {Tlp.Label(ceiling)} left out", warning),
                 _ => new(a.Id, a.Title, EditionFit.Included, Warning: warning),
             });
         }

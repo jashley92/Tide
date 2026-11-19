@@ -604,8 +604,7 @@ else
         var (part, field) = _jumpTo!.Value;
         _jumpTo = null;
         if (!_heads.TryGetValue(part, out var head)) return;
-        try { await JS.InvokeVoidAsync("tideEditor.jump", head, field); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideEditor.jump", head, field);
     }
 
     // At 900px or narrower, which of the two is shown: the fields or what readers get. Wider, the rail shows it beside
@@ -702,7 +701,7 @@ else
     // Copies the publisher's excerpt in as a starting point, on purpose: the analyst rewrites it from there.
     private Task StartFromExcerpt()
     {
-        _form!.Bluf = _excerpt!.Length > 600 ? _excerpt[..599] + "…" : _excerpt;
+        _form!.Bluf = Words.Ellipsis(_excerpt!, ArticleService.MaxBluf);
         return Touch();
     }
 
@@ -834,8 +833,7 @@ else
         }
         if (_registered || _form is null || !_canWrite) return;
         _registered = true;
-        try { await JS.InvokeVoidAsync("tidePasteDrop.register", "shot-zone", "shot-input", "shot-input", false); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tidePasteDrop.register", "shot-zone", "shot-input", "shot-input", false);
     }
 
     // Counts edits, so a save knows whether more were typed while it ran (the fields stay open meanwhile).

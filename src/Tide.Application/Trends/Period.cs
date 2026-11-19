@@ -51,7 +51,7 @@ public readonly record struct Period(PeriodKind Kind, int Year, int Index)
     public string Label => Kind switch
     {
         PeriodKind.Month => Start.ToString("MMM yyyy", CultureInfo.InvariantCulture),
-        PeriodKind.Week => "Week of " + Start.ToString("MMM d", CultureInfo.InvariantCulture),
+        PeriodKind.Week => "Week of " + Content.Words.MonthDay(Start),
         _ => string.Create(CultureInfo.InvariantCulture, $"Q{Index} {Year}"),
     };
 

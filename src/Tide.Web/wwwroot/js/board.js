@@ -93,7 +93,7 @@ window.tideBoard = (function () {
     // rendered by .NET). Without motion (the person's setting, or no Web Animations), the glow alone says it arrived.
     function play(moves) {
         if (!root || !moves) return;
-        const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const still = window.tideShortcuts.still();
         moves.forEach(function (m) {
             const card = root.querySelector('.tide-kcard[data-id="' + m.id + '"]');
             if (!card) return;

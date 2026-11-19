@@ -17,7 +17,7 @@ window.tideEditor = (function () {
         const key = (e.key || '').toLowerCase();
         if (e.ctrlKey || e.metaKey || e.altKey || (key !== 'j' && key !== 'k')) return;
         const stepper = document.querySelector('.tide-stepper');
-        if (!stepper || typing(e.target) || inMenu(e.target) || document.querySelector('.tide-modal, dialog[open]')) return;
+        if (!stepper || typing(e.target) || inMenu(e.target) || document.querySelector('.tide-modal')) return;
         if (!window.tideShortcuts.on()) return;   // single characters: off with the switch
         e.preventDefault();
         const link = stepper.querySelector('a[href][data-step="' + (key === 'k' ? 'prev' : 'next') + '"]');
@@ -30,7 +30,7 @@ window.tideEditor = (function () {
         if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
         // Focus in a menu or dialog (the account menu): the keys are its own.
         if (inMenu(e.target)) return;
-        if (document.querySelector('.tide-modal, dialog[open]')) return;
+        if (document.querySelector('.tide-modal')) return;
         if (!window.tideShortcuts.on()) return;   // a single character: off with the switch
         e.preventDefault();
         ref.invokeMethodAsync('OnEditionKey', e.key).catch(function () { });
@@ -49,7 +49,7 @@ window.tideEditor = (function () {
             if (!to) return;
             // From the rail open over the page (a gap's button in the preview): the page under it is inert until it closes.
             if (window.tideRail && window.tideRail.over() && !to.closest('#tide-rail')) window.tideRail.toggle();
-            const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const smooth = !window.tideShortcuts.still();
             to.scrollIntoView({ block: field ? 'center' : 'start', behavior: smooth ? 'smooth' : 'auto' });
             to.focus({ preventScroll: true });
         },

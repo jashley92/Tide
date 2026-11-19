@@ -107,7 +107,6 @@
     {
         if (_registered) return;
         _registered = true;
-        try { await JS.InvokeVoidAsync("tidePasteDrop.register", ZoneId, InputId, InputId, true, !TakesThePage, TakesThePage); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tidePasteDrop.register", ZoneId, InputId, InputId, true, !TakesThePage, TakesThePage);
     }
 }

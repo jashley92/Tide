@@ -220,7 +220,7 @@ public sealed partial class ReminderService
             ["Team"] = team.Name,
             ["Contact"] = contact,
             ["From"] = clock.TeamName,
-            ["Requests"] = $"{list.Count} request{S(list.Count)}",
+            ["Requests"] = Content.Words.Plural(list.Count, "request"),
             ["RequestList"] = RequestList(shown, today, clock.Days, tideUrl, withheld, clock.TeamName),
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(shown) + t.BodyHtml, t.Footer);
@@ -240,7 +240,7 @@ public sealed partial class ReminderService
     /// <summary>What an email says in place of the requests it doesn't name: "1 more request is marked above what we share
     /// by email: ask {sender}."</summary>
     internal static string WithheldText(int withheld, string sender) =>
-        $"{withheld} more request{S(withheld)} {(withheld == 1 ? "is" : "are")} marked above what we share by email: ask {sender}.";
+        $"{Content.Words.Plural(withheld, "more request")} {(withheld == 1 ? "is" : "are")} marked above what we share by email: ask {sender}.";
 
     // An action's mark for its reminder at a step: "{action}:{due}:{step}", and for one handed from another team, the team
     // it's with now after that (":{team}"). The team it was handed to hears only through its reminders, so a step the
@@ -310,6 +310,6 @@ public sealed partial class ReminderService
         var day = d.ToString("ddd MMM d", CultureInfo.InvariantCulture);
         if (d == today) return "Due today";
         if (d > today) return "Due " + day;
-        return late > 0 ? $"Was due {day}: {late} business day{S(late)} overdue" : $"Was due {day}";
+        return late > 0 ? $"Was due {day}: {Content.Words.Plural(late, "business day")} overdue" : $"Was due {day}";
     }
 }

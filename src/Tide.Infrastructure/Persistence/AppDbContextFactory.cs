@@ -23,9 +23,11 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     public AppDbContext CreateDbContext(string[] args)
     {
-        var provider = Environment.GetEnvironmentVariable("TIDE_MIGRATIONS_PROVIDER") ?? "Sqlite";
+        // Read as the running app reads Database:Provider: unset means SQLite, and a value it wouldn't take is refused
+        // rather than quietly building the SQLite set.
+        var provider = DependencyInjection.DatabaseProvider(Environment.GetEnvironmentVariable("TIDE_MIGRATIONS_PROVIDER"));
         var builder = new DbContextOptionsBuilder<AppDbContext>();
-        if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+        if (provider == "SqlServer")
             builder.UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=Tide;Trusted_Connection=True;TrustServerCertificate=True;",
                 sql => sql.MigrationsAssembly(SqlServerMigrationsAssembly));
         else

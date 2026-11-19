@@ -31,7 +31,7 @@ public sealed record DetectionCallerSet(string Caller, string Name, int Rules, D
 /// <summary>The current rules tagged with a technique (exactly, its parent, or one of its sub-techniques).</summary>
 public sealed record TechniqueRules(int Enabled, int Disabled, IReadOnlyList<string> Names)
 {
-    public string Label => Enabled > 0 ? $"{Enabled} rule{(Enabled == 1 ? "" : "s")}" : Disabled > 0 ? $"{Disabled} disabled" : "no rule";
+    public string Label => Enabled > 0 ? Words.Plural(Enabled, "rule") : Disabled > 0 ? $"{Disabled} disabled" : "no rule";
 }
 
 /// <summary>A technique briefed in the window: how often, which watched adversaries use it, its rules, and any gap action.</summary>
@@ -363,7 +363,7 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         }
         var name = row.Name == row.TechniqueId ? row.TechniqueId : $"{row.TechniqueId} {row.Name}";
         var about = new StringBuilder();
-        about.Append(System.Globalization.CultureInfo.InvariantCulture, $"Briefed in {row.Briefed} article{(row.Briefed == 1 ? "" : "s")} in the last {CoverageDays} days, with no enabled detection rule tagged with it");
+        about.Append(System.Globalization.CultureInfo.InvariantCulture, $"Briefed in {Words.Plural(row.Briefed, "article")} in the last {CoverageDays} days, with no enabled detection rule tagged with it");
         about.Append(row.Rules.Disabled > 0 ? $" ({row.Rules.Disabled} disabled)." : ".");
         if (row.Watched.Count > 0) about.Append(" Used by ").Append(string.Join(", ", row.Watched)).Append(" (watched).");
         about.Append("\n\n");

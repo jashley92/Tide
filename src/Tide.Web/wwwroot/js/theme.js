@@ -85,7 +85,11 @@ window.tideShortcuts = (function () {
     function inRail(target) {
         return document.documentElement.hasAttribute('data-rail-over') || !!(target && target.closest && target.closest('#tide-rail'));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail };
+    // The person asks for less motion: scroll and slide at once, not smoothly.
+    // Read once; .matches follows a change to the system setting.
+    var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    function still() { return !!(motion && motion.matches); }
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the

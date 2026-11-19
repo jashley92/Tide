@@ -191,7 +191,7 @@ public static class TableView
     }
 
     /// <summary>How many pages <paramref name="rows"/> make at <paramref name="size"/> a page (at least one).</summary>
-    public static int Pages(int rows, int size) => Math.Max(1, (rows + size - 1) / Math.Max(1, size));
+    public static int Pages(int rows, int size) => Application.Content.Words.Pages(rows, size);
 
     /// <summary>
     /// The page numbers a pager shows for <paramref name="page"/> of <paramref name="pages"/>: every one up to seven, else the

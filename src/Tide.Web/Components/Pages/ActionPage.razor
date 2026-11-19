@@ -1131,8 +1131,7 @@ else
         }
         if (_pasteRegistered || _detail is not { CanWork: true }) return;
         _pasteRegistered = true;
-        try { await JS.InvokeVoidAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true, true); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true, true);
     }
 
     private async Task Run(Func<Task> action)

@@ -140,11 +140,11 @@ public class ActionOutcomeTests
     public void Late_CountsCalendarDaysPastDue()
     {
         var due = new DateOnly(2026, 10, 27);
-        ActionSla.Late(due, new DateOnly(2026, 10, 30)).Should().Be(3);
-        ActionSla.Late(due, due).Should().Be(0);
-        ActionSla.Late(due, new DateOnly(2026, 10, 26)).Should().Be(0);
-        ActionSla.Late(null, due).Should().Be(0);
-        ActionSla.Late(due, null).Should().Be(0);
+        ActionSla.DaysLate(due, new DateOnly(2026, 10, 30)).Should().Be(3);
+        ActionSla.DaysLate(due, due).Should().Be(0);
+        ActionSla.DaysLate(due, new DateOnly(2026, 10, 26)).Should().Be(0);
+        ActionSla.DaysLate(null, due).Should().Be(0);
+        ActionSla.DaysLate(due, null).Should().Be(0);
     }
 }
 

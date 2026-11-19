@@ -1783,19 +1783,10 @@ public class AccessLogAndAuditMaskChallengeTests : IAsyncLifetime
     public async Task InitializeAsync() => _w = await ServiceWorld.BuildAsync();
     public Task DisposeAsync() { _w.Dispose(); return Task.CompletedTask; }
 
-    private sealed class Recorder : Microsoft.Extensions.Logging.ILogger
-    {
-        public List<string> Lines { get; } = [];
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
-        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) { lock (Lines) Lines.Add(logLevel + ": " + formatter(state, exception)); }
-    }
-
     [Fact]
     public async Task ARefusal_NamesTheUserAndTheServiceMethod_NotTheGuard_AndNeverEchoesTheInput()
     {
-        var recorder = new Recorder();
+        var recorder = new CapturingLogger();
         _w.As("dev:eve", AppRole.Reader);
         using (AmbientUser.Begin(_w.Db.User, recorder))
         {
@@ -1805,18 +1796,18 @@ public class AccessLogAndAuditMaskChallengeTests : IAsyncLifetime
             caught.Should().NotBeNull();
             Tide.Web.Services.UserFacingError.Refused(caught!).Should().Be("IntakeService.SaveSourceAsync", "the guard that threw speaks for the method that called it");
             Tide.Web.Services.UserFacingError.For(caught!, _w.Db.User).Should().Be(caught!.Message);
-            recorder.Lines.Should().ContainSingle().Which.Should().Contain("dev:eve").And.Contain("IntakeService.SaveSourceAsync").And.NotContain("SECRET-IN-INPUT");
+            recorder.Messages.Should().ContainSingle().Which.Should().Contain("dev:eve").And.Contain("IntakeService.SaveSourceAsync").And.NotContain("SECRET-IN-INPUT");
             // A refusal logged without naming the user takes the ambient one.
             Tide.Web.Services.UserFacingError.For(new ForbiddenException("No."));
-            recorder.Lines.Should().HaveCount(2);
-            recorder.Lines[1].Should().Contain("dev:eve");
+            recorder.Messages.Should().HaveCount(2);
+            recorder.Messages[1].Should().Contain("dev:eve");
             // Other errors aren't access events.
             Tide.Web.Services.UserFacingError.For(new ArgumentException("bad"));
-            recorder.Lines.Should().HaveCount(2);
+            recorder.Messages.Should().HaveCount(2);
         }
         // Outside any request or circuit activity there's no log to write to, and nothing is written.
         Tide.Web.Services.UserFacingError.For(new ForbiddenException("No."));
-        recorder.Lines.Should().HaveCount(2);
+        recorder.Messages.Should().HaveCount(2);
     }
 
     [Fact]
@@ -2423,15 +2414,6 @@ public class CircuitOriginUnderThePathBaseChallengeTests(SubPathApp app) : IClas
 /// Program.cs has run (it wires ChangeFeed.AroundHandler, a static), whatever order the tests run in.</summary>
 public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
 {
-    private sealed class Recorder : Microsoft.Extensions.Logging.ILogger
-    {
-        public List<string> Lines { get; } = [];
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
-        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) { lock (Lines) Lines.Add(formatter(state, exception)); }
-    }
-
     private static FakeUser User(string id) => new(AppRole.Analyst) { UserId = id };
 
     [Fact]
@@ -2502,7 +2484,7 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
         // (InvokeAsync, Task.Run, an await) sees no user: a refusal there is never logged under the publisher. The host's
         // log stays, so it's still logged, as nobody's.
         var presence = new Tide.Web.Services.Presence();
-        var subscriberLog = new Recorder();
+        var subscriberLog = new CapturingLogger();
         var seenInHandler = new TaskCompletionSource<string?>();
         var seenAfterYield = new TaskCompletionSource<string?>();
         var logged = new TaskCompletionSource();
@@ -2527,8 +2509,7 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
         (await seenAfterYield.Task).Should().BeNull("and so does what it starts");
         await logged.Task;
         // The join and the leave each call the handler: each refusal is logged to the host's log, as nobody's.
-        lock (subscriberLog.Lines)
-            subscriberLog.Lines.Should().NotBeEmpty("the refusal is still logged, to the host's log")
+        subscriberLog.Messages.Should().NotBeEmpty("the refusal is still logged, to the host's log")
                 .And.OnlyContain(l => l.StartsWith("Access denied for unknown") && !l.Contains("publisher-A"));
 
         // The change feed clears the scope the same way (Program.cs sets ChangeFeed.AroundHandler when the host starts).
@@ -2545,7 +2526,7 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheSameCircuitsHandlers_RunUnderThatCircuitsUser()
     {
         // The circuit handler wraps every inbound activity with the circuit's own user: a refusal in it is logged right.
-        var log = new Recorder();
+        var log = new CapturingLogger();
         var handler = new AmbientUserCircuitHandler(User("circuit-user"), new RecorderFactory(log));
         var inner = handler.CreateInboundActivityHandler(_ =>
         {
@@ -2553,11 +2534,11 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
             return Task.CompletedTask;
         });
         await inner(null!);
-        log.Lines.Should().ContainSingle().Which.Should().Contain("circuit-user");
+        log.Messages.Should().ContainSingle().Which.Should().Contain("circuit-user");
         AmbientUser.Current.Should().BeNull("restored after the activity");
     }
 
-    private sealed class RecorderFactory(Recorder recorder) : Microsoft.Extensions.Logging.ILoggerFactory
+    private sealed class RecorderFactory(CapturingLogger recorder) : Microsoft.Extensions.Logging.ILoggerFactory
     {
         public void AddProvider(Microsoft.Extensions.Logging.ILoggerProvider provider) { }
         public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => recorder;
