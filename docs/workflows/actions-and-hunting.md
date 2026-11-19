@@ -1037,7 +1037,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
      link to those actions.
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
-- **Today's Escalated card** (`TeamQueue.Escalated`, read with the queue on its context; `EscalatedAsync` alone): the
+- **Today's Escalated card** (`TeamQueue.Escalated`, read with the queue on its context): the
   escalated actions that are the person's to chase (assigned to them, on a team of theirs, or a part of an action
   assigned to them), soonest due first, up to 8. Read while the ladder is on, or while anything is still escalated.
   Shown only when there are any: first on an action owner's Today, above the actions card on an analyst's.

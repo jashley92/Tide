@@ -242,7 +242,7 @@ the last 30, 90 (the default), 180 or 365 days, today included. The rules are
 | Actions due (Parts due with the parts filter) | The team's actions due in the window. One with no due date isn't counted: it made no commitment. |
 | On time | Done on or before the due date, as a share of those on time or late, with the counts ("50% (2 of 4)"). Late is done after the due date, or still open past it. Cancelled and Not applicable are neither, nor is one due today and still open. "—" when nothing is either. |
 | On time vs. original date | The same rule against the date each action was **first** given (`ActionItem.OriginalDueDate`), over the team's actions first due in the window: done on or before that first date, as a share of those on time or late against it ("40% (2 of 5)"). An action re-dated and then done by its new date is on time in *On time* and late here. |
-| Average days late | Calendar days from the due date to the close, or to today while still open, averaged over the late ones. Calendar days, as `ActionSla.Late` and an action's "3 days late" count them. |
+| Average days late | Calendar days from the due date to the close, or to today while still open, averaged over the late ones. Calendar days, as `ActionSla.DaysLate` and an action's "3 days late" count them. |
 | Dates moved | Of the team's actions first due in the window, how many had their due date moved, and how many moves in all ("4 of 5 (5 moves)"). "—" when none was first due in the window. |
 | Open now, Overdue now | The team's open actions (Tracking included) today, and those past their due date, whatever the window. |
 
@@ -275,7 +275,7 @@ before this was kept start from the date they had at the upgrade, with no moves.
 - **Counted in the database.** Counts by team (due in the window, met, open, overdue; first due in the window, met and
   late against the first date, moved), each with the database's twin of `ActionSla.StateOf` (`ActionQueries.WhereMet`,
   `WhereLate`, `WhereOverdue`, `WhereMetOriginal`, `WhereLateOriginal`), so a count in SQL and a state on a page
-  agree. Only the late actions come back, as their team and two dates, for `ActionSla.Late` to give their days late, so
+  agree. Only the late actions come back, as their team and two dates, for `ActionSla.DaysLate` to give their days late, so
   neither provider is asked for a date difference, which SQLite and SQL Server write differently. The window starts at
   `ActionQueries.LastDaysFrom(today, days)`.
 
