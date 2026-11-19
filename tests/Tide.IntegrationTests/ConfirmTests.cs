@@ -144,7 +144,7 @@ public partial class ConfirmTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Theory]
-    [InlineData(false, "tide-empty-state  \"")]
+    [InlineData(false, "tide-empty-state \"")]
     [InlineData(true, "tide-empty-state tide-empty-state-compact")]
     public async Task AnEmptyState_HasItsIconAndWords_AndACompactOneIsSmaller(bool compact, string css)
     {
