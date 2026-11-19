@@ -10,7 +10,8 @@ namespace Tide.Infrastructure.Persistence;
 /// Tells the <see cref="ChangeFeed"/> what a save changed once it has committed, so a colleague's open brief, article,
 /// action or numbers form refreshes whichever service made the change. The topics are read before the save (a deleted row is gone from
 /// the tracker after it) and published only if it succeeds. A save inside a transaction the caller opened is published
-/// when that transaction commits, and forgotten if it rolls back (no service opens one today; this keeps it true).
+/// when that transaction commits, and forgotten if it rolls back: <c>SerializedAsync</c> opens one for every serialized
+/// change, and intake's promote and attach open one around their claim of the reports.
 /// </summary>
 public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, ChangeOrigin origin) : SaveChangesInterceptor, IDbTransactionInterceptor
 {

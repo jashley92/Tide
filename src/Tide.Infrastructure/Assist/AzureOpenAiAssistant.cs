@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Assist;
 using Tide.Application.Intake;
+using Tide.Infrastructure.Notifications;
 
 namespace Tide.Infrastructure.Assist;
 
@@ -39,9 +40,9 @@ public sealed class AzureOpenAiAssistant : IThreatIntelAssistant, IDisposable
     private static SocketsHttpHandler Handler(string? proxy)
     {
         var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5), AutomaticDecompression = DecompressionMethods.All };
-        if (!string.IsNullOrWhiteSpace(proxy) && Uri.TryCreate(proxy, UriKind.Absolute, out var p))
+        if (OutboundHttp.Proxy(proxy) is { } p)
         {
-            handler.Proxy = new WebProxy(p) { UseDefaultCredentials = true };
+            handler.Proxy = p;
             handler.UseProxy = true;
         }
         return handler;

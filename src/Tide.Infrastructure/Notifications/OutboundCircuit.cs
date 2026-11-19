@@ -1,7 +1,8 @@
 namespace Tide.Infrastructure.Notifications;
 
 /// <summary>
-/// A per-target back-off for sends to other hosts (the mail relay; later, metric connectors). A
+/// A per-target back-off for sends to other hosts (the mail relay, and the feed, KEV, EPSS and NVD hosts that
+/// <see cref="OutboundHttp"/> fetches from). A
 /// target that didn't answer <see cref="FailuresToOpen"/> sends in a row within <see cref="FailureWindow"/> (one dropped
 /// connection isn't a relay that's down) is backed off for <see cref="FirstBackOff"/>, doubling on each further failure
 /// up to <see cref="MaxBackOff"/>; meanwhile <see cref="TryEnter"/> says no and the caller fails fast instead of waiting
@@ -46,6 +47,9 @@ public sealed class OutboundCircuit
             return _targets.TryGetValue(target, out var state) && state.BackOffs > 0 && now < state.OpenUntil
                 ? state.OpenUntil - now : TimeSpan.Zero;
     }
+
+    /// <summary>Whole minutes until the target's back-off ends, at least one: what a caller turned away is told.</summary>
+    public int MinutesLeft(string target) => Math.Max(1, (int)Math.Ceiling(RetryIn(target).TotalMinutes));
 
     /// <summary>The target answered: any back-off ends.</summary>
     public void Succeeded(string target)

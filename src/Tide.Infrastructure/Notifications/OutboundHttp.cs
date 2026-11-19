@@ -54,14 +54,21 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             AllowAutoRedirect = false,
             ConnectTimeout = TimeSpan.FromSeconds(10),
         };
-        if (!string.IsNullOrWhiteSpace(options.CurrentValue.Proxy) && Uri.TryCreate(options.CurrentValue.Proxy, UriKind.Absolute, out var proxy))
+        if (Proxy(options.CurrentValue.Proxy) is { } proxy)
         {
-            handler.Proxy = _proxy = new WebProxy(proxy) { UseDefaultCredentials = true };
+            handler.Proxy = _proxy = proxy;
             handler.UseProxy = true;
         }
         else handler.ConnectCallback = ConnectAsync;   // the system proxy, if any, still applies (see ConnectAsync)
         _client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
     }
+
+    /// <summary>
+    /// The proxy a setting names, signing in as the service's own account; null when it's blank or not an absolute address.
+    /// </summary>
+    internal static WebProxy? Proxy(string? address) =>
+        !string.IsNullOrWhiteSpace(address) && Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            ? new WebProxy(uri) { UseDefaultCredentials = true } : null;
 
     public async Task<HttpFetch> GetAsync(string url, OutboundRequest? request = null, CancellationToken ct = default)
     {
@@ -69,7 +76,7 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             return new HttpFetch(FetchStatus.Failed, Error: "That isn't an http or https address.");
         var target = "http:" + uri.Host;
         if (!_circuit.TryEnter(target))
-            return new HttpFetch(FetchStatus.Failed, Error: $"{uri.Host} hasn't been answering; it's tried again in {Math.Max(1, (int)Math.Ceiling(_circuit.RetryIn(target).TotalMinutes))} minute(s).");
+            return new HttpFetch(FetchStatus.Failed, Error: $"{uri.Host} hasn't been answering; it's tried again in {_circuit.MinutesLeft(target)} minute(s).");
 
         var o = _options.CurrentValue;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

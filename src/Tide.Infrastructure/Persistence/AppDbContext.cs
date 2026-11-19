@@ -150,7 +150,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.FileName).HasMaxLength(260);
             e.Property(x => x.ContentType).HasMaxLength(100);
             e.Property(x => x.Sha256).HasMaxLength(64);
-            Audited(e);
         });
 
         b.Entity<ScorecardCategory>(e =>
@@ -160,7 +159,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Description).HasMaxLength(500);
             e.HasMany(x => x.Tags).WithOne(x => x.Category).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
-            Audited(e);
         });
 
         b.Entity<ScorecardTag>(e =>
@@ -169,7 +167,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.Key).IsUnique();
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Description).HasMaxLength(500);
-            Audited(e);
         });
 
         b.Entity<Article>(e =>
@@ -194,7 +191,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Cves).WithOne().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<Story>().WithMany().HasForeignKey(x => x.StoryId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.StoryId);
-            Audited(e);
         });
 
         b.Entity<ArticleBullet>(e =>
@@ -228,7 +224,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ContactEmail).HasMaxLength(StackProduct.MaxContactEmail);
             e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<ArticleProduct>(e =>
@@ -250,7 +245,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Sectors).HasMaxLength(Adversary.MaxSectors);
             e.Property(x => x.Notes).HasMaxLength(Adversary.MaxNotes);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<ArticleAdversary>(e =>
@@ -308,7 +302,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.Hash).IsUnique();
             e.Property(x => x.Hint).HasMaxLength(8);
             e.Property(x => x.Scopes).HasMaxLength(400);
-            Audited(e);
         });
 
         b.Entity<StoredSecret>(e =>
@@ -317,7 +310,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Key).HasMaxLength(100);
             e.Property(x => x.Protected).HasMaxLength(4000);
             e.Property(x => x.SavedByName).HasMaxLength(256);
-            Audited(e);
         });
 
         b.Entity<Webhook>(e =>
@@ -326,7 +318,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Events).HasMaxLength(200);
             e.Property(x => x.Secret).HasMaxLength(1000);
             e.Property(x => x.LastError).HasMaxLength(500);
-            Audited(e);
         });
 
         b.Entity<AiDraft>(e =>
@@ -337,7 +328,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.InputHash).HasMaxLength(64);
             e.Property(x => x.BasedOn).HasMaxLength(AiDraft.MaxBasedOn);
             e.Property(x => x.Suggestions).HasMaxLength(AiDraft.MaxSuggestions);
-            Audited(e);
         });
 
         b.Entity<ArticleTechnique>(e =>
@@ -383,7 +373,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Person(e, x => x.SharePointPostedById, x => x.SharePointPostedByName);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.BriefId).OnDelete(DeleteBehavior.Cascade);
-            Audited(e);
         });
 
         b.Entity<BriefItem>(e =>
@@ -451,7 +440,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.Key).IsUnique();
             e.Property(x => x.Name).HasMaxLength(100);
             e.HasMany(x => x.Metrics).WithOne(x => x.Group).HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
-            Audited(e);
         });
 
         b.Entity<MetricDefinition>(e =>
@@ -461,7 +449,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.WarnThreshold).HasPrecision(18, 4);
             e.Property(x => x.CriticalThreshold).HasPrecision(18, 4);
-            Audited(e);
         });
 
         b.Entity<MetricValue>(e =>
@@ -473,7 +460,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Note).HasMaxLength(300);
             Person(e, x => x.EnteredById, x => x.EnteredByName);
             e.HasOne<MetricImport>().WithMany().HasForeignKey(x => x.ImportId).OnDelete(DeleteBehavior.Restrict);
-            Audited(e);
         });
 
         b.Entity<MetricImport>(e =>
@@ -482,7 +468,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ImportedByName).HasMaxLength(256);
             e.Property(x => x.Problems).HasMaxLength(4000);
             e.HasIndex(x => x.ReadAtUtc);
-            Audited(e);
         });
 
         b.Entity<Team>(e =>
@@ -499,7 +484,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.EscalationEmail).HasMaxLength(256);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Members).WithOne().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
-            Audited(e);
         });
 
         b.Entity<TeamMember>(e =>
@@ -544,7 +528,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
             Person(e, x => x.DeletedById, x => x.DeletedByName);
             e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
-            Audited(e);
         });
         DeletedActionsLeftOut(b);
 
@@ -610,7 +593,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ModifiedByName).HasMaxLength(256);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Cascade);
-            Audited(e);
         });
 
         b.Entity<PlaybookStep>(e =>
@@ -623,7 +605,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.Property(x => x.Name).HasMaxLength(60);
             e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
-            Audited(e);
         });
 
         b.Entity<ActionEvent>(e =>
@@ -660,7 +641,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.CreatedByName).HasMaxLength(256);
             e.Property(x => x.ModifiedByName).HasMaxLength(256);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<OutreachTemplate>(e =>
@@ -674,7 +654,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.CreatedByName).HasMaxLength(256);
             e.Property(x => x.ModifiedByName).HasMaxLength(256);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<OutreachMessage>(e =>
@@ -759,7 +738,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ETag).HasMaxLength(200);
             e.Property(x => x.LastModified).HasMaxLength(100);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<FeedItemText>(e =>
@@ -806,7 +784,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Summary).HasMaxLength(4000);
             e.HasIndex(x => x.Status);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
-            Audited(e);
         });
 
         b.Entity<CveRecord>(e =>
@@ -861,7 +838,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         b.Entity<BriefExcuse>(e =>
         {
-            Audited(e);
             e.HasIndex(x => x.BriefDate).IsUnique();
             Person(e, x => x.AnalystId, x => x.AnalystName);
             Person(e, x => x.ExcusedById, x => x.ExcusedByName);
@@ -875,6 +851,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasKey(x => x.Date);
             e.Property(x => x.Name).HasMaxLength(Holiday.MaxName);
         });
+
+        // Every audited entity records who made and last changed it as a user name of at most 256 characters.
+        foreach (var entityType in b.Model.GetEntityTypes().Where(t => typeof(Domain.Common.AuditableEntity).IsAssignableFrom(t.ClrType)))
+        {
+            var audited = b.Entity(entityType.ClrType);
+            audited.Property(nameof(Domain.Common.AuditableEntity.CreatedBy)).HasMaxLength(256);
+            audited.Property(nameof(Domain.Common.AuditableEntity.ModifiedBy)).HasMaxLength(256);
+        }
 
         // Ids are made in code (Entity sets a new Guid), never by the database. Left as generated, EF would read a new
         // child (its key already set) reached through a tracked parent as an existing row and update it.
@@ -923,12 +907,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<ActionIndicator>().HasQueryFilter(ActionItem.DeletedFilter, x => Actions.Any(a => a.Id == x.ActionId));
         b.Entity<OutreachMessage>().HasQueryFilter(ActionItem.DeletedFilter, x => Actions.Any(a => a.Id == x.ActionId));
         b.Entity<DetectionGap>().HasQueryFilter(ActionItem.DeletedFilter, x => Actions.Any(a => a.Id == x.ActionId));
-    }
-
-    private static void Audited<T>(EntityTypeBuilder<T> e) where T : Domain.Common.AuditableEntity
-    {
-        e.Property(x => x.CreatedBy).HasMaxLength(256);
-        e.Property(x => x.ModifiedBy).HasMaxLength(256);
     }
 
     // A person as a row records them: their stable id and the display name they had then.
