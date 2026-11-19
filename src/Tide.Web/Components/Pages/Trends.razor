@@ -119,7 +119,7 @@ else
                         @for (var i = 0; i < _report.Periods.Count; i++)
                         {
                             var p = _report.Periods[i];
-                            <th class="tide-table-num @(i == _report.Periods.Count - 1 ? "tide-trend-now" : "")" title="@p.Start.ToString("MMM d", CultureInfo.InvariantCulture) – @p.End.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)">@p.Label</th>
+                            <th class="tide-table-num @(i == _report.Periods.Count - 1 ? "tide-trend-now" : "")" title="@Words.MonthDay(p.Start) – @Words.MonthDayYear(p.End)">@p.Label</th>
                         }
                         <th class="tide-table-num">Change</th>
                         <th><span class="visually-hidden">Trend</span></th>

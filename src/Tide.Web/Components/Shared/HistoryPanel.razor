@@ -56,7 +56,7 @@
     /// <summary>Changes when the thing is saved, so an open history reloads with the new change at the top.</summary>
     [Parameter] public Guid Version { get; set; }
 
-    private readonly string _id = "hist-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("hist");
     private bool _open, _busy, _hasMore;
     private int _next;
     private List<HistoryEntry>? _entries;

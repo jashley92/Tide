@@ -109,7 +109,7 @@
                         var week = _days.Where(d => RotationService.WeekStart(d.Date) == weekStart).ToList();
                         var inThisWeek = RotationService.WeekStart(Rotation.Today) == weekStart;
                         <tr class="@(inThisWeek ? "tide-rota-now" : "")">
-                            <th>@weekStart.ToString("MMM d", CultureInfo.InvariantCulture)<div class="small tide-muted fw-normal">@(week.FirstOrDefault()?.RegularName ?? (week.Count == 0 ? "No brief" : "Nobody"))</div></th>
+                            <th>@Words.MonthDay(weekStart)<div class="small tide-muted fw-normal">@(week.FirstOrDefault()?.RegularName ?? (week.Count == 0 ? "No brief" : "Nobody"))</div></th>
                             @for (var i = 0; i < 5; i++)
                             {
                                 var date = weekStart.AddDays(i);

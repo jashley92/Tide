@@ -13,7 +13,6 @@
 window.tidePresent = (function () {
     let ref = null;
     const typing = window.tideShortcuts.typing, inMenu = window.tideShortcuts.inMenu;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const keys = {
         ArrowRight: 'next', Enter: 'next',
@@ -57,7 +56,7 @@ window.tidePresent = (function () {
         return open.length ? open[open.length - 1] : slideBody();
     }
 
-    function behavior(instant) { return instant || reduced.matches ? 'instant' : 'smooth'; }
+    function behavior(instant) { return instant || window.tideShortcuts.still() ? 'instant' : 'smooth'; }
 
     // How far the element scrolls.
     function range(el) { return el.scrollHeight - el.clientHeight; }

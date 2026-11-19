@@ -40,7 +40,6 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        try { await JS.InvokeVoidAsync("tideRail.start"); }
-        catch (JSDisconnectedException) { /* the circuit has gone */ }
+        await JS.StopAsync("tideRail.start");
     }
 }

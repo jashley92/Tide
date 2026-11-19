@@ -39,6 +39,8 @@
     --tide-width-narrow: 40rem;  /* a message card: an error, access denied */
     --tide-width-form: 56rem;    /* a form card */
     --tide-width-rail: 23.75rem; /* the context rail (380px) */
+    --tide-width-side: 232px;    /* the sidebar */
+    --tide-width-side-collapsed: 64px; /* the sidebar folded to its icons */
     --tide-height-top: 3.25rem;  /* the top bar, and where what sticks or sits under it starts */
 
     --tide-bg: #f5f7f9;
@@ -215,7 +217,7 @@ html { scrollbar-gutter: stable; }
 h1:focus { outline: none; }
 a, .btn-link { color: var(--tide-accent-text); }
 .tide-data { font-family: var(--tide-font-data); font-size: .92em; }
-.text-muted, .form-text { color: var(--tide-text-muted) !important; }
+.form-text { color: var(--tide-text-muted) !important; }
 
 .btn-primary {
     --bs-btn-color: var(--tide-action-fg); --bs-btn-bg: var(--tide-action-bg); --bs-btn-border-color: var(--tide-action-bg);
@@ -238,8 +240,8 @@ a, .btn-link { color: var(--tide-accent-text); }
 .tide-skip-link { position: absolute; left: -999px; top: .5rem; z-index: 2000; background: var(--tide-surface); padding: .4rem .8rem; }
 .tide-skip-link:focus { left: .5rem; }
 .page { display: flex; min-height: 100vh; }
-.sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: 232px; flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; transition: width .15s ease; }
-html[data-nav="collapsed"] .sidebar { width: 64px; }
+.sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: var(--tide-width-side); flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; transition: width .15s ease; }
+html[data-nav="collapsed"] .sidebar { width: var(--tide-width-side-collapsed); }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
@@ -478,8 +480,8 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
     html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-head { display: none; }
     html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-body { padding-bottom: 6rem; }
     .tide-editor[data-pane="preview"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }
-    .tide-editor[data-pane="preview"] .tide-sticky-save { position: fixed; bottom: 0; right: 0; left: 232px; padding-inline: var(--tide-space-4); }
-    html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: 64px; }
+    .tide-editor[data-pane="preview"] .tide-sticky-save { position: fixed; bottom: 0; right: 0; left: var(--tide-width-side); padding-inline: var(--tide-space-4); }
+    html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: var(--tide-width-side-collapsed); }
 }
 @media (max-width: 640.98px) { .tide-editor[data-pane="preview"] .tide-sticky-save, html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: 0; } }
 /* On today's brief, the way to the article before and after it (BriefStepper), where the breadcrumbs would be. */
@@ -699,8 +701,6 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .reconnect-title { font-size: 1.1rem; font-weight: var(--tide-weight-semibold); }
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: var(--tide-warn-soft); color: var(--tide-text); padding: .6rem 1.25rem; z-index: 1000; }
 #blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; top: .35rem; background: none; border: 0; color: inherit; font-size: 1.25rem; line-height: 1; padding: 0 .25rem; }
-.blazor-error-boundary { background: var(--tide-threat-soft); color: var(--tide-threat); padding: 1rem; border-radius: var(--tide-radius-lg); }
-.blazor-error-boundary::after { content: "Part of this page failed to load. Reload to try again."; }
 
 /* ---- Lightbox ---- */
 .tide-lightbox { position: fixed; inset: 0; background: var(--tide-overlay-strong); z-index: 4000; display: grid; place-items: center; padding: 2rem; cursor: zoom-out; }
@@ -939,8 +939,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
    reason in the warning colour, which carries in both themes. */
 .tide-bundle-warn > td:first-child { box-shadow: inset 3px 0 0 var(--tide-warn); }
 .tide-bundle-warn-text { color: var(--tide-warn); font-weight: 600; }
-.tide-metric-group { margin-bottom: .9rem; }
-.tide-metric-group h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); margin: 0 0 .35rem; }
 .tide-metric-row { display: grid; grid-template-columns: minmax(0, 1.3fr) 7.5rem minmax(0, 1fr) minmax(0, 1.2fr); gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-metric-row:last-child { border-bottom: 0; }
 .tide-metric-row .tide-metric-value { font-variant-numeric: tabular-nums; text-align: right; }
@@ -1238,7 +1236,6 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-filter-add:disabled { opacity: .55; cursor: not-allowed; }
 /* Saved views beside the Actions tabs: a pill each (the filter bar's, the accent tint for the one shown) with a small
    menu button, then Save view in + Filter's dashed outline. */
-.tide-savedviews { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); min-width: 0; }
 .tide-savedviews-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); }
 .tide-savedview { display: inline-flex; align-items: center; }
 .tide-savedview > .tide-chip { margin: 0; white-space: nowrap; text-decoration: none; }
@@ -1329,10 +1326,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-file-list { list-style: none; padding: 0; margin: .5rem 0 0; }
 .tide-file { padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-file:last-child { border-bottom: 0; }
-.tide-file-head { display: flex; gap: .6rem; align-items: flex-start; }
-.tide-file-main { flex: 1 1 auto; min-width: 0; display: grid; gap: .2rem; }
 .tide-file-icon { font-size: 1.5rem; color: var(--tide-text-muted); line-height: 1; width: 3rem; text-align: center; }
-.tide-file-thumb { width: 3rem; height: 3rem; object-fit: cover; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); background: var(--tide-surface-2); }
 .tide-file-name { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
 .tide-file-desc { font-size: .88rem; white-space: pre-line; overflow-wrap: anywhere; }
 .tide-file-note { color: var(--tide-threat); }
@@ -2453,7 +2447,6 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
     .tide-pull-table td:nth-child(3)::before { content: "Next due: "; color: var(--tide-text-muted); }
     .tide-pull-table .tide-pull-error { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 }
-.tide-pull-table .tide-pull-wait { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-pull-table abbr[title] { text-decoration: none; cursor: help; }
 
 /* The formatting toolbar over a Markdown text box (MarkdownToolbar): a strip of small icon buttons joined to the top of

@@ -249,9 +249,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         }
         if (_selectedId == _rowSaid || _rows is null) return;
         _rowSaid = _selectedId;
-        try { await JS.InvokeVoidAsync("tideRows.remember", AddressShown); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
-        catch (InvalidOperationException) { /* not rendered interactively */ }
+        await JS.StopAsync("tideRows.remember", AddressShown);
     }
 
     private string Address(int page, Guid? row) =>

@@ -518,10 +518,7 @@
 
     private async Task RememberDialect()
     {
-        try { await JS.InvokeVoidAsync("tidePrefs.set", DialectPref, _dialect); }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
-        catch (InvalidOperationException) { /* not rendered interactively */ }
+        await JS.BestEffortAsync("tidePrefs.set", DialectPref, _dialect);
     }
 
     // --- "No hits, close" ------------------------------------------------------------------------------------------

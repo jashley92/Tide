@@ -60,7 +60,7 @@
     /// <summary>The most articles listed at once; the filter finds the rest.</summary>
     public const int MaxShown = 50;
 
-    private readonly string _id = "attach-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("attach");
     private IReadOnlyList<AttachTarget>? _targets;
     private string _filter = "";
     private bool _open, _focusInput;

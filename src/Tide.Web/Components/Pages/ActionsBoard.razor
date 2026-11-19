@@ -725,9 +725,7 @@ else
         if (_revealed != _view)
         {
             _revealed = _view;
-            try { await JS.InvokeVoidAsync("tideTabs.revealCurrent"); }
-            catch (JSDisconnectedException) { /* the tab has gone */ }
-            catch (JSException) { /* an older tabs.js still cached: the row just doesn't scroll to it */ }
+            await JS.BestEffortAsync("tideTabs.revealCurrent");
         }
         if (_refocus && !_loading)
         {

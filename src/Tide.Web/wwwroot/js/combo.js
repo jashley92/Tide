@@ -5,7 +5,7 @@ window.tideCombo = {
     reveal: function (id) {
         const el = id ? document.getElementById(id) : null;
         if (!el) return;
-        const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const still = window.tideShortcuts.still();
         el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: still ? 'auto' : 'smooth' });
     }
 };

@@ -44,5 +44,5 @@
     /// <summary>The day's metrics (MetricsService.GetDayAsync), as the team email is given them.</summary>
     [Parameter, EditorRequired] public MetricDay Day { get; set; } = default!;
 
-    private readonly string _id = "ed-numbers-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("ed-numbers");
 }

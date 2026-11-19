@@ -7,7 +7,7 @@
     <span class="tide-trend-@p.Trend.ToString().ToLowerInvariant()" title="@TrendTitle(p)">@MetricMath.Arrow(p.Delta) @MetricMath.FormatDelta(Tile.Metric.Format, p.Delta)</span>
     @if (ShowDate)
     {
-        <span class="tide-muted"> vs @p.Date.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture)</span>
+        <span class="tide-muted"> vs @Ui.ShortDay(p.Date)</span>
     }
 }
 else if (Tile.Value is not null)

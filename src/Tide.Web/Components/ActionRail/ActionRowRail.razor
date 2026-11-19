@@ -116,15 +116,15 @@
     /// Assign…, to the action page's edit form, for whoever works it.</summary>
     [Parameter] public bool OnBoard { get; set; }
 
-    /// <summary>How long the selection rests before the rest of the action is read.</summary>
-    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+    /// <summary>The selection resting a moment before the rest of the action is read, and the mark that drops a read
+    /// another selection overtook.</summary>
+    private readonly TypingPause _rest = new(150);
 
     // The hunt panel's choice of language, remembered by the browser.
     private const string DialectPref = "hunt-dialect";
 
     private ActionDetail? _detail;
     private ActionRow? _for;
-    private int _ticket;
     private string? _preview, _said;
     private string _dialect = QueryDialects.All[0].Key;
     private IReadOnlyList<ArticleIndicator> _sweeping = [];
@@ -161,12 +161,11 @@
     // another selection is dropped.
     private async Task Load(bool rest)
     {
-        var ticket = ++_ticket;
         var row = Row;
+        if (rest && !await _rest.Settled()) return;
+        var ticket = _rest.Now();
         try
         {
-            if (rest) await Task.Delay(Rest);
-            if (ticket != _ticket) return;
             var detail = await ActionSvc.GetAsync(row.Number);
             IReadOnlyList<ArticleIndicator> sweeping = [];
             string? preview = null;
@@ -177,12 +176,12 @@
                 (sweeping, days) = (sources.Own, sources.Days);
                 if (a.Hunts.Count == 0 && sweeping.Count > 0) preview = await ActionSvc.PreviewHuntAsync(a.Id, _dialect, days: days);
             }
-            if (ticket != _ticket) return;
+            if (!_rest.IsLatest(ticket)) return;
             (_detail, _sweeping, _preview, _previewDays) = (detail, sweeping, preview, days);
         }
         catch (Exception ex)
         {
-            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+            if (_rest.IsLatest(ticket)) Toasts.Error(UserFacingError.For(ex));
         }
     }
 

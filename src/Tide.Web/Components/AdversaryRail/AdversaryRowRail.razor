@@ -99,8 +99,9 @@
     /// <summary>After Watch or Stop watching (done or refused): the list reads the profiles again.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    /// <summary>How long the selection rests before the rest of the profile is read.</summary>
-    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+    /// <summary>The selection resting a moment before the rest of the profile is read, and the mark that drops a read
+    /// another selection overtook.</summary>
+    private readonly TypingPause _rest = new(150);
 
     /// <summary>How many articles and actions the rail lists; the rest are on the profile's page.</summary>
     internal const int Shown = 3;
@@ -111,7 +112,6 @@
     private AdversaryDetail? _detail;
     private IReadOnlyList<StackRun>? _runs;
     private AdversaryRow? _for;
-    private int _ticket;
     private bool _busy;
 
     // Analysts keep the profiles (AdversaryService's own rule, and the profile page's).
@@ -134,20 +134,19 @@
     // selection is dropped.
     private async Task Load(bool rest)
     {
-        var ticket = ++_ticket;
         var id = Row.Adversary.Id;
+        if (rest && !await _rest.Settled()) return;
+        var ticket = _rest.Now();
         try
         {
-            if (rest) await Task.Delay(Rest);
-            if (ticket != _ticket) return;
             var detail = await Adversaries.GetAsync(id);
             var runs = detail is null ? [] : await Stack.RunByArticlesAsync(detail.Articles.Select(a => a.Id).ToList());
-            if (ticket != _ticket) return;
+            if (!_rest.IsLatest(ticket)) return;
             (_detail, _runs) = (detail, runs);
         }
         catch (Exception ex)
         {
-            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+            if (_rest.IsLatest(ticket)) Toasts.Error(UserFacingError.For(ex));
         }
     }
 

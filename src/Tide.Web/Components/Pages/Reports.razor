@@ -133,7 +133,7 @@ else
 
     private async Task Print()
     {
-        try { await JS.InvokeVoidAsync("print"); } catch (JSDisconnectedException) { }
+        await JS.StopAsync("print");
     }
 
     private static string ReportName(Period p) => p.Kind switch

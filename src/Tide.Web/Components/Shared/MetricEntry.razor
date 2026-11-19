@@ -199,7 +199,7 @@
     /// <summary>How many of the day's numbers are missing, each time that changes.</summary>
     [Parameter] public EventCallback<int> MissingChanged { get; set; }
 
-    private readonly string _id = "numbers-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("numbers");
     private MetricDay? _day;
     private bool _canEdit, _locked, _notSent;
     private bool? _open;

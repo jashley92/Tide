@@ -56,7 +56,7 @@
     [Parameter] public Shot? Open { get; set; }
     [Parameter] public EventCallback<Shot?> OpenChanged { get; set; }
 
-    private readonly string _titleId = "shot-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _titleId = Ui.NewId("shot");
     private ElementReference _close;
     private bool _shown;
 

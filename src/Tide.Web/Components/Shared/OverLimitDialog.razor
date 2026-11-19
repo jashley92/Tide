@@ -11,7 +11,7 @@
 @code {
     private ConfirmDialog _dialog = default!;
     private string? _reason;
-    private readonly string _id = "over-limit-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _id = Ui.NewId("over-limit");
 
     /// <summary>The reason as typed (a test types it here).</summary>
     internal string? Reason { get => _reason; set => _reason = value; }

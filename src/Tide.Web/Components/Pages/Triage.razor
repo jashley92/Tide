@@ -747,9 +747,7 @@ else
     {
         var address = _sourcesTab ? "triage?tab=sources" : PageHref(_page);
         _addressPage = _sourcesTab ? 1 : _page;
-        try { await JS.InvokeVoidAsync("tideRows.remember", address); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
+        await JS.StopAsync("tideRows.remember", address);
     }
 
     // A page of this tab, with its filters: the pager's links, and the address a filter change writes.
@@ -933,8 +931,7 @@ else
     {
         if (_sort == sort) return;
         _sort = sort;
-        try { await JS.InvokeVoidAsync("tideTriage.pref", "sort", sort == InboxSort.Likely ? nameof(InboxSort.Likely) : null); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tideTriage.pref", "sort", sort == InboxSort.Likely ? nameof(InboxSort.Likely) : null);
         await Refilter();
     }
 
@@ -1806,9 +1803,7 @@ else
             if (outcome.Made) Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
             else Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in this article.");
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
-            try { await JS.InvokeVoidAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
-            catch (JSDisconnectedException) { }
-            catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
+            await JS.StopAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older));
             Nav.NavigateTo($"articles/{outcome.ArticleId}");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
