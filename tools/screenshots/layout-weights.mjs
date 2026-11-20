@@ -19,7 +19,8 @@ if (!runs.length || runs.some(r => !/^\d+$/.test(r))) {
 }
 
 const file = new URL('./layout-weights.json', import.meta.url);
-const gh = args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+// A tool a developer runs by hand: it relies on the developer's own signed-in gh, found on their PATH.
+const gh = args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }); // NOSONAR
 const repo = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
 
 const samples = new Map();      // page -> seconds, one per log

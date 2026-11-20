@@ -5141,7 +5141,7 @@ const pages = [
  * sharded run. With no SHARD, every page, in one run. `PLAN=1` (with SHARD=i/n, or 4 slices) prints the slices, what
  * each should take and the chains each runs, and starts nothing.
  */
-if (process.env.PLAN) {
+if (/^(1|true|yes)$/i.test(process.env.PLAN ?? '')) {
   const n = Number((process.env.SHARD ?? '1/4').split('/')[1]);
   console.log(`${n} slices of ${shard(pages).length} pages, by layout-weights.json:`);
   for (const l of describe(pages, n)) console.log(l);
