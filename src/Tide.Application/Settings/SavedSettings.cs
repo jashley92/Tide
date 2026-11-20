@@ -144,7 +144,7 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
 
     // Another save added the same setting's row first (SQLite names the column, SQL Server the key): as stale as a
     // change seen before saving.
-    private static bool KeyTaken(DbUpdateException e) => e is not DbUpdateConcurrencyException && e.InnerException?.Message is { } m
+    internal static bool KeyTaken(DbUpdateException e) => e is not DbUpdateConcurrencyException && e.InnerException?.Message is { } m
         && (m.Contains("Settings.Key", StringComparison.Ordinal) || m.Contains("PK_Settings", StringComparison.Ordinal));
 
     private static Articles.StaleEditException Stale() => new("Someone else changed a setting you changed here since you " +

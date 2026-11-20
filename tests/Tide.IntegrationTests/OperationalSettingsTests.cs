@@ -228,6 +228,67 @@ public class OperationalSettingsTests
     }
 
     [Fact]
+    public async Task AnotherSaveAddingTheSameSettingsRowFirst_RefusesTheSave_AsStale()
+    {
+        using var rig = new SettingsRig(Server);
+        var added = false;
+        // Another administrator's save adds the row in the moment between this save's check and its write.
+        rig.Db.BeforeSave = ctx =>
+        {
+            if (added || !ctx.ChangeTracker.Entries<AppSetting>().Any(e => e.State == EntityState.Added)) return;
+            added = true;
+            ctx.Database.ExecuteSqlRaw("INSERT INTO \"Settings\" (\"Key\", \"Value\", \"UpdatedAtUtc\", \"UpdatedBy\") VALUES ({0}, '06:00', 0, 'someone')",
+                OperationalSettings.ReminderTime);
+        };
+
+        var save = () => rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(reminder: "08:15"), loaded: OrgPage());
+
+        await save.Should().ThrowAsync<Tide.Application.Articles.StaleEditException>();
+        rig.Db.BeforeSave = null;
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("07:30", "nothing was saved");
+    }
+
+    [Fact]
+    public void OnlyARowAddedTwice_CountsAsTheKeyTaken()
+    {
+        static DbUpdateException Failed(string? inner) => new("save failed", inner is null ? null : new InvalidOperationException(inner));
+        OperationalSettingsService.KeyTaken(Failed("SQLite Error 19: 'UNIQUE constraint failed: Settings.Key'.")).Should().BeTrue();
+        OperationalSettingsService.KeyTaken(Failed("Violation of PRIMARY KEY constraint 'PK_Settings'.")).Should().BeTrue();
+        OperationalSettingsService.KeyTaken(Failed("UNIQUE constraint failed: Articles.Id")).Should().BeFalse("another table's key");
+        OperationalSettingsService.KeyTaken(Failed(null)).Should().BeFalse("no database error to read");
+        OperationalSettingsService.KeyTaken(new DbUpdateConcurrencyException("stale", new InvalidOperationException("PK_Settings")))
+            .Should().BeFalse("a concurrency failure isn't a row added twice");
+    }
+
+    [Theory]
+    [InlineData("Pacific Standard Time")]   // a server's Windows id: shown, but not one the app saves
+    [InlineData(null)]
+    public async Task APageThatShowedAValueTheAppCantSave_SavesTheZoneChosenInItsPlace(string? shown)
+    {
+        using var rig = new SettingsRig(Server);
+        var loaded = OrgPage();
+        loaded[OperationalSettings.TimeZone] = shown;
+
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Select(s => s.Key).Should().Equal(OperationalSettings.TimeZone);
+    }
+
+    [Fact]
+    public void ASavedValue_IsLaidOverTheDefaultOptionsOnly()
+    {
+        var applied = new List<string>();
+        using var saved = new SavedSettings();
+        var overlay = new OptionsOverlay<SavedSettings, OrgOptions>(saved, (_, o) => applied.Add(o.TimeZone));
+        overlay.PostConfigure("named", new OrgOptions { TimeZone = "named" });
+        overlay.PostConfigure(Options.DefaultName, new OrgOptions { TimeZone = "default" });
+        applied.Should().Equal("default");
+        overlay.Name.Should().Be(Options.DefaultName);
+    }
+
+    [Fact]
     public async Task OrgClock_FollowsASavedTimeZone_MeetingTimeAndName()
     {
         using var rig = new SettingsRig(Server);
