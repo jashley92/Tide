@@ -84,11 +84,15 @@ The restore drill. It takes the newest set of this install (or `-BackupSet`) and
 - checks the restored database has TIDE's migration history;
 - checks every screenshot the database lists is in the set at its recorded size, and that `-Sample` (200) of them, or
   all with `-HashAll`, match their SHA-256;
-- checks the set holds the key ring and the site's settings file.
+- checks the set holds the key ring and the site's settings file. With `DataProtection:KeyPath` not set there's no key
+  ring to back up, so that check is skipped and marked `[SKIP]` with why, not failed.
 
 It writes `restore-check-<time>.json` into the set, drops the scratch database (unless `-KeepRestored`), and exits with
 code 2 on a failed check. `-Register` schedules it every fourth Sunday. It refuses a scratch name that's the live
-database.
+database's on any instance, since `.`, `localhost` and the server's full name all reach the live one. It marks each
+scratch database it restores (a `TideRestoreDrill` extended property) and replaces an existing database of the scratch
+name only when it carries that mark, so on a shared instance it never drops another install's database. A scratch
+database kept from a drill before the mark is refused once: drop it yourself after checking.
 
 ### Upgrade-Tide.ps1
 
