@@ -263,6 +263,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.Property(x => x.ExternalId).HasMaxLength(DetectionRule.MaxExternalId);
             e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
+            // A push reads, and an administrator removes, one caller's rules: thousands of a sync's among other callers'.
+            e.Property(x => x.Caller).HasMaxLength(DetectionRule.MaxExternalId);
+            e.HasIndex(x => new { x.Source, x.Caller });
             e.Property(x => x.Name).HasMaxLength(DetectionRule.MaxName);
             e.Property(x => x.Techniques).HasMaxLength(DetectionRule.MaxTechniques);
             e.Property(x => x.Platform).HasMaxLength(DetectionRule.MaxPlatform);

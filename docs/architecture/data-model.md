@@ -1202,6 +1202,7 @@ single `AuditLog` entry itself when an administrator removes a pushed set.
 | `Id` | uniqueidentifier | no | |
 | `Source` | int | no | `DetectionSource`. **Unique** with `ExternalId`. |
 | `ExternalId` | nvarchar(300) | no | The rule's own id in its source, or its name when it has none. |
+| `Caller` | nvarchar(300) | yes | For a pushed rule, the API caller whose set holds it (a token as `api:<name>`, or a person's id): the start of `ExternalId`, up to the U+001F mark. Null for an imported rule and a push from before callers were kept. Set with `ExternalId`; indexed with `Source`, so a push or a removal reads only its caller's rules. |
 | `Name` | nvarchar(300) | no | |
 | `Techniques` | nvarchar(1000) | no | ATT&CK ids, comma-separated, upper case. |
 | `Platform` | nvarchar(100) | yes | |
