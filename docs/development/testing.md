@@ -333,13 +333,14 @@ Runs on pull requests and on pushes to `main`, and is called by the release work
 
 **`layout-build`, `layout-shard` and `layout`** (Ubuntu, .NET `10.0.x`, Chromium through Playwright): `layout-build`
 publishes TIDE once; eight `layout-shard` jobs (four slices of the pages, each at the default letter spacing and at
-`.12em`) each start that build, seed the demo database as the screenshot capture does, and run
+`.12em`, the slices balanced by what each page took in CI: `tools/screenshots/layout-weights.json`) each start that build, seed the demo database as the screenshot capture does, and run
 `tools/screenshots/layout.mjs`, which checks each page's layout rules at the widths it's used at: rows of
 controls that must stay one line (the meeting's quick add, a recommended line, an action on a slide), columns that must
 line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). A shard fails naming
 the page, the width and the rule, and prints TIDE's log; `layout`, the check the branch rules name, passes when all
-eight do. Run it locally with `node tools/screenshots/layout.mjs`
-(`tools/screenshots/README.md`).
+eight do. Every sharded run first checks that the four slices hold every page exactly once, and fails if not. Run it
+locally with `node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices and what each should take without starting
+anything (`tools/screenshots/README.md`, which says how to refresh the weights).
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);

@@ -5,6 +5,7 @@
 //   node tools/screenshots/layout.mjs                build, seed a demo database, start TIDE, check every page
 //   ONLY=slide-article node tools/screenshots/layout.mjs                 just these pages
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
+//   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -12,6 +13,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
@@ -3952,7 +3954,7 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
-/** Where, in the pages, those that change the demo begin (see shard). */
+/** Where, in the pages, those that change the demo begin (see shards.mjs). */
 const CHANGES_THE_DEMO = Symbol('changes the demo');
 
 /** The footer's buttons, each row of them on one baseline (a link styled as a button sits a few px off otherwise). */
@@ -5121,37 +5123,20 @@ const pages = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const wanted = pick(shard(pages, process.env.SHARD), 'page');
-
 /**
- * `SHARD=i/n` (1-based) runs one of n slices of the pages, in their order, so n runs side by side (each on its own fresh
- * demo) check them all. The pages before CHANGES_THE_DEMO change nothing a later page reads, so they're cut into slices
- * of about as many widths each; the pages from it on stay together, in order, at the end of the last slice. With no
- * SHARD, every page, in one run.
+ * `SHARD=i/n` (1-based) runs one of n slices of the pages, so n runs side by side (each on its own fresh demo) check them
+ * all, each about as long by what its pages took in CI (shards.mjs, layout-weights.json); every page is in exactly one
+ * slice, checked on every sharded run. With no SHARD, every page, in one run. `PLAN=1` (with SHARD=i/n, or 4 slices)
+ * prints the slices and what each should take, and starts nothing.
  */
-function shard(list, spec) {
-  const changesAt = list.indexOf(CHANGES_THE_DEMO);
-  if (changesAt < 0) throw new Error('The pages have lost their CHANGES_THE_DEMO marker.');
-  const all = list.filter(p => p !== CHANGES_THE_DEMO);
-  if (!spec) return all;
-  const [i, n] = spec.split('/').map(Number);
-  if (!(Number.isInteger(i) && Number.isInteger(n) && i >= 1 && i <= n)) throw new Error(`SHARD=${spec} isn't i/n with 1 <= i <= n.`);
-  const head = list.slice(0, changesAt), tail = list.slice(changesAt + 1);
-  // A width of a Present page (a meeting to start, people to seat) takes about twice as long as one elsewhere.
-  const weight = ps => ps.reduce((sum, p) => sum + p.widths.length * (p.route.startsWith('/present') ? 2 : 1), 0);
-  // Each slice about as long, the last with the tail in it: when the tail is a slice's worth or more, the first n-1 share
-  // the head between them.
-  const share = Math.min((weight(head) + weight(tail)) / n, weight(head) / Math.max(1, n - 1));
-  // The first n-1 slices take the head in turn until each has its share; the last has what's left of it, then the tail.
-  const slices = [[]];
-  for (const p of head) {
-    if (slices.length < n && weight(slices.at(-1)) >= share) slices.push([]);
-    slices.at(-1).push(p);
-  }
-  while (slices.length < n) slices.push([]);
-  slices[n - 1].push(...tail);
-  return slices[i - 1];
+if (process.env.PLAN) {
+  const n = Number((process.env.SHARD ?? '1/4').split('/')[1]);
+  console.log(`${n} slices of ${pages.length - 1} pages, by layout-weights.json:`);
+  for (const l of describe(pages, n, CHANGES_THE_DEMO)) console.log(l);
+  process.exit(0);
 }
+const wanted = pick(shard(pages, process.env.SHARD, CHANGES_THE_DEMO), 'page');
+if (process.env.SHARD) console.log(`Slice ${process.env.SHARD}: ${wanted.length} pages, about ${Math.round(wanted.reduce((sum, p) => sum + cost(p), 0))}s by layout-weights.json.`);
 
 let server;
 try {
