@@ -312,7 +312,7 @@ public class MigrationFillTests
         {
             Rule(DetectionSource.Api, "api:splunk sync\u001F1001"), Rule(DetectionSource.Api, "s-1-5-21-test-7\u001Fx\u001Fy"),
             Rule(DetectionSource.Api, "old-1"), Rule(DetectionSource.Api, "\u001Fno caller"), Rule(DetectionSource.Csv, "csv\u001Fr1"),
-            Rule(DetectionSource.Sigma, "sigma-1"),
+            Rule(DetectionSource.Sigma, "sigma-1"), Rule(DetectionSource.Api, "api:sécurité 🚨 sync\u001F42"),
         };
         await using (var ctx = database.Context())
         {
@@ -329,7 +329,8 @@ public class MigrationFillTests
             stored.Should().Equal(rules.ToDictionary(r => r.ExternalId, r => DetectionRule.CallerOf(r.Source, r.ExternalId)));
             stored["api:splunk sync\u001F1001"].Should().Be("api:splunk sync");
             stored["s-1-5-21-test-7\u001Fx\u001Fy"].Should().Be("s-1-5-21-test-7", "up to the first mark");
-            stored.Where(s => s.Value is not null).Should().HaveCount(2, "an imported rule, and a push from before callers were kept, has none");
+            stored["api:sécurité 🚨 sync\u001F42"].Should().Be("api:sécurité 🚨 sync", "an accent and an emoji are counted as the app counts them");
+            stored.Where(s => s.Value is not null).Should().HaveCount(3,"an imported rule, and a push from before callers were kept, has none");
         }
     }
 

@@ -112,6 +112,9 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("This token can't push detection rules.");
         var problems = new List<string>();
         var caller = Caller();
+        // Each id starts with the caller; one too long would leave no room for a rule's id or its hash (see Owned).
+        if (caller.Length + 1 + OwnedHashLength > DetectionRule.MaxExternalId)
+            throw new ArgumentException($"This caller's name is longer than {DetectionRule.MaxExternalId - 1 - OwnedHashLength} characters, so its rules can't be kept. Push with a token of a shorter name.");
         var clean = rules.Where(r => !string.IsNullOrWhiteSpace(r.Name))
             .Select(r => DetectionParsers.Rule(Owned(caller, string.IsNullOrWhiteSpace(r.ExternalId) ? r.Name : r.ExternalId, r.Name, problems),
                 r.Name, r.Techniques, r.Platform, r.Enabled, problems)).ToList();
@@ -130,12 +133,15 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
 
     // The rule's id with its caller in front. One too long for the column keeps its start and ends in a hash of the whole
     // id instead, so two long ids that differ only near the end stay two rules (clipping alone made them one).
+    // "#" and the first 16 hex digits of the id's SHA-256.
+    private const int OwnedHashLength = 17;
+
     private static string Owned(string caller, string id, string name, List<string> problems)
     {
         id = id.Trim();
         var prefix = caller + CallerMark;
         if (prefix.Length + id.Length <= DetectionRule.MaxExternalId) return prefix + id;
-        var hash = "#" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(id)))[..16];
+        var hash = "#" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(id)))[..(OwnedHashLength - 1)];
         problems.Add($"{Clip(name.Trim(), 60)}: its id is longer than {DetectionRule.MaxExternalId - prefix.Length} characters, so TIDE keeps its start and a hash of the rest.");
         return prefix + id[..Math.Max(0, DetectionRule.MaxExternalId - prefix.Length - hash.Length)] + hash;
     }

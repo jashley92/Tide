@@ -502,6 +502,11 @@ public class DetectionServiceTests : IDisposable
         var rules = (await Detections().ListAsync()).Rules;
         rules.Should().HaveCount(2).And.OnlyContain(r => r.Current && r.Rule.ExternalId.Length <= DetectionRule.MaxExternalId);
         (await Detections().PushAsync([new ParsedRule(stem + "/one", "First long", ["T1078"], null, true)])).Unchanged.Should().Be(1, "the same long id is the same rule next time");
+
+        // A caller whose name leaves no room for a rule's id is refused, not stored past the column.
+        (_db.User.UserId, _db.User.DisplayName) = ("S-1-5-21-" + new string('9', 274), "Long name");
+        await FluentActions.Invoking(() => Detections().PushAsync([new ParsedRule("1", "Too long a caller", ["T1078"], null, true)]))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*longer than 282 characters*");
     }
 }
 
