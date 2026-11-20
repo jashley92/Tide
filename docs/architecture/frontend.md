@@ -128,7 +128,7 @@ These pages have one:
 
 | Page | The rail's title | What it holds |
 |---|---|---|
-| Today and a day's brief (`BriefPage`) | Beside the brief | The edition check, your teams' queue, Escalated, reviews asked of you, the meeting, coming up and the brief's history (`Components/Today/`). |
+| Today and a day's brief (`BriefPage`) | Beside the brief | The edition check, your teams' queue, Escalated, Since you last looked, reviews asked of you, the meeting, coming up and the brief's history (`Components/Today/`). |
 | Triage (inbox tabs only) | What TIDE knows | For the selected item: its CVE's CVSS, EPSS, KEV and the priority a promote would suggest; the article that already covers it and that article's open actions; the other reports of the same event, with Attach all and Not the same; the story; what it names (We run, a watched adversary) with *Add to what we run…* (`Components/TriageRail/`). It reads only what's stored: nothing is fetched from a source site. |
 | The article editor | Context · what readers get | The reader preview (`ReaderPreview`) with its Preview, Actions and Details tabs and the Team / Company-wide switch, then the threat story and similar articles. |
 | Actions, list and board | About A-n | The selected action (`ActionRowRail`): its Next line, Take it, Assign… (list) or Move to (board), Open, its facts, its hunt query with Copy, the source article, the last activity and, on the list, About this page. A closed action on the list has Reopen. |

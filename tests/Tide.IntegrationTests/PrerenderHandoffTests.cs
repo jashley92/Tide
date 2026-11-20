@@ -123,8 +123,8 @@ public class PrerenderHandoffTests
 
         var html = await app.CreateClient().GetStringAsync("/");
 
-        html.Should().Contain("id=\"running-order-h\"");
-        handoff.Count.Should().Be(before + 1, "the prerender kept its brief for the circuit to start from");
+        html.Should().Contain("id=\"running-order-h\"").And.Contain("id=\"since-h\"");
+        handoff.Count.Should().Be(before + 2, "the prerender kept its brief, and Since you last looked what it read, for the circuit to start from");
     }
 
     [Fact]

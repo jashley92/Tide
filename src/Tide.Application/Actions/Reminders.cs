@@ -663,8 +663,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
         // Each reader's open actions, from one load of only theirs.
         var open = await db.Actions.AsNoTracking().Include(a => a.Article).Include(a => a.Team).ThenInclude(t => t!.Members).WhereOpen()
-            .Where(a => (a.AssigneeId != null && readers.Contains(a.AssigneeId)) || (a.AssigneeId == null && a.Team!.Members.Any(m => readers.Contains(m.UserId))))
-            .AsSplitQuery().ToListAsync(ct);
+            .WhereTheirs(readers).AsSplitQuery().ToListAsync(ct);
         var theirs = new Dictionary<string, List<ActionItem>>();
         void Add(string id, ActionItem a) => (theirs.TryGetValue(id, out var list) ? list : theirs[id] = []).Add(a);
         foreach (var a in open)

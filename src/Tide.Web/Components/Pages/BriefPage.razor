@@ -1170,9 +1170,10 @@ else
     private bool HasRail => _validDay && (_brief is not null ? AsToday || _tab == 0 : AsToday && !_loading);
 
     // The context rail: what sits beside the brief, what needs the reader first. For whoever writes the brief: the edition
-    // check, then on Today their teams' work nobody has and their escalated actions, the reviews asked of them; the
-    // meeting; on Today what's coming up for them; last the brief's history. For anyone else: the meeting, then on
-    // Today what's coming up and what was presented lately (their queue leads their page), or another day's history.
+    // check, then on Today their teams' work nobody has and their escalated actions, what changed since they last looked,
+    // the reviews asked of them; the meeting; on Today what's coming up for them; last the brief's history. For anyone
+    // else: on Today what changed since they last looked, the meeting, then on Today what's coming up and what was
+    // presented lately (their queue leads their page), or another day's history.
     private RenderFragment Rail() => __builder =>
     {
         @if (_canWrite && _brief is not null)
@@ -1186,8 +1187,10 @@ else
                 <TeamsQueueSection Queue="q" Busy="_busy" Marks="_actionMarks" OnTake="Take" />
             }
             <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
+            <SinceLastCard />
             <ReviewsForYou />
         }
+        @if (AsToday && !_canWrite) { <SinceLastCard /> }
         @if (_brief is not null) { @Meeting() }
         @if (AsToday) { <ComingUpCard Upcoming="_upcoming" /> }
         @if (AsToday && !_canWrite) { <RecentArticlesCard Articles="_recent" /> }

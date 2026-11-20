@@ -77,12 +77,33 @@ zone). Someone without the team edition (a Reader, a Visitor) is sent to `/publi
 The cards that sit beside the brief are in the context rail, "Beside the brief" (`Components/Today/`): the **edition
 check**, **your teams' queue** (their teams' open actions that are theirs or nobody's, up to 8, with *Take it* on those
 nobody holds; a colleague's take in the
-meantime is refused and names who took it), **Escalated**, **reviews asked of you**, the **meeting** (when, the
+meantime is refused and names who took it), **Escalated**, **Since you last looked** (below), **reviews asked of
+you**, the **meeting** (when, the
 presenter, and the title slide line, changed in place with *Change presenter* and *Title slide line*), **coming up**
 and the brief's **history**. From 1500px wide the rail is docked beside the brief and `]` hides it; below that it's
 shut, and **Context** in the top bar, or `]`, opens it over the page. A past day's brief (`/briefs/{day}`) has the same
 rail. A colleague's save never replaces what you're typing in the meeting form or the opening note: a "changed
 elsewhere" notice shows beside the form instead.
+
+**Since you last looked** (`SinceLastCard`, `ActivityService`, ADR
+[0030](../decisions/0030-since-you-last-looked-is-yours-alone.md)) lists what changed for the reader since their mark,
+the `seen.today` preference. It reads each record's own times; nothing new is recorded about what anyone looks at:
+
+| Group | Line | Read from |
+|---|---|---|
+| For you | An open action that is yours (the personal digest's rule, `ActionQueries.WhereTheirs`: assigned to you, or nobody's on a team of yours without a mailbox) that someone else raised, handed to its team, changed or commented on | `Actions` (created, handed, modified), their comments and latest history line |
+| For you | An article you wrote whose review someone decided, or commented on | `ArticleReviews`, `ReviewComments` |
+| Your work, changed by others | An article you wrote that someone else edited | `Articles` (modified) |
+| The day | A brief someone else sent, with its editions | `BriefSends` (real sends that went) |
+| The day | New triage items naming a KEV CVE, for whoever triages | `FeedItems` fetched since, `CveRecords` |
+
+Your own changes never count; TIDE's own (the reminder sweep's) read as "TIDE". It reaches back at most 7 days and
+draws at most 50 lines, the newest first in each group, then "And N more". It's drawn on Today only (never on another
+day's brief or in Present), for anyone with the team edition. The first time it's read there is no mark: it lists
+nothing, says you're up to date, and sets the mark then, so nothing from before the card is called new. **Mark all
+seen** moves the mark to when the card was read (never back, never past now), so what came in meanwhile is there next
+time. It's read in a fixed handful of queries: the mark, then one each for actions, articles, sends and new triage
+items, and one for their KEV CVEs when there are any.
 
 ## Starting a brief
 

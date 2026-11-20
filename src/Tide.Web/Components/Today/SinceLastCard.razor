@@ -1,0 +1,101 @@
+@using Tide.Application.History
+@inject ActivityService Activity
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject PrerenderHandoff Handoff
+
+@* Since you last looked (ADR 0030): on Today's context rail, what changed for the reader since they last marked it seen,
+   grouped for you, your work and the day, each line linking to the thing. Mark all seen moves their mark to when the card
+   was read and is how it's put away: it then says "You're up to date" until something else changes. The heading folds it
+   away for this visit. Today only, never Present (which doesn't draw it). *@
+
+@if (_since is { } s)
+{
+    <section class="tide-card" aria-labelledby="since-h">
+        <h2 id="since-h">
+            <button type="button" class="tide-collapse-btn" aria-expanded="@(_open ? "true" : "false")" aria-controls="since-body"
+                    @ref="_toggle" @onclick="() => _open = !_open">
+                <span class="bi @(_open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> Since you last looked
+            </button>
+            @if (!s.UpToDate)
+            {
+                <span class="tide-count">(@(s.Lines.Count + s.More))</span>
+            }
+        </h2>
+        <div id="since-body" hidden="@(!_open)">
+            @if (s.UpToDate)
+            {
+                <p class="small tide-muted mb-0">@(s.FirstLook ? "You're up to date. From now on, what changes while you're away is listed here." : "You're up to date.")</p>
+            }
+            else
+            {
+                <p class="small tide-muted mb-1">@(s.HeldToReach ? "The last 7 days" : "Since " + Ui.When(Clock, s.From))</p>
+                @foreach (var group in s.Groups)
+                {
+                    <h3 class="small fw-semibold mt-2 mb-1" id="@($"since-{group.Key}")">@GroupName(group.Key)</h3>
+                    <ul class="list-unstyled small mb-0" aria-labelledby="@($"since-{group.Key}")">
+                        @foreach (var line in group)
+                        {
+                            <li class="mb-1"><a href="@line.Href">@Ui.Clip(line.Title, 70)</a>
+                                @if (line.Detail.Length > 0)
+                                {
+                                    <span class="tide-muted"> · @line.Detail</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (s.More > 0)
+                {
+                    <p class="small tide-muted mt-1 mb-0">And @s.More more: see <a href="actions">Actions</a> and <a href="articles">Articles</a>.</p>
+                }
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="MarkSeen">Mark all seen</button>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private SinceLast? _since;
+    private bool _open = true, _busy;
+    private ElementReference _toggle;
+
+    // Read once: the interactive draw takes what the prerender read (which, on a first look, set the mark), so the card
+    // doesn't read twice or change its words as the page comes alive.
+    protected override async Task OnInitializedAsync()
+    {
+        _since = Handoff.Take<SinceLast>(RendererInfo, PrerenderedState) ?? await Activity.SinceAsync();
+        PrerenderedState = Handoff.Keep(RendererInfo, _since, PrerenderedState);
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    private static string GroupName(SinceGroup g) => g switch
+    {
+        SinceGroup.ForYou => "For you",
+        SinceGroup.YourWork => "Your work, changed by others",
+        _ => "The day",
+    };
+
+    // Up to when the card was read, so whatever came in since is still there next time. Focus goes back to the heading,
+    // as the button it was on is gone.
+    private async Task MarkSeen()
+    {
+        if (_since is not { } s || _busy) return;
+        _busy = true;
+        try
+        {
+            await Activity.MarkSeenAsync(s.ReadAtUtc);
+            _since = s with { Lines = [], More = 0, FirstLook = false };
+            Toasts.Show("Marked seen.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        StateHasChanged();
+        try { await _toggle.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+}

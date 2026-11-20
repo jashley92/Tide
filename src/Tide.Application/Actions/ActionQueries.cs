@@ -49,6 +49,15 @@ internal static class ActionQueries
     public static IQueryable<ActionItem> WhereEscalated(this IQueryable<ActionItem> q) =>
         q.Where(a => a.EscalatedForDue != null && a.EscalatedForDue == a.DueDate).WhereOpen();
 
+    /// <summary>
+    /// The actions that are one of <paramref name="people"/>'s, as the reminders and the personal digest have it: assigned
+    /// to them, or nobody's on a team of theirs that has no mailbox (a team with one hears of those itself). The digest
+    /// and Today's "Since you last looked" both read "yours" from here, so it means one thing.
+    /// </summary>
+    public static IQueryable<ActionItem> WhereTheirs(this IQueryable<ActionItem> q, IReadOnlyCollection<string> people) =>
+        q.Where(a => (a.AssigneeId != null && people.Contains(a.AssigneeId))
+                     || (a.AssigneeId == null && (a.Team!.Email == null || a.Team.Email.Trim() == "") && a.Team.Members.Any(m => people.Contains(m.UserId))));
+
     /// <summary>The actions that count toward their team's active limit (<see cref="ActionItem.IsActiveStatus"/>).</summary>
     public static IQueryable<ActionItem> WhereActive(this IQueryable<ActionItem> q) => q.Where(a => ActionItem.ActiveStatuses.Contains(a.Status));
 

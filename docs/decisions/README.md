@@ -34,3 +34,4 @@ contributor; supersede one rather than editing it once it's accepted.
 | [0027](0027-external-teams-actions-show-their-ticket.md) | An external team's unheld action is named by its ticket wherever a holder would be |
 | [0028](0028-pull-all-pulls-one-source-at-a-time.md) | Pull all pulls one source at a time, and stops with its page |
 | [0029](0029-the-layout-check-runs-in-slices-and-waits-for-stillness.md) | The layout check runs in slices side by side, and waits for the page to be still |
+| [0030](0030-since-you-last-looked-is-yours-alone.md) | "Since you last looked" is yours alone, read from what TIDE already records (proposed) |
