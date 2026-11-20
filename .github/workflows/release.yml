@@ -64,10 +64,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: bash tools/ci/check-sonar-quality-gate.sh "$GITHUB_SHA"
 
-      # Refuse to ship a release that edits or removes a migration an earlier release (alphas included) shipped: databases
-      # installed from that release could not upgrade to this one.
-      - name: Released migrations are immutable
-        run: bash tools/ci/check-migrations-immutable.sh
+      # "Released migrations are immutable" isn't repeated here: the gates job runs it on this commit, with every tag.
 
       # The release body is the version's section of docs/UPGRADE.md. A release must have one; an alpha without one gets
       # GitHub's generated list of the pull requests merged since the previous tag instead. Checked first, so a release
@@ -106,12 +103,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release -p:Version="${GITHUB_REF_NAME#v}" -p:TideReleaseBuild=true
 
-      - name: No un-migrated model changes (SQL Server + SQLite)
-        run: |
-          TIDE_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
-            --project src/Tide.Migrations.SqlServer --startup-project src/Tide.Web --context AppDbContext
-          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
-            --project src/Tide.Infrastructure --startup-project src/Tide.Web --context AppDbContext
+      # Nor "No un-migrated model changes": the gates job ran it on this commit, and the version and release marker above
+      # only stamp assembly attributes, which the EF model doesn't read.
 
       # Framework-dependent, portable publish (no RID), the same shape Install-Tide.ps1 produces, so the app runs under IIS
       # in-process with the .NET 10 Hosting Bundle.
