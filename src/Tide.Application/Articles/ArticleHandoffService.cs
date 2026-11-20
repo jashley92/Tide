@@ -30,6 +30,9 @@ public sealed class ArticleHandoffService(IAppDbContextFactory dbs, ICurrentUser
     /// <summary>Why a hand-off is refused to someone who can't write articles.</summary>
     public const string Refusal = "Only analysts can hand an article on.";
 
+    /// <summary>What the email says in place of the note for an article above the team edition's ceiling.</summary>
+    public const string WithheldNote = "A note came with it: open TIDE to read it.";
+
     /// <summary>Who <paramref name="articleId"/> can be handed to: everyone who can write articles but its writer now, by
     /// name, the signed-in person (taking it over) among them unless they're the writer.</summary>
     public async Task<IReadOnlyList<ArticleWriterChoice>> ChoicesAsync(Guid articleId, CancellationToken ct = default)
@@ -77,11 +80,17 @@ public sealed class ArticleHandoffService(IAppDbContextFactory dbs, ICurrentUser
                  ?? throw new ArgumentException(toUserId == a.CurrentWriterId ? $"{a.CurrentWriterName} already has it." : "Choose a colleague who can write articles.");
 
         var from = a.CurrentWriterName;
-        a.WriterId = to.Id;
-        a.WriterName = to.Name;
-        a.WriterSinceUtc = clock.Now.ToUniversalTime();
-        a.HandoffNote = cleanNote;
-        // Not the edit version: nothing anyone wrote changed, so an editor open on the article can still save.
+        var since = clock.Now.ToUniversalTime();
+        // The hand-off doesn't move the edit version (nothing anyone wrote changed, so an editor open on the article can
+        // still save), so that can't guard it. It's claimed in the database instead, only from the writer the page showed:
+        // of two hand-offs at once, the second matches nothing and is refused, before anyone is told.
+        var claimed = await db.Articles
+            .Where(x => x.Id == articleId && (x.WriterId == expectedWriterId || (x.WriterId == null && x.AuthorId == expectedWriterId)))
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.WriterId, to.Id).SetProperty(x => x.WriterName, to.Name)
+                .SetProperty(x => x.WriterSinceUtc, since).SetProperty(x => x.HandoffNote, cleanNote), ct);
+        if (claimed == 0) throw new StaleEditException("Someone else handed this article on just now. Reload it to see who has it.");
+        // The same values again through the tracked article, so the audit trail, the history and open pages hear it.
+        (a.WriterId, a.WriterName, a.WriterSinceUtc, a.HandoffNote) = (to.Id, to.Name, since, cleanNote);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
         {
@@ -92,7 +101,7 @@ public sealed class ArticleHandoffService(IAppDbContextFactory dbs, ICurrentUser
 
     // Emails the new writer, unless they turned it off. Sent after the save, so a relay that's down leaves the hand-off made.
     // The email leaves TIDE, so it's marked with the article's TLP, and an article above the team edition's ceiling isn't
-    // named in it.
+    // named in it, nor is the note, which may say as much as the title.
     private async Task<bool> NotifyAsync(IAppDbContext db, Article a, string from, ArticleWriterChoice to, CancellationToken ct)
     {
         var recipients = (await RecipientResolver.ResolveAsync(db, NotificationKinds.ArticleHandoffs, [to.Id], ct)).Reachable();
@@ -103,7 +112,9 @@ public sealed class ArticleHandoffService(IAppDbContextFactory dbs, ICurrentUser
         {
             ["Writer"] = to.Name, ["By"] = user.DisplayName, ["Before"] = from,
             ["Article"] = named ? a.Title : $"a draft marked {Tlp.Label(a.Tlp)}",
-            ["Note"] = a.HandoffNote is { } n ? $"<p style=\"margin:0 0 12px;\">“{Esc(n)}”</p>" : "",
+            ["Note"] = a.HandoffNote is not { } n ? ""
+                : named ? $"<p style=\"margin:0 0 12px;\">“{Esc(n)}”</p>"
+                : $"<p style=\"margin:0 0 12px;\">{Esc(WithheldNote)}</p>",
             ["ArticleLink"] = Link($"articles/{a.Id}"),
         });
         var marking = $"<p style=\"margin:0 0 12px;font-size:13px;color:{Palette.Muted};\">{TlpLabel(a.Tlp)} {Esc(Tlp.Meaning(a.Tlp))}</p>";

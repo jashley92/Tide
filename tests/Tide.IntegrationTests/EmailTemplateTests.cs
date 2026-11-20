@@ -77,6 +77,15 @@ public class EmailTemplateServiceTests : IDisposable
     }
 
     [Fact]
+    public void TheArticleHandoffPreview_FillsEveryValue_ItsNoteIncluded()
+    {
+        var t = EmailTemplateCatalog.ArticleHandoff;
+        var preview = _db.EmailTemplateAdmin().Preview(t.Id, t.DefaultSubject, t.DefaultHeading, t.DefaultBody);
+        preview.Subject.Should().Be("TIDE: Robin handed you an article");
+        preview.Html.Should().Contain("Finish the IOCs").And.Contain("from Robin").And.Contain("Fortinet FortiOS").And.NotContain("{{");
+    }
+
+    [Fact]
     public async Task ThePreview_AndATestSend_UseSampleValues_AndGoOnlyToTheAdministrator()
     {
         var svc = _db.EmailTemplateAdmin();

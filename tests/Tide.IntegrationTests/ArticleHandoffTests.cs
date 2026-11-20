@@ -171,14 +171,42 @@ public class ArticleHandoffTests : IDisposable
     }
 
     [Fact]
-    public async Task AnArticleAboveTheTeamCeiling_IsntNamedInTheEmail()
+    public async Task AnArticleAboveTheTeamCeiling_IsntNamedInTheEmail_NorIsItsNote()
     {
         await People();
         var id = await _db.Articles().CreateAsync("Named only inside TIDE", tlp: TlpLevel.Red);
-        await Handoffs().HandToAsync(id, Sam, null, Me);
+        await Handoffs().HandToAsync(id, Sam, "The implant beacons to 203.0.113.9", Me);
 
         var mail = _db.Email.Sent.Should().ContainSingle().Subject;
         mail.Subject.Should().EndWith("[TLP:RED]");
-        mail.Html.Should().NotContain("Named only inside TIDE").And.Contain("a draft marked TLP:RED");
+        mail.Html.Should().NotContain("Named only inside TIDE").And.Contain("a draft marked TLP:RED")
+            .And.NotContain("203.0.113.9", "the note may say as much as the title").And.Contain("open TIDE to read it");
+        (await Saved(id)).HandoffNote.Should().Be("The implant beacons to 203.0.113.9", "it's kept in TIDE, for the writer");
+    }
+
+    [Fact]
+    public async Task OfTwoHandOffsAtOnce_TheSecondIsRefused_AndOnlyTheFirstWriterIsTold()
+    {
+        await People();
+        const string Ada = "S-1-5-21-ADA";
+        await using (var ctx = _db.Context())
+        {
+            ctx.Users.Add(new AppUser { Sid = Ada, DisplayName = "Ada", RolesCsv = "Analyst", Email = "ada@example.org" });
+            await ctx.SaveChangesAsync();
+        }
+        var id = await _db.Articles().CreateAsync("Handed twice at once");
+
+        // A colleague's hand-off to Ada lands after this one read the article (Me has it) and before it writes.
+        _db.Commands.Before(sql => sql.StartsWith("UPDATE", StringComparison.Ordinal) && sql.Contains("\"WriterId\"", StringComparison.Ordinal), () =>
+        {
+            using var ctx = _db.PlainContext();
+            ctx.Articles.Where(a => a.Id == id).ExecuteUpdate(u => u.SetProperty(a => a.WriterId, Ada).SetProperty(a => a.WriterName, "Ada"));
+        });
+
+        await FluentActions.Invoking(() => Handoffs().HandToAsync(id, Sam, "Finish it", Me))
+            .Should().ThrowAsync<StaleEditException>("Ada has it now, and this hand-off was from Me");
+        var a = await Saved(id);
+        (a.CurrentWriterId, a.HandoffNote).Should().Be((Ada, (string?)null), "the colleague's hand-off stands");
+        _db.Email.Sent.Should().BeEmpty("Sam was never handed it, so isn't told");
     }
 }

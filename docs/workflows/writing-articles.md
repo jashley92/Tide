@@ -422,7 +422,7 @@ person until the article is handed on.
   save. It's refused when someone else handed it on after the page was read.
 - The new writer sees it first on Today's **Drafts in progress**, marked *Handed to you* with the note, and is told by a
   toast if Today is open. They're emailed too (`article-handoff`, marked with the article's TLP; an article above the
-  team edition's ceiling isn't named), unless they turned *Articles handed to you* off in My notifications.
+  team edition's ceiling isn't named, nor is the note), unless they turned *Articles handed to you* off in My notifications.
 - "Mine" means the writer: the brief picker's *Only mine* and Today's drafts list the articles you're writing now.
 - Editing rights don't change: any analyst can still edit any article. Reviews still go by the author: the author can't
   review it, and the author or whoever asked takes a request back.
