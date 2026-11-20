@@ -203,8 +203,8 @@ no top bar, so none there.
   changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
 - **Width.** In full from 1200px; "10:30 AM · 3/5" below that ("Mon · 3/5" on a day off, the day rather than the time,
   so it's never longer than a working day's); where the bar is still too tight the chip is cut short, its title and name
-  keeping the whole wording, rather than squeezing the search box or Go to; under 1000px the team's name gives way to it; under
-  740px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
+  keeping the whole wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
+  900px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
@@ -465,7 +465,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `Pager` | Previous, numbered pages (with … gaps) and Next, `aria-current` on the current page. Given `Href`, the pages are links to their own addresses (`?page=`), so a reload, Back, a copied link or a middle-click keeps the page; without it they're buttons that call `OnPage`. Used by `DataTable` (with `Href` when `PageInAddress`), Triage, Saved queries and Outreach templates. `pager.js` brings the list's top back into view. |
 | `RowKeys`, `RowSelection` | A list page's selected row: the keys that move it, and how it's read from the address, moved and drawn. See [a list with a selected row](#a-list-with-a-selected-row). `RowKeys` is used by the Actions list and board, Our stack, Adversaries and the Library's `LibraryBrowser`; Triage starts `rows.js` from `triage.js` with keys of its own. |
 | `LibraryPage<TRow>` | The base of the team libraries (Saved queries, Outreach templates, Playbooks, each a tab of the `Library` page; `@inherits LibraryPage<…>`): the rows read with or without the retired ones, the words typed, 20 entries a page with the page in the address, the selected entry (`Selected`, `Pick`; `?row=` in the address, and a link to an entry opens the page of the list it's on), Clear, Show retired, a colleague's change re-read in place (its `ChangeFeed` topic), one step at a time (then `OnChanged`, so the Library counts the tab again), Retire and Restore with their toasts, "Used on …" and "Saved by …, changed by …", and `EditingAway` (the entry being edited isn't the one shown, so the library draws its form above the list; when a colleague's change moved the shown entry to another page, the page goes there instead). A library supplies how it reads its rows, the filter that leaves some, what it calls them, a row's id, how the list names it (`LibraryEntry`) and the one being edited, and its own form and the selected entry's card. Focus follows the work, set after the render as elsewhere (`FocusForm`, `FocusList`): a form that opens takes it in its first box; Save, Cancel, a confirmed Delete and a Retire that takes the entry off the list put it on the selected row, or on the empty state when the list has none. After each render the address is made to name the entry shown, or none (`tideRows.remember`). |
-| `LibraryBrowser` | A library's list beside the entry chosen from it (one column below 1000px): the page's entries as rows (name, what it's for, kind, use), the selected one `aria-current="true"` and the list's one tab stop, a click or focus choosing a row, the pager under the list, and the selected entry (`ChildContent`) in a column that stays in view. A long grouped list folds after the selected entry's group ("3 more KQL, then Falcon · 3"). `RowKeys` moves between rows, `J` and `K` turning the page at the ends; `FocusSelectedAsync` puts focus back on the selected row. |
+| `LibraryBrowser` | A library's list beside the entry chosen from it (one column at 1000px or narrower): the page's entries as rows (name, what it's for, kind, use), the selected one `aria-current="true"` and the list's one tab stop, a click or focus choosing a row, the pager under the list, and the selected entry (`ChildContent`) in a column that stays in view. A long grouped list folds after the selected entry's group ("3 more KQL, then Falcon · 3"). `RowKeys` moves between rows, `J` and `K` turning the page at the ends; `FocusSelectedAsync` puts focus back on the selected row. |
 | `CardRuleCells` | A card rule's label in its colour (marked when off) and what it matches in words, as two table cells: Board rules and Administration › Card rules. |
 | `SearchCombobox` | The search picker for adversaries, We run, stories and scorecard tags: an ARIA combobox over a listbox with `aria-activedescendant`. Focus stays in the box; arrows, Home, End, Enter and Esc work; an optional last option makes a new entry from the words typed. `combo.js` keeps the highlighted option in view. |
 | `PresenceNote` | Who else has this brief, article, action or triage item open: initials in each person's own hue, "viewing", or "editing" with a pencil (so it isn't told by colour alone). With `Join` off it only watches, for a list row. |
@@ -841,7 +841,7 @@ At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
   links under it; it isn't remembered, so it starts closed on every page load, closes when a link is followed, and
   closes on Escape. The desktop collapse-to-icons state doesn't apply.
 - The search box in the top bar is hidden; the Go to button shrinks to an icon in its place, and so does the Context
-  button. The brief chip is gone (from 740px down). The context rail opens over the whole window, with the page under
+  button. The brief chip is gone (from below 900px). The context rail opens over the whole window, with the page under
   it inert.
 - Wide tables scroll inside their card rather than pushing the page sideways, with a shadow at the edge that has more.
 - Breadcrumbs keep only the way back ("‹ Actions").
@@ -853,8 +853,15 @@ At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
 
 Wider breakpoints (700px, 900px, 1000px, 1100px, 1200px) fold multi-column layouts (Our stack's and Adversaries'
 grids, a Library list beside its entry, Trends, slide columns) to one column. The article editor is one column at
-every width; on a phone it keeps an Edit / Preview switch for the reader preview. Printing (`@media print`) drops the sidebar, top bar and buttons,
+every width; below 900px it keeps an Edit / Preview switch for the reader preview. Printing (`@media print`) drops the sidebar, top bar and buttons,
 for Reports and Trends.
+
+**How a breakpoint is written.** Each breakpoint N is a pair: `(min-width: Npx)` for the wide side and
+`(max-width: N-0.02px)` for the narrow side (`900px` and `899.98px`; `641px` and `640.98px`). Under browser zoom the
+window can be a fractional number of pixels wide, and any other spelling leaves widths where both sides apply or
+neither does. The breakpoints are 421, 481, 641, 701, 768, 900, 1001, 1100, 1200, 1400, 1500, 1600, 1760 and 1800;
+`matchMedia` in script uses the same values. `BreakpointTests` fails on any other value or spelling, so a new
+breakpoint is added to its list on purpose.
 
 ## Markdown rendering
 
