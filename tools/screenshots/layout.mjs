@@ -2022,6 +2022,20 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
   }));
 }, [row, px]);
 
+/** Our stack's table as stacked rows (`true`: its headings hidden from view but still there, each product a grid of
+ *  named cells) or as a table (`false`: the header row shown, each product a table row). */
+const stackRows = stacked => holds(stacked ? 'Our stack\'s rows stacked' : 'Our stack a table', stacked => {
+  const table = document.querySelector('.tide-stack-table');
+  const head = table?.querySelector('thead'), rows = [...(table?.querySelectorAll('tbody > tr') ?? [])];
+  if (!head || !rows.length) return ['no Our stack table with rows'];
+  const headShown = head.getBoundingClientRect().height > 2;
+  const asRows = rows.filter(r => getComputedStyle(r).display === 'grid').length;
+  if (stacked) return [...(headShown ? ['its header row is shown'] : []),
+    ...(head.querySelectorAll('th').length === 7 ? [] : ['its headings are gone, not hidden']),
+    ...(asRows === rows.length ? [] : [`${rows.length - asRows} of ${rows.length} rows aren't stacked`])];
+  return [...(headShown ? [] : ['its header row is hidden']), ...(asRows === 0 ? [] : [`${asRows} of ${rows.length} rows are stacked`])];
+}, stacked);
+
 /** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
 const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
   const links = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
@@ -4576,17 +4590,20 @@ const pages = [
   { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
-  // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
+  // fifth column; and where the list is narrow (under 800px: a 1100px window with the sidebar open) each row's cells
+  // stacked, so the table never scrolls sideways inside its card.
   { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
       says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
-      fits('.tide-stack-list')] },
+      fits('.tide-stack-list'), [1440, stackRows(false)]] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
-  // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
-  // sections (facts, the buttons, in triage now, articles, open actions, notes) each fit the column. Below 1500px it's
-  // closed until `]` opens it over the page, where it's a modal dialog. The 780px stacked rows stay.
+  // beside the page, which has about 873px at 1500px: there the rows stack (stack-rail-docked), wider it's a table, and
+  // either way it fits beside the rail with no sideways scroll; the rail's flat sections (facts, the buttons, in triage
+  // now, articles, open actions, notes) each fit the column. Below 1500px it's closed until `]` opens it over the page,
+  // where it's a modal dialog. The 780px stacked rows stay.
   { name: 'stack-rail', route: '/stack', setup: wideFont, widths: [1920, 1600, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), fits('.tide-stack-list'), fits('.tide-stack-table td'),
+      [1600, stackRows(false)],
       visible('.tide-stack-item.selected'), attr('.tide-stack-item.selected', 'aria-current', 'true'), attr('#tide-rail', 'role', null),
       visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'),
       fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
@@ -4594,13 +4611,18 @@ const pages = [
       visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
       linksAlike('#tide-rail .tide-rail-list a'),
       ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // At 1500px the docked rail leaves the list under 800px, too narrow for seven columns (the headings broke mid-word and
+  // a CVE's chip spilled), so its rows stack by the list's width, as on a narrow window, and each fits.
+  { name: 'stack-rail-docked', route: '/stack', setup: wideFont, widths: [1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), stackRows(true), fits('.tide-stack-list'),
+      fits('.tide-stack-table td'), fits('.tide-stack-now .tide-chip'), clearOfEdge('.tide-stack-item.selected', 5)] },
   // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
-  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [stackRows(true), clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
       [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
-    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), stackRows(false)] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },

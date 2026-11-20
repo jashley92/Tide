@@ -863,6 +863,12 @@ neither does. The breakpoints are 421, 481, 641, 701, 768, 900, 1001, 1100, 1200
 `matchMedia` in script uses the same values. `BreakpointTests` fails on any other value or spelling, so a new
 breakpoint is added to its list on purpose.
 
+A part whose room depends on more than the window folds by its own width instead, with a container query: the Today
+steps strip, Triage's Sources table, and Our stack's table, whose rows stack when its list is under 800px (a 1100px
+window with the sidebar open, or 1500px beside the docked context rail). Those widths are the container's, so they
+needn't be on the list, but a query in px is written the same way, and a named container's `min-width: Npx` and
+`max-width: N-0.02px` sides meet at the same N; `BreakpointTests` checks that too.
+
 ## Markdown rendering
 
 Analysts write bullets, "why it matters", recommended actions, the team note and comments in Markdown. Storage stays

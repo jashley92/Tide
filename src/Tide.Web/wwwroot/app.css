@@ -2937,10 +2937,13 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-drawer .tide-drawer-head > .tide-drawer-tabs { margin: 0; border-bottom: 0; }
 .tide-hunt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) 0; }
 .tide-w-days { width: 5rem; }
-/* Our stack: the team chosen from its own list; on a narrow window each row's cells stacked, each named, so the list
-   never scrolls sideways inside its card. The headings are hidden from view but stay for screen readers. */
+/* Our stack: the team chosen from its own list; where the list is narrow each row's cells stacked, each named, so it
+   never scrolls sideways inside its card. The headings are hidden from view but stay for screen readers. Narrow by the
+   list's own width, not the window's: beside the docked context rail a 1500px window leaves it less room than a 1100px
+   one with the rail shut. Its seven columns need 800px with wide fonts (shorter, "Vulnerability" broke mid-word). */
 .tide-stack-team { width: auto; }
-@media (max-width: 1099.98px) {
+.tide-stack-list { container: stack / inline-size; }
+@container stack (max-width: 799.98px) {
     .tide-stack-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .tide-stack-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-1) var(--tide-space-3);
         padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
@@ -3270,17 +3273,17 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 
 /* ---- Our stack 3.7: a selected row, and the selected product in the context rail (its flat sections are Today 3.1's) ----
    The selected row is marked as the Actions list's is (rows.js moves it). Beside the docked rail the page has about
-   873px. The table is laid out by its columns' shares of its width, not by its words, so it is the card's width
-   whatever the fonts: the headings and cells wrap, a word longer than its column breaks, and a CVE's chip wraps
+   873px, so at 1500px its rows stack; wider, it's a table. The table is laid out by its columns' shares of its width,
+   not by its words, so it is the card's width whatever the fonts: the headings and cells wrap, and a CVE's chip wraps
    between its parts (the id, the scores, KEV). So it never scrolls sideways. */
 .tide-stack-item.selected > td, .tide-adv-item.selected > td { background: var(--tide-accent-soft); }
 .tide-stack-item.selected > td:first-child, .tide-adv-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
 .tide-stack-item:focus-visible, .tide-adv-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-stack-table th { white-space: normal; }
 .tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
-/* Seven columns need 1100px of window: narrower, the headings broke mid-word ("VERSIO NS") and a CVE's chip spilled
-   out of its cell, so below that each row stacks (the max-width: 1099.98px rules). */
-@media (min-width: 1100px) {
+/* Seven columns need 800px of list: narrower, the headings broke mid-word ("VERSIO NS") and a CVE's chip spilled
+   out of its cell, so below that each row stacks (the stack container's max-width: 799.98px rules). */
+@container stack (min-width: 800px) {
     .tide-stack-table { table-layout: fixed; width: 100%; }
     .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; }
     .tide-stack-table th:nth-child(1) { width: 19%; }
@@ -3295,7 +3298,7 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-stack-table .tide-stack-now { min-width: 0; }
 .tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
 /* Stacked, every row keeps its text clear of the left edge, where the selected row's accent is drawn. */
-@media (max-width: 1099.98px) {
+@container stack (max-width: 799.98px) {
     .tide-stack-table tr { padding-left: var(--tide-space-3); padding-right: var(--tide-space-2); }
     .tide-stack-item.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
     .tide-stack-item.selected > td { background: none; }

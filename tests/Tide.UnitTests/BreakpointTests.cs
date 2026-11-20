@@ -31,6 +31,7 @@ public partial class BreakpointTests
         var sources = css.Concat(js).Concat(components).ToDictionary(f => Path.GetRelativePath(web, f), File.ReadAllText);
 
         Queries(sources).Should().HaveCountGreaterThan(20, "the check must be reading the stylesheets");
+        ContainerQueries(sources).Should().NotBeEmpty("the check must be reading the container queries too");
         Problems(sources).Should().BeEmpty();
     }
 
@@ -53,6 +54,11 @@ public partial class BreakpointTests
     [InlineData("x.js", "matchMedia(`(min-width: ${wide}px)`)", "isn't a string literal")]
     [InlineData("Components/X.razor.css", "@media (max-width: 900px) { a { } }", "overlaps")]
     [InlineData("Components/X.razor", "<div></div>\n<style>\n@media (max-width: 900px) { a { } }\n</style>", "overlaps")]
+    [InlineData("x.css", "@container list (max-width: 800px) { a { } } @container list (min-width: 800px) { b { } }", "overlaps")]
+    [InlineData("x.css", "@container list (max-width: 799.5px) { a { } } @container list (min-width: 800px) { b { } }", "leaves a gap")]
+    [InlineData("x.css", "@container list (min-width: 800.5px) { a { } }", "min-width: 801px")]
+    [InlineData("x.css", "@container list (max-width: 799.98px) { a { } } @container list (min-width: 820px) { b { } }", "aren't a pair")]
+    [InlineData("x.css", "@container list (max-width: 799.98px) { a { } } @container list (min-width: 800px) { b { } } @container list (max-width: 899.98px) { c { } }", "aren't a pair")]
     public void ASeam_IsCaught(string file, string text, string problem)
     {
         Problems(new Dictionary<string, string> { [file] = text }).Should().ContainMatch($"*{problem}*");
@@ -66,6 +72,8 @@ public partial class BreakpointTests
             ["x.css"] = "@media (max-width: 899.98px) { a { } } @media (min-width: 900px) and (max-width: 1099.98px) { b { } }",
             ["x.js"] = "var m = window.matchMedia && window.matchMedia('(min-width: 1500px)'); var r = matchMedia(\"(prefers-reduced-motion: reduce)\");",
             ["X.razor"] = "<p>@media is only a word here</p><style>@media (min-width: 641px) { a { } }</style>",
+            // A container's width is its own, not one of the window's breakpoints; a named container's two sides meet.
+            ["y.css"] = "@container list (max-width: 799.98px) { a { } } @container list (min-width: 800px) { b { } } @container steps (max-width: 46rem) { c { } }",
         }).Should().BeEmpty();
     }
 
@@ -120,11 +128,54 @@ public partial class BreakpointTests
             if (q.Px != wanted)
                 problems.Add($"{q.File}: {q.Text} {(overlaps ? "overlaps" : "leaves a gap at")} the {n}px breakpoint; write ({q.Side}-width: {wanted}px)");
         }
+        problems.AddRange(ContainerProblems(sources));
         return problems;
+    }
+
+    private sealed record ContainerQuery(string File, string Name, string Side, decimal Px, string Text);
+
+    /// <summary>The width conditions in px of each <c>@container</c> rule, with its container's name ("" for none).</summary>
+    private static List<ContainerQuery> ContainerQueries(IReadOnlyDictionary<string, string> sources) =>
+        sources.Where(s => !s.Key.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(s => ContainerPrelude().Matches(s.Key.EndsWith(".razor", StringComparison.OrdinalIgnoreCase)
+                    ? string.Join("\n", StyleBlock().Matches(s.Value).Select(m => m.Groups[1].Value)) : s.Value)
+                .SelectMany(p => Width().Matches(p.Groups["cond"].Value)
+                    .Where(m => m.Groups[3].Value.Equals("px", StringComparison.OrdinalIgnoreCase))
+                    .Select(m => new ContainerQuery(s.Key, p.Groups["name"].Value.Trim(), m.Groups[1].Value.ToLowerInvariant(),
+                        decimal.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture), m.Value))))
+            .ToList();
+
+    /// <summary>A container query is for the container's own width, so it needn't be one of the window's breakpoints. It
+    /// is written the same way, though: <c>min-width: Npx</c> on the wide side and <c>max-width: (N - 0.02)px</c> on the
+    /// narrow, a named container's two sides meeting at the same N, so a zoomed page never has both sides or neither.</summary>
+    private static IEnumerable<string> ContainerProblems(IReadOnlyDictionary<string, string> sources)
+    {
+        var queries = ContainerQueries(sources);
+        foreach (var q in queries)
+        {
+            var seam = q.Side == "min" ? q.Px : q.Px + 0.02m;
+            if (seam == decimal.Truncate(seam)) continue;
+            var n = Math.Round(seam, MidpointRounding.AwayFromZero);
+            var wanted = q.Side == "min" ? n : n - 0.02m;
+            var overlaps = q.Side == "min" ? q.Px < wanted : q.Px > wanted;
+            yield return $"{q.File}: @container {q.Name} {q.Text} {(overlaps ? "overlaps" : "leaves a gap at")} its {n}px seam; write ({q.Side}-width: {wanted}px)";
+        }
+        // Only a named container's sides pair up: an unnamed query is for whichever container is nearest.
+        foreach (var named in queries.Where(q => q.Name.Length > 0).GroupBy(q => q.Name))
+        {
+            var wide = named.Where(q => q.Side == "min").Select(q => q.Px).ToHashSet();
+            var narrow = named.Where(q => q.Side == "max").Select(q => q.Px + 0.02m).ToHashSet();
+            if (wide.Count > 0 && narrow.Count > 0 && !wide.SetEquals(narrow))
+                yield return $"@container {named.Key}: its min-width sides ({string.Join(", ", wide.Order())}px) and max-width sides (for {string.Join(", ", narrow.Order())}px) aren't a pair";
+        }
     }
 
     [GeneratedRegex(@"@media([^{]*)\{", RegexOptions.IgnoreCase)]
     private static partial Regex MediaPrelude();
+
+    /// <summary>An @container rule's prelude: its container's name, when it names one, and its condition.</summary>
+    [GeneratedRegex(@"@container\s+(?<name>(?!not\b)[a-z_-][\w-]*\s*)?(?<cond>[^{]*)\{", RegexOptions.IgnoreCase)]
+    private static partial Regex ContainerPrelude();
 
     [GeneratedRegex(@"<style\b[^>]*>(.*?)</style\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex StyleBlock();
