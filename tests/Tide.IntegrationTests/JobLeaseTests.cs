@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
+using Tide.Application.Api;
 using Tide.Application.Operations;
 using Tide.Domain.Enums;
+using Tide.Web.Api;
 using Tide.Web.Components.Pages.Admin;
 using Tide.Web.Services;
 
@@ -148,6 +150,35 @@ public class JobLeaseTests
         lease.Asked.Should().Be(1);
         jobs.Get(JobMonitor.Reminders).Should().Match<JobState>(s => s.LastStartedUtc == null && s.LastSucceeded == null);
         jobs.TakeFinished().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TheWebhookJob_StandingBy_RecordsNoSchedule_AndWhereItsHeld_IsOnOnlyWhileAWebhookIs()
+    {
+        using var db = new TestDb();
+        db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        await using var provider = new ServiceCollection().AddSingleton(db.Webhooks()).BuildServiceProvider();
+        var scopes = provider.GetRequiredService<IServiceScopeFactory>();
+        var jobs = new JobMonitor(TimeProvider.System);
+        WebhookHostedService Hosted(IJobLease lease) => new(scopes, jobs, lease, TimeProvider.System, NullLogger<WebhookHostedService>.Instance);
+        await db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
+
+        // Another process sends them: this one was shown "on, next due in a minute" for good.
+        await Hosted(new StandbyLease()).PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null && s.LastStartedUtc == null);
+        JobHealth.Evaluate(jobs.States, new StandbyLease().Status, DateTimeOffset.UtcNow).StandingBy.Should().BeTrue();
+
+        var held = Hosted(new HeldLease());
+        await held.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => s.Enabled && s.NextDueUtc > DateTimeOffset.UtcNow && s.LastSucceeded == true);
+
+        // With no webhook on, there's nothing to run: it's off, not due.
+        var hook = (await db.Webhooks().ListAsync()).Single();
+        await db.Webhooks().SetEnabledAsync(hook.Id, false);
+        jobs.TakeFinished();
+        await held.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null);
+        jobs.TakeFinished().Should().BeEmpty("no run is made");
     }
 }
 

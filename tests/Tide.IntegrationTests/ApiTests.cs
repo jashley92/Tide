@@ -447,6 +447,88 @@ public class WebhookDeliveryTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ABacklog_GoesOutOverTheRuns_OldestFirst_NoneSkippedOrSentTwice_EvenWhereARunsLimitFallsInsideOneMoment(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised, WebhookService.BriefSent]);
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        DateTimeOffset from;
+        await using (var db = _db.Context()) from = (await db.Webhooks.AsNoTracking().SingleAsync()).SentUpToUtc;
+
+        // 250 actions raised after the watermark. 96–110 share one moment, across the first run's limit of 100, and
+        // 205–215 another, across the second's; a brief sent at the first moment goes with it.
+        DateTimeOffset At(int n) => from.AddSeconds(1) + TimeSpan.FromMilliseconds(n is >= 96 and <= 110 ? 96 : n is >= 205 and <= 215 ? 205 : n);
+        await using (var db = _db.Context())
+        {
+            for (var n = 1; n <= 250; n++) db.Actions.Add(new ActionItem { Number = n, Title = $"Action {n}", TeamId = team });
+            var brief = new Brief { BriefDate = _db.Clock.Today, AnalystName = "Robin" };
+            db.Briefs.Add(brief);
+            db.BriefSends.Add(new BriefSend { BriefId = brief.Id, BriefDate = brief.BriefDate, Edition = Edition.Team, Status = SendStatus.Sent, SentAtUtc = At(100), EmailHtml = "team", WebHtml = "team" });
+            await db.SaveChangesAsync();
+        }
+        await using (var db = _db.Context())
+            for (var n = 1; n <= 250; n++)
+            {
+                var at = At(n);
+                await db.Actions.Where(a => a.Number == n).ExecuteUpdateAsync(u => u.SetProperty(a => a.CreatedAtUtc, at));
+            }
+
+        var later = new ShiftedClock(TimeSpan.FromMinutes(5));
+        var runs = new List<int>();
+        for (var i = 0; i < 4; i++) runs.Add(await _db.Webhooks(later).DeliverDueAsync());
+
+        runs.Should().Equal([111, 105, 35, 0], "a run stops at 100 only between moments: the first at 110 and the brief, the second at 215");
+        var sent = _db.Posts.Posted.Select(p => JsonElement.Parse(p.Body))
+            .Select(j => j.GetProperty("event").GetString() == WebhookService.BriefSent ? "brief" : j.GetProperty("data").GetProperty("label").GetString())
+            .ToList();
+        sent.Should().Equal(Enumerable.Range(1, 110).Select(n => $"A-{n}").Append("brief").Concat(Enumerable.Range(111, 140).Select(n => $"A-{n}")),
+            "each goes once, oldest first, and those stamped at one moment in the order they were raised");
+        await using (var db = _db.Context())
+            (await db.Webhooks.AsNoTracking().SingleAsync()).SentUpToUtc.Should().BeCloseTo(later.GetUtcNow() - WebhookService.SettleDelay, TimeSpan.FromSeconds(5),
+                "with the backlog sent, the watermark moves on to the run's time");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AFailureInsideOneMoment_TheNextRunStartsThatMomentAgain_SkippingNone(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        DateTimeOffset from;
+        await using (var db = _db.Context()) from = (await db.Webhooks.AsNoTracking().SingleAsync()).SentUpToUtc;
+        await using (var db = _db.Context())
+        {
+            for (var n = 1; n <= 105; n++) db.Actions.Add(new ActionItem { Number = n, Title = $"Action {n}", TeamId = team });
+            await db.SaveChangesAsync();
+        }
+        // 96–105 share one moment, across the limit of 100.
+        await using (var db = _db.Context())
+            for (var n = 1; n <= 105; n++)
+            {
+                var at = from.AddSeconds(1) + TimeSpan.FromMilliseconds(Math.Min(n, 96));
+                await db.Actions.Where(a => a.Number == n).ExecuteUpdateAsync(u => u.SetProperty(a => a.CreatedAtUtc, at));
+            }
+        var delivered = new List<int>();
+        _db.Posts.During = () =>
+        {
+            var number = JsonElement.Parse(_db.Posts.Posted[^1].Body).GetProperty("data").GetProperty("number").GetInt32();
+            _db.Posts.Status = _db.Posts.Posted.Count == 99 ? 503 : 200;   // the fourth of that moment's ten
+            if (_db.Posts.Status == 200) delivered.Add(number);
+            return Task.CompletedTask;
+        };
+        var later = new ShiftedClock(TimeSpan.FromMinutes(5));
+
+        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(99);
+        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(10, "the watermark stayed before the moment, so all ten go again");
+        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(0);
+
+        delivered.Distinct().Should().Equal(Enumerable.Range(1, 105), "none is skipped");
+        delivered.Should().HaveCount(108, "only the three of that moment that went before the failure go twice, under the same ids");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task AnEvent_IsPostedOnceItsThirtySecondsOld_AndTheWatermarkWaitsForIt(string provider)
     {
         _db = _db.On(provider);

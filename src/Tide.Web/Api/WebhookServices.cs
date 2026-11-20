@@ -19,7 +19,8 @@ public sealed class HttpWebhookPoster(IHttpClientFactory clients) : IWebhookPost
 }
 
 /// <summary>Sends webhooks' events every minute (see <see cref="WebhookService.DeliverDueAsync"/>). A process that doesn't
-/// hold the job lease skips its passes (another process sends them).</summary>
+/// hold the job lease skips its passes (another process sends them) and records no schedule, so Diagnostics shows it
+/// standing by, not due. The job is on while a webhook is switched on, and runs only then.</summary>
 public sealed class WebhookHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, TimeProvider time, ILogger<WebhookHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
@@ -28,25 +29,43 @@ public sealed class WebhookHostedService(IServiceScopeFactory scopes, JobMonitor
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
-            {
-                if (await lease.HoldAsync(stoppingToken))
-                    await jobs.RunAsync(JobMonitor.Webhooks, async () =>
-                    {
-                        await using var scope = scopes.CreateAsyncScope();
-                        var posted = await scope.ServiceProvider.GetRequiredService<WebhookService>().DeliverDueAsync(stoppingToken);
-                        return posted == 0 ? null : $"{posted} sent";
-                    });
-            }
+            try { await PassAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception ex)
-            {
-                // Recorded and logged (a Warning, with the job's event id) by the monitor.
-                log.LogDebug(ex, "Sending webhooks failed; it's tried again at the next run.");
-            }
-            jobs.Scheduled(JobMonitor.Webhooks, true, time.GetUtcNow() + PollInterval);
             try { await Task.Delay(PollInterval, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
+    }
+
+    /// <summary>One poll: a run of the job when this process holds the lease and a webhook is on. A failure is recorded
+    /// and logged, never thrown (except for shutting down).</summary>
+    internal async Task PassAsync(CancellationToken stoppingToken)
+    {
+        if (!await lease.HoldAsync(stoppingToken)) return;
+        var on = jobs.Get(JobMonitor.Webhooks).Enabled;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var webhooks = scope.ServiceProvider.GetRequiredService<WebhookService>();
+            try { on = await webhooks.AnyEnabledAsync(stoppingToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                // Not knowing, it stays as it was; a job that's on shows the failure as a run would.
+                if (on) jobs.Failed(JobMonitor.Webhooks, ex);
+                throw;
+            }
+            if (on)
+                await jobs.RunAsync(JobMonitor.Webhooks, async () =>
+                {
+                    var posted = await webhooks.DeliverDueAsync(stoppingToken);
+                    return posted == 0 ? null : $"{posted} sent";
+                });
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            // Recorded and logged (a Warning, with the job's event id) by the monitor.
+            log.LogDebug(ex, "Sending webhooks failed; it's tried again at the next run.");
+        }
+        jobs.Scheduled(JobMonitor.Webhooks, on, on ? time.GetUtcNow() + PollInterval : null);
     }
 }

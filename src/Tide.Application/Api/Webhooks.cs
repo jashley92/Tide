@@ -108,6 +108,13 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         return result;
     }
 
+    /// <summary>Whether any webhook is switched on: the background job is on only then.</summary>
+    public async Task<bool> AnyEnabledAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.Webhooks.AnyAsync(w => w.Enabled, ct);
+    }
+
     /// <summary>
     /// The background job: for each enabled hook, posts what happened since its last run (actions raised, briefs sent)
     /// and, once a day, the actions that became overdue. A hook stops at its first failure and tries again next run.
@@ -124,10 +131,13 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         // would: an action raised from an article above its ceiling is left out, as the brief leaves the article out with
         // its actions. Left out of the query, it's passed by the watermark like anything already sent.
         var (_, ceiling) = await editions.ReadAsync(ct);
+        // Brief sends are a few a day: read once for every hook, from the oldest watermark of those that post them.
+        var sends = await SendsAsync(db, hooks, ct);
         var posted = 0;
         foreach (var hook in hooks)
         {
             var read = (hook.SentUpToUtc, hook.OverdueSentFor);
+            var after = hook.SentUpToUtc;
             var events = EventsOf(hook.Events);
             async Task<bool> Post(string name, string id, object data)
             {
@@ -145,25 +155,38 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
             if (events.Contains(BriefSent))
             {
                 var stuck = now - SendOutcome.InFlight;
-                var going = await db.BriefSends.AsNoTracking()
-                    .Where(s => !s.IsTest && s.Status == SendStatus.Sending && s.SentAtUtc > hook.SentUpToUtc && s.SentAtUtc > stuck)
-                    .Select(s => s.SentAtUtc).ToListAsync(ct);
+                var going = sends.Where(s => s.Status == SendStatus.Sending && s.SentAtUtc > after && s.SentAtUtc > stuck).Select(s => s.SentAtUtc).ToList();
                 if (going.Count > 0 && going.Min().AddTicks(-1) < upTo) upTo = going.Min().AddTicks(-1);
             }
+
+            // What's due is read only up to "complete", before which everything stamped is read. The actions are read oldest
+            // first in the database, at most MaxPerRun and then the rest stamped at the same moment as the last (the
+            // watermark can't tell those apart), so a backlog isn't loaded whole; complete is then that last moment. A brief
+            // send after it waits for a later run, as an action after it does.
+            var complete = upTo;
             var due = new List<(string Event, string Id, object Data, DateTimeOffset At)>();
             if (events.Contains(ActionRaised))
-                due.AddRange((await db.Actions.AsNoTracking().Include(a => a.Team).Include(a => a.Article)
-                    .Where(a => a.CreatedAtUtc > hook.SentUpToUtc && a.CreatedAtUtc <= upTo && (a.Article == null || a.Article.Tlp <= ceiling))
-                    .ToListAsync(ct)).Select(a => (ActionRaised, $"{ActionRaised}:{a.Id}", Action(a), a.CreatedAtUtc)));
+            {
+                var raised = Rows(db.Actions).Where(a => a.CreatedAtUtc > after && a.CreatedAtUtc <= upTo && (a.Tlp == null || a.Tlp <= ceiling));
+                var oldest = await raised.OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.Number).Take(MaxPerRun).ToListAsync(ct);
+                if (oldest.Count == MaxPerRun)
+                {
+                    var (at, last) = (oldest[^1].CreatedAtUtc, oldest[^1].Number);
+                    complete = at;
+                    oldest.AddRange(await raised.Where(a => a.CreatedAtUtc == at && a.Number > last).OrderBy(a => a.Number).ToListAsync(ct));
+                }
+                due.AddRange(oldest.Select(a => (ActionRaised, $"{ActionRaised}:{a.Id}", Action(a), a.CreatedAtUtc)));
+            }
             if (events.Contains(BriefSent))
             {
-                due.AddRange((await db.BriefSends.AsNoTracking().Where(s => !s.IsTest && s.Status == SendStatus.Sent && s.SentAtUtc > hook.SentUpToUtc && s.SentAtUtc <= upTo)
-                    .ToListAsync(ct)).Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.SentAtUtc)));
-                due.AddRange(await MarkedSentAsync(db, hook.SentUpToUtc, upTo, ct));
+                due.AddRange(sends.Where(s => s.Status == SendStatus.Sent && s.SentAtUtc > after && s.SentAtUtc <= complete)
+                    .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.SentAtUtc)));
+                due.AddRange(MarkedSent(sends, after, complete));
             }
 
             // Oldest first, the watermark following each post, so a backlog drains over the runs. At most MaxPerRun a run,
-            // but never stopping inside events stamped at the same moment: the watermark can't tell them apart.
+            // but never stopping inside events stamped at the same moment: the watermark can't tell them apart. Everything
+            // stamped up to complete is here, so once all of it is sent the watermark moves to complete.
             var ordered = due.OrderBy(d => d.At).ToList();
             var take = Math.Min(MaxPerRun, ordered.Count);
             while (take < ordered.Count && ordered[take].At == ordered[take - 1].At) take++;
@@ -173,14 +196,14 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
                 ok = await Post(ordered[i].Event, ordered[i].Id, ordered[i].Data);
                 if (ok && (i + 1 == ordered.Count || ordered[i + 1].At != ordered[i].At)) hook.SentUpToUtc = ordered[i].At;
             }
-            if (ok && take == ordered.Count && upTo > hook.SentUpToUtc) hook.SentUpToUtc = upTo;
+            if (ok && take == ordered.Count && complete > hook.SentUpToUtc) hook.SentUpToUtc = complete;
 
             // Then the newly overdue, a due date at a time, so a backlog of those drains too.
             if (ok && events.Contains(ActionOverdue) && hook.OverdueSentFor != today.AddDays(-1))
             {
                 var overdueFrom = hook.OverdueSentFor?.AddDays(1) ?? today.AddDays(-1);
-                var days = (await db.Actions.AsNoTracking().Include(a => a.Team).Include(a => a.Article)
-                    .WhereOpen().Where(a => a.DueDate >= overdueFrom && a.DueDate < today && (a.Article == null || a.Article.Tlp <= ceiling))
+                var days = (await Rows(db.Actions.WhereOpen())
+                    .Where(a => a.DueDate >= overdueFrom && a.DueDate < today && (a.Tlp == null || a.Tlp <= ceiling))
                     .ToListAsync(ct)).OrderBy(a => a.DueDate).ThenBy(a => a.Number).GroupBy(a => a.DueDate).ToList();
                 var left = MaxPerRun;
                 var d = 0;
@@ -198,18 +221,53 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         return posted;
     }
 
+    /// <summary>Just what a post of an action carries, and what it's chosen and ordered by: never the article's text. Set by name, not
+    /// by a constructor, so a query can still filter and order by them.</summary>
+    private sealed class ActionRow
+    {
+        public Guid Id { get; init; }
+        public int Number { get; init; }
+        public string Title { get; init; } = "";
+        public Priority Priority { get; init; }
+        public ActionStatus Status { get; init; }
+        public string? Team { get; init; }
+        public DateOnly? DueDate { get; init; }
+        public TlpLevel? Tlp { get; init; }
+        public DateTimeOffset CreatedAtUtc { get; init; }
+    }
+
+    private static IQueryable<ActionRow> Rows(IQueryable<ActionItem> actions) => actions.Select(a => new ActionRow
+    {
+        Id = a.Id, Number = a.Number, Title = a.Title, Priority = a.Priority, Status = a.Status, Team = a.Team == null ? null : a.Team.Name,
+        DueDate = a.DueDate, Tlp = a.Article == null ? null : a.Article.Tlp, CreatedAtUtc = a.CreatedAtUtc,
+    });
+
+    // The sends a hook that posts brief.sent may post or wait for: sent or still going after its watermark, or marked Sent
+    // after it. Read from the oldest such watermark; each hook picks its own from them.
+    // Only the columns a post carries: never the brief's HTML.
+    private static async Task<List<BriefSend>> SendsAsync(IAppDbContext db, List<Webhook> hooks, CancellationToken ct)
+    {
+        var posting = hooks.Where(h => EventsOf(h.Events).Contains(BriefSent)).ToList();
+        if (posting.Count == 0) return [];
+        var after = posting.Min(h => h.SentUpToUtc);
+        return await db.BriefSends.AsNoTracking()
+            .Where(s => !s.IsTest && (s.Status == SendStatus.Sent || s.Status == SendStatus.Sending) && (s.SentAtUtc > after || s.OutcomeAtUtc > after))
+            .OrderBy(s => s.SentAtUtc)
+            .Select(s => new BriefSend
+            {
+                Id = s.Id, BriefDate = s.BriefDate, Edition = s.Edition, Subject = s.Subject, Marking = s.Marking, Status = s.Status,
+                SentAtUtc = s.SentAtUtc, OutcomeAtUtc = s.OutcomeAtUtc,
+            })
+            .ToListAsync(ct);
+    }
+
     // A send marked Sent after the watermark passed its time: settled once someone asked a recipient (it may have gone),
     // or its outcome saved after the in-flight time. It's posted as of when it was marked (its OutcomeAtUtc). Should one
     // already have been posted (a run that stopped between its time and its marking), the repeat keeps its id, so a
     // receiver drops it.
-    private static async Task<IEnumerable<(string, string, object, DateTimeOffset)>> MarkedSentAsync(IAppDbContext db, DateTimeOffset after,
-        DateTimeOffset upTo, CancellationToken ct)
-    {
-        var sends = await db.BriefSends.AsNoTracking()
-            .Where(s => s.OutcomeAtUtc > after && s.OutcomeAtUtc <= upTo && !s.IsTest && s.Status == SendStatus.Sent && s.SentAtUtc <= after)
-            .ToListAsync(ct);
-        return sends.Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.OutcomeAtUtc!.Value));
-    }
+    private static IEnumerable<(string, string, object, DateTimeOffset)> MarkedSent(List<BriefSend> sends, DateTimeOffset after, DateTimeOffset upTo) =>
+        sends.Where(s => s.OutcomeAtUtc > after && s.OutcomeAtUtc <= upTo && s.Status == SendStatus.Sent && s.SentAtUtc <= after)
+            .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.OutcomeAtUtc!.Value));
 
     /// <summary>The signature a receiver checks: HMAC-SHA256 of "<paramref name="timestamp"/>.<paramref name="body"/>" with the secret.</summary>
     public static string Sign(string secret, string timestamp, string body) =>
@@ -248,7 +306,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
             u.SetProperty(w => w.LastAtUtc, hook.LastAtUtc).SetProperty(w => w.LastStatus, hook.LastStatus).SetProperty(w => w.LastError, hook.LastError), ct);
     }
 
-    private static string OverdueId(ActionItem a) =>
+    private static string OverdueId(ActionRow a) =>
         $"{ActionOverdue}:{a.Id}:{a.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
 
     private void Record(Webhook hook, (int? Status, string? Error) result)
@@ -260,10 +318,10 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     // marking: the TLP of the article the action was raised from (null when none), as the reminder emails mark their lists.
-    private object Action(ActionItem a) => new
+    private object Action(ActionRow a) => new
     {
-        number = a.Number, label = $"A-{a.Number}", a.Title, priority = a.Priority.ToString(), status = a.Status.ToString(), team = a.Team?.Name,
-        dueDate = a.DueDate, url = Link($"actions/{a.Number}"), marking = a.Article is { } article ? Tlp.Label(article.Tlp) : null,
+        number = a.Number, label = $"A-{a.Number}", a.Title, priority = a.Priority.ToString(), status = a.Status.ToString(), team = a.Team,
+        dueDate = a.DueDate, url = Link($"actions/{a.Number}"), marking = a.Tlp is { } tlp ? Tlp.Label(tlp) : null,
     };
 
     private static object Sent(BriefSend s) => new { briefDate = s.BriefDate, edition = s.Edition.ToString(), s.Subject, marking = Tlp.Label(s.Marking), sentAtUtc = s.SentAtUtc };
