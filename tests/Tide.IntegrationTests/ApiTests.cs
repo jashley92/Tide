@@ -490,7 +490,7 @@ public class WebhookDeliveryTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
-    public async Task AFailureInsideOneMoment_TheNextRunStartsThatMomentAgain_SkippingNone(string provider)
+    public async Task AFailureInsideOneMoment_TheNextRunGoesOnFromThePostThatFailed_SkippingNoneAndSendingNoneTwice(string provider)
     {
         _db = _db.On(provider);
         await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
@@ -520,11 +520,11 @@ public class WebhookDeliveryTests : IDisposable
         var later = new ShiftedClock(TimeSpan.FromMinutes(5));
 
         (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(99);
-        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(10, "the watermark stayed before the moment, so all ten go again");
+        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(7, "the moment's cursor kept the three that went before the failure");
         (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(0);
 
         delivered.Distinct().Should().Equal(Enumerable.Range(1, 105), "none is skipped");
-        delivered.Should().HaveCount(108, "only the three of that moment that went before the failure go twice, under the same ids");
+        delivered.Should().HaveCount(105, "none goes twice");
     }
 
     [Theory]
@@ -601,7 +601,7 @@ public class WebhookDeliveryTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
-    public async Task ASlowReceiver_StopsAtTheRunsTimeBudget_BetweenMoments_AndTheNextRunGoesOn_NoneSkippedOrSentTwice(string provider)
+    public async Task ASlowReceiver_StopsAtTheRunsTimeBudget_EvenInsideAMoment_AndTheNextRunGoesOn_NoneSkippedOrSentTwice(string provider)
     {
         _db = _db.On(provider);
         await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionRaised]);
@@ -628,13 +628,96 @@ public class WebhookDeliveryTests : IDisposable
         {
             var started = clock.Now;
             runs.Add(await _db.Webhooks(clock).DeliverDueAsync());
-            (clock.Now - started).Should().BeLessThan(WebhookService.RunBudget + TimeSpan.FromMinutes(1),
-                "a run keeps to its budget, finishing at most the moment it was in");
+            (clock.Now - started).Should().BeLessThan(WebhookService.RunBudget + TimeSpan.FromSeconds(15),
+                "a run keeps to its budget, overrunning by one post at most");
             clock.Now += TimeSpan.FromMinutes(1);
         }
 
-        runs.Should().Equal([25, 22, 3, 0], "the first run's budget ran out inside the moment 20–25, so it finished that moment and stopped");
+        runs.Should().Equal([22, 22, 6, 0], "the first run's budget ran out inside the moment 20–25, and the next went on from 23");
         _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(Enumerable.Range(1, 50), "each once, oldest first");
+    }
+
+    // Actions raised in one save: every one stamped at the same moment.
+    private async Task<List<int>> RaisedAtOneMoment(int count, DateOnly? due = null)
+    {
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        DateTimeOffset from;
+        await using (var db = _db.Context()) from = (await db.Webhooks.AsNoTracking().SingleAsync()).SentUpToUtc;
+        await using (var db = _db.Context())
+        {
+            for (var n = 1; n <= count; n++) db.Actions.Add(new ActionItem { Number = n, Title = $"Action {n}", TeamId = team, DueDate = due });
+            await db.SaveChangesAsync();
+        }
+        var at = from.AddSeconds(1);
+        await using (var db = _db.Context())
+            await db.Actions.ExecuteUpdateAsync(u => u.SetProperty(a => a.CreatedAtUtc, at));
+        return [.. Enumerable.Range(1, count)];
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ALargeOverdueDay_ToASlowReceiver_KeepsToTheBudget_AndGoesOnInsideTheDay_NoneSkippedOrSentTwice(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionOverdue]);
+        var numbers = await RaisedAtOneMoment(150, _db.Clock.Today.AddDays(-1));
+        var clock = new TestClock(DateTimeOffset.UtcNow.AddMinutes(5));
+        SlowAt("slow.example.org", clock);
+
+        var runs = new List<int>();
+        for (var i = 0; i < 8; i++)
+        {
+            var started = clock.Now;
+            runs.Add(await _db.Webhooks(clock).DeliverDueAsync());
+            (clock.Now - started).Should().BeLessThan(WebhookService.RunBudget + TimeSpan.FromSeconds(15), "the day's 150 don't hold one run past its budget");
+            clock.Now += TimeSpan.FromMinutes(1);
+        }
+
+        runs.Should().Equal([22, 22, 22, 22, 22, 22, 18, 0]);
+        _db.Posts.Posted.Select(p => p.Headers["X-Tide-Event-Id"]).Should().OnlyHaveUniqueItems();
+        _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(numbers, "each once, by number");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ALargeOverdueDay_GoesOutAHundredARun_GoingOnInsideTheDay(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionOverdue]);
+        var numbers = await RaisedAtOneMoment(150, _db.Clock.Today.AddDays(-1));
+
+        var runs = new List<int>();
+        for (var i = 0; i < 3; i++) runs.Add(await _db.Webhooks().DeliverDueAsync());
+
+        runs.Should().Equal(100, 50, 0);
+        _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(numbers, "each once, by number");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AFailure_OnTheLastPostBeforeTheBudgetRanOut_TheNextRunGoesOnFromIt_NoneSkippedOrSentTwice(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        var numbers = await RaisedAtOneMoment(30);
+        var clock = new TestClock(DateTimeOffset.UtcNow.AddMinutes(5));
+        var delivered = new List<int>();
+        _db.Posts.During = () =>
+        {
+            clock.Now += TimeSpan.FromSeconds(14);
+            // The 22nd post, the last the budget allows, fails.
+            _db.Posts.Status = _db.Posts.Posted.Count == 22 ? 503 : 200;
+            if (_db.Posts.Status == 200) delivered.Add(Number(_db.Posts.Posted[^1].Body));
+            return Task.CompletedTask;
+        };
+
+        (await _db.Webhooks(clock).DeliverDueAsync()).Should().Be(22);
+        clock.Now += TimeSpan.FromMinutes(1);
+        (await _db.Webhooks(clock).DeliverDueAsync()).Should().Be(9, "from the one that failed to the moment's end");
+        clock.Now += TimeSpan.FromMinutes(1);
+        (await _db.Webhooks(clock).DeliverDueAsync()).Should().Be(0);
+
+        delivered.Should().Equal(numbers, "each once, in order");
     }
 
     [Theory]

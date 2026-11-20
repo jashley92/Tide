@@ -93,6 +93,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         {
             hook.SentUpToUtc = time.GetUtcNow();
             hook.OverdueSentFor = clock.Today.AddDays(-1);
+            (hook.MomentCursor, hook.OverdueCursor) = (null, null);
         }
         await db.SaveChangesAsync(ct);
     }
@@ -129,7 +130,8 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// The background job: for each enabled hook, posts what happened since its last run (actions raised, briefs sent)
     /// and, once a day, the actions that became overdue. A hook stops at its first failure and tries again next run.
     /// The run keeps to <see cref="RunBudget"/>, each hook in turn getting an even share of what's left, so a slow receiver
-    /// can't hold up the others: a hook whose share is spent stops between moments and goes on from there next run.
+    /// can't hold up the others: a hook whose share is spent stops before its next post, wherever it is, and the next run
+    /// goes on from the post after the last that went (<see cref="Webhook.MomentCursor"/>, <see cref="Webhook.OverdueCursor"/>).
     /// Returns how many posts were made.
     /// </summary>
     public async Task<int> DeliverDueAsync(CancellationToken ct = default)
@@ -185,7 +187,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
             // watermark can't tell those apart), so a backlog isn't loaded whole; complete is then that last moment. A brief
             // send after it waits for a later run, as an action after it does.
             var complete = upTo;
-            var due = new List<(string Event, string Id, object Data, DateTimeOffset At)>();
+            var due = new List<(string Event, string Id, object Data, DateTimeOffset At, string Place)>();
             if (events.Contains(ActionRaised))
             {
                 var raised = Rows(db.Actions).Where(a => a.CreatedAtUtc > after && a.CreatedAtUtc <= upTo && (a.Tlp == null || a.Tlp <= ceiling));
@@ -196,50 +198,64 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
                     complete = at;
                     oldest.AddRange(await raised.Where(a => a.CreatedAtUtc == at && a.Number > last).OrderBy(a => a.Number).ToListAsync(ct));
                 }
-                due.AddRange(oldest.Select(a => (ActionRaised, $"{ActionRaised}:{a.Id}", Action(a), a.CreatedAtUtc)));
+                due.AddRange(oldest.Select(a => (ActionRaised, $"{ActionRaised}:{a.Id}", Action(a), a.CreatedAtUtc, ActionPlace(a.Number))));
             }
             if (events.Contains(BriefSent))
             {
                 due.AddRange(sends.Where(s => s.Status == SendStatus.Sent && s.SentAtUtc > after && s.SentAtUtc <= complete)
-                    .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.SentAtUtc)));
+                    .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.SentAtUtc, SendPlace(s.Id))));
                 due.AddRange(MarkedSent(sends, after, complete));
             }
 
-            // Oldest first, the watermark following each post, so a backlog drains over the runs. At most MaxPerRun a run,
-            // but never stopping inside events stamped at the same moment: the watermark can't tell them apart. Everything
-            // stamped up to complete is here, so once all of it is sent the watermark moves to complete.
-            var ordered = due.OrderBy(d => d.At).ToList();
+            // Oldest first, and those stamped at one moment in a fixed order (actions by number, then sends), so a backlog
+            // drains over the runs. The watermark passes a moment once all of it went; inside one, the moment cursor says how
+            // far a run got (the watermark can't tell events at one moment apart), so the next goes on from the event after
+            // it: none skipped, none sent twice. At most MaxPerRun a run, finishing the moment it's in, and never past the
+            // hook's share of the budget. Everything stamped up to complete is here, so once all of it is sent the watermark
+            // moves to complete.
+            var cursor = Cursor(hook.MomentCursor);
+            var ordered = due.Where(d => cursor is not (var ticks, var place) || d.At.UtcTicks != ticks || string.CompareOrdinal(d.Place, place) > 0)
+                .OrderBy(d => d.At).ThenBy(d => d.Place, StringComparer.Ordinal).ToList();
             var take = Math.Min(MaxPerRun, ordered.Count);
             while (take < ordered.Count && ordered[take].At == ordered[take - 1].At) take++;
-            // The budget is checked only before a moment's first post: stopping inside a moment would send its first events
-            // again next run, the watermark being unable to pass part of one.
             var ok = true;
             for (var i = 0; i < take && ok; i++)
             {
-                if ((i == 0 || ordered[i].At != ordered[i - 1].At) && Spent()) break;
+                if (Spent()) break;
                 ok = await Post(ordered[i].Event, ordered[i].Id, ordered[i].Data);
-                if (ok && (i + 1 == ordered.Count || ordered[i + 1].At != ordered[i].At)) hook.SentUpToUtc = ordered[i].At;
+                if (!ok) break;
+                if (i + 1 == ordered.Count || ordered[i + 1].At != ordered[i].At) (hook.SentUpToUtc, hook.MomentCursor) = (ordered[i].At, null);
+                else hook.MomentCursor = $"{ordered[i].At.UtcTicks.ToString(CultureInfo.InvariantCulture)}|{ordered[i].Place}";
             }
-            if (ok && !outOfTime && take == ordered.Count && complete > hook.SentUpToUtc) hook.SentUpToUtc = complete;
+            if (ok && !outOfTime && take == ordered.Count && complete > hook.SentUpToUtc) (hook.SentUpToUtc, hook.MomentCursor) = (complete, null);
 
-            // Then the newly overdue, a due date at a time, so a backlog of those drains too.
+            // Then the newly overdue, a due date at a time and by number within one, so a backlog of those drains too. A
+            // day's done once all of it went; inside one, the overdue cursor says how far a run got, and the next goes on from
+            // the action after it. At most MaxPerRun a run, and never past the hook's share of the budget.
             if (ok && events.Contains(ActionOverdue) && hook.OverdueSentFor != today.AddDays(-1) && !Spent())
             {
                 var overdueFrom = hook.OverdueSentFor?.AddDays(1) ?? today.AddDays(-1);
+                var within = OverdueCursorOf(hook.OverdueCursor);
                 var days = (await Rows(db.Actions.WhereOpen())
                     .Where(a => a.DueDate >= overdueFrom && a.DueDate < today && (a.Tlp == null || a.Tlp <= ceiling))
-                    .ToListAsync(ct)).OrderBy(a => a.DueDate).ThenBy(a => a.Number).GroupBy(a => a.DueDate).ToList();
+                    .ToListAsync(ct))
+                    .Where(a => within is not (var day, var number) || a.DueDate != day || a.Number > number)
+                    .OrderBy(a => a.DueDate).ThenBy(a => a.Number).GroupBy(a => a.DueDate!.Value).ToList();
                 var left = MaxPerRun;
-                var d = 0;
-                for (; d < days.Count && ok && left > 0; d++)
+                var stopped = false;
+                foreach (var day in days)
                 {
-                    if (d > 0 && Spent()) break;
-                    foreach (var a in days[d])
+                    foreach (var a in day)
+                    {
+                        if (left == 0 || Spent()) { stopped = true; break; }
                         if (!(ok = await Post(ActionOverdue, OverdueId(a), Action(a)))) break;
-                    if (ok) hook.OverdueSentFor = days[d].Key;
-                    left -= days[d].Count();
+                        left--;
+                        hook.OverdueCursor = $"{day.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}|{a.Number.ToString(CultureInfo.InvariantCulture)}";
+                    }
+                    if (!ok || stopped) break;
+                    (hook.OverdueSentFor, hook.OverdueCursor) = (day.Key, null);
                 }
-                if (ok && d == days.Count) hook.OverdueSentFor = today.AddDays(-1);
+                if (ok && !stopped) (hook.OverdueSentFor, hook.OverdueCursor) = (today.AddDays(-1), null);
             }
             await SaveAsync(db, hook, read, ct);
             if (outOfTime)
@@ -293,9 +309,26 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     // or its outcome saved after the in-flight time. It's posted as of when it was marked (its OutcomeAtUtc). Should one
     // already have been posted (a run that stopped between its time and its marking), the repeat keeps its id, so a
     // receiver drops it.
-    private static IEnumerable<(string, string, object, DateTimeOffset)> MarkedSent(List<BriefSend> sends, DateTimeOffset after, DateTimeOffset upTo) =>
+    private static IEnumerable<(string, string, object, DateTimeOffset, string)> MarkedSent(List<BriefSend> sends, DateTimeOffset after, DateTimeOffset upTo) =>
         sends.Where(s => s.OutcomeAtUtc > after && s.OutcomeAtUtc <= upTo && s.Status == SendStatus.Sent && s.SentAtUtc <= after)
-            .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.OutcomeAtUtc!.Value));
+            .Select(s => (BriefSent, $"{BriefSent}:{s.Id}", Sent(s), s.OutcomeAtUtc!.Value, SendPlace(s.Id)));
+
+    // An event's place among those stamped at one moment, compared ordinally: actions first, by number, then sends.
+    private static string ActionPlace(int number) => "A" + number.ToString("D10", CultureInfo.InvariantCulture);
+
+    private static string SendPlace(Guid id) => "B" + id.ToString("N");
+
+    // A moment cursor read back: the moment's ticks and the place of the last event posted in it. One that doesn't read
+    // is no cursor: the moment is sent from its start (repeats under the same ids, never a skip).
+    private static (long Ticks, string Place)? Cursor(string? text) =>
+        text?.Split('|') is [var ticks, { Length: > 0 } place] && long.TryParse(ticks, NumberStyles.None, CultureInfo.InvariantCulture, out var t)
+            ? (t, place) : null;
+
+    private static (DateOnly Day, int Number)? OverdueCursorOf(string? text) =>
+        text?.Split('|') is [var day, var number]
+        && DateOnly.TryParseExact(day, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+        && int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var n)
+            ? (d, n) : null;
 
     /// <summary>The signature a receiver checks: HMAC-SHA256 of "<paramref name="timestamp"/>.<paramref name="body"/>" with the secret.</summary>
     public static string Sign(string secret, string timestamp, string body) =>
@@ -328,7 +361,8 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (read is { } r && await db.Webhooks.Where(w => w.Id == hook.Id && w.SentUpToUtc == r.SentUpTo && w.OverdueSentFor == r.OverdueFor)
                 .ExecuteUpdateAsync(u => u.SetProperty(w => w.LastAtUtc, hook.LastAtUtc).SetProperty(w => w.LastStatus, hook.LastStatus)
                     .SetProperty(w => w.LastError, hook.LastError).SetProperty(w => w.SentUpToUtc, hook.SentUpToUtc)
-                    .SetProperty(w => w.OverdueSentFor, hook.OverdueSentFor), ct) > 0)
+                    .SetProperty(w => w.OverdueSentFor, hook.OverdueSentFor).SetProperty(w => w.MomentCursor, hook.MomentCursor)
+                    .SetProperty(w => w.OverdueCursor, hook.OverdueCursor), ct) > 0)
             return;
         await db.Webhooks.Where(w => w.Id == hook.Id).ExecuteUpdateAsync(u =>
             u.SetProperty(w => w.LastAtUtc, hook.LastAtUtc).SetProperty(w => w.LastStatus, hook.LastStatus).SetProperty(w => w.LastError, hook.LastError), ct);

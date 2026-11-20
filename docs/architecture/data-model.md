@@ -1438,6 +1438,8 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 | `Enabled` | bit | no | |
 | `SentUpToUtc` | datetimeoffset | no | Everything up to this moment has been sent or tried. |
 | `OverdueSentFor` | date | yes | The last day whose newly overdue actions were sent. |
+| `MomentCursor` | nvarchar(64) | yes | How far into the moment just after `SentUpToUtc` a run that stopped inside it got: the moment's ticks and the last event posted (`{ticks}\|A0000000012` for an action, `\|B{send}` for a brief). |
+| `OverdueCursor` | nvarchar(32) | yes | How far into the due date just after `OverdueSentFor` a run that stopped inside it got: the date and the last action number posted (`2026-11-18\|42`). |
 | `LastAtUtc`, `LastStatus`, `LastError` | datetimeoffset, int, nvarchar(500) | yes | The last delivery, updated with `ExecuteUpdateAsync`. |
 | stamps | | | **S** columns. |
 

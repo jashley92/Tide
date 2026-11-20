@@ -318,6 +318,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Events).HasMaxLength(200);
             e.Property(x => x.Secret).HasMaxLength(1000);
             e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.MomentCursor).HasMaxLength(64);
+            e.Property(x => x.OverdueCursor).HasMaxLength(32);
         });
 
         b.Entity<AiDraft>(e =>
