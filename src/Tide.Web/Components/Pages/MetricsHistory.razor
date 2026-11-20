@@ -43,7 +43,12 @@
     </div>
 </div>
 
-@if (_history is null)
+@if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the metric history" /></div>
+}
+else if (_history is null)
 {
     <LoadingBlock />
 }
@@ -295,6 +300,7 @@ else
     // Each read is numbered: one that lands after a later change to the dates is dropped, so it can't put back the
     // dates it was asked for over the ones just chosen.
     private int _reading;
+    private bool _failed;
 
     private async Task Load()
     {
@@ -303,7 +309,7 @@ else
         {
             var history = await MetricsSvc.HistoryAsync(_from, _to);
             if (reading != _reading) return;
-            _history = history;
+            (_history, _failed) = (history, false);
             (_from, _to) = (_history.From, _history.To);
             var days = new List<DateOnly>();
             // Working days, and a holiday someone entered numbers for anyway.
@@ -315,7 +321,11 @@ else
             _values = _history.Values.ToLookup(v => v.DefinitionId);
             Refresh();
         }
-        catch (Exception ex) when (reading == _reading) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex) when (reading == _reading)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
         catch (Exception) { /* a later read has the dates now */ }
     }
 
