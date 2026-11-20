@@ -1239,6 +1239,52 @@ public class ReminderTests : IDisposable
     }
 
     [Fact]
+    public async Task Overdue_OverManyActions_ReadsAsOftenAsOverAFew_AndSavesOncePerEmailSent()
+    {
+        var few = await OverdueCost(4);
+        var many = await OverdueCost(40);
+
+        few.Emails.Should().Be(3, "Robin, Sam and the team's mailbox, each once");
+        many.Emails.Should().Be(few.Emails, "one email per recipient, however many actions it lists");
+        many.Saves.Should().Be(many.Emails + 1,
+            "each email's marks are saved as it goes, so a pass stopped partway doesn't send it again; then the actions' own marks once");
+        many.Queries.Should().Be(few.Queries, "the actions, their marks and their recipients are each read once, not once per action");
+    }
+
+    // What an overdue pass over this many actions (a quarter each Robin's and Sam's, the rest the team's) costs: the queries
+    // it reads with, its saves, and its emails. Each on a database of its own, so the two passes compare.
+    private static async Task<(int Queries, int Saves, int Emails)> OverdueCost(int actions)
+    {
+        using var db = new TestDb();
+        db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var team = await db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
+        await using (var ctx = db.Context())
+        {
+            foreach (var (sid, email) in new[] { ("S-ROBIN", "robin@example.org"), ("S-SAM", "sam@example.org") })
+                ctx.Users.Add(new AppUser { Sid = sid, DisplayName = sid, Email = email, RolesCsv = "ActionOwner", LastSeenUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+        await db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
+        await db.Teams().AddMemberAsync(team, "S-SAM", "Sam");
+        var today = db.Clock.Today;
+        for (var i = 0; i < actions; i++)
+            await db.Actions().CreateAsync(new ActionForm
+            {
+                Title = $"Patch {i}", TeamId = team, DueDate = today.AddDays(-1 - i % 5),
+                AssigneeId = (i % 4) switch { 0 => "S-ROBIN", 1 => "S-SAM", _ => null },
+                AssigneeName = (i % 4) switch { 0 => "Robin", 1 => "Sam", _ => null },
+            });
+
+        var saves = 0;
+        db.BeforeSave = _ => saves++;
+        db.Commands.Reset();
+        db.Commands.Record = true;
+        await db.Reminders().RunAsync(ReminderKind.Overdue);
+        db.Commands.Record = false;
+        return (db.Commands.Sql.Count(sql => sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)), saves, db.Email.Sent.Count);
+    }
+
+    [Fact]
     public async Task TheLastSevenDays_AreTodayAndTheSixBefore_InWorkloadAndTheDigest()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
