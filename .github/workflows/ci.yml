@@ -232,7 +232,8 @@ jobs:
       # What axe found, never failing the job (tools/screenshots/README.md, "Accessibility scan").
       - name: Accessibility scan summary (report only)
         if: always() && matrix.spacing == '.07em'
-        run: cat tools/screenshots/.axe/axe-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No axe report: the scan didn't run."
+        run: |
+          cat tools/screenshots/.axe/axe-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No axe report: the scan didn't run."
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.spacing == '.07em'

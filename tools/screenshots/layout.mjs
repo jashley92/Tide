@@ -5219,7 +5219,7 @@ async function check(list, demo) {
             try {
               axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
             } catch (e) {
-              axe.failed(p.name, width, height, e.message.split('\n')[0]);
+              axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
             }
           }
         } catch (e) {

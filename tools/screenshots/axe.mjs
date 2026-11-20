@@ -28,6 +28,22 @@ export function widest(widths) {
 /** Runs axe on the page as it is now (the top document; frames aren't scanned). Returns the rules it breaks, each with the
  *  selector of every element that breaks it. */
 export async function scan(page) {
+  // Bounded, so a scan that hangs can't hold the slice to its job's time limit and fail it: the page is skipped instead.
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${SCAN_SECONDS}s`)), SCAN_SECONDS * 1000);
+  });
+  try {
+    return await Promise.race([run(page), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The longest one page's scan may take; a page's scan takes well under a second. */
+const SCAN_SECONDS = 60;
+
+async function run(page) {
   // Passed as a string, which Playwright runs through the browser's debugging protocol, outside the page's policy; an
   // eval() in the page would be refused like a script tag.
   if (!(await page.evaluate(() => !!window.axe))) await page.evaluate(source);
