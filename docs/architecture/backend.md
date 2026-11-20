@@ -294,6 +294,11 @@ flowchart LR
 | `WebhookHostedService` (`src/Tide.Web/Api/WebhookServices.cs`) | Every minute, at start-up first | Enabled webhooks; actions raised and brief sends since each watermark, at least 30 seconds old; open actions newly overdue | POSTs to each webhook; its watermarks and last result (outside the audit log) | Each webhook's on/off in Administration › API access | A webhook stops at its first failed post and retries from there next minute with the same event id. See [API.md](../API.md#webhooks). |
 | `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`) | Every 30 seconds; at shutdown | The `JobLeases` row; the runs `JobMonitor` queued | The lease (renewed, or let go at shutdown); `JobRuns`, and deletes runs older than 30 days once a day | Always on; prunes only while it holds the lease | Logged as a Warning; runs it couldn't write are kept (up to 2,000) and written at the next pass. |
 
+`MeetingAttendanceHostedService` (`src/Tide.Web/Services/MeetingAttendanceHostedService.cs`) isn't a job: it has no
+loop and no lease. It closes the attendance of each meeting `LiveMeetings` drops empty, through `AttendanceCloser`
+(internal to the web project and not in DI, so no page can use it: it asks no permission, as no one is signed in).
+See [collaboration.md](collaboration.md#livemeetings). A failure is logged.
+
 Every job but the upkeep runs only in the process holding the job lease. A run past its job's limit (30 minutes for
 most, 2 hours for the CVE refresh, 10 minutes for the update check, 15 for webhooks, 1 hour for the prune) is hung,
 and a job with no good run in three intervals (at least 15 minutes) is overdue: see `JobHealth` and
