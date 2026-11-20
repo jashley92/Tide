@@ -26,7 +26,7 @@
     }
     else
     {
-        <div class="table-responsive">
+        <TableScroll LabelledBy="src-app">
             <table class="tide-table">
                 <thead><tr><th>Setting</th><th>Effective value</th><th>Source</th></tr></thead>
                 <tbody>
@@ -44,13 +44,13 @@
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
     }
 </section>
 
 <section class="tide-card" aria-labelledby="src-server">
     <h2 id="src-server"><span class="bi bi-hdd-stack" aria-hidden="true"></span> Set on the server</h2>
-    <div class="table-responsive">
+    <TableScroll LabelledBy="src-server">
         <table class="tide-table">
             <thead><tr><th>Setting</th><th>Effective value</th><th>Source</th></tr></thead>
             <tbody>
@@ -64,7 +64,7 @@
                 }
             </tbody>
         </table>
-    </div>
+    </TableScroll>
 </section>
 
 @code {
