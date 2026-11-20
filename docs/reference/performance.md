@@ -43,9 +43,10 @@ at these volumes; running the same calls against a populated SQL Server database
 Every change is held to a budget of SQL work on the hot paths, on SQLite and on SQL Server
 (`tests/Tide.IntegrationTests/Audit/QueryBudgetTests.cs`, budgets in `Golden/query-budget.json`; how it works and how to
 update it are in [development/testing.md](../development/testing.md#the-query-budget)). On a fifth of the scale
-harness's data, with a fixed clock and seed, it counts for each operation the commands run, the parameters sent (in all,
-and the most in one command) and the rows read back. Those don't vary from run to run as a timing does, so the test
-fails a change that grows one past its allowance (a tenth). The operations:
+harness's data, with a fixed clock and seed, it counts for each operation the round trips that read, the `SaveChanges`
+calls, the commands that write, the parameters sent (in all, and the most in one command) and the rows read back. Those
+don't vary from run to run as a timing does, so the test fails a change that grows one past its allowance (a tenth; the
+commands that write, which SQLite sends a row at a time and SQL Server batches, get half again). The operations:
 
 | Page or pass | Operations in the budget |
 |---|---|
@@ -235,7 +236,7 @@ flowchart TD
 - Bound every list a page reads (`Take`), and every export.
 - Don't add a leading-wildcard filter over a large table without a date or person bound, as the audit log does.
 - Count queries for a hot call with `TestDb.Commands` and run the scale harness before and after. The query budget
-  (`QueryBudgetTests`) fails a change that grows a hot path's commands, parameters or rows read; update it with
+  (`QueryBudgetTests`) fails a change that grows a hot path's reads, saves, parameters or rows read; update it with
   `TIDE_UPDATE_BUDGET=1` only when the growth is deliberate, and say why in the PR.
 - Read the time from `OrgClock` or the injected `TimeProvider`, not `DateTimeOffset.UtcNow`, in anything a page reads:
   the query budget's fixed clock depends on it, as do the tests that move the clock.

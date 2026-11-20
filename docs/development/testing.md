@@ -66,7 +66,7 @@ infrastructure audits:
 | `Audit/FrontendAuditTests.cs` | Pages kept open from one record to the next, confirmations that act on what they counted, steps that can't run twice. |
 | `Audit/InfraAuditTests.cs` | Outbound HTTP (redirects, private addresses), directory lookups that hang. |
 | `Audit/ScaleAuditTests.cs` | The opt-in scale harness (below). |
-| `Audit/QueryBudgetTests.cs` | The query budget: the hot paths' SQL commands, parameters and rows read against `Golden/query-budget.json` (below). |
+| `Audit/QueryBudgetTests.cs` | The query budget: the hot paths' reads, saves, rows written, parameters and rows read against `Golden/query-budget.json` (below). |
 
 `CapabilitiesTests.cs` holds each row of the "What each role can do" table to the service check or page policy it
 names, for every role.
@@ -125,9 +125,10 @@ carries:
   listen to);
 - `ColumnLengthCheck`, which fails a save that writes a string longer than its column. SQLite keeps any length, and
   SQL Server refuses it, so this catches in SQLite what would fail in production;
-- `CommandLog` (`TestDb.Commands`), which counts SQL commands (reads in `Count`, writes in `Writes`), the parameters
-  they send (`Parameters`, `MaxParameters`) and the rows read back (`Rows`), records their text, and can run a hook
-  just before a matching command (`Before`) to stage a race;
+- `CommandLog` (`TestDb.Commands`), which counts SQL commands (queries in `Count`, a save's batches among them; the
+  queries alone in `Reads`; `SaveChanges` calls in `Saves`; commands that write in `Writes`), the parameters they send
+  (`Parameters`, `MaxParameters`) and the rows read back (`Rows`), records their text, and can run a hook just before a
+  matching command (`Before`) to stage a race;
 - a retrying execution strategy (`RetryingStrategy`), as production's SQL Server has, so a transaction a service opens
   must run inside the strategy.
 
@@ -299,8 +300,8 @@ TIDE_SCALE=1 TIDE_SCALE_OUT=./scale dotnet test tests/Tide.IntegrationTests --fi
 ## The query budget
 
 Timings are too noisy to fail a PR on (the same call varies by half from run to run), but the regressions that matter
-have signatures that don't vary: a query per row, an IN list that grows with the data, a whole table read to show a
-page of it. `Audit/QueryBudgetTests.HotPaths_StayWithinTheirQueryBudget` runs on every change and measures those.
+have signatures that don't vary: a query or a save per row, an IN list that grows with the data, a whole table read to
+show a page of it. `Audit/QueryBudgetTests.HotPaths_StayWithinTheirQueryBudget` runs on every change and measures those.
 
 It seeds the scale harness's data at a fifth of its size (`QueryBudgetTests.Factor`: 2,000 articles, 1,000 actions,
 10,000 feed items) on a fixed clock (`QueryBudgetTests.At`, a Wednesday at 11:00 New York time) from a fixed random
@@ -308,19 +309,23 @@ seed, then runs each hot operation as its page or pass does and counts, through 
 
 | Number | What grows it |
 |---|---|
-| `commands` | SQL commands run, reads and writes (`Count` plus `Writes`): a query per row. |
-| `parameters` | Parameters sent across all of them: IN lists built from collections. |
+| `reads` | Round trips that read (`Reads`: queries and scalars, not a save's batches): a query per row. |
+| `saves` | `SaveChanges` calls (`Saves`): a save per row. |
+| `rowsWritten` | Commands that write (`Writes`: a save's batches, `ExecuteUpdate`, `ExecuteDelete`). SQLite sends a save a row at a time, so this is about the rows written there; SQL Server batches, so it's fewer. |
+| `parameters` | Parameters sent across all commands: IN lists built from collections. |
 | `maxParameters` | The most in any one command: an IN list heading for SQL Server's limit of 2,100. |
-| `rows` | Rows the client read back (EF's read count as each reader closes): an unbounded read, paging in memory. |
+| `rowsRead` | Rows the client read back (EF's read count as each reader closes): an unbounded read, paging in memory. |
 
 The operations are Today (what the start page reads, but for the candidates), `Brief.Candidates`, each Triage tab
 (`Triage.Inbox(<status>)`: the page of items, the missed reports on New, the tab counts, the sources), the Actions
 board and list (Open, Mine, Closed), Search (text, CVE, indicator), Trends over 6 and 24 months, the monthly report,
 each reminder scan (`Reminders(<kind>)`) and the webhook pass. Each is compared with `Golden/query-budget.json`, which
 holds the numbers as last accepted for each provider: `Sqlite`, checked in the `build-test` job, and `SqlServer`,
-checked by the `sql-server` job (the theory's SQL Server row). A number may go over by a tenth, and at least by a
-command or a few parameters or rows (`QueryBudgetTests.Allowance`), before the test fails; the failure names each
-operation and number that grew. A number that fell well below its budget is noted in the test's output, so the budget
+checked by the `sql-server` job (the theory's SQL Server row). A number may go over by a tenth, and at least by a read
+or a save or a few parameters or rows (`QueryBudgetTests.Allowance`), before the test fails; the failure names each
+operation and number that grew. `rowsWritten` is held more loosely (half again, and at least 20): it's the one number
+that means different things on the two providers, and a save per row already fails on `saves`. `reads` and `saves` are
+the numbers to watch for round trips; they come out the same on both providers. A number that fell well below its budget is noted in the test's output, so the budget
 can be tightened. The run takes about 10 s on SQLite and 20 s on SQL Server.
 
 The numbers are the same on every run: none comes from a timing, and the services the operations call read the time
@@ -510,5 +515,5 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | Browser behaviour: the JavaScript in `wwwroot/js`, layout, focus, keyboard, drag and drop | Only the layout check runs a browser in CI, and it checks layout rules, not script behaviour. Component tests check markup and semantics (`AccessibilityTests`, `MarkdownToolbarTests`), not script behaviour. Three scripts' logic runs in Node over a small stand-in for the page (`FilterMenuKeysTests` for `filters.js`, `AutogrowTests` for `autogrow.js`, `DialogTabTests` for `dialog.js`'s Tab cycle; Node must be on the PATH); the rest of the JavaScript has no tests, and none has coverage. |
 | How the email looks in mail clients | Render tests check its structure; open the `.eml` from development in Outlook. |
 | Long polling, reconnection after sleep, several server processes | Not simulated. TIDE runs as one process ([reference/known-issues.md](../reference/known-issues.md)). |
-| Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. The query budget runs on both providers on every change, but counts commands, parameters and rows, not time. See [reference/performance.md](../reference/performance.md). |
+| Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. The query budget runs on both providers on every change, but counts reads, saves, parameters and rows, not time. See [reference/performance.md](../reference/performance.md). |
 | A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off. CI applies the DBA schema script to SQL Server and compares the result with the migrations, but doesn't start the app on it. |
