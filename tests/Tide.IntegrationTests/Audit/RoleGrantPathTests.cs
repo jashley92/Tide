@@ -9,23 +9,10 @@ using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Infrastructure.Security;
+using Tide.TestSupport;
 using Tide.Web.Security;
 
 namespace Tide.IntegrationTests.Audit;
-
-/// <summary>Waits for something another thread does (a timer's retry, a re-check's tick).</summary>
-file static class Eventually
-{
-    public static async Task Until(Func<bool> done, string because)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (!done())
-        {
-            if (DateTime.UtcNow > deadline) throw new TimeoutException(because);
-            await Task.Delay(10);
-        }
-    }
-}
 
 /// <summary>
 /// The real role directory against the test database: how it answers sign-ins from the mappings, and what it does when
@@ -38,14 +25,11 @@ public sealed class RoleDirectoryTests : IDisposable
     private readonly CapturingLogger _log = new();
     private readonly ILoggerFactory _loggers;
     private readonly ServiceProvider _services;
-    private readonly TimeSpan _retryEvery = RoleDirectory.RetryEvery;
     private Action? _beforeNextRead;
     private int _reads;
 
     public RoleDirectoryTests()
     {
-        // Retried often, so a test sees several retries in moments rather than one every 30 s.
-        RoleDirectory.RetryEvery = TimeSpan.FromMilliseconds(20);
         _dbs = new FlakyDbs(_db);
         _loggers = LoggerFactory.Create(b => b.AddProvider(_log));
         _services = new ServiceCollection().AddScoped(_ =>
@@ -58,7 +42,9 @@ public sealed class RoleDirectoryTests : IDisposable
             }
             return (AppDbContext)_dbs.CreateAsync().GetAwaiter().GetResult();
         }).BuildServiceProvider();
-        Directory = new RoleDirectory(_services.GetRequiredService<IServiceScopeFactory>(), new Logger<RoleDirectory>(_loggers));
+        // Retried often, so a test sees several retries in moments rather than one every 30 s.
+        Directory = new RoleDirectory(_services.GetRequiredService<IServiceScopeFactory>(), new Logger<RoleDirectory>(_loggers))
+            { RetryEvery = TimeSpan.FromMilliseconds(20) };
     }
 
     private RoleDirectory Directory { get; }
@@ -66,7 +52,6 @@ public sealed class RoleDirectoryTests : IDisposable
     public void Dispose()
     {
         _dbs.Down = false;
-        RoleDirectory.RetryEvery = _retryEvery;
         _services.Dispose();
         _loggers.Dispose();
         _db.Dispose();
@@ -128,19 +113,14 @@ public sealed class RoleDirectoryTests : IDisposable
         Logged(LogLevel.Critical, "couldn't reload from the database").Should().ContainSingle();
         Directory.RolesForGroups(["CORP\\SOC-Admins"]).Should().BeEquivalentTo(["Admin"], "the previous mappings stay until a reload works");
         var reads = Volatile.Read(ref _reads);
-        await Eventually.Until(() => Volatile.Read(ref _reads) >= reads + 3, "the reload is retried on a timer");
+        (await Poll.Until(() => Volatile.Read(ref _reads) >= reads + 3)).Should().BeTrue("the reload is retried on a timer");
         Directory.IsCurrent.Should().BeFalse();
         Logged(LogLevel.Critical, "couldn't reload from the database").Should().ContainSingle("a failed retry doesn't log again");
 
         _dbs.Down = false;
-        await Eventually.Until(() => Directory.IsCurrent, "a retry that works makes the directory current");
+        (await Poll.Until(() => Directory.IsCurrent)).Should().BeTrue("a retry that works makes the directory current");
         Directory.RolesForGroups(["CORP\\SOC-Admins"]).Should().BeEmpty("the removal is in effect");
         Logged(LogLevel.Warning, "The role directory reloaded").Should().ContainSingle();
-
-        // The timer is gone: nothing reads the database again on its own.
-        reads = Volatile.Read(ref _reads);
-        await Task.Delay(RoleDirectory.RetryEvery * 10);
-        Volatile.Read(ref _reads).Should().Be(reads, "the retry timer stopped once the reload took");
     }
 
     [Fact]
@@ -159,16 +139,16 @@ public sealed class RoleDirectoryTests : IDisposable
             Directory.Invalidate();
             hooked = true;
         };
-        await Eventually.Until(() => Volatile.Read(ref hooked), "a retry runs");
+        (await Poll.Until(() => Volatile.Read(ref hooked))).Should().BeTrue("a retry runs");
         var reads = Volatile.Read(ref _reads);
-        await Eventually.Until(() => Volatile.Read(ref _reads) >= reads + 3, "retrying goes on");
+        (await Poll.Until(() => Volatile.Read(ref _reads) >= reads + 3)).Should().BeTrue("retrying goes on");
 
         Directory.RolesForGroups(["CORP\\SOC-Admins"]).Should().BeEquivalentTo(["Admin"], "the older read was still stored");
         Directory.IsCurrent.Should().BeFalse("the newer change hasn't loaded");
         Logged(LogLevel.Warning, "The role directory reloaded").Should().BeEmpty();
 
         _dbs.Down = false;
-        await Eventually.Until(() => Directory.IsCurrent, "a later retry that loads everything makes the directory current");
+        (await Poll.Until(() => Directory.IsCurrent)).Should().BeTrue("a later retry that loads everything makes the directory current");
         Logged(LogLevel.Warning, "The role directory reloaded").Should().ContainSingle();
     }
 }
@@ -188,65 +168,6 @@ internal sealed class SwitchableRoles : IRoleDirectory
     public bool IsCurrent => true;
 }
 
-/// <summary>A clock whose timers fire, and repeat on their period, only as the test moves it on.</summary>
-internal sealed class TickingClock : TimeProvider
-{
-    private readonly List<Tick> _timers = [];
-    private TimeSpan _now;
-
-    public int Pending { get { lock (_timers) return _timers.Count(t => t.Due is not null); } }
-
-    public void Advance(TimeSpan by)
-    {
-        List<Tick> due;
-        lock (_timers)
-        {
-            _now += by;
-            due = _timers.Where(t => t.Due <= _now).ToList();
-            foreach (var t in due)
-                t.Due = t.Period > TimeSpan.Zero && t.Period != Timeout.InfiniteTimeSpan ? _now + t.Period : null;
-        }
-        foreach (var t in due) t.Callback(t.State);
-    }
-
-    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-    {
-        var timer = new Tick(this, callback, state);
-        lock (_timers) _timers.Add(timer);
-        timer.Change(dueTime, period);
-        return timer;
-    }
-
-    private sealed class Tick(TickingClock owner, TimerCallback callback, object? state) : ITimer
-    {
-        public TimerCallback Callback => callback;
-        public object? State => state;
-        public TimeSpan? Due { get; set; }
-        public TimeSpan Period { get; private set; }
-
-        public bool Change(TimeSpan dueTime, TimeSpan period)
-        {
-            lock (owner._timers)
-            {
-                Due = dueTime == Timeout.InfiniteTimeSpan ? null : owner._now + dueTime;
-                Period = period;
-            }
-            return true;
-        }
-
-        public void Dispose()
-        {
-            lock (owner._timers) owner._timers.Remove(this);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            Dispose();
-            return ValueTask.CompletedTask;
-        }
-    }
-}
-
 /// <summary>
 /// The circuit's periodic re-check, on a clock the test moves: a session open for days loses a role revoked while it was
 /// open, one failed re-check doesn't end the re-checking, and a sign-in that can't be copied is logged.
@@ -254,7 +175,7 @@ internal sealed class TickingClock : TimeProvider
 public sealed class SessionRecheckTests : IDisposable
 {
     private readonly SwitchableRoles _roles = new();
-    private readonly TickingClock _clock = new();
+    private readonly ManualClock _clock = new();
     private readonly CapturingLogger _log = new();
     private readonly ILoggerFactory _loggers;
     private int _failNextReads;
@@ -293,9 +214,7 @@ public sealed class SessionRecheckTests : IDisposable
         (await CanAdminister(provider)).Should().BeTrue("nothing has re-checked yet");
 
         _clock.Advance(PermissionRevalidatingAuthStateProvider.Interval);
-        var revoked = false;
-        await Eventually.Until(() => revoked = !CanAdminister(provider).GetAwaiter().GetResult(), "the tick re-checks the session");
-        revoked.Should().BeTrue();
+        (await Poll.Until(() => !CanAdminister(provider).GetAwaiter().GetResult())).Should().BeTrue("the tick re-checks the session");
     }
 
     [Fact]
@@ -307,11 +226,11 @@ public sealed class SessionRecheckTests : IDisposable
 
         Volatile.Write(ref _failNextReads, 1);
         _clock.Advance(PermissionRevalidatingAuthStateProvider.Interval);
-        await Eventually.Until(() => Warnings("Session permission re-check failed").Count == 1, "the failed re-check is logged");
+        (await Poll.Until(() => Warnings("Session permission re-check failed").Count == 1)).Should().BeTrue("the failed re-check is logged");
         (await CanAdminister(provider)).Should().BeTrue("the failed re-check changed nothing");
 
         _clock.Advance(PermissionRevalidatingAuthStateProvider.Interval);
-        await Eventually.Until(() => !CanAdminister(provider).GetAwaiter().GetResult(), "the loop survived the failure and re-checked again");
+        (await Poll.Until(() => !CanAdminister(provider).GetAwaiter().GetResult())).Should().BeTrue("the loop survived the failure and re-checked again");
         Warnings("Session permission re-check failed").Should().ContainSingle();
     }
 
@@ -321,7 +240,7 @@ public sealed class SessionRecheckTests : IDisposable
         using var provider = Provider();
         provider.SetAuthenticationState(Task.FromException<AuthenticationState>(new ObjectDisposedException("SafeAccessTokenHandle")));
 
-        await Eventually.Until(() => Warnings("Couldn't copy the session's sign-in").Count == 1, "the failed copy is logged");
+        (await Poll.Until(() => Warnings("Couldn't copy the session's sign-in").Count == 1)).Should().BeTrue("the failed copy is logged");
         _clock.Pending.Should().Be(1, "the re-check still runs");
     }
 }

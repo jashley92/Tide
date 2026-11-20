@@ -37,8 +37,9 @@ public sealed class RoleDirectory : IRoleDirectory
     private long _requested;
     private long _applied;
 
-    /// <summary>How often a failed reload is tried again.</summary>
-    internal static TimeSpan RetryEvery { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>How often a failed reload is tried again. Tests only set it, per instance, so a short one never reaches
+    /// another test's directory.</summary>
+    internal TimeSpan RetryEvery { get; init; } = TimeSpan.FromSeconds(30);
 
     public RoleDirectory(IServiceScopeFactory scopes, ILogger<RoleDirectory>? logger = null)
     {
