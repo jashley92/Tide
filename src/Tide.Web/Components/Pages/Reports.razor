@@ -43,7 +43,12 @@
     </div>
 </div>
 
-@if (_report is not { } r)
+@if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the report" /></div>
+}
+else if (_report is not { } r)
 {
     <LoadingBlock />
 }
@@ -53,13 +58,13 @@ else
 
     <section class="tide-card" aria-labelledby="rep-headlines">
         <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
-        @Figures(r.Headlines)
+        @Figures(r.Headlines, "rep-headlines")
         @Assessment("headlines")
     </section>
 
     <section class="tide-card" aria-labelledby="rep-outcomes">
         <h2 id="rep-outcomes">2 &middot; Outcomes <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
-        @Figures(r.Outcomes)
+        @Figures(r.Outcomes, "rep-outcomes")
         @Assessment("outcomes")
     </section>
 
@@ -72,7 +77,7 @@ else
         else
         {
             <div class="table-responsive">
-                <table class="tide-table tide-report-table">
+                <table class="tide-table tide-report-table" aria-labelledby="rep-metrics">
                     <thead><tr><th scope="col">Metric</th><th scope="col" class="tide-table-num">Latest</th><th scope="col" class="tide-table-num">Average</th>
                         <th scope="col" class="tide-table-num">Range</th><th scope="col" class="tide-table-num">Days missing</th><th scope="col" class="tide-table-num">Days past a threshold</th></tr></thead>
                     <tbody>
@@ -115,14 +120,23 @@ else
 
     private Period _period;
     private PeriodReport? _report;
+    private bool _failed;
     private readonly Dictionary<string, string> _notes = new();
 
     protected override async Task OnParametersSetAsync()
     {
-        _period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
-        _report = null;
+        var period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
+        // Earlier, Later and the period buttons keep this same page and only change ?p=, so an assessment written for
+        // one period would otherwise stay in its box, and print, under the next. Each period starts with empty boxes.
+        if (period != _period) _notes.Clear();
+        _period = period;
+        (_report, _failed) = (null, false);
         try { _report = await ReportSvc.BuildAsync(_period); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
     }
 
     private void Go(Period p) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("p", p.Key));
@@ -152,10 +166,10 @@ else
     // A trend line's numbers open in Trends, on the line, for this period.
     private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
 
-    private RenderFragment Figures(IReadOnlyList<ReportFigure> figures) => __builder =>
+    private RenderFragment Figures(IReadOnlyList<ReportFigure> figures, string headingId) => __builder =>
     {
         <div class="table-responsive">
-            <table class="tide-table tide-report-table">
+            <table class="tide-table tide-report-table" aria-labelledby="@headingId">
                 <thead><tr><th scope="col">Measure</th><th scope="col" class="tide-table-num">@_period.Label</th><th scope="col" class="tide-table-num">@_period.Previous.Label</th><th scope="col" class="tide-table-num">Change</th></tr></thead>
                 <tbody>
                     @foreach (var f in figures)
@@ -190,11 +204,15 @@ else
         }
     };
 
+    internal void Note(string section, string? text) => _notes[section] = text ?? string.Empty;
+
+    // Keyed by period as well as section, so a new period's box is a new element rather than the last one's with its
+    // typed text still in it.
     private RenderFragment Assessment(string section) => __builder =>
     {
         var id = "assess-" + section;
         <label class="tide-field-label mt-2" for="@id">Assessment</label>
         <textarea id="@id" class="form-control form-control-sm tide-autogrow" rows="2" maxlength="4000" placeholder="What this means, in your words (prints with the report; not saved)"
-                  value="@_notes.GetValueOrDefault(section)" @onchange="e => _notes[section] = e.Value?.ToString() ?? string.Empty"></textarea>
+                  @key="@($"{_period.Key}:{section}")" value="@_notes.GetValueOrDefault(section)" @onchange="e => Note(section, e.Value?.ToString())"></textarea>
     };
 }

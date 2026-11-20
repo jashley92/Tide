@@ -177,7 +177,7 @@ public sealed class ScrollFollowTests
         var present = Shortcuts.For("present/2026-09-01").Single(g => g.Title == "Present mode").Keys;
         present.Single(k => k.Keys.Contains("Space")).Should().Match<Shortcut>(k => k.Keys.Contains("Page Down") && k.What.Contains("Scroll"));
         present.Single(k => k.Keys.Contains("Page Up")).Keys.Should().Contain("Shift Space");
-        present.Single(k => k.What == "Next slide").Keys.Should().Equal("→", "Enter");
+        present.Single(k => k.What.StartsWith("Next slide", StringComparison.Ordinal)).Keys.Should().Equal("→", "Enter");
     }
 }
 

@@ -177,7 +177,7 @@ The `appsettings.json` comment names every role, and the seed accepts each.
 | `Files:RootPath` | `App_Data/files` | A folder; relative paths are under the content root. Production uses `<data root>\files`, outside the web root. The metrics drop folder is `metrics-inbox` under it. | Server | Start-up |
 | `Files:MaxImageMB` | `15` | Megabytes, at least 1. Caps one screenshot. | Server | Start-up |
 | `Files:MaxEvidenceMB` | `25` | Megabytes, at least 1. Caps any other file on an action or its comments. | Server | Start-up |
-| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. When the zip comes first, a bare `/files/{id}/download` link redirects to it; only the "as is" link on the Files list (`?plain=` with a pass for that file and person, good for 10 minutes) sends the file plain, and under `Always` never; the API zips every file under `Always` too. | In app: **Teams & SLA** | At once |
+| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. When the zip comes first, a bare `/files/{id}/download` link redirects to it; only the "as is" link on the Files list (`?plain=` with a pass for that file and person, good for 10 minutes) sends the file plain, and under `Always` never; the API zips every file under `Always` too, and for a person signed in (not a token) zips whatever the zip comes first for. | In app: **Teams & SLA** | At once |
 
 ### Organization
 
@@ -297,6 +297,16 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 
 `appsettings.json` sets `SponsoredExceptions` without `regime-sponsored`, which the code default
 (`SponsoredFilter.DefaultExceptions`) has. The file's value wins.
+
+### Webhooks
+
+| Key | Default | Allowed values | Where | Effect |
+|---|---|---|---|---|
+| `Webhooks:AllowPrivateNetworks` | `true` | `true` lets webhooks be posted to 10/8, 172.16/12, 192.168/16, 100.64/10 and IPv6 unique-local, where a receiver such as a SOAR platform often is; `false` allows public addresses only. Loopback, link-local (cloud metadata among them), unspecified and multicast addresses are never posted to, whatever the setting. Separate from `Intake:AllowPrivateNetworks`, which is off by default. | Server | Next post |
+
+An install upgraded from a release before this setting keeps posting to internal receivers: it defaults to `true`.
+A webhook pointed at a refused address fails with `Refused: <host> is a loopback address, which webhooks aren't sent
+to.` (or link-local, private, reserved) on **Test** and as its last result.
 
 ### CVE enrichment
 

@@ -69,7 +69,7 @@ else
             {
                 <button @ref="_newToggle" class="btn btn-primary" aria-expanded="@Ui.Aria(_adding == Adding.New)" aria-controls="story-new" @onclick="StartNew"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article on this story</button>
                 <button @ref="_attachToggle" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_adding == Adding.Existing)" aria-controls="story-attach" @onclick="StartAttach"><span class="bi bi-link-45deg" aria-hidden="true"></span> Add an existing article</button>
-                <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                <button @ref="_editToggle" class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
             }
         </div>
     </div>
@@ -80,7 +80,7 @@ else
                 <div class="tide-card" data-submit-scope>
                     <ChangedElsewhere By="@_changedBy" What="story" OnReload="ReloadTheirs" />
                     <div class="row g-2">
-                        <div class="col-md-8"><label class="tide-field-label" for="st-name">Name</label><input id="st-name" class="form-control form-control-sm" maxlength="200" @bind="_name" /></div>
+                        <div class="col-md-8"><label class="tide-field-label" for="st-name">Name</label><input @ref="_nameBox" id="st-name" class="form-control form-control-sm" maxlength="200" @bind="_name" @bind:event="oninput" /></div>
                         <div class="col-md-4">
                             <label class="tide-field-label" for="st-status">Status</label>
                             <select id="st-status" class="form-select form-select-sm" @bind="_status">
@@ -88,12 +88,12 @@ else
                             </select>
                         </div>
                         <div class="col-12"><label class="tide-field-label" for="st-sum">Summary (Markdown)</label>
-                            <MarkdownToolbar For="st-sum" Label="Summary" BindsOnChange="true" />
-                            <textarea id="st-sum" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="4" maxlength="4000" @bind="_summary"></textarea></div>
+                            <MarkdownToolbar For="st-sum" Label="Summary" />
+                            <textarea id="st-sum" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="4" maxlength="4000" @bind="_summary" @bind:event="oninput"></textarea></div>
                     </div>
                     <div class="d-flex gap-2 mt-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = false">Cancel</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="CancelEdit">Cancel</button>
                         @if (_detail.Articles.Count == 0) { <button class="btn btn-link btn-sm ms-auto text-danger" disabled="@_busy" @onclick="Delete">Delete the story</button> }
                     </div>
                 </div>
@@ -145,7 +145,7 @@ else
                     @foreach (var a in _detail.Articles)
                     {
                         <li>
-                            <div class="small tide-muted">@Ui.When(Clock, a.PublishedAtUtc ?? a.CreatedAtUtc)@(_detail.BriefedOn.TryGetValue(a.Id, out var d) ? $" · briefed {Ui.ShortDay(d)}" : "")</div>
+                            <div class="small tide-muted">@Ui.When(Clock, a.PublishedAtUtc ?? a.CreatedAtUtc)@(_detail.BriefedOn.TryGetValue(a.Id, out var d) ? $" · briefed {Ui.ShortDay(d, Clock.Today)}" : "")</div>
                             <a class="fw-semibold" href="articles/@a.Id">@a.Title</a> <ClassBadge Classification="a.Classification" Priority="a.Priority" /> <TlpBadge Level="a.Tlp" />
                             @if (!string.IsNullOrWhiteSpace(a.Bluf)) { <div class="small">@a.Bluf</div> }
                         </li>
@@ -184,6 +184,7 @@ else
 }
 
 <ConfirmDialog @ref="_confirm" />
+<UnsavedGuard @ref="_guard" Dirty="EditUnsaved" Message="You've changed this story and not saved it." Save="SaveUnsaved" Discard="CloseEdit" />
 
 @code {
     [Parameter] public Guid? Id { get; set; }
@@ -322,7 +323,49 @@ else
         _summary = _detail.Story.Summary;
         _status = _detail.Story.Status;
         _editVersion = _detail.Story.EditVersion;
+        _editedFrom = (_name, _summary, _status);
         _changedBy = null;
+        _focusNext = () => _nameBox.TryFocusAsync();
+    }
+
+    // The story as Edit opened on it: what's typed is unsaved while it differs (a colleague's save meanwhile doesn't make
+    // it so, nor does reading theirs in).
+    private (string? Name, string? Summary, StoryStatus Status) _editedFrom;
+    private ElementReference _editToggle, _nameBox;
+    private UnsavedGuard _guard = default!;
+
+    /// <summary>The question asked on leaving with the Edit form changed, for a test to answer as a click would.</summary>
+    internal UnsavedGuard Guard => _guard;
+
+    /// <summary>Whether leaving would lose what's typed in the Edit form.</summary>
+    internal bool EditUnsaved => _editing && _detail is not null
+        && ((_name ?? "").Trim() != (_editedFrom.Name ?? "").Trim() || (_summary ?? "").Trim() != (_editedFrom.Summary ?? "").Trim() || _status != _editedFrom.Status);
+
+    // Cancel: the form closes and focus goes back to Edit, as the add panels' does to their buttons.
+    internal void CancelEdit()
+    {
+        CloseEdit();
+        _focusNext = () => _editToggle.TryFocusAsync();
+    }
+
+    // Discard and leave, or Cancel: what was typed goes.
+    private void CloseEdit() => (_editing, _changedBy) = (false, null);
+
+    // Save and leave: a refused save (a colleague's came first, a name left empty) says why and stays.
+    internal async Task<bool> SaveUnsaved()
+    {
+        try
+        {
+            await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status, _editVersion);
+            CloseEdit();
+            Toasts.Show("Saved.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
     }
 
     // The banner's Reload: their version in the form, and what was typed goes.
@@ -345,7 +388,8 @@ else
     internal Task Save() => Run(async () =>
     {
         await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status, _editVersion);
-        (_editing, _changedBy) = (false, null);
+        CloseEdit();
+        _focusNext = () => _editToggle.TryFocusAsync();
         await LoadStory();
     });
 
@@ -358,6 +402,7 @@ else
         await Run(async () =>
         {
             await StorySvc.DeleteAsync(id.Value);
+            CloseEdit();   // deleted: nothing is left to keep, so leaving doesn't ask
             Nav.NavigateTo("stories");
         });
     }

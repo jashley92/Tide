@@ -114,7 +114,8 @@ Long lists are read a page at a time, with the count of every match. The triage 
 filter depend on what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned
 counts), so those read every matching item light and page that. Its suggested groups are worked out over the page shown.
 The actions list (`ActionService.PageAsync`, 50 rows) sorts, groups and pages in SQL; the board loads every open card and
-caps each column on screen. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
+caps each column on screen, and `ListAsync` (every match, for the API and the brief) reads them all; both sort in SQL in the
+list's default order. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
 
 ### Rotation, metrics, trends and search
 
@@ -294,6 +295,11 @@ flowchart LR
 | `UrlHashFillHostedService` (`src/Tide.Web/Services/UrlHashFillHostedService.cs`) | Once the app is listening, after an upgrade: runs of 20 batches of 300 rows a second apart until done, then stops for good | Articles and links without an address hash; the `Data:UrlHashesToFill` setting | Each row's hash, one UPDATE per batch (no modified time, edit version or history moves); deletes the setting when none is left (`UrlHashFill`) | Always on; nothing to do on a database that's done | Logged; tried again a minute later, carrying on from the rows. Triage's past coverage reads every recent address until it's done. |
 | `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`) | Every 30 seconds; at shutdown | The `JobLeases` row; the runs `JobMonitor` queued | The lease (renewed, or let go at shutdown); `JobRuns`, and deletes runs older than 30 days once a day | Always on; prunes only while it holds the lease | Logged as a Warning; runs it couldn't write are kept (up to 2,000) and written at the next pass. |
 
+`MeetingAttendanceHostedService` (`src/Tide.Web/Services/MeetingAttendanceHostedService.cs`) isn't a job: it has no
+loop and no lease. It closes the attendance of each meeting `LiveMeetings` drops empty, through `AttendanceCloser`
+(internal to the web project and not in DI, so no page can use it: it asks no permission, as no one is signed in).
+See [collaboration.md](collaboration.md#livemeetings). A failure is logged.
+
 Every job but the upkeep runs only in the process holding the job lease. A run past its job's limit (30 minutes for
 most, 2 hours for the CVE refresh, 10 minutes for the update check, 15 for webhooks, 1 hour for the prune) is hung,
 and a job with no good run in three intervals (at least 15 minutes) is overdue: see `JobHealth` and
@@ -333,7 +339,9 @@ one client TIDE uses to fetch from other hosts: feeds (`IntakeService`), article
 | Result | Never throws for a failure: `HttpFetch` with `Ok`, `NotModified` or `Failed` and a sentence saying why, which the Sources and Diagnostics pages show. |
 
 Two other clients exist, each for one purpose. Webhooks post through the `webhooks` named client
-(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't apply `AddressPolicy` or `Intake:Proxy`. The
+(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't use `Intake:Proxy` but checks each connection
+with the same `AddressGuard.ConnectAsync` and `AddressPolicy`, private ranges following `Webhooks:AllowPrivateNetworks`
+(on by default) instead of the intake setting. The
 Azure OpenAI client (`src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs`) has its own `HttpClient`.
 
 ## Email sending
@@ -425,7 +433,7 @@ everything, log it, and record it on Diagnostics.
 | Security headers, circuit origin, user mirror | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `UserMirrorMiddleware.cs` |
 | Hosted services | `src/Tide.Web/Services/*HostedService.cs`, `src/Tide.Web/Api/WebhookServices.cs` |
 | Job reporting, lease and history | `src/Tide.Application/Operations/JobMonitor.cs`, `BackgroundJobLease.cs`, `JobRunLog.cs`, `JobHealth.cs` |
-| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `OutboundCircuit.cs` |
+| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `AddressGuard.cs`, `OutboundCircuit.cs` |
 | Email | `src/Tide.Infrastructure/Notifications/EmailSender.cs`, `EmailOptions.cs`, `SmtpClientFactory.cs` |
 | Change feed | `src/Tide.Application/Abstractions/ChangeFeed.cs`, `src/Tide.Infrastructure/Persistence/ChangeInterceptor.cs` |
 | Audit | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs` |

@@ -1,6 +1,7 @@
 @* "Are you sure?" before something that can't be taken back: a modal that says what will happen, with
    Cancel and a button named for the action ("Delete draft"), not the browser's OK/Cancel box. Focus moves in when it
-   opens, Tab stays inside (dialog.js), Escape or a click outside cancels, and focus goes back to the button that asked.
+   opens, Tab stays inside (dialog.js), Escape or a click outside cancels, and focus goes back to the button that asked
+   (ModalShell draws the frame).
    Usage: <ConfirmDialog @ref="_confirm" />, then  if (!await _confirm.Ask("Delete draft?", "…", "Delete draft")) return;
    It is also the one dialog for a short step that needs a detail or two first (the outcome of a move to Done, a hunt's
    result): the child content is the body, shown under the message, with ConfirmDisabled until it's complete. Form
@@ -9,38 +10,33 @@
    for a panel whose own buttons do the work (sending the brief from Today): just Close, focus on the body's first
    control, and Ask answers false. *@
 @implements IDisposable
-@inject IJSRuntime JS
 
-@if (_open)
-{
-    <div class="tide-modal-scrim" @onclick="Cancel">
-        <div class="tide-modal @(Wide ? "tide-modal-wide" : "")" tabindex="-1" role="@(Form || CloseOnly ? "dialog" : "alertdialog")" aria-modal="true" aria-labelledby="@_titleId"
-             aria-describedby="@DescribedBy" @onclick:stopPropagation="true" @onkeydown="OnKey">
-            <h2 class="tide-modal-title" id="@_titleId">@(Title ?? _title)</h2>
-            @if (!string.IsNullOrEmpty(_message))
-            {
-                <p class="tide-modal-body" id="@_bodyId">@_message</p>
-            }
-            @if (ChildContent is not null)
-            {
-                <div class="tide-modal-content" id="@_contentId" @ref="_content">@ChildContent</div>
-            }
-            <div class="tide-modal-actions">
-                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_cancel" disabled="@_busy" @onclick="Cancel">@(CloseOnly ? "Close" : _cancelLabel)</button>
-                @if (!CloseOnly)
+<ModalShell Open="_open" Id="@_id" Role="@(Form || CloseOnly ? "dialog" : "alertdialog")" Title="@(Title ?? _title)" DescribedBy="@DescribedBy"
+            Wide="Wide" OnClose="Cancel" FocusTarget="() => _cancel" Focus="FocusFirst" AfterClose="AfterClose">
+    <ChildContent>
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <p class="tide-modal-body" id="@_bodyId">@_message</p>
+        }
+        @if (ChildContent is not null)
+        {
+            <div class="tide-modal-content" id="@_contentId">@ChildContent</div>
+        }
+    </ChildContent>
+    <Actions>
+        <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_cancel" disabled="@_busy" @onclick="Cancel">@(CloseOnly ? "Close" : _cancelLabel)</button>
+        @if (!CloseOnly)
+        {
+            <button type="button" class="btn @(_danger ? "btn-danger" : "btn-primary") btn-sm" disabled="@(_busy || ConfirmDisabled)" @onclick="Confirm">
+                @if (ConfirmIcon is not null)
                 {
-                    <button type="button" class="btn @(_danger ? "btn-danger" : "btn-primary") btn-sm" disabled="@(_busy || ConfirmDisabled)" @onclick="Confirm">
-                        @if (ConfirmIcon is not null)
-                        {
-                            <span class="bi @ConfirmIcon me-1" aria-hidden="true"></span>
-                        }
-                        @(ConfirmLabel ?? _confirmLabel)
-                    </button>
+                    <span class="bi @ConfirmIcon me-1" aria-hidden="true"></span>
                 }
-            </div>
-        </div>
-    </div>
-}
+                @(ConfirmLabel ?? _confirmLabel)
+            </button>
+        }
+    </Actions>
+</ModalShell>
 
 @code {
     /// <summary>The body under the message: what's about to happen in full, or the fields the step needs.</summary>
@@ -76,13 +72,13 @@
     /// </summary>
     [Parameter] public Func<Task<bool>>? Confirming { get; set; }
 
-    private readonly string _titleId = Ui.NewId("confirm");
-    private string _bodyId => _titleId + "-body";
-    private string _contentId => _titleId + "-content";
-    private bool _open, _shown, _danger, _busy;
+    private readonly string _id = Ui.NewId("confirm");
+    private string _bodyId => _id + "-body";
+    private string _contentId => _id + "-content";
+    private bool _open, _danger, _busy;
     private string _title = "", _message = "", _confirmLabel = "", _cancelLabel = "Cancel";
     private TaskCompletionSource<bool>? _answer;
-    private ElementReference _cancel, _content;
+    private ElementReference _cancel;
     private ElementReference? _focusOnCancel;
     private bool _confirmed;
 
@@ -112,9 +108,13 @@
         return _answer.Task;
     }
 
+    // Also called by the page that asked (the article it asked about has gone), not only by a click here: it redraws, so
+    // the dialog closes either way.
     internal void Cancel()
     {
-        if (!_busy) Close(false);
+        if (_busy || !_open) return;
+        Close(false);
+        StateHasChanged();
     }
 
     internal async Task Confirm()
@@ -141,30 +141,20 @@
         _answer = null;
     }
 
-    private void OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") Cancel();
-    }
+    // Cancel takes focus when it opens (the safe choice, as Enter then cancels), or a form's first field does, or the first
+    // control of a panel whose own buttons act (CloseOnly). The body is the only part with fields or controls before
+    // Cancel, so the first in the dialog is the body's first.
+    private ModalShell.FirstFocus FocusFirst =>
+        ChildContent is null ? ModalShell.FirstFocus.Target
+        : CloseOnly ? ModalShell.FirstFocus.Control
+        : Form ? ModalShell.FirstFocus.Field
+        : ModalShell.FirstFocus.Target;
 
-    // Cancel takes focus when it opens (the safe choice, as Enter then cancels), or a form's first field does; focus goes
-    // back when it closes.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    // Focus has gone back to the button that asked as it closed; a cancel can send it elsewhere.
+    private async Task AfterClose()
     {
-        if (_open == _shown) return;
-        _shown = _open;
-        try
-        {
-            if (_open && CloseOnly && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirstControl", _content, _cancel);
-            else if (_open && Form && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirst", _content, _cancel);
-            else if (_open) await JS.InvokeVoidAsync("tideDialog.open", _cancel);
-            else
-            {
-                await JS.InvokeVoidAsync("tideDialog.close");
-                if (!_confirmed && _focusOnCancel is { } back) await FocusBack(back);
-                _focusOnCancel = null;
-            }
-        }
-        catch (JSDisconnectedException) { }
+        if (!_confirmed && _focusOnCancel is { } back) await FocusBack(back);
+        _focusOnCancel = null;
     }
 
     // After tideDialog.close has put focus back on the opener, so this wins.

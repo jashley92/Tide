@@ -79,6 +79,50 @@ public class DialogTabTests
             tabInTheMiddle: press(box, 'Tab'),
             tabIntoConfirmation: press(outside, 'Tab'),
         };
+        // A dialog opened over another (a confirmation over the picker): each close gives focus back to what opened that
+        // dialog, the inner one's opener inside the outer, then the outer one's on the page. The elements need isConnected;
+        // Blazor takes a closed dialog out of the page before it calls close.
+        [outside, box, apply, ok].forEach(e => e.isConnected = true);
+        outside.focus();
+        window.tideDialog.open(box);             // A opens from the page; focus in A
+        apply.focus();                           // A's Apply opens B
+        window.tideDialog.open(ok);
+        ok.isConnected = false;                  // B closes
+        window.tideDialog.close();
+        out.afterInnerClose = document.activeElement.id;
+        box.isConnected = false;                 // A closes
+        window.tideDialog.close();
+        out.afterOuterClose = document.activeElement.id;
+
+        // Dialogs that close without calling close (the palette running a command, the guide ending, one thrown away
+        // while open) leave nothing behind: a later close never sends focus to what opened them.
+        const dialog = (id, kid) => el(id, 'div', 'tide-modal', { role: 'dialog' }, [kid]);
+        const aOpener = el('aOpener', 'button', 'btn'), aField = el('aField', 'button', 'btn'), aOther = el('aOther', 'button', 'btn');
+        const pBox = el('pBox', 'input', 'form-control'), bOk = el('bOk', 'button', 'btn');
+        const a = el('a', 'div', 'tide-modal', { role: 'dialog' }, [aField, aOther]), p = dialog('p', pBox), b = el('b', 'div', 'tide-modal', { role: 'alertdialog' }, [bOk]);
+        [aOpener, aField, aOther, pBox, bOk, a, p, b].forEach(e => e.isConnected = true);
+        aOpener.focus();
+        window.tideDialog.open(aField);          // A opens from the page
+        aOther.focus();
+        window.tideDialog.open(pBox);            // the palette opens from A's other control...
+        p.isConnected = false;                   // ...and runs a command: gone, with no close
+        aField.focus();
+        window.tideDialog.open(bOk);             // B opens from A's field
+        b.isConnected = false;
+        window.tideDialog.close();               // B closes
+        out.staleInnerClose = document.activeElement.id;
+        a.isConnected = false;
+        window.tideDialog.close();               // A closes
+        out.staleOuterClose = document.activeElement.id;
+        // The palette's command run (forget), then a close nothing matches: focus stays where the command put it.
+        p.isConnected = true;
+        aOther.focus();
+        window.tideDialog.open(pBox);
+        p.isConnected = false;
+        window.tideDialog.forget();
+        aOpener.focus();
+        window.tideDialog.close();
+        out.unmatchedClose = document.activeElement.id;
         console.log(JSON.stringify(out));
         """;
 
@@ -110,6 +154,11 @@ public class DialogTabTests
                 At("shiftTabFromPanel").Should().Be("apply", "and Shift+Tab to its last");
                 At("tabInTheMiddle").Should().Be("browser", "between the ends, the browser's own Tab moves on");
                 At("tabIntoConfirmation").Should().Be("ok", "Tab from behind an open confirmation goes to its first control that can take focus, not to a rail under it");
+                At("afterInnerClose").Should().Be("apply", "a dialog opened over another gives focus back to the control in the outer one that opened it");
+                At("afterOuterClose").Should().Be("outside", "and the outer one, closing after it, gives focus back to its own opener on the page");
+                At("staleInnerClose").Should().Be("aField", "a dialog that closed without saying so (the palette) is skipped");
+                At("staleOuterClose").Should().Be("aOpener", "and the outer dialog gives focus back to its own opener, not the palette's");
+                At("unmatchedClose").Should().Be("aOpener", "a forgotten dialog leaves nothing for a later close to send focus to");
             }
         }
         finally { File.Delete(script); }

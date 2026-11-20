@@ -528,8 +528,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         await using var db = await dbs.CreateAsync(ct);
         var a = await WithEverything(db.Articles).FirstOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw new KeyNotFoundException("That article no longer exists.");
-        if (status == ArticleStatus.Ready && ArticleChecks.For(a).FirstOrDefault(c => c.Blocking) is { } gap)
-            throw new InvalidOperationException("It isn't ready yet: " + gap.Message);
+        if (status == ArticleStatus.Ready && ArticleChecks.NotReady(ArticleChecks.For(a)) is { } notReady)
+            throw new InvalidOperationException(notReady);
         var was = a.EditVersion;
         a.Status = status;
         a.EditVersion = Guid.NewGuid();

@@ -332,6 +332,33 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     }
 
     /// <summary>
+    /// Keeps who has presented the brief's live meeting so far on the brief, as it starts and each time it changes hands:
+    /// a meeting is in memory only, so one dropped once everyone left, or lost to a restart, and then ended from the brief
+    /// page still names who ran it rather than the presenter it was given. The meeting's end writes it again, as the final
+    /// word. Nothing when the meeting isn't live, or the brief has been sent (its record is what went out). The edit
+    /// version is left alone: a colleague editing the brief meanwhile isn't refused for it.
+    /// </summary>
+    public async Task RecordPresentersAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequirePresent();
+        if (_meetings.PresentersOf(briefId) is not { Count: > 0 } presenters) return;
+        var name = ArticleService.Clean(Names(presenters), PresentedByMax);
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            if (await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) is not { } brief || brief.Status == BriefStatus.Sent
+                || brief.PresentedByName == name) return;
+            brief.PresentedByName = name;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 3) { /* a colleague saved the brief at that moment: read again */ }
+        }
+    }
+
+    /// <summary>
     /// Records that the meeting happened: the brief and its articles are Presented. Two times are kept: when the meeting
     /// was held (<paramref name="heldAtUtc"/>; by default now, or the usual meeting time on a past day's brief) and when
     /// this was recorded (the clock). The meeting can't be held before its day or in the future.

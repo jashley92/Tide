@@ -88,9 +88,9 @@ public static partial class Guides
             new("attendance", "wrap", Permission.PresentBriefs, "#wrap-attendance",
                 "Who attended",
                 "On the wrap-up, Attended is filled in from who followed the meeting. Add someone who was in the room from your rail, or take a name off; after the meeting, you can still correct it."),
-            new("end", "wrap", Permission.PresentBriefs, "#present-end || #present-rail-toggle",
+            new("end", "wrap", Permission.PresentBriefs, "#present-end || #present-end-when || #present-rail-toggle",
                 "Ending the meeting",
-                "Raise what's left, and tick an article not discussed to carry it to the next brief. End the meeting then marks the brief presented."),
+                "Raise what's left, and tick an article not discussed to carry it to the next brief. End the meeting, here from the brief's day, then marks the brief presented."),
         ],
         Summary: "Present mode in rehearsal, on today's brief: the slides, your rail, and ending the meeting. No meeting starts, and nothing is shared or saved.");
 
