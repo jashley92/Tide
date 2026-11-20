@@ -33,6 +33,8 @@
          leave the pool stopped while the database records a migration the previous build doesn't know and didn't
          run on before the upgrade (or either can't be read after the new build may have run), until the database
          backup is restored.
+      6. On success only: prune the older upgrade backups, keeping the newest -KeepUpgradeBackups (3) pre-upgrade .bak
+         files and tide-upgrade-backups folders, this run's among them. A failed or rolled-back upgrade deletes nothing.
 
     Integrated authentication throughout: no secrets are read or written. Windows PowerShell 5.1 only: PowerShell 7
     doesn't have the IIS: drive, so the script refuses to run there.
@@ -98,6 +100,14 @@
 .PARAMETER SkipDbBackup
     Skip the database backup (only when your backup product's is current).
 
+.PARAMETER KeepUpgradeBackups
+    How many upgrades' backups to keep (default 3, this run's among them), once the upgrade has succeeded: of the
+    <database>-preupgrade-<time>.bak files in SQL Server's default backup folder, and of the <time> folders under
+    tide-upgrade-backups. Older ones are deleted and each is listed. Only names the upgrade itself writes are touched.
+    The .bak files are pruned only when this host reaches the folder: a UNC path, or SQL Server on this host; otherwise
+    the upgrade lists the older ones it left. Folders are pruned only under the default location, not a -BackupRoot.
+    0 keeps everything. A failed or rolled-back upgrade deletes nothing, and a backup that can't be deleted is a warning.
+
 .PARAMETER Force
     Don't ask before backing up and deploying. -WhatIf runs the checks and stops before any change.
 
@@ -135,6 +145,7 @@ param(
     [string] $BackupRoot,
     [string] $DataRoot,
     [switch] $SkipDbBackup,
+    [ValidateRange(0, 1000)] [int] $KeepUpgradeBackups = 3,
     [int]    $WarmupTimeoutSec = 660,   # past the app's 600 s startupTimeLimit (web.config)
     [switch] $Force,
 
@@ -671,7 +682,13 @@ if (-not $Force -and -not $PSBoundParameters.ContainsKey('Confirm')) {
 }
 
 # --- 5. Back up ---------------------------------------------------------------
-if (-not $BackupRoot) { $BackupRoot = Join-Path (Split-Path -Parent $SitePath) "tide-upgrade-backups\$stamp" }
+# Only the default location is pruned after a successful upgrade: a -BackupRoot's parent may hold anything.
+$upgradeBackupsDir = $null
+if (-not $BackupRoot) {
+    $upgradeBackupsDir = Join-Path (Split-Path -Parent $SitePath) 'tide-upgrade-backups'
+    $BackupRoot = Join-Path $upgradeBackupsDir $stamp
+}
+$bakDir = $null; $bakName = $null
 New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
 
 if (-not $SkipDbBackup) {
@@ -934,6 +951,62 @@ try {
 # Apart, so a task that can't be re-pointed isn't reported as a failed copy.
 try { Update-TideTaskPaths -KeptDir $kept -SitePath $SitePath }
 catch { Write-Warn2 "Couldn't point the TIDE scheduled tasks at $kept ($($_.Exception.Message)). Run each script's -Register again from there." }
+
+# --- 8. Prune the older upgrade backups (the new build is up, so they're no longer this run's way back) ---------
+# Only here, after the warm-up passed: every failure above throws before this, and leaves every backup for a restore.
+# This run's backups are never deleted. A backup that can't be pruned is a warning; the upgrade has succeeded.
+if ($KeepUpgradeBackups -gt 0) {
+    Write-Step "Pruning older upgrade backups (keeping the newest $KeepUpgradeBackups of each)"
+    $pruned = 0
+    # The pre-upgrade .bak files, in SQL Server's default backup folder: deleted only where this host reaches that folder
+    # (a UNC path, or SQL Server running here). Nothing is deleted through SQL Server itself.
+    try {
+        if (-not $bakDir) { $bakDir = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000))")" }
+        $bakPattern = Get-TidePreUpgradeBakPattern $DbName
+        $sqlHost = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('MachineName') AS nvarchar(256))")"
+        $reachable = $bakDir -and ($bakDir.StartsWith('\\') -or $sqlHost -ieq $env:COMPUTERNAME) -and
+            (Test-Path -LiteralPath $bakDir -PathType Container)
+        if ($reachable) {
+            $baks = @(Get-ChildItem -LiteralPath $bakDir -File -Filter '*.bak' -ErrorAction Stop)
+            foreach ($old in @(Get-TidePrunable -Items $baks -Keep $KeepUpgradeBackups -Exclude @($bakName) -Pattern $bakPattern)) {
+                try { Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop; $pruned++; Write-Info "Deleted $($old.FullName)" }
+                catch { Write-Warn2 "Couldn't delete $($old.FullName): $($_.Exception.Message)" }
+            }
+        } else {
+            # Out of reach: say which older ones msdb's backup history names (some may be gone already), so they can be
+            # cleared by hand.
+            $where = if ($bakDir) { "$bakDir on $sqlHost" } else { "SQL Server's default backup folder on $sqlHost" }
+            $left = @()
+            try {
+                $c = New-TideSqlConnection -SqlInstance $SqlInstance -DbName $DbName -ValidateServerCertificate:$dbInfo.ValidateServerCertificate -ApplicationName 'TIDE upgrade'
+                try {
+                    $files = @(Invoke-TideSqlColumn -Connection $c -Sql ("SELECT DISTINCT mf.physical_device_name FROM msdb.dbo.backupset bs " +
+                        "JOIN msdb.dbo.backupmediafamily mf ON mf.media_set_id = bs.media_set_id " +
+                        "WHERE bs.database_name = DB_NAME() AND bs.name LIKE N'TIDE pre-upgrade %'"))
+                } finally { $c.Dispose() }
+                $byName = @($files | ForEach-Object { [pscustomobject]@{ Name = ($_ -replace '^.*[\\/]', ''); Path = $_ } })
+                $left = @(Get-TidePrunable -Items $byName -Keep $KeepUpgradeBackups -Exclude @($bakName) -Pattern $bakPattern | ForEach-Object { $_.Path })
+            } catch { Write-Verbose "Couldn't read msdb's backup history: $($_.Exception.Message)" }
+            Write-Warn2 ("The pre-upgrade database backups are in $where, which this host can't reach, so none was deleted. " +
+                         "Delete all but the newest $KeepUpgradeBackups $DbName-preupgrade-<time>.bak there by hand.")
+            foreach ($l in $left) { Write-Warn2 "  Left: $l" }
+        }
+    } catch { Write-Warn2 "Couldn't prune the older pre-upgrade database backups: $($_.Exception.Message)" }
+
+    # The tide-upgrade-backups\<time> folders (the settings copy and site-rollback of each earlier upgrade).
+    if ($upgradeBackupsDir) {
+        try {
+            $folders = @(Get-ChildItem -LiteralPath $upgradeBackupsDir -Directory -ErrorAction Stop)
+            foreach ($old in @(Get-TidePrunable -Items $folders -Keep $KeepUpgradeBackups -Exclude @($stamp) -Pattern (Get-TideUpgradeFolderPattern))) {
+                try { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction Stop; $pruned++; Write-Info "Deleted $($old.FullName)" }
+                catch { Write-Warn2 "Couldn't delete $($old.FullName): $($_.Exception.Message)" }
+            }
+        } catch { Write-Warn2 "Couldn't prune the older upgrade backup folders in $($upgradeBackupsDir): $($_.Exception.Message)" }
+    } else {
+        Write-Info "The backup folders under -BackupRoot's parent aren't pruned: clear older ones by hand."
+    }
+    Write-Info "Deleted $pruned older backup(s)."
+}
 
 $verifySite = $SiteName
 Write-Step "Upgrade complete."

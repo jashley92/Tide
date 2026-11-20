@@ -407,3 +407,46 @@ function Get-TideVerifyFailureKind($Exception) {
     }
     return 'failed'
 }
+
+# --- Pruning old upgrade backups ------------------------------------------------------------------------------------
+# Every upgrade leaves a <database>-preupgrade-<stamp>.bak in SQL Server's backup folder and a
+# tide-upgrade-backups\<stamp> folder beside the site. After a successful upgrade the script keeps the newest few of
+# each. The patterns are exactly the names the upgrade writes, so nothing else in those folders is ever picked.
+# ConvertFrom-TideStamp is lib\TideStamp.ps1's.
+
+# The name of a pre-upgrade backup of $DbName, its stamp in the group 'stamp'. Matched whole, so the pattern for 'Tide'
+# never matches another database's 'Tide-test-preupgrade-<stamp>.bak'.
+function Get-TidePreUpgradeBakPattern([string] $DbName) {
+    return '^' + [regex]::Escape($DbName) + '-preupgrade-(?<stamp>\d{8}-\d{6})\.bak$'
+}
+
+# The name of an upgrade's folder under tide-upgrade-backups.
+function Get-TideUpgradeFolderPattern { return '^(?<stamp>\d{8}-\d{6})$' }
+
+# Which of $Items to delete so that the newest $Keep remain. An item is a name, or anything with a Name (a FileInfo, a
+# DirectoryInfo). It counts only when its whole name matches $Pattern (ignoring case) and the pattern's 'stamp' group
+# is a real Get-TideStamp time, which orders it. A name in $Exclude (this run's) is never returned, and counts among
+# the ones kept. $Keep 0 or less prunes nothing. Returns the items themselves, newest first.
+function Get-TidePrunable {
+    param(
+        $Items = @(),
+        [int] $Keep = 3,
+        [string[]] $Exclude = @(),
+        [Parameter(Mandatory = $true)] [string] $Pattern
+    )
+    if ($Keep -lt 1) { return @() }
+    $excluded = @($Exclude | Where-Object { $_ } | ForEach-Object { "$_".ToLowerInvariant() })
+    $matched = @(foreach ($item in @($Items)) {
+        if ($null -eq $item) { continue }
+        $name = if ($item -is [string]) { $item } else { [string]$item.Name }
+        $m = [regex]::Match($name, $Pattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $m.Success -or -not $m.Groups['stamp'].Success) { continue }
+        $when = ConvertFrom-TideStamp $m.Groups['stamp'].Value
+        if ($null -eq $when) { continue }
+        [pscustomobject]@{ Item = $item; Name = $name; When = $when }
+    })
+    # Newest first; two of one stamp (a copy made by hand) order by name, so the choice is the same every run.
+    $ordered = @($matched | Sort-Object -Property @{ Expression = 'When'; Descending = $true }, @{ Expression = 'Name'; Descending = $true })
+    return @($ordered | Select-Object -Skip $Keep | Where-Object { $excluded -notcontains $_.Name.ToLowerInvariant() } |
+        ForEach-Object { $_.Item })
+}

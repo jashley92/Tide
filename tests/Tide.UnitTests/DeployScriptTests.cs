@@ -178,6 +178,26 @@ public partial class DeployScriptTests
     }
 
     [Fact]
+    public void Older_upgrade_backups_are_pruned_only_after_the_new_build_answered_and_never_this_runs()
+    {
+        var script = Read("deploy", "Upgrade-Tide.ps1");
+        int At(string s)
+        {
+            var i = script.IndexOf(s, StringComparison.Ordinal);
+            i.Should().BeGreaterThan(-1, "the script has '{0}'", s);
+            return i;
+        }
+        var lastRollback = script.LastIndexOf("Complete-Rollback \"", StringComparison.Ordinal);
+        var versionWritten = At("Set-Content -Path (Join-Path $SitePath 'VERSION.txt')");
+        var pruneBaks = At("Get-TidePrunable -Items $baks -Keep $KeepUpgradeBackups -Exclude @($bakName)");
+        var pruneFolders = At("Get-TidePrunable -Items $folders -Keep $KeepUpgradeBackups -Exclude @($stamp)");
+        var complete = At("Write-Step \"Upgrade complete.\"");
+        new[] { lastRollback, versionWritten, pruneBaks, pruneFolders, complete }.Should().BeInAscendingOrder(
+            "every failure rolls back and throws before the prune, so a failed upgrade keeps every backup");
+        script.Should().NotContain("xp_delete_file", "the .bak files are deleted only through a path this host reaches");
+    }
+
+    [Fact]
     public void Whatever_fails_between_stopping_the_pool_and_starting_it_rolls_back_and_every_rollback_asks_whether_the_old_build_fits()
     {
         // A file the stale-file removal can't delete, an IIS setting that won't take, a pool that won't start: each throws
@@ -394,8 +414,9 @@ public partial class DeployScriptPowerShellTests
         var names = upgrade.GetProperty("Params").EnumerateArray().Select(p => p.GetProperty("Name").GetString()).ToList();
         names.Should().Contain(["BundleZip", "Version", "Repository", "Proxy", "AppSource", "Build", "SiteName", "AppPath", "SitePath",
             "AppPoolName", "SqlInstance", "DbName", "HealthUrl", "BackupRoot", "DataRoot", "SkipDbBackup", "Force", "ReleaseHashChecked",
-            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath"]);
+            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath", "KeepUpgradeBackups"]);
         string? Default(JsonElement s, string n) => s.GetProperty("Params").EnumerateArray().Single(p => p.GetProperty("Name").GetString() == n).GetProperty("Default").GetString();
+        Default(upgrade, "KeepUpgradeBackups").Should().Be("3", "docs/UPGRADE.md says an upgrade keeps three");
         Default(upgrade, "Repository").Should().Be("'jashley92/Tide'");
         Default(upgrade, "SiteName").Should().Be("'TIDE'", "Install-Tide.ps1's default site");
         upgrade.GetProperty("ShouldProcess").GetBoolean().Should().BeTrue("-WhatIf runs the checks and stops");
@@ -830,6 +851,47 @@ public partial class DeployScriptPowerShellTests
             """);
         foreach (var grant in new[] { "backupOperator", "dbcreator", "msdb", "stopsOnError" }) r.GetProperty(grant).GetBoolean().Should().BeTrue(grant);
         r.GetProperty("bad").GetString().Should().StartWith("BackupAccount must be an account name", "it goes into the SQL inside brackets and quotes");
+    }
+
+    [Fact]
+    public void Pruning_keeps_the_newest_upgrade_backups_and_this_runs_and_ignores_what_the_upgrade_didnt_write()
+    {
+        var r = Run("""
+            $bak = Get-TidePreUpgradeBakPattern 'Tide'
+            $dir = Get-TideUpgradeFolderPattern
+            $baks = @(
+                'Tide-preupgrade-20260105-090000.bak', 'Tide-preupgrade-20260101-090000.bak', 'Tide-preupgrade-20260103-090000.bak',
+                'Tide-preupgrade-20260102-090000.bak', 'Tide-preupgrade-20260104-090000.bak',
+                'Tide-test-preupgrade-20250101-090000.bak',   # another database's
+                'Tide-preupgrade-20251301-090000.bak',        # not a real time
+                'Tide-full-20250101.bak', 'Tide-preupgrade-20250101-090000.bak.old', 'notes.txt')
+            # Objects with a Name, as Get-ChildItem gives.
+            $folders = @('20260101-090000', '20260102-090000', '20260103-090000', '20260104-090000', 'site-rollback', 'keep-me', '20260101-0900') |
+                ForEach-Object { [pscustomobject]@{ Name = $_; FullName = "D:\inetpub\tide-upgrade-backups\$_" } }
+            $out = [ordered]@{
+                newest      = @(Get-TidePrunable -Items $baks -Keep 3 -Pattern $bak)
+                # This run's stamp sorts oldest (a clock set back): it's still never deleted.
+                thisRun     = @(Get-TidePrunable -Items $baks -Keep 1 -Exclude @('Tide-preupgrade-20260101-090000.bak') -Pattern $bak)
+                caseless    = @(Get-TidePrunable -Items @('TIDE-PREUPGRADE-20260101-090000.BAK', 'tide-preupgrade-20260102-090000.bak') -Keep 1 -Pattern $bak)
+                folders     = @(Get-TidePrunable -Items $folders -Keep 2 -Exclude @('20260104-090000') -Pattern $dir | ForEach-Object { $_.FullName })
+                fewer       = @(Get-TidePrunable -Items $baks -Keep 10 -Pattern $bak).Count
+                none        = @(Get-TidePrunable -Items $baks -Keep 0 -Pattern $bak).Count
+                empty       = @(Get-TidePrunable -Items @() -Keep 3 -Pattern $bak).Count
+                escaped     = @(Get-TidePrunable -Items @('TideXDb-preupgrade-20260101-090000.bak', 'Tide.Db-preupgrade-20260101-090000.bak') -Keep 1 -Pattern (Get-TidePreUpgradeBakPattern 'Tide.Db'))
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
+        Names("newest").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"],
+            "the newest three stay, and nothing that isn't this database's pre-upgrade backup is picked");
+        Names("thisRun").Should().Equal(["Tide-preupgrade-20260104-090000.bak", "Tide-preupgrade-20260103-090000.bak", "Tide-preupgrade-20260102-090000.bak"]);
+        Names("caseless").Should().Equal(["TIDE-PREUPGRADE-20260101-090000.BAK"]);
+        Names("folders").Should().Equal(["D:\\inetpub\\tide-upgrade-backups\\20260102-090000", "D:\\inetpub\\tide-upgrade-backups\\20260101-090000"],
+            "only the upgrade's own <time> folders count");
+        r.GetProperty("fewer").GetInt32().Should().Be(0);
+        r.GetProperty("none").GetInt32().Should().Be(0, "-KeepUpgradeBackups 0 keeps everything");
+        r.GetProperty("empty").GetInt32().Should().Be(0);
+        r.GetProperty("escaped").GetArrayLength().Should().Be(0, "a database name is matched literally, its dot included");
     }
 
     [Fact]

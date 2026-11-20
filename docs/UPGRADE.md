@@ -115,7 +115,7 @@ What it does, in order:
    `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`). A backup that reads back wrong stops the
    upgrade with nothing deployed. Reading it back needs `CREATE DATABASE` permission (`dbcreator`) as well as the right
    to back up; without it the upgrade warns that the backup was written `WITH CHECKSUM` but not read back, and carries
-   on. The upgrade doesn't remove old pre-upgrade backups: clear them out of the backup folder from time to time.
+   on. Older upgrades' backups are pruned once this one has succeeded (step 6).
 4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
    files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
    `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
@@ -139,6 +139,14 @@ What it does, in order:
    then the database is as it was, and the previous build is started again if it was running when the upgrade began
    (on AppMigrates, a pool already stopped may be an earlier failed upgrade's, so it stays stopped). On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
    refreshes the kept deploy scripts.
+6. **Prunes older upgrade backups**, on success only: it keeps the newest `-KeepUpgradeBackups` (3 by default, this
+   run's among them) of the `<database>-preupgrade-<time>.bak` files in SQL Server's default backup folder and of the
+   `<time>` folders under `tide-upgrade-backups`, deletes the older ones and lists each it deleted. Only those names
+   are touched; anything else in either folder stays. The `.bak` files are deleted only when the web server reaches
+   the folder: a UNC path, or SQL Server on the same host. Otherwise the upgrade warns and lists the older ones msdb's
+   backup history names, for you to delete there. With `-BackupRoot`, the backup folders aren't pruned. `0` keeps
+   everything. A failed or rolled-back upgrade deletes nothing, since its backups may be needed for a restore, and a
+   backup that can't be deleted is a warning, not a failed upgrade.
 
 Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.
 
