@@ -212,6 +212,16 @@ public class OutreachFillTests
     }
 
     [Fact]
+    public void DroppingAnOptionalLine_LeavesOneBlankLine_NotTwo_ButKeepsTheTemplatesOwn()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);   // no other links
+        OutreachFill.Fill("x", "{{article.title}}\n\n{{article.other-links?}}\n\nThanks", facts).Body
+            .Should().EndWith("\n\nEdge VPN zero-day exploited\n\nThanks\n");
+        OutreachFill.Fill("x", "{{article.title}}\n{{article.other-links?}}\n\n\nThanks", facts).Body
+            .Should().EndWith("\n\nEdge VPN zero-day exploited\n\n\nThanks\n", "the template's own two blank lines aren't the drop's doing");
+    }
+
+    [Fact]
     public void AnOptionalPlaceholder_WithAValue_FillsAsUsual()
     {
         var facts = Facts(Article(), TlpLevel.Clear) with { ArticleLinks = ["https://news.example/follow-up"] };

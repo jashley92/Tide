@@ -315,9 +315,7 @@ public static partial class OutreachFill
             return value;
         });
         var filledSubject = Gone(Replace(subject).ReplaceLineEndings(" ")).Trim();
-        var filledBody = string.Join("\n", Replace((body ?? "").Replace("\r\n", "\n")).Split('\n')
-            .Where(l => !l.Contains(GoneSlot, StringComparison.Ordinal) || !string.IsNullOrWhiteSpace(l.Replace(GoneSlot, "", StringComparison.Ordinal)))
-            .Select(Gone));
+        var filledBody = string.Join("\n", Lines(Replace((body ?? "").Replace("\r\n", "\n"))));
         var line = $"{Tlp.Label(marking)}: {Tlp.Meaning(marking)}";
         var placed = filledBody.Contains(TlpSlot, StringComparison.Ordinal);
         filledSubject = filledSubject.Replace(TlpSlot, Tlp.Label(marking), StringComparison.Ordinal);
@@ -330,6 +328,28 @@ public static partial class OutreachFill
 
     // Where {{tlp}} was, until the marking is known: a value filled in that happens to say "{{tlp}}" stays as it is.
     private const string TlpSlot = "\u0000tlp\u0000";
+
+    // The body's lines with each line an optional placeholder left empty dropped, and the gaps in the rest closed. A
+    // blank line that would then follow another blank line goes too: "a\n\n{{x?}}\n\nb" reads "a\n\nb", not "a\n\n\nb".
+    // Blank lines the template has side by side of its own are kept.
+    private static List<string> Lines(string text)
+    {
+        var kept = new List<string>();
+        // Whether lines were just dropped, and the line before them was blank (or there was none).
+        var (dropped, blankBefore) = (false, false);
+        foreach (var l in text.Split('\n'))
+        {
+            if (l.Contains(GoneSlot, StringComparison.Ordinal) && string.IsNullOrWhiteSpace(l.Replace(GoneSlot, "", StringComparison.Ordinal)))
+            {
+                if (!dropped) (dropped, blankBefore) = (true, kept.Count == 0 || string.IsNullOrWhiteSpace(kept[^1]));
+                continue;
+            }
+            var skip = dropped && blankBefore && string.IsNullOrWhiteSpace(l);
+            dropped = false;
+            if (!skip) kept.Add(Gone(l));
+        }
+        return kept;
+    }
 
     // Where an optional placeholder with nothing to fill was, until its line is dropped or the gap closed.
     private const string GoneSlot = "\u0000gone\u0000";
