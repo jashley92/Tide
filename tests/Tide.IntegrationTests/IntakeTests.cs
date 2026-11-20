@@ -1013,6 +1013,62 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Coverage_MatchesByAddressAndCve_AtMostFive_EachWithItsBriefsActionsAndWhetherItCanTakeAReport()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Edge VPN bug, more", "https://news.example/vpn", "CVE-2026-1111 and CVE-2026-2222")));
+        await _db.Intake().PollNowAsync(source);
+        var now = DateTimeOffset.UtcNow;
+        var ids = new Dictionary<string, Guid>();
+        await using (var ctx = _db.PlainContext())
+        {
+            Article Add(string title, string? url, ArticleStatus status, params string[] cves)
+            {
+                var a = new Article { Title = title, SourceUrl = url, Status = status, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = now.AddDays(-ids.Count - 1) };
+                a.Cves.AddRange(cves.Select(c => new ArticleCve { CveId = c }));
+                ctx.Articles.Add(a);
+                ids[title] = a.Id;
+                return a;
+            }
+            var sameUrl = Add("Same address, tracked", "https://news.example/vpn?utm_source=mail", ArticleStatus.Presented, "CVE-2026-1111");
+            var linked = Add("Links to it", "https://elsewhere.example/a", ArticleStatus.Ready);
+            var onDraft = Add("Same first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
+            Add("Also the first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
+            Add("Same second CVE", null, ArticleStatus.Ready, "CVE-2026-2222");   // a sixth match: past the five shown
+            Add("Another CVE", "https://elsewhere.example/b", ArticleStatus.Ready, "CVE-2026-3333");
+            Add("Too old to match by address", "https://news.example/vpn", ArticleStatus.Ready).CreatedAtUtc = now.AddDays(-200);
+            ctx.ArticleLinks.Add(new ArticleLink { ArticleId = linked.Id, Url = "https://news.example/vpn", Title = "x", AddedAtUtc = now, AddedByName = "Analyst" });
+            Brief On(DateOnly day, BriefStatus status, Article a)
+            {
+                var b = new Brief { BriefDate = day, Status = status, AnalystId = "S-1", AnalystName = "Analyst", CreatedAtUtc = now };
+                b.Items.Add(new BriefItem { ArticleId = a.Id });
+                ctx.Briefs.Add(b);
+                return b;
+            }
+            On(new DateOnly(2026, 10, 1), BriefStatus.Presented, sameUrl);
+            On(new DateOnly(2026, 10, 9), BriefStatus.Draft, onDraft);
+            await ctx.SaveChangesAsync();
+        }
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var action = await _db.Actions().CreateAsync(new ActionForm { Title = "Patch", Kind = ActionKind.PatchRemediate, TeamId = team, ArticleId = ids["Links to it"] });
+
+        var coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage;
+
+        coverage.Take(2).Select(c => (c.Why, c.ArticleTitle)).Should().Equal(
+            [(Tide.Application.Search.RelatedService.SameLink, "Same address, tracked"), (Tide.Application.Search.RelatedService.SameLink, "Links to it")], "address matches come first");
+        coverage.Select(c => (c.Why, c.ArticleTitle, c.BriefDate, c.OnBrief, c.Attachable, string.Join(",", c.OpenActions))).Should().BeEquivalentTo([
+            (Tide.Application.Search.RelatedService.SameLink, "Same address, tracked", (DateOnly?)new DateOnly(2026, 10, 1), (DateOnly?)null, false, ""),
+            (Tide.Application.Search.RelatedService.SameLink, "Links to it", (DateOnly?)null, (DateOnly?)null, true, action.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("CVE-2026-1111", "Same address, tracked", (DateOnly?)new DateOnly(2026, 10, 1), (DateOnly?)null, false, ""),
+            ("CVE-2026-1111", "Same first CVE", (DateOnly?)null, (DateOnly?)new DateOnly(2026, 10, 9), true, ""),
+            ("CVE-2026-1111", "Also the first CVE", (DateOnly?)null, (DateOnly?)null, true, ""),
+        ]);
+        coverage.Skip(2).Should().OnlyContain(c => c.Why == "CVE-2026-1111", "then the item's CVEs in the order it names them");
+        coverage.Should().HaveCount(5).And.NotContain(c => c.ArticleTitle == "Same second CVE", "only the first five matches are shown")
+            .And.OnlyContain(c => c.ArticleId == ids[c.ArticleTitle]);
+    }
+
+    [Fact]
     public async Task AddLink_TakesAWebAddress_AndRefusesOthersAndRepeats()
     {
         var id = await _db.Articles().CreateAsync("Okta session theft", "Vendor", "https://vendor.example/okta");
