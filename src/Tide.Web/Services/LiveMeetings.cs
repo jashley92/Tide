@@ -45,6 +45,12 @@ public readonly record struct MeetingChange(DateOnly Day, Guid Origin);
 /// </summary>
 public readonly record struct MeetingScroll(DateOnly Day, Guid Origin, string? SlideKey, int Slide, double Fraction);
 
+/// <summary>
+/// A meeting the sweep dropped with no one in it (nobody ended it): when each person who came was last seen there, by user
+/// id, and when it was dropped, for the attendance record to be closed (<see cref="Tide.Application.Briefs.AttendanceCloser"/>).
+/// </summary>
+public sealed record DroppedMeeting(DateOnly Day, Guid BriefId, IReadOnlyDictionary<string, DateTimeOffset> LastSeenUtc, DateTimeOffset AtUtc);
+
 /// <summary>A page's seat in a live meeting. Disposing it leaves.</summary>
 public interface IMeetingSeat : IDisposable
 {
@@ -104,6 +110,9 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// <see cref="Changed"/>, as it comes often and a page needs only to scroll, not to draw the slides again.
     /// </summary>
     public event Action<MeetingScroll>? Scrolled;
+
+    /// <summary>Raised when the sweep drops a meeting nobody ended (<see cref="Sweep"/>), with who was last seen when.</summary>
+    public event Action<DroppedMeeting>? Dropped;
 
     public LiveMeetingView? Get(DateOnly day)
     {
@@ -311,13 +320,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate)
         {
             if (Seated(seat) is not (var m, var s) || m.PresenterId != s.UserId && !(s.CanPresent && CanTakeOver(m))) return null;
-            var now = _time.GetUtcNow();
-            left = new Dictionary<string, DateTimeOffset>(m.LastLeftAtUtc, StringComparer.Ordinal);
-            foreach (var g in m.Seats.Values.GroupBy(x => x.UserId, StringComparer.Ordinal))
-            {
-                var last = g.Max(x => x.DownSinceUtc ?? now);   // a dropped seat left when its connection went
-                left[g.Key] = left.TryGetValue(g.Key, out var before) && before > last ? before : last;
-            }
+            left = LastSeen(m, _time.GetUtcNow());
             _meetings.Remove(m.Day);
             origin = s.Origin;
         }
@@ -375,11 +378,13 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// <summary>
     /// Says so when a presenter's grace period runs out (the others can take over), and drops meetings nobody has been in
     /// for <see cref="Abandoned"/>, and any whose brief's day hasn't come (the organization's time zone moved under it):
-    /// it couldn't be ended until then. Runs every few seconds.
+    /// it couldn't be ended until then. Runs every few seconds. A dropped meeting is said (<see cref="Dropped"/>) with when
+    /// each person was last seen, as <see cref="End"/> gives it, for the attendance record to say they left.
     /// </summary>
     public void Sweep()
     {
         var changed = new List<DateOnly>();
+        var dropped = new List<DroppedMeeting>();
         lock (_gate)
         {
             var now = _time.GetUtcNow();
@@ -389,6 +394,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 {
                     _meetings.Remove(m.Day);
                     changed.Add(m.Day);
+                    dropped.Add(new DroppedMeeting(m.Day, m.BriefId, LastSeen(m, now), now));
                 }
                 else if (CanTakeOver(m) && !m.TakeOverSaid)
                 {
@@ -398,6 +404,19 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             }
         }
         foreach (var day in changed) Notify(day, Guid.Empty);
+        foreach (var d in dropped) Together.Notify(Dropped, d);
+    }
+
+    // When each person who came was last there: as they left, as their connection went, or now for those still there.
+    private static Dictionary<string, DateTimeOffset> LastSeen(Meeting m, DateTimeOffset now)
+    {
+        var left = new Dictionary<string, DateTimeOffset>(m.LastLeftAtUtc, StringComparer.Ordinal);
+        foreach (var g in m.Seats.Values.GroupBy(x => x.UserId, StringComparer.Ordinal))
+        {
+            var last = g.Max(x => x.DownSinceUtc ?? now);   // a dropped seat left when its connection went
+            left[g.Key] = left.TryGetValue(g.Key, out var before) && before > last ? before : last;
+        }
+        return left;
     }
 
     private bool TooEarly(DateOnly day, DateTimeOffset nowUtc) => _clock is not null && MeetingDay.Before(_clock, day, nowUtc);

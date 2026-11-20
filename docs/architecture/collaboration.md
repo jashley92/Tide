@@ -220,7 +220,10 @@ It raises `Changed` (started, moved, joined, left, ended) and `Scrolled` for pag
 `IMeetingsInProgress`, which the application layer asks: `BriefService.ReopenAsync` is refused while the brief's
 meeting runs, and `MeetingAccess` lets a Visitor read only the brief of a meeting they're seated in
 ([security.md](security.md)). What's kept is the database's (`MeetingService`): attendees as they join and notes, each
-publishing `meeting:{briefId}`. The meeting workflow is in [brief-and-meeting.md](../workflows/brief-and-meeting.md).
+publishing `meeting:{briefId}`. A meeting the sweeper drops raises `Dropped`, with when each person was last seen (as
+`End` gives it); `MeetingAttendanceHostedService` then has `AttendanceCloser` give everyone still marked there a left
+time, as the system (no one is signed in), keeping any time already recorded. At start-up it closes whoever a restart
+left marked as there, at the start-up time, since when they were last seen went with the meeting. The meeting workflow is in [brief-and-meeting.md](../workflows/brief-and-meeting.md).
 
 ## Concurrency: claim in one statement
 
