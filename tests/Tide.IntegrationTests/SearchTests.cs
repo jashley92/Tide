@@ -440,11 +440,6 @@ public class SearchServiceTests : IDisposable
     }
 }
 
-/// <summary>
-/// The Search page on a lookup: its first line says whether the indicator or CVE is known and whether anyone is on it,
-/// each article is listed once, the hunt query is there on the first render in the language the person used last (and
-/// looking at it saves nothing), "Seen with" links to the other values, and nobody below the team edition gets any of it.
-/// </summary>
 /// <summary>The search page's article count at and past where its pages go, on an app of its own (it adds two thousand articles).</summary>
 public class SearchCapPageTests(TideApp app) : IClassFixture<TideApp>
 {
@@ -478,6 +473,11 @@ public class SearchCapPageTests(TideApp app) : IClassFixture<TideApp>
     }
 }
 
+/// <summary>
+/// The Search page on a lookup: its first line says whether the indicator or CVE is known and whether anyone is on it,
+/// each article is listed once, the hunt query is there on the first render in the language the person used last (and
+/// looking at it saves nothing), "Seen with" links to the other values, and nobody below the team edition gets any of it.
+/// </summary>
 public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 {
     // Each test signs in as its own person, so a saved query language can't reach another test.
