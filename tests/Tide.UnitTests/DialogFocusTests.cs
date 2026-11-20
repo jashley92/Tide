@@ -25,6 +25,14 @@ public partial class DialogFocusTests
         modals.Select(x => x.File).Should().Contain(["ModalShell.razor", "AttackMatrixPicker.razor"]);
         modals.Where(x => !x.Tag.Contains("tabindex=\"-1\"", StringComparison.Ordinal)).Select(x => x.File)
             .Should().BeEmpty("a click on the dialog's text keeps focus in it, so Escape still closes it");
+
+        // Each of the dialogs drawn in ModalShell either still is, or draws its own modal that takes focus (and so is
+        // in the list above): one gone back to hand-written markup without it can't slip through.
+        string[] framed = ["ConfirmDialog.razor", "LeaveDialog.razor", "ScreenshotDialog.razor", "ShortcutsOverlay.razor", "WhatsNewDialog.razor"];
+        var files = Directory.GetFiles(src, "*.razor", SearchOption.AllDirectories).ToDictionary(f => Path.GetFileName(f), File.ReadAllText);
+        framed.Where(f => !files[f].Contains("<ModalShell", StringComparison.Ordinal)
+                && !modals.Any(m => m.File == f && m.Tag.Contains("tabindex=\"-1\"", StringComparison.Ordinal)))
+            .Should().BeEmpty("each is drawn in ModalShell, or its own modal takes focus when its text is clicked");
     }
 
     // An element opening tag with aria-modal="true", across lines.
