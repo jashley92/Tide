@@ -1,0 +1,4 @@
+{
+ "open": false,
+ "focus": "<button type=\"button\" class=\"tide-zoom\" aria-label=\"Open screenshot 1\"><img src=\"files/43e64716-d645-4b30-a999-5db596ab0050/inline\" alt=\"Vendor advisory: affect"
+}

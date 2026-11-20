@@ -1,0 +1,4 @@
+{
+ "open": false,
+ "focus": "<h1 tabindex=\"-1\">Today, Thursday, November 19, 2026</h1>"
+}

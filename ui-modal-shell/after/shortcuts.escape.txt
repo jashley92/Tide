@@ -1,0 +1,4 @@
+{
+ "open": false,
+ "focus": "<button type=\"button\" class=\"tide-shortcuts-btn\" aria-haspopup=\"dialog\" aria-keyshortcuts=\"Shift+?\" aria-label=\"Keyboard shortcuts\" title=\"Keyboard shortcuts (?"
+}
