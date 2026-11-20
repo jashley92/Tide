@@ -102,7 +102,7 @@
             <td class="small">
                 @foreach (var (d, i) in r.BriefDates.Select((d, i) => (d, i)))
                 {
-                    @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a>
+                    @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d, Clock.Today)</a>
                 }
             </td>
             <td class="small tide-muted">@r.AuthorName<br />@Ui.When(Clock, r.CreatedAtUtc)</td>

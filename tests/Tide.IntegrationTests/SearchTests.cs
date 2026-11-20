@@ -436,7 +436,10 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // How the first line names a brief that hasn't been presented.
-    private string NotPresented(DateOnly day) => day == Clock.Today ? "on today's brief, not presented yet" : $"on the brief for {day:ddd MMM d}, not presented yet";
+    private string NotPresented(DateOnly day) => day == Clock.CurrentBriefDate ? "on today's brief, not presented yet" : $"on the brief for {Day(day)}, not presented yet";
+
+    // A brief's day as the page names it: with its year when that isn't this year (41 working days back can be last year's).
+    private string Day(DateOnly day) => Tide.Web.Components.Shared.Ui.ShortDay(day, Clock.Today);
 
     private async Task<Guid> Article(string title, IEnumerable<(IndicatorType Type, string Value)> indicators, IEnumerable<string>? cves = null,
         IEnumerable<string>? techniques = null, DateOnly? brief = null, bool presented = false)
@@ -514,7 +517,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 
         var html = await Page(domain);
 
-        Summary(html).Should().Be($"On 1 article · briefed {day:ddd MMM d} · 2 actions open · no hunt result yet");
+        Summary(html).Should().Be($"On 1 article · briefed {Day(day)} · 2 actions open · no hunt result yet");
         Inside(html, "lookup-summary").Should().Contain($"href=\"briefs/{day:yyyy-MM-dd}\"");
         var sweeping = Inside(html, "lookup-sweeping");
         sweeping.Should().Contain("Lookup sweep for it").And.NotContain("Lookup block for it").And.Contain($"href=\"actions/{sweep}\"");
@@ -537,7 +540,21 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var earlier = Unique("earlier") + ".example.net";
         var day = Past(43);
         await Article("Lookup on an unpresented brief", [(IndicatorType.Domain, earlier)], brief: day);
-        Summary(await Page(earlier)).Should().Be($"On 1 article · on the brief for {day:ddd MMM d}, not presented yet · no action raised");
+        Summary(await Page(earlier)).Should().Be($"On 1 article · on the brief for {Day(day)}, not presented yet · no action raised");
+    }
+
+    [Fact]
+    public async Task ABriefFromAnEarlierYear_IsNamedWithItsYear()
+    {
+        var domain = Unique("lastyear") + ".example.net";
+        var day = new DateOnly(2025, 9, 16);
+        var id = await Article("Lookup briefed in 2025", [(IndicatorType.Domain, domain)], brief: day, presented: true);
+
+        var html = await Page(domain);
+
+        Summary(html).Should().Be("On 1 article · briefed Tue Sep 16, 2025 · no action raised");
+        var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
+        WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]).Should().Contain(">Tue Sep 16, 2025</a>");
     }
 
     [Fact]
@@ -608,7 +625,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
         row = WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]);
         row.Should().Contain("TLP:AMBER").And.Contain("Informational").And.Contain("This indicator")
-            .And.Contain($"{day:ddd MMM d}").And.Contain("</td><td");
+            .And.Contain(Day(day)).And.Contain("</td><td");
         html.Should().Contain("<h3 class=\"tide-card-title\">Actions raised</h3>", "the card's heading starts at its top, with no band above it");
 
         var cve = NewCve();
