@@ -588,6 +588,6 @@ public class UnmakeableScreenshotFolderTests(UnmakeableFilesFolderApp app) : ICl
         Audit.ServiceScopes.SignIn(scope, Permission.Administer);
         var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
         report.Checks.Should().Contain(c => c.Label == "Screenshot folder" && c.Level == CheckLevel.Problem
-            && c.Detail == "It doesn't exist yet: it's made at the first upload.");
+            && c.Detail == "Start-up couldn't create it. The Tide.Files warning in the log says why: usually the app pool's permissions, or a wrong Files:RootPath.");
     }
 }

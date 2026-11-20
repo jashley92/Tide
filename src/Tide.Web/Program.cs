@@ -234,6 +234,7 @@ using (var scope = app.Services.CreateScope())
 // The file store makes its folder when it's first built. Building it now, rather than at the first upload or the intake
 // job's first pass, means Diagnostics on a new server finds the screenshot folder ready. A folder the app pool can't make
 // doesn't stop the app: Diagnostics reports it, and the next use of the store tries again.
+// On an unreachable UNC share, making the folder can block until the SMB timeout, and that wait is now part of start-up.
 try { app.Services.GetRequiredService<IFileStore>(); }
 catch (Exception ex)
 {
