@@ -40,7 +40,7 @@ public class OperationsBugRoundTests : IDisposable
         services.AddScoped(_ => _db.Reminders(options, clock));
         await using var provider = services.BuildServiceProvider();
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(), TimeProvider.System,
+        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(),
             NullLogger<ReminderHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);

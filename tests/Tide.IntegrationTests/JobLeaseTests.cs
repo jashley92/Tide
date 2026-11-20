@@ -142,7 +142,7 @@ public class JobLeaseTests
         await using var provider = new ServiceCollection().BuildServiceProvider();
         var jobs = new JobMonitor(TimeProvider.System);
         var lease = new StandbyLease();
-        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, lease, TimeProvider.System,
+        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, lease,
             NullLogger<ReminderHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);
@@ -160,7 +160,7 @@ public class JobLeaseTests
         await using var provider = new ServiceCollection().AddSingleton(db.Webhooks()).BuildServiceProvider();
         var scopes = provider.GetRequiredService<IServiceScopeFactory>();
         var jobs = new JobMonitor(TimeProvider.System);
-        WebhookHostedService Hosted(IJobLease lease) => new(scopes, jobs, lease, TimeProvider.System, NullLogger<WebhookHostedService>.Instance);
+        WebhookHostedService Hosted(IJobLease lease) => new(scopes, jobs, lease, NullLogger<WebhookHostedService>.Instance);
         await db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
 
         // Another process sends them: this one was shown "on, next due in a minute" for good.
@@ -191,7 +191,7 @@ public class JobLeaseTests
             Microsoft.Extensions.Options.Options.Create(new Tide.Application.Distribution.AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System, db.Settings());
         await using var provider = new ServiceCollection().AddSingleton(webhooks).BuildServiceProvider();
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new WebhookHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(), TimeProvider.System,
+        var hosted = new WebhookHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(),
             NullLogger<WebhookHostedService>.Instance);
 
         // Off, and the database down: it stays off, with no failure to show for a job that isn't on.
