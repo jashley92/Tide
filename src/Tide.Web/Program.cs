@@ -231,6 +231,16 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// The file store makes its folder when it's first built. Building it now, rather than at the first upload or the intake
+// job's first pass, means Diagnostics on a new server finds the screenshot folder ready. A folder the app pool can't make
+// doesn't stop the app: Diagnostics reports it, and the next use of the store tries again.
+try { app.Services.GetRequiredService<IFileStore>(); }
+catch (Exception ex)
+{
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Files")
+        .LogWarning(ex, "Couldn't make the files folder (Files:RootPath) at start-up; Administration > System > Diagnostics shows why.");
+}
+
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
 if (demoMode)
     await DemoSeeder.SeedAsync(app.Services, app.Configuration, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Demo"));
