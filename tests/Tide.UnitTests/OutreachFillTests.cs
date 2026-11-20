@@ -157,6 +157,45 @@ public class OutreachFillTests
             .Should().Contain("[[article.cve-links: above TLP:GREEN, left out]]");
     }
 
+    [Fact]
+    public void TheCvesDetailed_GiveAParagraphEach_WithWhatTideKnows_AndTheIdAndLinkAlone_ForOneItDoesnt()
+    {
+        var facts = Facts(Article(TlpLevel.Green), TlpLevel.Green) with
+        {
+            Cves = new Dictionary<string, CveRecord>
+            {
+                ["CVE-2026-1234"] = new()
+                {
+                    CveId = "CVE-2026-1234", CvssScore = 9.8m, CvssSeverity = "CRITICAL", IsKev = true, KevAddedDate = new(2026, 11, 1),
+                    KevDueDate = new(2026, 11, 22), KevRansomware = true, EpssScore = 0.941m, Vendor = "Ivanti", Product = "Connect Secure",
+                    Description = "A pre-auth flaw\nin the gateway.",
+                },
+            },
+        };
+        var d = OutreachFill.Fill("x", "{{article.cves-detailed}}", facts);
+
+        d.Body.Should().EndWith("\n\nCVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-0002\n\n"
+            + "CVE-2026-1234: CVSS 9.8 critical; on CISA's KEV list since Nov 1, 2026, due Nov 22, 2026, used in ransomware; EPSS 94.1%\n"
+            + "Ivanti Connect Secure\nA pre-auth flaw in the gateway.\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n");
+        d.Marking.Should().Be(TlpLevel.Green);
+    }
+
+    [Fact]
+    public void TheStarterTemplates_WriteAnEmail_ForAnArticleWithNoCvesOrOtherLinks()
+    {
+        var article = Article();
+        article.Cves = [];
+        article.SourceUrl = null;
+        var facts = Facts(article, TlpLevel.Amber);
+        foreach (var s in StarterOutreachTemplates.All)
+        {
+            OutreachFill.Check(s.Subject);
+            OutreachFill.Check(s.Body);
+            var d = OutreachFill.Fill(s.Subject, s.Body, facts);
+            d.Unfilled.Should().BeEmpty(s.Name);
+        }
+    }
+
     // --- optional placeholders ----------------------------------------------------------------------------------------
 
     [Fact]

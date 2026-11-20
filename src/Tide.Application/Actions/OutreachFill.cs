@@ -113,6 +113,9 @@ public static partial class OutreachFill
     /// <summary>The placeholder for a link to each of the article's CVEs.</summary>
     public const string CveLinksName = "article.cve-links";
 
+    /// <summary>The placeholder for each of the article's CVEs in detail.</summary>
+    public const string CvesDetailedName = "article.cves-detailed";
+
     /// <summary>A CVE's page on the NVD, as the app links it.</summary>
     public static string CveLink(string cveId) => "https://nvd.nist.gov/vuln/detail/" + cveId;
 
@@ -132,6 +135,7 @@ public static partial class OutreachFill
         new("article.other-links", ArticleGroup, "The other reports added to it, one a line."),
         new("article.cves", ArticleGroup, "Its CVEs, one a line, with KEV and EPSS where TIDE knows them."),
         new(CveLinksName, ArticleGroup, "A link to each of its CVEs on the NVD, one a line."),
+        new(CvesDetailedName, ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
         new("article.tlp", ArticleGroup, "The article's TLP, as TLP:GREEN."),
         new(IndicatorsName, IndicatorsGroup, "Every indicator on the article and the action, defanged, one a line."),
         new(IndicatorsName + ":domain", IndicatorsGroup, "One kind only (domain, url, ipv4, sha256…), as the saved hunt queries name them."),
@@ -374,6 +378,7 @@ public static partial class OutreachFill
             "article.other-links" => (OtherLinks(a, f.ArticleLinks), a.Tlp, false),
             "article.tlp" => (Tlp.Label(a.Tlp), a.Tlp, false),
             "article.cves" => (Cves(a, f.Cves), a.Tlp, false),
+            CvesDetailedName => (CvesDetailed(a, f.Cves), a.Tlp, false),
             CveLinksName => (a.Cves.Count == 0 ? null
                 : string.Join("\n", a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase).Select(CveLink)), a.Tlp, false),
             "article.why-it-matters" => cut.ShowWhy
@@ -412,6 +417,40 @@ public static partial class OutreachFill
             sb.Append(id).Append(notes.Count > 0 ? $" ({string.Join("; ", notes)})" : "").Append('\n');
         }
         return sb.ToString().TrimEnd();
+    }
+
+    // A paragraph a CVE, a blank line between:
+    //   CVE-2026-1234: CVSS 9.8 critical; on CISA's KEV list since Nov 1, 2026, due Nov 22, 2026, used in ransomware; EPSS 94.1%
+    //   Ivanti Connect Secure
+    //   The NVD's description.
+    //   https://nvd.nist.gov/vuln/detail/CVE-2026-1234
+    // A line TIDE has nothing for is left out; a CVE it knows nothing about is its id and link.
+    private static string? CvesDetailed(Article a, IReadOnlyDictionary<string, CveRecord> records)
+    {
+        if (a.Cves.Count == 0) return null;
+        var inv = CultureInfo.InvariantCulture;
+        var paragraphs = new List<string>();
+        foreach (var id in a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase))
+        {
+            var lines = new List<string>();
+            var notes = new List<string>();
+            records.TryGetValue(id, out var r);
+            if (r?.CvssScore is { } cvss)
+                notes.Add($"CVSS {cvss.ToString("0.0", inv)}" + (string.IsNullOrWhiteSpace(r.CvssSeverity) ? "" : " " + r.CvssSeverity.Trim().ToLowerInvariant()));
+            if (r is { IsKev: true })
+                notes.Add("on CISA's KEV list"
+                    + (r.KevAddedDate is { } added ? " since " + added.ToString("MMM d, yyyy", inv) : "")
+                    + (r.KevDueDate is { } due ? ", due " + due.ToString("MMM d, yyyy", inv) : "")
+                    + (r.KevRansomware ? ", used in ransomware" : ""));
+            if (r?.EpssScore is { } epss) notes.Add($"EPSS {(epss * 100).ToString("0.#", inv)}%");
+            lines.Add(id + (notes.Count > 0 ? ": " + string.Join("; ", notes) : ""));
+            var made = string.Join(" ", new[] { r?.Vendor, r?.Product }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
+            if (made.Length > 0) lines.Add(made);
+            if (!string.IsNullOrWhiteSpace(r?.Description)) lines.Add(r.Description.ReplaceLineEndings(" ").Trim());
+            lines.Add(CveLink(id));
+            paragraphs.Add(string.Join("\n", lines));
+        }
+        return string.Join("\n\n", paragraphs);
     }
 
     // Defanged, one a line, in the order a hunt groups them; one kind only when the placeholder names it.
