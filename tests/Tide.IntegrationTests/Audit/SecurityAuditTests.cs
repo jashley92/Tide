@@ -353,8 +353,6 @@ public sealed class ListingAuditTests : IDisposable
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
         var teams = () => _db.Teams().ListAsync();
         await teams.Should().ThrowAsync<ForbiddenException>();
-        var mine = () => _db.Teams().TeamsOfAsync("S-1-5-21-MEMBER");
-        await mine.Should().ThrowAsync<ForbiddenException>();
         var tags = () => _db.Scorecard().ListAsync();
         await tags.Should().ThrowAsync<ForbiddenException>();
 
@@ -375,7 +373,7 @@ public sealed class ListingAuditTests : IDisposable
         _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
         _db.User.UserId = "S-1-5-21-OWNER";
         (await _db.Teams().ListAsync()).Should().ContainSingle(t => t.Members.Any(m => m.UserId == "S-1-5-21-OWNER"));
-        (await _db.Teams().TeamsOfAsync("S-1-5-21-OWNER")).Should().Equal(team);
+        (await _db.Actions().WorkersAsync()).Teams.Should().Equal(team);
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         (await _db.Teams().ListAsync()).Should().HaveCount(1);

@@ -1013,7 +1013,7 @@ The escalation contact (EP-88 part C), on any team, internal or external:
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `EscalationName` | nvarchar(200) | yes | Who the escalation ladder copies when the team's actions slip: a manager, a duty lead. |
-| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (`TeamService.SetEscalationContactAsync`). The migration left existing rows null. |
+| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (the team's form: `TeamService.UpdateAsync`, `UpdateExternalAsync`). The migration left existing rows null. |
 
 `TeamMembers` has key `(TeamId, UserId)` and is cascade-deleted with its team. Columns: `UserId`/`DisplayName`
 nvarchar(256) and `AddedAtUtc`. `UserId` is indexed. Members are the people who may work the team's actions, with
