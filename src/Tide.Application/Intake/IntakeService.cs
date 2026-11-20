@@ -132,6 +132,16 @@ public sealed record PromoteUndo(Guid ArticleId, Guid EditVersion, IReadOnlyList
 {
     /// <summary>The brief the promote put the article on (Triage's "Add to today's brief"), which Undo takes it off.</summary>
     public Guid? BriefId { get; init; }
+
+    /// <summary>When the same step started that brief: its edit version just after the article went on it. Undo removes
+    /// the brief too while it's still exactly that (nothing else on it, nobody has changed it).</summary>
+    public Guid? StartedBriefVersion { get; init; }
+
+    /// <summary>The draft as the promote left it: when it was last changed, and how many rows of each table pointed at it
+    /// (<see cref="Referrers"/>). Anything different at Undo is someone's work since.</summary>
+    public DateTimeOffset? ModifiedAtUtc { get; init; }
+
+    public IReadOnlyDictionary<string, int> Children { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>
@@ -1359,7 +1369,11 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             return new(articleId.Value, Made: true)
             {
                 Undo = new(articleId.Value, article.EditVersion,
-                    [.. items.Select(i => new PromotedFrom(i.Id, i.Status, i.StatusByName, i.StatusAtUtc, i.DismissReason, i.DuplicateOfId))]),
+                    [.. items.Select(i => new PromotedFrom(i.Id, i.Status, i.StatusByName, i.StatusAtUtc, i.DismissReason, i.DuplicateOfId))])
+                {
+                    ModifiedAtUtc = article.ModifiedAtUtc,
+                    Children = await Referrers.CountAsync<Article>(db, articleId.Value, ct),
+                },
             };
         }
         catch
@@ -1394,14 +1408,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// <summary>How long a promotion may hold an item before another analyst can take it over (it never finished).</summary>
     internal static readonly TimeSpan ClaimTimeout = TimeSpan.FromMinutes(5);
 
+    // The foreign keys Undo checks by name rather than by count: the reports (each must be one this promote claimed) and
+    // the article's brief items (only on the brief this step put it on); and a brief's own items, when it's removed.
+    private const string ReportsKey = nameof(FeedItem) + "." + nameof(FeedItem.ArticleId), BriefKey = nameof(BriefItem) + "." + nameof(BriefItem.ArticleId),
+        BriefItemsKey = nameof(BriefItem) + "." + nameof(BriefItem.BriefId);
+
     /// <summary>
     /// Undo of a promote made from Triage without opening the draft (the toast's Undo, or Alt+Z): the draft it made is
     /// deleted, taken off the brief the same step put it on, and its reports go back exactly as they were (Shortlisted
-    /// stays Shortlisted, with who decided it and when). Only while the draft is still just what the promote made: no
-    /// one has saved it, added a screenshot, asked for a review, raised an action, attached another report or put it on
-    /// any other brief, and that brief hasn't been sent. Anything else is someone's work, and stands. In one save, so
-    /// it's all or nothing, and audited as the article's deletion and the brief's change are. False when it no longer
-    /// can be undone (or it was already).
+    /// stays Shortlisted, with who decided it and when). Only while the draft is still just what the promote made: the
+    /// article itself unchanged (its edit version, when it was last changed, its status, screenshots and story), and
+    /// every table that points at it holding exactly the rows the promote left (<see cref="Referrers"/>, read from the
+    /// model, so a tag, a link, an AI draft, a review, an action or any table added later all count), its reports still
+    /// the ones this promote claimed, and on no brief but the one this step put it on, unsent. Anything else is
+    /// someone's work, and stands. A brief this step started is removed too while it's still just that. In one save,
+    /// so it's all or nothing, and audited as the article's deletion and the brief's change are. False when it no
+    /// longer can be undone (or it was already).
     /// </summary>
     public async Task<bool> UndoPromoteAsync(PromoteUndo undo, CancellationToken ct = default)
     {
@@ -1409,9 +1431,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         await using var db = await dbs.CreateAsync(ct);
         var article = await db.Articles.FirstOrDefaultAsync(a => a.Id == undo.ArticleId, ct);
         if (article is null || article.Status != ArticleStatus.Draft || article.EditVersion != undo.EditVersion
-            || article.ScreenshotsChangedAtUtc is not null || article.StoryId is not null) return false;
-        if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(a => a.ArticleId == undo.ArticleId, ct)
-            || await db.ArticleReviews.AnyAsync(r => r.ArticleId == undo.ArticleId, ct)) return false;
+            || article.ModifiedAtUtc != undo.ModifiedAtUtc || article.ScreenshotsChangedAtUtc is not null || article.StoryId is not null) return false;
+        // Every table pointing at it as the promote left it. Its reports and its brief are checked by name below.
+        var children = await Referrers.CountAsync<Article>(db, undo.ArticleId, ct);
+        if (children.Any(c => c.Key is not (ReportsKey or BriefKey) && c.Value != undo.Children.GetValueOrDefault(c.Key))) return false;
         // Its reports are still the ones this promote claimed, every one still in it, and no colleague's attached since.
         var reports = await db.FeedItems.Where(i => i.ArticleId == undo.ArticleId).ToListAsync(ct);
         var was = undo.Reports.ToDictionary(r => r.Id);
@@ -1423,15 +1446,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         {
             var brief = await db.Briefs.Include(b => b.Items).FirstAsync(b => b.Id == undo.BriefId, ct);
             if (brief.Status == BriefStatus.Sent) return false;
+            // Started by this step, and still just that: nobody has changed it, and nothing but this article points at it.
+            var untouched = undo.StartedBriefVersion is { } started && brief.EditVersion == started && brief.Status == BriefStatus.Draft
+                && (await Referrers.CountAsync<Brief>(db, brief.Id, ct)).All(c => c.Value == (c.Key == BriefItemsKey ? onBriefs.Count : 0));
             foreach (var item in onBriefs)
             {
                 db.BriefItems.Remove(item);
                 brief.Items.RemoveAll(i => i.Id == item.Id);
             }
-            // The running order closes up, as taking an article off the brief closes it (BriefService.RemoveItemAsync).
-            var n = 0;
-            foreach (var item in brief.Items.OrderBy(i => i.SortOrder)) item.SortOrder = n++;
-            brief.EditVersion = Guid.NewGuid();
+            if (untouched) db.Briefs.Remove(brief);
+            else
+            {
+                // The running order closes up, as taking an article off the brief closes it (BriefService.RemoveItemAsync).
+                var n = 0;
+                foreach (var item in brief.Items.OrderBy(i => i.SortOrder)) item.SortOrder = n++;
+                brief.EditVersion = Guid.NewGuid();
+            }
         }
         _learned = null;   // a decision undone changes what's learned
         foreach (var row in reports)

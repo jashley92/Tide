@@ -139,7 +139,7 @@ public class TriagePromoteAndStayTests(StayApp app) : IClassFixture<StayApp>
 
         var toast = LastToast(r);
         toast.Message.Should().Be($"Promoted “{TitleOf("next", 1)}” to a draft.");
-        toast.Link.Should().Be(new ToastService.ToastLink($"articles/{made.ArticleId}", "Write it"));
+        toast.Link.Should().Be(new ToastService.ToastLink($"/articles/{made.ArticleId}", "Write it"));
         toast.Undo.Should().NotBeNull();
 
         // Again on the next: two promotes, no page change.

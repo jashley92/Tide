@@ -1924,7 +1924,7 @@ else
     private void ToldStayed(TriagePromotion done, TriageGroup? group, string title)
     {
         var outcome = done.Outcome;
-        var link = new ToastService.ToastLink($"articles/{outcome.ArticleId}", outcome.Made ? "Write it" : "Open it");
+        var link = new ToastService.ToastLink($"/articles/{outcome.ArticleId}", outcome.Made ? "Write it" : "Open it");
         if (!outcome.Made)
         {
             Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in an article.", link);
@@ -1941,12 +1941,31 @@ else
         Toasts.Show(said, link, undo, warning: done.NotOnBrief is not null);
     }
 
+    // Waits, on the page's own thread, for the step being saved to finish: true once nothing is, false after UndoWait.
+    private async Task<bool> Idle()
+    {
+        for (var waited = TimeSpan.Zero; _busy; waited += UndoPoll)
+        {
+            if (waited >= UndoWait) return false;
+            await Task.Delay(UndoPoll);
+        }
+        return true;
+    }
+
+    internal static readonly TimeSpan UndoWait = TimeSpan.FromSeconds(10), UndoPoll = TimeSpan.FromMilliseconds(100);
+
     // Undo of a promote that stayed on the inbox, from its toast (or Alt+Z): the draft deleted, off the brief the tick put
     // it on, and its reports back as they were, unless someone has worked on the draft since. The report is selected
     // again where it's shown; an open reading pane follows with text already kept, never fetching.
     internal async Task UndoPromote(PromoteUndo undo)
     {
-        if (_busy) return;
+        // The toast has gone as its Undo was pressed, so it's never dropped without a word: it waits for a step still
+        // being saved (another promote, a dismissal) to finish, then runs; if that takes too long, it says so.
+        if (_busy && !await Idle())
+        {
+            Toasts.Error("The promote wasn't undone: another change was still being saved. Delete the draft from the editor (Write it, then Delete draft) if it isn't wanted.");
+            return;
+        }
         _busy = true;
         try
         {

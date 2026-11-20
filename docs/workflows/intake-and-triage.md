@@ -461,12 +461,25 @@ put on the brief: it's theirs to place.
 
 **Undo** (`IntakeService.UndoPromoteAsync`, with the `PromoteUndo` the promote returned) deletes the draft, takes it off
 the brief the tick put it on (the running order closes up), and puts each report back exactly as it was before the
-claim: its status (New or Shortlisted), who decided it and when, and any dismiss reason or duplicate link. It's
-refused ("Nothing to undo: the draft has been worked on since") once the draft is someone's work: it has been saved
-(its edit version moved), has a screenshot, a review, an action or a story, another report has been attached to it, it's
-on any other brief, or its brief has been sent. Everything happens in one save, so it's all or nothing, and the
-article's deletion and the brief's change are audited as they are from their own pages. *Promote and write* offers no
-Undo: the editor's *Delete draft* is the way back there, which puts the items in New.
+claim: its status (New or Shortlisted), who decided it and when, and any dismiss reason or duplicate link. If the
+promote started that brief, and nothing else has changed it or been put on it since, the brief goes too; a brief that
+was there already, or one someone has changed since, stays, just without this article.
+
+Undo is refused ("Nothing to undo: the draft has been worked on since") once the draft is someone's work, so a tag or
+an AI draft made after *Write it* opened it in another tab is never deleted by Alt+Z. The promote keeps a snapshot of
+the draft as it left it: its edit version, when it was last changed, and how many rows of every table that points at
+an article refer to it. That list of tables is read from the data model's foreign keys (`Intake/Referrers.cs`), not
+kept by hand, so tags, adversaries, products, links, AI drafts, reviews, actions, screenshots and any table added later
+all count. Undo goes ahead only while all of that is unchanged, its reports are still the ones this promote claimed,
+and it's on no brief but the one this step put it on, which hasn't been sent. A test lists today's tables
+(`TriagePromoteUndoTests`), so a new one gets a look. Everything happens in one save, so it's all or nothing, and the
+article's deletion and the brief's change are audited as they are from their own pages. An Undo pressed while another
+step on the page is still saving waits for it (up to 10 seconds), and otherwise says it wasn't done, rather than
+dropping it. *Promote and write* offers no Undo: the editor's *Delete draft* is the way back there, which puts the items
+in New.
+
+The toast's *Write it* link, like any toast link (`ToastService.ToastLink`), may only be a path in TIDE ("/articles/…");
+anything else is refused as it's made.
 
 What the draft gets (`IntakeService.PromoteManyAsync`, then `ArticleService.CreateAsync`):
 

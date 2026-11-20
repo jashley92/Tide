@@ -38,7 +38,7 @@
             @* Where it made something (Triage's promote that stays on the inbox): a link on to it. *@
             @if (t.Link is { } link)
             {
-                <a class="tide-toast-link" href="@link.Href" @onclick="() => Dismiss(t.Id)">@link.Text</a>
+                <a class="tide-toast-link" href="@link.Relative" @onclick="() => Dismiss(t.Id)">@link.Text</a>
             }
             @if (t.Undo is not null)
             {

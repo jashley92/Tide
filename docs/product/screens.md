@@ -266,7 +266,8 @@ the page stops it after the source it's on.
   always has. **Promote and keep triaging** (Shift+Enter) makes the draft and stays on the inbox: the row leaves the
   tab, the next one is selected, and a toast says what was made, with **Write it** (opens the draft) and **Undo**
   (Alt+Z too). Undo deletes the draft and puts the item back where it was, Shortlisted included, as long as nobody has
-  worked on the draft since. So four promotes cost no page changes, and the drafts wait on the Promoted tab and the
+  worked on the draft since (an edit, a tag, a link, an AI draft, a review, an action: anything), and removes a brief
+  the promote started if nothing else has touched it. So four promotes cost no page changes, and the drafts wait on the Promoted tab and the
   Articles list.
 - **Add to today's brief.** A tick in the form puts the draft on the end of today's running order (the next working
   day's on a weekend), starting the brief if there's none, with either button. It's off until the analyst ticks it, and

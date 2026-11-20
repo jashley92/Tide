@@ -46,9 +46,13 @@ public sealed class TriagePromoter(IntakeService intake, BriefService briefs, IC
         if (!outcome.Made) return new(outcome, NotOnBrief: $"{outcome.By} made this article, so it wasn't added to the brief.");
         try
         {
-            var brief = await briefs.GetOrStartAsync(briefs.CurrentDate, ct);
+            var day = briefs.CurrentDate;
+            var had = await briefs.GetAsync(day, ct) is not null;
+            var brief = await briefs.GetOrStartAsync(day, ct);
             await briefs.AddArticleAsync(brief.Id, outcome.ArticleId, ct: ct);
-            return new(outcome, brief.BriefDate) { Undo = outcome.Undo! with { BriefId = brief.Id } };
+            // A brief this step started, as it is now (the article on it): Undo removes it while it's still just that.
+            var started = had ? null : (await briefs.GetAsync(day, ct))?.EditVersion;
+            return new(outcome, brief.BriefDate) { Undo = outcome.Undo! with { BriefId = brief.Id, StartedBriefVersion = started } };
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException)
         {
