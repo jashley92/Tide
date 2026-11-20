@@ -4579,7 +4579,7 @@ const pages = [
   // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
   { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
-      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
+      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
       fits('.tide-stack-list')] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
   // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
@@ -4598,7 +4598,7 @@ const pages = [
   { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
-      [900, fits('.tide-stack-table td')]] },
+      [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
