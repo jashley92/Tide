@@ -46,6 +46,27 @@ public class ReportsPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task AnAssessment_StaysWithItsPeriod_AndTheNextPeriodStartsEmpty()
+    {
+        // Earlier and Later keep the same page and change only ?p=; October's assessment showed, and printed, under November.
+        await using var r = await ComponentHarness.RenderAsync<Reports>(app, "/reports?p=2026-10");
+        await r.Click(c =>
+        {
+            c.Note("headlines", "October was quiet");
+            return c.SetParametersAsync(Microsoft.AspNetCore.Components.ParameterView.Empty);
+        });
+        (await r.Html()).Should().Contain("October was quiet", "the same period drawn again keeps what the lead wrote");
+
+        await r.Click(c =>
+        {
+            c.PeriodParam = "2026-11";
+            return c.SetParametersAsync(Microsoft.AspNetCore.Components.ParameterView.Empty);
+        });
+        var november = System.Net.WebUtility.HtmlDecode(await r.Html());
+        november.Should().Contain("Monthly report · November 2026").And.NotContain("October was quiet");
+    }
+
+    [Fact]
     public async Task TrendsTiles_OpenWhatTheyCount_AndTheOutcomesRowFollows()
     {
         await using var r = await ComponentHarness.RenderAsync<Trends>(app, "/trends?p=2026-W44");
