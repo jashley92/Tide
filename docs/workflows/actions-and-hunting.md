@@ -881,7 +881,7 @@ others. An administrator can run any scan now from Teams & SLA.
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
 | External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with); `contact-reminded` per action, day and contact |
-| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `escalation-email` per step and address, as each email goes (so a run killed before it climbed doesn't send it again); `contact-reminded` as above |
+| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `escalation-email` per step and address, as each email goes (so a run killed before it climbed doesn't send it again; pruned once the step is marked and the action has been closed 90 days); `contact-reminded` as above |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -889,6 +889,13 @@ recipient, marks the email with the highest TLP of the articles its actions came
 writes a `NotificationMark` as each email goes, so a scan stopped partway resumes with only those not reached. A
 reminder's key includes the due date, so moving the date earns a new reminder. The wording of each is an email
 template (see [administration.md](administration.md#email-templates)).
+
+Once a day the reminder job prunes the marks that can't stop a send again (`ReminderService.PruneMarksAsync`): a past
+period's, 90 days on, and, for an action closed (or closed and deleted) more than 90 days ago, the per-recipient marks
+under a mark that stays: `due-soon` and `overdue` per recipient under the action's own, and `escalation-email` under its
+step's `escalation` mark. An email mark whose step was never marked (a run stopped before it climbed) stays. An open
+action keeps every mark, and a closed one keeps the marks its scans would read again, so reopening it sends nothing
+twice. See [data-model.md](../architecture/data-model.md#notificationmarks-not-audited).
 
 ### Who's reminded
 

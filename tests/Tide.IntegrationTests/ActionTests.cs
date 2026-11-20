@@ -1177,6 +1177,61 @@ public class ReminderTests : IDisposable
         _db.Email.Sent.Should().HaveCount(sent);
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task PruningMarks_DropsAClosedActionsEscalationEmailMarks_WhereTheirStepIsMarked_AndKeepsAnOpenActionsAndARecentlyClosedOnes(string provider)
+    {
+        _db = _db.On(provider);
+        var (closed, open, options) = await RemindedThenOneClosedLongAgo();
+        Guid team;
+        await using (var ctx = _db.Context())
+            team = await ctx.Actions.Where(a => a.Id == open).Select(a => a.TeamId).SingleAsync();
+        var recent = (await _db.Actions().GetAsync(await _db.Actions().CreateAsync(new ActionForm
+        {
+            Title = "Closed last week", TeamId = team, DueDate = _db.Clock.Today.AddDays(-3),
+        })))!.Action.Id;
+        (await _db.Reminders(options).RunAsync(ReminderKind.Escalation)).Should().BeGreaterThan(0);
+        await _db.Actions().SetStatusAsync(recent, ActionStatus.Cancelled, ActionOutcome.None, null);
+        // An email that went in a run that stopped before its step was marked: the ladder still reads it, so it stays.
+        var unclaimed = $"{closed:N}:{_db.Clock.Today.AddDays(-3):yyyy-MM-dd}:-9.1|r:0123456789abcdef";
+        await using (var ctx = _db.Context())
+        {
+            ctx.NotificationMarks.Add(new NotificationMark { Kind = "escalation-email", Key = unclaimed, SentAtUtc = _db.Clock.Now.ToUniversalTime().AddDays(-120) });
+            await ctx.SaveChangesAsync();
+        }
+        var before = await Marks();
+        bool Of(Guid id, (string Kind, string Key) m) => m.Key.Contains(id.ToString("N"), StringComparison.Ordinal);
+        foreach (var id in new[] { closed, open, recent })
+            before.Count(m => m.Kind == "escalation-email" && Of(id, m) && m.Key != unclaimed).Should().Be(2, "the ladder's reminder went to each member");
+
+        (await _db.Reminders(options).PruneMarksAsync()).Should().BeGreaterThan(0);
+
+        var after = await Marks();
+        after.Where(m => Of(closed, m) && m.Kind == "escalation-email").Should().Equal([("escalation-email", unclaimed)],
+            "an email whose step is marked is never read again; one whose step isn't, is");
+        after.Where(m => Of(closed, m) && m.Kind == "escalation").Should().BeEquivalentTo(before.Where(m => Of(closed, m) && m.Kind == "escalation"),
+            "the step's own mark stays, so the ladder never runs it again");
+        after.Where(m => Of(open, m)).Should().BeEquivalentTo(before.Where(m => Of(open, m)), "an open action keeps every mark");
+        after.Where(m => Of(recent, m)).Should().BeEquivalentTo(before.Where(m => Of(recent, m)), "one closed within the retention keeps every mark");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AfterPruningTheLaddersEmailMarks_ReopeningTheAction_SendsNoEscalationAgain(string provider)
+    {
+        _db = _db.On(provider);
+        var (closed, _, options) = await RemindedThenOneClosedLongAgo();
+        (await _db.Reminders(options).PruneMarksAsync()).Should().BeGreaterThan(0);
+        (await Marks()).Should().NotContain(m => m.Kind == "escalation-email" && m.Key.StartsWith(closed.ToString("N"), StringComparison.Ordinal));
+        var sent = _db.Email.Sent.Count;
+
+        await _db.Actions().SetStatusAsync(closed, ActionStatus.Open, ActionOutcome.None, null);
+        (await _db.Reminders(options).RunAsync(ReminderKind.Escalation)).Should().Be(0, "its step is still marked for that due date");
+        _db.Email.Sent.Should().HaveCount(sent);
+        await using var ctx = _db.Context();
+        (await ctx.ActionEvents.CountAsync(e => e.ActionId == closed && e.ByName == ReminderService.EscalatedBy)).Should().Be(1, "it climbed once, before it closed");
+    }
+
     [Fact]
     public async Task PruningMarks_RunsWithTheReminderJob_AtMostOnceADay()
     {

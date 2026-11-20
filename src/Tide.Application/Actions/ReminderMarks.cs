@@ -33,7 +33,8 @@ public sealed partial class ReminderService
     /// <item>A past period's marks (<see cref="PeriodMarks"/>) go once they're older than the retention.</item>
     /// <item>For an action closed more than <see cref="MarkRetentionDays"/> ago (deleted ones too): its recipients' due-soon
     /// and overdue marks, where the action's own mark for that kind and due date is kept (a scan that finds that mark
-    /// never reads its recipients'); the marks saying which personal digests listed it (should it be reopened, the next
+    /// never reads its recipients'); the escalation ladder's email marks, where their step's mark is kept (the ladder never
+    /// runs a marked step again, nor reads that step's emails); the marks saying which personal digests listed it (should it be reopened, the next
     /// digest lists it as new to them again, in an email that goes anyway); and the follow-up marks of its outreach emails
     /// that have a reply (the follow-up only reads those without one).</item>
     /// </list>
@@ -109,15 +110,19 @@ public sealed partial class ReminderService
             var prefixes = ids.Select(id => id.ToString("N")).ToList();
             var doomed = new List<(string Kind, string Key)>();
 
-            // Recipients' due marks, where the action's own mark for the same kind and due date is there to stop the scan.
-            // Read as key ranges, one an action, so each is a seek on the key.
-            var due = new List<(string Kind, string Key)>();
-            foreach (var kind in new[] { "due-soon", "overdue" })
+            // Per-recipient marks ("{whole}|{who}"), where the mark that stops the scan before it reads them ("{whole}") is
+            // there: recipients' due marks under the action's own for the same kind and due date, and the escalation
+            // ladder's emails under their step's mark (the ladder reads them only for steps not yet marked). Read as key
+            // ranges, one an action, so each is a seek on the key.
+            var marks = new List<(string Kind, string Key)>();
+            foreach (var kind in new[] { "due-soon", "overdue", EscalationMark, EscalationEmailMark })
                 foreach (var chunk in prefixes.Chunk(RangesPerQuery))
-                    due.AddRange((await db.NotificationMarks.AsNoTracking().Where(KeysStartingWith(kind, chunk)).Select(m => m.Key).ToListAsync(ct))
+                    marks.AddRange((await db.NotificationMarks.AsNoTracking().Where(KeysStartingWith(kind, chunk)).Select(m => m.Key).ToListAsync(ct))
                         .Where(k => chunk.Any(p => k.StartsWith(p, StringComparison.Ordinal))).Select(k => (kind, k)));
-            var whole = due.Where(m => !m.Key.Contains('|')).ToHashSet();
-            doomed.AddRange(due.Where(m => m.Key.IndexOf('|') is var bar and > 0 && whole.Contains((m.Kind, m.Key[..bar]))));
+            // The step's mark stands for its emails: it's what the ladder looks for before it reads them.
+            var whole = marks.Where(m => !m.Key.Contains('|'))
+                .Select(m => (Kind: m.Kind == EscalationMark ? EscalationEmailMark : m.Kind, m.Key)).ToHashSet();
+            doomed.AddRange(marks.Where(m => m.Kind != EscalationMark && m.Key.IndexOf('|') is var bar and > 0 && whole.Contains((m.Kind, m.Key[..bar]))));
 
             // Which personal digests listed it: "{who}:{action}", for each reader that has any.
             readers ??= await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest-seen")
