@@ -1,4 +1,4 @@
-=== draft / Analyst Side Analyst / today (46 commands)
+=== draft / Analyst Side Analyst / today (43 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
@@ -24,7 +24,7 @@
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== draft / Analyst Side Analyst / day (35 commands)
+=== draft / Analyst Side Analyst / day (32 commands)
 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
@@ -42,7 +42,7 @@
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</li></ul></div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== draft / Analyst Robin / today (47 commands)
+=== draft / Analyst Robin / today (44 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
@@ -77,7 +77,7 @@
 <li>You present {shortday} to {shortday}</li></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== draft / Analyst Robin / day (35 commands)
+=== draft / Analyst Robin / day (32 commands)
 same as draft / Analyst Side Analyst / day
 === draft / ActionOwner Side Owner / today (26 commands)
 
@@ -127,13 +127,13 @@ same as draft / Analyst Side Analyst / day
 <h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === draft / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== ready / Analyst Side Analyst / today (46 commands)
+=== ready / Analyst Side Analyst / today (43 commands)
 same as draft / Analyst Side Analyst / today
-=== ready / Analyst Side Analyst / day (35 commands)
+=== ready / Analyst Side Analyst / day (32 commands)
 same as draft / Analyst Side Analyst / day
-=== ready / Analyst Robin / today (47 commands)
+=== ready / Analyst Robin / today (44 commands)
 same as draft / Analyst Robin / today
-=== ready / Analyst Robin / day (35 commands)
+=== ready / Analyst Robin / day (32 commands)
 same as draft / Analyst Side Analyst / day
 === ready / ActionOwner Side Owner / today (26 commands)
 same as draft / ActionOwner Side Owner / today
@@ -143,7 +143,7 @@ same as draft / ActionOwner Side Owner / day
 same as draft / Viewer Side Viewer / today
 === ready / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== live meeting / Analyst Side Analyst / today (46 commands)
+=== live meeting / Analyst Side Analyst / today (43 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
@@ -170,9 +170,9 @@ same as draft / ActionOwner Side Owner / day
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== live meeting / Analyst Side Analyst / day (35 commands)
+=== live meeting / Analyst Side Analyst / day (32 commands)
 same as draft / Analyst Side Analyst / day
-=== live meeting / Analyst Robin / today (47 commands)
+=== live meeting / Analyst Robin / today (44 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
@@ -208,7 +208,7 @@ same as draft / Analyst Side Analyst / day
 <li>You present {shortday} to {shortday}</li></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== live meeting / Analyst Robin / day (35 commands)
+=== live meeting / Analyst Robin / day (32 commands)
 same as draft / Analyst Side Analyst / day
 === live meeting / ActionOwner Side Owner / today (26 commands)
 
@@ -251,13 +251,13 @@ same as draft / ActionOwner Side Owner / day
 <h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact"><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === live meeting / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== presented / Analyst Side Analyst / today (46 commands)
+=== presented / Analyst Side Analyst / today (43 commands)
 same as live meeting / Analyst Side Analyst / today
-=== presented / Analyst Side Analyst / day (35 commands)
+=== presented / Analyst Side Analyst / day (32 commands)
 same as draft / Analyst Side Analyst / day
-=== presented / Analyst Robin / today (47 commands)
+=== presented / Analyst Robin / today (44 commands)
 same as live meeting / Analyst Robin / today
-=== presented / Analyst Robin / day (35 commands)
+=== presented / Analyst Robin / day (32 commands)
 same as draft / Analyst Side Analyst / day
 === presented / ActionOwner Side Owner / today (26 commands)
 same as live meeting / ActionOwner Side Owner / today
@@ -267,7 +267,7 @@ same as draft / ActionOwner Side Owner / day
 same as live meeting / Viewer Side Viewer / today
 === presented / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== sent / Analyst Side Analyst / today (47 commands)
+=== sent / Analyst Side Analyst / today (44 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
@@ -294,7 +294,7 @@ same as draft / ActionOwner Side Owner / day
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== sent / Analyst Side Analyst / day (36 commands)
+=== sent / Analyst Side Analyst / day (33 commands)
 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
@@ -312,7 +312,7 @@ same as draft / ActionOwner Side Owner / day
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</li></ul></div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== sent / Analyst Robin / today (48 commands)
+=== sent / Analyst Robin / today (45 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
@@ -348,7 +348,7 @@ same as draft / ActionOwner Side Owner / day
 <li>You present {shortday} to {shortday}</li></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== sent / Analyst Robin / day (36 commands)
+=== sent / Analyst Robin / day (33 commands)
 same as sent / Analyst Side Analyst / day
 === sent / ActionOwner Side Owner / today (26 commands)
 same as live meeting / ActionOwner Side Owner / today

@@ -999,15 +999,35 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         var cves = items.SelectMany(i => i.CveList).Distinct().ToList();
         var byCve = cves.Count == 0 ? [] : await db.ArticleCves.AsNoTracking().Where(c => cves.Contains(c.CveId))
-            .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title, a.SourceUrl })
+            .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title })
             .ToListAsync(ct);
+        // Every recent address is read, as only canonicalizing it here says which match, but just the id and the address:
+        // the title is read below for the few that do.
         var since = DateTimeOffset.UtcNow.AddDays(-120);
         var recentLinks = (await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.CreatedAtUtc >= since)
-                .Select(a => new { a.Id, a.Title, a.SourceUrl }).ToListAsync(ct))
+                .Select(a => new { a.Id, a.SourceUrl }).ToListAsync(ct))
             .Concat(await db.ArticleLinks.AsNoTracking().Where(l => l.AddedAtUtc >= since)
-                .Join(db.Articles, l => l.ArticleId, a => a.Id, (l, a) => new { a.Id, a.Title, SourceUrl = (string?)l.Url }).ToListAsync(ct))
-            .Select(a => (a.Id, a.Title, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct().ToList();
-        var articleIds = byCve.Select(x => x.Id).Concat(recentLinks.Select(x => x.Id)).Distinct().ToList();
+                .Select(l => new { Id = l.ArticleId, SourceUrl = (string?)l.Url }).ToListAsync(ct))
+            .Select(a => (a.Id, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct()
+            .ToLookup(a => a.Url!, a => a.Id);
+        // Each item's matches, at most five, before anything is looked up about them: only those are shown, so only
+        // those are asked about (a few thousand ids at once had made the lookups the slow part of the page).
+        var ofCve = byCve.ToLookup(x => x.CveId, x => x.Id);
+        var matches = new Dictionary<Guid, List<(string Why, Guid Id)>>();
+        foreach (var item in items)
+        {
+            var list = recentLinks[item.Url].Select(id => (Why: Search.RelatedService.SameLink, Id: id))
+                .Concat(item.CveList.SelectMany(cve => ofCve[cve].Select(id => (Why: cve, Id: id))))
+                .Distinct().Take(5).ToList();
+            if (list.Count > 0) matches[item.Id] = list;
+        }
+        var articleIds = matches.Values.SelectMany(l => l.Select(m => m.Id)).Distinct().ToList();
+        if (articleIds.Count == 0) return [];
+        var titles = byCve.DistinctBy(x => x.Id).ToDictionary(x => x.Id, x => x.Title);
+        var untitled = articleIds.Where(id => !titles.ContainsKey(id)).ToList();
+        if (untitled.Count > 0)
+            foreach (var a in await db.Articles.AsNoTracking().Where(a => untitled.Contains(a.Id)).Select(a => new { a.Id, a.Title }).ToListAsync(ct))
+                titles[a.Id] = a.Title;
         var briefs = await Search.Lookups.BriefsAsync(db, articleIds, ct);
         var open = (await db.Actions.AsNoTracking()
                 .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))
@@ -1015,27 +1035,18 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                 .Select(a => new { ArticleId = a.ArticleId!.Value, a.Number }).ToListAsync(ct))
             .GroupBy(a => a.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<int>)g.Select(a => a.Number).Order().ToList());
         var attachable = (await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Where(Unfrozen(db)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-        Coverage Of(string why, Guid id, string title)
+        Coverage Of(string why, Guid id)
         {
             var on = briefs.GetValueOrDefault(id) ?? [];
-            return new(why, id, title, on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
+            return new(why, id, titles[id], on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
             {
                 OnBrief = on.Where(b => !b.Presented).Select(b => (DateOnly?)b.Day).Max(),
                 OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
             };
         }
-        var result = new Dictionary<Guid, IReadOnlyList<Coverage>>();
-        foreach (var item in items)
-        {
-            var list = new List<Coverage>();
-            foreach (var a in recentLinks.Where(a => a.Url == item.Url))
-                list.Add(Of(Search.RelatedService.SameLink, a.Id, a.Title));
-            foreach (var cve in item.CveList)
-                foreach (var a in byCve.Where(x => x.CveId == cve).DistinctBy(x => x.Id))
-                    list.Add(Of(cve, a.Id, a.Title));
-            if (list.Count > 0) result[item.Id] = list.DistinctBy(c => (c.Why, c.ArticleId)).Take(5).ToList();
-        }
-        return result;
+        // An article deleted between the reads above has no title: it's left out, as it would have been a moment later.
+        return matches.Select(m => (m.Key, List: m.Value.Where(x => titles.ContainsKey(x.Id)).Select(x => Of(x.Why, x.Id)).ToList()))
+            .Where(m => m.List.Count > 0).ToDictionary(m => m.Key, m => (IReadOnlyList<Coverage>)m.List);
     }
 
     // --- triage ---------------------------------------------------------------------------------------------------
