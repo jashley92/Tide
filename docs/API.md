@@ -652,6 +652,9 @@ In **Administration › API access › Webhooks** (administrators only):
    in a burst.
 4. **Remove** deletes it.
 
+If another administrator removed a webhook after the page listed it, any of these says so in a message and the list
+is read again; a token or secret still on show stays.
+
 The table shows each webhook's last post: its HTTP status and time, or the error. If the server's data protection
 keys are lost or replaced, the secret can't be read: every post fails with "The signing secret can't be read", and
 the webhook must be added again.
