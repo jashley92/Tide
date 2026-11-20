@@ -922,7 +922,7 @@ notifications** (`/notifications`, from the account menu). The choices are `User
 |---|---|---|
 | `notify.dueSoon`, `notify.overdue`, `notify.teamDigest` | `on` (default), `off` | `ReadActions` |
 | `notify.outreachFollowUp` | `on`, `off` | `WorkActions` |
-| `notify.rotationReminders`, `notify.rotationRequests` | `on`, `off` | `WriteArticles` |
+| `notify.rotationReminders`, `notify.rotationRequests`, `notify.articleHandoffs` | `on`, `off` | `WriteArticles` |
 | `notify.digest` | `off` (default), `daily`, `weekly` | `ReadActions` |
 
 `NotificationPreferenceService` reads and saves only the signed-in person's choices and refuses a change to a kind

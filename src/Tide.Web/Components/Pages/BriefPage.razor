@@ -291,6 +291,7 @@ else
     private Brief? _brief;
     private MeetingRecord _meeting = MeetingRecord.None;
     private IReadOnlyList<BriefCandidate> _candidates = [];
+    private string _me = "";   // the signed-in person: their drafts lead Drafts in progress
     private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
     private IReadOnlyList<ArticleSummary> _recent = [];
 
@@ -401,6 +402,7 @@ else
             return;
         }
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        _me = CurrentUser.UserId;
         _past = BriefSvc.IsPast(_date);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page. It's read again below, quietly, only if something was saved in between: otherwise it's what a read gives.
@@ -556,7 +558,12 @@ else
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {
                 if (AsToday && !_canWrite) _recent = await RecentAsync();
-                if (_canWrite && (_brief is not null || AsToday)) _candidates = await BriefSvc.CandidatesAsync(_brief?.Id ?? Guid.Empty);
+                if (_canWrite && (_brief is not null || AsToday))
+                {
+                    var before = _candidates;
+                    _candidates = await BriefSvc.CandidatesAsync(_brief?.Id ?? Guid.Empty);
+                    if (AsToday) TellHandedToMe(before, changes);
+                }
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -1222,7 +1229,28 @@ else
             }
             <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="CanAddFromCard" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
         </div>
+        @if (AsToday)
+        {
+            <DraftsInProgressCard Drafts="DraftsInProgress" Me="@_me" />
+        }
     };
+
+    /// <summary>
+    /// For whoever writes the brief, on Today: the drafts still being written, from the same candidates (the last
+    /// <see cref="BriefService.CandidateDays"/> days' drafts not on today's brief, so the read stays bounded), the
+    /// signed-in person's first (DraftsInProgressCard.Order).
+    /// </summary>
+    internal IReadOnlyList<BriefCandidate> DraftsInProgress =>
+        DraftsInProgressCard.Order(_candidates.Where(c => c.Status == ArticleStatus.Draft), _me);
+
+    // A draft newly handed to the signed-in person, heard while Today is open: they're told (the card says so too).
+    private void TellHandedToMe(IReadOnlyList<BriefCandidate> before, IReadOnlyList<Change> changes)
+    {
+        var had = before.Where(c => c.WriterId == _me).Select(c => c.Id).ToHashSet();
+        foreach (var c in _candidates.Where(c => c.Status == ArticleStatus.Draft && c.WriterId == _me && c.WriterId != c.AuthorId
+                     && !had.Contains(c.Id) && before.Any(b => b.Id == c.Id)))
+            Toasts.Tell($"{LiveChanges.Who(changes)} handed you “{c.Title}”.");
+    }
 
     /// <summary>
     /// For whoever writes the brief: the ready articles that haven't been on any brief yet, newest first (no drafts, and

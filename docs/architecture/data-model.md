@@ -763,8 +763,11 @@ Written by `ArticleService` (editor saves, status, delete). `ArticleForm` applie
 | `Sectors` | nvarchar(500) | yes | Comma-separated, as typed. |
 | `Status` | int | no | `ArticleStatus`. Indexed. |
 | `StoryId` | uniqueidentifier | yes | FK → `Stories`, **set null**. Indexed. |
-| `AuthorId`, `AuthorName` | nvarchar(256) | no | |
-| `EditVersion` | uniqueidentifier | no | Concurrency token. Changes on every save, including a status change. |
+| `AuthorId`, `AuthorName` | nvarchar(256) | no | Who started it: the credit, kept when it's handed on. |
+| `WriterId`, `WriterName` | nvarchar(256) | yes | Who is writing it now (ADR [0031](../decisions/0031-an-article-has-an-author-and-a-writer.md)): the author until it's handed on (`ArticleHandoffService`). Empty reads as the author (`Article.CurrentWriterId`). The `ArticleWriter` migration filled it with the author for every article before it. |
+| `WriterSinceUtc` | datetimeoffset | yes | When the writer took it: made, or handed on. Filled with `CreatedAtUtc` by the migration. |
+| `HandoffNote` | nvarchar(300) | yes | What the last hand-off asked of the writer, shown to them on Today. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token. Changes on every save, including a status change. A hand-off leaves it alone. |
 | `ScreenshotsChangedAtUtc` | datetimeoffset | yes | Set when a screenshot is added or removed, which leaves `EditVersion` unchanged. A review recorded before this time is out of date. |
 | stamps | | | **S** columns. `CreatedAtUtc` is indexed. |
 

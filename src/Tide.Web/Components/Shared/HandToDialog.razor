@@ -1,0 +1,90 @@
+@* "Hand to…": gives an article to a colleague to finish (ADR 0031). Pick anyone who can write articles (yourself, to take
+   it over), add a note if you like; ArticleHandoffService saves it as one history line, "Handed from Pat to Sam", and the
+   new writer sees it on Today (and by email, unless they turned that off). The author stays the credit. A refusal (a
+   colleague handed it on meanwhile) keeps the dialog open, saying so. *@
+@inject ArticleHandoffService Handoffs
+@inject ToastService Toasts
+
+<ConfirmDialog @ref="_dialog" Form="true" Confirming="Save" ConfirmIcon="bi-person-up" ConfirmDisabled="@(!Ready)">
+    @if (_open)
+    {
+        @if (_choices.Count == 0)
+        {
+            <p class="small tide-muted mb-0">There's no one else who writes articles to hand it to yet.</p>
+        }
+        else
+        {
+            <label class="tide-field-label" for="handto-who">Hand it to</label>
+            <select id="handto-who" class="form-select form-select-sm" @bind="_to">
+                <option value="">Choose a colleague</option>
+                @foreach (var c in _choices)
+                {
+                    <option value="@c.Id">@(c.Me ? $"{c.Name} (me: take it over)" : c.Name)</option>
+                }
+            </select>
+            <label class="tide-field-label mt-2" for="handto-note">Note <span class="fw-normal">(optional)</span></label>
+            <input id="handto-note" class="form-control form-control-sm" maxlength="@Article.MaxHandoffNote" placeholder="Finish the IOCs; the vendor's advisory is linked"
+                   @bind="_note" @bind:event="oninput" />
+            <div class="form-text">@Writer has it now. @(Article.AuthorId == Article.CurrentWriterId ? "" : $"{Article.AuthorName} stays its author.") Its history records the hand-off.</div>
+        }
+        @if (_error is not null) { <div class="text-danger small mt-2" role="alert">@_error</div> }
+    }
+</ConfirmDialog>
+
+@code {
+    /// <summary>The article as the editor shows it: whose it is now is read from here.</summary>
+    [Parameter, EditorRequired] public Article Article { get; set; } = default!;
+
+    /// <summary>After it's handed on: the editor reloads the article.</summary>
+    [Parameter] public EventCallback Done { get; set; }
+
+    private ConfirmDialog _dialog = default!;
+    private IReadOnlyList<ArticleWriterChoice> _choices = [];
+    private bool _open;
+    private string? _to, _note, _error;
+
+    private string Writer => Article.CurrentWriterName;
+    private bool Ready => !string.IsNullOrEmpty(_to);
+
+    /// <summary>The colleagues offered (a test reads them here).</summary>
+    internal IReadOnlyList<ArticleWriterChoice> Choices => _choices;
+
+    /// <summary>Fills the dialog in as a person would (a test).</summary>
+    internal void Fill(string to, string? note) => (_to, _note) = (to, note);
+
+    internal string? Error => _error;
+
+    /// <summary>Opens it, offering everyone who can write articles but the writer now.</summary>
+    public async Task OpenAsync()
+    {
+        try { _choices = await Handoffs.ChoicesAsync(Article.Id); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        (_open, _to, _note, _error) = (true, null, null, null);
+        try { await _dialog.Ask("Hand this article to a colleague", null, "Hand it over", danger: false); }
+        finally
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>The dialog's Hand it over: kept open, saying why, when it's refused.</summary>
+    internal async Task<bool> Save()
+    {
+        _error = null;
+        var to = _choices.FirstOrDefault(c => c.Id == _to);
+        try { await Handoffs.HandToAsync(Article.Id, _to!, _note, Article.CurrentWriterId); }
+        catch (Exception ex)
+        {
+            _error = UserFacingError.For(ex);
+            return false;
+        }
+        Toasts.Show(to is { Me: true } ? "It's yours to finish now." : $"Handed to {to?.Name}.");
+        await Done.InvokeAsync();
+        return true;
+    }
+}

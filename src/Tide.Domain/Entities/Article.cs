@@ -116,6 +116,32 @@ public class Article : AuditableEntity
     public string AuthorId { get; set; } = string.Empty;
     public string AuthorName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Who is writing it now (user id), their name then, and since when: the author until it's handed to a colleague
+    /// (ADR 0031). The author stays the credit; the writer is whose it is to finish. Empty reads as the author
+    /// (<see cref="CurrentWriterId"/>), for a row written some other way.
+    /// </summary>
+    public string? WriterId { get; set; }
+
+    /// <inheritdoc cref="WriterId"/>
+    public string? WriterName { get; set; }
+
+    /// <inheritdoc cref="WriterId"/>
+    public DateTimeOffset? WriterSinceUtc { get; set; }
+
+    /// <summary>What the last hand-off asked of the writer ("finish the IOCs"), if anything: shown to them on Today, and
+    /// in the history line of the hand-off.</summary>
+    public string? HandoffNote { get; set; }
+
+    /// <summary>The longest <see cref="HandoffNote"/> kept.</summary>
+    public const int MaxHandoffNote = 300;
+
+    /// <summary>Who is writing it now: the writer, or the author when there's none.</summary>
+    public string CurrentWriterId => string.IsNullOrEmpty(WriterId) ? AuthorId : WriterId;
+
+    /// <summary>The name of who is writing it now: the writer's, or the author's when there's none.</summary>
+    public string CurrentWriterName => string.IsNullOrEmpty(WriterId) ? AuthorName : WriterName ?? AuthorName;
+
     /// <summary>Changes on every save; a save made from an older copy is refused.</summary>
     public Guid EditVersion { get; set; } = Guid.NewGuid();
 

@@ -36,7 +36,8 @@ An article starts in one of two ways:
 | Triage | Promote, Promote as one, or the brief's Add article picker linking a shortlisted item | Title, source, link, date, CVEs, TLP from the source, the chosen classification and priority. See [intake-and-triage.md](intake-and-triage.md#promoting-an-item). |
 | The Articles list (`/articles`) | New article: title, source name, link, TLP | `ArticleService.CreateAsync`. The link must be http or https. |
 
-Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`).
+Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`), who is also its writer
+until they hand it on ([Handing an article on](#handing-an-article-on)).
 
 ## What an article holds
 
@@ -407,6 +408,25 @@ way an article can leave: an edition's send, the SharePoint copy, marking the br
 sent, and a correction whose "now" lines add words. The Send dialog lists the brief's articles without a current
 approval (`GapsAsync`) whether or not the rule is on. See [distribution.md](distribution.md#review-holds).
 
+## Handing an article on
+
+An article has an **author**, who started it and keeps the credit (the archive, "By …" in the editor, the reports), and
+a **writer**, who has it now (ADR [0031](../decisions/0031-an-article-has-an-author-and-a-writer.md)). They're the same
+person until the article is handed on.
+
+- **Hand to…** in the editor's head, while the article is a Draft or Ready, for anyone who may edit it: pick a colleague
+  who can write articles (or yourself, to take it over) and add a note if you like (300 characters). The editor's line
+  under the title then reads "By Pat · Sam is writing it now".
+- It's saved by `ArticleHandoffService.HandToAsync` as the article's own save, so it's audited and the History reads
+  "Handed from Pat to Sam" with the note. It leaves the edit version alone: an editor open on the article can still
+  save. It's refused when someone else handed it on after the page was read.
+- The new writer sees it first on Today's **Drafts in progress**, marked *Handed to you* with the note, and is told by a
+  toast if Today is open. They're emailed too (`article-handoff`, marked with the article's TLP; an article above the
+  team edition's ceiling isn't named, nor is the note), unless they turned *Articles handed to you* off in My notifications.
+- "Mine" means the writer: the brief picker's *Only mine* and Today's drafts list the articles you're writing now.
+- Editing rights don't change: any analyst can still edit any article. Reviews still go by the author: the author can't
+  review it, and the author or whoever asked takes a request back.
+
 ## History
 
 Analysts can open **History** on an article (`HistoryService`, `WriteArticles` only, since the log holds every field at
@@ -430,6 +450,7 @@ the foreign keys refuse the delete and the same message is shown. Its screenshot
 | Ask for, comment on, decide a review; open the review page | `WriteArticles`, and for comments and decisions being the reviewer or author | `ReviewService`; `ReviewPage.razor` policy |
 | Set the review rule | `Administer` | `ReviewService.SaveRuleAsync` |
 | See History | `WriteArticles` | `HistoryService` |
+| Hand an article on (Draft or Ready), to someone who can write articles | `WriteArticles` | `ArticleHandoffService` |
 
 A Viewer and an Action owner read articles at every marking inside TIDE, as analysts do; see
 [architecture/security.md](../architecture/security.md).

@@ -175,6 +175,7 @@ template: it's written from the brief ([distribution.md](distribution.md)).
 | `rotation-approved` | Swap or cover approved | `RotationService` |
 | `rotation-recorded` | Past cover recorded | `RotationService` |
 | `rotation-declined` | Swap or cover declined | `RotationService` |
+| `article-handoff` | Article handed to you (marked with the article's TLP; an article above the team edition's ceiling isn't named, nor is its note) | `ArticleHandoffService` |
 
 **Editing.** Pick a template; the editor shows its subject, heading and Markdown body, the `{{Name}}` values it fills in
 (`EmailTemplateCatalog`), and a live preview with sample values in a sandboxed frame (`EmailTemplateService.Preview`).
