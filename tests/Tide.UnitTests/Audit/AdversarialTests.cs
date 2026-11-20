@@ -7,6 +7,7 @@ using Tide.Application.Files;
 using Tide.Application.Indicators;
 using Tide.Application.Intake;
 using Tide.Application.Metrics;
+using Tide.Domain.Common;
 using Tide.Domain.Enums;
 using Tide.Domain.Observables;
 

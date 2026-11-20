@@ -29,7 +29,7 @@ public class ReviewFixesRenderTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Workload_LinksEachTeamsOpenAndOverdueCounts_ToThoseActions_FiveTilesARow()
+    public async Task Workload_LinksEachTeamsCounts_ToThoseActions_FiveTilesARow()
     {
         Guid team;
         await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
@@ -39,7 +39,10 @@ public class ReviewFixesRenderTests(TideApp app) : IClassFixture<TideApp>
         var html = System.Net.WebUtility.HtmlDecode(await r.Html());
 
         html.Should().Contain($"href=\"actions?view=open&team={team}\" aria-label=\"0 open for Workload Links Team\"")
-            .And.Contain($"href=\"actions?view=overdue&team={team}\" aria-label=\"0 overdue for Workload Links Team\"");
+            .And.Contain($"href=\"actions?view=overdue&team={team}\" aria-label=\"0 overdue for Workload Links Team\"")
+            .And.Contain($"href=\"actions?view=open&team={team}&due=soon\" aria-label=\"0 due soon for Workload Links Team\"")
+            .And.Contain($"href=\"actions?view=open&team={team}&status=blocked\" aria-label=\"0 blocked for Workload Links Team\"")
+            .And.Contain($"href=\"actions?view=open&team={team}&priority=p1\" aria-label=\"0 P1 for Workload Links Team\"");
         (await app.StylesheetAsync()).Should().Contain(".tide-load-nums { display: grid; grid-template-columns: repeat(5, 1fr);");
     }
 

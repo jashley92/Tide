@@ -114,7 +114,8 @@ Long lists are read a page at a time, with the count of every match. The triage 
 filter depend on what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned
 counts), so those read every matching item light and page that. Its suggested groups are worked out over the page shown.
 The actions list (`ActionService.PageAsync`, 50 rows) sorts, groups and pages in SQL; the board loads every open card and
-caps each column on screen. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
+caps each column on screen, and `ListAsync` (every match, for the API and the brief) reads them all; both sort in SQL in the
+list's default order. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
 
 ### Rotation, metrics, trends and search
 
@@ -255,7 +256,7 @@ None of them can stop the app.
   in-process locks (`RotationService.Deciding`, `MetricImportService.Gate`, `ReminderService.Running`) rely on one
   process ([ADR 0001](../decisions/0001-blazor-server-on-prem.md)).
 - **Reporting.** Each run is reported to `JobMonitor` (Administration › System › Diagnostics, `/health/jobs`), which
-  logs a failure as a Warning under the job's event id (7101 to 7107) and queues the run for the job history.
+  logs a failure as a Warning under the job's event id (7101 to 7108) and queues the run for the job history.
 - **Upkeep.** `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`), registered first so it
   stops last, renews the lease every 30 seconds whatever the jobs are doing, writes the queued runs to `JobRuns`, and
   prunes runs older than 30 days daily while it holds the lease. At shutdown it writes what's left and lets the lease
@@ -287,11 +288,17 @@ flowchart LR
 | Job | Cadence | Reads | Writes | Switches | On failure |
 |---|---|---|---|---|---|
 | `IntakeHostedService` (`src/Tide.Web/Services/IntakeHostedService.cs`) | A pass every minute. Each source on its own interval (at least `Intake:MinPollMinutes`, 15). CVE refresh every `Cve:RefreshHours` (24). Prune once a day. | Sources due; feeds over `OutboundHttp`; the CVEs on articles and recent items; KEV, EPSS and NVD | Feed items and source poll state (`IntakeService.PollDueAsync`); CVE records (`CveService.EnrichDueAsync`); deletes items older than `Intake:RetentionDays` (90) nobody kept, and kept texts past `Intake:ReadingDays` (7) | `Intake:Enabled`, `Cve:Enabled` (each saved on Sources, else the server's). Prune always runs. | Each part on its own: logged, the others still run, tried at the next pass. A failed prune is tried a minute later, not a day. A source that keeps failing is backed off by `OutboundCircuit`. |
-| `ReminderHostedService` (`src/Tide.Web/Services/ReminderHostedService.cs`) | Every 5 minutes. Each scan runs when its time of day has come. | Open actions, teams, external teams' cadence, escalation contacts, rotation, briefs, people's notification choices | Emails through `EmailSender`; a `NotificationMark` per email so nothing is sent twice. The escalation ladder also writes the actions it climbs: priority, `EscalatedForDue` and `EscalatedAtUtc`, a history line and a mark per step run, all in one save on one fresh read | `Notifications:DueSoon`, `Overdue`, `Digest`, `Presenting`, `BriefNotReady`, `PersonalDigest` (on by default), `OutreachFollowUp`, `ExternalReminders`, `Escalation`, each with `Enabled`; `ReminderTime` (08:00), `Digest:Day` and `Time`, `BriefNotReady:Time` (10:00) and `Recipients`, `OutreachFollowUp:Days` (5), `Escalation:Scope` and `Steps`. All off by default but the personal digest's offer; saved on Teams & SLA. | Each scan's failure is its own; marks stop repeats when a scan stops partway. A pass in which any scan failed is a failed run on Diagnostics, naming each scan and its error (the other scans still ran). One scan at a time in the process. A ladder step whose every email failed changes nothing and is tried at the next poll. A ladder save lost to a colleague's save at that moment is redone action by action, each read again (and tried once more). Ladder steps that don't read climb nothing: the run's note says why, and it's logged. |
+| `ReminderHostedService` (`src/Tide.Web/Services/ReminderHostedService.cs`) | Every 5 minutes. Each scan runs when its time of day has come. | Open actions, teams, external teams' cadence, escalation contacts, rotation, briefs, people's notification choices | Emails through `EmailSender`; a `NotificationMark` per email so nothing is sent twice. Once a day it prunes the marks that can't matter again (a closed action's, 90 days on, and past periods'; see `NotificationMarks` in data-model.md). The escalation ladder also writes the actions it climbs: priority, `EscalatedForDue` and `EscalatedAtUtc`, a history line and a mark per step run, all in one save on one fresh read; each of its emails is marked (`escalation-email`) as soon as it went, before that save | `Notifications:DueSoon`, `Overdue`, `Digest`, `Presenting`, `BriefNotReady`, `PersonalDigest` (on by default), `OutreachFollowUp`, `ExternalReminders`, `Escalation`, each with `Enabled`; `ReminderTime` (08:00), `Digest:Day` and `Time`, `BriefNotReady:Time` (10:00) and `Recipients`, `OutreachFollowUp:Days` (5), `Escalation:Scope` and `Steps`. All off by default but the personal digest's offer; saved on Teams & SLA. | Each scan's failure is its own; marks stop repeats when a scan stops partway. A pass in which any scan failed is a failed run on Diagnostics, naming each scan and its error (the other scans still ran). One scan at a time in the process. A ladder step whose every email failed changes nothing and is tried at the next poll. A ladder save lost to a colleague's save at that moment is redone action by action, each read again (and tried once more). Ladder steps that don't read climb nothing: the run's note says why, and it's logged. |
 | `MetricImportHostedService` (`src/Tide.Web/Services/MetricImportHostedService.cs`) | Every `Metrics:Import:PollMinutes` (5, held to 1 to 60) while on; checks every minute while off | CSV files in `metrics-inbox` under `Files:RootPath`, once unchanged for 30 seconds | Metric values and an import record (`MetricImportService.ImportDroppedAsync`); moves each file to `processed`, `rejected` or `failed`, deleted after 90 days (`MetricDropFolder`) | `Metrics:Import:DropFolderEnabled` (off by default) | Logged; a file the database couldn't take waits for the next pass. A setting that won't bind is logged and treated as off. |
 | `UpdateCheckHostedService` (`src/Tide.Web/Services/UpdateCheckHostedService.cs`) | First check 2 minutes after start, then every `Updates:CheckIntervalHours` (24, held to 6 to 168); re-reads the switch every 5 minutes | GitHub Releases for `Updates:Repository`, over `OutboundHttp` | Nothing in the database; the result in memory for the Updates page | `Updates:CheckEnabled` (off by default; saved on the Updates page) | Recorded as "couldn't check" with the reason; tried at the next interval. |
 | `WebhookHostedService` (`src/Tide.Web/Api/WebhookServices.cs`) | Every minute, at start-up first | Enabled webhooks; actions raised and brief sends since each watermark, at least 30 seconds old; open actions newly overdue | POSTs to each webhook; its watermarks and last result (outside the audit log) | Each webhook's on/off in Administration › API access | A webhook stops at its first failed post and retries from there next minute with the same event id. See [API.md](../API.md#webhooks). |
+| `UrlHashFillHostedService` (`src/Tide.Web/Services/UrlHashFillHostedService.cs`) | Once the app is listening, after an upgrade: runs of 20 batches of 300 rows a second apart until done, then stops for good | Articles and links without an address hash; the `Data:UrlHashesToFill` setting | Each row's hash, one UPDATE per batch (no modified time, edit version or history moves); deletes the setting when none is left (`UrlHashFill`) | Always on; nothing to do on a database that's done | Logged; tried again a minute later, carrying on from the rows. Triage's past coverage reads every recent address until it's done. |
 | `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`) | Every 30 seconds; at shutdown | The `JobLeases` row; the runs `JobMonitor` queued | The lease (renewed, or let go at shutdown); `JobRuns`, and deletes runs older than 30 days once a day | Always on; prunes only while it holds the lease | Logged as a Warning; runs it couldn't write are kept (up to 2,000) and written at the next pass. |
+
+`MeetingAttendanceHostedService` (`src/Tide.Web/Services/MeetingAttendanceHostedService.cs`) isn't a job: it has no
+loop and no lease. It closes the attendance of each meeting `LiveMeetings` drops empty, through `AttendanceCloser`
+(internal to the web project and not in DI, so no page can use it: it asks no permission, as no one is signed in).
+See [collaboration.md](collaboration.md#livemeetings). A failure is logged.
 
 Every job but the upkeep runs only in the process holding the job lease. A run past its job's limit (30 minutes for
 most, 2 hours for the CVE refresh, 10 minutes for the update check, 15 for webhooks, 1 hour for the prune) is hung,
@@ -332,7 +339,9 @@ one client TIDE uses to fetch from other hosts: feeds (`IntakeService`), article
 | Result | Never throws for a failure: `HttpFetch` with `Ok`, `NotModified` or `Failed` and a sentence saying why, which the Sources and Diagnostics pages show. |
 
 Two other clients exist, each for one purpose. Webhooks post through the `webhooks` named client
-(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't apply `AddressPolicy` or `Intake:Proxy`. The
+(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't use `Intake:Proxy` but checks each connection
+with the same `AddressGuard.ConnectAsync` and `AddressPolicy`, private ranges following `Webhooks:AllowPrivateNetworks`
+(on by default) instead of the intake setting. The
 Azure OpenAI client (`src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs`) has its own `HttpClient`.
 
 ## Email sending
@@ -424,7 +433,7 @@ everything, log it, and record it on Diagnostics.
 | Security headers, circuit origin, user mirror | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `UserMirrorMiddleware.cs` |
 | Hosted services | `src/Tide.Web/Services/*HostedService.cs`, `src/Tide.Web/Api/WebhookServices.cs` |
 | Job reporting, lease and history | `src/Tide.Application/Operations/JobMonitor.cs`, `BackgroundJobLease.cs`, `JobRunLog.cs`, `JobHealth.cs` |
-| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `OutboundCircuit.cs` |
+| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `AddressGuard.cs`, `OutboundCircuit.cs` |
 | Email | `src/Tide.Infrastructure/Notifications/EmailSender.cs`, `EmailOptions.cs`, `SmtpClientFactory.cs` |
 | Change feed | `src/Tide.Application/Abstractions/ChangeFeed.cs`, `src/Tide.Infrastructure/Persistence/ChangeInterceptor.cs` |
 | Audit | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs` |

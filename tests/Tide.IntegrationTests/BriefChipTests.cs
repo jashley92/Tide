@@ -74,8 +74,8 @@ internal static partial class BriefChipPage
     /// <summary>The same in a narrow window.</summary>
     public static string Short(string text) => $"<span class=\"tide-brief-chip-short\">{Markup(text)}</span>";
 
-    /// <summary>The link's accessible name, the same at every width.</summary>
-    public static string Named(string text) => $" aria-label=\"{Markup(text)}\"";
+    /// <summary>The whole wording, unseen, after the short form: the name a narrow chip has after the words it shows.</summary>
+    public static string Said(string text) => $"<span class=\"tide-brief-chip-said visually-hidden\">, {Markup(text)}</span>";
 
     /// <summary>Text as the renderer writes it (the middle dot as a character reference).</summary>
     public static string Markup(string text) => System.Text.Encodings.Web.HtmlEncoder.Default.Encode(text);
@@ -111,7 +111,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
         chip.Should().StartWith("<a class=\"tide-brief-chip\" href ", "one click returns to Today, the app's start page");
         chip.Should().Contain(BriefChipPage.Full(needsWork ? $"Brief {Meets} · step 2 of 5 · Write" : $"Brief {Meets} · step 3 of 5 · Order"))
             .And.Contain(BriefChipPage.Short(needsWork ? $"{Meets} · 2/5" : $"{Meets} · 3/5"))
-            .And.Contain(BriefChipPage.Named(needsWork ? $"Brief at {Meets}, step 2 of 5, Write" : $"Brief at {Meets}, step 3 of 5, Order"),
+            .And.Contain(BriefChipPage.Said(needsWork ? $"Brief at {Meets}, step 2 of 5, Write" : $"Brief at {Meets}, step 3 of 5, Order"),
                 "the short text alone says nothing to someone who hears only the link's name");
         chip.Should().NotContain("aria-current", "Articles isn't Today");
         html.IndexOf("tide-brief-chip", StringComparison.Ordinal).Should()
@@ -144,7 +144,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
     {
         await BriefChipPage.Change(app, b => b.Status = BriefStatus.Ready);
         (await BriefChipPage.On(app)).Should().Contain(BriefChipPage.Full($"Brief {Meets} · step 4 of 5 · Present"))
-            .And.Contain(BriefChipPage.Short($"{Meets} · 4/5")).And.Contain(BriefChipPage.Named($"Brief at {Meets}, step 4 of 5, Present"));
+            .And.Contain(BriefChipPage.Short($"{Meets} · 4/5")).And.Contain(BriefChipPage.Said($"Brief at {Meets}, step 4 of 5, Present"));
     }
 
     [Fact]
@@ -154,12 +154,12 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
         await BriefChipPage.Change(app, b => b.Status = BriefStatus.Presented);
         var presented = await BriefChipPage.On(app, "/actions");
         presented.Should().Contain(BriefChipPage.Full("Brief presented · step 5 of 5 · Send")).And.Contain(BriefChipPage.Short("Presented · 5/5"))
-            .And.Contain(BriefChipPage.Named("Brief presented, step 5 of 5, Send"));
+            .And.Contain(BriefChipPage.Said("Brief presented, step 5 of 5, Send"));
         presented.Should().NotContain(Meets);
 
         await BriefChipPage.Change(app, b => b.Status = BriefStatus.Sent);
         var sent = await BriefChipPage.On(app);
-        sent.Should().Contain(BriefChipPage.Full("Brief · Sent")).And.Contain(BriefChipPage.Short("Sent")).And.Contain(BriefChipPage.Named("Brief, Sent"));
+        sent.Should().Contain(BriefChipPage.Full("Brief · Sent")).And.Contain(BriefChipPage.Short("Sent")).And.Contain(BriefChipPage.Said("Brief, Sent"));
         sent.Should().NotContain(Meets).And.NotContain("step");
         // Today's strip, for the same brief: its last step, done, says the same word.
         var today = await app.CreateClient().GetStringAsync("/");
@@ -178,7 +178,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
         {
             var chip = await BriefChipPage.On(app);
             chip.Should().Contain(BriefChipPage.Full("Brief · 1 of 2 sent")).And.Contain(BriefChipPage.Short("1 of 2 sent"))
-                .And.Contain(BriefChipPage.Named("Brief, 1 of 2 sent"));
+                .And.Contain(BriefChipPage.Said("Brief, 1 of 2 sent"));
 
             var today = await app.CreateClient().GetStringAsync("/");
             BriefChipPage.In(today).Should().Contain(BriefChipPage.Full("Brief · 1 of 2 sent"));
@@ -232,7 +232,8 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
             var chip = BriefChipPage.In(html);
 
             chip.Should().StartWith("<a class=\"tide-brief-chip is-live\" href ");
-            chip.Should().Contain(BriefChipPage.Full("Brief is live")).And.Contain(BriefChipPage.Short("Live")).And.Contain(BriefChipPage.Named("Brief is live"));
+            chip.Should().Contain(BriefChipPage.Full("Brief is live")).And.Contain(BriefChipPage.Short("Live"))
+                .And.NotContain("aria-label", "named by the words it shows, so a narrow chip's name starts with Live");
             chip.Should().NotContain("step").And.NotContain("Join", "the banner below the top bar is where you join");
             html.Should().Contain("Brief meeting is live");
         }
@@ -308,7 +309,7 @@ public class BriefChipNotStartedTests(TideApp app) : IClassFixture<TideApp>
 
         var meets = BriefChipPage.Meets(app);
         chip.Should().Contain(BriefChipPage.Full($"Brief {meets} · not started")).And.Contain(BriefChipPage.Short(meets))
-            .And.Contain(BriefChipPage.Named($"Brief at {meets}, not started"));
+            .And.Contain(BriefChipPage.Said($"Brief at {meets}, not started"));
         (await app.CreateClient().GetStringAsync("/")).Should().Contain("brief yet.").And.NotContain("aria-label=\"Brief progress\"");
     }
 }

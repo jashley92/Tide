@@ -108,7 +108,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             number = (await scope.ServiceProvider.GetRequiredService<ActionService>()
                 .QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2")).Number;
         }
-        var take = $"aria-label=\"Take A-{number}\"";
+        var take = $"aria-label=\"Take it: A-{number}\"";
 
         await using (var r = await PresentHarness.Open(app, day))
         {

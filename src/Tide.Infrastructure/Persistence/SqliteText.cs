@@ -18,7 +18,8 @@ namespace Tide.Infrastructure.Persistence;
 /// every connection a lower() that folds every letter and a <see cref="Collation"/> that orders by
 /// <see cref="NameOrder.Compare"/>, and translates <c>ToLower()</c> to <c>lower(x) COLLATE unicode_ci</c>, so every
 /// case-insensitive sort (<see cref="NameOrder"/>, the title and team columns) agrees with SQL Server with no query
-/// written for one provider. SQL Server is left alone: its collation already does this.
+/// written for one provider. <c>EF.Functions.Like</c> likewise ignores case for every letter (<see cref="SqliteLike"/>).
+/// SQL Server is left alone: its collation already does this.
 /// </summary>
 /// <remarks>
 /// Only queries use these; nothing in the schema does, so the database file still opens in any SQLite tool. A sort runs
@@ -52,6 +53,7 @@ internal static class SqliteText
     {
         connection.CreateFunction<string?, string?>("lower", s => s?.ToLowerInvariant(), isDeterministic: true);
         connection.CreateCollation(Collation, NameOrder.Compare);
+        SqliteLike.Register(connection);
     }
 
     private sealed class Connections : DbConnectionInterceptor
@@ -80,9 +82,35 @@ internal static class SqliteText
         }
     }
 
+    /// <summary>
+    /// <c>EF.Functions.Like</c> as SQLite's own LIKE, or, for a pattern with a letter beyond ASCII, <see cref="SqliteLike"/>'s
+    /// <c>ulike</c>: <c>x LIKE p ESCAPE e OR (needs_unicode(p) AND ulike(p, x, e))</c>.
+    /// </summary>
+    private sealed class LikeTranslator(ISqlExpressionFactory sql) : IMethodCallTranslator
+    {
+        private static readonly MethodInfo Like = typeof(DbFunctionsExtensions).GetMethod(nameof(DbFunctionsExtensions.Like),
+            [typeof(DbFunctions), typeof(string), typeof(string)])!;
+        private static readonly MethodInfo LikeEscaped = typeof(DbFunctionsExtensions).GetMethod(nameof(DbFunctionsExtensions.Like),
+            [typeof(DbFunctions), typeof(string), typeof(string), typeof(string)])!;
+
+        public SqlExpression? Translate(SqlExpression? instance, MethodInfo method, IReadOnlyList<SqlExpression> arguments,
+            IDiagnosticsLogger<DbLoggerCategory.Query> logger)
+        {
+            if (!method.Equals(Like) && !method.Equals(LikeEscaped)) return null;
+            var mapping = Microsoft.EntityFrameworkCore.Query.ExpressionExtensions.InferTypeMapping(arguments[1], arguments[2]);
+            var value = sql.ApplyTypeMapping(arguments[1], mapping);
+            var pattern = sql.ApplyTypeMapping(arguments[2], mapping);
+            var escape = arguments.Count == 4 ? sql.ApplyTypeMapping(arguments[3], mapping) : null;
+            var unicode = sql.Function(SqliteLike.NeedsUnicode, [pattern], nullable: false, argumentsPropagateNullability: [false], typeof(bool));
+            SqlExpression[] args = escape is null ? [pattern, value] : [pattern, value, escape];
+            var ulike = sql.Function(SqliteLike.Like, args, nullable: false, argumentsPropagateNullability: args.Select(_ => false), typeof(bool));
+            return sql.OrElse(sql.Like(value, pattern, escape), sql.AndAlso(unicode, ulike));
+        }
+    }
+
     private sealed class TranslatorPlugin(ISqlExpressionFactory sql) : IMethodCallTranslatorPlugin
     {
-        public IEnumerable<IMethodCallTranslator> Translators { get; } = [new ToLowerTranslator(sql)];
+        public IEnumerable<IMethodCallTranslator> Translators { get; } = [new ToLowerTranslator(sql), new LikeTranslator(sql)];
     }
 
     private sealed class Extension : IDbContextOptionsExtension

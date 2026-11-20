@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Content;
@@ -206,7 +207,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     /// <summary>
     /// Runs every enabled scan that's due now (its time of day has come). Each scan's failure is its own: it's logged
     /// and the others still run. Returns the emails sent and the scans that failed, so the poller's run is recorded as
-    /// failed (on Diagnostics) when one did, not as a success.
+    /// failed (on Diagnostics) when one did, not as a success. Then, once a day, the marks that can't matter again are
+    /// pruned (<see cref="PruneMarksAsync"/>).
     /// </summary>
     public async Task<ReminderPass> RunDueAsync(CancellationToken ct = default)
     {
@@ -221,6 +223,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             if (log.Last(kind) is not { } run || ReferenceEquals(run, before)) continue;
             if (run.Error is not null) failed.Add(run);
             else if (run.Unsure > 0) unsure.Add(run);
+        }
+        // Whatever scans are on: marks written while one was on still pile up. A failure is the prune's own, tried again
+        // at the next pass; the scans' emails went all the same.
+        try { await PruneMarksAsync(ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(ex, "Pruning old reminder marks failed; it's tried again at the next pass.");
         }
         return new ReminderPass(sent, failed, unsure);
     }
@@ -339,13 +348,19 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     // (shutdown, a database error, a later send failing) doesn't email the same people again next time.
     private static async Task MarkAsync(IAppDbContext db, string kind, IEnumerable<string> keys)
     {
+        if (AddMarks(db, kind, keys)) await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    // Adds marks to the next save, and says whether there were any.
+    private static bool AddMarks(IAppDbContext db, string kind, IEnumerable<string> keys)
+    {
         var added = false;
         foreach (var key in keys)
         {
             db.NotificationMarks.Add(new NotificationMark { Kind = kind, Key = key, SentAtUtc = DateTimeOffset.UtcNow });
             added = true;
         }
-        if (added) await db.SaveChangesAsync(CancellationToken.None);
+        return added;
     }
 
     private bool IsTime(ReminderKind kind)

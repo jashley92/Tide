@@ -6,8 +6,10 @@
 @inject OrgClock Clock
 
 @{ var a = Detail.Action; }
-@* A region, not a dialog: present.js still has the keys, so Esc closes it and the arrows move on (which closes it too).
-   Over the slide, or beside it (a column of the page, the slide narrowed for it) where the organization has chosen that. *@
+@* A region, not a dialog: present.js still has the keys, so Esc closes it. Over the slide it holds the keys that move
+   the slide (the arrows, Home, End, Enter, Backspace; Space at its end), so it isn't closed under whoever is reading it;
+   beside the slide they move the slide, which closes it. Over the slide, or beside it (a column of the page, the slide
+   narrowed for it) where the organization has chosen that. *@
 <section class="tide-present-action@(Beside ? " is-beside" : "")" aria-labelledby="present-action-title" inert="@Inert">
     <div class="tide-present-action-head">
         <h2 id="present-action-title"><span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> @a.Title</h2>

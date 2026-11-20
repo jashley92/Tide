@@ -10,12 +10,15 @@
 @inject ILogger<NavMenu> Log
 
 <div class="tide-side-head">
+    @* The link is named by its words. Collapsed to icons they're hidden, so the same name is given unseen
+       (tide-brand-said, app.css): an aria-label would have to start with the mark's "T" to match what's shown. *@
     <a class="tide-brand" href="">
         <span class="tide-brand-mark" aria-hidden="true">T</span>
         <span class="tide-brand-text">
             <span class="tide-brand-name">TIDE</span>
             <span class="tide-brand-sub">Threat Intelligence Daily Exchange</span>
         </span>
+        <span class="tide-brand-said visually-hidden">TIDE, Threat Intelligence Daily Exchange</span>
     </a>
     @* Collapse to icons and back, at the top of the sidebar (desktop only; on a phone the menu button
        below rules). Wired CSP-safely in theme.js (tideNav.toggle), which keeps aria-expanded and the tooltip in step; the state is
@@ -116,10 +119,18 @@
         await JS.StopAsync("tideNav.reveal");
     });
 
-    /// <summary>A link's name with its count, as a screen reader hears it ("Triage, 4 new"); the plain name at zero.</summary>
-    public static string CountTitle(string name, int count, string what) => count > 0 ? $"{name}, {count} {what}" : name;
+    /// <summary>A link's name with its count, as a screen reader hears it ("Triage 4 new"); the plain name at zero. It starts
+    /// with the words on screen ("Triage 4", or "Triage 99+" past 99, then the whole count), so speech input can say what it
+    /// sees.</summary>
+    public static string CountTitle(string name, int count, string what) => count switch
+    {
+        <= 0 => name,
+        > 99 => $"{name} 99+, {count} {what}",
+        _ => $"{name} {count} {what}",
+    };
 
-    // A link with its icon. Triage and Actions carry their counts, in the name a screen reader hears too.
+    // A link with its icon. Triage and Actions carry their counts, in the name a screen reader hears too. A space parts
+    // the label from its count in the text (the flex row spaces them on screen), so the words read "Triage 65", as shown.
     private RenderFragment Link(NavPage link)
     {
         var (count, what, alert) = link.Key switch
@@ -129,7 +140,7 @@
             _ => (0, "", false),
         };
         var name = CountTitle(link.Label, count, what);
-        return @<NavLink href="@link.Href" Match="link.Match" title="@name" aria-label="@(what.Length > 0 ? name : null)"><span class="bi @link.Icon" aria-hidden="true"></span><span class="tide-nav-label">@link.Label</span>@Count(count, alert)</NavLink>;
+        return @<NavLink href="@link.Href" Match="link.Match" title="@name" aria-label="@(what.Length > 0 ? name : null)"><span class="bi @link.Icon" aria-hidden="true"></span><span class="tide-nav-label">@link.Label</span>@(count > 0 ? " " : null)@Count(count, alert)</NavLink>;
     }
 
     private static RenderFragment? Count(int count, bool alert) => count > 0

@@ -77,6 +77,56 @@ public class EscalationSettingsTests
     }
 }
 
+/// <summary>An app whose server value for the ladder's steps doesn't read (one hand-edited past the most days).</summary>
+public sealed class UnreadableLadderApp : TideApp
+{
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting(OperationalSettings.EscalationSteps, "after 99: flag");
+    }
+}
+
+/// <summary>Teams &amp; SLA over steps that don't read: it warns, and saving the switch or scope doesn't write an empty
+/// ladder over them.</summary>
+public class UnreadableLadderPageTests(UnreadableLadderApp app) : IClassFixture<UnreadableLadderApp>
+{
+    private async Task<string?> Saved(string key)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+        return db.Settings.Where(s => s.Key == key).Select(s => s.Value).FirstOrDefault();
+    }
+
+    // The page as drawn now: a method called straight, not from a click, doesn't render it again on its own.
+    private static async Task<string> Drawn(Rendered<TeamsAdmin> r)
+    {
+        await r.Renderer.Dispatcher.InvokeAsync(() => typeof(Microsoft.AspNetCore.Components.ComponentBase)
+            .GetMethod("StateHasChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(r.Component, null));
+        return await r.Html();
+    }
+
+    [Fact]
+    public async Task StepsThatDontRead_AreWarnedOf_AndKeptWhenTheRestIsSaved_UntilReplaced()
+    {
+        await using var r = await RenderAsync<TeamsAdmin>(app, "/admin/teams");
+        var html = System.Net.WebUtility.HtmlDecode(await r.Html());
+        html.Should().Contain("id=\"esc-unreadable\"").And.Contain("The saved steps can't be read, so the ladder climbs nothing.")
+            .And.Contain("Step 1").And.NotContain("No steps: the ladder does nothing.");
+
+        r.Component.Escalation.Scope = EscalationScope.PartsOnly;
+        await r.Click(c => c.SaveEscalation());
+        (await Saved(OperationalSettings.EscalationScope)).Should().Be("PartsOnly");
+        (await Saved(OperationalSettings.EscalationSteps)).Should().BeNull("the server's steps aren't overwritten with none");
+        app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<ReminderOptions>>().CurrentValue.Escalation.Steps.Should().Be("after 99: flag");
+        (await Drawn(r)).Should().Contain("id=\"esc-unreadable\"", "still unread after the save");
+
+        await r.Click(c => { c.Escalation.UseDefaults(); return c.SaveEscalation(); });
+        (await Saved(OperationalSettings.EscalationSteps)).Should().Be(EscalationLadder.DefaultText, "replaced on purpose, they're saved");
+        (await Drawn(r)).Should().NotContain("id=\"esc-unreadable\"");
+    }
+}
+
 /// <summary>The ladder in the real app: its section on Teams &amp; SLA, the escalation contact on both team forms, and the
 /// flag on Today, an action's page and the lists.</summary>
 public class EscalationPagesTests(TideApp app) : IClassFixture<TideApp>
@@ -114,7 +164,8 @@ public class EscalationPagesTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(c => c.SaveEscalation());
         (await Saved(OperationalSettings.EscalationScope)).Should().Be("ExternalOnly");
         (await Saved(OperationalSettings.EscalationSteps)).Should().Be("before 2: remind; after 3: contact; after 7: raise, flag");
-        (await Saved(OperationalSettings.Escalation)).Should().Be("false");
+        (await Saved(OperationalSettings.Escalation)).Should().BeNull("left off, as the server has it, it isn't written");
+        r.Component.Escalation.On.Should().BeFalse();
 
         r.Component.Escalation.Steps.Add(new StepRow { When = StepWhen.After, Days = 3, Does = EscalationDoes.CopyContact });
         await r.Click(c => c.SaveEscalation());

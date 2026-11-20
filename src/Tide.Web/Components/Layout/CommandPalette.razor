@@ -215,7 +215,7 @@
             if (_open == _shown) return;
             _shown = _open;
             if (_open) await JS.InvokeVoidAsync("tidePalette.focus", _input);
-            else if (_restoreFocus) await JS.InvokeVoidAsync("tideDialog.close");
+            else await JS.InvokeVoidAsync(_restoreFocus ? "tideDialog.close" : "tideDialog.forget");
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
     }
