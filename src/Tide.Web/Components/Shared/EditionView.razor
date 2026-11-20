@@ -60,7 +60,7 @@
     }
     @if (Edition.WithheldArticles > 0 && Edition.Articles.Count > 0)
     {
-        <p class="tide-withheld mt-2">@Edition.WithheldArticles restricted @(Edition.WithheldArticles == 1 ? "item was" : "items were") briefed to the security team and left out of this edition.</p>
+        <p class="tide-withheld mt-2">@Ui.Plural(Edition.WithheldArticles, "restricted item was", "restricted items were") briefed to the security team and left out of this edition.</p>
     }
 </div>
 

@@ -2,11 +2,13 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tide.Application;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
+using Tide.Application.Files;
 using Tide.Application.Intake;
 using Tide.Application.Metrics;
 using Tide.Application.Operations;
@@ -15,6 +17,8 @@ using Tide.Application.Security;
 using Tide.Application.Settings;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Infrastructure.Storage;
+using Tide.TestSupport;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -300,7 +304,8 @@ public class IntakeHostedServiceSettingsTests
     {
         using var rig = new SettingsRig(new() { ["Intake:Enabled"] = "true", ["Intake:MinPollMinutes"] = "5" });
         rig.Db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
-        rig.Db.Http.Set(FeedUrl, "<rss version=\"2.0\"><channel><title>News</title></channel></rss>");
+        rig.Db.Http.Set(FeedUrl, "<rss version=\"2.0\"><channel><title>News</title>"
+            + "<item><title>Patch now</title><link>https://news.example.com/patch-now</link></item></channel></rss>");
         await rig.Get<IntakeService>().SaveSourceAsync(new SourceForm { Name = "News", Kind = SourceKind.Feed, Url = FeedUrl, DefaultTlp = TlpLevel.Clear, PollMinutes = 30 });
         var jobs = new JobMonitor(TimeProvider.System);
         var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, new HeldLease(), rig.Get<IOptionsMonitor<IntakeOptions>>(),
@@ -308,7 +313,8 @@ public class IntakeHostedServiceSettingsTests
 
         await hosted.PassAsync(CancellationToken.None);
         rig.Db.Http.Requests.Should().ContainSingle(r => r.Url == FeedUrl, "polling is on on the server");
-        jobs.Get(JobMonitor.FeedPoll).Enabled.Should().BeTrue();
+        jobs.Get(JobMonitor.FeedPoll).Should().Match<JobState>(s => s.Enabled && s.LastDetail == "1 new item", "Diagnostics says what the pass took");
+        jobs.Get(JobMonitor.Prune).LastDetail.Should().Be("0 removed, 0 kept texts expired");
 
         await rig.Save(OperationalSettings.IntakeEnabled, "false");
         await using (var ctx = rig.Db.Context())
@@ -350,5 +356,142 @@ public class IntakeHostedServiceSettingsTests
         jobs.Get(JobMonitor.CveRefresh).Should().Match<JobState>(s => !s.Running && s.LastSucceeded != null);
         cves.StartedAtUtc.Should().BeNull();
         cves.Last.Should().NotBeNull();
+    }
+}
+
+public class MetricImportHostedServiceTests
+{
+    // The service as the app builds it, over a drop folder of its own and the options given.
+    private sealed class Rig : IAsyncDisposable
+    {
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "tide-drop-" + Guid.NewGuid().ToString("N"));
+
+        public SettingsRig Settings { get; } = new();
+        public JobMonitor Jobs { get; } = new(TimeProvider.System);
+        public RecordingLogger<MetricImportHostedService> Log { get; } = new();
+        public MetricDropFolder Folder { get; }
+        public MetricImportHostedService Hosted { get; }
+
+        public Rig(IOptionsMonitor<MetricImportOptions> folderOptions, IOptionsMonitor<MetricImportOptions>? serviceOptions = null,
+            IServiceScopeFactory? scopes = null)
+        {
+            Settings.Db.User.IsAuthenticated = false;   // the background service: no one signed in
+            Folder = new MetricDropFolder(Options.Create(new FileStoreOptions { RootPath = _root }), new TestHostEnvironment(), folderOptions,
+                TimeProvider.System, NullLogger<MetricDropFolder>.Instance);
+            Hosted = new MetricImportHostedService(scopes ?? Settings.Get<IServiceScopeFactory>(), Folder, serviceOptions ?? folderOptions, Jobs,
+                new HeldLease(), TimeProvider.System, Log);
+        }
+
+        // A file left long enough to have settled, so the next pass reads it.
+        public void Drop(string name)
+        {
+            Directory.CreateDirectory(Folder.Inbox);
+            var path = Path.Combine(Folder.Inbox, name);
+            File.WriteAllText(path, "nothing useful");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-5));
+        }
+
+        public JobState Job => Jobs.Get(JobMonitor.MetricDropFolder);
+
+        public async ValueTask DisposeAsync()
+        {
+            await Hosted.StopAsync(CancellationToken.None);
+            Hosted.Dispose();
+            Settings.Dispose();
+            if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        }
+    }
+
+    private static StaticOptionsMonitor<MetricImportOptions> On(int pollMinutes = 5) =>
+        new(new MetricImportOptions { DropFolderEnabled = true, PollMinutes = pollMinutes });
+
+    // A server file edited while TIDE runs, with a value that won't bind.
+    private sealed class Unreadable : IOptionsMonitor<MetricImportOptions>
+    {
+        public MetricImportOptions CurrentValue => throw new InvalidOperationException("Failed to convert '5m' to type 'System.Int32'.");
+        public MetricImportOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<MetricImportOptions, string?> listener) => null;
+    }
+
+    [Fact]
+    public async Task WithTheDropFolderOn_APassReadsTheFileWaiting_AndSaysHowMany()
+    {
+        await using var rig = new Rig(On(pollMinutes: 7));
+        rig.Drop("queue.csv");
+
+        await rig.Hosted.StartAsync(CancellationToken.None);
+
+        (await Poll.Until(() => rig.Job.NextDueUtc is not null)).Should().BeTrue("the first pass runs at start, then it waits for the next");
+        rig.Job.Should().Match<JobState>(s => s.LastSucceeded == true && s.LastDetail == "1 file" && s.Enabled && s.Interval == TimeSpan.FromMinutes(7));
+        Directory.GetFiles(rig.Folder.Inbox, "*.csv").Should().BeEmpty("the file was read and moved");
+    }
+
+    [Fact]
+    public async Task AnUnreadableSetting_FallsBack_AndIsLogged_RatherThanStoppingTheApp()
+    {
+        // Whether it's on can't be read: it's taken as off, so nothing is read, and it's asked again in a minute.
+        await using (var off = new Rig(new Unreadable()))
+        {
+            off.Drop("queue.csv");
+            await off.Hosted.StartAsync(CancellationToken.None);
+            // Asked before the pass and again before the wait: both logged, neither thrown.
+            (await Poll.Until(() => off.Log.Entries.Count(e => e.Level == LogLevel.Error) >= 2)).Should().BeTrue();
+            off.Log.Entries.Should().Contain(e => e.Message.Contains("Metrics:Import setting can't be read"));
+            off.Job.Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null && s.LastStartedUtc == null);
+            Directory.GetFiles(off.Folder.Inbox, "*.csv").Should().ContainSingle("nothing was read");
+            off.Hosted.ExecuteTask!.IsCompleted.Should().BeFalse("it keeps asking");
+        }
+
+        // On, but how often can't be read: the pass runs, and the next is a minute away.
+        await using var on = new Rig(On(), serviceOptions: new Unreadable());
+        await on.Hosted.StartAsync(CancellationToken.None);
+        (await Poll.Until(() => on.Job.NextDueUtc is not null)).Should().BeTrue();
+        on.Job.Should().Match<JobState>(s => s.Enabled && s.LastSucceeded == true && s.Interval == MetricImportHostedService.OffInterval);
+        on.Log.Entries.Should().Contain(e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task AFailedPass_IsRecordedAndLogged_AndTheServiceKeepsGoing()
+    {
+        // No import service to read the files with: the pass throws.
+        await using var empty = new ServiceCollection().BuildServiceProvider();
+        await using var rig = new Rig(On(), scopes: empty.GetRequiredService<IServiceScopeFactory>());
+        rig.Drop("queue.csv");
+
+        await rig.Hosted.StartAsync(CancellationToken.None);
+
+        (await Poll.Until(() => rig.Job.NextDueUtc is not null)).Should().BeTrue("a failure waits for the next pass like any other");
+        rig.Job.Should().Match<JobState>(s => s.LastSucceeded == false && s.LastError != null && !s.Running);
+        rig.Log.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("tried again at the next pass"));
+        rig.Hosted.ExecuteTask!.IsCompleted.Should().BeFalse("it's waiting to try again, not stopped");
+    }
+
+    [Fact]
+    public async Task Stopping_EndsTheWait_AndReturns()
+    {
+        await using var rig = new Rig(On(pollMinutes: 60));
+        await rig.Hosted.StartAsync(CancellationToken.None);
+        (await Poll.Until(() => rig.Job.NextDueUtc is not null)).Should().BeTrue();
+
+        await rig.Hosted.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(15));
+
+        rig.Hosted.ExecuteTask!.Status.Should().Be(TaskStatus.RanToCompletion, "an hour's wait ends when the app stops");
+    }
+}
+
+/// <summary>A logger that keeps every entry, with its level.</summary>
+public sealed class RecordingLogger<T> : ILogger<T>
+{
+    private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+    public IReadOnlyList<(LogLevel Level, string Message)> Entries { get { lock (_entries) return [.. _entries]; } }
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        lock (_entries) _entries.Add((logLevel, formatter(state, exception)));
     }
 }

@@ -50,7 +50,7 @@ at these volumes; running the same calls against a populated SQL Server database
 | Article list page | 50 (page), at most 1,000 a read | `Articles.razor` `PageSize`; `ArticleService.MaxPage` |
 | Articles `ListAsync` default | 200 | `ArticleService.ListAsync` |
 | Triage inbox | 50 rows a page, every match counted; at most 500 a read. New, *Likely used*, *Names what we run* and the KEV filter read every matching item light and page in memory | `InboxFilter.PageSize`, `IntakeService.InboxPageAsync` |
-| Search | 50 hits a kind a page, among the newest 1,000 matches; 200 sightings of an indicator; 8 terms | `SearchService.MaxHits`, `MaxTake`, `MaxSightings`; `SearchText.MaxTerms` |
+| Search | 50 hits a kind a page, among the newest 1,000 matches (articles counted to 1,000, then "1,000+"); 200 sightings of an indicator; 8 terms | `SearchService.MaxHits`, `MaxTake`, `MaxSightings`; `SearchText.MaxTerms` |
 | Command palette | 5 hits a kind, after 250 ms | `PaletteEntries.HitsPerKind`, `CommandPalette.Debounce` |
 | Brief archive | 60 briefs | `BriefService.ListAsync` |
 | Brief candidates (Add articles) | Articles from the last 14 days | `BriefService.CandidateDays` |
@@ -161,12 +161,12 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `BriefItems` | `(BriefId, ArticleId)` unique; `ArticleId`; `CarriedFromBriefId` | A brief's running order; "first briefed" for trends; carry-over. |
 | `Briefs` | `BriefDate` unique | Every day-based lookup. |
 | `BriefSends` | `(BriefId, SentAtUtc)`; `(Edition, IsTest, Status, BriefDate)` | Send history; the published archive. |
-| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId` | The board and lists, overdue and due-soon scans, Workload, "my actions". |
+| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId`; `ClosedAtUtc` (closed only) | The board and lists, overdue and due-soon scans, Workload, "my actions"; the daily prune of reminder marks. |
 | `ActionComments`, `ActionEvents` | `(ActionId, AtUtc)` | An action's timeline. |
 | `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. |
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
 | `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. Indicator values are not indexed: an indicator search scans. |
-| `NotificationMarks` | `SentAtUtc` | Reminder marks by age. |
+| `NotificationMarks` | `SentAtUtc` | Reminder marks by age: the daily prune of past periods' marks. |
 | `ApiTokens` | `Hash` unique | Token sign-in. |
 
 **Needs verification:** whether SQL Server's plans use these as intended at volume (an execution plan of the
