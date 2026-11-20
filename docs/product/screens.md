@@ -272,12 +272,17 @@ the page stops it after the source it's on.
 
 ### Several reports of one event
 
+- **Undo a single decision.** Shortlisting or dismissing one new item (S, X, or the button) says so in a toast with
+  *Undo* (or Alt+Z), which puts it back in New and selects it again, unless a colleague has decided it since (even
+  the same way). When the row was out of date and a colleague had already decided the item, there's no Undo: it
+  would put the item in New rather than back where the colleague left it.
 - **Attach to…** Any item can be kept as another report of a recent draft or ready article, instead of becoming a
   new one, and its CVEs go with it. When an article already covers the item, that's the main button.
 - **Looks like one event.** Reports from several feeds that share a CVE, or names and amounts in their headlines
   ("Binance", "$6.3 billion"), are suggested as one line. It opens to the reports themselves, each with its source and
-  excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click, and
-  a group has no "dismiss all". *Not the same* splits a suggested group for everyone, with Undo.
+  excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click.
+  *Shortlist the N* and *Dismiss the N* (S, X) act on every report in it once confirmed, and dismissing asks for the
+  reason in the confirmation, as *Dismiss all* does. *Not the same* splits a suggested group for everyone, with Undo.
 
 ![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
 

@@ -302,8 +302,9 @@ else
 <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_said</div>
 
 <ConfirmDialog @ref="_confirm" />
-@* "Dismiss all": the reason goes with every one of them, so it's chosen in the confirmation. *@
-<ConfirmDialog @ref="_dismissAll">
+@* "Dismiss all" and a group's "Dismiss the N": the reason goes with every one of them, so it's chosen in the
+   confirmation (a group's line has no reason of its own to show). *@
+<ConfirmDialog @ref="_dismissMany">
     <label class="tide-field-label" for="dismiss-all-reason">Dismiss them as</label>
     <select id="dismiss-all-reason" class="form-select form-select-sm mb-2" @bind="_reason">
         @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
@@ -311,7 +312,7 @@ else
 </ConfirmDialog>
 
 @code {
-    private ConfirmDialog _confirm = default!, _dismissAll = default!;
+    private ConfirmDialog _confirm = default!, _dismissMany = default!;
 
     // The reading pane (EP-76): the selected item's article, fetched from its page on V (or "Read it here") and kept for
     // colleagues and the editor. While it's open it follows the selection, showing a report's text when it's kept and
@@ -863,7 +864,7 @@ else
 
     private Guid? _sourceId;
     private string? _search;
-    private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all"
+    private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all" and a group's "dismiss the N"
     private string _itemReason = IntakeService.DismissReasons[0];   // for one item (X)
     private bool _sinceLast;
     private InboxSort _sort;
@@ -1003,15 +1004,16 @@ else
         if (_busy || line.Members.Count == 0 || _status != FeedItemStatus.New) return;
         var n = line.Members.Count;
         var dismiss = what == TriageStep.Dismiss;
-        if (!await _confirm.Ask(dismiss ? $"Dismiss the {n} reports?" : $"Shortlist the {n} reports?",
-                $"Every report in \u201C{Short(line.Members[0].Item.Title)}\u201D goes{(dismiss ? ", for everyone: the inbox is shared" : " to Shortlisted")}. To keep one, open the group and act on it alone.",
-                dismiss ? $"Dismiss {n}" : $"Shortlist {n}")) return;
+        var message = $"Every report in \u201C{Short(line.Members[0].Item.Title)}\u201D goes{(dismiss ? ", for everyone: the inbox is shared" : " to Shortlisted")}. To keep one, open the group and act on it alone.";
+        // Dismissing asks for the reason, as "Dismiss all" does: the single item's reason isn't on a group's line.
+        if (!await (dismiss ? _dismissMany.Ask($"Dismiss the {n} reports?", message, $"Dismiss {n}")
+                : _confirm.Ask($"Shortlist the {n} reports?", message, $"Shortlist {n}"))) return;
         _busy = true;
         try
         {
             var ids = line.Members.Select(m => m.Item.Id).ToList();
             // The count done, not the group's size: a colleague may have acted on some of them first.
-            var done = dismiss ? await Intake.DismissManyAsync(ids, _itemReason) : await Intake.ShortlistManyAsync(ids);
+            var done = dismiss ? await Intake.DismissManyAsync(ids, _reason) : await Intake.ShortlistManyAsync(ids);
             Announce();
             Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
                 : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, "report")}.");
@@ -1718,20 +1720,55 @@ else
             return;
         }
         _busy = true;
+        var item = row.Item;
         try
         {
+            TriageDecision? decision = null;
             switch (what)
             {
-                case TriageStep.Shortlist: await Intake.ShortlistAsync(row.Item.Id); break;
-                case TriageStep.Dismiss: await Intake.DismissAsync(row.Item.Id, _itemReason); break;
-                case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(row.Item.Id); break;
-                case TriageStep.Restore: await Intake.RestoreAsync(row.Item.Id); break;
+                case TriageStep.Shortlist: decision = await Intake.ShortlistAsync(item.Id); break;
+                case TriageStep.Dismiss: decision = await Intake.DismissAsync(item.Id, _itemReason); break;
+                case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(item.Id); break;
+                case TriageStep.Restore: await Intake.RestoreAsync(item.Id); break;
             }
             Announce();
             await Load();
             // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
             // now belongs to the next item) or the page.
             _focus = "tideTriage.focusRow";
+            // S or X on a new item is one keypress and the row leaves the list: the toast's Undo (or Alt+Z) puts it back.
+            // Only when it was new as it was decided (the service says; this row may be stale), where putting it back is
+            // the exact inverse; otherwise it would land in New rather than where it was.
+            if (decision is { FromNew: true } d)
+            {
+                var decided = what == TriageStep.Shortlist ? FeedItemStatus.Shortlisted : FeedItemStatus.Dismissed;
+                Toasts.Show($"{(decided == FeedItemStatus.Shortlisted ? "Shortlisted" : "Dismissed")}: {Short(item.Title)}", async () =>
+                {
+                    // From the toast: this page re-renders itself, as the click wasn't on it.
+                    await UndoDecision(item, decided, d.At);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Undo of a single shortlist or dismissal, from its toast: back in New, unless a colleague has decided it since. The
+    // row is selected again where it's shown, and an open reading pane follows it; nothing is fetched (Follow shows
+    // only text already kept).
+    internal async Task UndoDecision(FeedItem item, FeedItemStatus decided, DateTimeOffset at)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            Toasts.Show(await Intake.UndoDecisionAsync(item.Id, decided, at)
+                ? $"Put back in New: {Short(item.Title)}" : "Nothing to undo: a colleague already changed it.");
+            Announce();
+            await Load();
+            // Load has already followed the selection it made; the pane follows this one.
+            if (SelectItem(item.Id)) await Follow();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -1894,7 +1931,7 @@ else
     {
         var shown = _rows.Select(r => r.Item.Id).ToList();
         var n = shown.Count;
-        if (!await _dismissAll.Ask($"Dismiss all {n} shown?", "The inbox is shared.", $"Dismiss {n}")) return;
+        if (!await _dismissMany.Ask($"Dismiss all {n} shown?", "The inbox is shared.", $"Dismiss {n}")) return;
         await DismissAll(shown);
     }
 
