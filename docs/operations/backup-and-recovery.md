@@ -104,11 +104,14 @@ Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#u
   says which backup to restore. Migrations a DBA applied before a DbaApplies upgrade don't count: the previous build
   ran on them. When it can't read the database's migration history, or the previous build's, it leaves the pool
   stopped too and says what to check, unless the failure came before the new build could start;
-- once the new build has answered, it keeps the newest three upgrades' backups (`-KeepUpgradeBackups`, this run's
-  among them) and deletes the older `<database>-preupgrade-<time>.bak` files and `tide-upgrade-backups\<time>` folders,
-  listing each. The `.bak` files go only where the web server reaches SQL Server's backup folder (a UNC path, or SQL
-  Server on the same host); otherwise it lists the ones it left. A failed upgrade deletes none. These are the
-  upgrade's own backups: your scheduled backups (`Backup-Tide.ps1 -Keep`) are pruned separately.
+- once the new build has answered, it keeps the newest three successful upgrades' backups (`-KeepUpgradeBackups`,
+  this run's among them), plus any failed run's since the last success, and deletes the older
+  `<database>-preupgrade-<time>.bak` files and `tide-upgrade-backups\<time>` folders, listing each. It touches only
+  this install's: folders whose `snapshot.json` names this server and site (sibling sites share the folder), and
+  `.bak` files this SQL Server's backup history records for this database. The `.bak` files go only where the web
+  server reaches SQL Server's backup folder (a UNC path, or SQL Server on the same host); otherwise it lists the ones
+  it left. A failed upgrade deletes none. These are the upgrade's own backups: your scheduled backups
+  (`Backup-Tide.ps1 -Keep`) are pruned separately.
 
 ```mermaid
 flowchart TD

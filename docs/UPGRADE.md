@@ -139,12 +139,22 @@ What it does, in order:
    then the database is as it was, and the previous build is started again if it was running when the upgrade began
    (on AppMigrates, a pool already stopped may be an earlier failed upgrade's, so it stays stopped). On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
    refreshes the kept deploy scripts.
-6. **Prunes older upgrade backups**, on success only: it keeps the newest `-KeepUpgradeBackups` (3 by default, this
-   run's among them) of the `<database>-preupgrade-<time>.bak` files in SQL Server's default backup folder and of the
-   `<time>` folders under `tide-upgrade-backups`, deletes the older ones and lists each it deleted. Only those names
-   are touched; anything else in either folder stays. The `.bak` files are deleted only when the web server reaches
-   the folder: a UNC path, or SQL Server on the same host. Otherwise the upgrade warns and lists the older ones msdb's
-   backup history names, for you to delete there. With `-BackupRoot`, the backup folders aren't pruned. `0` keeps
+6. **Prunes older upgrade backups**, on success only. Each upgrade's folder holds a `snapshot.json` naming the server
+   and site folder it belongs to, and whether that upgrade succeeded. The upgrade keeps the newest
+   `-KeepUpgradeBackups` (3 by default, this run's among them) successful upgrades' `<database>-preupgrade-<time>.bak`
+   files and `<time>` folders, deletes the older ones, and lists each it deleted. A failed run doesn't count toward
+   the number, and a failed run's backups newer than the last successful upgrade are always kept: after failed
+   retries, the first one's backup may be the only one from before its migrations. Only this install's backups are
+   touched:
+   - a folder only when its `snapshot.json` names this server and site folder. Sibling sites (`D:\inetpub\tide` and
+     `D:\inetpub\tide-test`) share `tide-upgrade-backups`, and a folder from an upgrade before the record is never pruned;
+   - a `.bak` only when this SQL Server's backup history (`msdb`) records it for this database, with the name matched
+     case and all. Another server sharing the backup folder, or a database whose name differs only in case, keeps its
+     own. If the history can't be read, none is deleted.
+
+   The `.bak` files are deleted only when the web server reaches the folder: a UNC path, or SQL Server on the same
+   host. Otherwise the upgrade warns and lists the older ones, for you to delete there. With `-BackupRoot`, the backup
+   folders aren't pruned. A link (junction) inside a folder is removed as a link, never followed. `0` keeps
    everything. A failed or rolled-back upgrade deletes nothing, since its backups may be needed for a restore, and a
    backup that can't be deleted is a warning, not a failed upgrade.
 

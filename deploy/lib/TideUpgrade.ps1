@@ -423,10 +423,15 @@ function Get-TidePreUpgradeBakPattern([string] $DbName) {
 # The name of an upgrade's folder under tide-upgrade-backups.
 function Get-TideUpgradeFolderPattern { return '^(?<stamp>\d{8}-\d{6})$' }
 
-# Which of $Items to delete so that the newest $Keep remain. An item is a name, or anything with a Name (a FileInfo, a
-# DirectoryInfo). It counts only when its whole name matches $Pattern (ignoring case) and the pattern's 'stamp' group
-# is a real Get-TideStamp time, which orders it. A name in $Exclude (this run's) is never returned, and counts among
-# the ones kept. $Keep 0 or less prunes nothing. Returns the items themselves, newest first.
+# Which of $Items to delete. An item is anything with a Name (a name alone counts as a failed run's), and Succeeded:
+# $true when that upgrade succeeded; false or missing when it failed or isn't known. It counts only when its whole name
+# matches $Pattern, case included (on a case-sensitive server 'Tide' and 'TIDE' are two databases), and the pattern's
+# 'stamp' group is a real Get-TideStamp time, which orders it. A name in $Exclude (this run's, which succeeded) is never
+# returned.
+#   Successful runs: the newest $Keep stay, this run's among them; older ones go.
+#   Failed runs don't use up $Keep: one newer than the last success before this run stays (after failed retries, the
+#   first one's backup may be the only one from before its migrations); older ones go. With no earlier success, all stay.
+# $Keep 0 or less prunes nothing. Returns the items themselves, newest first.
 function Get-TidePrunable {
     param(
         $Items = @(),
@@ -435,18 +440,112 @@ function Get-TidePrunable {
         [Parameter(Mandatory = $true)] [string] $Pattern
     )
     if ($Keep -lt 1) { return @() }
-    $excluded = @($Exclude | Where-Object { $_ } | ForEach-Object { "$_".ToLowerInvariant() })
+    $excluded = @($Exclude | Where-Object { $_ })
     $matched = @(foreach ($item in @($Items)) {
         if ($null -eq $item) { continue }
         $name = if ($item -is [string]) { $item } else { [string]$item.Name }
-        $m = [regex]::Match($name, $Pattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $m = [regex]::Match($name, $Pattern)
         if (-not $m.Success -or -not $m.Groups['stamp'].Success) { continue }
         $when = ConvertFrom-TideStamp $m.Groups['stamp'].Value
         if ($null -eq $when) { continue }
-        [pscustomobject]@{ Item = $item; Name = $name; When = $when }
+        $ok = ($item -isnot [string]) -and $item.PSObject.Properties['Succeeded'] -and ($item.Succeeded -eq $true)
+        [pscustomobject]@{ Item = $item; Name = $name; When = $when; Succeeded = [bool]$ok; Excluded = ($excluded -ccontains $name) }
     })
     # Newest first; two of one stamp (a copy made by hand) order by name, so the choice is the same every run.
     $ordered = @($matched | Sort-Object -Property @{ Expression = 'When'; Descending = $true }, @{ Expression = 'Name'; Descending = $true })
-    return @($ordered | Select-Object -Skip $Keep | Where-Object { $excluded -notcontains $_.Name.ToLowerInvariant() } |
+    $out = New-Object System.Collections.Generic.List[object]
+    $successes = 0; $lastSuccess = $null
+    foreach ($o in $ordered) {
+        if (-not ($o.Succeeded -or $o.Excluded)) { continue }
+        $successes++
+        if (-not $o.Excluded -and $null -eq $lastSuccess) { $lastSuccess = $o.When }
+        if ($successes -gt $Keep -and -not $o.Excluded) { $out.Add($o) }
+    }
+    if ($null -ne $lastSuccess) {
+        foreach ($o in $ordered) {
+            if (-not $o.Succeeded -and -not $o.Excluded -and $o.When -lt $lastSuccess) { $out.Add($o) }
+        }
+    }
+    return @($out | Sort-Object -Property @{ Expression = 'When'; Descending = $true }, @{ Expression = 'Name'; Descending = $true } |
         ForEach-Object { $_.Item })
+}
+
+# The record an upgrade writes into its backup folder (snapshot.json): whose snapshot it is (this server, the site
+# folder), its database backup, and, once the new build answered, that it succeeded. Pruning goes by it: a folder
+# without one, or another site's, is never pruned, since sibling sites share the parent's tide-upgrade-backups.
+function New-TideUpgradeRecord([string] $Server, [string] $SitePath, [string] $IisPath, [string] $DbName, [string] $BakName, [string] $Started) {
+    return [ordered]@{ format = 1; server = $Server; site = $SitePath; iisPath = $IisPath; database = $DbName; bak = $BakName
+                       started = $Started; succeeded = $false; completed = $null }
+}
+
+# Marks the record in $Folder succeeded. Throws when there's none.
+function Set-TideUpgradeSucceeded([string] $Folder, [string] $Completed) {
+    $file = Join-Path $Folder 'snapshot.json'
+    $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $r | Add-Member -NotePropertyName succeeded -NotePropertyValue $true -Force
+    $r | Add-Member -NotePropertyName completed -NotePropertyValue $Completed -Force
+    ConvertTo-Json -InputObject $r | Set-Content -LiteralPath $file -Encoding UTF8
+}
+
+# This site's upgrade folders under $Root: each with a snapshot.json naming this server and this site folder. Another
+# site's, one with no record or one that won't read, and a link (junction or symbolic link), are left out. Each is
+# Name, FullName, Succeeded and BakName (the pre-upgrade backup that run took, or '').
+function Get-TideUpgradeSnapshots([string] $Root, [string] $SitePath, [string] $Server) {
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return @() }
+    $site = "$SitePath".TrimEnd('\', '/')
+    return @(foreach ($d in @(Get-ChildItem -LiteralPath $Root -Directory -Force)) {
+        if ($d.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        $file = Join-Path $d.FullName 'snapshot.json'
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        try { $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json } catch { continue }
+        if (-not $r -or "$($r.site)".TrimEnd('\', '/') -ine $site -or "$($r.server)" -ine $Server) { continue }
+        [pscustomobject]@{ Name = $d.Name; FullName = $d.FullName; Succeeded = ($r.succeeded -eq $true); BakName = [string]$r.bak }
+    })
+}
+
+# The names of the pre-upgrade backups of $DbName in $BakDir to delete. Only a file this SQL Server's backup history
+# ($History, msdb's physical_device_name for this database) records in $BakDir is ours: another server writing to a
+# shared folder, or a database whose name differs only in case, is never picked. -Files: the names in the folder, when
+# this host reaches it (a file the history names that's gone isn't returned); $null to go by the history alone.
+# $Snapshots (Get-TideUpgradeSnapshots) say which runs succeeded; a backup no record names counts as a failed run's.
+function Get-TidePrunableBaks {
+    param(
+        [string[]] $History = @(),
+        [string] $BakDir,
+        [Parameter(Mandatory = $true)] [string] $DbName,
+        $Files = $null,
+        $Snapshots = @(),
+        [int] $Keep = 3,
+        [string[]] $Exclude = @()
+    )
+    $dir = "$BakDir".TrimEnd('\', '/')
+    if (-not $dir) { return @() }
+    $ours = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($h in @($History)) {
+        if ("$h" -match '^(?<d>.*)[\\/](?<n>[^\\/]+)$' -and $Matches['d'].TrimEnd('\', '/') -ieq $dir) { [void]$ours.Add($Matches['n']) }
+    }
+    $names = if ($null -ne $Files) { @(@($Files) | ForEach-Object { "$_" } | Where-Object { $ours.Contains($_) }) } else { @($ours) }
+    $succeeded = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($s in @($Snapshots)) { if ($s -and $s.BakName) { $succeeded[[string]$s.BakName] = [bool]$s.Succeeded } }
+    $items = @($names | ForEach-Object { [pscustomobject]@{ Name = $_; Succeeded = ($succeeded.ContainsKey($_) -and $succeeded[$_]) } })
+    return @(Get-TidePrunable -Items $items -Keep $Keep -Exclude $Exclude -Pattern (Get-TidePreUpgradeBakPattern $DbName) |
+        ForEach-Object { $_.Name })
+}
+
+# Deletes a folder and what it holds without following a link inside it: Windows PowerShell 5.1's Remove-Item -Recurse
+# goes through a junction and deletes its target's files. A link is removed as a link. Refuses a folder that is a link.
+function Remove-TideTree([string] $Path) {
+    $top = Get-Item -LiteralPath $Path -Force
+    if ($top.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$Path is a link, not a folder: left as it is." }
+    foreach ($c in @(Get-ChildItem -LiteralPath $Path -Force)) {
+        if ($c.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            if ($c.PSIsContainer) { [IO.Directory]::Delete($c.FullName, $false) } else { [IO.File]::Delete($c.FullName) }
+        } elseif ($c.PSIsContainer) {
+            Remove-TideTree $c.FullName
+        } else {
+            $c.Attributes = [IO.FileAttributes]::Normal
+            [IO.File]::Delete($c.FullName)
+        }
+    }
+    [IO.Directory]::Delete($Path, $false)
 }
