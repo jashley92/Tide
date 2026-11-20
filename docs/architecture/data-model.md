@@ -1087,6 +1087,9 @@ Records that a reminder or digest was sent, so each scan sends it once. Key `(Ki
 `late-0`, `late-1`… (`ExternalCadence.Step`). A step of the escalation ladder is `escalation` and
 `{action}:{due}:{step}`, the step its offset and what it does (`+7.12`: seven business days after, raise and flag), so
 reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again.
+Each of the ladder's emails is `escalation-email` and `{action}:{due}:{step}|{r or c}:{address hash}`, written as it
+goes, so a run stopped before the step is marked sends only what didn't go; the ladder reads them only for steps not yet
+marked.
 That an external team's contact was reminded about an action today, by either, is `contact-reminded` and
 `{action}:{day}:{contact}` (the address as a short hash), so the other is skipped that day. `Kind` is nvarchar(32), `Key`
 nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
@@ -1096,7 +1099,8 @@ the mark `marks-pruned`/`last`). A mark goes only when its absence can't send an
 `MarkRetentionDays` (90): a past period's (`digest`, `personal-digest`, `brief-not-ready`, `presenting`,
 `contact-reminded`, which a scan only looks up by the current period's key), and, for an action closed that long ago
 (deleted ones too), its recipients' `due-soon` and `overdue` marks (the action's own mark for that kind and due date
-stays, and a scan that finds it reads no further), its `digest-seen` marks, and the `outreach-follow-up` marks of its
+stays, and a scan that finds it reads no further), its `escalation-email` marks whose step's `escalation` mark is there
+(that mark stays; the ladder never runs the step again, nor reads its emails), its `digest-seen` marks, and the `outreach-follow-up` marks of its
 answered emails. An open action keeps every mark. A closed one keeps what its scans would read again were it reopened
 (its own `due-soon` and `overdue`, `escalation`, `external-reminder`, an unanswered email's follow-up), so reopening it
 sends nothing twice; its next personal digest may list it as new again. Deletes name their keys, a few hundred a
