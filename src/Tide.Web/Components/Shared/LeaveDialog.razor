@@ -5,34 +5,29 @@
    UnsavedGuard wraps both for any page with something unsaved. Asked with canSave: false (a draft with no one save, a
    comment that would be posted), it offers only Discard and leave, or Stay. *@
 @implements IDisposable
-@inject IJSRuntime JS
 
-@if (_open)
-{
-    <div class="tide-modal-scrim" @onclick="Stay">
-        <div class="tide-modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="@_titleId" aria-describedby="@_bodyId"
-             @onclick:stopPropagation="true" @onkeydown="OnKey">
-            <h2 class="tide-modal-title" id="@_titleId">Leave with unsaved changes?</h2>
-            <p class="tide-modal-body" id="@_bodyId">@_message</p>
-            <div class="tide-modal-actions tide-modal-actions-wrap">
-                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_stay" @onclick="Stay">Stay</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Close(Choice.Discard)">Discard and leave</button>
-                @if (_canSave)
-                {
-                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => Close(Choice.Save)">Save and leave</button>
-                }
-            </div>
-        </div>
-    </div>
-}
+<ModalShell Open="_open" Id="@_id" Role="alertdialog" Title="Leave with unsaved changes?" DescribedBy="@_bodyId" OnClose="Stay"
+            FocusTarget="() => _stay" ActionsClass="tide-modal-actions-wrap">
+    <ChildContent>
+        <p class="tide-modal-body" id="@_bodyId">@_message</p>
+    </ChildContent>
+    <Actions>
+        <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_stay" @onclick="Stay">Stay</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Close(Choice.Discard)">Discard and leave</button>
+        @if (_canSave)
+        {
+            <button type="button" class="btn btn-primary btn-sm" @onclick="() => Close(Choice.Save)">Save and leave</button>
+        }
+    </Actions>
+</ModalShell>
 
 @code {
     /// <summary>What to do with the unsaved changes.</summary>
     public enum Choice { Stay, Save, Discard }
 
-    private readonly string _titleId = Ui.NewId("leave");
-    private string _bodyId => _titleId + "-body";
-    private bool _open, _shown, _canSave = true;
+    private readonly string _id = Ui.NewId("leave");
+    private string _bodyId => _id + "-body";
+    private bool _open, _canSave = true;
     private string _message = "";
     private TaskCompletionSource<Choice>? _answer;
     private ElementReference _stay;
@@ -57,23 +52,6 @@
         _open = false;
         _answer?.TrySetResult(choice);
         _answer = null;
-    }
-
-    private void OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") Stay();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_open == _shown) return;
-        _shown = _open;
-        try
-        {
-            if (_open) await JS.InvokeVoidAsync("tideDialog.open", _stay);
-            else await JS.InvokeVoidAsync("tideDialog.close");
-        }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
     }
 
     public void Dispose() => _answer?.TrySetResult(Choice.Stay);
