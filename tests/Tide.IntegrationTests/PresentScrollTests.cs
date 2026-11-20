@@ -210,7 +210,7 @@ public class PresentScrollTests(MeetingClockApp app) : IClassFixture<MeetingCloc
         html.Should().NotContain("data-scroll-share", "nothing to share outside a meeting");
         html.Should().NotContain("tide-slide-back");
 
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-scrollfade.is-more-above").And.Contain(".tide-scrollfade.is-more-below")
             .And.Contain(".tide-slide:has(> .tide-slide-body.is-more-below) .tide-slide-more")
             .And.Contain("container-type: size").And.Contain("var(--tide-fit, 1)").And.Contain("scrollbar-width: thin");

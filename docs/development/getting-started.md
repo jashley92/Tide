@@ -267,7 +267,7 @@ in [testing.md](testing.md#the-upgrade-test).
 
 ## Conventions
 
-- **Colours.** They come from the `--tide-*` tokens in `src/Tide.Web/wwwroot/app.css`, which are defined for both
+- **Colours.** They come from the `--tide-*` tokens in `src/Tide.Web/wwwroot/css/00-tokens.css`, which are defined for both
   themes. Never hard-code a hex colour in a page. `StyleTokenTests` checks that every token used is defined. Email is
   the exception (mail clients can't read CSS variables): its colours are in `EmailComposer.Palette`, mirroring the
   light tokens. Change both together.

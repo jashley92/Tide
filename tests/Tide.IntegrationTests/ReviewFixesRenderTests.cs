@@ -40,7 +40,7 @@ public class ReviewFixesRenderTests(TideApp app) : IClassFixture<TideApp>
 
         html.Should().Contain($"href=\"actions?view=open&team={team}\" aria-label=\"0 open for Workload Links Team\"")
             .And.Contain($"href=\"actions?view=overdue&team={team}\" aria-label=\"0 overdue for Workload Links Team\"");
-        (await app.CreateClient().GetStringAsync("/app.css")).Should().Contain(".tide-load-nums { display: grid; grid-template-columns: repeat(5, 1fr);");
+        (await app.StylesheetAsync()).Should().Contain(".tide-load-nums { display: grid; grid-template-columns: repeat(5, 1fr);");
     }
 
     [Fact]

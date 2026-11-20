@@ -22,7 +22,7 @@ public partial class MarkdownQuoteTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task RenderedMarkdown_SetsAQuoteApart_WithARuleAndMutedText_FromTheTokens()
     {
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
 
         var rule = BlockquoteRule().Match(css);
         rule.Success.Should().BeTrue("rendered Markdown's quotes need a style of their own: Bootstrap's reboot gives a bare blockquote only a margin");

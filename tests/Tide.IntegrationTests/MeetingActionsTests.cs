@@ -133,7 +133,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     {
         // A stylesheet edit once dropped the quick add's grid, and its five controls stacked one per line: each row of
         // controls on an article slide keeps its own layout rule.
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-quick-add { display: grid;", "the quick add: what needs doing, then kind, team, due date and Add")
             .And.Contain(".tide-reco li { display: grid;", "a recommended line with what to raise it as")
             .And.Contain(".tide-slide-actlist { display: grid;", "the article's actions, one line each");

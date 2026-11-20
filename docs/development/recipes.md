@@ -11,6 +11,7 @@ Before changing a rule, read [reference/business-rules.md](../reference/business
 - [Add an entity or a column, and its migration](#add-an-entity-or-a-column-and-its-migration)
 - [Add a permission or a role capability](#add-a-permission-or-a-role-capability)
 - [Add a page or a route](#add-a-page-or-a-route)
+- [Add styles for a page](#add-styles-for-a-page)
 - [Add an operational setting (changed in the app)](#add-an-operational-setting-changed-in-the-app)
 - [Add a server-only configuration key](#add-a-server-only-configuration-key)
 - [Add an email template](#add-an-email-template)
@@ -191,6 +192,19 @@ A page `GET` that's refused or not found redirects to `/access-denied` or `/not-
 real status code (`UseStatusCodePages` in `Program.cs`).
 
 **Docs:** [product/screens.md](../product/screens.md) and the workflow page the screen belongs to.
+
+## Add styles for a page
+
+The stylesheet is in parts by area under `src/Tide.Web/wwwroot/css/` (the list is in
+[frontend.md](../architecture/frontend.md#design-tokens), "Where the styles live").
+
+1. Find the part for the page's area and, in it, the section for the component. Add the rule there, not at the end of
+   the file. Use the `--tide-*` tokens only (`StyleTokenTests` fails a token that isn't defined).
+2. Bump that part's `?v=` in `src/Tide.Web/Components/App.razor` (`tools/ci/check-asset-versions.sh`).
+3. Never reorder the parts, and don't move rules between them in a change that's meant to look the same: the order
+   of the `<link>`s is the cascade.
+4. A rule a layout check depends on gets a rule in `tools/screenshots/layout.mjs`; a test that reads the CSS reads
+   it as served (`app.StylesheetAsync()`), not from one file.
 
 ## Add an operational setting (changed in the app)
 
