@@ -876,8 +876,10 @@ sequenceDiagram
   events stamped at the same moment, such as actions raised in one save) and at most 100 `action.overdue` posts, so a
   backlog drains over several runs.
 - **Time budget.** Every post a run makes, of every kind, starts within **5 minutes** of the run's start
-  (`WebhookService.RunBudget`), so a run ends within that plus one post (15 seconds at most), well under the job's
-  15-minute hang limit; a slow receiver could otherwise hold a run for most of half an hour. Each webhook in turn gets
+  (`WebhookService.RunBudget`, timed on the monotonic clock, so a wall-clock correction can't stretch it). A run
+  therefore ends within the budget plus one post (15 seconds at most) plus the remaining webhooks' bookkeeping: each
+  still reads what's due and saves its watermarks and last result, posting nothing once the budget is spent. That's
+  well under the job's 15-minute hang limit; a slow receiver could otherwise hold a run for most of half an hour. Each webhook in turn gets
   an even share of what's left, so one slow receiver doesn't hold up the others. A webhook whose share is spent stops
   before its next post, even among events stamped at one moment or due the same day, and the next run goes on from the
   post after the last that went (the webhook's `MomentCursor` and `OverdueCursor`): nothing is skipped or sent twice.

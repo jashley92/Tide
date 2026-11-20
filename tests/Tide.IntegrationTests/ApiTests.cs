@@ -720,6 +720,135 @@ public class WebhookDeliveryTests : IDisposable
         delivered.Should().Equal(numbers, "each once, in order");
     }
 
+    private async Task<DateTimeOffset> TheMoment()
+    {
+        await using var db = _db.Context();
+        return (await db.Actions.AsNoTracking().OrderBy(a => a.Number).FirstAsync()).CreatedAtUtc;
+    }
+
+    private static string EventOf(string body)
+    {
+        var json = JsonElement.Parse(body);
+        return json.GetProperty("event").GetString() == WebhookService.BriefSent ? json.GetProperty("id").GetString()! : $"A-{Number(body)}";
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AMomentOfActionsAndBriefSends_StoppedAmongTheSends_TheNextRunGoesOnFromTheNextSend(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionRaised, WebhookService.BriefSent]);
+        await RaisedAtOneMoment(21);
+        var at = await TheMoment();
+        var sendIds = new List<Guid>();
+        await using (var ctx = _db.Context())
+        {
+            var brief = new Brief { BriefDate = _db.Clock.Today, AnalystName = "Robin" };
+            ctx.Briefs.Add(brief);
+            for (var i = 0; i < 3; i++)
+            {
+                var send = new BriefSend
+                {
+                    BriefId = brief.Id, BriefDate = brief.BriefDate, Edition = Edition.Team, Status = SendStatus.Sent, Ceiling = TlpLevel.Green,
+                    Marking = TlpLevel.Green, Subject = $"Brief {i}", Recipients = "soc@example.org", RecipientCount = 1, SentAtUtc = at, SentById = "x",
+                    SentByName = "X", EmailHtml = "<p>brief</p>", WebHtml = "<p>brief</p>",
+                };
+                ctx.BriefSends.Add(send);
+                sendIds.Add(send.Id);
+            }
+            await ctx.SaveChangesAsync();
+        }
+        var clock = new TestClock(DateTimeOffset.UtcNow.AddMinutes(5));
+        SlowAt("slow.example.org", clock);
+
+        var runs = new List<int>();
+        for (var i = 0; i < 3; i++)
+        {
+            runs.Add(await _db.Webhooks(clock).DeliverDueAsync());
+            clock.Now += TimeSpan.FromMinutes(1);
+        }
+
+        runs.Should().Equal([22, 2, 0], "the budget ran out after the moment's 21 actions and its first send");
+        _db.Posts.Posted.Select(p => EventOf(p.Body)).Should().Equal(Enumerable.Range(1, 21).Select(n => $"A-{n}")
+            .Concat(sendIds.Select(id => id.ToString("N")).Order(StringComparer.Ordinal).Select(n => $"{WebhookService.BriefSent}:{Guid.ParseExact(n, "N")}")),
+            "each once: the actions by number, then the sends in their fixed order");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AnOverdueFailure_PartwayThroughADay_TheNextRunGoesOnFromIt_NoneSkippedOrSentTwice(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionOverdue]);
+        var numbers = await RaisedAtOneMoment(30, _db.Clock.Today.AddDays(-1));
+        var delivered = new List<int>();
+        _db.Posts.During = () =>
+        {
+            _db.Posts.Status = _db.Posts.Posted.Count == 10 ? 503 : 200;   // the day's tenth
+            if (_db.Posts.Status == 200) delivered.Add(Number(_db.Posts.Posted[^1].Body));
+            return Task.CompletedTask;
+        };
+
+        (await _db.Webhooks().DeliverDueAsync()).Should().Be(10);
+        (await _db.Webhooks().DeliverDueAsync()).Should().Be(21, "from the tenth, the one that failed");
+        (await _db.Webhooks().DeliverDueAsync()).Should().Be(0);
+
+        delivered.Should().Equal(numbers, "each once, by number");
+    }
+
+    [Fact]
+    public async Task SwitchingAWebhookBackOn_ClearsItsCursors()
+    {
+        var hook = await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised, WebhookService.ActionOverdue]);
+        await using (var ctx = _db.Context())
+            await ctx.Webhooks.ExecuteUpdateAsync(u => u.SetProperty(w => w.MomentCursor, "638000000000000000|A0000000007").SetProperty(w => w.OverdueCursor, "2026-11-18|7"));
+
+        await _db.Webhooks().SetEnabledAsync(hook.Id, false);
+        await _db.Webhooks().SetEnabledAsync(hook.Id, true);
+
+        await using (var ctx = _db.Context())
+        {
+            var row = await ctx.Webhooks.AsNoTracking().SingleAsync();
+            row.MomentCursor.Should().BeNull("it starts from now: a cursor into what came before means nothing");
+            row.OverdueCursor.Should().BeNull();
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AMomentCursor_ThatDoesntRead_SendsTheMomentFromItsStart_SkippingNone(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        var numbers = await RaisedAtOneMoment(5);
+        var ticks = (await TheMoment()).UtcTicks;
+        async Task Cursor(string place)
+        {
+            await using var ctx = _db.Context();
+            await ctx.Webhooks.ExecuteUpdateAsync(u => u.SetProperty(w => w.MomentCursor, $"{ticks}|{place}"));
+        }
+        var later = new ShiftedClock(TimeSpan.FromMinutes(5));
+
+        await Cursor("garbage");
+        (await _db.Webhooks(later).DeliverDueAsync()).Should().Be(5, "a place it can't read would sort after the moment's events and skip them all");
+        _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(numbers);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AMomentCursor_GoesOnFromTheEventAfterIt(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        await RaisedAtOneMoment(5);
+        var ticks = (await TheMoment()).UtcTicks;
+        await using (var ctx = _db.Context())
+            await ctx.Webhooks.ExecuteUpdateAsync(u => u.SetProperty(w => w.MomentCursor, $"{ticks}|A0000000002"));
+
+        (await _db.Webhooks(new ShiftedClock(TimeSpan.FromMinutes(5))).DeliverDueAsync()).Should().Be(3);
+        _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(3, 4, 5);
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task ASlowReceiver_DoesntHoldUpAnotherHook_ItStillGetsItsPostsInTheSameRun(string provider)

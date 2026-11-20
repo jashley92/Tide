@@ -136,6 +136,8 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// </summary>
     public async Task<int> DeliverDueAsync(CancellationToken ct = default)
     {
+        // The budget is timed on the monotonic clock, so a step in the wall clock (an NTP correction) can't stretch a run.
+        var runStarted = time.GetTimestamp();
         var now = time.GetUtcNow();
         var today = clock.Today;
         await using var db = await dbs.CreateAsync(ct);
@@ -143,7 +145,6 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         // before a post, so a slow one can overrun by a post) is first in line next run.
         var hooks = (await db.Webhooks.AsNoTracking().Where(w => w.Enabled).ToListAsync(ct)).OrderBy(w => w.LastAtUtc).ThenBy(w => w.Id).ToList();
         if (hooks.Count == 0) return 0;
-        var runEnds = now + RunBudget;
         // A receiver is at least as wide as the team edition's list (a SOAR, a ticket queue), so it gets what that edition
         // would: an action raised from an article above its ceiling is left out, as the brief leaves the article out with
         // its actions. Left out of the query, it's passed by the watermark like anything already sent.
@@ -156,10 +157,10 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
             var hook = hooks[h];
             var read = (hook.SentUpToUtc, hook.OverdueSentFor);
             // This hook's share: an even part of what's left of the budget, so time one hook didn't need goes to the rest.
-            var started = time.GetUtcNow();
-            var deadline = started + (runEnds - started) / (hooks.Count - h);
+            var started = time.GetElapsedTime(runStarted);
+            var deadline = started + (RunBudget - started) / (hooks.Count - h);
             var outOfTime = false;
-            bool Spent() => outOfTime = outOfTime || time.GetUtcNow() >= deadline;
+            bool Spent() => outOfTime = outOfTime || time.GetElapsedTime(runStarted) >= deadline;
             var after = hook.SentUpToUtc;
             var events = EventsOf(hook.Events);
             async Task<bool> Post(string name, string id, object data)
@@ -321,8 +322,16 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     // A moment cursor read back: the moment's ticks and the place of the last event posted in it. One that doesn't read
     // is no cursor: the moment is sent from its start (repeats under the same ids, never a skip).
     private static (long Ticks, string Place)? Cursor(string? text) =>
-        text?.Split('|') is [var ticks, { Length: > 0 } place] && long.TryParse(ticks, NumberStyles.None, CultureInfo.InvariantCulture, out var t)
+        text?.Split('|') is [var ticks, var place] && IsPlace(place) && long.TryParse(ticks, NumberStyles.None, CultureInfo.InvariantCulture, out var t)
             ? (t, place) : null;
+
+    // Only a place as ActionPlace or SendPlace writes it: any other text could sort past the moment's events and skip them.
+    private static bool IsPlace(string place) => place switch
+    {
+        ['A', .. var digits] => digits.Length == 10 && digits.All(char.IsAsciiDigit),
+        ['B', .. var id] => id.Length == 32 && id.All(char.IsAsciiHexDigitLower),
+        _ => false,
+    };
 
     private static (DateOnly Day, int Number)? OverdueCursorOf(string? text) =>
         text?.Split('|') is [var day, var number]
