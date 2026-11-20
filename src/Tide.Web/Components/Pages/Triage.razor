@@ -330,6 +330,9 @@ else
     // item is the one in the pane by then. It isn't cancelled: the site has been asked already, and the analyst asked for
     // that text, so it's kept for when they come back to it.
     private readonly HashSet<Guid> _fetching = [];
+    // Why each item's latest fetch failed, for this visit only (failures aren't kept like texts): coming back to an item
+    // whose read failed after the analyst moved on shows why, as it would have at the time, without asking the site again.
+    private readonly Dictionary<Guid, ReadingText> _readFailed = [];
     private ReadingText? _read;
     private InboxRow? _readRow;
     private IReadOnlyDictionary<string, CveRecord> _readCves = new Dictionary<string, CveRecord>();
@@ -359,7 +362,7 @@ else
         if (row is null) return;
         try
         {
-            var kept = await Reading.KeptAsync(row.Item.Id);
+            var kept = await Reading.KeptAsync(row.Item.Id) ?? _readFailed.GetValueOrDefault(row.Item.Id);
             // Its own fetch can land meanwhile (the analyst came back to an item still being read): that text stays.
             if (kept is not null || _read is null) await Show(row.Item.Id, kept);
         }
@@ -398,9 +401,13 @@ else
             _read = null;
             _fetching.Add(row.Item.Id);
             StateHasChanged();
-            try { await Show(row.Item.Id, await Reading.ReadAsync(row.Item.Id, again)); }
-            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(row.Item.Id, ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
+            ReadingText read;
+            try { read = await Reading.ReadAsync(row.Item.Id, again); }
+            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { read = ReadingText.Failed(row.Item.Id, UserFacingError.For(ex)); }
             finally { _fetching.Remove(row.Item.Id); }
+            if (read.HasText) _readFailed.Remove(row.Item.Id);
+            else _readFailed[row.Item.Id] = read;
+            await Show(row.Item.Id, read);
         }
         finally { await kept; }
     }

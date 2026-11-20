@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Intake;
 using Tide.Domain.Entities;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
@@ -219,13 +220,41 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
         for (var i = 0; i < 200 && Fetches(prefix) == 0; i++) await Task.Delay(50);
         await r.Click(t => t.OnTriageKey("next"));
         (await r.Html()).Should().Contain("aria-busy=\"false\"", "B isn't being read");
+        await r.Click(t => t.OnTriageKey("read"));
+        (await r.Html()).Should().Contain("Fast page text about the browser.", "another row reads while A is busy");
         await r.Click(t => t.OnTriageKey("prev"));
         (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">backread item A").And.Contain("aria-busy=\"true\"", "A still is");
 
         await r.Click(t => t.OnTriageKey("read"));
-        Fetches(prefix).Should().Be(1, "V on an item being read doesn't fetch it twice");
+        Fetches(prefix).Should().Be(2, "V on an item being read doesn't fetch it twice");
 
         slow.SetResult();
         (await r.HtmlOnce("Slow page text about the hospitals.")).Should().Contain("Slow page text about the hospitals.").And.Contain("aria-busy=\"false\"");
+    }
+
+    [Fact]
+    public async Task AFetchThatFailsAfterTheAnalystMovedOn_SaysWhyWhenTheyComeBack_WithoutAskingAgain()
+    {
+        var (source, _, prefix, slow) = await SlowFeed("lateread");
+        app.Http.Responses[prefix + "a"] = new HttpFetch(FetchStatus.Failed, Error: "The server answered 404 Not Found.");
+        var who = new ComponentHarness.SignIn("lateread:" + prefix, "Late tester", "Analyst");
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
+        await r.HtmlOnce("lateread item C");
+
+        await r.Press(t => t.OnTriageKey("read"));
+        for (var i = 0; i < 200 && Fetches(prefix) == 0; i++) await Task.Delay(50);
+        await r.Click(t => t.OnTriageKey("next"));
+
+        // A's site answers 404 while the analyst is on B: B's pane doesn't change.
+        slow.SetResult();
+        await Task.Delay(300);
+        await r.Drawn();
+        (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item B").And.Contain("Not read yet.").And.NotContain("404");
+
+        // Back on A, why it failed shows, as it would have at the time, and the site isn't asked again.
+        await r.Click(t => t.OnTriageKey("prev"));
+        (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item A")
+            .And.Contain("The server answered 404 Not Found. Open the site instead.").And.NotContain("Not read yet.");
+        Fetches(prefix).Should().Be(1, "coming back to an item never fetches it");
     }
 }
