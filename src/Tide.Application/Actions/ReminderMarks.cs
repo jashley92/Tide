@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tide.Application.Abstractions;
@@ -59,7 +60,13 @@ public sealed partial class ReminderService
                 .ExecuteUpdateAsync(u => u.SetProperty(m => m.SentAtUtc, now), CancellationToken.None) == 0)
         {
             db.NotificationMarks.Add(new NotificationMark { Kind = PrunedMark, Key = PrunedKey, SentAtUtc = now });
-            await db.SaveChangesAsync(CancellationToken.None);
+            // Another pass (another process, a moment ago) wrote it first: that one pruned just now too, so this is done.
+            try { await db.SaveChangesAsync(CancellationToken.None); }
+            catch (DbUpdateException)
+            {
+                await using var fresh = await dbs.CreateAsync(CancellationToken.None);
+                if (!await fresh.NotificationMarks.AsNoTracking().AnyAsync(m => m.Kind == PrunedMark && m.Key == PrunedKey, CancellationToken.None)) throw;
+            }
         }
         if (pruned > 0) logger?.LogInformation("Pruned {Count} reminder marks that can't matter again (kept {Days} days).", pruned, MarkRetentionDays);
         return pruned;
@@ -83,6 +90,9 @@ public sealed partial class ReminderService
             .Where(a => !ActionItem.OpenStatuses.Contains(a.Status) && a.ClosedAtUtc != null && a.ClosedAtUtc <= cutoff);
         if (after is { } from) closed = closed.Where(a => a.ClosedAtUtc > from);
         var total = 0;
+        // The readers whose personal digests listed anything ("{who}:{action}"), read once the first page needs them: with
+        // them, an action's digest-seen marks are exact keys, each a seek.
+        List<string>? readers = null;
         // A page at a time, oldest closed first, each after the last one read.
         DateTimeOffset? lastAt = null;
         var lastNumber = 0;
@@ -100,16 +110,19 @@ public sealed partial class ReminderService
             var doomed = new List<(string Kind, string Key)>();
 
             // Recipients' due marks, where the action's own mark for the same kind and due date is there to stop the scan.
-            var due = await db.NotificationMarks.AsNoTracking()
-                .Where(m => (m.Kind == "due-soon" || m.Kind == "overdue") && prefixes.Contains(m.Key.Substring(0, 32)))
-                .Select(m => new { m.Kind, m.Key }).ToListAsync(ct);
-            var whole = due.Where(m => !m.Key.Contains('|')).Select(m => (m.Kind, m.Key)).ToHashSet();
-            doomed.AddRange(due.Where(m => m.Key.IndexOf('|') is var bar and > 0 && whole.Contains((m.Kind, m.Key[..bar]))).Select(m => (m.Kind, m.Key)));
+            // Read as key ranges, one an action, so each is a seek on the key.
+            var due = new List<(string Kind, string Key)>();
+            foreach (var kind in new[] { "due-soon", "overdue" })
+                foreach (var chunk in prefixes.Chunk(RangesPerQuery))
+                    due.AddRange((await db.NotificationMarks.AsNoTracking().Where(KeysStartingWith(kind, chunk)).Select(m => m.Key).ToListAsync(ct))
+                        .Where(k => chunk.Any(p => k.StartsWith(p, StringComparison.Ordinal))).Select(k => (kind, k)));
+            var whole = due.Where(m => !m.Key.Contains('|')).ToHashSet();
+            doomed.AddRange(due.Where(m => m.Key.IndexOf('|') is var bar and > 0 && whole.Contains((m.Kind, m.Key[..bar]))));
 
-            // Which personal digests listed it: "{who}:{action}".
-            doomed.AddRange((await db.NotificationMarks.AsNoTracking()
-                    .Where(m => m.Kind == "digest-seen" && prefixes.Contains(m.Key.Substring(HashLength + 1, 32))).Select(m => m.Key).ToListAsync(ct))
-                .Select(k => ("digest-seen", k)));
+            // Which personal digests listed it: "{who}:{action}", for each reader that has any.
+            readers ??= await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest-seen")
+                .Select(m => m.Key.Substring(0, HashLength)).Distinct().ToListAsync(ct);
+            doomed.AddRange(readers.SelectMany(who => prefixes.Select(p => ("digest-seen", $"{who}:{p}"))));
 
             // Follow-ups of its emails that were answered: a reply is never taken back.
             doomed.AddRange((await db.OutreachMessages.AsNoTracking().IgnoreQueryFilters([ActionItem.DeletedFilter])
@@ -118,6 +131,44 @@ public sealed partial class ReminderService
 
             total += await DeleteMarksAsync(db, doomed, ct);
         }
+    }
+
+    // Key ranges per query: each is a seek on the key, and the statement stays small.
+    private const int RangesPerQuery = 50;
+
+    // The marks of one kind whose key starts with one of these 32-hex prefixes (an action's id), as key ranges: from the
+    // prefix up to the next one in hex, which sorts after every key starting with it under any collation (hex digits
+    // compare alike in all of them), so the database seeks each range on the key rather than reading the kind whole.
+    // The prefixes are hex, so they're inlined. A range can't hold a key without the prefix: every key has it in full.
+    private static Expression<Func<NotificationMark, bool>> KeysStartingWith(string kind, IEnumerable<string> prefixes)
+    {
+        var m = Expression.Parameter(typeof(NotificationMark), "m");
+        var key = Expression.Property(m, nameof(NotificationMark.Key));
+        var compare = typeof(string).GetMethod(nameof(string.Compare), [typeof(string), typeof(string)])!;
+        var zero = Expression.Constant(0);
+        Expression Cmp(string bound) => Expression.Call(compare, key, Expression.Constant(bound));
+        Expression any = Expression.Constant(false);
+        foreach (var p in prefixes)
+        {
+            Expression one = Expression.GreaterThanOrEqual(Cmp(p), zero);
+            if (NextHex(p) is { } next) one = Expression.AndAlso(one, Expression.LessThan(Cmp(next), zero));
+            any = Expression.OrElse(any, one);
+        }
+        var body = Expression.AndAlso(Expression.Equal(Expression.Property(m, nameof(NotificationMark.Kind)), Expression.Constant(kind)), any);
+        return Expression.Lambda<Func<NotificationMark, bool>>(body, m);
+    }
+
+    // The next lower-case hex string of the same length ("0af" → "0b0"), or null after "fff…".
+    private static string? NextHex(string hex)
+    {
+        var chars = hex.ToCharArray();
+        for (var i = chars.Length - 1; i >= 0; i--)
+        {
+            if (chars[i] == 'f') { chars[i] = '0'; continue; }
+            chars[i] = chars[i] == '9' ? 'a' : (char)(chars[i] + 1);
+            return new string(chars);
+        }
+        return null;
     }
 
     // Deletes the marks named, a kind and a batch of keys a statement (the key's seek), whatever the caller's token says:

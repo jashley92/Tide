@@ -1175,6 +1175,40 @@ public class ReminderTests : IDisposable
         (await Kept("second")).Should().BeFalse("a day on, it runs again");
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task PruningMarks_ReadsEachClosedActionsKeys_AsItsOwnRange_TouchingNoNeighboursAndMissingNone(string provider)
+    {
+        _db = _db.On(provider);
+        var team = await _db.Teams().AddAsync("Vulnerability Management", null, null);
+        var longAgo = _db.Clock.Now.ToUniversalTime().AddDays(-ReminderService.MarkRetentionDays - 10);
+        // Ids next to each other in hex, one at the very end, and enough others to need more than one query of ranges.
+        var edge = Guid.Parse("0000000000000000000000000000000f");
+        var neighbour = Guid.Parse("00000000000000000000000000000010");
+        var last = Guid.Parse("ffffffffffffffffffffffffffffffff");
+        var closed = new[] { edge, last }.Concat(Enumerable.Range(0, 120).Select(_ => Guid.NewGuid())).ToList();
+        await using (var ctx = _db.Context())
+        {
+            var number = 9000;
+            foreach (var id in closed)
+                ctx.Actions.Add(new ActionItem { Id = id, Number = ++number, Title = "Closed", TeamId = team, Status = ActionStatus.Cancelled, ClosedAtUtc = longAgo });
+            ctx.Actions.Add(new ActionItem { Id = neighbour, Number = ++number, Title = "Open", TeamId = team });
+            foreach (var id in closed.Append(neighbour))
+                ctx.NotificationMarks.AddRange(
+                    new NotificationMark { Kind = "overdue", Key = $"{id:N}:2026-01-01", SentAtUtc = longAgo },
+                    new NotificationMark { Kind = "overdue", Key = $"{id:N}:2026-01-01|0123456789abcdef", SentAtUtc = longAgo },
+                    new NotificationMark { Kind = "digest-seen", Key = $"0123456789abcdef:{id:N}", SentAtUtc = longAgo });
+            await ctx.SaveChangesAsync();
+        }
+
+        (await _db.Reminders().PruneMarksAsync()).Should().Be(closed.Count * 2, "each closed action's recipient mark and digest listing");
+
+        var after = await Marks();
+        after.Where(m => m.Key.Contains(neighbour.ToString("N"), StringComparison.Ordinal)).Should().HaveCount(3, "the open neighbour keeps every mark");
+        foreach (var id in closed)
+            after.Where(m => m.Key.Contains(id.ToString("N"), StringComparison.Ordinal)).Should().Equal([("overdue", $"{id:N}:2026-01-01")]);
+    }
+
     [Fact]
     public async Task TheLastSevenDays_AreTodayAndTheSixBefore_InWorkloadAndTheDigest()
     {
