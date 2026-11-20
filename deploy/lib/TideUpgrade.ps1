@@ -297,7 +297,8 @@ function Get-TideBuildMigrations([string] $Folder) {
 #   -DbaApplies    : the app doesn't migrate (Database:ApplyMigrations false): the DBA applies the schema ahead of the upgrade.
 #   -NewBuildRan   : the new build may have started (false when the copy, the stale-file removal or the pool's settings
 #                    failed, before the pool was started).
-# Returns Safe, Verdict ('ok', 'unchanged', 'dba-ahead', 'history-unreadable', 'build-unreadable', 'before-unreadable',
+#   -PoolWasRunning: the app pool was started when this run began, so the previous build was running on the database.
+# Returns Safe, Verdict ('ok', 'unchanged', 'unchanged-unproven', 'dba-ahead', 'history-unreadable', 'build-unreadable', 'before-unreadable',
 # 'unknown'), Unknown (the ids the previous build doesn't know), EarlierRun (every one of them was there before this run:
 # an earlier upgrade that failed applied them), Message (when it isn't safe: what's wrong and what to do, to follow
 # "Upgrade failed (...).") and Note (when it is safe but something should be said first).
@@ -310,7 +311,8 @@ function Get-TideRollbackDecision {
         [string] $KnownError,
         [string] $BeforeError,
         [bool] $DbaApplies,
-        [bool] $NewBuildRan = $true
+        [bool] $NewBuildRan = $true,
+        [bool] $PoolWasRunning
     )
     $app = @($Applied | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
     $knows = @($Known | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
@@ -326,9 +328,22 @@ function Get-TideRollbackDecision {
         # was running on it then, unless an earlier, failed upgrade had left it stopped.
         $state = if (-not $HistoryError) { $app } elseif (-not $BeforeError) { $before } else { $null }
         if ($null -eq $state -or $KnownError) {
-            $why = @($HistoryError, $KnownError) | Where-Object { $_ }
-            return & $result 'unchanged' $true @() $false $null ("The new build never ran, so this run didn't change the " +
-                "database; the previous build is started again without comparing its migrations ($($why -join '; ')).")
+            $why = (@($HistoryError, $KnownError, $BeforeError) | Where-Object { $_ } | Select-Object -Unique) -join '; '
+            # Unchanged by this run proves the previous build fits only if it was running on this database when the run
+            # began. A pool already stopped may be an earlier upgrade's that migrated and failed (AppMigrates), whose
+            # migrations this run's before-deploy history includes too. On DbaApplies the database only ever has what the
+            # DBA applied, which the previous build ran on.
+            if ($PoolWasRunning -or $DbaApplies) {
+                return & $result 'unchanged' $true @() $false $null ("The new build never ran, so this run didn't change " +
+                    "the database; the previous build is started again without comparing its migrations ($why).")
+            }
+            $hint = if ($state -and $state.Count) { " The database's newest migration is $($state | Sort-Object | Select-Object -Last 1)." } else { '' }
+            return & $result 'unchanged-unproven' $false @() $false ("$stopped. The new build never ran, so this run didn't " +
+                "change the database, but the app pool was already stopped when the upgrade began (an earlier upgrade that " +
+                "failed may have migrated it) and the upgrade can't compare the database's migrations with the previous " +
+                "build's ($why).$hint If an earlier upgrade applied migrations the previous release doesn't have, restore " +
+                "the pre-upgrade backup that earlier upgrade took (<database>-preupgrade-<time>.bak, in SQL Server's default " +
+                "backup folder), then start the app pool; if not, start the app pool.") $null
         }
         $unknown = @($state | Where-Object { $knows -notcontains $_ })
         if ($unknown.Count -eq 0) { return & $result 'ok' $true @() $false $null $null }

@@ -201,6 +201,9 @@ public partial class DeployScriptTests
         script.Should().Contain("Complete-Rollback \"the new build didn't start\"");
         script.Should().Contain("Get-TideBuildMigrations $rollbackDir").And.Contain("Get-TideRollbackDecision -Applied $now -Known $rollbackKnows");
         script.Should().NotContain("$appliedBeforeDeploy -notcontains", "a re-run's snapshot already has the first run's migrations");
+        script.Should().Contain("-PoolWasRunning $poolWasRunning");
+        At("$poolWasRunning = (Get-WebAppPoolState").Should().BeLessThan(At("Stop-TideAppPool -Name $AppPoolName\n"),
+            "the pool's state is read before this run stops it");
     }
 
     [Fact]
@@ -464,8 +467,11 @@ public partial class DeployScriptPowerShellTests
                 dbaWarmup  = & $d ($old + $new) $old ($old + $new) $null $null @{ DbaApplies = $true }
                 dbaNew     = & $d ($old + $new) $old $old $null $null @{ DbaApplies = $true }
                 copyNoHist = & $d @() $old $old 'Login failed' $null @{ NewBuildRan = $false }
-                copyBlind  = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed' }
-                copyNoBld  = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false }
+                copyBlind  = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed'; PoolWasRunning = $true }
+                copyNoBld  = & $d $old @() $old $null 'no dll' @{ NewBuildRan = $false; PoolWasRunning = $true }
+                rerunNoBld = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false }
+                rerunBlind = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed' }
+                dbaNoBld   = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false; DbaApplies = $true }
             }
             ConvertTo-Json -Depth 4 -Compress -InputObject $cases
             """);
@@ -516,11 +522,21 @@ public partial class DeployScriptPowerShellTests
 
         // A failure before the pool was started: the database is as it was, so the history only has to be read once.
         Case("copyNoHist").Safe.Should().BeTrue("the history from before the run stands in");
-        foreach (var blind in new[] { "copyBlind", "copyNoBld" })
+        // With nothing to compare, unchanged is enough only when the previous build was running on it when the run began
+        // (or on DbaApplies, where only the DBA changes the schema).
+        foreach (var blind in new[] { "copyBlind", "copyNoBld", "dbaNoBld" })
         {
             (Case(blind).Safe, Case(blind).Verdict).Should().Be((true, "unchanged"), blind);
             r.GetProperty(blind).GetProperty("Note").GetString().Should().StartWith("The new build never ran");
         }
+        // AppMigrates re-run without restoring, whose copy fails: the pool was already stopped by the first, migrated run,
+        // and the before-deploy history has its migrations too, so "unchanged" proves nothing.
+        foreach (var rerunBlind in new[] { "rerunNoBld", "rerunBlind" })
+        {
+            (Case(rerunBlind).Safe, Case(rerunBlind).Verdict).Should().Be((false, "unchanged-unproven"), rerunBlind);
+            Case(rerunBlind).Message.Should().Contain("STOPPED").And.Contain("already stopped").And.Contain("-preupgrade-");
+        }
+        Case("rerunNoBld").Message.Should().Contain("20260301000000_Later", "the database's newest, to compare with");
     }
 
     [Fact]

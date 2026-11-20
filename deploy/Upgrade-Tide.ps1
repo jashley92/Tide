@@ -765,6 +765,10 @@ if ($carveOutsToSet.Count -gt 0) {
 
 # --- 6. Deploy ---------------------------------------------------------------
 Write-Step "Stopping app pool '$AppPoolName'"
+# Whether the previous build was running when this run began: a pool already stopped may be an earlier failed upgrade's,
+# left stopped because it had migrated (Get-TideRollbackDecision -PoolWasRunning).
+$poolWasRunning = $false
+try { $poolWasRunning = (Get-WebAppPoolState -Name $AppPoolName).Value -eq 'Started' } catch { }
 # Until the worker has exited and let go of the DLLs, not a fixed few seconds.
 Stop-TideAppPool -Name $AppPoolName
 
@@ -799,7 +803,7 @@ function Complete-Rollback([string] $why, [string] $after, [bool] $NewBuildRan =
     try { $now = @(Get-AppliedMigrations) } catch { $historyError = $_.Exception.Message }
     $decision = Get-TideRollbackDecision -Applied $now -Known $rollbackKnows -AppliedBefore $appliedBeforeDeploy `
         -HistoryError $historyError -KnownError $rollbackKnowsError -BeforeError $appliedBeforeError `
-        -DbaApplies $dbaApplies -NewBuildRan $NewBuildRan
+        -DbaApplies $dbaApplies -NewBuildRan $NewBuildRan -PoolWasRunning $poolWasRunning
     if (-not $decision.Safe) { throw "Upgrade failed ($why). $($decision.Message) $after" }
     if ($decision.Note) { Write-Warn2 $decision.Note }
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue

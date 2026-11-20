@@ -136,7 +136,8 @@ What it does, in order:
    previous build ran on them), so it starts the previous build and says so: keep the database for the next attempt.
    It leaves the pool stopped too when it can't read the database's migration history, or the previous build's, and
    says what to check, unless the failure came before the new build could start (the copy, a file, an IIS setting):
-   then the database is as it was, and the previous build is started again. On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
+   then the database is as it was, and the previous build is started again if it was running when the upgrade began
+   (on AppMigrates, a pool already stopped may be an earlier failed upgrade's, so it stays stopped). On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
    refreshes the kept deploy scripts.
 
 Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.
