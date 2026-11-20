@@ -24,3 +24,13 @@ pauses of 25ms to 1.5s), which was both slow and, on a slow runner, not always l
 
 - A new page that changes the demo goes after the marker; any other before it.
 - `/demo/activity` exists only in Development with `Demo:Seed`, so it never reaches an installed site.
+
+## Follow-up
+
+- **2026-11-19: slices balanced by measured time.** Cutting the pages in order by a guess at their cost (a width, twice
+  that on a Present page) left the slices far apart: in CI the third took about 9.5 minutes of checks and the first about
+  4. The pages before the marker are now placed longest first, each on the slice with least so far, by what each took in
+  CI (`tools/screenshots/layout-weights.json`, refreshed from green runs' logs with `layout-weights.mjs`; a page not yet
+  timed is counted by its widths). Every sharded run checks that the slices hold every page exactly once. By the weights,
+  the slices went from about 246, 317, 556 and 432 seconds to 373, 373, 373 and 432: the last slice, the pages that change
+  the demo, is now the longest, and a fifth slice wouldn't shorten it. Splitting those pages is what would help next.

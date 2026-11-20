@@ -142,9 +142,9 @@ jobs:
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
 
   # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there), in four slices side by
-  # side, each on its own fresh demo, at the default letter spacing and again with wider letters (LETTER_SPACING=.12em,
-  # for pages that widen them); the layout job below passes when all eight do. TIDE is built once, by layout-build, and
-  # each slice starts that build.
+  # side (balanced by what each page took in CI: shards.mjs), each on its own fresh demo, at the default letter spacing
+  # and again with wider letters (LETTER_SPACING=.12em, for pages that widen them); the layout job below passes when all
+  # eight do. TIDE is built once, by layout-build, and each slice starts that build.
   layout-build:
     runs-on: ubuntu-latest
     permissions:
