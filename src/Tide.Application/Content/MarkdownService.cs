@@ -124,15 +124,6 @@ public sealed partial class MarkdownService : IMarkdownService
         catch (ArgumentException) { return OneLine(markdown); }   // too deeply nested: see Render
     }
 
-    /// <summary>Whether Markdig can render <paramref name="markdown"/>: a run of a few hundred brackets or quote markers,
-    /// well within a field's length, nests deeper than it allows.</summary>
-    public static bool IsRenderable(string? markdown)
-    {
-        if (string.IsNullOrWhiteSpace(markdown)) return true;
-        try { RenderOrThrow(markdown, Pipeline, LinkRoot.None); return true; }
-        catch (ArgumentException) { return false; }
-    }
-
     // Markdig refuses input nested deeper than it allows (a few hundred '[' or '> ' in a row) with an exception, from
     // the parser or the renderer. That would fail every render of the brief the text is on (the pages, the email, the
     // send) until someone found the field, so such text is shown as it was typed, escaped, instead.
