@@ -872,11 +872,21 @@ sequenceDiagram
   happens; `action.overdue` comes at the first run after midnight in the organization's time zone.
 - **Order.** Oldest first, per webhook. Each webhook has its own watermark, so one failing receiver doesn't hold up
   the others.
-- **Batching.** At most 100 events a run per webhook (more only to finish events stamped at the same moment), and the
-  overdue posts a due date at a time, so a backlog drains over several runs.
+- **Batching.** Per webhook a run posts at most 100 `action.raised` and `brief.sent` events (more only to finish
+  events stamped at the same moment, such as actions raised in one save) and at most 100 `action.overdue` posts, so a
+  backlog drains over several runs.
+- **Time budget.** Every post a run makes, of every kind, starts within **5 minutes** of the run's start
+  (`WebhookService.RunBudget`, timed on the monotonic clock, so a wall-clock correction can't stretch it). A run
+  therefore ends within the budget plus one post (15 seconds at most) plus the remaining webhooks' bookkeeping: each
+  still reads what's due and saves its watermarks and last result, posting nothing once the budget is spent. That's
+  well under the job's 15-minute hang limit; a slow receiver could otherwise hold a run for most of half an hour. Each webhook in turn gets
+  an even share of what's left, so one slow receiver doesn't hold up the others. A webhook whose share is spent stops
+  before its next post, even among events stamped at one moment or due the same day, and the next run goes on from the
+  post after the last that went (the webhook's `MomentCursor` and `OverdueCursor`): nothing is skipped or sent twice.
+  The log says so at Information.
 - **Failure.** A post fails on any status outside 200 to 299, a timeout (15 seconds), a connection error, or a
   redirect (redirects aren't followed; a 3xx is reported). The webhook's run stops at its first failure; the next run,
-  a minute later, tries again from the same event with the **same `id`**. There's no back-off and no limit: it retries
+  a minute later, tries again from the same event with the **same `id`**, and posts nothing that already went before it. There's no back-off and no limit: it retries
   every minute until it succeeds, the webhook is turned off, or it's removed. The last error is on the page.
 - **At least once.** A run that stopped between posting and saving its watermark posts the event again. Deduplicate
   on `id`.

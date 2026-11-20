@@ -3635,6 +3635,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MomentCursor")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OverdueCursor")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateOnly?>("OverdueSentFor")
                         .HasColumnType("TEXT");
 
