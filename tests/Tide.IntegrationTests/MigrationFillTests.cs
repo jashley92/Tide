@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using Microsoft.Extensions.Logging.Abstractions;
+using Tide.Application.Intake;
 using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -306,9 +306,11 @@ public class MigrationFillTests
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
-    public async Task UrlHashes_AreFilledAtStartUp_ABatchAtATime_WithoutTouchingTheArticles_AndOnlyOnce(string provider)
+    public async Task UrlHashes_AreFilledABatchAtATime_CarryingOnAfterARestart_WithoutTouchingTheArticles(string provider)
     {
         using var database = new MigratedDatabase(provider);
+        await using (var ctx = database.Context())
+            (await UrlHashFill.DoneAsync(ctx)).Should().BeTrue("a database migrated with no address in it has nothing to fill");
         var urls = new[]
         {
             "https://news.example/vpn?utm_source=mail", "HTTPS://News.Example/vpn/", "https://news.example/VPN", "http://other.example:8080/a?b=2&a=1",
@@ -334,9 +336,24 @@ public class MigrationFillTests
         }
         var before = await Stored();
         before.Articles.Values.Concat(before.Links.Values).Should().AllSatisfy(h => h.Should().BeNull(), "the rows were saved before the hash was kept");
-
         await using (var ctx = database.Context())
-            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance, batch: 2)).Should().Be(5 + 2, "every address with a canonical form");
+        {
+            (await UrlHashFill.DoneAsync(ctx)).Should().BeFalse("an upgraded database with addresses has them to fill");
+            var first = new UrlHashProgress();
+            (await UrlHashFill.FillAsync(ctx, first, batches: 2, batch: 2)).Should().BeFalse();
+            first.Filled.Should().BeInRange(2, 4, "two batches of two, less any without a canonical address");
+            (await UrlHashFill.LeftAsync(ctx, first)).Should().Be(7 + 3 - 4, "ten addresses to read, four read");
+        }
+
+        // A restart (or the lease moving to another process) starts with nothing in memory, and carries on from the rows.
+        var filled = (await Stored()).Articles.Values.Count(h => h is not null);
+        var again = new UrlHashProgress();
+        await using (var ctx = database.Context())
+        {
+            while (!await UrlHashFill.FillAsync(ctx, again, batches: 1, batch: 2)) { }
+            (await UrlHashFill.DoneAsync(ctx)).Should().BeTrue("the pending setting is deleted once none is left");
+        }
+        again.Filled.Should().Be(5 + 2 - filled, "only what the first run didn't fill");
 
         var after = await Stored();
         after.Articles.Should().Equal(articles.ToDictionary(a => a.Id, a => UrlCanonicalizer.HashOf(a.SourceUrl)));
@@ -347,19 +364,10 @@ public class MigrationFillTests
         {
             var stamps = await ctx.Articles.ToDictionaryAsync(a => a.Id, a => (a.EditVersion, a.ModifiedAtUtc));
             stamps.Should().Equal(articles.ToDictionary(a => a.Id, a => (a.EditVersion, (DateTimeOffset?)Decided)), "filling a hash isn't an edit");
-            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance)).Should().Be(0, "it runs once");
+            var done = new UrlHashProgress();
+            (await UrlHashFill.FillAsync(ctx, done, batches: 1)).Should().BeTrue();
+            done.Filled.Should().Be(0, "once it is done, nothing is read again");
         }
-
-        // A start that stopped partway carries on: what's still without a hash is filled, and only that.
-        await using (var ctx = database.Context())
-        {
-            ctx.Settings.RemoveRange(ctx.Settings.Where(s => s.Key == DatabaseInitializer.UrlHashesKey));
-            await ctx.SaveChangesAsync();
-            var undone = articles.Take(3).Select(a => a.Id).ToList();
-            await ctx.Articles.Where(a => undone.Contains(a.Id)).ExecuteUpdateAsync(s => s.SetProperty(a => a.SourceUrlHash, (string?)null));
-            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance, batch: 2)).Should().Be(3);
-        }
-        (await Stored()).Articles.Should().Equal(after.Articles);
     }
 
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.

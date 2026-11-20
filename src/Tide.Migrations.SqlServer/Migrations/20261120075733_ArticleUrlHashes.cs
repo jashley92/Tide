@@ -24,8 +24,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                 maxLength: 64,
                 nullable: true);
 
-            // The rows already there are filled at start-up (DatabaseInitializer.FillUrlHashesAsync): the hash is of the
-            // canonical address, which only the app's own code computes.
+            // The rows already there are filled after start-up by a background job (UrlHashFill): the hash is of the
+            // canonical address, which only the app's own code computes. A database with addresses to fill is marked so,
+            // and triage matches addresses the old way until the job has filled them; a new install has none. Only columns
+            // that were already there are named, so the batch compiles before the new ones exist.
             migrationBuilder.CreateIndex(
                 name: "IX_Articles_SourceUrlHash",
                 table: "Articles",
@@ -35,11 +37,20 @@ namespace Tide.Migrations.SqlServer.Migrations
                 name: "IX_ArticleLinks_UrlHash",
                 table: "ArticleLinks",
                 column: "UrlHash");
+
+            migrationBuilder.Sql("""
+            INSERT INTO [Settings] ([Key], [Value], [UpdatedAtUtc], [UpdatedBy])
+            SELECT N'Data:UrlHashesToFill', N'1', TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00'), N'system'
+            WHERE (EXISTS (SELECT 1 FROM [Articles] WHERE [SourceUrl] IS NOT NULL) OR EXISTS (SELECT 1 FROM [ArticleLinks]))
+              AND NOT EXISTS (SELECT 1 FROM [Settings] WHERE [Key] = N'Data:UrlHashesToFill');
+            """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DELETE FROM [Settings] WHERE [Key] = N'Data:UrlHashesToFill';");
+
             migrationBuilder.DropIndex(
                 name: "IX_Articles_SourceUrlHash",
                 table: "Articles");

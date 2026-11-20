@@ -58,67 +58,7 @@ public sealed class DatabaseInitializer(
         await SeedStarterLibrariesAsync(db, ct);
         await CanonicalizeIndicatorsAsync(db, log, ct);
         await LinkRecommendationsAsync(db, log, ct);
-        await FillUrlHashesAsync(db, log, ct: ct);
         if (env.IsDevelopment()) await SeedSamplesAsync(ct);
-    }
-
-    /// <summary>The setting that says the one-time pass hashing stored article and link addresses has run.</summary>
-    public const string UrlHashesKey = "Data:UrlHashes";
-
-    /// <summary>
-    /// Stores the hash of each article's and each link's canonical address on the rows saved before it was kept
-    /// (<see cref="Article.SourceUrlHash"/>, <see cref="ArticleLink.UrlHash"/>), once: triage's "already covered" looks
-    /// them up by it. Canonicalizing is the app's own code, so the rows are read and written here, <paramref name="batch"/>
-    /// at a time, each batch committed: a start that stops partway carries on from where it got to. An address that has
-    /// no canonical form keeps no hash, as a save leaves it. Written column by column (ExecuteUpdate), so no article's
-    /// modified time, edit version or history moves. Logged, and skipped after the marker is written. Returns the rows filled.
-    /// </summary>
-    public static async Task<int> FillUrlHashesAsync(AppDbContext db, ILogger log, int batch = 500, CancellationToken ct = default)
-    {
-        if (await db.Settings.AnyAsync(s => s.Key == UrlHashesKey, ct)) return 0;
-        var articles = await FillAsync(db, batch,
-            (skip, take) => db.Articles.Where(a => a.SourceUrl != null && a.SourceUrlHash == null).OrderBy(a => a.Id).Skip(skip).Take(take)
-                .Select(a => new KeyValuePair<Guid, string>(a.Id, a.SourceUrl!)).ToListAsync(ct),
-            (id, hash) => db.Articles.Where(a => a.Id == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.SourceUrlHash, hash), ct), ct);
-        var links = await FillAsync(db, batch,
-            (skip, take) => db.ArticleLinks.Where(l => l.UrlHash == null).OrderBy(l => l.Id).Skip(skip).Take(take)
-                .Select(l => new KeyValuePair<Guid, string>(l.Id, l.Url)).ToListAsync(ct),
-            (id, hash) => db.ArticleLinks.Where(l => l.Id == id).ExecuteUpdateAsync(s => s.SetProperty(l => l.UrlHash, hash), ct), ct);
-        db.Settings.Add(new AppSetting { Key = UrlHashesKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
-        await db.SaveChangesAsync(ct);
-        if (articles + links > 0)
-            log.LogInformation("Stored the address hash of {Articles} article(s) and {Links} link(s) saved before it was kept.", articles, links);
-        return articles + links;
-    }
-
-    // One table's rows still without a hash, a batch at a time in id order. A row whose address has no canonical form stays
-    // without one, and so stays first in that order: the next batch skips past the ones met so far.
-    private static async Task<int> FillAsync(AppDbContext db, int batch, Func<int, int, Task<List<KeyValuePair<Guid, string>>>> unfilled,
-        Func<Guid, string, Task<int>> store, CancellationToken ct)
-    {
-        var filled = 0;
-        var skipped = 0;
-        var strategy = db.Database.CreateExecutionStrategy();
-        while (true)
-        {
-            // Read and written in one transaction, retried as a whole on a transient failure, so a retry reads the batch again.
-            var (stored, left, read) = await strategy.ExecuteAsync(async () =>
-            {
-                await using var tx = await db.Database.BeginTransactionAsync(ct);
-                var rows = await unfilled(skipped, batch);
-                var (done, none) = (0, 0);
-                foreach (var (id, url) in rows)
-                {
-                    if (UrlCanonicalizer.HashOf(url) is { } hash) { await store(id, hash); done++; }
-                    else none++;
-                }
-                await tx.CommitAsync(ct);
-                return (done, none, rows.Count);
-            });
-            filled += stored;
-            skipped += left;
-            if (read < batch) return filled;
-        }
     }
 
     /// <summary>The setting that says the one-time pass linking actions to their recommended lines has run.</summary>

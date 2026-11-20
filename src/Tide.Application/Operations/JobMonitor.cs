@@ -62,8 +62,10 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         TimeSpan.FromHours(24), TimeSpan.FromMinutes(10), 7106);
     public static readonly JobDefinition Webhooks = new("webhooks", "Webhooks", "every minute, when a webhook is set up under API access",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(15), 7107);
+    public static readonly JobDefinition UrlHashes = new("url-hashes", "Hashing stored addresses", "once after an upgrade, until every older article and link has its address hash",
+        TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7108);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks];
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));

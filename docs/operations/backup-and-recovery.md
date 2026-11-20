@@ -203,6 +203,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7105 | Metrics drop folder |
 | 7106 | Update check |
 | 7107 | Webhooks |
+| 7108 | Hashing stored addresses |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -213,6 +214,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Metrics drop folder | `MetricImportHostedService` | Every `Metrics:Import:PollMinutes`; every minute while off | `Metrics:Import:DropFolderEnabled` |
 | Update check | `UpdateCheckHostedService` | 2 minutes after start, then every `Updates:CheckIntervalHours`; re-reads the switch every 5 minutes | `Updates:CheckEnabled` |
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
+| Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
 
 ### Timers and periodic work in the request path
 
@@ -274,7 +276,7 @@ page's connection and everyone's since start); and whether a newer release is ou
 | `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
-| "Background job … failed", event ids 7101 to 7107 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
+| "Background job … failed", event ids 7101 to 7108 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
@@ -288,7 +290,7 @@ How to read the log, and how to raise its level, is in [INSTALL.md](../INSTALL.m
 | Upgrade backup and rollback | `deploy/Upgrade-Tide.ps1`, `deploy/lib/TideUpgrade.ps1` |
 | Key ring | `src/Tide.Web/Program.cs` (data protection) |
 | File store | `src/Tide.Infrastructure/Storage/DiskFileStore.cs` |
-| Hosted services | `src/Tide.Web/Services/IntakeHostedService.cs`, `ReminderHostedService.cs`, `MetricImportHostedService.cs`, `UpdateCheckHostedService.cs`; `src/Tide.Web/Api/WebhookServices.cs` (`WebhookHostedService`) |
+| Hosted services | `src/Tide.Web/Services/IntakeHostedService.cs`, `ReminderHostedService.cs`, `MetricImportHostedService.cs`, `UpdateCheckHostedService.cs`, `UrlHashFillHostedService.cs`; `src/Tide.Web/Api/WebhookServices.cs` (`WebhookHostedService`) |
 | Job reporting | `src/Tide.Application/Operations/JobMonitor.cs`, `JobHealth.cs`, `JobRunLog.cs` |
 | Job lease | `src/Tide.Application/Operations/BackgroundJobLease.cs`, `src/Tide.Web/Services/JobUpkeepHostedService.cs` |
 | Pool settings | `deploy/lib/TideIis.ps1` (`Set-TideSingleWorkerProcess`) |

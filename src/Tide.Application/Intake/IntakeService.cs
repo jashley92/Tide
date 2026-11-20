@@ -995,6 +995,37 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return held.Max();
     }
 
+    // How recent an article or a link must be for past coverage to match its address.
+    private static readonly TimeSpan AddressWindow = TimeSpan.FromDays(120);
+
+    // The recent articles and links at the items' addresses, found by the hash of each canonical address that's stored with
+    // them (and indexed), so only the ones that match are read: an article's own address first, then links.
+    private static async Task<Func<FeedItem, IEnumerable<Guid>>> AtAddressAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, CancellationToken ct)
+    {
+        var since = DateTimeOffset.UtcNow - AddressWindow;
+        var hashes = items.Select(i => i.UrlHash).Distinct().ToList();
+        var found = (await db.Articles.AsNoTracking().Where(a => hashes.Contains(a.SourceUrlHash!) && a.CreatedAtUtc >= since)
+                .Select(a => new { a.Id, Hash = a.SourceUrlHash! }).ToListAsync(ct))
+            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => hashes.Contains(l.UrlHash!) && l.AddedAtUtc >= since)
+                .Select(l => new { Id = l.ArticleId, Hash = l.UrlHash! }).ToListAsync(ct))
+            .Distinct().ToLookup(a => a.Hash, a => a.Id);
+        return item => found[item.UrlHash];
+    }
+
+    // The same, while older rows are still being given their hash (UrlHashFill): every recent address is read and
+    // canonicalized here, as only that says which match, so the matches are complete meanwhile.
+    private static async Task<Func<FeedItem, IEnumerable<Guid>>> AtAddressByReadingAllAsync(IAppDbContext db, CancellationToken ct)
+    {
+        var since = DateTimeOffset.UtcNow - AddressWindow;
+        var found = (await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.CreatedAtUtc >= since)
+                .Select(a => new { a.Id, a.SourceUrl }).ToListAsync(ct))
+            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => l.AddedAtUtc >= since)
+                .Select(l => new { Id = l.ArticleId, SourceUrl = (string?)l.Url }).ToListAsync(ct))
+            .Select(a => (a.Id, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct()
+            .ToLookup(a => a.Url!, a => a.Id);
+        return item => found[item.Url];
+    }
+
     // Past coverage: articles about the same CVE, or with the same canonical address, and the brief they were on.
     private static async Task<Dictionary<Guid, IReadOnlyList<Coverage>>> CoverageAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, CancellationToken ct)
     {
@@ -1002,23 +1033,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var byCve = cves.Count == 0 ? [] : await db.ArticleCves.AsNoTracking().Where(c => cves.Contains(c.CveId))
             .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title })
             .ToListAsync(ct);
-        // The recent articles and links at the page's addresses, found by the hash of each canonical address that's stored
-        // with them (and indexed), so only the ones that match are read: the article's own address first, then its links.
-        var since = DateTimeOffset.UtcNow.AddDays(-120);
-        var hashOf = items.Select(i => i.Url).Distinct().ToDictionary(u => u, UrlCanonicalizer.Hash);
-        var hashes = hashOf.Values.ToList();
-        var recentLinks = (await db.Articles.AsNoTracking().Where(a => hashes.Contains(a.SourceUrlHash!) && a.CreatedAtUtc >= since)
-                .Select(a => new { a.Id, Hash = a.SourceUrlHash! }).ToListAsync(ct))
-            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => hashes.Contains(l.UrlHash!) && l.AddedAtUtc >= since)
-                .Select(l => new { Id = l.ArticleId, Hash = l.UrlHash! }).ToListAsync(ct))
-            .Distinct().ToLookup(a => a.Hash, a => a.Id);
+        var atAddress = await UrlHashFill.DoneAsync(db, ct) ? await AtAddressAsync(db, items, ct) : await AtAddressByReadingAllAsync(db, ct);
         // Each item's matches, at most five, before anything is looked up about them: only those are shown, so only
         // those are asked about (a few thousand ids at once had made the lookups the slow part of the page).
         var ofCve = byCve.ToLookup(x => x.CveId, x => x.Id);
         var matches = new Dictionary<Guid, List<(string Why, Guid Id)>>();
         foreach (var item in items)
         {
-            var list = recentLinks[hashOf[item.Url]].Select(id => (Why: Search.RelatedService.SameLink, Id: id))
+            var list = atAddress(item).Select(id => (Why: Search.RelatedService.SameLink, Id: id))
                 .Concat(item.CveList.SelectMany(cve => ofCve[cve].Select(id => (Why: cve, Id: id))))
                 .Distinct().Take(5).ToList();
             if (list.Count > 0) matches[item.Id] = list;

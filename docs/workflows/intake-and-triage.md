@@ -307,7 +307,7 @@ the address is rewritten to say so. Tab counts stay totals, and Older pages too.
 |---|---|---|
 | Source | Name, TLP, reliability, licence note | The item's `Source`. |
 | Similar | "Looks like" a recent item | `SimilarToId`. |
-| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days, looked up by the stored hash of the canonical address (`SourceUrlHash`, `UrlHash`). At most 5. `Coverage.Attachable` says whether a report can still be added. |
+| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days, looked up by the stored hash of the canonical address (`SourceUrlHash`, `UrlHash`); after an upgrade, until the job filling older rows' hashes has finished (`Data:UrlHashesToFill`), by reading every recent address. At most 5. `Coverage.Attachable` says whether a report can still be added. |
 | Same CVE | Other New items sharing a CVE: one story from several outlets | New tab only, read over every New item, not just the page shown. |
 | Group | "Looks like one event" | `TriageGroups.Find`, New and Shortlisted, over the page shown. See below. |
 | We run | A product on Our stack the item names | `StackService.Matcher`. Items naming one sort first in New and never age. |
