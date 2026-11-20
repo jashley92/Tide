@@ -34,7 +34,14 @@ updates:
     open-pull-requests-limit: 10
     # Low-risk minor/patch bumps arrive as one grouped PR; majors come individually so their
     # potential breaking changes get reviewed on their own.
+    # EF Core is pinned to an exact version, and the dotnet-ef tool in .config/dotnet-tools.json must
+    # match it or every `dotnet ef` run warns. This group comes first so the packages and the tool
+    # always move together in one PR (Dependabot puts a dependency in the first group it matches).
     groups:
+      ef-core:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "dotnet-ef"
       nuget-minor-patch:
         update-types:
           - "minor"

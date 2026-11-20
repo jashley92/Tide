@@ -408,7 +408,8 @@ pre-release for `-alpha`, `-beta` or `-rc` tags). The key and the signing are in
 
 - **CodeQL** runs through GitHub's default setup (repository settings), not a workflow here.
 - **Dependabot** (`.github/dependabot.yml`) proposes updates to the SHA-pinned GitHub Actions and to NuGet packages
-  weekly, after a seven-day cooldown.
+  weekly, after a seven-day cooldown. EF Core packages are pinned to an exact version, and they and the `dotnet-ef`
+  tool arrive in one grouped PR so the tool always matches the packages.
 - **Snyk** isn't configured in this repository: no workflow or policy file names it. **Needs verification:** whether
   a Snyk check is attached to pull requests through a GitHub integration outside the repository; the checks listed on
   a recent pull request would confirm it.
