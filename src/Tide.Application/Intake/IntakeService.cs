@@ -1034,10 +1034,28 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     // --- triage ---------------------------------------------------------------------------------------------------
 
-    public Task ShortlistAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.Shortlisted, null, null, ct);
+    /// <summary>Shortlists an item; when it was stamped, and whether it was new (<see cref="TriageDecision"/>).</summary>
+    public Task<TriageDecision> ShortlistAsync(Guid id, CancellationToken ct = default) => DecideAsync(id, FeedItemStatus.Shortlisted, null, ct);
 
-    public Task DismissAsync(Guid id, string? reason, CancellationToken ct = default) =>
-        SetAsync(id, FeedItemStatus.Dismissed, ArticleService.CleanOrNull(reason, 200) ?? DismissReasons[0], null, ct);
+    /// <summary>Dismisses an item with a reason; when it was stamped, and whether it was new (<see cref="TriageDecision"/>).</summary>
+    public Task<TriageDecision> DismissAsync(Guid id, string? reason, CancellationToken ct = default) =>
+        DecideAsync(id, FeedItemStatus.Dismissed, ArticleService.CleanOrNull(reason, 200) ?? DismissReasons[0], ct);
+
+    // A single shortlist or dismissal. From New first, in a statement of its own, so the caller learns whether the item
+    // was new as it was decided, not as the page last read it: a stale row can still show New after a colleague's
+    // decision, which this then replaces, and putting that item back in New would be wrong.
+    private async Task<TriageDecision> DecideAsync(Guid id, FeedItemStatus status, string? reason, CancellationToken ct)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var at = time.GetUtcNow();
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == FeedItemStatus.New), status, reason, null, ct, at) > 0)
+            return new(at, FromNew: true);
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, null, ct, at) > 0)
+            return new(at, FromNew: false);
+        if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
+        throw new KeyNotFoundException("That item is gone.");
+    }
 
     /// <summary>Marks an item as repeating another (by default the one it was flagged as similar to).</summary>
     public async Task MarkDuplicateAsync(Guid id, Guid? ofId = null, CancellationToken ct = default)
@@ -1055,6 +1073,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>Puts an item back in the inbox as new (undoes a shortlist, dismissal or duplicate; never a promotion).</summary>
     public Task RestoreAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.New, null, null, ct);
+
+    /// <summary>
+    /// Undoes a new item's shortlist or dismissal (its toast's Undo): back to new, only while it's still this person's
+    /// <paramref name="decided"/> stamped <paramref name="at"/> (<see cref="TriageDecision.At"/>), so a colleague's
+    /// decision since stands, the same one made again included. Whether it went back.
+    /// </summary>
+    public async Task<bool> UndoDecisionAsync(Guid id, FeedItemStatus decided, DateTimeOffset at, CancellationToken ct = default)
+    {
+        if (decided is not (FeedItemStatus.Shortlisted or FeedItemStatus.Dismissed))
+            throw new ArgumentException("Only a shortlist or a dismissal is undone this way.", nameof(decided));
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var by = user.DisplayName;
+        return await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == decided && i.StatusAtUtc == at && i.StatusByName == by),
+            FeedItemStatus.New, null, null, ct) > 0;
+    }
 
     // FeedItem.DismissKept as a query: a dismissal no one has said was right since it was made.
     private static readonly System.Linq.Expressions.Expression<Func<FeedItem, bool>> NotKept =
@@ -1160,13 +1194,15 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     // read first and saved after, a dismissal landing just after a colleague's promotion (or a "dismiss the rest" racing
     // it) marked the promoted item Dismissed, its article still pointing at it. Feed items aren't audited: who decided,
     // and when, is kept on the item, as Stamp keeps it. Returns how many changed.
-    private Task<int> StampAsync(IQueryable<FeedItem> items, FeedItemStatus status, string? reason, Guid? duplicateOf, CancellationToken ct)
+    // stamp: the time to stamp, when the caller needs to know it (DecideAsync); now otherwise.
+    private Task<int> StampAsync(IQueryable<FeedItem> items, FeedItemStatus status, string? reason, Guid? duplicateOf, CancellationToken ct,
+        DateTimeOffset? stamp = null)
     {
         _learned = null;   // a decision changes what's learned
         var dismissReason = status == FeedItemStatus.Dismissed ? reason : null;
         var duplicate = status == FeedItemStatus.Duplicate ? duplicateOf : null;
         var by = status == FeedItemStatus.New ? null : user.DisplayName;
-        var at = status == FeedItemStatus.New ? null : (DateTimeOffset?)time.GetUtcNow();
+        var at = status == FeedItemStatus.New ? null : stamp ?? (DateTimeOffset?)time.GetUtcNow();
         return items.ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, status).SetProperty(i => i.DismissReason, dismissReason)
             .SetProperty(i => i.DuplicateOfId, duplicate).SetProperty(i => i.StatusByName, by).SetProperty(i => i.StatusAtUtc, at), ct);
     }
@@ -1582,3 +1618,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only analysts triage the inbox.");
     }
 }
+
+/// <summary>A single shortlist or dismissal: when it was stamped, which its Undo matches, and whether the item was new
+/// as it was decided (only then is putting it back in New its exact inverse).</summary>
+public sealed record TriageDecision(DateTimeOffset At, bool FromNew);

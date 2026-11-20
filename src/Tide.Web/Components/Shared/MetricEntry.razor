@@ -6,9 +6,10 @@
    hadn't saved yet says so in a toast, with what was typed.
    Collapsible folds the boxes away behind the heading (open while numbers are missing); MissingChanged hears how many
    are missing whenever that changes, for the brief's step strip and its Mark ready confirmation.
-   A colleague's save to the day's numbers re-reads them in place (LiveChanges, naming them in a toast), so the step
-   strip and the edition check follow too. A box being typed in, or holding something that isn't a number, keeps what's
-   in it, and its row says they changed it.
+   A colleague's save to the day's numbers re-reads them in place (LiveChanges, naming them in a toast, at most one every
+   few seconds: ColleagueNews), so the step strip and the edition check follow too. A box being typed in, or holding
+   something that isn't a number, keeps what's in it, and its row says they changed it. A save refused for another
+   reason (the metric retired meanwhile, say) keeps what was typed, marked as not saved with why under it.
    With many groups the form says where you are: a bar that stays in view under the page's own header, with the overall
    count and a chip per group (filled of total, a tick when done, highlighted while a box in it has focus; clicking one
    jumps to its first empty box). Each group is a panel of its own with its count, and one whose numbers are all in
@@ -21,6 +22,7 @@
 @inject OrgClock Clock
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject TimeProvider Time
 @implements IDisposable
 
 @if (_day is { Any: true })
@@ -125,14 +127,16 @@
                     {
                         var id = "metric-" + t.Metric.Id.ToString("N");
                         var bad = _invalid.GetValueOrDefault(t.Metric.Id);
+                        var failed = _failed.TryGetValue(t.Metric.Id, out var unsaved);
+                        var error = bad is not null ? "Not a number." : failed ? "Not saved. " + unsaved.Why : null;
                         <div class="tide-metric-row" @key="t.Metric.Id">
                             <label for="@id">@t.Metric.Name@(Unit(t.Metric.Format))</label>
                             @if (_canEdit)
                             {
                                 <div>
                                     <div class="d-flex align-items-center">
-                                        <input id="@id" @ref="_boxes[t.Metric.Id]" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" maxlength="32" inputmode="decimal" autocomplete="off"
-                                               value="@(bad ?? Shown(t.Metric.Id, false, Raw(t.Value)))" aria-invalid="@(bad is null ? null : "true")" aria-describedby="@(bad is null ? null : id + "-error")"
+                                        <input id="@id" @ref="_boxes[t.Metric.Id]" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(error is null ? "" : "is-invalid")" maxlength="32" inputmode="decimal" autocomplete="off"
+                                               value="@(bad ?? (failed ? Raw(unsaved.Value) : Shown(t.Metric.Id, false, Raw(t.Value))))" aria-invalid="@(error is null ? null : "true")" aria-describedby="@(error is null ? null : id + "-error")"
                                                @onchange="e => SaveValue(t, e.Value?.ToString())" @onfocus="() => Entering(t.Metric.Id, false)" @onblur="() => Left(t.Metric.Id, false)" />
                                         <LevelMark Level="t.Level" />
                                         @if (t.ImportedFrom is { } from)
@@ -140,9 +144,9 @@
                                             <span class="bi bi-file-earmark-arrow-down tide-muted ms-1" title="@from" role="img" aria-label="@from"></span>
                                         }
                                     </div>
-                                    @if (bad is not null)
+                                    @if (error is not null)
                                     {
-                                        <div id="@(id + "-error")" class="tide-metric-error">Not a number.</div>
+                                        <div id="@(id + "-error")" class="tide-metric-error">@error</div>
                                     }
                                 </div>
                             }
@@ -168,7 +172,7 @@
                             @if (_canEdit)
                             {
                                 <input class="form-control form-control-sm tide-metric-note" placeholder="Note (optional)" maxlength="300" aria-label="Note for @t.Metric.Name"
-                                       value="@Shown(t.Metric.Id, true, t.Note)" @onchange="e => SaveNote(t, e.Value?.ToString())"
+                                       value="@(failed ? unsaved.Note : Shown(t.Metric.Id, true, t.Note))" @onchange="e => SaveNote(t, e.Value?.ToString())"
                                        @onfocus="() => Entering(t.Metric.Id, true)" @onblur="() => Left(t.Metric.Id, true)" />
                             }
                             else
@@ -208,6 +212,11 @@
     // What was typed in a box that isn't a number, by metric, until the box holds one (or is cleared).
     private readonly Dictionary<Guid, string> _invalid = [];
 
+    // A metric whose save failed for a reason other than the form locking (a refusal, the database down): what was asked
+    // for and why it failed. Its boxes go on showing what was typed, marked as not saved with why under them, until a
+    // save of it works (the next change to either box tries again with both).
+    private readonly Dictionary<Guid, (decimal? Value, string? Note, string Why)> _failed = [];
+
     // The box being typed in (a metric's value, or its note), as the browser's focus says.
     private (Guid Metric, bool Note)? _focus;
 
@@ -243,6 +252,7 @@
     private readonly Dictionary<Guid, ElementReference> _boxes = [];
 
     private LiveChanges? _live;
+    private ColleagueNews? _news;
     private volatile string _topic = "";
 
     private string Heading => Date == Clock.CurrentBriefDate ? "Today's numbers" : "Numbers for " + Ui.ShortDay(Date);
@@ -264,10 +274,17 @@
         await MissingChanged.InvokeAsync(missing);
     }
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
+        _news = new ColleagueNews(Toasts, who => $"{who} updated the numbers.", Time);
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == ChangeFeed.Metrics, InvokeAsync, OnChangedElsewhere);
+    }
 
-    public void Dispose() => _live?.Dispose();
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _news?.Dispose();
+    }
 
     protected override Task OnParametersSetAsync() => InTurn(async () =>
     {
@@ -277,6 +294,7 @@
             // Another day (the brief page's previous and next links keep this form): what was typed, kept or flagged
             // for the last day's boxes isn't this day's, and whether it starts open is settled again.
             _invalid.Clear();
+            _failed.Clear();
             _kept.Clear();
             _elsewhere.Clear();
             _unnamed.Clear();
@@ -318,6 +336,7 @@
         if (!_canEdit)
         {
             if (wasEditable && _locked && before is not null) Lost(before);
+            _failed.Clear();
             _focus = null;
             _kept.Clear();
             _elsewhere.Clear();
@@ -326,7 +345,7 @@
         }
         if (before is null) return;
         var after = Tiles(_day);
-        HashSet<Guid> held = [.. _invalid.Keys];
+        HashSet<Guid> held = [.. _invalid.Keys, .. _failed.Keys];
         if (_focus is { } f && f.Metric != own)
         {
             held.Add(f.Metric);
@@ -358,6 +377,7 @@
             if (asked.Value != saved?.Value) lost.TryAdd(key.Metric, Raw(asked.Value));
             else if (asked.Note != saved?.Note) lost.TryAdd(key.Metric, asked.Note ?? "");
         }
+        foreach (var (metric, failed) in _failed) lost.TryAdd(metric, Raw(failed.Value));
         _invalid.Clear();
         foreach (var (metric, typed) in lost)
             Toasts.Error(LostMessage((now.GetValueOrDefault(metric) ?? before.GetValueOrDefault(metric))?.Metric.Name ?? "A number", typed, _notSent));
@@ -383,7 +403,7 @@
     // The counts and folds follow the day as it is now, and the boxes holding what isn't a number or a colleague's change.
     private void Recount()
     {
-        if (_day is not null) _progress.Update(_day, new HashSet<Guid>([.. _invalid.Keys, .. _elsewhere.Keys]));
+        if (_day is not null) _progress.Update(_day, new HashSet<Guid>([.. _invalid.Keys, .. _failed.Keys, .. _elsewhere.Keys]));
     }
 
     // Focus moving into another group (or to its chip) is leaving the group it was in: a finished one folds then.
@@ -444,14 +464,14 @@
     }
 
     // A colleague's save to this day's numbers (or to the metrics kept): re-read in place. A box being typed in, or holding
-    // what isn't a number, keeps its text; if they changed that metric, its row says so.
+    // what isn't a number, keeps its text; if they changed that metric, its row says so. The toast naming them is at most
+    // one every few seconds (ColleagueNews), so two people entering the numbers together don't get one per save.
     internal Task OnChangedElsewhere(IReadOnlyList<Change> changes) => InTurn(async () =>
     {
-        var who = LiveChanges.Who(changes);
-        await Reread(who);
+        await Reread(LiveChanges.Who(changes));
         Recount();
         await Report();
-        Toasts.Show($"{who} updated the numbers.");
+        _news!.Heard(changes);
         StateHasChanged();
     });
 
@@ -504,6 +524,7 @@
     private (decimal? Value, string? Note) Wanted(Guid metric)
     {
         if (_pending.TryGetValue((Date, metric), out var asked)) return asked;
+        if (_failed.TryGetValue(metric, out var failed)) return (failed.Value, failed.Note);
         var t = Tiles(_day).GetValueOrDefault(metric);
         return (t?.Value, t?.Note);
     }
@@ -535,6 +556,7 @@
                 await MetricsSvc.SaveValueAsync(metric, key.Date, write.Value, write.Note);
                 if (key.Date == Date)
                 {
+                    _failed.Remove(metric);
                     await Reread(null, metric);
                     await Report();
                 }
@@ -547,7 +569,14 @@
                     await Reread(null);
                     await Report();
                 }
-                else Toasts.Error(UserFacingError.For(ex));
+                else
+                {
+                    // Otherwise the box would go on showing what was typed as though it were kept, with only a toast to
+                    // say it wasn't: it's marked as not saved, with why, until a save of it works.
+                    var why = UserFacingError.For(ex);
+                    if (key.Date == Date) _failed[metric] = (write.Value, write.Note, why);
+                    Toasts.Error(why);
+                }
             }
             finally
             {
