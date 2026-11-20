@@ -32,7 +32,7 @@ else
 {
     <section class="tide-card" aria-labelledby="diag-checks">
         <h2 id="diag-checks"><span class="bi bi-heart-pulse" aria-hidden="true"></span> Health checks</h2>
-        <table class="tide-table tide-diag-checks">
+        <table class="tide-table tide-diag-checks" aria-labelledby="diag-checks">
             <tbody>
                 @foreach (var c in report.Checks)
                 {
@@ -52,7 +52,7 @@ else
     <div class="tide-admin-index mb-3">
         <section class="tide-card mb-0" aria-labelledby="diag-build">
             <h2 id="diag-build"><span class="bi bi-cpu" aria-hidden="true"></span> This server</h2>
-            <table class="tide-kv">
+            <table class="tide-kv" aria-labelledby="diag-build">
                 <tbody>
                     <tr><th scope="row">Version</th><td><span class="tide-data">@report.Build.Version</span> <a class="small ms-1" href="admin/system/updates">Updates</a></td></tr>
                     <tr><th scope="row">Runtime</th><td>@report.Build.Runtime</td></tr>
@@ -68,7 +68,7 @@ else
 
         <section class="tide-card mb-0" aria-labelledby="diag-db">
             <h2 id="diag-db"><span class="bi bi-database" aria-hidden="true"></span> Database</h2>
-            <table class="tide-kv">
+            <table class="tide-kv" aria-labelledby="diag-db">
                 <tbody>
                     <tr><th scope="row">Provider</th><td>@report.Database.Provider</td></tr>
                     <tr><th scope="row">Answers</th><td><CheckBadge Level="@(report.Database.Reachable ? CheckLevel.Ok : CheckLevel.Problem)" /> @report.Database.Problem</td></tr>
@@ -88,7 +88,7 @@ else
 
         <section class="tide-card mb-0" aria-labelledby="diag-email">
             <h2 id="diag-email"><span class="bi bi-envelope" aria-hidden="true"></span> Email delivery</h2>
-            <table class="tide-kv">
+            <table class="tide-kv" aria-labelledby="diag-email">
                 <tbody>
                     <tr><th scope="row">Sending</th><td>@(report.Email.Enabled ? "On" : "Off: nothing is emailed (Email:Enabled)")</td></tr>
                     <tr><th scope="row">Delivery</th><td>@report.Email.Delivery</td></tr>
@@ -107,7 +107,7 @@ else
 
         <section class="tide-card mb-0" aria-labelledby="diag-storage">
             <h2 id="diag-storage"><span class="bi bi-hdd" aria-hidden="true"></span> Storage</h2>
-            <table class="tide-kv">
+            <table class="tide-kv" aria-labelledby="diag-storage">
                 <tbody>
                     @foreach (var s in report.Storage)
                     {
@@ -129,7 +129,7 @@ else
 
         <section class="tide-card mb-0" aria-labelledby="diag-connections">
             <h2 id="diag-connections"><span class="bi bi-plug" aria-hidden="true"></span> Connections</h2>
-            <table class="tide-kv">
+            <table class="tide-kv" aria-labelledby="diag-connections">
                 <tbody>
                     <tr>
                         <th scope="row">This page</th>
@@ -168,7 +168,7 @@ else
         </p>
         @* At a narrow width the jobs table scrolls within its card rather than widening the page. *@
         <div class="tide-card-scroll">
-            <table class="tide-table">
+            <table class="tide-table" aria-labelledby="diag-jobs">
                 <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th><th class="text-end">Runs</th></tr></thead>
                 <tbody>
                     @foreach (var j in report.Jobs)
@@ -221,8 +221,8 @@ else
         </div>
         @if (report.JobHistory.RecentFailures.Count > 0)
         {
-            <h3 class="h6 mt-3">Recent failures</h3>
-            <table class="tide-table">
+            <h3 class="h6 mt-3" id="diag-failures">Recent failures</h3>
+            <table class="tide-table" aria-labelledby="diag-failures">
                 <thead><tr><th>When</th><th>Job</th><th>Server</th><th>Error</th></tr></thead>
                 <tbody>
                     @foreach (var f in report.JobHistory.RecentFailures)

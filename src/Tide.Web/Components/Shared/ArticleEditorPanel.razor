@@ -127,7 +127,7 @@ else
                         </div>
                     }
                     <div>
-                        <label class="tide-field-label">Article TLP</label>
+                        <label class="tide-field-label" for="f-tlp">Article TLP</label>
                         <TlpSelect Id="f-tlp" Value="_form.Tlp" ValueChanged="SetTlp" Label="The article's TLP" Disabled="@(!_canWrite)" />
                     </div>
                 </div>
@@ -344,7 +344,7 @@ else
                 @if (_form.Indicators.Count > 0)
                 {
                     <table class="tide-table tide-ind-table mb-2">
-                        <thead><tr><th class="tide-col-md">Type</th><th>Value (shown defanged)</th><th class="tide-col-third">Note</th><th></th></tr></thead>
+                        <thead><tr><th class="tide-col-md">Type</th><th>Value (shown defanged)</th><th class="tide-col-third">Note</th><th><span class="visually-hidden">Remove</span></th></tr></thead>
                         <tbody>
                             @foreach (var ind in _form.Indicators.ToList())
                             {

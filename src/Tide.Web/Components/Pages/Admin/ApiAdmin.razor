@@ -73,8 +73,8 @@
             <input id="tok-name" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.ApiToken.MaxName" placeholder="XSOAR playbooks" @bind="_name" />
         </div>
         <div class="col-md-3">
-            <span class="tide-field-label" aria-hidden="true">Reads up to</span>
-            <TlpSelect Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
+            <label class="tide-field-label" for="tok-tlp">Reads up to</label>
+            <TlpSelect Id="tok-tlp" Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
         </div>
         <div class="col-md-2">
             <label class="tide-field-label" for="tok-days">Days</label>

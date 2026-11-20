@@ -42,8 +42,8 @@
                     <input id="new-url" class="form-control" @bind="_url" maxlength="2000" placeholder="https://…" />
                 </div>
                 <div class="col-md-2">
-                    <label class="tide-field-label">TLP</label>
-                    <TlpSelect @bind-Value="_tlp" Label="The article's TLP" />
+                    <label class="tide-field-label" for="new-tlp">TLP</label>
+                    <TlpSelect @bind-Value="_tlp" Id="new-tlp" Label="The article's TLP" />
                 </div>
             </div>
             <div class="form-text">Private sources (an ISAC, a vendor portal) usually require TLP:AMBER or a licence. Set it now: bullets start at the article's marking, screenshots at TLP:AMBER or the article's if higher.</div>

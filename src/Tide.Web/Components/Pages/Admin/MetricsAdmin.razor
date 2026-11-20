@@ -73,7 +73,7 @@
             <p class="tide-muted small text-end mb-2" id="chart-help-@g.Id">@ChartName(g.Chart): @ChartHelp(g.Chart)</p>
         }
         <table class="tide-table">
-            <thead><tr><th>Metric</th><th>Format</th><th>Good when</th><th>Warn / critical</th><th>Flag missing</th><th></th></tr></thead>
+            <thead><tr><th>Metric</th><th>Format</th><th>Good when</th><th>Warn / critical</th><th>Flag missing</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var (m, mi) in g.Metrics.Select((m, i) => (m, i)))
                 {

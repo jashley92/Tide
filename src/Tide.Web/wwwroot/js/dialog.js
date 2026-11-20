@@ -1,7 +1,9 @@
 // Dialogs drawn by Blazor (the screenshot lightbox, confirmations, the ATT&CK matrix picker): remembers what had focus when one opened, and gives it focus back
 // when it closes. CSP-safe (an external file).
 window.tideDialog = (function () {
-    let opener = null;
+    // What had focus as each open dialog opened, the innermost last: a dialog opened over another (a confirmation over
+    // the ATT&CK picker) gives focus back to its own opener inside the outer one, and the outer one later to its own.
+    const openers = [];
 
     // The controls Tab can reach in a dialog, in order. One inside an inert or hidden part (a folded ATT&CK column, a
     // closed file's details) or not drawn can't take focus, so it's left out: the Tab cycle's first and last are always
@@ -57,7 +59,7 @@ window.tideDialog = (function () {
         open: function (focusTarget) {
             // Opened from inside a popout (the palette over + Filter), which closes as the dialog takes focus: focus goes
             // back to the popout's button, as what had focus in it is gone by then.
-            opener = (window.tidePopout && window.tidePopout.opener(document.activeElement)) || document.activeElement;
+            openers.push((window.tidePopout && window.tidePopout.opener(document.activeElement)) || document.activeElement);
             if (focusTarget && focusTarget.focus) focusTarget.focus();
         },
         // A dialog with fields to fill (ConfirmDialog's Form): focus goes to its first field, or to the fallback.
@@ -79,8 +81,8 @@ window.tideDialog = (function () {
             if (filterBox && filterBox.focus && (!active || active === document.body || (active.closest && active.closest('[inert]')))) filterBox.focus();
         },
         close: function () {
+            var opener = openers.pop();
             if (opener && opener.isConnected && opener.focus) opener.focus();
-            opener = null;
         }
     };
 })();
