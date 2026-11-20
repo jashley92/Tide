@@ -535,6 +535,9 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.HasIndex("AssigneeId");
 
+                    b.HasIndex("ClosedAtUtc")
+                        .HasFilter("[ClosedAtUtc] IS NOT NULL");
+
                     b.HasIndex("CreatedAtUtc");
 
                     b.HasIndex("EscalatedForDue")
