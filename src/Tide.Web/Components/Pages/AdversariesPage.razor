@@ -141,7 +141,7 @@ else
                 </ul>
                 @if (_canWrite && _detail.Untagged.Count > 0)
                 {
-                    <div class="small mt-2">@_detail.Untagged.Count article@(_detail.Untagged.Count == 1 ? " names" : "s name") it but @(_detail.Untagged.Count == 1 ? "isn't" : "aren't") tagged. Check them, then
+                    <div class="small mt-2">@Ui.Plural(_detail.Untagged.Count, "article names", "articles name") it but @(_detail.Untagged.Count == 1 ? "isn't" : "aren't") tagged. Check them, then
                         <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="LinkAll">Tag the @_detail.Untagged.Count</button></div>
                 }
             </section>
@@ -324,7 +324,7 @@ else
         (t.Articles >= 3 ? "h2" : t.Articles == 2 ? "h1" : "") + (rules is { Enabled: 0 } ? " tide-adv-gap" : "");
 
     private static string HeatTitle(AdversaryTechnique t, Tide.Application.Detections.TechniqueRules? rules) =>
-        $"{t.Id} {t.Name}: {t.Articles} article{(t.Articles == 1 ? "" : "s")}" + (rules is null ? "" : $"; {rules.Label} tagged");
+        $"{t.Id} {t.Name}: {Ui.Plural(t.Articles, "article")}" + (rules is null ? "" : $"; {rules.Label} tagged");
 
     // A colleague added, edited, watched, retired, merged or imported a profile, or tagged an article with one: re-read in
     // place. The edit form keeps what's typed in it, and says who saved it meanwhile (saving it then is refused by the
@@ -538,7 +538,7 @@ else
     internal Task LinkAll() => Run(async () =>
     {
         var n = await Adversaries.LinkAsync(_detail!.Adversary.Id, _detail.Untagged.Select(a => a.Id).ToList());
-        Toasts.Show($"Tagged {n} article{(n == 1 ? "" : "s")}.");
+        Toasts.Show($"Tagged {Ui.Plural(n, "article")}.");
         await Load();
     });
 

@@ -4,6 +4,22 @@
 # and background jobs first, and holds the app's DLLs until it exits, so copying files straight after (a fixed few
 # seconds' wait) fails on locked files part way through.
 
+# The scripts that manage IIS work through the IIS: drive, which only Windows PowerShell has: PowerShell 7 loads
+# WebAdministration through a Windows PowerShell session, without the drive, so they would fail part way (an upgrade with
+# the site down). Returns why $Script can't run in this PowerShell, or $null when it can. -Edition is for tests.
+function Get-TideEditionRefusal([string] $Script, [string] $Edition = $PSVersionTable.PSEdition) {
+    if ($Edition -ne 'Core') { return $null }
+    return ("$Script runs in Windows PowerShell 5.1, not PowerShell 7: it manages IIS through the IIS: drive, which " +
+            "PowerShell 7 doesn't have. Nothing has been changed. Open Windows PowerShell (powershell.exe) as " +
+            "Administrator and run it again.")
+}
+
+# Stops a script that manages IIS, before it changes anything, when it runs in PowerShell 7.
+function Assert-TideWindowsPowerShell([string] $Script) {
+    $refusal = Get-TideEditionRefusal $Script
+    if ($refusal) { throw $refusal }
+}
+
 function Stop-TideAppPool([string] $Name, [int] $TimeoutSeconds = 120) {
     # Stops the pool and waits until it reports Stopped and its worker process has exited. Throws if it doesn't in time.
     Import-Module WebAdministration -ErrorAction Stop

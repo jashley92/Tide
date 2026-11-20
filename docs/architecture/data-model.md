@@ -53,6 +53,7 @@ snapshot is right.
 | **Enums are integers** | EF has no value conversions for enums, so every enum column is `int`. Each enum's comment says "Stored; append, never renumber." Add new members at the end, and never renumber or remove one. Two things are stored **by name** instead: `AppRole` names in `RoleMappings.RoleName` and `Users.RolesCsv`. Never rename an `AppRole` member. |
 | **TLP** | `TlpLevel` is stored as `int`: 0 CLEAR, 1 GREEN, 2 AMBER, 3 AMBER+STRICT, 4 RED. The order matters because editions compare markings numerically (`part > ceiling`). `Tlp.Checked` (`src/Tide.Domain/Enums/TlpLevel.cs`) refuses an undefined value before it's stored, because one would compare below every ceiling. TLP columns: `Articles.Tlp` and `WhyItMattersTlp`, `ArticleBullets.Tlp`, `ArticleScreenshots.Tlp`, `Briefs.IntroTlp`, `Sources.DefaultTlp`, `BriefSends.Ceiling`/`Marking`, `BriefCorrections.Ceiling`/`Marking`, `AiDrafts.InputTlp`, `ApiTokens.MaxTlp`, `OutreachTemplates.Ceiling` and `OutreachMessages.Tlp`. [editions-and-tlp.md](editions-and-tlp.md) explains how editions are cut. |
 | **Times are UTC** | Every moment is a `DateTimeOffset` named `…AtUtc`. It's `datetimeoffset` on SQL Server. SQLite can't order or compare `DateTimeOffset`, so on SQLite `OnModelCreating` stores UTC ticks (`long`) and the offset is lost. Code writes UTC from `TimeProvider` or `DateTimeOffset.UtcNow`. |
+| **Text sorts as SQL Server's does** | Case-insensitive sorts write `.ToLower()` (or `NameOrder`), which is `LOWER()` under SQL Server's collation. SQLite's own `lower()` folds A to Z only and orders by bytes, so "Égout" sorted apart from "éclair" and after "Zebra". On SQLite, `SqliteText` (`src/Tide.Infrastructure/Persistence/SqliteText.cs`, from `AppDbContext.OnConfiguring`) gives every connection a `lower()` that folds every letter and a `unicode_ci` collation (`NameOrder.Compare`), and translates `ToLower()` to `lower(x) COLLATE unicode_ci`. Nothing in the schema uses them. `LIKE` is untouched: on SQLite it still ignores case for A to Z only. |
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
 | **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries`, `Sources`, `Teams` and `Stories`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
@@ -1014,7 +1015,7 @@ The escalation contact (EP-88 part C), on any team, internal or external:
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `EscalationName` | nvarchar(200) | yes | Who the escalation ladder copies when the team's actions slip: a manager, a duty lead. |
-| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (`TeamService.SetEscalationContactAsync`). The migration left existing rows null. |
+| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (the team's form: `TeamService.UpdateAsync`, `UpdateExternalAsync`). The migration left existing rows null. |
 
 `TeamMembers` has key `(TeamId, UserId)` and is cascade-deleted with its team. Columns: `UserId`/`DisplayName`
 nvarchar(256) and `AddedAtUtc`. `UserId` is indexed. Members are the people who may work the team's actions, with
@@ -1043,7 +1044,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `Status` | int | no | `ActionStatus`. |
 | `Outcome` | int | no | `ActionOutcome`. |
 | `OutcomeNote` | nvarchar(2000) | yes | |
-| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. |
+| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. `ClosedAtUtc` is indexed, closed ones only, for the daily prune of reminder marks. |
 | `TicketRef`, `TicketUrl` | nvarchar(100), nvarchar(2000) | yes | A ticket in an ITSM tool that tracks the same work. |
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |
@@ -1059,7 +1060,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `DeletedById`, `DeletedByName` | nvarchar(256) | yes | Who deleted it. Cleared on restore. |
 | `DeleteReason` | nvarchar(500) | yes | Why, as they wrote it (required to delete). Cleared on restore; the history keeps it. |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
-| stamps | | | **S** columns. |
+| stamps | | | **S** columns. `CreatedAtUtc` is indexed: the webhook job reads the oldest actions raised after each hook's watermark. |
 
 ### Action child tables
 
@@ -1090,6 +1091,17 @@ reordering the steps doesn't run one again. Only a step that ran is marked: one 
 That an external team's contact was reminded about an action today, by either, is `contact-reminded` and
 `{action}:{day}:{contact}` (the address as a short hash), so the other is skipped that day. `Kind` is nvarchar(32), `Key`
 nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
+
+The reminder job prunes it once a day (`ReminderService.PruneMarksAsync`, `Actions/ReminderMarks.cs`; when it last ran is
+the mark `marks-pruned`/`last`). A mark goes only when its absence can't send anything twice, after
+`MarkRetentionDays` (90): a past period's (`digest`, `personal-digest`, `brief-not-ready`, `presenting`,
+`contact-reminded`, which a scan only looks up by the current period's key), and, for an action closed that long ago
+(deleted ones too), its recipients' `due-soon` and `overdue` marks (the action's own mark for that kind and due date
+stays, and a scan that finds it reads no further), its `digest-seen` marks, and the `outreach-follow-up` marks of its
+answered emails. An open action keeps every mark. A closed one keeps what its scans would read again were it reopened
+(its own `due-soon` and `overdue`, `escalation`, `external-reminder`, an unanswered email's follow-up), so reopening it
+sends nothing twice; its next personal digest may list it as new again. Deletes name their keys, a few hundred a
+statement.
 
 ## Hunting, outreach and playbooks
 
@@ -1191,6 +1203,7 @@ single `AuditLog` entry itself when an administrator removes a pushed set.
 | `Id` | uniqueidentifier | no | |
 | `Source` | int | no | `DetectionSource`. **Unique** with `ExternalId`. |
 | `ExternalId` | nvarchar(300) | no | The rule's own id in its source, or its name when it has none. |
+| `Caller` | nvarchar(300) | yes | For a pushed rule, the API caller whose set holds it (a token as `api:<name>`, or a person's id): the start of `ExternalId`, up to the U+001F mark. Null for an imported rule and a push from before callers were kept. Set with `ExternalId`; indexed with `Source`, so a push or a removal reads only its caller's rules. |
 | `Name` | nvarchar(300) | no | |
 | `Techniques` | nvarchar(1000) | no | ATT&CK ids, comma-separated, upper case. |
 | `Platform` | nvarchar(100) | yes | |
@@ -1439,6 +1452,8 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 | `Enabled` | bit | no | |
 | `SentUpToUtc` | datetimeoffset | no | Everything up to this moment has been sent or tried. |
 | `OverdueSentFor` | date | yes | The last day whose newly overdue actions were sent. |
+| `MomentCursor` | nvarchar(64) | yes | How far into the moment just after `SentUpToUtc` a run that stopped inside it got: the moment's ticks and the last event posted (`{ticks}\|A0000000012` for an action, `\|B{send}` for a brief). |
+| `OverdueCursor` | nvarchar(32) | yes | How far into the due date just after `OverdueSentFor` a run that stopped inside it got: the date and the last action number posted (`2026-11-18\|42`). |
 | `LastAtUtc`, `LastStatus`, `LastError` | datetimeoffset, int, nvarchar(500) | yes | The last delivery, updated with `ExecuteUpdateAsync`. |
 | stamps | | | **S** columns. |
 

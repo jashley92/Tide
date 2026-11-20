@@ -101,14 +101,6 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
 
     // --- reading ------------------------------------------------------------------------------------------------
 
-    /// <summary>The live profiles, without matching them against the articles (the editor's picker).</summary>
-    public async Task<IReadOnlyList<Adversary>> ProfilesAsync(CancellationToken ct = default)
-    {
-        RequireRead();
-        await using var db = await dbs.CreateAsync(ct);
-        return await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
-    }
-
     public async Task<IReadOnlyList<AdversaryRow>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Tide.Application.Content;
 using Tide.Application.Metrics;
 using Tide.Application.Operations;
 using Tide.Infrastructure.Storage;
@@ -43,7 +44,7 @@ public sealed class MetricImportHostedService(IServiceScopeFactory scopes, Metri
                             await using var scope = scopes.CreateAsyncScope();
                             var read = await folder.ProcessAsync(scope.ServiceProvider.GetRequiredService<MetricImportService>(), stoppingToken);
                             if (read > 0) log.LogInformation("Imported {Count} metrics file(s) from the drop folder.", read);
-                            return $"{read} file{(read == 1 ? "" : "s")}";
+                            return Words.Plural(read, "file");
                         });
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }

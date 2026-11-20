@@ -105,8 +105,7 @@ public class SecurityAuditTests
         FluentActions.Invoking(() => _md.ToInlineHtml(text)).Should().NotThrow();
         FluentActions.Invoking(() => _md.ToPlainText(text)).Should().NotThrow();
         _md.ToHtml(text).Should().Contain(System.Net.WebUtility.HtmlEncode(text.Length > 50 ? text[..50] : text), "it's shown as typed, escaped").And.NotContain("<a ");
-        MarkdownService.IsRenderable(text).Should().BeFalse();
-        MarkdownService.IsRenderable("**bold** [x](https://a)").Should().BeTrue();
+        _md.ToHtml("**bold** [x](https://a)").Should().Contain("<strong>bold</strong>").And.Contain("<a ", "Markdown that nests within bounds still renders");
     }
 
     [Theory]

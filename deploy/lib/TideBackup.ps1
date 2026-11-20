@@ -62,6 +62,56 @@ function Get-TideBackupFolders {
     return @($list | Where-Object { $_.Path })
 }
 
+# Why the restore drill may not use $Scratch as its scratch database, or $null when it may. The drill drops and
+# replaces its scratch database, so the live database's name is refused on any instance: an instance can be named many
+# ways ('.', localhost, its FQDN, an alias), so comparing instance names can't prove two are different servers. Compared
+# as SQL Server compares names under the usual case-insensitive collation.
+function Get-TideScratchRefusal([string] $Scratch, [string] $LiveName) {
+    if (-not "$Scratch".Trim()) { return "-ScratchDatabase is empty. Give the drill a database name of its own, or leave it out." }
+    if ("$Scratch".Trim() -ieq "$LiveName".Trim()) {
+        return ("The scratch database can't be named '$Scratch': that's the live database's name ($LiveName), and the drill " +
+                "drops and replaces its scratch database. Nothing has been changed. Give -ScratchDatabase another name, or " +
+                "leave it out to use Tide_RestoreDrill_<server>_<site folder>.")
+    }
+    return $null
+}
+
+# The restore drill marks the scratch database it restores with a database-level extended property, and replaces an
+# existing database of that name only when it carries the mark: a name given by hand can be another install's live
+# database on a shared instance, and a drill's restore is then the only proof the database is a drill's.
+function Get-TideDrillMarkerName { return 'TideRestoreDrill' }
+
+# The SQL that marks $Database as a drill's scratch database.
+function Get-TideDrillMarkerSql([string] $Database) {
+    return "EXEC $(Get-SqlName $Database).sys.sp_addextendedproperty @name = N'$(Get-TideDrillMarkerName)', @value = N'1';"
+}
+
+# The SQL that counts the mark on $Database (0 or 1).
+function Get-TideDrillMarkerQuery([string] $Database) {
+    return "SELECT COUNT(*) FROM $(Get-SqlName $Database).sys.extended_properties WHERE class = 0 AND name = N'$(Get-TideDrillMarkerName)'"
+}
+
+# Why the drill may not drop the existing database $Scratch, or $null when it carries the drill's mark.
+function Get-TideScratchDropRefusal([string] $Scratch, [string] $SqlInstance, [bool] $Marked) {
+    if ($Marked) { return $null }
+    return ("$SqlInstance already has a database named $Scratch, and it isn't one a restore drill made (it lacks the " +
+            "$(Get-TideDrillMarkerName) mark), so the drill won't drop it: it may be another install's database. Nothing has " +
+            "been changed. Give -ScratchDatabase a name no database has, or leave it out to use " +
+            "Tide_RestoreDrill_<server>_<site folder>. If it's a scratch database left by a drill from before the mark, " +
+            "drop it yourself once you've checked.")
+}
+
+# Whether a backup set should hold the Data Protection key ring: when the backup that made it had DataProtection:KeyPath
+# set, as backup-set.json records (a folder labelled dp-keys, even one that wasn't there to copy). A set from before
+# backup-set.json listed its folders goes by the site's setting now. Without the setting the app keeps its keys in memory
+# and there's no ring to back up.
+function Test-TideSetHasKeyRing($Manifest, $Site) {
+    if ($Manifest -and $Manifest.PSObject.Properties['folders']) {
+        return [bool](@($Manifest.folders) | Where-Object { $_ -and "$($_.label)" -eq 'dp-keys' })
+    }
+    return [bool](Get-TideSetting $Site 'DataProtection:KeyPath')
+}
+
 # Where the file store keeps a file (DiskFileStore): <root>\<first two of the id>\<id>.bin, the id without dashes.
 function Get-TideStoredFilePath([string] $Root, [guid] $Id) {
     $n = $Id.ToString('N')

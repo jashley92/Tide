@@ -84,33 +84,42 @@ The restore drill. It takes the newest set of this install (or `-BackupSet`) and
 - checks the restored database has TIDE's migration history;
 - checks every screenshot the database lists is in the set at its recorded size, and that `-Sample` (200) of them, or
   all with `-HashAll`, match their SHA-256;
-- checks the set holds the key ring and the site's settings file.
+- checks the set holds the key ring and the site's settings file. With `DataProtection:KeyPath` not set there's no key
+  ring to back up, so that check is skipped and marked `[SKIP]` with why, not failed.
 
 It writes `restore-check-<time>.json` into the set, drops the scratch database (unless `-KeepRestored`), and exits with
 code 2 on a failed check. `-Register` schedules it every fourth Sunday. It refuses a scratch name that's the live
-database.
+database's on any instance, since `.`, `localhost` and the server's full name all reach the live one. It marks each
+scratch database it restores (a `TideRestoreDrill` extended property) and replaces an existing database of the scratch
+name only when it carries that mark, so on a shared instance it never drops another install's database. A scratch
+database kept from a drill before the mark is refused once: drop it yourself after checking.
 
 ### Upgrade-Tide.ps1
 
 Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#upgrading-with-upgrade-tideps1)):
 
-- before deploying, a `COPY_ONLY` database backup (`-SkipDbBackup` when your product's is current), the site's
-  `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`), under
-  `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
+- before deploying, a `COPY_ONLY` database backup checked with `RESTORE VERIFYONLY` (`-SkipDbBackup` when your
+  product's is current), the site's `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`),
+  under `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
 - after deploying, it polls `/health` for up to 11 minutes;
-- if TIDE doesn't answer `Healthy`, it puts the previous files back and starts the pool, unless the new build had
-  already migrated the database, in which case it leaves the pool stopped and says to restore the pre-upgrade backup.
+- if deploying fails (the copy, removing old files, the pool's settings, starting the pool) or TIDE doesn't answer
+  `Healthy`, it puts the previous files back and starts the pool, unless the database records a migration the previous
+  build doesn't know (the new build's, or an earlier failed upgrade's), in which case it leaves the pool stopped and
+  says which backup to restore. Migrations a DBA applied before a DbaApplies upgrade don't count: the previous build
+  ran on them. When it can't read the database's migration history, or the previous build's, it leaves the pool
+  stopped too and says what to check, unless the failure came before the new build could start.
 
 ```mermaid
 flowchart TD
-    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database,<br/>settings file, site snapshot"]
+    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database (verified),<br/>settings file, site snapshot"]
     B --> C["Stop pool, copy release,<br/>keep settings, logs, App_Data"]
     C --> D["Start pool<br/>AppMigrates: migrations run"]
+    C -->|A step fails| G
     D --> E{"/health Healthy<br/>within 11 minutes?"}
     E -->|Yes| F["Write VERSION.txt,<br/>refresh kept scripts"]
-    E -->|No| G{"Did the new build<br/>migrate the database?"}
-    G -->|No| H["Restore site-rollback,<br/>start pool"]
-    G -->|Yes| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
+    E -->|No| G{"Restore site-rollback.<br/>Does the database have migrations<br/>the previous build doesn't know?"}
+    G -->|No| H["Start pool"]
+    G -->|"Yes, or can't tell"| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
 ```
 
 ## Restoring
@@ -262,7 +271,8 @@ is logged as `Tide.Health` ("Background jobs is Unhealthy: jobs …").
 ### Diagnostics
 
 **Administration › System › Diagnostics** is the deeper check, for administrators: the build and uptime; the
-database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file);
+database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file; the app makes the folder at start-up, and
+logs a `Tide.Files` warning if it can't);
 the key ring is on disk; email is on, signs in properly, and isn't backed off; which sources are failing; each
 background job's last run, result and next run, whether it's failing, overdue or hung, and its runs and failures over
 30 days; which process holds the job lease (or that this one is standing by); whether the role mappings loaded; whether WebSockets are in use (this

@@ -1000,7 +1000,7 @@ else
     private Task SetTlp(TlpLevel t)
     {
         var raised = _form!.SetTlp(t);
-        if (raised > 0) Toasts.Show($"Raised {raised} part{(raised == 1 ? "" : "s")} to {Tlp.Label(t)} to match the article.");
+        if (raised > 0) Toasts.Show($"Raised {Ui.Plural(raised, "part")} to {Tlp.Label(t)} to match the article.");
         return Touch();
     }
 
@@ -1140,7 +1140,7 @@ else
         {
             var room = Article.MaxScreenshots - _form!.Screenshots.Count;
             var files = e.GetMultipleFiles(Article.MaxScreenshots);
-            if (files.Count > room) throw new ArgumentException($"Only {room} more screenshot{(room == 1 ? "" : "s")} fit on this article.");
+            if (files.Count > room) throw new ArgumentException($"Only {Ui.Plural(room, "more screenshot")} fit on this article.");
             var uploads = new List<ScreenshotUpload>();
             foreach (var f in files)
             {

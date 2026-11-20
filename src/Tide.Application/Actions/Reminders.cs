@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Content;
@@ -206,7 +207,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     /// <summary>
     /// Runs every enabled scan that's due now (its time of day has come). Each scan's failure is its own: it's logged
     /// and the others still run. Returns the emails sent and the scans that failed, so the poller's run is recorded as
-    /// failed (on Diagnostics) when one did, not as a success.
+    /// failed (on Diagnostics) when one did, not as a success. Then, once a day, the marks that can't matter again are
+    /// pruned (<see cref="PruneMarksAsync"/>).
     /// </summary>
     public async Task<ReminderPass> RunDueAsync(CancellationToken ct = default)
     {
@@ -221,6 +223,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             if (log.Last(kind) is not { } run || ReferenceEquals(run, before)) continue;
             if (run.Error is not null) failed.Add(run);
             else if (run.Unsure > 0) unsure.Add(run);
+        }
+        // Whatever scans are on: marks written while one was on still pile up. A failure is the prune's own, tried again
+        // at the next pass; the scans' emails went all the same.
+        try { await PruneMarksAsync(ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(ex, "Pruning old reminder marks failed; it's tried again at the next pass.");
         }
         return new ReminderPass(sent, failed, unsure);
     }
@@ -378,11 +387,23 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var soon = clock.Days.Next(today);
         var kind = overdue ? "overdue" : "due-soon";
         await using var db = await dbs.CreateAsync(ct);
-        var open = db.Actions.AsNoTracking().Include(a => a.Article).Include(a => a.Team).ThenInclude(t => t!.Members)
-            .WhereOpen().Where(a => a.DueDate != null);
-        var actions = await (overdue ? open.Where(a => a.DueDate < today) : open.Where(a => a.DueDate >= today && a.DueDate <= soon)).ToListAsync(ct);
-        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == kind).Select(m => m.Key).ToListAsync(ct)).ToHashSet();
-        var pending = actions.Where(a => !marks.Contains(MarkKey(a))).ToList();
+        var open = db.Actions.AsNoTracking().WhereOpen().Where(a => a.DueDate != null);
+        open = overdue ? open.Where(a => a.DueDate < today) : open.Where(a => a.DueDate >= today && a.DueDate <= soon);
+
+        // The candidates' keys first, then only their marks (an action's own, and its recipients', which start with it),
+        // so an action already reminded about isn't loaded with its team, and the kind's older marks aren't read at all.
+        // In database order, so the actions load (and are listed) in the order one query of them all would have had.
+        var candidates = await open.OrderBy(a => a.Id).Select(a => new { a.Id, a.DueDate }).ToListAsync(ct);
+        var marks = new HashSet<string>();
+        foreach (var chunk in candidates.Select(c => MarkKey(c.Id, c.DueDate)).Chunk(KeysPerQuery))
+            marks.UnionWith(await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == kind && chunk.Contains(m.Key.Substring(0, MarkKeyLength)))
+                .Select(m => m.Key).ToListAsync(ct));
+        var pending = new List<ActionItem>();
+        foreach (var chunk in candidates.Where(c => !marks.Contains(MarkKey(c.Id, c.DueDate))).Select(c => c.Id).Chunk(KeysPerQuery))
+            pending.AddRange(await open.Where(a => chunk.Contains(a.Id)).Include(a => a.Article).Include(a => a.Team).ThenInclude(t => t!.Members)
+                .AsSplitQuery().ToListAsync(ct));
+        // A due date moved since the first read earns its own key: it's checked again here.
+        pending = [.. pending.Where(a => !marks.Contains(MarkKey(a)))];
         if (pending.Count == 0) return 0;
 
         var people = pending.Select(a => a.AssigneeId).OfType<string>().Concat(pending.SelectMany(a => a.Team!.Members.Select(m => m.UserId))).ToList();
@@ -433,7 +454,15 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     private static string RecipientKey(ActionItem a, string to) => MarkKey(a) + "|" + Hash(to);
 
     // Once per action per due date: moving the date earns a new reminder.
-    private static string MarkKey(ActionItem a) => $"{a.Id:N}:{a.DueDate:yyyy-MM-dd}";
+    private static string MarkKey(ActionItem a) => MarkKey(a.Id, a.DueDate);
+
+    private static string MarkKey(Guid id, DateOnly? due) => $"{id:N}:{due:yyyy-MM-dd}";
+
+    // An action's key with a due date ("{32 hex}:{yyyy-MM-dd}"): its recipients' keys start with it.
+    private const int MarkKeyLength = 32 + 1 + 10;
+
+    // Keys or ids looked up per query, well inside SQL Server's limit on a query's parameters.
+    private const int KeysPerQuery = 500;
 
     // Who's emailed about an action, who would have been but opted out, and who was left out as inactive. An assignee who
     // opted out isn't swapped for the team: the action is theirs. One who's inactive is, as one with no address is: they
@@ -465,14 +494,16 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var weekAgo = ActionQueries.LastSevenDaysFrom(today);
         await using var db = await dbs.CreateAsync(ct);
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members).Where(t => !t.IsRetired).ToListAsync(ct);
-        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest").Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+        string KeyOf(Team team) => $"{team.Id:N}:{weekStart:yyyy-MM-dd}";
+        var keys = teams.Select(KeyOf).ToList();
+        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest" && keys.Contains(m.Key)).Select(m => m.Key).ToListAsync(ct)).ToHashSet();
         var members = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Digest),
             teams.SelectMany(t => t.Members.Select(m => m.UserId)), ct, Active(Permission.ReadActions));
-        var sent = 0;
         var leftOut = new HashSet<string>();
+        var due = new List<(Team Team, string Key, IReadOnlyList<string> To)>();
         foreach (var team in teams)
         {
-            var key = $"{team.Id:N}:{weekStart:yyyy-MM-dd}";
+            var key = KeyOf(team);
             if (marks.Contains(key)) continue;
             IReadOnlyList<string> to = [team.Email!];
             if (string.IsNullOrWhiteSpace(team.Email))
@@ -481,9 +512,18 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 leftOut.UnionWith(skipped);
                 Inactive(inactive);
             }
-            if (to.Count == 0) continue;
-            var actions = await db.Actions.AsNoTracking().Include(a => a.Article).Where(a => a.TeamId == team.Id)
-                .WhereOpenOrClosedSince(weekAgo).ToListAsync(ct);
+            if (to.Count > 0) due.Add((team, key, to));
+        }
+
+        // Every team's actions in one query, rather than one per team.
+        var teamIds = due.Select(d => d.Team.Id).ToList();
+        var byTeam = teamIds.Count == 0 ? Enumerable.Empty<ActionItem>().ToLookup(a => a.TeamId)
+            : (await db.Actions.AsNoTracking().Include(a => a.Article).Where(a => teamIds.Contains(a.TeamId))
+                .WhereOpenOrClosedSince(weekAgo).ToListAsync(ct)).ToLookup(a => a.TeamId);
+        var sent = 0;
+        foreach (var (team, key, to) in due)
+        {
+            var actions = byTeam[team.Id].ToList();
             var open = actions.Where(a => a.IsOpen).OrderBy(a => a.DueDate ?? DateOnly.MaxValue).ToList();
             var closed = actions.Where(a => !a.IsOpen).OrderBy(a => a.ClosedDate).ToList();
             var overdue = open.Count(a => ActionSla.StateOf(a, today, clock.Days) == SlaState.Overdue);

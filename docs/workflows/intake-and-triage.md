@@ -545,7 +545,7 @@ Triage shows a group as one line that opens to its reports' own rows. There's no
 split it, with **Undo** (`UndoSplitAsync`, deletes the batch; anyone who triages can). Both are audited and heard on
 the triage topic. A report's split rows go with it when it's pruned (cascade).
 
-**Promote as one article** (`IntakeService.PromoteAsOneAsync`, 2 to 8 reports):
+**Promote as one article** (`IntakeService.PromoteOrJoinAsync`, 2 to 8 reports):
 
 ```mermaid
 sequenceDiagram
@@ -554,7 +554,7 @@ sequenceDiagram
     participant I as IntakeService
     participant Db as Database
     participant Ar as ArticleService
-    A->>I: PromoteAsOneAsync(ids, form)
+    A->>I: PromoteOrJoinAsync(ids, form)
     I->>Db: BEGIN transaction inside the execution strategy
     I->>Db: UPDATE FeedItems SET Promoted WHERE id IN ids AND claimable
     alt claimed fewer than all
