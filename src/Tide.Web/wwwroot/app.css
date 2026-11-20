@@ -358,6 +358,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 /* A wide table scrolls sideways; a sub-pixel rounding at its foot mustn't add a vertical scrollbar beside a short one. */
 .table-responsive { overflow-y: hidden; }
+/* TableScroll's box takes focus, so the keyboard can scroll it: its ring sits just outside, clear of the table's lines. */
+.tide-table-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); padding: .5rem .6rem; border-bottom: 1px solid var(--tide-border); text-align: left; white-space: nowrap; }
 .tide-table td { padding: .6rem; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
 /* What each role can do (Role mappings): the activities read as text, not as column headings. */
@@ -3099,7 +3101,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
        is its verb and the start of the title. It takes the room the others leave, up to its full width. */
     .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(2em, 1fr);
         flex: 4 1 0; min-width: auto; max-width: max-content; }
-    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { display: none; }
+    /* Out of sight but still said: the words stay in the button's name, which starts with what's shown. */
+    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     /* Last of all, before the row wraps (fonts wider than this machine's), the key hint on a button before the end gives
        way: its label then its key, the key's column able to close to nothing. Each such button is as wide as its label
        when the row is laid out, then takes the room back for its key before Attach or the end take any (as the buttons

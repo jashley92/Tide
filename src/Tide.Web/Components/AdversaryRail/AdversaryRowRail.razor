@@ -30,7 +30,7 @@
         <div class="tide-fact tide-fact-wide"><dt>Sectors</dt><dd>@(p.Sectors ?? "—")</dd></div>
     </dl>
     <div class="tide-stack-rail-buttons">
-        <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}")" aria-label="@($"Open {p.Name}'s profile")">Open profile</a>
+        <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}")" aria-label="@($"Open profile: {p.Name}")">Open profile</a>
         @if (CanWrite && !p.IsRetired)
         {
             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Watch(!p.Watched)">@(p.Watched ? "Stop watching" : "Watch in triage")</button>
