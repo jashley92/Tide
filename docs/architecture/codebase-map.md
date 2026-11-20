@@ -128,7 +128,8 @@ also lives here, so unit tests can reach it without a database.
 | `Persistence/AuditInterceptor.cs` | Stamps and the audit log, written in the same save. `NotAudited`, `SkippedProperties` and `MaskFor` are the knobs. | `Record`, `Changes` |
 | `Persistence/ChangeInterceptor.cs` | Publishes change-feed topics after a save commits (`TopicsOf` maps entities to topics). | `TopicsOf` |
 | `Persistence/DatabaseInitializer.cs` | Startup: migrate (or refuse if `Database:ApplyMigrations` is false and migrations are pending), load holidays, seed role mappings and the scorecard, run the one-time indicator canonicalization, and add Development sample data. | `InitializeAsync`, `SeedSamplesAsync` |
-| `Persistence/SqliteText.cs` | On SQLite only: a `lower()` that folds every letter and a `unicode_ci` collation on every connection, and `ToLower()` translated to use them, so text sorts as on SQL Server. | `Configure`, `Register` |
+| `Persistence/SqliteText.cs` | On SQLite only: a `lower()` that folds every letter and a `unicode_ci` collation on every connection, and `ToLower()` translated to use them, so text sorts as on SQL Server; and `EF.Functions.Like` translated to add `SqliteLike`'s matcher for a pattern with a letter beyond ASCII, so search ignores case as on SQL Server. | `Configure`, `Register` |
+| `Persistence/SqliteLike.cs` | On SQLite only: `needs_unicode(p)` and `ulike(p, x[, e])`, LIKE ignoring case for every letter (as `NameOrder` compares), accents counted. | `Register` |
 | `Persistence/AppDbContextFactory.cs` | The design-time factory for `dotnet ef`. It reads `TIDE_MIGRATIONS_PROVIDER`, and its XML comment has the migration commands. | |
 | `Persistence/Migrations/` | The **SQLite** migrations and snapshot. | |
 | `Storage/DiskFileStore.cs` | File bytes on disk under `Files:RootPath`. | `WriteAsync`, `PathFor` |
