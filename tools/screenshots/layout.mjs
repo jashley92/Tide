@@ -7,6 +7,7 @@
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -14,6 +15,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { AxeReport, axeOn, scan, widest } from './axe.mjs';
 import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
@@ -5205,6 +5207,9 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
+  // Report only: what axe finds is written and printed, never added to the problems.
+  const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
+  const axe = axeOn ? new AxeReport(label) : null;
   try {
     for (const p of list) {
       if (p.when && !p.when(demo)) {
@@ -5230,6 +5235,15 @@ async function check(list, demo) {
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
+          // Once a page, at its widest width, as its rules left it.
+          if (axe && size === widest(p.widths)) {
+            const start = Date.now();
+            try {
+              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+            } catch (e) {
+              axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
+            }
+          }
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {
@@ -5239,6 +5253,7 @@ async function check(list, demo) {
     }
   } finally {
     await browser.close();
+    axe?.write();
   }
   return problems;
 }
