@@ -419,7 +419,7 @@ public class ApiMoreTests(TideApp app) : IClassFixture<TideApp>
         secrets.Unprotect("Tide.Secrets.NvdApiKey.v1", kept).Should().BeNull("one purpose never opens another's");
 
         var handler = new Answering(HttpStatusCode.Accepted);
-        var poster = new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler));
+        var poster = new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler), new StaticOptionsMonitor<WebhookOptions>(new WebhookOptions()));
         (await poster.PostAsync("https://hooks.example.org/x", "{}", new Dictionary<string, string> { ["X-Tide-Event"] = "ping" })).Should().Be((202, (string?)null));
         handler.Last!.Headers.GetValues("X-Tide-Event").Should().Equal("ping");
         handler.Status = HttpStatusCode.Redirect;

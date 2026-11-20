@@ -114,7 +114,8 @@ builder.Services.AddAuthentication()
 builder.Services.AddSingleton<Tide.Application.Abstractions.ISecretProtector, Tide.Web.Security.DataProtectionSecrets>();
 builder.Services.AddScoped<Tide.Application.Api.IWebhookPoster, HttpWebhookPoster>();
 builder.Services.AddHttpClient(HttpWebhookPoster.Client, c => c.Timeout = TimeSpan.FromSeconds(15))
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+    .ConfigurePrimaryHttpMessageHandler(sp => HttpWebhookPoster.Handler(
+        HttpWebhookPoster.Refusal(sp.GetRequiredService<IOptionsMonitor<Tide.Application.Api.WebhookOptions>>())));
 
 builder.Services.AddAuthorization(options =>
 {

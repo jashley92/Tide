@@ -298,6 +298,16 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 `appsettings.json` sets `SponsoredExceptions` without `regime-sponsored`, which the code default
 (`SponsoredFilter.DefaultExceptions`) has. The file's value wins.
 
+### Webhooks
+
+| Key | Default | Allowed values | Where | Effect |
+|---|---|---|---|---|
+| `Webhooks:AllowPrivateNetworks` | `true` | `true` lets webhooks be posted to 10/8, 172.16/12, 192.168/16, 100.64/10 and IPv6 unique-local, where a receiver such as a SOAR platform often is; `false` allows public addresses only. Loopback, link-local (cloud metadata among them), unspecified and multicast addresses are never posted to, whatever the setting. Separate from `Intake:AllowPrivateNetworks`, which is off by default. | Server | Next post |
+
+An install upgraded from a release before this setting keeps posting to internal receivers: it defaults to `true`.
+A webhook pointed at a refused address fails with `Refused: <host> is a loopback address, which webhooks aren't sent
+to.` (or link-local, private, reserved) on **Test** and as its last result.
+
 ### CVE enrichment
 
 | Key | Default | Allowed values | Where | Effect |

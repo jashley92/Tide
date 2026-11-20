@@ -338,7 +338,9 @@ one client TIDE uses to fetch from other hosts: feeds (`IntakeService`), article
 | Result | Never throws for a failure: `HttpFetch` with `Ok`, `NotModified` or `Failed` and a sentence saying why, which the Sources and Diagnostics pages show. |
 
 Two other clients exist, each for one purpose. Webhooks post through the `webhooks` named client
-(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't apply `AddressPolicy` or `Intake:Proxy`. The
+(`HttpWebhookPoster`: 15-second time-out, redirects off), which doesn't use `Intake:Proxy` but checks each connection
+with the same `AddressGuard.ConnectAsync` and `AddressPolicy`, private ranges following `Webhooks:AllowPrivateNetworks`
+(on by default) instead of the intake setting. The
 Azure OpenAI client (`src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs`) has its own `HttpClient`.
 
 ## Email sending
@@ -430,7 +432,7 @@ everything, log it, and record it on Diagnostics.
 | Security headers, circuit origin, user mirror | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `UserMirrorMiddleware.cs` |
 | Hosted services | `src/Tide.Web/Services/*HostedService.cs`, `src/Tide.Web/Api/WebhookServices.cs` |
 | Job reporting, lease and history | `src/Tide.Application/Operations/JobMonitor.cs`, `BackgroundJobLease.cs`, `JobRunLog.cs`, `JobHealth.cs` |
-| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `OutboundCircuit.cs` |
+| Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `AddressGuard.cs`, `OutboundCircuit.cs` |
 | Email | `src/Tide.Infrastructure/Notifications/EmailSender.cs`, `EmailOptions.cs`, `SmtpClientFactory.cs` |
 | Change feed | `src/Tide.Application/Abstractions/ChangeFeed.cs`, `src/Tide.Infrastructure/Persistence/ChangeInterceptor.cs` |
 | Audit | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs` |
