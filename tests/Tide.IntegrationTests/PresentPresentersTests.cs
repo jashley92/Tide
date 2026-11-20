@@ -1,9 +1,15 @@
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Tide.Application.Abstractions;
 using Tide.Application.Briefs;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Infrastructure.Persistence;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
 using static Tide.IntegrationTests.PresentHarness;
@@ -111,5 +117,100 @@ public class PresentPresentersTests(MeetingClockApp app) : IClassFixture<Meeting
 
         await robin.DisposeAsync();
         EndMeeting(app, day);
+    }
+}
+
+/// <summary>
+/// <see cref="MeetingClockApp"/>'s app, whose database a test can take away for a moment (<see cref="Outage"/>): every
+/// context asked for meanwhile fails, as a dropped connection would.
+/// </summary>
+public sealed class DatabaseOutageApp : TideApp
+{
+    public TestClock Clock { get; } = new(DateTimeOffset.UtcNow);
+
+    public sealed class Outage
+    {
+        private volatile bool _on;
+
+        public bool On
+        {
+            get => _on;
+            set => _on = value;
+        }
+    }
+
+    private sealed class Failing(IDbContextFactory<AppDbContext> inner, Outage outage) : IAppDbContextFactory
+    {
+        public async Task<IAppDbContext> CreateAsync(CancellationToken ct = default) =>
+            outage.On ? throw new InvalidOperationException("The database is unreachable.") : await inner.CreateDbContextAsync(ct);
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.ConfigureTestServices(s =>
+        {
+            s.AddSingleton(_ => new LiveMeetings(Clock));
+            s.AddSingleton<TimeProvider>(new ManualClock());
+            s.AddSingleton<Outage>();
+            s.RemoveAll<IAppDbContextFactory>();
+            s.AddScoped<IAppDbContextFactory, Failing>();
+        });
+    }
+}
+
+/// <summary>
+/// Keeping who presented on the brief is best effort: the database failing as the meeting changes hands leaves the
+/// meeting going, in the new presenter's hands, and the meeting's end writes who presented it.
+/// </summary>
+public class PresentPresentersOutageTests(DatabaseOutageApp app) : IClassFixture<DatabaseOutageApp>
+{
+    private static readonly SignIn Robin = new("dev:outage-robin", "Robin Analyst", "Analyst");
+    private static readonly SignIn Sam = new("dev:outage-sam", "Sam Analyst", "Analyst");
+
+    private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
+    private DatabaseOutageApp.Outage Outage => app.Services.GetRequiredService<DatabaseOutageApp.Outage>();
+
+    private async Task<Brief> Read(DateOnly day)
+    {
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        return (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!;
+    }
+
+    private async Task WhileTheDatabaseIsDown(Func<Task> what)
+    {
+        Outage.On = true;
+        try { await what(); }
+        finally { Outage.On = false; }
+    }
+
+    [Fact]
+    public async Task TheDatabaseFailing_AsTheMeetingIsHandedOffOrTakenOver_LeavesItGoing_AndItsEndWritesWhoPresented()
+    {
+        var day = await TwoArticleBrief(app, 94, "Presenters outage");
+        var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        var robin = await Open(app, day, Robin);
+        await Do(robin, p => p.JoinIfLive());
+        var sam = await Open(app, day, Sam);
+        await Do(sam, p => p.JoinIfLive());
+
+        await WhileTheDatabaseIsDown(() => Do(pat, p => p.HandOff(Robin.UserId)));
+        Meetings.Get(day)!.PresenterId.Should().Be(Robin.UserId, "the hand-off happened, whatever became of the save");
+        (await Read(day)).PresentedByName.Should().Be("Tester", "kept as it started; the hand-off's save failed");
+
+        await robin.DisposeAsync();   // the new presenter's tab closed
+        app.Clock.Now += LiveMeetings.Grace + TimeSpan.FromSeconds(1);
+        await WhileTheDatabaseIsDown(() => Do(sam, p => p.TakeOver()));
+        Meetings.Get(day)!.PresenterId.Should().Be(Sam.UserId, "the take-over happened, whatever became of the save");
+        (await Read(day)).PresentedByName.Should().Be("Tester", "neither change of hands could be saved");
+
+        await pat.DisposeAsync();
+        await Do(sam, p => p.EndMeeting());
+        Meetings.Get(day).Should().BeNull("the meeting ended");
+        var brief = await Read(day);
+        brief.Status.Should().Be(BriefStatus.Presented);
+        brief.PresentedByName.Should().Be("Tester, Robin Analyst and Sam Analyst", "the end writes who presented it, the final word");
+        await sam.DisposeAsync();
     }
 }

@@ -315,8 +315,9 @@ window.tidePresent = (function () {
     // --- keys ------------------------------------------------------------------------------------------------------------
 
     // Space and Page Down page the slide's body down first, Shift+Space and Page Up up; only at its end do they change
-    // the slide. The arrows and the other keys change it at once. With a panel open over the slide, they page it and
-    // none of them changes the slide (cardOver).
+    // the slide. The arrows and the other keys change it at once. With a panel open over the slide, Space and the page
+    // keys page it and stop at its top and end, and no key changes the slide (cardOver), with the presenter's rail or a
+    // step of Learn to present open too.
     function paging(e) {
         if (e.key === 'PageDown') return 'down';
         if (e.key === 'PageUp') return 'up';
@@ -332,12 +333,14 @@ window.tidePresent = (function () {
             const move = stepKeys[e.key];
             if (!move || document.querySelector('.tide-modal:not([data-guide-card])') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
             e.preventDefault();
+            if (moves[move] && cardOver()) return;   // a card over the slide holds them, as below
             ref.invokeMethodAsync('OnPresentKey', move).catch(function () { });
             return;
         }
         // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
         // and Escape close it (not while typing). The slide's keys that press nothing in the rail still work, as its D
-        // hint says: D ticks the article, the arrows, Home and End move the slide under it, and focus stays in the rail.
+        // hint says: D ticks the article, the arrows, Home and End move the slide under it (not with a card open over the
+        // slide: cardOver), and focus stays in the rail.
         // Enter, Space and Backspace are the rail's own; Tab is dialog.js's. A dialog open over it (a confirmation from
         // Raise or Add) has the keys: its Escape cancels it alone.
         const rail = ref && document.querySelector('#present-rail[aria-modal="true"]');
@@ -347,6 +350,7 @@ window.tidePresent = (function () {
             const action = e.key === ']' || e.key === 'Escape' ? 'rail' : railKeys[e.key];
             if (!action || action === 'discussed' && !window.tideShortcuts.on()) return;
             e.preventDefault();
+            if (moves[action] && cardOver()) return;   // a card over the slide holds them, as below
             ref.invokeMethodAsync('OnPresentKey', action).then(function () {
                 if (action !== 'rail' && rail.isConnected && !rail.contains(document.activeElement)) rail.focus();
             }).catch(function () { });

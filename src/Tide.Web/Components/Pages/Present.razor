@@ -25,6 +25,7 @@
 @inject PresenceCircuit Circuit
 @inject Tide.Application.Stack.StackService StackSvc
 @inject PrerenderHandoff Handoff
+@inject ILogger<Present> Log
 @implements IAsyncDisposable
 
 <PageTitle>Presenting @Ui.ShortDay(_date) · TIDE</PageTitle>
@@ -2059,8 +2060,9 @@ else
         try
         {
             if (!already) carriedTo = await BriefSvc.MarkPresentedAsync(_brief!.Id, held, carry: carry);
-            // Ended from the brief page already: who took it over since still goes on the brief.
-            else await BriefSvc.RecordPresentersAsync(_brief!.Id);
+            // Ended from the brief page already: who took it over since still goes on the brief, as best it can; the
+            // meeting ends whatever becomes of that.
+            else await RecordPresenters();
         }
         catch (KeyNotFoundException)
         {
@@ -2597,13 +2599,17 @@ else
     }
 
     // Who has presented the meeting so far goes on the brief as it starts and changes hands (BriefService
-    // .RecordPresentersAsync), so it outlasts a meeting dropped once everyone left, or lost to a restart. A save that fails
-    // here (a colleague's at the same moment, thrice) is left: the meeting's end writes it again.
+    // .RecordPresentersAsync), so it outlasts a meeting dropped once everyone left, or lost to a restart. Best effort: the
+    // seat has changed hands already, and the meeting's end writes it again, so a save that fails here (the database
+    // gone a moment, a colleague's save thrice) is logged and left, never taking the start, take-over or hand-off with it.
     private async Task RecordPresenters()
     {
         if (_brief is null) return;
         try { await BriefSvc.RecordPresentersAsync(_brief.Id); }
-        catch (Microsoft.EntityFrameworkCore.DbUpdateException) { }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "Couldn't keep who presented the brief {BriefId} on it; the meeting's end writes it again.", _brief.Id);
+        }
     }
 
     // The meeting changed hands, which closed what was open over the slide for the room: this page's goes too (this
