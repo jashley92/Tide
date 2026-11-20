@@ -145,7 +145,8 @@ its other widths aren't tried: they would only wait out the same timeouts.
 `ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages on its own fresh
 demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after them, so they
 stay together, in order, at the end of the last slice: put a new page that changes the demo there, and any other before
-the marker.
+the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR` with
+`NO_BUILD=1` (or publish once and give each `APP_DIR`, as CI does).
 
 The slices take about as long as each other by what each page took in CI (`shards.mjs`): the pages before the marker
 are placed longest first, each on the slice with least so far, and each slice keeps the pages' own order. What a page
@@ -159,8 +160,7 @@ Refresh the weights when the slices drift apart in CI (a shard several minutes l
 many pages: pick two or three recent green runs of CI on main, run
 `node tools/screenshots/layout-weights.mjs <run id> <run id> ...` (it reads each layout shard's log through `gh`, so be
 signed in), check `PLAN=1`, and commit `layout-weights.json`. A page's weight is its mean over every shard log it's in,
-from the time between its lines' timestamps; pages those runs didn't time keep theirs. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR`
-with `NO_BUILD=1` (or publish once and give each `APP_DIR`, as CI does).
+from the time between its lines' timestamps; pages those runs didn't time keep theirs.
 
 After a load, a click or a key, wait with `idle(page)` (tide.mjs), not a fixed pause: it waits until Blazor's circuit
 is up, the server has no event in hand (the Development-only `/demo/activity`, on with `Demo:Seed`), and nothing in the

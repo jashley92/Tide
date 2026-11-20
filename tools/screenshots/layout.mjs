@@ -5129,7 +5129,7 @@ const pages = [
  * slice, checked on every sharded run. With no SHARD, every page, in one run. `PLAN=1` (with SHARD=i/n, or 4 slices)
  * prints the slices and what each should take, and starts nothing.
  */
-if (process.env.PLAN) {
+if (/^(1|true|yes)$/i.test(process.env.PLAN ?? '')) {
   const n = Number((process.env.SHARD ?? '1/4').split('/')[1]);
   console.log(`${n} slices of ${pages.length - 1} pages, by layout-weights.json:`);
   for (const l of describe(pages, n, CHANGES_THE_DEMO)) console.log(l);
