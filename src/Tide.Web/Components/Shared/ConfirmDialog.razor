@@ -112,9 +112,13 @@
         return _answer.Task;
     }
 
+    // Also called by the page that asked (the article it asked about has gone), not only by a click here: it redraws, so
+    // the dialog closes either way.
     internal void Cancel()
     {
-        if (!_busy) Close(false);
+        if (_busy || !_open) return;
+        Close(false);
+        StateHasChanged();
     }
 
     internal async Task Confirm()

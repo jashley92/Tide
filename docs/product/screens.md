@@ -331,7 +331,8 @@ sees the reader preview, with the article's actions, as the whole page.
 "Saved at 3:17 PM", or why it didn't. It never saves over a colleague's newer version (it stops and says who), and it
 never saves a change to a TLP marking, or anything that would put a part into the company-wide edition: those wait
 for **Save**, and the bar says so. An article on a sent brief isn't saved by itself. The history shows one editing
-session as one entry.
+session as one entry. Nothing is saved while **Discard**, or the question on leaving, waits for an answer, so Discard
+drops just what wasn't saved yet. What's typed while a screenshot uploads or a save runs is saved after the next pause.
 
 "Why it matters to us" carries the same **Set to AMBER** and **Keep it** as Today when it would reach the
 company-wide edition.

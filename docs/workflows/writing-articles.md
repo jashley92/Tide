@@ -189,6 +189,12 @@ seconds. It keeps the same safety properties as an explicit save:
   one editing session as one entry.
 - **When it's off.** An article on a sent brief is never autosaved (corrections stay deliberate), and it's off for
   anyone who can't edit the article. `UnsavedGuard` stays honest: with nothing unsaved, leaving doesn't ask.
+- **Questions and busy steps.** No new autosave starts while Discard's question or the leave question is open
+  (`UnsavedGuard`'s `Asking`); Cancel or Stay starts the pause again. Discard drops what isn't saved yet. A save that
+  had already started when the question opened isn't stopped: it may still complete, and what it saved stays. Moving to
+  another article cancels Discard's question, so it never reloads the next one. When the pause
+  runs out during an upload or another save, it tries again after another pause, so what was typed meanwhile is saved
+  without another keystroke.
 
 **Marking ready while a colleague saved.** `ArticleService.SetStatusAsync` returns the version before and after. If the
 version before is the form's, only the status changed and the form carries on at the new version. If not, a colleague
