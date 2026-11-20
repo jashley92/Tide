@@ -239,7 +239,7 @@ else
         else
         {
             <TabBar Label="Brief" PanelId="brief-panel" Active="@_tab.ToString(System.Globalization.CultureInfo.InvariantCulture)" OnSelect="SelectTab"
-                    Items="@([new("Running order", "", Key: "0", Count: _brief.Items.Count), new("Preview both editions", "", Key: "1")])" />
+                    Items="@([new("Running order", "", Key: "0", Count: TabCount(_brief)), new("Preview both editions", "", Key: "1")])" />
             <div role="tabpanel" id="brief-panel" aria-labelledby="@TabBar.TabId("brief-panel", _tab.ToString(System.Globalization.CultureInfo.InvariantCulture))">
                 @Panel()
             </div>
@@ -471,6 +471,17 @@ else
     /// <summary>"3 articles" beside Running order: the number it lists (<see cref="Listed"/>), with the noun taken from
     /// that same number, so an item left out of the list can't leave "1 articles" or "2 article".</summary>
     internal static string ArticleCount(Brief brief) => Ui.Plural(Listed(brief).Count(), "article");
+
+    /// <summary>The Running order tab's count: the items the running order lists (<see cref="Listed"/>), as its heading says.</summary>
+    internal static int TabCount(Brief brief) => Listed(brief).Count();
+
+    /// <summary>"Moved to 2 of 3": the item's place in the running order out of the items it lists (<see cref="Listed"/>),
+    /// so the place isn't counted out of more than the list shows.</summary>
+    internal static string MovedTo(Brief brief, Guid itemId)
+    {
+        var listed = Listed(brief).ToList();
+        return $"Moved to {listed.FindIndex(i => i.Id == itemId) + 1} of {listed.Count}.";
+    }
 
     // A colleague's save to this brief, or to an article on it: re-read in place. Unsaved presenter or opening-note edits
     // are kept, and if the colleague changed those too, ChangedElsewhere says so. The day's numbers re-read alone (the
@@ -767,10 +778,10 @@ else
     }
 
     private Task Move(Guid itemId, int by) => Run(() => BriefSvc.MoveItemAsync(_brief!.Id, itemId, by), null,
-        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == itemId) + 1} of {_brief!.Items.Count}."));
+        () => Toasts.Show(MovedTo(_brief!, itemId)));
 
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
-        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == drop.Moved) + 1} of {_brief!.Items.Count}."));
+        () => Toasts.Show(MovedTo(_brief!, drop.Moved)));
 
     // A warning's one-click answer, from the running order: the article as this page showed it (its edit version), so a
     // colleague's save in between is refused, not written over. "Set to AMBER" raises the paragraph's marking; "Keep it"
