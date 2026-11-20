@@ -161,12 +161,12 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `BriefItems` | `(BriefId, ArticleId)` unique; `ArticleId`; `CarriedFromBriefId` | A brief's running order; "first briefed" for trends; carry-over. |
 | `Briefs` | `BriefDate` unique | Every day-based lookup. |
 | `BriefSends` | `(BriefId, SentAtUtc)`; `(Edition, IsTest, Status, BriefDate)` | Send history; the published archive. |
-| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId` | The board and lists, overdue and due-soon scans, Workload, "my actions". |
+| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId`; `ClosedAtUtc` (closed only) | The board and lists, overdue and due-soon scans, Workload, "my actions"; the daily prune of reminder marks. |
 | `ActionComments`, `ActionEvents` | `(ActionId, AtUtc)` | An action's timeline. |
 | `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. |
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
 | `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. Indicator values are not indexed: an indicator search scans. |
-| `NotificationMarks` | `SentAtUtc` | Reminder marks by age. |
+| `NotificationMarks` | `SentAtUtc` | Reminder marks by age: the daily prune of past periods' marks. |
 | `ApiTokens` | `Hash` unique | Token sign-in. |
 
 **Needs verification:** whether SQL Server's plans use these as intended at volume (an execution plan of the

@@ -526,6 +526,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
             // Square brackets quote a name in SQL Server and SQLite alike.
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
+            // The daily prune of reminder marks reads the actions closed in a day's window, oldest first: only closed ones.
+            e.HasIndex(x => x.ClosedAtUtc).HasFilter("[ClosedAtUtc] IS NOT NULL");
             Person(e, x => x.DeletedById, x => x.DeletedByName);
             e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
         });
