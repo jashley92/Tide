@@ -32,14 +32,16 @@ else
 {
     <section class="tide-card" aria-labelledby="diag-checks">
         <h2 id="diag-checks"><span class="bi bi-heart-pulse" aria-hidden="true"></span> Health checks</h2>
-        <table class="tide-table tide-diag-checks">
-            <tbody>
+        @* A narrower window stacks each check (app.css); the roles keep it a table to screen readers, which Safari stops
+           reading it as once its rows and cells aren't displayed as table parts. *@
+        <table class="tide-table tide-diag-checks" role="table">
+            <tbody role="rowgroup">
                 @foreach (var c in report.Checks)
                 {
-                    <tr>
-                        <td class="tide-col-lg text-nowrap">@c.Label</td>
-                        <td class="tide-col-sm text-nowrap"><CheckBadge Level="c.Level" /></td>
-                        <td>
+                    <tr role="row">
+                        <td role="cell" class="tide-col-lg text-nowrap">@c.Label</td>
+                        <td role="cell" class="tide-col-sm text-nowrap"><CheckBadge Level="c.Level" /></td>
+                        <td role="cell">
                             @c.Detail
                             @if (c.Level is not CheckLevel.Ok && c.FixHref is { } fix) { <a class="ms-2 small" href="@fix">Where it's set</a> }
                         </td>

@@ -200,7 +200,7 @@ public class FeedsPullAllPageTests(FeedsApp app) : IClassFixture<FeedsApp>
 
     private static string RowOf(string html, string name)
     {
-        var at = html.IndexOf($"<td class=\"fw-semibold\">{name}", StringComparison.Ordinal);
+        var at = html.IndexOf($"<td role=\"cell\" class=\"fw-semibold\">{name}", StringComparison.Ordinal);
         at.Should().BeGreaterThan(0, name + " is listed");
         return html[at..html.IndexOf("</tr>", at, StringComparison.Ordinal)];
     }
