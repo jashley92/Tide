@@ -4577,7 +4577,7 @@ const pages = [
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
   // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
-  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
       says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
       fits('.tide-stack-list')] },
