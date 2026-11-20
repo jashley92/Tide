@@ -51,7 +51,7 @@ public class MetricEntryProgressTests
         p.Summary.Should().Be("4 of 6 entered");
         p.Groups.Select(g => (g.Name, g.Entered, g.Total, g.Complete)).Should().Equal(("Email triage", 2, 4, false), ("Cases", 2, 2, true));
         p.Groups[0].Count.Should().Be("2 of 4");
-        p.Groups[0].AccessibleName.Should().Be("Email triage, 2 of 4 entered");
+        p.Groups[0].AccessibleName.Should().Be("Email triage 2/4: 2 of 4 entered");
     }
 
     [Fact]

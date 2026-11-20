@@ -104,8 +104,8 @@ The sidebar's visibility rule is only a hint: each page's own `[Authorize]` poli
 - **Counts.** Triage shows the number of new items (`IntakeService.NewCountAsync`, for `WriteArticles`) and Actions the
   person's overdue actions (`ActionService.MyOverdueCountAsync`, for `WorkActions`, in red). They're read when the
   menu starts and on each navigation, never on a re-render. A failed read keeps the last value and logs once per run
-  of failures, because the menu sits outside the page's error boundary. The count is in each link's accessible name
-  ("Triage, 4 new").
+  of failures, because the menu sits outside the page's error boundary. The count is in each link's accessible name, which
+  starts with the words on screen ("Triage 4 new"; "Triage 99+, 120 new" past 99).
 - **Collapse.** The button at the top collapses the sidebar to icons. `theme.js` (`tideNav.toggle`) sets
   `data-nav="collapsed"` on `<html>` and remembers it in `localStorage`; `theme-init.js` applies it before paint.
 - **A short window.** Under about 1050px tall (not on a phone) the links and group labels tighten with the window's
@@ -202,8 +202,9 @@ no top bar, so none there.
   turns. The chip then reads again after `LiveChanges`' pause, and checks on each navigation (free unless something
   changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
 - **Width.** In full from 1200px; "10:30 AM · 3/5" below that ("Mon · 3/5" on a day off, the day rather than the time,
-  so it's never longer than a working day's); where the bar is still too tight the chip is cut short, its title and name
-  keeping the whole wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
+  so it's never longer than a working day's, followed in its name by the whole wording, unseen, so the name starts with
+  the words on screen); where the bar is still too tight the chip is cut short, its title and name keeping the whole
+  wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
   900px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and

@@ -352,7 +352,7 @@ public partial class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp
             html.IndexOf("tide-feeds-nudge", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("tide-steps", StringComparison.Ordinal))
                 .And.BeLessThan(html.IndexOf("running-order-h", StringComparison.Ordinal), "under the steps, above the running order");
             var before = NewInFeed(html);
-            (await menu.Html()).Should().Contain($"Triage, {before} new");
+            (await menu.Html()).Should().Contain(Tide.Web.Components.Layout.NavMenu.CountTitle("Triage", before, "new"));
 
             await r.Click(t => t.Freshness!.PullAll!.RunAsync());
 
@@ -360,7 +360,8 @@ public partial class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp
                 .Contain(t => t.Message == "Pulled 2 · 2 new items · 1 skipped (pulled in the last 15 min)" && !t.IsError && !t.IsWarning);
             (await r.HtmlOnce("tide-steps")).Should().NotContain("tide-feeds-nudge", "every feed has been pulled since 8:00 now");
             (await r.HtmlOnce($"{before + 2} new in the feed")).Should().Contain($"{before + 2} new in the feed", "Triage's step counts the new items at once");
-            (await menu.HtmlOnce($"Triage, {before + 2} new")).Should().Contain($"Triage, {before + 2} new", "and so does the sidebar");
+            var pulled = Tide.Web.Components.Layout.NavMenu.CountTitle("Triage", before + 2, "new");
+            (await menu.HtmlOnce(pulled)).Should().Contain(pulled, "and so does the sidebar");
         }
         app.Http.Requests.Select(q => q.Url).Should().Contain([Feed("Stale feed"), Feed("Broken feed")]).And.NotContain(Feed("Fresh feed"));
 

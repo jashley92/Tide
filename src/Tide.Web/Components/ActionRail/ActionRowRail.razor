@@ -17,8 +17,10 @@
     <div class="tide-rail-buttons">
         @if (CanTake)
         {
-            <button type="button" class="btn btn-primary btn-sm tide-rail-take" disabled="@Busy" aria-keyshortcuts="T" aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on")"
-                    @onclick="() => OnTake.InvokeAsync()">Take it <kbd class="tide-kbd" aria-hidden="true">T</kbd></button>
+            @* Named by its words, then the action, unseen ("Take it: A-12"); the key is aria-keyshortcuts'. An aria-label
+               would have to end in the key's "T" to start with what's shown. *@
+            <button type="button" class="btn btn-primary btn-sm tide-rail-take" disabled="@Busy" aria-keyshortcuts="T"
+                    @onclick="() => OnTake.InvokeAsync()">Take it<span class="visually-hidden">@($": {Ui.ActionLabel(Row.Number)}")</span> <kbd class="tide-kbd" aria-hidden="true">T</kbd></button>
         }
         @if (Moves is { Count: > 0 })
         {

@@ -53,7 +53,7 @@
             @if (CanTake?.Invoke(r) == true)
             {
                 <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap tide-row-take" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(r)"
-                        aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+                        aria-label="@($"Take it: {Ui.ActionLabel(r.Number)}, {r.Title}")">Take it</button>
             }
         </td>
         <td role="cell" class="small tide-col-progress">

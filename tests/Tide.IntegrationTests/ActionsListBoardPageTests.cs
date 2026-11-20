@@ -136,7 +136,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using (var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner))
         {
             var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
-            html.Should().Contain($"aria-label=\"Take A-{ours} on: {token} ours\"").And.NotContain($"Take A-{theirs} on", "another team's action isn't theirs to take");
+            html.Should().Contain($"aria-label=\"Take it: A-{ours}, {token} ours\"").And.NotContain($"Take it: A-{theirs},", "another team's action isn't theirs to take");
             await r.Click(p => p.Take(p.Rows.Single(x => x.Number == ours)));
         }
         var taken = (await Detail(ours)).Action;

@@ -9,7 +9,7 @@
 
 <div class="tide-profile" @ref="_holder">
     <button type="button" class="tide-profile-btn" @ref="_button" @onclick="Toggle" title="@CurrentUser.DisplayName"
-            aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_open ? "account-menu" : null)" aria-label="Account menu">
+            aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_open ? "account-menu" : null)" aria-label="@($"{MainLayout.Initials(CurrentUser.DisplayName)}, account menu")">
         <span class="tide-avatar" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
     </button>
 
