@@ -188,7 +188,7 @@ else
                         {
                             var row = byDay[d].ToDictionary(v => v.DefinitionId);
                             <tr>
-                                <th scope="row" class="tide-mh-day text-nowrap"><a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a></th>
+                                <th scope="row" class="tide-mh-day text-nowrap"><a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d, Clock.Today)</a></th>
                                 @foreach (var g in shown)
                                 {
                                     @for (var i = 0; i < g.Metrics.Count; i++)

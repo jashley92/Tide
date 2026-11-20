@@ -91,7 +91,7 @@
                 <td>@a.Kind</td>
                 <td class="tide-data">@(a.MitreId ?? "—")</td>
                 <td class="tide-table-num">@r.Articles</td>
-                <td>@(r.LastReported is { } d ? Ui.ShortDay(d) : "—")</td>
+                <td>@(r.LastReported is { } d ? Ui.ShortDay(d, Clock.Today) : "—")</td>
             </RowTemplate>
         </DataTable>
         @if (view.Count > 0)
@@ -136,7 +136,7 @@ else
                     @foreach (var a in _detail.Articles)
                     {
                         <li class="tide-stack-row">@if (a.Priority is { } pr) { <PriorityBadge Priority="pr" /> } <a href="@($"articles/{a.Id}")">@a.Title</a>
-                            <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
+                            <span class="small tide-muted">@Ui.ShortDay(a.On, Clock.Today) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
                     }
                 </ul>
                 @if (_canWrite && _detail.Untagged.Count > 0)
@@ -232,7 +232,7 @@ else
                 <div class="tide-fact"><dt>MITRE id</dt><dd class="tide-data">@(p.MitreId ?? "—")</dd></div>
                 <div class="tide-fact"><dt>Motivation</dt><dd>@(p.Motivation ?? "—")</dd></div>
                 <div class="tide-fact"><dt>Sectors</dt><dd>@(p.Sectors ?? "—")</dd></div>
-                <div class="tide-fact tide-fact-wide"><dt>Reported</dt><dd>@Ui.Plural(_detail.BriefedThisQuarter, "brief") this quarter@(_detail.Articles.Count > 0 ? $" · last reported {Ui.ShortDay(_detail.Articles[0].On)}" : "")</dd></div>
+                <div class="tide-fact tide-fact-wide"><dt>Reported</dt><dd>@Ui.Plural(_detail.BriefedThisQuarter, "brief") this quarter@(_detail.Articles.Count > 0 ? $" · last reported {Ui.ShortDay(_detail.Articles[0].On, Clock.Today)}" : "")</dd></div>
                 @if (_detail.MergedIntoName is { } into)
                 {
                     <div class="tide-fact tide-fact-wide"><dt>Merged into</dt><dd><a href="@($"adversaries/{p.MergedIntoId}")">@into</a></dd></div>

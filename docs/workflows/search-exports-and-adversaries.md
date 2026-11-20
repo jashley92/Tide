@@ -68,7 +68,9 @@ triage", linked to Triage). "Not seen before" is said only to someone who triage
 value, no action was raised and nothing new in Triage names it; anyone else reads "Not on any article yet", since
 Triage may have it. "Briefed" counts only a brief that was presented or sent
 (`Lookups.BriefsAsync`); an article on a brief that hasn't been reads "on today's brief, not presented yet" or "on
-the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". A CVE's line states no hunt
+the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". "Today's brief" is the one
+the editor's *Add to today's brief* adds to (`OrgClock.CurrentBriefDate`: Monday's on a weekend), and a day in another
+year carries its year ("briefed Tue Sep 16, 2025"). A CVE's line states no hunt
 result, because a hunt searches for indicators; the sweeps and hunts on its articles are named under it
 (`CveLookup.Sweeps`). The answer stays in the page: the first line, the articles (a table of the article, which
 value matched, when it was briefed and when it was written), *Actions raised* and *Seen with*. What you'd do with it is

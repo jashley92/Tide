@@ -66,7 +66,7 @@
                             <span class="tide-muted small">Sent @Ui.When(Clock, s.SentAtUtc)</span>
                             @if (p.Corrections.FirstOrDefault(c => !c.IsTlpSlip) is { } fix)
                             {
-                                <Badge Tone="BadgeTone.Warn" Icon="bi-pencil-square">Corrected @Ui.ShortDay(DateOnly.FromDateTime(Clock.ToLocal(fix.SentAtUtc).DateTime))</Badge>
+                                <Badge Tone="BadgeTone.Warn" Icon="bi-pencil-square">Corrected @Ui.ShortDay(DateOnly.FromDateTime(Clock.ToLocal(fix.SentAtUtc).DateTime), Clock.Today)</Badge>
                             }
                         </div>
                         @if (p.Withdrawn)
@@ -101,7 +101,7 @@ else
 {
     <div class="tide-page-head">
         <div>
-            <Breadcrumbs Items="@([new("Published briefs", "published"), new(_valid ? Ui.ShortDay(_date) : "Published brief")])" />
+            <Breadcrumbs Items="@([new("Published briefs", "published"), new(_valid ? Ui.ShortDay(_date, Clock.Today) : "Published brief")])" />
             <h1>@(_valid ? Ui.Day(_date) : "Published brief")</h1>
             @if (_send is not null) { <div class="tide-sub">Sent @Ui.When(Clock, _send.SentAtUtc) &middot; <TlpBadge Level="_send.Marking" /></div> }
         </div>
