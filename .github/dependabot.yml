@@ -50,3 +50,21 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "dotnet-ef"
         update-types: ["version-update:semver-major"]
+
+  # The screenshot and layout tooling's Playwright (tools/screenshots), pinned exactly in package.json. A new
+  # Playwright brings a new browser build, so a bump comes as its own PR for the layout slices to prove it.
+  - package-ecosystem: "npm"
+    directory: "/tools/screenshots"
+    schedule:
+      interval: "weekly"
+    # Wait a week before proposing a newly published version, so a malicious or broken release is
+    # likely to be caught and pulled first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    # One grouped PR per run: Playwright and its playwright-core move together.
+    groups:
+      screenshots-npm:
+        patterns:
+          - "*"
