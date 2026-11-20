@@ -180,7 +180,8 @@ jobs:
   layout-shard:
     name: layout (${{ matrix.shard }}/4${{ matrix.spacing != '.07em' && format(', {0}', matrix.spacing) || '' }})
     needs: layout-build
-    # Pinned: Playwright 1.56.1 can't install its browser on ubuntu-latest's 26.04 image.
+    # Pinned: Playwright 1.56.1 couldn't install its browser on ubuntu-latest's 26.04 image. 1.61 should, but the pin
+    # stays until 1.61 has proved itself in CI here; a later change moves this to ubuntu-latest.
     runs-on: ubuntu-24.04
     permissions:
       contents: read
