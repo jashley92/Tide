@@ -954,8 +954,8 @@ as Trends and Metrics, marked AMBER:
 4. **Topics and techniques** briefed most;
 5. **Actions raised by team**.
 
-Each section has room for the lead's assessment, which prints with the report but isn't saved. *Print* prints the
-report without the app's frame. A period still under way is marked "(to date)".
+Each section has room for the lead's assessment, which prints with the report but isn't saved; moving to another period
+starts with empty boxes. *Print* prints the report without the app's frame. A period still under way is marked "(to date)".
 
 ## Team commitments
 

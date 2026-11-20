@@ -119,7 +119,11 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
+        var period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
+        // Earlier, Later and the period buttons keep this same page and only change ?p=, so an assessment written for
+        // one period would otherwise stay in its box, and print, under the next. Each period starts with empty boxes.
+        if (period != _period) _notes.Clear();
+        _period = period;
         _report = null;
         try { _report = await ReportSvc.BuildAsync(_period); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -190,11 +194,15 @@ else
         }
     };
 
+    internal void Note(string section, string? text) => _notes[section] = text ?? string.Empty;
+
+    // Keyed by period as well as section, so a new period's box is a new element rather than the last one's with its
+    // typed text still in it.
     private RenderFragment Assessment(string section) => __builder =>
     {
         var id = "assess-" + section;
         <label class="tide-field-label mt-2" for="@id">Assessment</label>
         <textarea id="@id" class="form-control form-control-sm tide-autogrow" rows="2" maxlength="4000" placeholder="What this means, in your words (prints with the report; not saved)"
-                  value="@_notes.GetValueOrDefault(section)" @onchange="e => _notes[section] = e.Value?.ToString() ?? string.Empty"></textarea>
+                  @key="@($"{_period.Key}:{section}")" value="@_notes.GetValueOrDefault(section)" @onchange="e => Note(section, e.Value?.ToString())"></textarea>
     };
 }
