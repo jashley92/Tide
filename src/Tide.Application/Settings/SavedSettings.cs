@@ -110,32 +110,45 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
             : checkedValues.Where(v => !loaded.TryGetValue(v.Key, out var was) || AsStored(v.Key, was) != v.Value)
                 .ToDictionary(v => v.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
         if (changed.Count == 0) return;
-        await using (var db = await dbs.CreateAsync(ct))
-        {
-            var keys = changed.Keys.ToList();
-            var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
-            if (loaded is not null) NotChangedSince(loaded, keys, rows);
-            if (changed.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
-            {
-                var inside = changed.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
-                    ? boundary.With(OperationalSettings.SplitAddresses(domains))
-                    : boundary.CurrentOrUnknown();
-                inside.CheckAdded(OperationalSettings.SplitAddresses(told),
-                    OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value), confirmOutside,
-                    "They're told each morning there's no brief yet.");
-            }
-            foreach (var (key, value) in changed)
-            {
-                if (rows.TryGetValue(key, out var row) && row.Value == value) continue;
-                if (row is null) db.Settings.Add(row = new AppSetting { Key = key });
-                row.Value = value;
-                row.UpdatedAtUtc = time.GetUtcNow();
-                row.UpdatedBy = user.UserId;
-            }
-            await db.SaveChangesAsync(ct);
-        }
+        // The check and the save it guards in one serializable transaction: two administrators saving the same setting at
+        // the same moment can't both pass it, the second reads what the first saved.
+        try { await dbs.SerializedAsync(db => Write(db, changed, loaded, confirmOutside, ct), ct); }
+        catch (DbUpdateException e) when (KeyTaken(e)) { throw Stale(); }
         await saved.RefreshAsync(dbs, ct);
     }
+
+    private async Task Write(IAppDbContext db, Dictionary<string, string> changed, IReadOnlyDictionary<string, string?>? loaded,
+        bool confirmOutside, CancellationToken ct)
+    {
+        var keys = changed.Keys.ToList();
+        var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
+        if (loaded is not null) NotChangedSince(loaded, changed, rows);
+        if (changed.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
+        {
+            var inside = changed.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
+                ? boundary.With(OperationalSettings.SplitAddresses(domains))
+                : boundary.CurrentOrUnknown();
+            inside.CheckAdded(OperationalSettings.SplitAddresses(told),
+                OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value), confirmOutside,
+                "They're told each morning there's no brief yet.");
+        }
+        foreach (var (key, value) in changed)
+        {
+            if (rows.TryGetValue(key, out var row) && row.Value == value) continue;
+            if (row is null) db.Settings.Add(row = new AppSetting { Key = key });
+            row.Value = value;
+            row.UpdatedAtUtc = time.GetUtcNow();
+            row.UpdatedBy = user.UserId;
+        }
+    }
+
+    // Another save added the same setting's row first (SQLite names the column, SQL Server the key): as stale as a
+    // change seen before saving.
+    private static bool KeyTaken(DbUpdateException e) => e is not DbUpdateConcurrencyException && e.InnerException?.Message is { } m
+        && (m.Contains("Settings.Key", StringComparison.Ordinal) || m.Contains("PK_Settings", StringComparison.Ordinal));
+
+    private static Articles.StaleEditException Stale() => new("Someone else changed a setting you changed here since you " +
+        "opened this page, so nothing was saved. Reload to see their change, then make yours again.");
 
     // A value as it would be stored, to compare what a page showed with what it sends and with what's saved now. One
     // that doesn't pass its check (a server's Windows time zone id, say) is compared as it is.
@@ -144,12 +157,13 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
 
     // A setting changed on the page that someone else has saved since it loaded: saving would put back what they set, so
     // nothing is saved. A saved row that no longer passes its check isn't in force (the page showed the server's value),
-    // so it doesn't count; nor does no row, as no one has saved one.
-    private static void NotChangedSince(IReadOnlyDictionary<string, string?> loaded, IEnumerable<string> keys, Dictionary<string, AppSetting> rows)
+    // so it doesn't count; nor does no row, as no one has saved one; nor does someone else having saved just what this
+    // page sends, as nothing of theirs would be lost.
+    private static void NotChangedSince(IReadOnlyDictionary<string, string?> loaded, Dictionary<string, string> changed, Dictionary<string, AppSetting> rows)
     {
-        if (keys.Any(k => loaded.TryGetValue(k, out var was) && rows.TryGetValue(k, out var row)
-                && OperationalSettings.Problem(k, row.Value) is null && OperationalSettings.Normalize(k, row.Value) != AsStored(k, was)))
-            throw new Articles.StaleEditException("Someone else changed a setting you changed here since you opened this page, so " +
-                "nothing was saved. Reload to see their change, then make yours again.");
+        if (changed.Any(c => loaded.TryGetValue(c.Key, out var was) && rows.TryGetValue(c.Key, out var row)
+                && OperationalSettings.Problem(c.Key, row.Value) is null && OperationalSettings.Normalize(c.Key, row.Value) is var now
+                && now != AsStored(c.Key, was) && now != c.Value))
+            throw Stale();
     }
 }

@@ -23,11 +23,13 @@ namespace Tide.IntegrationTests;
 /// configuration, so the saved settings are laid over the server's as they are in the app.</summary>
 public sealed class SettingsRig : IDisposable
 {
-    public TestDb Db { get; } = new();
+    public TestDb Db { get; }
     public ServiceProvider Provider { get; }
 
-    public SettingsRig(Dictionary<string, string?>? server = null)
+    // A connection per context when two saves run at once, as two administrators' would.
+    public SettingsRig(Dictionary<string, string?>? server = null, bool connectionPerContext = false)
     {
+        Db = new TestDb(connectionPerContext: connectionPerContext);
         Db.User.Roles = new HashSet<AppRole> { AppRole.Admin };
         var services = new ServiceCollection();
         // The organization's boundary is the sending address's domain, example.org, unless the test's server says otherwise.
@@ -173,6 +175,45 @@ public class OperationalSettingsTests
         // Reloaded, the same change saves.
         await settings.SaveAsync(OrgPage(reminder: "08:15"), loaded: OrgPage(reminder: "06:00"));
         rig.Now<ReminderOptions>().ReminderTime.Should().Be("08:15");
+    }
+
+    [Fact]
+    public async Task TwoAdministratorsSavingTheSameSettingAtTheSameMoment_TheSecondIsRefused_AndTheFirstStands()
+    {
+        using var rig = new SettingsRig(Server, connectionPerContext: true);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        var saving = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Db.BeforeSave = ctx =>
+        {
+            if (!ctx.ChangeTracker.Entries<AppSetting>().Any(e => e.State == EntityState.Added)) return;
+            if (saving.TrySetResult()) Thread.Sleep(400);   // the first has checked and is about to save
+        };
+
+        var first = Task.Run(() => settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded));
+        await saving.Task;
+        var second = Task.Run(() => settings.SaveAsync(OrgPage(reminder: "08:15"), loaded: loaded));
+        await first;
+        await second.Invoking(t => t).Should().ThrowAsync<Tide.Application.Articles.StaleEditException>();
+        rig.Db.BeforeSave = null;
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00", "the second waited, read what the first saved and was refused");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Single(s => s.Key == OperationalSettings.ReminderTime).Value.Should().Be("06:00");
+    }
+
+    [Fact]
+    public async Task SomeoneElseHavingSavedTheSameValue_DoesntRefuseTheSave()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+
+        await settings.SaveAsync(OrgPage(reminder: "6:00", zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo", "nothing of theirs would be lost, so the rest saves");
     }
 
     [Fact]
