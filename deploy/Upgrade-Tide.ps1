@@ -33,7 +33,7 @@
          leave the pool stopped while the database records a migration the previous build doesn't know and didn't
          run on before the upgrade (or either can't be read after the new build may have run), until the database
          backup is restored.
-      6. On success only: mark this run's backup record succeeded and prune this install's older upgrade backups,
+      6. On a proven start only: mark this run's backup record succeeded and prune this install's older upgrade backups,
          keeping the newest -KeepUpgradeBackups (3) successful upgrades' pre-upgrade .bak files and backup folders, this
          run's among them, and every failed run's since the last success. A failed or rolled-back upgrade deletes nothing.
 
@@ -107,11 +107,12 @@
     folders under tide-upgrade-backups. Older ones are deleted and each is listed. A failed run's backups don't count
     toward the number, and those newer than the last successful upgrade are always kept.
     Only this install's backups are touched: a folder whose snapshot.json names this server and site folder (sibling
-    sites share tide-upgrade-backups; a folder from before the record is never pruned), and a .bak that this SQL
-    Server's backup history records for this database, its name matched case and all. The .bak files are pruned only
-    when this host reaches the folder: a UNC path, or SQL Server on this host; otherwise the upgrade lists the older ones
-    it left. Folders are pruned only under the default location, not a -BackupRoot. 0 keeps everything. A failed or
-    rolled-back upgrade deletes nothing, and a backup that can't be deleted is a warning.
+    sites share tide-upgrade-backups), and a .bak that one of those records names and this SQL Server's backup history
+    records for this database, its name matched case and all. A folder or .bak from before the records is never
+    pruned: clear those by hand. The .bak files are pruned only when this host reaches the folder: a UNC path, or SQL
+    Server on this host; otherwise the upgrade lists the older ones it left. With -BackupRoot nothing is pruned. 0 keeps
+    everything. A failed or rolled-back upgrade deletes nothing, nor does one whose start wasn't proven (Windows
+    authentication answered the warm-up), and a backup that can't be deleted is a warning.
 
 .PARAMETER Force
     Don't ask before backing up and deploying. -WhatIf runs the checks and stops before any change.
@@ -886,12 +887,15 @@ Write-Step $(if ($dbaApplies) { "Warming up" } else { "Warming up (the first sta
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $deadline = (Get-Date).AddSeconds($WarmupTimeoutSec)
 $started = $false; $lastStatus = $null; $verdict = 'none'; $lastDetail = $null
+# Whether TIDE itself answered. A start taken on trust (Windows authentication answered the root too) is $started but
+# not proven: the run isn't recorded as a success then, and no older backup is pruned, since it may yet be rolled back.
+$startProven = $false
 while ((Get-Date) -lt $deadline) {
     $probe = Invoke-SiteProbe $ProbeUrl
     if ($probe.Detail -ne $lastDetail) { Write-Info "Probe: $($probe.Detail)"; $lastDetail = $probe.Detail }
     $lastStatus = $probe.Status
     $verdict = Get-TideProbeVerdict $probe -Health
-    if ($verdict -eq 'started') { $started = $true; break }
+    if ($verdict -eq 'started') { $started = $true; $startProven = $true; break }
     if ($verdict -in 'crashed', 'auth', 'other') { break }
     Start-Sleep -Seconds 3   # still starting, or its database not answering yet
 }
@@ -909,10 +913,11 @@ if ($verdict -in 'auth', 'other') {
     Write-Info "Probe: $($probe.Detail)"
     $lastStatus = $probe.Status
     switch (Get-TideProbeVerdict $probe) {
-        'started' { $started = $true }
+        'started' { $started = $true; $startProven = $true }
         'auth' {
             Write-Warn2 ("Couldn't prove the new build started: the site root was answered by Windows authentication too. " +
-                         "Open $HealthUrl in a browser now; if it fails, roll back by hand (docs/UPGRADE.md).")
+                         "Open $HealthUrl in a browser now; if it fails, roll back by hand (docs/UPGRADE.md). Every " +
+                         "backup is kept.")
             $started = $true
         }
         'other' { Write-Warn2 "$HealthUrl answered '$($probe.Detail)', which isn't a TIDE page." }
@@ -962,26 +967,28 @@ try { Update-TideTaskPaths -KeptDir $kept -SitePath $SitePath }
 catch { Write-Warn2 "Couldn't point the TIDE scheduled tasks at $kept ($($_.Exception.Message)). Run each script's -Register again from there." }
 
 # --- 8. Record the success, and prune the older upgrade backups -----------------------------------------------
-# Only here, after the warm-up passed: every failure above throws before this, so a failed run's backups stay for a
-# restore, and its record stays unsucceeded. This run's backups are never deleted. A backup that can't be pruned is a
-# warning; the upgrade has succeeded.
-try { Set-TideUpgradeSucceeded -Folder $BackupRoot -Completed (Get-TideUtcStamp) }
-catch { Write-Warn2 "Couldn't mark this upgrade's backup record (snapshot.json in $BackupRoot) as succeeded: $($_.Exception.Message)" }
-if ($KeepUpgradeBackups -gt 0) {
+# Only here, after the warm-up: every failure above throws before this, so a failed run's backups stay for a restore,
+# and its record stays unsucceeded. Only a proven start is recorded and prunes (lib\TideUpgrade.ps1, Get-TidePrunePlan).
+# This run's backups are never deleted. A backup that can't be pruned is a warning; the upgrade has succeeded.
+$plan = Get-TidePrunePlan -StartProven $startProven -CustomBackupRoot (-not $upgradeBackupsDir) -Keep $KeepUpgradeBackups
+if ($plan.MarkSucceeded) {
+    try { Set-TideUpgradeSucceeded -Folder $BackupRoot -Completed (Get-TideUtcStamp) }
+    catch { Write-Warn2 "Couldn't mark this upgrade's backup record (snapshot.json in $BackupRoot) as succeeded: $($_.Exception.Message)" }
+}
+if ($plan.Note) { Write-Warn2 $plan.Note }
+if ($plan.PruneBaks -or $plan.PruneFolders) {
     Write-Step "Pruning older upgrade backups (keeping the newest $KeepUpgradeBackups successful upgrades' of each)"
     $pruned = 0
-    # This site's records: which folders are its own, and which runs (and so which .bak files) succeeded. Read from the
-    # default location even under -BackupRoot, which holds the earlier runs' records.
+    # This site's records: which folders are its own, and which runs (and so which .bak files) succeeded.
     $snapshots = @()
-    try {
-        $snapshots = @(Get-TideUpgradeSnapshots -Root (Join-Path (Split-Path -Parent $SitePath) 'tide-upgrade-backups') `
-            -SitePath $SitePath -Server $env:COMPUTERNAME)
-    } catch { Write-Warn2 "Couldn't read the earlier upgrades' backup records: $($_.Exception.Message)" }
+    try { $snapshots = @(Get-TideUpgradeSnapshots -Root $upgradeBackupsDir -SitePath $SitePath -Server $env:COMPUTERNAME) }
+    catch { Write-Warn2 "Couldn't read the earlier upgrades' backup records: $($_.Exception.Message)" }
 
     # The pre-upgrade .bak files, in SQL Server's default backup folder. Only those this SQL Server's backup history
-    # records for this database are ours (another server may share the folder), and they're deleted only where this
-    # host reaches the folder (a UNC path, or SQL Server running here). Nothing is deleted through SQL Server itself.
-    try {
+    # records for this database, and a record of this site names, are pruned (another server may share the folder; a
+    # backup from before the records is left), and only where this host reaches the folder (a UNC path, or SQL Server
+    # running here). Nothing is deleted through SQL Server itself.
+    if ($plan.PruneBaks) { try {
         if (-not $bakDir) { $bakDir = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000))")" }
         $sqlHost = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('MachineName') AS nvarchar(256))")"
         $history = $null
@@ -1020,11 +1027,11 @@ if ($KeepUpgradeBackups -gt 0) {
                 }
             }
         }
-    } catch { Write-Warn2 "Couldn't prune the older pre-upgrade database backups: $($_.Exception.Message)" }
+    } catch { Write-Warn2 "Couldn't prune the older pre-upgrade database backups: $($_.Exception.Message)" } }
 
     # The tide-upgrade-backups\<time> folders (the settings copy and site-rollback of each earlier upgrade): only this
     # site's, by their record, since sibling sites share the folder. A folder with no record is left alone.
-    if ($upgradeBackupsDir) {
+    if ($plan.PruneFolders) {
         try {
             foreach ($old in @(Get-TidePrunable -Items $snapshots -Keep $KeepUpgradeBackups -Exclude @($stamp) -Pattern (Get-TideUpgradeFolderPattern))) {
                 # Not Remove-Item -Recurse: Windows PowerShell 5.1's follows a junction and deletes what it points to.
@@ -1032,8 +1039,6 @@ if ($KeepUpgradeBackups -gt 0) {
                 catch { Write-Warn2 "Couldn't delete $($old.FullName): $($_.Exception.Message)" }
             }
         } catch { Write-Warn2 "Couldn't prune the older upgrade backup folders in $($upgradeBackupsDir): $($_.Exception.Message)" }
-    } else {
-        Write-Info "The backup folders under -BackupRoot aren't pruned: clear older ones by hand."
     }
     Write-Info "Deleted $pruned older backup(s)."
 }

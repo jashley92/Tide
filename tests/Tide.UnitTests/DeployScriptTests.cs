@@ -191,13 +191,24 @@ public partial class DeployScriptTests
         var stop = At("Stop-TideAppPool -Name $AppPoolName\n");
         var lastRollback = script.LastIndexOf("Complete-Rollback \"", StringComparison.Ordinal);
         var versionWritten = At("Set-Content -Path (Join-Path $SitePath 'VERSION.txt')");
+        var plan = At("$plan = Get-TidePrunePlan -StartProven $startProven -CustomBackupRoot (-not $upgradeBackupsDir) -Keep $KeepUpgradeBackups");
+        var markGate = At("if ($plan.MarkSucceeded) {");
         var succeeded = At("Set-TideUpgradeSucceeded -Folder $BackupRoot");
+        var baksGate = At("if ($plan.PruneBaks) {");
         var pruneBaks = At("Get-TidePrunableBaks -History $history -BakDir $bakDir -DbName $DbName -Files $inFolder");
+        var foldersGate = At("if ($plan.PruneFolders) {");
         var pruneFolders = At("Get-TidePrunable -Items $snapshots -Keep $KeepUpgradeBackups -Exclude @($stamp)");
         var complete = At("Write-Step \"Upgrade complete.\"");
-        new[] { record, stop, lastRollback, versionWritten, succeeded, pruneBaks, pruneFolders, complete }.Should().BeInAscendingOrder(
-            "the record is written before anything changes, and every failure rolls back and throws before the run is " +
-            "marked succeeded and the prune, so a failed upgrade keeps every backup");
+        new[] { record, stop, lastRollback, versionWritten, plan, markGate, succeeded, baksGate, pruneBaks, foldersGate, pruneFolders, complete }
+            .Should().BeInAscendingOrder(
+                "the record is written before anything changes, every failure rolls back and throws before the run is " +
+                "marked succeeded and the prune, and both go by the plan, so a failed upgrade keeps every backup");
+        script.IndexOf("Remove-Item -LiteralPath $path", StringComparison.Ordinal).Should().BeGreaterThan(baksGate);
+
+        // Only TIDE's own answer proves the start: the warm-up's 'started' verdicts, not Windows authentication's.
+        (script.Split("$startProven = $true").Length - 1).Should().Be(2);
+        var authCase = script[At("        'auth' {\n            Write-Warn2 (\"Couldn't prove the new build started")..At("        'other' { Write-Warn2 \"$HealthUrl answered")];
+        authCase.Should().Contain("$started = $true").And.NotContain("$startProven");
         script.Should().NotContain("xp_delete_file", "the .bak files are deleted only through a path this host reaches");
         script.Should().Contain("Remove-TideTree $old.FullName").And.NotContain("Remove-Item -LiteralPath $old.FullName -Recurse",
             "Windows PowerShell 5.1's Remove-Item -Recurse follows a junction into its target");
@@ -938,10 +949,12 @@ public partial class DeployScriptPowerShellTests
                 'D:\SQLBackup\Tide-preupgrade-20260101-090000.bak', 'D:\SQLBackup\Tide-preupgrade-20260102-090000.bak',
                 'd:\sqlbackup\Tide-preupgrade-20260103-090000.bak', 'D:\SQLBackup\Tide-preupgrade-20260104-090000.bak',
                 'D:\SQLBackup\TIDE-preupgrade-20250101-090000.bak',   # a database whose name differs only in case
+                'D:\SQLBackup\Tide-preupgrade-20250601-090000.bak',   # from before the records: no record names it
                 'E:\Elsewhere\Tide-preupgrade-20251201-090000.bak')    # another folder
             $files = @(
                 'Tide-preupgrade-20260101-090000.bak', 'Tide-preupgrade-20260102-090000.bak', 'Tide-preupgrade-20260103-090000.bak',
                 'Tide-preupgrade-20260104-090000.bak', 'TIDE-preupgrade-20250101-090000.bak', 'Tide-preupgrade-20251201-090000.bak',
+                'Tide-preupgrade-20250601-090000.bak',
                 'Tide-preupgrade-20251101-090000.bak')               # another server's, sharing the folder
             $snaps = @('20260101-090000', '20260102-090000', '20260103-090000', '20260104-090000') |
                 ForEach-Object { [pscustomobject]@{ Name = $_; Succeeded = $true; BakName = "Tide-preupgrade-$_.bak" } }
@@ -953,17 +966,78 @@ public partial class DeployScriptPowerShellTests
                 noHistory   = @(Get-TidePrunableBaks -History @() -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Snapshots $snaps -Keep 1 -Exclude @($this)).Count
                 unrecorded  = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Keep 1 -Exclude @($this)).Count
                 otherCase   = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'TIDE' -Files $files -Snapshots $snaps -Keep 1).Count
+                # A record's flag edited by hand to "true" or 1 isn't a success: those runs count as failed, newer than
+                # the last real success (20260101), so they stay.
+                handEdited  = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Keep 1 -Exclude @($this) -Snapshots @(
+                    [pscustomobject]@{ Name = 'a'; Succeeded = $true; BakName = 'Tide-preupgrade-20260101-090000.bak' },
+                    [pscustomobject]@{ Name = 'b'; Succeeded = 'true'; BakName = 'Tide-preupgrade-20260102-090000.bak' },
+                    [pscustomobject]@{ Name = 'c'; Succeeded = 1; BakName = 'Tide-preupgrade-20260103-090000.bak' },
+                    [pscustomobject]@{ Name = 'd'; Succeeded = $true; BakName = $this }))
             }
             ConvertTo-Json -Compress -InputObject $out
             """);
         string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
         Names("reachable").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"],
-            "a .bak this server's history doesn't record in the folder (another server's, another folder's) and the database named in another case stay");
+            "a .bak this server's history doesn't record in the folder (another server's, another folder's), the database " +
+            "named in another case, and one from before the records (older than every success, yet no record names it) stay");
+        Names("handEdited").Should().Equal(["Tide-preupgrade-20260101-090000.bak"],
+            "with only 20260101 a real success, it's the last success before this run: the hand-edited ones are newer and stay, " +
+            "and 20260101 is past keep 1");
         r.GetProperty("gone").GetInt32().Should().Be(0, "a file the history names but that's no longer there isn't returned");
         Names("unreachable").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"]);
         r.GetProperty("noHistory").GetInt32().Should().Be(0, "with no history, nothing is ours");
-        r.GetProperty("unrecorded").GetInt32().Should().Be(0, "a backup no record names counts as a failed run's, and there's no earlier success");
+        r.GetProperty("unrecorded").GetInt32().Should().Be(0, "a backup no record names is never pruned");
         r.GetProperty("otherCase").GetInt32().Should().Be(0, "'TIDE' has one backup in the history, which is kept");
+    }
+
+    [Fact]
+    public void A_records_succeeded_flag_counts_only_as_the_JSON_boolean_true()
+    {
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-flags-' + [guid]::NewGuid().ToString('N'))
+            try {
+                $flags = [ordered]@{ '20260101-090000' = 'true'; '20260102-090000' = '"true"'; '20260103-090000' = '1'; '20260104-090000' = 'false' }
+                foreach ($k in $flags.Keys) {
+                    New-Item -ItemType Directory -Force -Path (Join-Path $root $k) | Out-Null
+                    Set-Content -LiteralPath (Join-Path $root "$k\snapshot.json") -Encoding UTF8 -Value (
+                        '{ "format": 1, "server": "WEB1", "site": "C:\\inetpub\\tide", "bak": "", "succeeded": ' + $flags[$k] + ' }')
+                }
+                $snaps = @(Get-TideUpgradeSnapshots -Root $root -SitePath 'C:\inetpub\tide' -Server 'WEB1')
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+            $items = @(@{ Name = '20260101-090000'; Succeeded = $true }, @{ Name = '20260102-090000'; Succeeded = 'true' },
+                @{ Name = '20260103-090000'; Succeeded = 1 }, @{ Name = '20260104-090000'; Succeeded = $true }) | ForEach-Object { [pscustomobject]$_ }
+            $out = [ordered]@{
+                snaps = @($snaps | ForEach-Object { "$($_.Name):$($_.Succeeded)" })
+                # Keep 1, this run 20260104: with only 20260101 a success, the two between are a failed run's, newer than it.
+                pruned = @(Get-TidePrunable -Items $items -Keep 1 -Exclude @('20260104-090000') -Pattern (Get-TideUpgradeFolderPattern) | ForEach-Object { $_.Name })
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        r.GetProperty("snaps").EnumerateArray().Select(x => x.GetString()).Should().Equal(
+            "20260101-090000:True", "20260102-090000:False", "20260103-090000:False", "20260104-090000:False");
+        r.GetProperty("pruned").EnumerateArray().Select(x => x.GetString()).Should().Equal(["20260101-090000"],
+            "\"true\" and 1 don't count as successes, so those runs are kept as a failed run's newer than the last success");
+    }
+
+    [Fact]
+    public void Only_a_proven_start_is_recorded_as_a_success_and_prunes_and_BackupRoot_prunes_nothing()
+    {
+        var r = Run("""
+            function Show($p) { "$($p.MarkSucceeded):$($p.PruneBaks):$($p.PruneFolders):$([bool]$p.Note)" }
+            $out = [ordered]@{
+                proven     = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $false -Keep 3)
+                unproven   = Show (Get-TidePrunePlan -StartProven $false -CustomBackupRoot $false -Keep 3)
+                backupRoot = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $true -Keep 3)
+                keepNone   = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $false -Keep 0)
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        r.GetProperty("proven").GetString().Should().Be("True:True:True:False");
+        r.GetProperty("unproven").GetString().Should().Be("False:False:False:True",
+            "a start taken on trust may yet need a rollback by hand: it isn't a success and deletes nothing");
+        r.GetProperty("backupRoot").GetString().Should().Be("True:False:False:True",
+            "a -BackupRoot run's records aren't with the others, so neither its .bak files nor its folders are pruned");
+        r.GetProperty("keepNone").GetString().Should().Be("True:False:False:False");
     }
 
     [Fact]

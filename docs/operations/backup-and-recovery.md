@@ -108,9 +108,11 @@ Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#u
   this run's among them), plus any failed run's since the last success, and deletes the older
   `<database>-preupgrade-<time>.bak` files and `tide-upgrade-backups\<time>` folders, listing each. It touches only
   this install's: folders whose `snapshot.json` names this server and site (sibling sites share the folder), and
-  `.bak` files this SQL Server's backup history records for this database. The `.bak` files go only where the web
-  server reaches SQL Server's backup folder (a UNC path, or SQL Server on the same host); otherwise it lists the ones
-  it left. A failed upgrade deletes none. These are the upgrade's own backups: your scheduled backups
+  `.bak` files those records name and this SQL Server's backup history records for this database. Backups from
+  upgrades before the records (no `snapshot.json`) are never pruned: delete them by hand. The `.bak` files go only
+  where the web server reaches SQL Server's backup folder (a UNC path, or SQL Server on the same host); otherwise it
+  lists the ones it left. With `-BackupRoot` nothing is pruned. A failed upgrade, or one whose start wasn't proven,
+  deletes none. These are the upgrade's own backups: your scheduled backups
   (`Backup-Tide.ps1 -Keep`) are pruned separately.
 
 ```mermaid

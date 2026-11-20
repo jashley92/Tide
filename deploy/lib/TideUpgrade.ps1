@@ -448,7 +448,8 @@ function Get-TidePrunable {
         if (-not $m.Success -or -not $m.Groups['stamp'].Success) { continue }
         $when = ConvertFrom-TideStamp $m.Groups['stamp'].Value
         if ($null -eq $when) { continue }
-        $ok = ($item -isnot [string]) -and $item.PSObject.Properties['Succeeded'] -and ($item.Succeeded -eq $true)
+        # The boolean true only: -eq $true would take 1 or "true" (a record edited by hand) as a success.
+        $ok = ($item -isnot [string]) -and $item.PSObject.Properties['Succeeded'] -and ($item.Succeeded -is [bool]) -and $item.Succeeded
         [pscustomobject]@{ Item = $item; Name = $name; When = $when; Succeeded = [bool]$ok; Excluded = ($excluded -ccontains $name) }
     })
     # Newest first; two of one stamp (a copy made by hand) order by name, so the choice is the same every run.
@@ -499,7 +500,9 @@ function Get-TideUpgradeSnapshots([string] $Root, [string] $SitePath, [string] $
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         try { $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json } catch { continue }
         if (-not $r -or "$($r.site)".TrimEnd('\', '/') -ine $site -or "$($r.server)" -ine $Server) { continue }
-        [pscustomobject]@{ Name = $d.Name; FullName = $d.FullName; Succeeded = ($r.succeeded -eq $true); BakName = [string]$r.bak }
+        # JSON's true only (ConvertFrom-Json gives a [bool]); "true" or 1, edited by hand, isn't a success.
+        $ok = ($r.succeeded -is [bool]) -and $r.succeeded
+        [pscustomobject]@{ Name = $d.Name; FullName = $d.FullName; Succeeded = $ok; BakName = [string]$r.bak }
     })
 }
 
@@ -507,7 +510,9 @@ function Get-TideUpgradeSnapshots([string] $Root, [string] $SitePath, [string] $
 # ($History, msdb's physical_device_name for this database) records in $BakDir is ours: another server writing to a
 # shared folder, or a database whose name differs only in case, is never picked. -Files: the names in the folder, when
 # this host reaches it (a file the history names that's gone isn't returned); $null to go by the history alone.
-# $Snapshots (Get-TideUpgradeSnapshots) say which runs succeeded; a backup no record names counts as a failed run's.
+# $Snapshots (Get-TideUpgradeSnapshots, this site's records) say which runs took which backup and which succeeded. A
+# backup no record names (one from before the records, or a -BackupRoot run's, whose record is elsewhere) is never
+# pruned and doesn't count, as a folder without a record isn't.
 function Get-TidePrunableBaks {
     param(
         [string[]] $History = @(),
@@ -526,10 +531,35 @@ function Get-TidePrunableBaks {
     }
     $names = if ($null -ne $Files) { @(@($Files) | ForEach-Object { "$_" } | Where-Object { $ours.Contains($_) }) } else { @($ours) }
     $succeeded = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
-    foreach ($s in @($Snapshots)) { if ($s -and $s.BakName) { $succeeded[[string]$s.BakName] = [bool]$s.Succeeded } }
-    $items = @($names | ForEach-Object { [pscustomobject]@{ Name = $_; Succeeded = ($succeeded.ContainsKey($_) -and $succeeded[$_]) } })
+    foreach ($s in @($Snapshots)) {
+        if ($s -and $s.BakName) { $succeeded[[string]$s.BakName] = (($s.Succeeded -is [bool]) -and $s.Succeeded) }
+    }
+    # This run's own backup counts toward $Keep (and is never returned) even if its record couldn't be written.
+    $items = @($names | Where-Object { $succeeded.ContainsKey($_) -or $Exclude -ccontains $_ } |
+        ForEach-Object { [pscustomobject]@{ Name = $_; Succeeded = ($succeeded.ContainsKey($_) -and $succeeded[$_]) } })
     return @(Get-TidePrunable -Items $items -Keep $Keep -Exclude $Exclude -Pattern (Get-TidePreUpgradeBakPattern $DbName) |
         ForEach-Object { $_.Name })
+}
+
+# What a finished upgrade does with its backups: whether it records itself as a success (MarkSucceeded), prunes the
+# older .bak files (PruneBaks) and backup folders (PruneFolders), and a Note to show when it doesn't.
+#   -StartProven      : TIDE itself answered the warm-up. A start taken on trust (Windows authentication answered) may yet
+#                       need a rollback by hand, so it neither counts as a success nor deletes a backup.
+#   -CustomBackupRoot : -BackupRoot was given. Neither is pruned: its records are there, not with the others, so its
+#                       runs' backups couldn't be told apart.
+#   -Keep             : -KeepUpgradeBackups; 0 prunes nothing.
+function Get-TidePrunePlan([bool] $StartProven, [bool] $CustomBackupRoot, [int] $Keep) {
+    $plan = { param($mark, $baks, $folders, $note) [pscustomobject]@{ MarkSucceeded = $mark; PruneBaks = $baks; PruneFolders = $folders; Note = $note } }
+    if (-not $StartProven) {
+        return & $plan $false $false $false ("The new build's start wasn't proven, so this upgrade isn't recorded as a " +
+            "success and no older backup was deleted.")
+    }
+    if ($Keep -lt 1) { return & $plan $true $false $false $null }
+    if ($CustomBackupRoot) {
+        return & $plan $true $false $false ("With -BackupRoot, older upgrade backups aren't pruned (neither the " +
+            "pre-upgrade .bak files nor the backup folders): clear them by hand.")
+    }
+    return & $plan $true $true $true $null
 }
 
 # Deletes a folder and what it holds without following a link inside it: Windows PowerShell 5.1's Remove-Item -Recurse
