@@ -82,13 +82,26 @@ internal static class SqliteLike
     /// <summary>A compiled pattern; null tokens when it ends in the escape character, which SQLite never matches.</summary>
     private sealed record Pattern(string Text, Rune? Escape, Token[]? Tokens);
 
-    // A query compares one pattern with every row, so the last one compiled is kept, per thread (SQLite calls back on the
-    // thread running the statement).
-    [ThreadStatic] private static Pattern? _last;
+    // A query compares the same few patterns with every row (one per accented term or indicator form, taken in turn), so
+    // the last few compiled are kept, per thread (SQLite calls back on the thread running the statement), and the oldest
+    // gives way to a new one.
+    private const int Cached = 4;
+    [ThreadStatic] private static Pattern?[]? _recent;
+    [ThreadStatic] private static int _next;
 
     private static Pattern Compile(string text, Rune? escape)
     {
-        if (_last is { } last && last.Escape == escape && string.Equals(last.Text, text, StringComparison.Ordinal)) return last;
+        var recent = _recent ??= new Pattern?[Cached];
+        foreach (var p in recent)
+            if (p is not null && p.Escape == escape && string.Equals(p.Text, text, StringComparison.Ordinal)) return p;
+        var compiled = Build(text, escape);
+        recent[_next] = compiled;
+        _next = (_next + 1) % Cached;
+        return compiled;
+    }
+
+    private static Pattern Build(string text, Rune? escape)
+    {
         if (Encoding.UTF8.GetByteCount(text) > MaxPatternBytes) throw new InvalidOperationException(TooComplex);
 
         // As SQLite does: an escape character that is itself a wildcard turns that wildcard off.
@@ -113,7 +126,7 @@ internal static class SqliteLike
             else tokens.Add(new Token(one && c.Value == '_' ? Kind.One : Kind.Literal, c));
         }
         if (!ended) compiled = [.. tokens];
-        return _last = new Pattern(text, escape, compiled);
+        return new Pattern(text, escape, compiled);
     }
 
     private static bool Matches(Pattern pattern, string value)

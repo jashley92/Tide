@@ -50,7 +50,7 @@ public class AccentedSearchTests : IDisposable
         { "a%c", "a%%c", "%" }, { "abc", "a%c", "%" }, { "abc", "a%%c", "%" }, { "a_c", "a__c", "_" }, { "abc", "a_c", "_" },
         { "abc", "a_bc", "_" }, { "a[b]c", "a[b]c", null }, { "a[b]c", "a\\[b]c", "\\" }, { "é", "_", null }, { "éa", "_A", null },
         { "😀", "_", null }, { "😀x", "__", null }, { "x😀y", "x_y", null }, { "😀", "😀", null }, { "a😀", "A%", "😀" },
-        { "aé", "a😀é", "😀" }, { null, "a", null }, { "a", null, null }, { "a", "a", null }, { 12.ToString(), "1_", null },
+        { "aé", "a😀é", "😀" }, { null, "a", null }, { "a", null, null }, { "a", "a", null }, { "12", "1_", null },
     };
 
     [Theory]
