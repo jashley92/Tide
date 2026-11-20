@@ -338,9 +338,11 @@ publishes TIDE once; eight `layout-shard` jobs (four slices of the pages, each a
 controls that must stay one line (the meeting's quick add, a recommended line, an action on a slide), columns that must
 line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). A shard fails naming
 the page, the width and the rule, and prints TIDE's log; `layout`, the check the branch rules name, passes when all
-eight do. Every sharded run first checks that the four slices hold every page exactly once, and fails if not. Run it
-locally with `node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices and what each should take without starting
-anything (`tools/screenshots/README.md`, which says how to refresh the weights).
+eight do. The pages that change the demo run in chains, each whole and in order after its slice's other pages, spread
+over the slices like any page. Every sharded run first checks that the four slices hold every page exactly once, each
+chain whole and in order after the pages that read the demo, and fails if not. Run it locally with
+`node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices, what each should take and the chains each runs, without
+starting anything (`tools/screenshots/README.md`, which says how to refresh the weights).
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);
