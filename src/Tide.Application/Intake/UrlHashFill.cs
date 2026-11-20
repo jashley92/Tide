@@ -15,10 +15,11 @@ public sealed class UrlHashProgress
     /// <summary>Whether every row has its hash and the pending setting is gone.</summary>
     public bool Done { get; internal set; }
 
-    // The rows met that have no canonical address, so keep no hash: they stay first in id order among the rows still
-    // without one, and each batch skips past them.
-    internal int SkippedArticles { get; set; }
-    internal int SkippedLinks { get; set; }
+    // The last id read in each table: rows are read in id order after it (keyset paging), so a row with no canonical
+    // address, which keeps no hash, is read once and passed. A count of those skipped would drift if one were deleted
+    // or edited meanwhile; an id doesn't. A row saved meanwhile is hashed by its own save, wherever it falls.
+    internal Guid? LastArticle { get; set; }
+    internal Guid? LastLink { get; set; }
 }
 
 /// <summary>
@@ -46,10 +47,22 @@ public static class UrlHashFill
     public static async Task<bool> DoneAsync(IAppDbContext db, CancellationToken ct = default) =>
         !await db.Settings.AsNoTracking().AnyAsync(s => s.Key == PendingKey, ct);
 
-    /// <summary>The rows still to be read: each table's rows without a hash, less those met without a canonical address.</summary>
+    /// <summary>The rows still to be read: each table's rows without a hash after the last read.</summary>
     public static async Task<int> LeftAsync(IAppDbContext db, UrlHashProgress progress, CancellationToken ct = default) =>
-        Math.Max(0, await db.Articles.CountAsync(a => a.SourceUrl != null && a.SourceUrlHash == null, ct) - progress.SkippedArticles)
-        + Math.Max(0, await db.ArticleLinks.CountAsync(l => l.UrlHash == null, ct) - progress.SkippedLinks);
+        await UnhashedArticles(db, progress.LastArticle).CountAsync(ct) + await UnhashedLinks(db, progress.LastLink).CountAsync(ct);
+
+    // Each table's rows without a hash, after the last id read (all of them before the first batch).
+    private static IQueryable<Article> UnhashedArticles(IAppDbContext db, Guid? after)
+    {
+        var q = db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.SourceUrlHash == null);
+        return after is { } last ? q.Where(a => a.Id.CompareTo(last) > 0) : q;
+    }
+
+    private static IQueryable<ArticleLink> UnhashedLinks(IAppDbContext db, Guid? after)
+    {
+        var q = db.ArticleLinks.AsNoTracking().Where(l => l.UrlHash == null);
+        return after is { } last ? q.Where(l => l.Id.CompareTo(last) > 0) : q;
+    }
 
     /// <summary>
     /// Fills up to <paramref name="batches"/> batches of <paramref name="batch"/> rows, articles first, then links, and
@@ -60,12 +73,12 @@ public static class UrlHashFill
         if (progress.Done || await DoneAsync(db, ct)) return progress.Done = true;
         for (var i = 0; i < batches; i++)
         {
-            var rows = await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.SourceUrlHash == null).OrderBy(a => a.Id)
-                .Skip(progress.SkippedArticles).Take(batch).Select(a => new KeyValuePair<Guid, string?>(a.Id, a.SourceUrl)).ToListAsync(ct);
+            var rows = await UnhashedArticles(db, progress.LastArticle).OrderBy(a => a.Id).Take(batch)
+                .Select(a => new KeyValuePair<Guid, string?>(a.Id, a.SourceUrl)).ToListAsync(ct);
             var table = rows.Count > 0 ? 0 : 1;
             if (table == 1)
-                rows = await db.ArticleLinks.AsNoTracking().Where(l => l.UrlHash == null).OrderBy(l => l.Id)
-                    .Skip(progress.SkippedLinks).Take(batch).Select(l => new KeyValuePair<Guid, string?>(l.Id, l.Url)).ToListAsync(ct);
+                rows = await UnhashedLinks(db, progress.LastLink).OrderBy(l => l.Id).Take(batch)
+                    .Select(l => new KeyValuePair<Guid, string?>(l.Id, l.Url)).ToListAsync(ct);
             if (rows.Count == 0)
             {
                 await FinishAsync(db, ct);
@@ -75,12 +88,12 @@ public static class UrlHashFill
                 .Select(r => (Id: r.Key, Hash: r.Hash!)).ToList();
             if (table == 0)
             {
-                progress.SkippedArticles += rows.Count - hashed.Count;
+                progress.LastArticle = rows[^1].Key;
                 if (hashed.Count > 0) await StoreAsync(db.Articles.Where(a => a.SourceUrlHash == null), a => a.SourceUrlHash, hashed, ct);
             }
             else
             {
-                progress.SkippedLinks += rows.Count - hashed.Count;
+                progress.LastLink = rows[^1].Key;
                 if (hashed.Count > 0) await StoreAsync(db.ArticleLinks.Where(l => l.UrlHash == null), l => l.UrlHash, hashed, ct);
             }
             progress.Filled += hashed.Count;

@@ -339,6 +339,11 @@ public class MigrationFillTests
         await using (var ctx = database.Context())
         {
             (await UrlHashFill.DoneAsync(ctx)).Should().BeFalse("an upgraded database with addresses has them to fill");
+            // The setting as the app reads it: the migration writes the time as each provider stores one (UTC ticks on SQLite).
+            var pending = await ctx.Settings.AsNoTracking().SingleAsync(s => s.Key == UrlHashFill.PendingKey);
+            (pending.Value, pending.UpdatedBy).Should().Be(("1", "system"));
+            pending.UpdatedAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5));
+            pending.UpdatedAtUtc.Offset.Should().Be(TimeSpan.Zero);
             var first = new UrlHashProgress();
             (await UrlHashFill.FillAsync(ctx, first, batches: 2, batch: 2)).Should().BeFalse();
             first.Filled.Should().BeInRange(2, 4, "two batches of two, less any without a canonical address");

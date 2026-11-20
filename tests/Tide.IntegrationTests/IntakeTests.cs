@@ -1128,6 +1128,36 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TheFill_PassesARowWithNoCanonicalAddressOnce_AndStillFillsEveryOther_WhenThatRowIsDeletedMidFill()
+    {
+        // In id order: one whose address has no canonical form, then five that have one.
+        static Guid Id(int n) => new($"00000000-0000-0000-0000-{n:000000000000}");
+        await using (var ctx = _db.PlainContext())
+        {
+            ctx.Articles.Add(new Article { Id = Id(1), Title = "Not a web address", SourceUrl = "ftp://files.example/x", AuthorId = "S-1", AuthorName = "Analyst" });
+            for (var n = 2; n <= 6; n++)
+                ctx.Articles.Add(new Article { Id = Id(n), Title = "Article " + n, SourceUrl = $"https://news.example/{n}", AuthorId = "S-1", AuthorName = "Analyst" });
+            await ctx.SaveChangesAsync();
+        }
+        await Unfilled();
+
+        var progress = new UrlHashProgress();
+        await using (var ctx = _db.Context())
+        {
+            (await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 2)).Should().BeFalse();
+            progress.Filled.Should().Be(1, "the first batch was the row passed by and one other");
+            // A colleague deletes the row passed by: what's read next mustn't move.
+            var passed = Id(1);
+            await ctx.Articles.Where(a => a.Id == passed).ExecuteDeleteAsync();
+            while (!await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 2)) { }
+        }
+
+        progress.Filled.Should().Be(5);
+        await using (var ctx = _db.PlainContext())
+            (await ctx.Articles.Where(a => a.SourceUrlHash == null).Select(a => a.Title).ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task TwoProcessesFilling_AtOnce_BothFinish_AndTheOneThatFinishesSecondChangesNothing()
     {
         await using (var ctx = _db.PlainContext())
