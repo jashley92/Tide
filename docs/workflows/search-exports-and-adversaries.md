@@ -210,7 +210,7 @@ Markdown kept internal, watched, retired, merged into).
 
 - a timeline of the articles tagged with it **or naming it** (in the title, the earlier actors note or the start of the
   bottom line, as whole words), with their actions and indicators, and how many briefs it was in this quarter;
-- the ATT&CK techniques across those articles, darker where more articles show them, downloadable as an ATT&CK Navigator
+- the ATT&CK techniques across those articles, each with how many show it (×2) and darker where more do, downloadable as an ATT&CK Navigator
   layer scored by count (`GET /adversaries/{id}/navigator.json`, `NavigatorLayerAsync`). With detection rules imported,
   each technique is also coloured by whether a current, enabled rule is tagged with it;
 - the articles that name it but aren't tagged, for an analyst to check and tag (`LinkAsync`). Nothing is linked

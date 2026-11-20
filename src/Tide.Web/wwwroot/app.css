@@ -2335,10 +2335,13 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 .tide-passage { border-left: 3px solid var(--tide-accent); background: var(--tide-chip-bg); padding: .35rem .55rem; margin-top: .3rem; font-size: .85rem; border-radius: 0 6px 6px 0; }
 @media (forced-colors: active) { .tide-cite { border-color: CanvasText; } }
 
-/* An adversary profile's techniques (EP-73): darker where more of our articles show it. */
-.tide-adv-heat { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 3px; }
-.tide-adv-heat span { font-size: .78rem; padding: .25rem .35rem; border-radius: 3px; background: var(--tide-chip-bg); color: var(--tide-text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An adversary profile's techniques (EP-73): darker where more of our articles show it, and each with its count (×2) at
+   its end, so the shade isn't the only way to tell. The name gives way (ellipsis) before the count does. */
+.tide-adv-heat { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 3px; list-style: none; margin: 0; padding: 0; }
+.tide-adv-heat > li { display: flex; align-items: baseline; gap: .35rem; min-width: 0; font-size: .78rem; padding: .25rem .35rem; border-radius: 3px;
+  background: var(--tide-chip-bg); color: var(--tide-text-muted); }
+.tide-adv-heat-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-adv-heat-n { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tide-adv-heat .h1 { background: var(--tide-info-soft); color: var(--tide-text); }
 .tide-adv-heat .h2 { background: var(--tide-accent); color: #fff; }
 /* EP-80: reviews. */
@@ -2350,7 +2353,7 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 .tide-review-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--tide-space-3); align-items: start; }
 @media (max-width: 899.98px) { .tide-review-layout { grid-template-columns: minmax(0, 1fr); } }
 .tide-adv-heat .tide-adv-gap { box-shadow: inset 0 0 0 2px var(--tide-threat); }
-@media (forced-colors: active) { .tide-adv-heat span { border: 1px solid CanvasText; } }
+@media (forced-colors: active) { .tide-adv-heat > li { border: 1px solid CanvasText; } }
 
 /* Many metric groups. The day's numbers form (MetricEntry): a progress bar that stays in view under the page's own
    sticky header (.top-row), a bordered panel per group with its count, and finished groups folded to a line. */

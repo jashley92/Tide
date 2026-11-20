@@ -853,7 +853,7 @@ Scattered Spider, UNC3944 and Octo Tempest are one. A profile's page has:
 
 - a **timeline** of the articles tagged with it or naming it (in the title, the earlier actors note or the bottom
   line), and their actions and indicators, with how many briefs it was in this quarter;
-- the **ATT&CK techniques** across those articles, darker where more articles show them, downloadable as an ATT&CK
+- the **ATT&CK techniques** across those articles, each with how many show it (×2) and darker where more do, downloadable as an ATT&CK
   Navigator layer scored by count;
 - **our notes** (internal, AMBER), motivation and sectors.
 
