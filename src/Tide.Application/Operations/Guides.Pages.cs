@@ -328,7 +328,7 @@ public static partial class Guides
                 "Add a product with the other names triage should know it by."),
             Step("filter", Team, "#stack-q", "Finding one",
                 "Filter by product, other name or version, or by Needs a look, Check is old and No owning team."),
-            Step("table", Team, ".tide-stack-table thead || .tide-stack-table tbody tr || .tide-stack-table", "Most pressing first",
+            Step("table", Team, ".tide-stack-table tbody tr || .tide-stack-table", "Most pressing first",
                 "Right now shows a product's CVEs from the last week's briefs."),
             Step("triage", Write, "td.tide-stack-now", "In triage",
                 "For you, Right now also counts the new triage items that name the product."),

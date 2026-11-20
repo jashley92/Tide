@@ -239,7 +239,7 @@ else
         else
         {
             <TabBar Label="Brief" PanelId="brief-panel" Active="@_tab.ToString(System.Globalization.CultureInfo.InvariantCulture)" OnSelect="SelectTab"
-                    Items="@([new("Running order", "", Key: "0", Count: _brief.Items.Count), new("Preview both editions", "", Key: "1")])" />
+                    Items="@([new("Running order", "", Key: "0", Count: TabCount(_brief)), new("Preview both editions", "", Key: "1")])" />
             <div role="tabpanel" id="brief-panel" aria-labelledby="@TabBar.TabId("brief-panel", _tab.ToString(System.Globalization.CultureInfo.InvariantCulture))">
                 @Panel()
             </div>
@@ -463,7 +463,25 @@ else
         return topics;
     }
 
-    private IEnumerable<BriefItem> Ordered() => _brief!.Items.Where(i => i.Article is not null).OrderBy(i => i.SortOrder);
+    private IEnumerable<BriefItem> Ordered() => Listed(_brief!);
+
+    // The running order draws only the items whose article loaded with the brief.
+    private static IEnumerable<BriefItem> Listed(Brief brief) => brief.Items.Where(i => i.Article is not null).OrderBy(i => i.SortOrder);
+
+    /// <summary>"3 articles" beside Running order: the number it lists (<see cref="Listed"/>), with the noun taken from
+    /// that same number, so an item left out of the list can't leave "1 articles" or "2 article".</summary>
+    internal static string ArticleCount(Brief brief) => Ui.Plural(Listed(brief).Count(), "article");
+
+    /// <summary>The Running order tab's count: the items the running order lists (<see cref="Listed"/>), as its heading says.</summary>
+    internal static int TabCount(Brief brief) => Listed(brief).Count();
+
+    /// <summary>"Moved to 2 of 3": the item's place in the running order out of the items it lists (<see cref="Listed"/>),
+    /// so the place isn't counted out of more than the list shows.</summary>
+    internal static string MovedTo(Brief brief, Guid itemId)
+    {
+        var listed = Listed(brief).ToList();
+        return $"Moved to {listed.FindIndex(i => i.Id == itemId) + 1} of {listed.Count}.";
+    }
 
     // A colleague's save to this brief, or to an article on it: re-read in place. Unsaved presenter or opening-note edits
     // are kept, and if the colleague changed those too, ChangedElsewhere says so. The day's numbers re-read alone (the
@@ -760,10 +778,10 @@ else
     }
 
     private Task Move(Guid itemId, int by) => Run(() => BriefSvc.MoveItemAsync(_brief!.Id, itemId, by), null,
-        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == itemId) + 1} of {_brief!.Items.Count}."));
+        () => Toasts.Show(MovedTo(_brief!, itemId)));
 
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
-        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == drop.Moved) + 1} of {_brief!.Items.Count}."));
+        () => Toasts.Show(MovedTo(_brief!, drop.Moved)));
 
     // A warning's one-click answer, from the running order: the article as this page showed it (its edit version), so a
     // colleague's save in between is refused, not written over. "Set to AMBER" raises the paragraph's marking; "Keep it"
@@ -806,7 +824,7 @@ else
     {
         if (blocked) return null;
         var parts = new List<string>();
-        if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")} on the running order");
+        if (warnings > 0) parts.Add($"{Ui.Plural(warnings, "warning")} on the running order");
         if (missingNumbers > 0) parts.Add($"{BriefSteps.Numbers(missingNumbers)} not entered");
         return parts.Count == 0 ? null : string.Join(" and ", parts) + ".";
     }
@@ -823,7 +841,7 @@ else
         "The brief goes back to Ready and the meeting can be presented again. Its articles go back to how they were before it; "
         + "the meeting's notes, attendees and discussed ticks are kept."
         + (plan is { Carried: > 0, CarriedTo: { } day }
-            ? $" The {plan.Carried} article{(plan.Carried == 1 ? "" : "s")} it carried to {Ui.Day(day)} come{(plan.Carried == 1 ? "s" : "")} off that brief and back to this one."
+            ? $" The {Ui.Plural(plan.Carried, "article")} it carried to {Ui.Day(day)} come{(plan.Carried == 1 ? "s" : "")} off that brief and back to this one."
             : "");
 
     internal async Task AskReopen()
@@ -847,7 +865,7 @@ else
         {
             var done = await BriefSvc.ReopenAsync(_brief!.Id);
             _reopened = done is { Carried: > 0, CarriedTo: { } day }
-                ? $"Back to ready. {done.Carried} article{(done.Carried == 1 ? "" : "s")} came back from {Ui.Day(day)}."
+                ? $"Back to ready. {Ui.Plural(done.Carried, "article")} came back from {Ui.Day(day)}."
                 : "Back to ready.";
         }, null, () => Toasts.Show(_reopened ?? "Back to ready."));
     }
@@ -1002,7 +1020,7 @@ else
                 }
                 <section class="tide-card" aria-labelledby="running-order-h">
                     <h2 id="running-order-h">Running order
-                        <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
+                        <span class="ms-auto small fw-normal tide-muted">@ArticleCount(_brief) &middot; @Ui.Plural(Count(Classification.Threat), "threat") &middot; @Count(Classification.Informational) informational</span></h2>
                     <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
                                   PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                   CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"

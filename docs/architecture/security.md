@@ -34,7 +34,7 @@ team. What it protects, from whom, and the main control for each:
 | The signed-in user's Windows credentials | A hostile page riding them (CSRF, cross-site WebSocket hijacking) | No cookie-auth writes outside the circuit; the circuit refuses foreign `Origin`s; no CORS policy |
 | The browser session | Script injected through stored text (bullets, notes, feed items) | Markdown with raw HTML off, link schemes filtered, strict CSP with `script-src 'self'` |
 | Analysts' machines | Malware samples and evidence files added to actions | Files are always attachments, sniffed, sandboxed, risky ones zipped with the password `infected` |
-| The server's own network | A feed or its redirect pointing at loopback, metadata or internal addresses (SSRF) | `AddressPolicy`, checked on each redirect hop and each connection |
+| The server's own network | A feed or its redirect, or a webhook address, pointing at loopback, metadata or internal addresses (SSRF) | `AddressPolicy`, checked on each redirect hop and each connection (`AddressGuard`) |
 | Secrets (SMTP password, API keys, webhook secrets, tokens) | Anyone reading the audit log, the settings pages, logs or a config export | Hashes for tokens, Data Protection for webhook secrets, masking in the audit trail and on display |
 | The app itself | A misconfigured server signing everyone in as an administrator | `AuthModeGuard` refuses to start Production without Windows sign-in |
 | The server, through an upgrade | A changed or substitute release bundle (a tampered download, a copy on a file share) | Bundles signed with TIDE's release key; the installed upgrade script checks the signature against its pinned keys before it expands or runs anything ([below](#release-integrity-and-authenticity)) |
@@ -370,8 +370,14 @@ ADR [0016](../decisions/0016-api-tokens-scopes-and-signed-webhooks.md) records t
 - Each post carries `X-Tide-Timestamp` and `X-Tide-Signature: sha256=` the HMAC-SHA256 of `timestamp.body`
   (`WebhookService.Sign`).
 - `HttpWebhookPoster` uses its own `HttpClient`: 15-second timeout, redirects not followed (a redirect is reported).
-  Webhook addresses are not passed through `AddressPolicy`, and the client uses no proxy: only https is required, so
-  an administrator can point one at an internal address.
+  Its handler's `ConnectCallback` (`AddressGuard.ConnectAsync`, shared with the outbound client) resolves the host and
+  connects only to an address `AddressPolicy` allows, so DNS rebinding can't slip past it. Loopback, link-local (cloud
+  metadata at 169.254.169.254 among them), unspecified and multicast addresses are always refused, so an
+  administrator can't use **Test** to probe the server itself or its metadata service. Private ranges are allowed
+  while `Webhooks:AllowPrivateNetworks` is on (the default, since receivers such as SOAR platforms are often
+  internal); off, only public addresses are. It doesn't use `Intake:Proxy`; through the system proxy, which connects
+  for it, the host is checked before the post instead. A refused post reports
+  `Refused: <host> is <kind of address>, which webhooks aren't sent to.`, with nothing about the connection.
 - Actions raised from an article above the team edition's ceiling are never posted.
 
 ## HTTP protections
@@ -486,7 +492,8 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   anything else is refused). The inline endpoint sniffs again before serving and uses the sniffed type, never the
   stored one.
 - `ScreenshotService.OpenAsync` decides who sees which image: the team (`ReadTeamEdition`) any article screenshot; a
-  Visitor only a screenshot of the brief they're seated in; a Reader only a frozen copy in a sent company-wide edition
+  Visitor only a screenshot of the brief they're seated in, and only when the article and the screenshot are both within
+  the team edition's ceiling (as the meeting's slides show it); a Reader only a frozen copy in a sent company-wide edition
   (ADR [0007](../decisions/0007-frozen-sends-and-cid-email.md)), so an image above the public ceiling, or never sent,
   can't be fetched by guessing its id.
 - The browser keeps a copy five minutes, then revalidates with the `ETag` (the hash): a 304 while the bytes match and
@@ -516,7 +523,9 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   minted for, good for 10 minutes. A link written by hand, a forged or expired pass, or one minted for another file or
   person is sent to the zip. Under `Always` there's no "as is" link and even a valid pass is refused with a 403: no
   action's or comment's file is ever sent plain. The API's file download (`?zip=true`) zips every file under `Always`
-  too, whatever `zip` says.
+  too, whatever `zip` says. A person signed in to the API (not a token) gets the zip whenever `/files/{id}/download`
+  would send it, whatever `zip` says, since they may simply have followed a link; a token gets the file as it is unless
+  it asks for the zip.
 - `ActionFileService.OpenAsync` checks access per file. Removing keeps the bytes, hash and row with who, when and why;
   only an administrator restores.
 
@@ -540,7 +549,8 @@ one client, `IOutboundHttp` (`src/Tide.Infrastructure/Notifications/OutboundHttp
   (`OutboundCircuit`) for a host that keeps failing.
 
 Email goes to the configured SMTP relay only (`SmtpClientFactory`, backed off by `OutboundCircuit`). Webhooks use their
-own client (above). The Azure OpenAI assistant posts to the configured `Ai:Endpoint` with its own client, through
+own client with the same address check on each connection, but with their own private-network setting,
+`Webhooks:AllowPrivateNetworks` (above). The Azure OpenAI assistant posts to the configured `Ai:Endpoint` with its own client, through
 `Intake:Proxy` when set, but not through `AddressPolicy`.
 
 ## AI data handling
@@ -681,7 +691,7 @@ An upgrade runs a release's scripts as an administrator, so a bundle has to be t
 | Markdown | `src/Tide.Application/Content/MarkdownService.cs` | `tests/Tide.UnitTests/Audit/SecurityAuditTests.cs` (`AnUnsafeLinkScheme_HoweverItIsSpelled_IsNeutralised`, `AProtocolRelativeLink_IsNotALinkToAnotherHost`) |
 | Email | `src/Tide.Application/Distribution/EmailComposer.cs`, `BriefRenderer.cs`, `EmailTemplates.cs` | `tests/Tide.UnitTests/BriefRendererTests.cs` (`Email_EscapesWhatAnalystsTyped`), `EmailTemplateTests.cs` |
 | Files | `src/Tide.Application/Files/FileRisk.cs`, `ImageSniffer.cs`, `ScreenshotService.cs`, `src/Tide.Web/Security/FileDownloads.cs` | `ActionFilesTests.cs` (`ThePlainFile_IsAnAttachment_NeverSniffed_AndSandboxed`, `ARiskyFile_DownloadsInAZip_ThatOpensWithThePasswordInfected`), `Audit/SecurityAuditTests.cs` (`AReader_SeesNoScreenshotThatWasNeverPublished_ByAnyRoute`) |
-| Outbound | `src/Tide.Infrastructure/Notifications/AddressPolicy.cs`, `OutboundHttp.cs`, `OutboundCircuit.cs` | `OutboundHttpTests.cs` (`Get_ALoopbackAddress_IsRefusedByDefault_BeforeAnyRequest`, `Get_ARedirectToARefusedAddress_IsNotFollowed`) |
+| Outbound | `src/Tide.Infrastructure/Notifications/AddressPolicy.cs`, `AddressGuard.cs`, `OutboundHttp.cs`, `OutboundCircuit.cs`, `src/Tide.Web/Api/WebhookServices.cs` (`HttpWebhookPoster`) | `OutboundHttpTests.cs` (`Get_ALoopbackAddress_IsRefusedByDefault_BeforeAnyRequest`, `Get_ARedirectToARefusedAddress_IsNotFollowed`), `Audit/InfraAuditTests.cs` (`WebhookAddressGuardTests`) |
 | AI | `src/Tide.Application/Assist/AssistService.cs`, `DraftChecks.cs`, `src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs` | `AssistTests.cs` (`AboveTheLimit_NothingIsSent_NorCopied`, `OurNotes_GoOnlyWhenTheLimitAllowsAmber_AndThenTheInputCountsAsAmber`) |
 | Download records and zip first | `src/Tide.Web/Api/ExportEndpoints.cs` (`Recorded`, `AsExport`, `AuditedWhen`), `src/Tide.Application/History/DownloadAudit.cs`, `src/Tide.Web/Program.cs` (`/files/{id}/download`) | `AccessAuditTests.cs` (`DownloadAuditTests`) |
 | Audit and secrets | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs`, `src/Tide.Application/Operations/SecretMask.cs`, `SettingsCatalog.cs` (`IsSecret`), `src/Tide.Application/History/AuditLogService.cs` | `AuditLogTests.cs` (`ASecret_ShowsOnlyAsSetOrChanged_OnThePageAndInTheCsv_AndIsntSearchable`), `Audit/SecurityAuditTests.cs` (`TheAuditTrail_NeverHoldsASettingNamedLikeASecret`) |

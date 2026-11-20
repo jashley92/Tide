@@ -14,6 +14,7 @@ using Tide.Application.Org;
 using Tide.Application.Scorecard;
 using Tide.Application.Security;
 using Tide.Application.Settings;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Security;
@@ -109,7 +110,7 @@ public static class DemoSeeder
         var now = DateTimeOffset.UtcNow;
         void Add(Source from, string title, string url, DateTimeOffset at, string? cves = null) => db.FeedItems.Add(new FeedItem
         {
-            Source = from, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            Source = from, Title = title, Url = url, UrlHash = UrlCanonicalizer.Hash(url),
             TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = at, FetchedAtUtc = at, Cves = cves,
         });
         for (var n = 1; n <= Math.Min(count, 500); n++) Add(source, $"Filler k{n:000}", $"https://example.com/filler/k{n:000}", now.AddHours(-8).AddMinutes(-10 * n));
@@ -357,7 +358,7 @@ public static class DemoSeeder
             {
                 var item = new FeedItem
                 {
-                    SourceId = sources[s].Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+                    SourceId = sources[s].Id, Title = title, Url = url, UrlHash = UrlCanonicalizer.Hash(url),
                     TitleKey = Application.Intake.TitleMatch.Key(title), Excerpt = excerpt,
                     Cves = title.Contains("file transfer", StringComparison.Ordinal) ? "CVE-2026-0003" : null,
                     PublishedAtUtc = now.AddHours(-hours), FetchedAtUtc = now.AddHours(-hours).AddMinutes(20),

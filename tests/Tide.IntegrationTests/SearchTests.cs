@@ -139,6 +139,38 @@ public class SearchServiceTests : IDisposable
         (await Search().SearchAsync("zebrafish")).Articles.Items.Should().HaveCount(3);
     }
 
+    // Articles with the word in their title, a minute apart: their ids, newest first.
+    private async Task<List<Guid>> Many(string word, int count)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var made = Enumerable.Range(0, count).Select(i => new Article
+        {
+            Title = $"{word} {i}", Bluf = "Summary.", AuthorId = "S-1-5-21-TEST-1", AuthorName = "Test Analyst", CreatedAtUtc = now.AddMinutes(-i),
+        }).ToList();
+        await using var db = _db.PlainContext();
+        db.Articles.AddRange(made);
+        await db.SaveChangesAsync();
+        return made.Select(a => a.Id).ToList();
+    }
+
+    [Theory]
+    [InlineData(SearchService.MaxTake - 1, SearchService.MaxTake - 1, false)]
+    [InlineData(SearchService.MaxTake, SearchService.MaxTake, false)]
+    [InlineData(SearchService.MaxTake + 1, SearchService.MaxTake, true)]
+    public async Task Text_CountsArticlesExactly_UpToWhereThePagesGo_AndPastItOnlySaysThereAreMore(int matching, int total, bool more)
+    {
+        var newest = await Many("Wombat", matching);
+
+        var first = await Search().SearchAsync("wombat");
+        (first.Articles.Total, first.Articles.AtLeast, first.Articles.Beyond, first.Articles.More).Should().Be((total, more, more, true));
+        first.Articles.Items.Select(a => a.Id).Should().Equal(newest.Take(SearchService.MaxHits), "the newest first, as before");
+
+        var last = await Search().SearchAsync("wombat", new SearchPages(Articles: 99));
+        last.Articles.Items.Select(a => a.Id).Should().Equal(newest.Take(SearchService.MaxTake).Skip(SearchService.MaxTake - SearchService.MaxHits),
+            "the last page ends at the newest 1,000, whatever lies beyond");
+        (last.Articles.Total, last.Articles.AtLeast).Should().Be((total, more), "the count is the same whatever the page");
+    }
+
     [Fact]
     public async Task Lookup_Ip_ListsEveryArticle_AndWhatWasDone()
     {
@@ -408,6 +440,39 @@ public class SearchServiceTests : IDisposable
     }
 }
 
+/// <summary>The search page's article count at and past where its pages go, on an app of its own (it adds two thousand articles).</summary>
+public class SearchCapPageTests(TideApp app) : IClassFixture<TideApp>
+{
+    private async Task Many(string word, int count)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+        for (var i = 0; i < count; i++)
+            db.Articles.Add(new Article { Title = $"{word} {i}", Bluf = "Summary.", AuthorId = SignIn.Analyst.UserId, AuthorName = SignIn.Analyst.Name, CreatedAtUtc = now.AddMinutes(-i) });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<string> Page(string q)
+    {
+        await using var r = await RenderAsync<Search>(app, "/search?q=" + Uri.EscapeDataString(q));
+        return WebUtility.HtmlDecode(await r.Html());
+    }
+
+    [Fact]
+    public async Task TheCount_IsExact_UpToWhereThePagesGo_AndPastItReads1000Plus()
+    {
+        await Many("Numbat", SearchService.MaxTake);
+        await Many("Bilby", SearchService.MaxTake + 1);
+
+        var at = await Page("numbat");
+        at.Should().Contain("(1–50 of 1,000)").And.NotContain("1,000+").And.NotContain("add a word to find the rest");
+
+        var over = await Page("bilby");
+        over.Should().Contain("(1–50 of 1,000+)").And.Contain("The pages go to the first 1,000; add a word to find the rest.");
+    }
+}
+
 /// <summary>
 /// The Search page on a lookup: its first line says whether the indicator or CVE is known and whether anyone is on it,
 /// each article is listed once, the hunt query is there on the first render in the language the person used last (and
@@ -436,7 +501,10 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // How the first line names a brief that hasn't been presented.
-    private string NotPresented(DateOnly day) => day == Clock.Today ? "on today's brief, not presented yet" : $"on the brief for {day:ddd MMM d}, not presented yet";
+    private string NotPresented(DateOnly day) => day == Clock.CurrentBriefDate ? "on today's brief, not presented yet" : $"on the brief for {Day(day)}, not presented yet";
+
+    // A brief's day as the page names it: with its year when that isn't this year (41 working days back can be last year's).
+    private string Day(DateOnly day) => Tide.Web.Components.Shared.Ui.ShortDay(day, Clock.Today);
 
     private async Task<Guid> Article(string title, IEnumerable<(IndicatorType Type, string Value)> indicators, IEnumerable<string>? cves = null,
         IEnumerable<string>? techniques = null, DateOnly? brief = null, bool presented = false)
@@ -514,7 +582,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 
         var html = await Page(domain);
 
-        Summary(html).Should().Be($"On 1 article · briefed {day:ddd MMM d} · 2 actions open · no hunt result yet");
+        Summary(html).Should().Be($"On 1 article · briefed {Day(day)} · 2 actions open · no hunt result yet");
         Inside(html, "lookup-summary").Should().Contain($"href=\"briefs/{day:yyyy-MM-dd}\"");
         var sweeping = Inside(html, "lookup-sweeping");
         sweeping.Should().Contain("Lookup sweep for it").And.NotContain("Lookup block for it").And.Contain($"href=\"actions/{sweep}\"");
@@ -537,7 +605,21 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var earlier = Unique("earlier") + ".example.net";
         var day = Past(43);
         await Article("Lookup on an unpresented brief", [(IndicatorType.Domain, earlier)], brief: day);
-        Summary(await Page(earlier)).Should().Be($"On 1 article · on the brief for {day:ddd MMM d}, not presented yet · no action raised");
+        Summary(await Page(earlier)).Should().Be($"On 1 article · on the brief for {Day(day)}, not presented yet · no action raised");
+    }
+
+    [Fact]
+    public async Task ABriefFromAnEarlierYear_IsNamedWithItsYear()
+    {
+        var domain = Unique("lastyear") + ".example.net";
+        var day = new DateOnly(2025, 9, 16);
+        var id = await Article("Lookup briefed in 2025", [(IndicatorType.Domain, domain)], brief: day, presented: true);
+
+        var html = await Page(domain);
+
+        Summary(html).Should().Be("On 1 article · briefed Tue Sep 16, 2025 · no action raised");
+        var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
+        WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]).Should().Contain(">Tue Sep 16, 2025</a>");
     }
 
     [Fact]
@@ -608,7 +690,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
         row = WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]);
         row.Should().Contain("TLP:AMBER").And.Contain("Informational").And.Contain("This indicator")
-            .And.Contain($"{day:ddd MMM d}").And.Contain("</td><td");
+            .And.Contain(Day(day)).And.Contain("</td><td");
         html.Should().Contain("<h3 class=\"tide-card-title\">Actions raised</h3>", "the card's heading starts at its top, with no band above it");
 
         var cve = NewCve();

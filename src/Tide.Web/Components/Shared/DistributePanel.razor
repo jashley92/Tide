@@ -59,7 +59,7 @@ else if (_canSend)
         var required = _reviewGaps.Count(g => g.Required);
         <div class="alert @(required > 0 ? "alert-danger" : "alert-warning") small py-2 mb-2" role="status">
             <span class="bi bi-person-exclamation" aria-hidden="true"></span>
-            @_reviewGaps.Count article@(_reviewGaps.Count == 1 ? " hasn't" : "s haven't") been reviewed:
+            @Ui.Plural(_reviewGaps.Count, "article hasn't", "articles haven't") been reviewed:
             @for (var i = 0; i < _reviewGaps.Count; i++)
             {
                 var g = _reviewGaps[i];
@@ -355,7 +355,7 @@ else if (_canSend)
     private async Task Corrected(BriefCorrection c)
     {
         var done = c.Status == SendStatus.Sent
-            ? $"{(c.IsTlpSlip ? "Slip notice" : "Correction")} sent to {c.RecipientCount} recipient{(c.RecipientCount == 1 ? "" : "s")}."
+            ? $"{(c.IsTlpSlip ? "Slip notice" : "Correction")} sent to {Ui.Plural(c.RecipientCount, "recipient")}."
             : c.Error ?? "The relay didn't take the message.";
         // A slip withdraws the day's sends so far whatever became of its email.
         if (c.IsTlpSlip)
@@ -446,11 +446,11 @@ else if (_canSend)
     /// <summary>The tick's words: "I've checked the marking (TLP:AMBER) and the recipients (2 addresses on the security team
     /// edition list)". Addresses, not people: one may be a distribution list.</summary>
     public static string CheckedLabel(SendPlan plan) =>
-        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({plan.Recipients.Count} {(plan.Recipients.Count == 1 ? "address" : "addresses")} "
+        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({Ui.Plural(plan.Recipients.Count, "address", "addresses")} "
         + $"on the {BriefRenderer.EditionName(plan.Edition).ToLowerInvariant()} list)";
 
     private static string Summary(SendPlan plan) =>
-        $"{plan.Articles} article{(plan.Articles == 1 ? "" : "s")}, {plan.Images} image{(plan.Images == 1 ? "" : "s")}"
+        $"{Ui.Plural(plan.Articles, "article")}, {Ui.Plural(plan.Images, "image")}"
         + (plan.WithheldArticles > 0 ? $"; {plan.WithheldArticles} restricted left out" : "")
         + (plan.Edition == Edition.Team ? "; the day's numbers at the top" : "");
 
@@ -549,7 +549,7 @@ else if (_canSend)
         {
             var send = await Distribution.SendAsync(plan, _withoutMeeting);
             var done = send.Status == SendStatus.Sent
-                ? $"Sent to {send.RecipientCount} recipient{(send.RecipientCount == 1 ? "" : "s")}."
+                ? $"Sent to {Ui.Plural(send.RecipientCount, "recipient")}."
                 : send.Error ?? "The relay didn't take the message.";
             if (send.Status == SendStatus.Sent) Toasts.Show(done);
             else Toasts.Error(done);

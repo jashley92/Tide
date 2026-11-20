@@ -283,6 +283,9 @@ public enum ActionDue
 
     /// <summary>No due date.</summary>
     None = 2,
+
+    /// <summary>Open and due today or the next working day: the SLA's Due soon (<see cref="SlaState.DueSoon"/>), as Workload counts it.</summary>
+    Soon = 3,
 }
 
 /// <summary>What the actions list is sorted by. <see cref="Closed"/> is most recently closed first, the closed view's own.</summary>
@@ -524,10 +527,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter);
-        var rows = await RowsAsync(db, q, ct);
-        return filter.View == ActionView.Closed
-            ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
-            : rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
+        // Every match, in the list's default order (the most recently closed first, or the soonest due), sorted in the
+        // database as a page of the list is. The Actions page reads a page at a time (PageAsync); this is for readers
+        // that want them all: the API's list and the brief's own actions.
+        return await RowsAsync(db, Ordered(q, filter.View == ActionView.Closed ? ActionSort.Closed : ActionSort.Due), ct);
     }
 
     /// <summary>How far back the Recently closed view reaches.</summary>
@@ -697,14 +700,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // The list's order: its group first, so a group's rows come together across pages, then the sort, then the number, so
     // the order is stable and an action is on one page only. Blanks (no due date) go last either way, as the table's own
     // sort puts them.
-    private static IQueryable<ActionItem> Ordered(IQueryable<ActionItem> q, ActionSort sort, bool descending, ActionGrouping group,
-        Expression<Func<ActionItem, int>> urgency)
+    private static IQueryable<ActionItem> Ordered(IQueryable<ActionItem> q, ActionSort sort, bool descending = false,
+        ActionGrouping group = ActionGrouping.None, Expression<Func<ActionItem, int>>? urgency = null)
     {
         IOrderedQueryable<ActionItem>? o = null;
         void By<TKey>(Expression<Func<ActionItem, TKey>> key, bool desc = false) =>
             o = o is null ? (desc ? q.OrderByDescending(key) : q.OrderBy(key)) : (desc ? o.ThenByDescending(key) : o.ThenBy(key));
         if (group == ActionGrouping.Kind) By(a => a.Kind);
-        else if (group == ActionGrouping.Urgency) By(urgency);
+        else if (group == ActionGrouping.Urgency) By(urgency ?? throw new ArgumentNullException(nameof(urgency)));
         switch (sort)
         {
             case ActionSort.Closed:
@@ -768,9 +771,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         await using var db = await dbs.CreateAsync(ct);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpen();
-        var rows = await WithKevAsync(db, Readable(await RowsAsync(db, q, ct)), q, ct);
-        // By due date then priority.
-        var cards = rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
+        // By due date then priority, in the database. The board shows every open card (its lanes and their counts), so it
+        // reads them all; the KEV read takes the unordered query, as SQL Server allows no ORDER BY in a subquery.
+        var cards = await WithKevAsync(db, Readable(await RowsAsync(db, Ordered(q, ActionSort.Due), ct)), q, ct);
         var workers = await WorkersAsync(db, ct);
         return new ActionBoard(cards, workers.All, workers.Teams);
     }
@@ -855,6 +858,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 break;
             case ActionDue.None:
                 q = q.Where(a => a.DueDate == null);
+                break;
+            case ActionDue.Soon:
+                var nextDay = clock.Days.Next(today);
+                q = q.WhereOpen().Where(a => a.DueDate != null && a.DueDate >= today && a.DueDate <= nextDay);
                 break;
         }
         return q;

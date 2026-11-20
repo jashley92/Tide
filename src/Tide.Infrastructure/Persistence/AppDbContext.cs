@@ -178,6 +178,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Title).HasMaxLength(300);
             e.Property(x => x.SourceName).HasMaxLength(200);
             e.Property(x => x.SourceUrl).HasMaxLength(2000);
+            // Triage's "already covered" looks articles up by the address an item has (IntakeService.CoverageAsync).
+            e.Property(x => x.SourceUrlHash).HasMaxLength(64);
+            e.HasIndex(x => x.SourceUrlHash);
             e.Property(x => x.Bluf).HasMaxLength(600);
             e.Property(x => x.Actors).HasMaxLength(500);
             e.Property(x => x.Sectors).HasMaxLength(500);
@@ -263,6 +266,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.Property(x => x.ExternalId).HasMaxLength(DetectionRule.MaxExternalId);
             e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
+            // A push reads, and an administrator removes, one caller's rules: thousands of a sync's among other callers'.
+            e.Property(x => x.Caller).HasMaxLength(DetectionRule.MaxExternalId);
+            e.HasIndex(x => new { x.Source, x.Caller });
             e.Property(x => x.Name).HasMaxLength(DetectionRule.MaxName);
             e.Property(x => x.Techniques).HasMaxLength(DetectionRule.MaxTechniques);
             e.Property(x => x.Platform).HasMaxLength(DetectionRule.MaxPlatform);
@@ -322,6 +328,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Events).HasMaxLength(200);
             e.Property(x => x.Secret).HasMaxLength(1000);
             e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.MomentCursor).HasMaxLength(64);
+            e.Property(x => x.OverdueCursor).HasMaxLength(32);
         });
 
         b.Entity<AiDraft>(e =>
@@ -352,6 +360,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             OfArticle(e, x => x.ArticleId);
             e.Property(x => x.Url).HasMaxLength(2000);
+            e.Property(x => x.UrlHash).HasMaxLength(64);
+            e.HasIndex(x => x.UrlHash);
             e.Property(x => x.Title).HasMaxLength(ArticleLink.MaxTitle);
             e.Property(x => x.SourceName).HasMaxLength(200);
             e.Property(x => x.AddedByName).HasMaxLength(256);
@@ -527,9 +537,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.AssigneeId);
             e.HasIndex(x => x.ArticleId);
             e.HasIndex(x => x.ParentId);
+            // The webhook job reads the oldest actions raised after each hook's watermark, a run's worth at a time.
+            e.HasIndex(x => x.CreatedAtUtc);
             // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
             // Square brackets quote a name in SQL Server and SQLite alike.
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
+            // The daily prune of reminder marks reads the actions closed in a day's window, oldest first: only closed ones.
+            e.HasIndex(x => x.ClosedAtUtc).HasFilter("[ClosedAtUtc] IS NOT NULL");
             Person(e, x => x.DeletedById, x => x.DeletedByName);
             e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
         });

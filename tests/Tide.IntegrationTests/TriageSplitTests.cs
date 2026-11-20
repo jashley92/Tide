@@ -386,7 +386,7 @@ public class TriageGroupingAdminTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(c => c.SaveGrouping());
 
         (await Saved(OperationalSettings.GroupIgnoredWords)).Should().Be("webinar");
-        (await Saved(OperationalSettings.GroupWindowHours)).Should().Be("48");
+        (await Saved(OperationalSettings.GroupWindowHours)).Should().BeNull("the window wasn't changed, so the server's stands");
         r.Component.IgnoredWords.Should().Be("webinar", "the form shows what was saved");
         r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.Message.Contains("leaving out ransomware", StringComparison.Ordinal));
     }
