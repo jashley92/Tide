@@ -1031,7 +1031,8 @@ generic example set can be imported.
   first metrics slide instead of a slide of its own.
 - **The team email.** A block at the top: each value with its change from the previous business day, and a
   four-week sparkline.
-- **History.** The Metric history page has a chart and a CSV export, retired metrics included. A pill per group
+- **History.** The Metric history page has a chart and a CSV export, retired metrics included. Its range (From and
+  To, or 30 days, 90 days, 1 year) is kept in the address, so a link opens on the same days. A pill per group
   narrows its table to those groups' columns (kept in the address); **Clear** shows every group again.
 
 ![Metrics history](../screenshots/metrics-history.png)

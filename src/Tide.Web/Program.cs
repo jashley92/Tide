@@ -391,7 +391,7 @@ app.MapGet("/rotation/my.ics", async (Tide.Application.Rotation.RotationService 
 app.MapGet("/metrics/export.csv", async (string? from, string? to, MetricsService metrics, OrgClock clock, CancellationToken ct) =>
 {
     var end = DateOnly.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t) ? t : clock.CurrentBriefDate;
-    var start = DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : end.AddDays(-30);
+    var start = DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : MetricHistoryRange.Last(MetricHistoryRange.DefaultDays, end).From;
     try
     {
         var history = await metrics.HistoryAsync(start, end, ct);

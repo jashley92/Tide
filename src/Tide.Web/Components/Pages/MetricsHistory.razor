@@ -22,11 +22,11 @@
     <div class="d-flex gap-3 flex-wrap align-items-end">
         <div>
             <label class="tide-field-label" for="from">From</label>
-            <input id="from" type="date" class="form-control form-control-sm" @bind="_from" @bind:after="Load" />
+            <input id="from" type="date" class="form-control form-control-sm" @bind="_from" @bind:after="Dated" />
         </div>
         <div>
             <label class="tide-field-label" for="to">To</label>
-            <input id="to" type="date" class="form-control form-control-sm" @bind="_to" @bind:after="Load" />
+            <input id="to" type="date" class="form-control form-control-sm" @bind="_to" @bind:after="Dated" />
         </div>
         <div class="d-flex gap-1">
             @foreach (var (label, days) in new[] { ("30 days", 30), ("90 days", 90), ("1 year", 365) })
@@ -217,8 +217,15 @@ else
     [SupplyParameterFromQuery(Name = MetricChartPicks.Parameter)] public string? ChartParam { get; set; }
     [SupplyParameterFromQuery(Name = MetricChartPicks.ViewParameter)] public string? ViewParam { get; set; }
 
+    /// <summary>The days shown (MetricHistoryRange); none for the last 30.</summary>
+    [SupplyParameterFromQuery(Name = MetricHistoryRange.FromParameter)] public string? FromParam { get; set; }
+    [SupplyParameterFromQuery(Name = MetricHistoryRange.ToParameter)] public string? ToParam { get; set; }
+
     private IReadOnlySet<string> _chosen = new HashSet<string>();
     private DateOnly _from, _to;
+
+    // The range last read, so a change to the address that leaves it alone (a group pill, the chart) doesn't read again.
+    private (DateOnly From, DateOnly To)? _read;
     private MetricHistory? _history;
     private IReadOnlyList<DateOnly> _days = [];
     private IReadOnlyList<string> _labels = [];
@@ -261,17 +268,20 @@ else
 
     private string CsvUrl => $"metrics/export.csv?from={Ui.IsoDay(_from)}&to={Ui.IsoDay(_to)}";
 
-    protected override Task OnInitializedAsync()
-    {
-        _to = Clock.CurrentBriefDate;
-        _from = _to.AddDays(-30);
-        return Load();
-    }
-
-    protected override void OnParametersSet()
+    protected override Task OnParametersSetAsync()
     {
         _chosen = MetricHistoryColumns.Parse(GroupsParam);
-        Refresh();
+        // The boxes show the range as read from the address, in order and within bounds, even when it's the one already
+        // read (a date typed past today shows as today).
+        var range = MetricHistoryRange.Parse(FromParam, ToParam, Clock.CurrentBriefDate);
+        (_from, _to) = range;
+        if (_read == range)
+        {
+            Refresh();
+            return Task.CompletedTask;
+        }
+        _read = range;
+        return Load();
     }
 
     // The choice goes in the address (replacing it, so Back leaves the page rather than stepping through the chips).
@@ -285,12 +295,17 @@ else
         Go(MetricHistoryColumns.Parameter, MetricHistoryColumns.Query(keys));
     }
 
-    private Task Range(int days)
+    // A preset is the N days to the current brief date, both ends counted. It and a date typed go in the address (replacing
+    // it, as the pills do), which the page reads them from.
+    private void Range(int days) => GoRange(MetricHistoryRange.Last(days, Clock.CurrentBriefDate));
+
+    private void Dated() => GoRange((_from, _to));
+
+    private void GoRange((DateOnly From, DateOnly To) range) => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
     {
-        _to = Clock.CurrentBriefDate;
-        _from = _to.AddDays(-days);
-        return Load();
-    }
+        [MetricHistoryRange.FromParameter] = MetricHistoryRange.Query(range.From),
+        [MetricHistoryRange.ToParameter] = MetricHistoryRange.Query(range.To),
+    }), replace: true);
 
     // Each read is numbered: one that lands after a later change to the dates is dropped, so it can't put back the
     // dates it was asked for over the ones just chosen.
