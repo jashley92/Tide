@@ -94,23 +94,27 @@ database.
 
 Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#upgrading-with-upgrade-tideps1)):
 
-- before deploying, a `COPY_ONLY` database backup (`-SkipDbBackup` when your product's is current), the site's
-  `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`), under
-  `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
+- before deploying, a `COPY_ONLY` database backup checked with `RESTORE VERIFYONLY` (`-SkipDbBackup` when your
+  product's is current), the site's `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`),
+  under `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
 - after deploying, it polls `/health` for up to 11 minutes;
-- if TIDE doesn't answer `Healthy`, it puts the previous files back and starts the pool, unless the new build had
-  already migrated the database, in which case it leaves the pool stopped and says to restore the pre-upgrade backup.
+- if deploying fails (the copy, removing old files, the pool's settings, starting the pool) or TIDE doesn't answer
+  `Healthy`, it puts the previous files back and starts the pool, unless the database records a migration the previous
+  build doesn't know (the new build's, or an earlier failed upgrade's), in which case it leaves the pool stopped and
+  says which backup to restore. When it can't read the database's migration history, or the previous build's, it
+  leaves the pool stopped too and says what to check.
 
 ```mermaid
 flowchart TD
-    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database,<br/>settings file, site snapshot"]
+    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database (verified),<br/>settings file, site snapshot"]
     B --> C["Stop pool, copy release,<br/>keep settings, logs, App_Data"]
     C --> D["Start pool<br/>AppMigrates: migrations run"]
+    C -->|A step fails| G
     D --> E{"/health Healthy<br/>within 11 minutes?"}
     E -->|Yes| F["Write VERSION.txt,<br/>refresh kept scripts"]
-    E -->|No| G{"Did the new build<br/>migrate the database?"}
-    G -->|No| H["Restore site-rollback,<br/>start pool"]
-    G -->|Yes| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
+    E -->|No| G{"Restore site-rollback.<br/>Does the database have migrations<br/>the previous build doesn't know?"}
+    G -->|No| H["Start pool"]
+    G -->|"Yes, or can't tell"| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
 ```
 
 ## Restoring

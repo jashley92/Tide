@@ -70,7 +70,8 @@ failure and counts, not content.
     upgrade. Don't flip `ApplyMigrations` to `true` on a pool without `db_owner`.
   - "There is already an object named …": the database has TIDE's tables but no migration history. Don't force it;
     see [UPGRADE.md](../UPGRADE.md#upgrading-with-upgrade-tideps1) (preflight).
-  - A failed upgrade that migrated: the pool is left stopped; restore the pre-upgrade backup
+  - A failed upgrade that migrated: the pool is left stopped; restore the pre-upgrade backup the message names (after
+    a re-run, the first run's)
     ([backup-and-recovery.md](backup-and-recovery.md#after-a-failed-upgrade)).
 
 ### `/health` says `Unhealthy`

@@ -170,10 +170,57 @@ public partial class DeployScriptTests
 
         migrationCheck.Should().BeLessThan(whatIf);
         whatIf.Should().BeLessThan(dbBackup);
-        new[] { dbBackup, snapshot, settings, carveOut, stop, copy, stale, warm }.Should().BeInAscendingOrder();
+        var verify = At("RESTORE VERIFYONLY FROM DISK = @bak WITH CHECKSUM");
+        new[] { dbBackup, verify, snapshot, settings, carveOut, stop, copy, stale, warm }.Should().BeInAscendingOrder();
         script.Should().Contain("/XF appsettings.Production.json VERSION.txt /XD logs App_Data", "the deploy keeps the settings, logs and App_Data");
         script.Should().Contain("COPY_ONLY", "the pre-upgrade backup doesn't reset the scheduled backups' chain");
         script.Should().NotContain("Join-Path $bakDir", "the backup folder is on the SQL Server, whose drive the web server may not have");
+    }
+
+    [Fact]
+    public void Whatever_fails_between_stopping_the_pool_and_starting_it_rolls_back_and_every_rollback_asks_whether_the_old_build_fits()
+    {
+        // A file the stale-file removal can't delete, an IIS setting that won't take, a pool that won't start: each throws
+        // under $ErrorActionPreference = 'Stop', and used to leave the site down and half deployed.
+        var script = Read("deploy", "Upgrade-Tide.ps1");
+        int At(string s, int from = 0)
+        {
+            var i = script.IndexOf(s, from, StringComparison.Ordinal);
+            i.Should().BeGreaterThan(-1, "the script has '{0}'", s);
+            return i;
+        }
+        var open = At("$deployStep = 'the copy'\ntry {");
+        var close = At("    Start-WebAppPool -Name $AppPoolName\n} catch {", open);
+        foreach (var step in new[] { "& robocopy $appSrc $SitePath", "Remove-TideStaleFiles -From $appSrc", "recycling.periodicRestart.time",
+                     "Set-TideSingleWorkerProcess -Name $AppPoolName" })
+            At(step, open).Should().BeLessThan(close, "{0} is inside the rollback's try", step);
+        var handler = script[close..At("\n}\n", close)];
+        handler.Should().Contain("Restore-PreviousBuild $failure").And.Contain("Complete-Rollback $failure");
+
+        // Both rollbacks decide by what the previous build knows, not by what this run saw before deploying.
+        script.Should().Contain("Complete-Rollback \"the new build didn't start\"");
+        script.Should().Contain("Get-TideBuildMigrations $rollbackDir").And.Contain("Get-TideRollbackDecision -Applied $now -Known $rollbackKnows");
+        script.Should().NotContain("$appliedBeforeDeploy -notcontains", "a re-run's snapshot already has the first run's migrations");
+    }
+
+    [Fact]
+    public void The_scripts_that_manage_IIS_refuse_PowerShell_7_before_they_change_anything_and_the_rest_run_there()
+    {
+        foreach (var name in new[] { "Install-Tide.ps1", "Upgrade-Tide.ps1", "Verify-Install.ps1" })
+        {
+            var text = Read("deploy", name);
+            var script = text[text.IndexOf("\n#>", StringComparison.Ordinal)..];   // the code, after the help
+            var assert = script.IndexOf($"Assert-TideWindowsPowerShell '{name}'", StringComparison.Ordinal);
+            assert.Should().BeGreaterThan(-1, "{0} refuses PowerShell 7", name);
+            foreach (var later in new[] { "Import-Module WebAdministration", "Get-Credential", "Invoke-WebRequest", "IIS:\\", "Write-Step \"" })
+            {
+                var at = script.IndexOf(later, StringComparison.Ordinal);
+                if (at >= 0) at.Should().BeGreaterThan(assert, "{0} refuses before {1}", name, later);
+            }
+        }
+        // Documented to run in PowerShell 7 too (Test-TideBundle.ps1), or not using the IIS: drive.
+        foreach (var name in new[] { "Test-TideBundle.ps1", "Backup-Tide.ps1", "Test-TideRestore.ps1", "Install-Database.ps1", "New-TideConfig.ps1" })
+            Read("deploy", name).Should().NotContain("Assert-TideWindowsPowerShell", name);
     }
 
     [Fact]
@@ -245,6 +292,9 @@ public partial class DeployScriptTests
 public partial class DeployScriptPowerShellTests
 {
     private static readonly string Lib = Path.Combine(DeployScriptTests.Deploy, "lib");
+
+    [GeneratedRegex(@"^\d{14}_", RegexOptions.None, 1000)]
+    private static partial Regex MigrationFile();
 
     /// <summary>Runs <paramref name="script"/> with the deploy\lib helpers loaded and returns what it wrote, as JSON.</summary>
     private static JsonElement Run(string script, string? shell = null)
@@ -391,6 +441,112 @@ public partial class DeployScriptPowerShellTests
         Case("newer").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "unknown" && !c.Ok);
         Case("noHistory").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "no-history" && !c.Ok);
         Case("diverged").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "baseline" && !c.Ok);
+    }
+
+    [Fact]
+    public void A_failed_upgrade_starts_the_previous_build_only_on_a_database_it_knows()
+    {
+        var r = Run("""
+            $old = @('20260101000000_Initial', '20260201000000_Next')
+            $new = '20260301000000_Later'
+            $d = { param($a, $k, $b, $he, $ke) Get-TideRollbackDecision -Applied $a -Known $k -AppliedBefore $b -HistoryError $he -KnownError $ke }
+            $cases = [ordered]@{
+                same       = & $d $old $old $old
+                empty      = & $d @() $old @()
+                older      = & $d @('20260101000000_Initial') $old @('20260101000000_Initial')
+                migrated   = & $d ($old + $new) $old $old
+                rerun      = & $d ($old + $new) $old ($old + $new)
+                noHistory  = & $d @() $old $old 'Login failed'
+                noBuild    = & $d ($old + $new) @() $old $null 'Tide.Migrations.SqlServer.dll isn''t there.'
+            }
+            ConvertTo-Json -Depth 4 -Compress -InputObject $cases
+            """);
+        (bool Safe, string Verdict, string[] Unknown, bool EarlierRun, string? Message) Case(string name)
+        {
+            var c = r.GetProperty(name);
+            var unknown = c.GetProperty("Unknown");
+            return (c.GetProperty("Safe").GetBoolean(), c.GetProperty("Verdict").GetString()!,
+                unknown.ValueKind == JsonValueKind.Array ? unknown.EnumerateArray().Select(x => x.GetString()!).ToArray() : [unknown.GetString()!],
+                c.GetProperty("EarlierRun").GetBoolean(), c.GetProperty("Message").GetString());
+        }
+        Case("same").Safe.Should().BeTrue();
+        Case("empty").Safe.Should().BeTrue("a database with no history has nothing the previous build doesn't know");
+        Case("older").Safe.Should().BeTrue();
+
+        var migrated = Case("migrated");
+        (migrated.Safe, migrated.Verdict, migrated.EarlierRun).Should().Be((false, "unknown", false));
+        migrated.Unknown.Should().Equal("20260301000000_Later");
+        migrated.Message.Should().Contain("STOPPED").And.Contain("20260301000000_Later").And.Contain("restore the pre-upgrade database backup");
+
+        // Re-run without restoring: this run's snapshot of the history already had the new migration, which used to read
+        // as "nothing new" and start the previous build on a schema it doesn't know.
+        var rerun = Case("rerun");
+        (rerun.Safe, rerun.EarlierRun).Should().Be((false, true));
+        rerun.Message.Should().Contain("earlier upgrade").And.Contain("this run's pre-upgrade backup has them too").And.Contain("-preupgrade-");
+
+        var noHistory = Case("noHistory");
+        (noHistory.Safe, noHistory.Verdict).Should().Be((false, "history-unreadable"));
+        noHistory.Message.Should().Contain("STOPPED").And.Contain("Login failed").And.Contain("20260201000000_Next", "the previous build's newest, to compare with");
+
+        var noBuild = Case("noBuild");
+        (noBuild.Safe, noBuild.Verdict).Should().Be((false, "build-unreadable"));
+        noBuild.Message.Should().Contain("STOPPED").And.Contain("isn't there").And.Contain("20260301000000_Later", "the database's newest, to compare with");
+    }
+
+    [Fact]
+    public void The_upgrade_reads_the_migrations_a_build_knows_from_its_assembly()
+    {
+        // The real assembly (built with these tests) against the migration files: every id, and nothing else.
+        var expected = Directory.EnumerateFiles(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Migrations.SqlServer", "Migrations"), "*.cs")
+            .Select(Path.GetFileNameWithoutExtension)
+            .Where(n => MigrationFile().IsMatch(n!) && !n!.EndsWith(".Designer", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        expected.Should().NotBeEmpty();
+        var r = Run("""
+            $bin = '__BIN__'
+            $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-build-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            try {
+                # An id-like string that isn't an attribute's (no length byte before it) doesn't count.
+                [IO.File]::WriteAllBytes((Join-Path $dir 'Tide.Migrations.SqlServer.dll'), [Text.Encoding]::ASCII.GetBytes("MZ x20260101000000_Initial`0"))
+                $none = try { Get-TideBuildMigrations $dir; 'read' } catch { $_.Exception.Message }
+                $missing = try { Get-TideBuildMigrations (Join-Path $dir 'nowhere'); 'read' } catch { $_.Exception.Message }
+            } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{ ids = @(Get-TideBuildMigrations $bin); none = $none; missing = $missing })
+            """.Replace("__BIN__", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar).Replace("'", "''")));
+        r.GetProperty("ids").EnumerateArray().Select(x => x.GetString()).Order(StringComparer.Ordinal).Should().Equal(expected);
+        r.GetProperty("none").GetString().Should().Contain("names no migration");
+        r.GetProperty("missing").GetString().Should().Contain("isn't there");
+    }
+
+    [Fact]
+    public void A_script_that_manages_IIS_says_how_to_run_it_when_started_in_PowerShell_7()
+    {
+        var r = Run("""
+            . (Join-Path (Join-Path $deploy 'lib') 'TideIis.ps1')
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                core = Get-TideEditionRefusal 'Upgrade-Tide.ps1' -Edition 'Core'
+                desktop = Get-TideEditionRefusal 'Upgrade-Tide.ps1' -Edition 'Desktop'
+            })
+            """);
+        r.GetProperty("core").GetString().Should().StartWith("Upgrade-Tide.ps1 runs in Windows PowerShell 5.1, not PowerShell 7")
+            .And.Contain("Nothing has been changed").And.Contain("powershell.exe");
+        r.GetProperty("desktop").ValueKind.Should().Be(JsonValueKind.Null);
+
+        // Started for real in each PowerShell here: PowerShell 7 refuses before any check runs; Windows PowerShell gets past
+        // it (and isn't run further, since the checks would reach for IIS).
+        foreach (var shell in Shells())
+        {
+            var run = Run("""
+                $out = if ($PSVersionTable.PSEdition -ne 'Core') { 'not run' } else {
+                    try { & (Join-Path $deploy 'Verify-Install.ps1') -Url 'http://127.0.0.1:9/' 6>$null | Out-Null; 'ran' } catch { $_.Exception.Message }
+                }
+                ConvertTo-Json -Compress -InputObject ([ordered]@{ edition = $PSVersionTable.PSEdition; out = $out })
+                """, shell);
+            if (run.GetProperty("edition").GetString() == "Core")
+                run.GetProperty("out").GetString().Should().StartWith("Verify-Install.ps1 runs in Windows PowerShell 5.1", shell);
+        }
     }
 
     [Fact]

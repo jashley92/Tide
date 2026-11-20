@@ -264,3 +264,78 @@ function Invoke-TideBundleCheck {
     }
     return [pscustomobject]@{ Tag = $Tag; KeyId = $keyId; HashSource = $hashSource; Sha256 = $actual; Notes = @($notes); Warnings = @($warnings) }
 }
+
+# --- Rolling back: may the previous build start against the database as it is now? --------------------------------
+
+# The SQL Server migration ids a build knows: the string of each [Migration("<id>")] attribute in the build's
+# Tide.Migrations.SqlServer.dll. The assembly is read as bytes, not loaded: Windows PowerShell 5.1 runs on .NET Framework,
+# which can't load a .NET 10 assembly. An attribute keeps its string in the assembly as UTF-8 after a byte giving its
+# length, so an id counts only where that byte is its length. Throws when the folder has no such assembly, or it names
+# no migration.
+function Get-TideBuildMigrations([string] $Folder) {
+    $dll = Join-Path $Folder 'Tide.Migrations.SqlServer.dll'
+    if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw "$dll isn't there." }
+    # Latin-1 maps each byte to the character of the same code, so a match's index is its offset in the file.
+    $text = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($dll))
+    $ids = @(foreach ($m in [regex]::Matches($text, '\d{14}_[A-Za-z0-9_]+')) {
+        if ($m.Index -gt 0 -and [int]$text[$m.Index - 1] -eq $m.Length) { $m.Value }
+    })
+    if ($ids.Count -eq 0) { throw "$dll names no migration." }
+    return @($ids | Sort-Object -Unique)
+}
+
+# Whether the previous build, its files put back after a failed upgrade, may be started against the database. Only when
+# the database records no migration that build doesn't know: started on a schema it doesn't know, it may fail, or write
+# data the schema no longer means. Not knowing either side is no answer, so the pool stays stopped then too.
+#   -Applied       : the database's migration ids now.
+#   -Known         : the ids the previous build knows (Get-TideBuildMigrations on its rollback snapshot).
+#   -AppliedBefore : the ids the database had before this run deployed anything.
+#   -HistoryError  : why the database's history couldn't be read, when it couldn't.
+#   -KnownError    : why the previous build's ids couldn't be listed, when they couldn't.
+# Returns Safe, Verdict ('ok', 'history-unreadable', 'build-unreadable', 'unknown'), Unknown (the ids the previous build
+# doesn't know), EarlierRun (every one of them was there before this run: an earlier upgrade that failed applied them),
+# and Message: when it isn't safe, what's wrong and what to do, to follow "Upgrade failed (...)."
+function Get-TideRollbackDecision {
+    param(
+        [string[]] $Applied = @(),
+        [string[]] $Known = @(),
+        [string[]] $AppliedBefore = @(),
+        [string] $HistoryError,
+        [string] $KnownError
+    )
+    $app = @($Applied | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    $knows = @($Known | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    $before = @($AppliedBefore | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    $result = { param($v, $unknown, $earlier, $msg) [pscustomobject]@{ Safe = ($v -eq 'ok'); Verdict = $v; Unknown = @($unknown); EarlierRun = $earlier; Message = $msg } }
+    $stopped = "The previous build's files are back, but the app pool is left STOPPED"
+    $restore = "restore the pre-upgrade database backup (in SQL Server's default backup folder), then start the app pool"
+
+    if ($HistoryError) {
+        $hint = if ($knows.Count) {
+            " The previous build's newest migration is $($knows | Sort-Object | Select-Object -Last 1): if the history has a " +
+            "later one, $restore; if not, start the app pool."
+        } else { " If it has migrations the previous release doesn't, $restore; if not, start the app pool." }
+        return & $result 'history-unreadable' @() $false ("$stopped. The database's migration history couldn't be read " +
+            "($HistoryError), so the upgrade can't tell whether the previous build can run against it. Once SQL Server " +
+            "answers, look at dbo.__EFMigrationsHistory in the database.$hint")
+    }
+    if ($KnownError) {
+        $hint = if ($app.Count) {
+            " The database's newest migration is $($app | Sort-Object | Select-Object -Last 1): if the previous release " +
+            "doesn't have it, $restore; if it does, start the app pool."
+        } else { ' The database records no migration, so start the app pool.' }
+        return & $result 'build-unreadable' @() $false ("$stopped. The migrations the previous build knows couldn't be " +
+            "listed ($KnownError), so the upgrade can't tell whether it can run against the database.$hint")
+    }
+    $unknown = @($app | Where-Object { $knows -notcontains $_ })
+    if ($unknown.Count -eq 0) { return & $result 'ok' @() $false $null }
+    $earlier = @($unknown | Where-Object { $before -notcontains $_ }).Count -eq 0
+    $what = "the database has $($unknown.Count) migration(s) the previous build doesn't know " +
+            "($([string]::Join(', ', @($unknown | Select-Object -First 3))))"
+    $todo = if ($earlier) {
+        "An earlier upgrade that failed applied them, so this run's pre-upgrade backup has them too: restore the " +
+        "pre-upgrade backup that earlier upgrade took (<database>-preupgrade-<time>.bak, in SQL Server's default backup " +
+        "folder), then start the app pool."
+    } else { "The new build applied them: $restore." }
+    return & $result 'unknown' $unknown $earlier "$stopped`: $what. $todo"
+}

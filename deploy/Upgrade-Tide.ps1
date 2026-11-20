@@ -21,17 +21,20 @@
          and on a DbaApplies install it stops unless the database already has every migration in the manifest: the
          upgrade never migrates such a database. It also lists any data-folder or server setting a newer release added
          that the file lacks, and checks the anonymous /health and /api/v1 carve-outs. -WhatIf stops here.
-      3. Back up: a server-side, COPY_ONLY full backup of the database, a copy of appsettings.Production.json, and a
-         snapshot of the current site files (the rollback point).
+      3. Back up: a server-side, COPY_ONLY full backup of the database, checked with RESTORE VERIFYONLY (one that doesn't
+         verify stops the upgrade), a copy of appsettings.Production.json, and a snapshot of the current site files
+         (the rollback point).
       4. Add any missing settings (at the value the app already uses without them; data folders under the data root),
          set the /health and /api/v1 carve-outs if they differ, stop the pool, copy the new files into the site (keeping
          appsettings.Production.json, logs and App_Data), and remove what the release no longer ships, as
          Install-Tide.ps1 does.
       5. Start the pool and warm up: the first start applies pending migrations (AppMigrates); poll /health until TIDE
-         answers. If it doesn't, roll the files back automatically, and leave the pool stopped when the new build had
-         already migrated, until the database backup is restored.
+         answers. If it doesn't, or a step of stage 4 from the copy on fails, roll the files back automatically, and
+         leave the pool stopped while the database records a migration the previous build doesn't know (or either
+         can't be read), until the database backup is restored.
 
-    Integrated authentication throughout: no secrets are read or written.
+    Integrated authentication throughout: no secrets are read or written. Windows PowerShell 5.1 only: PowerShell 7
+    doesn't have the IIS: drive, so the script refuses to run there.
 
 .PARAMETER BundleZip
     A release bundle the Release workflow built (tide-<version>.zip: app\, deploy\, migrations-sqlserver.txt,
@@ -141,6 +144,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Before anything is read or downloaded: the upgrade works through the IIS: drive, which PowerShell 7 doesn't have, and
+# there it would stop part way with the site down.
+. (Join-Path $PSScriptRoot 'lib\TideIis.ps1')
+Assert-TideWindowsPowerShell 'Upgrade-Tide.ps1'
 # -WhatIf stops at the confirmation, before anything changes. Until then the run stages the build in TEMP and runs the
 # preflight for real (an extraction or New-Item skipped by -WhatIf would only break it); the flag is still passed on by
 # the handover to the bundle's script below.
@@ -167,7 +174,6 @@ $repoRoot  = Split-Path -Parent $deployDir
 . (Join-Path $deployDir 'lib\TideStamp.ps1')
 . (Join-Path $deployDir 'lib\TideJson.ps1')
 . (Join-Path $deployDir 'lib\TidePath.ps1')
-. (Join-Path $deployDir 'lib\TideIis.ps1')
 . (Join-Path $deployDir 'lib\TideSql.ps1')
 . (Join-Path $deployDir 'lib\TideSettings.ps1')
 . (Join-Path $deployDir 'lib\TideUpgrade.ps1')
@@ -681,7 +687,16 @@ if (-not $SkipDbBackup) {
     }
     # The folder is on the SQL Server, so it's joined as text: Join-Path fails when its drive doesn't exist here.
     $bakDir = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000))")"
-    Write-Info "Database backup: $(if ($bakDir) { $bakDir.TrimEnd('\') + '\' + $bakName } else { $bakName }) (on the SQL Server)"
+    $bakShown = if ($bakDir) { $bakDir.TrimEnd('\') + '\' + $bakName } else { $bakName }
+    # Read back, as Backup-Tide.ps1 checks its sets: a failed upgrade that migrated is restored from this backup, which is
+    # no time to find it unreadable.
+    try { [void](Invoke-DbScalar 'RESTORE VERIFYONLY FROM DISK = @bak WITH CHECKSUM' @{ '@bak' = $bakName } 0) }
+    catch {
+        throw ("The database backup $bakShown was written but didn't verify ($($_.Exception.Message)). Nothing has been " +
+               "deployed. RESTORE VERIFYONLY needs CREATE DATABASE permission (dbcreator) besides the right to back up: fix " +
+               "the cause and run the upgrade again, or run it with -SkipDbBackup if your backup product's is current.")
+    }
+    Write-Info "Database backup: $bakShown (on the SQL Server, verified)"
 } else { Write-Warn2 "Skipping the database backup (-SkipDbBackup)." }
 
 Write-Step "Backing up the settings and the current files (the rollback point)"
@@ -690,6 +705,15 @@ $rollbackDir = Join-Path $BackupRoot 'site-rollback'
 & robocopy $SitePath $rollbackDir /E /XD logs App_Data /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Couldn't snapshot the current site for rollback (robocopy exit $LASTEXITCODE). Nothing has been deployed." }
 Write-Info "Rollback snapshot: $rollbackDir"
+# The migrations the build being replaced knows, from its snapshot: a rollback starts it again only on a database that
+# records none it doesn't know (lib\TideUpgrade.ps1, Get-TideRollbackDecision).
+$rollbackKnows = @(); $rollbackKnowsError = $null
+try { $rollbackKnows = @(Get-TideBuildMigrations $rollbackDir) }
+catch {
+    $rollbackKnowsError = $_.Exception.Message
+    Write-Warn2 ("Couldn't list the migrations the current build knows ($rollbackKnowsError). The upgrade carries on, but " +
+                 "if it has to roll back it leaves the app pool stopped, since it can't tell whether that build fits the database.")
+}
 
 # --- 5b. Add the missing data-folder settings (the settings are backed up above) ---------
 if ($missingData.Count -gt 0) {
@@ -736,7 +760,8 @@ Write-Step "Stopping app pool '$AppPoolName'"
 # Until the worker has exited and let go of the DLLs, not a fixed few seconds.
 Stop-TideAppPool -Name $AppPoolName
 
-# What the database has applied before the new build runs, so a rollback can tell whether it migrated.
+# What the database has applied before the new build runs, so a rollback can tell whether an earlier, failed upgrade
+# applied what the previous build doesn't know (this run's backup then has it too).
 $appliedBeforeDeploy = @()
 try { $appliedBeforeDeploy = @(Get-AppliedMigrations) }
 catch { Write-Warn2 "Couldn't read the migration history before deploying: $($_.Exception.Message)" }
@@ -755,36 +780,62 @@ function Restore-PreviousBuild([string] $why) {
     }
 }
 
-Write-Step "Deploying the new files (keeping appsettings.Production.json, logs and App_Data)"
-& robocopy $appSrc $SitePath /E /XF appsettings.Production.json VERSION.txt /XD logs App_Data /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
-$rc = $LASTEXITCODE
-if ($rc -ge 8) {
-    Write-Warn2 "The copy failed (robocopy exit $rc): rolling the files back."
-    Restore-PreviousBuild "the copy failed (robocopy exit $rc)"
+# With the previous build's files back: starts it only when the database records no migration it doesn't know, else
+# leaves the pool stopped and says what to restore. Throws either way, as the upgrade failed. $why is what failed;
+# $after ends the message.
+function Complete-Rollback([string] $why, [string] $after) {
+    $now = @(); $historyError = $null
+    try { $now = @(Get-AppliedMigrations) } catch { $historyError = $_.Exception.Message }
+    $decision = Get-TideRollbackDecision -Applied $now -Known $rollbackKnows -AppliedBefore $appliedBeforeDeploy `
+        -HistoryError $historyError -KnownError $rollbackKnowsError
+    if (-not $decision.Safe) { throw "Upgrade failed ($why). $($decision.Message) $after" }
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
-    throw "Upgrade aborted during the copy; the previous build was restored."
-}
-# A copy only adds and overwrites: what the earlier release had and this one doesn't would still be there (as the
-# installer does: under wwwroot, and the assemblies at the top of the folder).
-$removed = @(Remove-TideStaleFiles -From $appSrc -To $SitePath)
-if ($removed.Count) { Write-Info "Removed $($removed.Count) file(s) the earlier release had and this one doesn't: $($removed -join ', ')" }
-
-# As the installer sets them: no scheduled recycle, no overlap, one worker process. The pool is stopped, so a change
-# here doesn't recycle anything.
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
-$single = Set-TideSingleWorkerProcess -Name $AppPoolName
-if (-not $single.Ok) {
-    # The new build is in place: say so rather than leave the pool stopped. The app's job lease still keeps the
-    # background jobs to one worker.
-    Write-Warn2 ("The app pool reads processModel.maxProcesses = $($single.After) after it was set to 1. Set Maximum " +
-                 "Worker Processes to 1 in the pool's Advanced Settings: each worker keeps its own sign-ins and live pages.")
-} elseif ($null -ne $single.Before -and $single.Before -ne 1) {
-    Write-Info "Maximum worker processes was $($single.Before); it's now 1."
+    $poolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction SilentlyContinue).Value
+    $poolNote = if ($poolState -eq 'Started') { "the app pool restarted" } else { "the app pool did NOT start (start '$AppPoolName' in IIS Manager)" }
+    throw "Upgrade failed ($why): the previous build has been restored and $poolNote. The database is unchanged by the new build. $after"
 }
 
-Write-Step "Starting app pool"
-Start-WebAppPool -Name $AppPoolName
+# From the copy until the pool starts the site is down and its files may be part new, so whatever fails here goes back
+# to the previous build (Restore-PreviousBuild, then Complete-Rollback) rather than leave the site down and half deployed:
+# a file the stale-file removal can't delete, an IIS setting that won't take, a pool that won't start.
+$deployStep = 'the copy'
+try {
+    Write-Step "Deploying the new files (keeping appsettings.Production.json, logs and App_Data)"
+    & robocopy $appSrc $SitePath /E /XF appsettings.Production.json VERSION.txt /XD logs App_Data /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+    $rc = $LASTEXITCODE
+    if ($rc -ge 8) { throw "robocopy exit $rc" }
+    # A copy only adds and overwrites: what the earlier release had and this one doesn't would still be there (as the
+    # installer does: under wwwroot, and the assemblies at the top of the folder).
+    $deployStep = "removing the files the earlier release had and this one doesn't"
+    $removed = @(Remove-TideStaleFiles -From $appSrc -To $SitePath)
+    if ($removed.Count) { Write-Info "Removed $($removed.Count) file(s) the earlier release had and this one doesn't: $($removed -join ', ')" }
+
+    # As the installer sets them: no scheduled recycle, no overlap, one worker process. The pool is stopped, so a change
+    # here doesn't recycle anything.
+    $deployStep = "setting the app pool's recycling and worker processes"
+    Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
+    Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
+    $single = Set-TideSingleWorkerProcess -Name $AppPoolName
+    if (-not $single.Ok) {
+        # The new build is in place: say so rather than leave the pool stopped. The app's job lease still keeps the
+        # background jobs to one worker.
+        Write-Warn2 ("The app pool reads processModel.maxProcesses = $($single.After) after it was set to 1. Set Maximum " +
+                     "Worker Processes to 1 in the pool's Advanced Settings: each worker keeps its own sign-ins and live pages.")
+    } elseif ($null -ne $single.Before -and $single.Before -ne 1) {
+        Write-Info "Maximum worker processes was $($single.Before); it's now 1."
+    }
+
+    $deployStep = 'starting the app pool'
+    Write-Step "Starting app pool"
+    Start-WebAppPool -Name $AppPoolName
+} catch {
+    $failure = "$deployStep failed: $($_.Exception.Message)"
+    Write-Warn2 "Deploying stopped ($failure): rolling the files back."
+    try { Stop-TideAppPool -Name $AppPoolName }
+    catch { Write-Warn2 $_.Exception.Message }
+    Restore-PreviousBuild $failure
+    Complete-Rollback $failure "Fix the cause, then run the upgrade again (docs/UPGRADE.md)."
+}
 
 # --- 7. Warm up (applies pending migrations on AppMigrates) + verify ----------
 Write-Step $(if ($dbaApplies) { "Warming up" } else { "Warming up (the first start applies pending migrations)" })
@@ -843,24 +894,9 @@ if (-not $started -or ($lastStatus -ge 500)) {
     try { Stop-TideAppPool -Name $AppPoolName }
     catch { Write-Warn2 $_.Exception.Message }
     Restore-PreviousBuild "the new build didn't start"
-    # If the new build recorded migrations, the previous build would run against a schema it doesn't know. Leave the pool
-    # stopped until the database backup is restored.
-    $migrated = @()
-    try {
-        $now = @(Get-AppliedMigrations)
-        $migrated = @($now | Where-Object { $appliedBeforeDeploy -notcontains $_ })
-    } catch { Write-Warn2 "Couldn't read the migration history to check what the new build applied: $($_.Exception.Message)" }
-    if ($migrated.Count -gt 0) {
-        throw ("Upgrade failed. The previous build's files are back, but the new build had already applied " +
-               "$($migrated.Count) migration(s) ($([string]::Join(', ', @($migrated | Select-Object -First 3)))), so the app pool " +
-               "is left STOPPED. Restore the pre-upgrade database backup (in SQL Server's default backup folder), then start " +
-               "the app pool. Review the event-log error above and docs/UPGRADE.md.")
-    }
-    Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
-    $poolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction SilentlyContinue).Value
-    $poolNote = if ($poolState -eq 'Started') { "the app pool restarted" } else { "the app pool did NOT start (start '$AppPoolName' in IIS Manager)" }
-    throw ("Upgrade failed: the previous build has been restored and $poolNote. The database is unchanged by the new " +
-           "build. Review the event-log error above and docs/UPGRADE.md.")
+    # If the database records migrations the previous build doesn't know (the new build's, or an earlier failed
+    # upgrade's), it would run against a schema it doesn't know: the pool stays stopped until the backup is restored.
+    Complete-Rollback "the new build didn't start" "Review the event-log error above and docs/UPGRADE.md."
 }
 
 # Record the deployed version, so the next upgrade can show current -> target, and what it was upgraded from, when and

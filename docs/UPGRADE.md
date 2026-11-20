@@ -56,7 +56,8 @@ doesn't start.
 
 ### Upgrading with Upgrade-Tide.ps1
 
-In an elevated PowerShell on the web server. Once an install or upgrade has kept the deploy scripts beside the site
+In an elevated Windows PowerShell (`powershell.exe`, 5.1) on the web server. PowerShell 7 doesn't have the `IIS:` drive the
+upgrade works through, so the script refuses to run there, as `Install-Tide.ps1` and `Verify-Install.ps1` do. Once an install or upgrade has kept the deploy scripts beside the site
 (`<site folder>-deploy`, such as `D:\inetpub\tide-deploy`), an upgrade is one line, which **Administration › System ›
 Updates** shows with the newest version filled in:
 
@@ -109,8 +110,11 @@ What it does, in order:
 
    **`-WhatIf` stops here**, having reported all of it.
 3. **Backs up**: a `COPY_ONLY` full backup of the database (to SQL Server's default backup folder; `-SkipDbBackup` when
-   your backup product's is current), `appsettings.Production.json`, and a snapshot of the site folder, under
-   `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`).
+   your backup product's is current), checked with `RESTORE VERIFYONLY` as `Backup-Tide.ps1` checks its sets, then
+   `appsettings.Production.json` and a snapshot of the site folder, under
+   `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`). A backup that doesn't verify stops the
+   upgrade with nothing deployed. The check needs `CREATE DATABASE` permission (`dbcreator`) as well as the right to
+   back up. The upgrade doesn't remove old pre-upgrade backups: clear them out of the backup folder from time to time.
 4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
    files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
    `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
@@ -119,12 +123,17 @@ What it does, in order:
    (`processModel.maxProcesses = 1`, Maximum Worker Processes in IIS Manager). It reads that back; a pool that still
    reads more than 1 (a lock in `applicationHost.config`) is a warning, not a failure, since the new build is already
    in place: set it by hand. Only one process runs the background jobs either way (the job lease), but each worker
-   keeps its own sign-ins and live pages.
+   keeps its own sign-ins and live pages. If any of this fails (the copy, a file it can't remove, an IIS setting, the
+   pool not starting), it rolls back as in step 5.
 5. **Starts and warms up**: on AppMigrates the first start applies the new migrations; it polls `/health` for up to 11
    minutes (past the 10-minute `startupTimeLimit`). If TIDE doesn't answer `Healthy`, it puts the previous files back
-   and starts the pool again; if the new build had already applied migrations, it leaves the pool **stopped** and says
-   so: restore the pre-upgrade database backup, then start the pool. It writes `VERSION.txt` into the site (the
-   version, the one before, when and who), and refreshes the kept deploy scripts.
+   and starts the pool again, but only when the database records no migration the previous build doesn't know (it
+   reads them from that build's `Tide.Migrations.SqlServer.dll`). Otherwise it leaves the pool **stopped** and says
+   so: restore the pre-upgrade database backup, then start the pool. That includes a re-run after a failed upgrade
+   that migrated: the second run's backup already has the new migrations, so it names the earlier run's backup. It
+   leaves the pool stopped too when it can't read the database's migration history, or the previous build's, and says
+   what to check. On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
+   refreshes the kept deploy scripts.
 
 Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.
 
@@ -133,7 +142,8 @@ migration list from the source; `-AppSource <folder>` takes an app already publi
 
 **Rolling back by hand**, if the automatic rollback couldn't: stop the pool, copy `site-rollback` from the backup folder
 over the site folder (leave `appsettings.Production.json`, `logs` and `App_Data`), restore the pre-upgrade database
-backup if the new build migrated, and start the pool.
+backup if the new build migrated, and start the pool. After a failed upgrade that migrated, restore the database before
+running the upgrade again; a re-run's own backup is taken after those migrations.
 
 ### A first install from a bundle
 
