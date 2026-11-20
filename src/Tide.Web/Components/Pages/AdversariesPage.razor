@@ -161,16 +161,21 @@ else
             <section class="tide-card" aria-labelledby="adv-tech-h">
                 <h2 id="adv-tech-h">Techniques seen in our articles</h2>
                 @if (_detail.Techniques.Count == 0) { <div class="small tide-muted">None yet.</div> }
-                <div class="tide-adv-heat">
+                @* Each technique says how many of our articles show it in words, not only in its shade: the shade alone
+                   is lost without colour (forced colours, a grey screen) and the title only shows on hover. *@
+                <ul class="tide-adv-heat">
                     @foreach (var t in _detail.Techniques)
                     {
                         var rules = _rules?.GetValueOrDefault(t.Id);
-                        <span class="@HeatCss(t, rules)" title="@HeatTitle(t, rules)">@t.Id @t.Name@(rules is null ? "" : " · " + rules.Label)</span>
+                        <li class="@HeatCss(t, rules)" title="@HeatTitle(t, rules)">
+                            <span class="tide-adv-heat-name">@t.Id @t.Name@(rules is null ? "" : " · " + rules.Label)</span>
+                            <span class="tide-adv-heat-n"><span aria-hidden="true">×@t.Articles</span><span class="visually-hidden">, in @Ui.Plural(t.Articles, "article")</span></span>
+                        </li>
                     }
-                </div>
+                </ul>
                 @if (_detail.Techniques.Count > 0)
                 {
-                    <div class="small tide-muted mt-1">Darker: in more of our articles.
+                    <div class="small tide-muted mt-1">×2: in 2 of our articles. Darker: in more of them.
                         @if (_rules is not null) { <span>Outlined in red: no enabled detection rule is tagged with it (<a href="coverage">Coverage</a>).</span> }</div>
                 }
             </section>
