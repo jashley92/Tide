@@ -449,15 +449,23 @@ public partial class DeployScriptPowerShellTests
         var r = Run("""
             $old = @('20260101000000_Initial', '20260201000000_Next')
             $new = '20260301000000_Later'
-            $d = { param($a, $k, $b, $he, $ke) Get-TideRollbackDecision -Applied $a -Known $k -AppliedBefore $b -HistoryError $he -KnownError $ke }
+            $d = { param($a, $k, $b, $he, $ke, [hashtable] $more = @{}) Get-TideRollbackDecision -Applied $a -Known $k -AppliedBefore $b -HistoryError $he -KnownError $ke @more }
             $cases = [ordered]@{
                 same       = & $d $old $old $old
                 empty      = & $d @() $old @()
                 older      = & $d @('20260101000000_Initial') $old @('20260101000000_Initial')
                 migrated   = & $d ($old + $new) $old $old
                 rerun      = & $d ($old + $new) $old ($old + $new)
+                rerunCopy  = & $d ($old + $new) $old ($old + $new) $null $null @{ NewBuildRan = $false }
                 noHistory  = & $d @() $old $old 'Login failed'
                 noBuild    = & $d ($old + $new) @() $old $null 'Tide.Migrations.SqlServer.dll isn''t there.'
+                noBefore   = & $d ($old + $new) $old @() $null $null @{ BeforeError = 'timeout' }
+                dbaCopy    = & $d ($old + $new) $old ($old + $new) $null $null @{ DbaApplies = $true; NewBuildRan = $false }
+                dbaWarmup  = & $d ($old + $new) $old ($old + $new) $null $null @{ DbaApplies = $true }
+                dbaNew     = & $d ($old + $new) $old $old $null $null @{ DbaApplies = $true }
+                copyNoHist = & $d @() $old $old 'Login failed' $null @{ NewBuildRan = $false }
+                copyBlind  = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed' }
+                copyNoBld  = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false }
             }
             ConvertTo-Json -Depth 4 -Compress -InputObject $cases
             """);
@@ -491,6 +499,53 @@ public partial class DeployScriptPowerShellTests
         var noBuild = Case("noBuild");
         (noBuild.Safe, noBuild.Verdict).Should().Be((false, "build-unreadable"));
         noBuild.Message.Should().Contain("STOPPED").And.Contain("isn't there").And.Contain("20260301000000_Later", "the database's newest, to compare with");
+
+        // AppMigrates re-run whose copy fails: the new build never ran, but the database still has the first run's migration.
+        (Case("rerunCopy").Safe, Case("rerunCopy").EarlierRun).Should().Be((false, true));
+        (Case("noBefore").Safe, Case("noBefore").Verdict).Should().Be((false, "before-unreadable"));
+
+        // DbaApplies: the preflight requires the DBA to have applied the new release's migrations already, and the previous
+        // build ran on them until the pool stopped. Restoring the backup would undo the DBA's schema.
+        foreach (var dba in new[] { "dbaCopy", "dbaWarmup" })
+        {
+            var c = Case(dba);
+            (c.Safe, c.Verdict).Should().Be((true, "dba-ahead"), dba);
+            r.GetProperty(dba).GetProperty("Note").GetString().Should().Contain("by the DBA").And.Contain("20260301000000_Later");
+        }
+        (Case("dbaNew").Safe, Case("dbaNew").Verdict).Should().Be((false, "unknown"), "one that wasn't there before this run is the new build's");
+
+        // A failure before the pool was started: the database is as it was, so the history only has to be read once.
+        Case("copyNoHist").Safe.Should().BeTrue("the history from before the run stands in");
+        foreach (var blind in new[] { "copyBlind", "copyNoBld" })
+        {
+            (Case(blind).Safe, Case(blind).Verdict).Should().Be((true, "unchanged"), blind);
+            r.GetProperty(blind).GetProperty("Note").GetString().Should().StartWith("The new build never ran");
+        }
+    }
+
+    [Fact]
+    public void A_backup_that_cant_be_read_back_for_want_of_permission_only_warns_and_one_that_reads_back_wrong_stops_the_upgrade()
+    {
+        // Stand-ins for the exceptions Invoke-DbScalar throws: a MethodInvocationException-like wrapper around a
+        // SqlException-like one, with its Number and Errors.
+        var r = Run("""
+            $sql = { param($n, $m) [pscustomobject]@{ Message = $m; Number = $n; Errors = @([pscustomobject]@{ Number = $n }); InnerException = $null } }
+            $wrap = { param($inner) [pscustomobject]@{ Message = 'Exception calling "ExecuteScalar"'; InnerException = $inner } }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                denied   = Get-TideVerifyFailureKind (& $wrap (& $sql 262 "CREATE DATABASE permission denied in database 'master'."))
+                byText   = Get-TideVerifyFailureKind (& $wrap ([pscustomobject]@{ Message = 'CREATE DATABASE permission denied'; InnerException = $null }))
+                terminated = Get-TideVerifyFailureKind (& $wrap (& $sql 3013 'VERIFY DATABASE is terminating abnormally.'))
+                checksum = Get-TideVerifyFailureKind (& $wrap (& $sql 3189 'Damage to the backup set was detected.'))
+                media    = Get-TideVerifyFailureKind (& $wrap (& $sql 3241 'The media family on device is incorrectly formed.'))
+                osDenied = Get-TideVerifyFailureKind (& $wrap (& $sql 3201 'Cannot open backup device. Operating system error 5(Access is denied.).'))
+                plain    = Get-TideVerifyFailureKind ([Exception]::new('timeout'))
+            })
+            """);
+        r.GetProperty("denied").GetString().Should().Be("permission");
+        r.GetProperty("byText").GetString().Should().Be("permission");
+        foreach (var hard in new[] { "terminated", "checksum", "media", "osDenied", "plain" })
+            r.GetProperty(hard).GetString().Should().Be("failed", hard);
+        DeployScriptTests.ReadText("deploy", "Upgrade-Tide.ps1").Should().Contain("if ((Get-TideVerifyFailureKind $_.Exception) -ne 'permission') {");
     }
 
     [Fact]

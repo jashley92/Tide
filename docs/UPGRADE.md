@@ -112,9 +112,10 @@ What it does, in order:
 3. **Backs up**: a `COPY_ONLY` full backup of the database (to SQL Server's default backup folder; `-SkipDbBackup` when
    your backup product's is current), checked with `RESTORE VERIFYONLY` as `Backup-Tide.ps1` checks its sets, then
    `appsettings.Production.json` and a snapshot of the site folder, under
-   `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`). A backup that doesn't verify stops the
-   upgrade with nothing deployed. The check needs `CREATE DATABASE` permission (`dbcreator`) as well as the right to
-   back up. The upgrade doesn't remove old pre-upgrade backups: clear them out of the backup folder from time to time.
+   `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`). A backup that reads back wrong stops the
+   upgrade with nothing deployed. Reading it back needs `CREATE DATABASE` permission (`dbcreator`) as well as the right
+   to back up; without it the upgrade warns that the backup was written `WITH CHECKSUM` but not read back, and carries
+   on. The upgrade doesn't remove old pre-upgrade backups: clear them out of the backup folder from time to time.
 4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
    files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
    `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
@@ -130,9 +131,12 @@ What it does, in order:
    and starts the pool again, but only when the database records no migration the previous build doesn't know (it
    reads them from that build's `Tide.Migrations.SqlServer.dll`). Otherwise it leaves the pool **stopped** and says
    so: restore the pre-upgrade database backup, then start the pool. That includes a re-run after a failed upgrade
-   that migrated: the second run's backup already has the new migrations, so it names the earlier run's backup. It
-   leaves the pool stopped too when it can't read the database's migration history, or the previous build's, and says
-   what to check. On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
+   that migrated: the second run's backup already has the new migrations, so it names the earlier run's backup. On a
+   DbaApplies install the new release's migrations were there before the upgrade (the DBA applied them, and the
+   previous build ran on them), so it starts the previous build and says so: keep the database for the next attempt.
+   It leaves the pool stopped too when it can't read the database's migration history, or the previous build's, and
+   says what to check, unless the failure came before the new build could start (the copy, a file, an IIS setting):
+   then the database is as it was, and the previous build is started again. On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
    refreshes the kept deploy scripts.
 
 Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.

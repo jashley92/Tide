@@ -101,8 +101,9 @@ Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#u
 - if deploying fails (the copy, removing old files, the pool's settings, starting the pool) or TIDE doesn't answer
   `Healthy`, it puts the previous files back and starts the pool, unless the database records a migration the previous
   build doesn't know (the new build's, or an earlier failed upgrade's), in which case it leaves the pool stopped and
-  says which backup to restore. When it can't read the database's migration history, or the previous build's, it
-  leaves the pool stopped too and says what to check.
+  says which backup to restore. Migrations a DBA applied before a DbaApplies upgrade don't count: the previous build
+  ran on them. When it can't read the database's migration history, or the previous build's, it leaves the pool
+  stopped too and says what to check, unless the failure came before the new build could start.
 
 ```mermaid
 flowchart TD

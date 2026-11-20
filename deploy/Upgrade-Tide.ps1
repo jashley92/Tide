@@ -21,8 +21,8 @@
          and on a DbaApplies install it stops unless the database already has every migration in the manifest: the
          upgrade never migrates such a database. It also lists any data-folder or server setting a newer release added
          that the file lacks, and checks the anonymous /health and /api/v1 carve-outs. -WhatIf stops here.
-      3. Back up: a server-side, COPY_ONLY full backup of the database, checked with RESTORE VERIFYONLY (one that doesn't
-         verify stops the upgrade), a copy of appsettings.Production.json, and a snapshot of the current site files
+      3. Back up: a server-side, COPY_ONLY full backup of the database, checked with RESTORE VERIFYONLY (one that reads
+         back wrong stops the upgrade; without the permission to read it back, a warning), a copy of appsettings.Production.json, and a snapshot of the current site files
          (the rollback point).
       4. Add any missing settings (at the value the app already uses without them; data folders under the data root),
          set the /health and /api/v1 carve-outs if they differ, stop the pool, copy the new files into the site (keeping
@@ -30,8 +30,9 @@
          Install-Tide.ps1 does.
       5. Start the pool and warm up: the first start applies pending migrations (AppMigrates); poll /health until TIDE
          answers. If it doesn't, or a step of stage 4 from the copy on fails, roll the files back automatically, and
-         leave the pool stopped while the database records a migration the previous build doesn't know (or either
-         can't be read), until the database backup is restored.
+         leave the pool stopped while the database records a migration the previous build doesn't know and didn't
+         run on before the upgrade (or either can't be read after the new build may have run), until the database
+         backup is restored.
 
     Integrated authentication throughout: no secrets are read or written. Windows PowerShell 5.1 only: PowerShell 7
     doesn't have the IIS: drive, so the script refuses to run there.
@@ -690,13 +691,20 @@ if (-not $SkipDbBackup) {
     $bakShown = if ($bakDir) { $bakDir.TrimEnd('\') + '\' + $bakName } else { $bakName }
     # Read back, as Backup-Tide.ps1 checks its sets: a failed upgrade that migrated is restored from this backup, which is
     # no time to find it unreadable.
-    try { [void](Invoke-DbScalar 'RESTORE VERIFYONLY FROM DISK = @bak WITH CHECKSUM' @{ '@bak' = $bakName } 0) }
+    # Reading it back needs CREATE DATABASE (dbcreator), which an account that may only back up lacks: that's a warning,
+    # as before this check, not a reason to stop. A backup that reads back wrong stops the upgrade.
+    $verified = $false
+    try { [void](Invoke-DbScalar 'RESTORE VERIFYONLY FROM DISK = @bak WITH CHECKSUM' @{ '@bak' = $bakName } 0); $verified = $true }
     catch {
-        throw ("The database backup $bakShown was written but didn't verify ($($_.Exception.Message)). Nothing has been " +
-               "deployed. RESTORE VERIFYONLY needs CREATE DATABASE permission (dbcreator) besides the right to back up: fix " +
-               "the cause and run the upgrade again, or run it with -SkipDbBackup if your backup product's is current.")
+        if ((Get-TideVerifyFailureKind $_.Exception) -ne 'permission') {
+            throw ("The database backup $bakShown was written but didn't verify ($($_.Exception.Message)). Nothing has been " +
+                   "deployed. Check the backup folder's disk and SQL Server's error log, then run the upgrade again, or run " +
+                   "it with -SkipDbBackup if your backup product's is current.")
+        }
+        Write-Warn2 ("The database backup was written WITH CHECKSUM but couldn't be read back to check it: RESTORE VERIFYONLY " +
+                     "needs CREATE DATABASE permission (dbcreator), which you don't have ($($_.Exception.Message)). Carrying on.")
     }
-    Write-Info "Database backup: $bakShown (on the SQL Server, verified)"
+    Write-Info "Database backup: $bakShown (on the SQL Server$(if ($verified) { ', verified' }))"
 } else { Write-Warn2 "Skipping the database backup (-SkipDbBackup)." }
 
 Write-Step "Backing up the settings and the current files (the rollback point)"
@@ -762,9 +770,12 @@ Stop-TideAppPool -Name $AppPoolName
 
 # What the database has applied before the new build runs, so a rollback can tell whether an earlier, failed upgrade
 # applied what the previous build doesn't know (this run's backup then has it too).
-$appliedBeforeDeploy = @()
+$appliedBeforeDeploy = @(); $appliedBeforeError = $null
 try { $appliedBeforeDeploy = @(Get-AppliedMigrations) }
-catch { Write-Warn2 "Couldn't read the migration history before deploying: $($_.Exception.Message)" }
+catch {
+    $appliedBeforeError = $_.Exception.Message
+    Write-Warn2 "Couldn't read the migration history before deploying: $appliedBeforeError"
+}
 
 # A rollback copy that fails (often the same locked DLL that failed the deploy) leaves a mix of old and new files. Say so
 # and leave the pool stopped, rather than start it and report the previous build restored.
@@ -782,13 +793,15 @@ function Restore-PreviousBuild([string] $why) {
 
 # With the previous build's files back: starts it only when the database records no migration it doesn't know, else
 # leaves the pool stopped and says what to restore. Throws either way, as the upgrade failed. $why is what failed;
-# $after ends the message.
-function Complete-Rollback([string] $why, [string] $after) {
+# $after ends the message. -NewBuildRan:$false when it failed before the pool was started, so the database is as it was.
+function Complete-Rollback([string] $why, [string] $after, [bool] $NewBuildRan = $true) {
     $now = @(); $historyError = $null
     try { $now = @(Get-AppliedMigrations) } catch { $historyError = $_.Exception.Message }
     $decision = Get-TideRollbackDecision -Applied $now -Known $rollbackKnows -AppliedBefore $appliedBeforeDeploy `
-        -HistoryError $historyError -KnownError $rollbackKnowsError
+        -HistoryError $historyError -KnownError $rollbackKnowsError -BeforeError $appliedBeforeError `
+        -DbaApplies $dbaApplies -NewBuildRan $NewBuildRan
     if (-not $decision.Safe) { throw "Upgrade failed ($why). $($decision.Message) $after" }
+    if ($decision.Note) { Write-Warn2 $decision.Note }
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
     $poolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction SilentlyContinue).Value
     $poolNote = if ($poolState -eq 'Started') { "the app pool restarted" } else { "the app pool did NOT start (start '$AppPoolName' in IIS Manager)" }
@@ -834,7 +847,8 @@ try {
     try { Stop-TideAppPool -Name $AppPoolName }
     catch { Write-Warn2 $_.Exception.Message }
     Restore-PreviousBuild $failure
-    Complete-Rollback $failure "Fix the cause, then run the upgrade again (docs/UPGRADE.md)."
+    # Until Start-WebAppPool was asked, the new build can't have run, so it can't have migrated.
+    Complete-Rollback $failure "Fix the cause, then run the upgrade again (docs/UPGRADE.md)." -NewBuildRan ($deployStep -eq 'starting the app pool')
 }
 
 # --- 7. Warm up (applies pending migrations on AppMigrates) + verify ----------
