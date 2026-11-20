@@ -548,4 +548,29 @@ public class EscalationTests : IDisposable
         EscalationForm.From(new EscalationOptions { Steps = "nonsense" }).Steps.Should().BeEmpty();
         EscalationForm.Scopes.Select(s => s.Scope).Should().Equal(Enum.GetValues<EscalationScope>());
     }
+
+    [Fact]
+    public void SavedStepsThatDontRead_AreKept_UntilTheAdministratorReplacesThem()
+    {
+        var form = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        form.Steps.Should().BeEmpty();
+        form.Unreadable.Should().Contain("Step 1");
+        form.StepsText().Should().BeNull("saving leaves the saved steps as they are, not an empty ladder");
+
+        form.Add();
+        form.Unreadable.Should().BeNull("a step added replaces them");
+        form.StepsText().Should().Be("after 1: ");
+
+        var defaults = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        defaults.UseDefaults();
+        defaults.Unreadable.Should().BeNull();
+        defaults.StepsText().Should().Be(EscalationLadder.DefaultText);
+
+        var cleared = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        cleared.ClearUnreadable();
+        cleared.Unreadable.Should().BeNull();
+        cleared.StepsText().Should().BeEmpty("cleared on purpose, none are saved");
+
+        EscalationForm.From(new EscalationOptions { Steps = "" }).Unreadable.Should().BeNull("no steps is a ladder that reads");
+    }
 }

@@ -73,8 +73,8 @@
             <input id="tok-name" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.ApiToken.MaxName" placeholder="XSOAR playbooks" @bind="_name" />
         </div>
         <div class="col-md-3">
-            <span class="tide-field-label" aria-hidden="true">Reads up to</span>
-            <TlpSelect Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
+            <label class="tide-field-label" for="tok-tlp">Reads up to</label>
+            <TlpSelect Id="tok-tlp" Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
         </div>
         <div class="col-md-2">
             <label class="tide-field-label" for="tok-days">Days</label>
@@ -172,7 +172,7 @@
 <ConfirmDialog @ref="_confirm" />
 
 @code {
-    private ConfirmDialog _confirm = default!;
+    internal ConfirmDialog _confirm = default!;
     private IReadOnlyList<ApiTokenRow>? _tokens;
     private IReadOnlyList<WebhookRow>? _hooks;
     private string? _name, _hookUrl;
@@ -218,11 +218,15 @@
         finally { _busy = false; }
     }
 
-    private async Task Revoke(ApiTokenRow t)
+    internal async Task Revoke(ApiTokenRow t)
     {
         if (!await _confirm.Ask($"Revoke the token for {t.Name}?", "Calls with it are refused from now on. It can't be turned back on: issue a new one instead.", "Revoke")) return;
-        await Tokens.RevokeAsync(t.Id);
-        Toasts.Show($"Revoked the token for {t.Name}.");
+        try
+        {
+            await Tokens.RevokeAsync(t.Id);
+            Toasts.Show($"Revoked the token for {t.Name}.");
+        }
+        catch (KeyNotFoundException) { Toasts.Show($"The token for {t.Name} no longer exists."); }
         await Load();
     }
 
@@ -242,7 +246,7 @@
         finally { _busy = false; }
     }
 
-    private async Task Test(WebhookRow h)
+    internal async Task Test(WebhookRow h)
     {
         _busy = true;
         try
@@ -250,23 +254,30 @@
             var (status, error) = await Webhooks.TestAsync(h.Id);
             if (error is null) Toasts.Show($"The test reached {h.Url} ({status}).");
             else Toasts.Error(error);
-            await Load();
         }
+        catch (KeyNotFoundException) { Removed(h); }
         finally { _busy = false; }
-    }
-
-    private async Task Enable(WebhookRow h, bool on)
-    {
-        await Webhooks.SetEnabledAsync(h.Id, on);
         await Load();
     }
 
-    private async Task Remove(WebhookRow h)
+    internal async Task Enable(WebhookRow h, bool on)
+    {
+        try { await Webhooks.SetEnabledAsync(h.Id, on); }
+        catch (KeyNotFoundException) { Removed(h); }
+        await Load();
+    }
+
+    internal async Task Remove(WebhookRow h)
     {
         if (!await _confirm.Ask("Remove the webhook?", $"TIDE stops posting to {h.Url}.", "Remove")) return;
-        await Webhooks.RemoveAsync(h.Id);
+        try { await Webhooks.RemoveAsync(h.Id); }
+        catch (KeyNotFoundException) { Removed(h); }
         await Load();
     }
+
+    // Another administrator removed it after this page listed it. Said in a toast and the list read again, rather than
+    // left to the error boundary, which would also lose a token or secret still on show here (neither can be shown again).
+    private void Removed(WebhookRow h) => Toasts.Show($"The webhook for {h.Url} was already removed.");
 
     private async Task Copy(string text)
     {

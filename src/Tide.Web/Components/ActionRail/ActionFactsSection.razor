@@ -17,13 +17,13 @@
             </dd>
         </div>
         <div class="tide-fact"><dt>Created</dt><dd>@Ui.When(Clock, A.CreatedAtUtc)</dd></div>
-        <div class="tide-fact"><dt>Due</dt><dd>@(A.DueDate is { } due ? Ui.ShortDay(due) : "No due date") @if (A.DueDate is not null) { <SlaBadge State="State" Due="A.DueDate" Today="ActionSvc.Today" /> }
+        <div class="tide-fact"><dt>Due</dt><dd>@(A.DueDate is { } due ? Ui.ShortDay(due, ActionSvc.Today) : "No due date") @if (A.DueDate is not null) { <SlaBadge State="State" Due="A.DueDate" Today="ActionSvc.Today" /> }
             @if (MovedNote(A) is { } moved) { <div class="small tide-muted tide-due-moved">@moved</div> }</dd></div>
         @if (A.RaisedOn is { } raised)
         {
             <div class="tide-fact tide-fact-wide"><dt>Raised for</dt><dd>@Ui.Day(raised)'s brief</dd></div>
         }
-        @if (A.ClosedDate is { } closed) { <div class="tide-fact"><dt>Closed</dt><dd>@Ui.ShortDay(closed)</dd></div> }
+        @if (A.ClosedDate is { } closed) { <div class="tide-fact"><dt>Closed</dt><dd>@Ui.ShortDay(closed, ActionSvc.Today)</dd></div> }
         @if (Parent is { } p)
         {
             <div class="tide-fact tide-fact-wide"><dt>Part of</dt><dd><a href="@Ui.ActionUrl(p.Number)">@Ui.ActionLabel(p.Number)</a> @p.Title</dd></div>

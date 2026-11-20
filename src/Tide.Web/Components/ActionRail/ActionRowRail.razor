@@ -237,7 +237,7 @@
         if (next is { Kind: NextKind.Unowned } && !onAction)
             return ("unowned", _preview is not null ? "Nobody has it. Take it, then copy the query." : "Nobody has it. Take it.");
         if (next is not null) return (next.Kind.ToString().ToLowerInvariant(), next.Text);
-        if (!Row.IsOpen) return ("closed", $"{ActionService.StatusName(Row.Status)}{(Row.ClosedDate is { } c ? " on " + Ui.ShortDay(c) : "")}.");
+        if (!Row.IsOpen) return ("closed", $"{ActionService.StatusName(Row.Status)}{(Row.ClosedDate is { } c ? " on " + Ui.ShortDay(c, ActionSvc.Today) : "")}.");
         // An external team's: nobody in TIDE holds it, as expected; its ticket names it.
         if (Row.Holder("") is { Outside: true } holder)
             return ("external", holder.Kind == HolderKind.Ticket ? $"With {Row.TeamName} on {holder.Text}." : $"{holder.Text}.");

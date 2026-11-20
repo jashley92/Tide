@@ -207,6 +207,35 @@ public class AdversaryPageTests(TideApp app) : IClassFixture<TideApp>
         await using var profile = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.AdversariesPage>(app, $"/adversaries/{id}", new() { ["Id"] = id });
         var html = await profile.Html();
         html.Should().Contain("Timeline").And.Contain("Techniques seen in our articles").And.Contain("Stop watching").And.Contain("Our notes (Markdown, internal)");
+        html.Should().Contain("None yet.").And.NotContain("tide-adv-heat", "no techniques, no empty list");
+    }
+
+    [Fact]
+    public async Task EachTechnique_SaysHowManyOfOurArticlesShowIt_NotOnlyByItsShade()
+    {
+        Guid id;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var adversaries = scope.ServiceProvider.GetRequiredService<AdversaryService>();
+            var articles = scope.ServiceProvider.GetRequiredService<ArticleService>();
+            id = await adversaries.SaveAsync(new AdversaryForm { Name = "heat-test Spider" });
+            foreach (var techniques in new[] { new[] { "T1621", "T1566.004" }, ["T1621"] })
+            {
+                var article = await articles.CreateAsync("heat-test " + techniques.Length, "Vendor", "https://vendor.example.com/" + Guid.NewGuid().ToString("N"));
+                var form = ArticleForm.From((await articles.GetAsync(article))!);
+                form.TechniqueIds = techniques.ToList();
+                await articles.SaveAsync(form);
+                await adversaries.TagArticleAsync(article, id);
+            }
+        }
+
+        await using var profile = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.AdversariesPage>(app, $"/adversaries/{id}", new() { ["Id"] = id });
+        var html = await profile.Html();
+        var heat = html[html.IndexOf("<ul class=\"tide-adv-heat\"", StringComparison.Ordinal)..];
+        heat = heat[..heat.IndexOf("</ul>", StringComparison.Ordinal)];
+        heat.Should().Contain("<li class=\"h1\"").And.Contain("<span aria-hidden=\"true\">×2</span><span class=\"visually-hidden\">, in 2 articles</span>")
+            .And.Contain("<span aria-hidden=\"true\">×1</span><span class=\"visually-hidden\">, in 1 article</span>");
+        html.Should().Contain("×2: in 2 of our articles. Darker: in more of them.", "the legend names the scale");
     }
 
     // CON-1: Robin's card on an article stays open while Sam tags it. Robin's card shows Sam's tag, and Robin's own tag

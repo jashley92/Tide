@@ -32,9 +32,6 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
     private readonly Func<IPAddress, string?> _refusal;
     private readonly WebProxy? _proxy;
 
-    // Through a proxy, how long a name is looked up here before it's left to the proxy.
-    private static readonly TimeSpan ProxiedLookup = TimeSpan.FromSeconds(3);
-
     public OutboundHttp(OutboundCircuit circuit, IOptionsMonitor<IntakeOptions> options, ILogger<OutboundHttp> log)
         : this(circuit, options, log, ip => AddressPolicy.Refusal(ip, options.CurrentValue.AllowPrivateNetworks))
     {
@@ -59,7 +56,7 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             handler.Proxy = _proxy = proxy;
             handler.UseProxy = true;
         }
-        else handler.ConnectCallback = ConnectAsync;   // the system proxy, if any, still applies (see ConnectAsync)
+        else handler.ConnectCallback = (context, ct) => AddressGuard.ConnectAsync(context, _refusal, ct);   // the system proxy, if any, still applies
         _client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
@@ -126,7 +123,7 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
             return new HttpFetch(FetchStatus.Ok, ms.ToArray(), response.Headers.ETag?.ToString(),
                 response.Content.Headers.LastModified?.ToString("R"));
         }
-        catch (Exception ex) when (Refused(ex) is { } refused)
+        catch (Exception ex) when (AddressGuard.Refused(ex) is { } refused)
         {
             // A rule, not the host failing: nothing to back off.
             _circuit.Release(target);
@@ -202,67 +199,11 @@ public sealed class OutboundHttp : IOutboundHttp, IDisposable
         string.Equals(a.Scheme, b.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(a.IdnHost, b.IdnHost, StringComparison.OrdinalIgnoreCase)
         && a.Port == b.Port;
 
-    // Refuses a host whose name resolves to (or is) an address the rule doesn't allow. Through a proxy, a name that
-    // can't be resolved here, or not quickly, is the proxy's to resolve.
-    private async Task CheckHostAsync(Uri uri, CancellationToken ct)
-    {
-        IPAddress[] addresses;
-        if (IPAddress.TryParse(uri.IdnHost.Trim('[', ']'), out var literal)) addresses = [literal];
-        else if (!Proxied(uri)) addresses = await Dns.GetHostAddressesAsync(uri.IdnHost, ct);
-        else
-        {
-            using var lookup = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            lookup.CancelAfter(ProxiedLookup);
-            try { addresses = await Dns.GetHostAddressesAsync(uri.IdnHost, lookup.Token); }
-            catch (Exception ex) when (ex is SocketException || (ex is OperationCanceledException && !ct.IsCancellationRequested)) { return; }
-        }
-        foreach (var address in addresses)
-            if (_refusal(address) is { } why) throw new RefusedAddressException(uri.Host, why);
-    }
+    // Refuses a host whose name resolves to (or is) an address the rule doesn't allow.
+    private Task CheckHostAsync(Uri uri, CancellationToken ct) => AddressGuard.CheckHostAsync(uri, Proxied(uri), _refusal, ct);
 
     // Whether the request goes through a proxy: Intake:Proxy, or (when that's blank) the system's for this address.
-    private bool Proxied(Uri uri) =>
-        _proxy is not null ? !_proxy.IsBypassed(uri) : !HttpClient.DefaultProxy.IsBypassed(uri) && HttpClient.DefaultProxy.GetProxy(uri) is not null;
-
-    // Going direct: connects only to an address the rule allows, whatever the name resolves to now. A connection to the
-    // system proxy for the request (the machine's or HTTPS_PROXY's, used when Intake:Proxy is blank) is the proxy's own
-    // address, not the feed's, so it isn't judged; the per-hop check covers the feed then.
-    private async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken ct)
-    {
-        var host = context.DnsEndPoint.Host;
-        var proxied = context.InitialRequestMessage.RequestUri is { } requested && !HttpClient.DefaultProxy.IsBypassed(requested)
-                      && HttpClient.DefaultProxy.GetProxy(requested) is { } proxy
-                      && string.Equals(proxy.IdnHost, host, StringComparison.OrdinalIgnoreCase) && proxy.Port == context.DnsEndPoint.Port;
-        var addresses = IPAddress.TryParse(host, out var literal) ? [literal] : await Dns.GetHostAddressesAsync(host, ct);
-        var allowed = proxied ? addresses.ToList() : addresses.Where(a => _refusal(a) is null).ToList();
-        if (allowed.Count == 0)
-            throw addresses.Length == 0 ? new SocketException((int)SocketError.HostNotFound) : new RefusedAddressException(host, _refusal(addresses[0])!);
-        for (var i = 0; ; i++)
-        {
-            var socket = new Socket(allowed[i].AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-            try
-            {
-                await socket.ConnectAsync(new IPEndPoint(allowed[i], context.DnsEndPoint.Port), ct);
-                return new NetworkStream(socket, ownsSocket: true);
-            }
-            catch (SocketException) when (i < allowed.Count - 1)
-            {
-                socket.Dispose();   // try the next address
-            }
-            catch
-            {
-                socket.Dispose();
-                throw;
-            }
-        }
-    }
-
-    private static RefusedAddressException? Refused(Exception ex)
-    {
-        for (var e = ex; e is not null; e = e.InnerException)
-            if (e is RefusedAddressException r) return r;
-        return null;
-    }
+    private bool Proxied(Uri uri) => _proxy is not null ? !_proxy.IsBypassed(uri) : AddressGuard.SystemProxied(uri);
 
     public void Dispose() => _client.Dispose();
 }
