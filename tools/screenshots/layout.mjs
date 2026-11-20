@@ -4220,7 +4220,7 @@ const pages = [
   // Below 1500px the rail is closed until asked for, and the form is the same one column, nothing scrolling sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits, editorReadingOrder, editorMeasure,
-      [901, hidden('.tide-ws-switch')]] },
+      [900, hidden('.tide-ws-switch')]] },
   // A bullet starts a line high and grows with its text, whatever was dragged at its corner.
   { name: 'editor-bullet-grows', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920], rules: [bulletGrows] },
   // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
@@ -4604,7 +4604,7 @@ const pages = [
   { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
-      [901, fits('.tide-stack-table td')]] },
+      [900, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
@@ -5079,7 +5079,7 @@ const pages = [
   // fit; and the tools never leave the window (the top bar takes a second row, at most, instead). The footer no longer
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
-    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
+    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 900, 899, 780],
       rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
@@ -5108,7 +5108,7 @@ const pages = [
       inWindow('.tide-wrap-add button'), visible('.tide-attendance button[aria-label="Remove Sam from the SOC"]'),
       pillClear('.tide-attendance li'), contrastAtLeast('.tide-wrap-add input[placeholder]', 4.5, '::placeholder'), hidden('#present-rail')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
-  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
+  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 900, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
   // An action opened beside the slide (Org:ActionBesideSlide, on for this run): from 1200px a column between the slide
   // and the presenter's rail, as wide for a follower as for the presenter, whose slide, fit and scroll the follower's
