@@ -104,7 +104,7 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
 
     /// <summary>
     /// The API's push (EP-75's <c>detections:write</c>): the full set of rules the caller manages, replacing its last push.
-    /// Each caller's rules are a set of their own (<see cref="CallerMark"/>): another caller's push neither replaces them
+    /// Each caller's rules are a set of their own (<see cref="DetectionRule.Caller"/>): another caller's push neither replaces them
     /// nor stops them counting, and the same id from two callers is two rules.
     /// </summary>
     public async Task<DetectionImport> PushAsync(IReadOnlyList<ParsedRule> rules, CancellationToken ct = default)
@@ -112,6 +112,9 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("This token can't push detection rules.");
         var problems = new List<string>();
         var caller = Caller();
+        // Each id starts with the caller; one too long would leave no room for a rule's id or its hash (see Owned).
+        if (caller.Length + 1 + OwnedHashLength > DetectionRule.MaxExternalId)
+            throw new ArgumentException($"This caller's name is longer than {DetectionRule.MaxExternalId - 1 - OwnedHashLength} characters, so its rules can't be kept. Push with a token of a shorter name.");
         var clean = rules.Where(r => !string.IsNullOrWhiteSpace(r.Name))
             .Select(r => DetectionParsers.Rule(Owned(caller, string.IsNullOrWhiteSpace(r.ExternalId) ? r.Name : r.ExternalId, r.Name, problems),
                 r.Name, r.Techniques, r.Platform, r.Enabled, problems)).ToList();
@@ -119,9 +122,9 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         return await StoreAsync(DetectionSource.Api, clean, problems, ct, caller);
     }
 
-    // An API rule's ExternalId is "<caller><CallerMark><its id>": a control character, so no id read before it was added
-    // (EP-79's first pushes, which had no caller) is taken for one. Callers are no table of their own; the mark is the set.
-    private const char CallerMark = '\u001F';
+    // An API rule's ExternalId is "<caller><CallerMark><its id>" (DetectionRule.CallerMark). Callers are no table of their
+    // own; the mark is the set, and DetectionRule.Caller keeps it in a column so one caller's rules are one indexed query.
+    private const char CallerMark = DetectionRule.CallerMark;
 
     // Whose push this is: a token by its name, so a token issued again under the same name (as each expiry needs) carries
     // on its set; a person by their id. Lower case, so one caller is one set whatever the database's collation.
@@ -130,27 +133,31 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
 
     // The rule's id with its caller in front. One too long for the column keeps its start and ends in a hash of the whole
     // id instead, so two long ids that differ only near the end stay two rules (clipping alone made them one).
+    // "#" and the first 16 hex digits of the id's SHA-256.
+    private const int OwnedHashLength = 17;
+
     private static string Owned(string caller, string id, string name, List<string> problems)
     {
         id = id.Trim();
         var prefix = caller + CallerMark;
         if (prefix.Length + id.Length <= DetectionRule.MaxExternalId) return prefix + id;
-        var hash = "#" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(id)))[..16];
+        var hash = "#" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(id)))[..(OwnedHashLength - 1)];
         problems.Add($"{Clip(name.Trim(), 60)}: its id is longer than {DetectionRule.MaxExternalId - prefix.Length} characters, so TIDE keeps its start and a hash of the rest.");
         return prefix + id[..Math.Max(0, DetectionRule.MaxExternalId - prefix.Length - hash.Length)] + hash;
     }
 
     // The caller whose push holds an API rule; null for an imported rule and an API rule pushed before callers were kept.
-    private static string? CallerOf(DetectionRule r) =>
-        r.Source == DetectionSource.Api && r.ExternalId.IndexOf(CallerMark) is var i and > 0 ? r.ExternalId[..i] : null;
+    // DetectionRule.CallerOf reads it; the column keeps what it read.
+    private static string? CallerOf(DetectionRule r) => r.Caller;
 
     private async Task<DetectionImport> StoreAsync(DetectionSource source, IReadOnlyList<ParsedRule> rules, List<string> problems, CancellationToken ct,
         string? caller = null, string? file = null)
     {
         var now = time.GetUtcNow();
         await using var db = await dbs.CreateAsync(ct);
-        // The rules this import replaces: the source's, or for a push only its caller's.
-        var existing = (await db.DetectionRules.Where(r => r.Source == source).ToListAsync(ct)).Where(r => CallerOf(r) == caller)
+        // The rules this import replaces: the source's, or for a push only its caller's. Read by the indexed column, then held
+        // to the exact caller, as a case-insensitive collation could also match one that differs only in case.
+        var existing = (await db.DetectionRules.Where(r => r.Source == source && r.Caller == caller).ToListAsync(ct)).Where(r => CallerOf(r) == caller)
             .ToDictionary(r => r.ExternalId, StringComparer.OrdinalIgnoreCase);
         int added = 0, changed = 0, unchanged = 0;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -283,12 +290,13 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var pushed = await db.DetectionRules.AsNoTracking().Where(r => r.Source == DetectionSource.Api).ToListAsync(ct);
+        // Only what the sets are made of, not each rule's name and tags.
+        var pushed = await db.DetectionRules.AsNoTracking().Where(r => r.Source == DetectionSource.Api).Select(r => new { r.Caller, r.LastSeenAtUtc }).ToListAsync(ct);
         if (pushed.Count == 0) return [];
         var people = await PeopleAsync(db, ct);
         var now = time.GetUtcNow();
         var gone = await GoneAsync(db, now, ct);
-        return pushed.GroupBy(r => CallerOf(r) ?? "").Select(g =>
+        return pushed.GroupBy(r => r.Caller ?? "").Select(g =>
         {
             var at = g.Max(r => r.LastSeenAtUtc);
             return new DetectionCallerSet(g.Key, CallerName(g.Key, people), g.Count(r => r.LastSeenAtUtc >= at), at, at < now.AddDays(-PushQuietDays), !gone.Contains(g.Key));
@@ -304,7 +312,9 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var rules = (await db.DetectionRules.Where(r => r.Source == DetectionSource.Api).ToListAsync(ct)).Where(r => (CallerOf(r) ?? "") == caller).ToList();
+        var held = caller.Length == 0 ? null : caller;
+        var rules = (await db.DetectionRules.Where(r => r.Source == DetectionSource.Api && r.Caller == held).ToListAsync(ct))
+            .Where(r => (CallerOf(r) ?? "") == caller).ToList();
         if (rules.Count == 0) throw new KeyNotFoundException("That caller has no pushed rules now.");
         db.DetectionRules.RemoveRange(rules);
         // Rules aren't audited one by one (each push would write a row for every rule), so the removal, an administrator's

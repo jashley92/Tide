@@ -40,7 +40,7 @@ public class OperationsBugRoundTests : IDisposable
         services.AddScoped(_ => _db.Reminders(options, clock));
         await using var provider = services.BuildServiceProvider();
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(), TimeProvider.System,
+        var hosted = new ReminderHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(),
             NullLogger<ReminderHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);
@@ -53,6 +53,9 @@ public class OperationsBugRoundTests : IDisposable
         _db.Email.Fault = null;
         await hosted.PassAsync(CancellationToken.None);
         jobs.Get(JobMonitor.Reminders).Should().Match<JobState>(s => s.LastSucceeded == true && s.LastDetail == "1 email");
+
+        await hosted.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Reminders).Should().Match<JobState>(s => s.LastSucceeded == true && s.LastDetail == null, "a pass that sends nothing says nothing");
     }
 
     // A mistyped provider ("SQL Server", "MSSQL") was taken for SQLite: start-up then failed reading the SQL Server

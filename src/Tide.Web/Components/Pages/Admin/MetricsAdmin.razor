@@ -257,7 +257,7 @@
     private Task ImportExamples() => Run(async () =>
     {
         var added = await MetricsSvc.ImportExampleSetAsync();
-        Toasts.Show(added == 0 ? "The example groups are already here." : $"Added {added} example group{(added == 1 ? "" : "s")}.");
+        Toasts.Show(added == 0 ? "The example groups are already here." : $"Added {Ui.Plural(added, "example group")}.");
     });
 
     private async Task Retire(string name, bool isRetired, Func<Task> action)

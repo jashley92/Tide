@@ -47,7 +47,10 @@ every TLP, as the article pages do; Readers have the published archive's own fil
 | Actions | title, description, outcome note, ticket, assignee, comments; `A-12` or `12` by number | open first, then newest |
 | Stories | name, summary | by status, then newest |
 
-Each kind is paged 50 at a time (`SearchPages`), up to 1,000 deep. Each hit has a snippet with the matches marked
+Each kind is paged 50 at a time (`SearchPages`), up to 1,000 deep. Each kind's heading counts its hits ("51–100 of
+132"). Articles are counted only as far as the pages go: matching them scans every article, so the search reads the
+newest 1,001 matches once and counts those, and past 1,000 the heading reads "1–50 of 1,000+" with *The pages go to the
+first 1,000; add a word to find the rest.* (`HitList.AtLeast`). Actions and stories are counted in full. Each hit has a snippet with the matches marked
 (`SearchText.Snippet`, `Mark`); an indicator in a snippet is shown defanged, so a snippet never carries a live link.
 
 **Lookup.** When the whole query is one indicator (`IocObservable.DetectType`) or one CVE, the page also shows a

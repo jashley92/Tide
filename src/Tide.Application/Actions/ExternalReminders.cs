@@ -34,14 +34,11 @@ public sealed record NotEmailedReason(NotEmailedCause Cause, string Text);
 public static class ExternalCadence
 {
     /// <summary>
-    /// Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (or isn't external): the
-    /// scan is off for everyone (<paramref name="scanOn"/>), the team's own reminders are off, or it has no contact email.
-    /// Said wherever work is given to one, so a request isn't left with someone who never hears of it.
+    /// Why <paramref name="team"/> won't be emailed its reminders, as a reason (so the fix can be offered) and its words;
+    /// null when it will be, or isn't external: the scan is off for everyone (<paramref name="scanOn"/>), the team's own
+    /// reminders are off, or it has no contact email. Said wherever work is given to one, so a request isn't left with
+    /// someone who never hears of it.
     /// </summary>
-    public static string? NotEmailedWhy(Team team, bool scanOn) => NotEmailed(team, scanOn)?.Text;
-
-    /// <summary>Why <paramref name="team"/> won't be emailed, as a reason (so the fix can be offered) and its words; null
-    /// when it will be, or isn't external.</summary>
     public static NotEmailedReason? NotEmailed(Team team, bool scanOn) =>
         !team.IsExternal ? null
         : !scanOn ? new(NotEmailedCause.OffForEveryone, $"External team reminders are off for everyone, so {team.Name} won't be emailed about this.")

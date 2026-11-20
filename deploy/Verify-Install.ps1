@@ -26,6 +26,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# The pool, site and WebSocket checks read IIS through the IIS: drive, which PowerShell 7 doesn't have: there they would
+# warn about what they couldn't read rather than check it.
+. (Join-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'lib') 'TideIis.ps1')
+Assert-TideWindowsPowerShell 'Verify-Install.ps1'
 $failed = 0
 function Report([bool] $ok, [string] $what, [string] $fix = '') {
     if ($ok) { Write-Host "  [ OK ] $what" -ForegroundColor Green }
