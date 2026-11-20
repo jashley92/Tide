@@ -1,7 +1,19 @@
 // Dialogs drawn by Blazor (the screenshot lightbox, confirmations, the ATT&CK matrix picker): remembers what had focus when one opened, and gives it focus back
 // when it closes. CSP-safe (an external file).
 window.tideDialog = (function () {
-    let opener = null;
+    // Each open dialog and what had focus as it opened, the innermost last: a dialog opened over another (a confirmation
+    // over the ATT&CK picker) gives focus back to its own opener inside the outer one, and the outer one later to its own.
+    // Blazor takes a closed dialog out of the page, so an entry whose dialog has gone is one that closed. Some close
+    // without telling us (the palette running a command, the guide ending, one thrown away while open): their entries
+    // are dropped as they're found gone, so a later close never sends focus to what opened them.
+    const openers = [];
+
+    function gone(entry) { return !!entry.dialog && !entry.dialog.isConnected; }
+
+    // Drops the entries of dialogs that have closed.
+    function forget() {
+        for (var i = openers.length - 1; i >= 0; i--) if (gone(openers[i])) openers.splice(i, 1);
+    }
 
     // The controls Tab can reach in a dialog, in order. One inside an inert or hidden part (a folded ATT&CK column, a
     // closed file's details) or not drawn can't take focus, so it's left out: the Tab cycle's first and last are always
@@ -57,7 +69,11 @@ window.tideDialog = (function () {
         open: function (focusTarget) {
             // Opened from inside a popout (the palette over + Filter), which closes as the dialog takes focus: focus goes
             // back to the popout's button, as what had focus in it is gone by then.
-            opener = (window.tidePopout && window.tidePopout.opener(document.activeElement)) || document.activeElement;
+            forget();
+            openers.push({
+                opener: (window.tidePopout && window.tidePopout.opener(document.activeElement)) || document.activeElement,
+                dialog: (focusTarget && focusTarget.closest && focusTarget.closest('[role="dialog"], [role="alertdialog"]')) || focusTarget || null,
+            });
             if (focusTarget && focusTarget.focus) focusTarget.focus();
         },
         // A dialog with fields to fill (ConfirmDialog's Form): focus goes to its first field, or to the fallback.
@@ -78,9 +94,17 @@ window.tideDialog = (function () {
             var active = document.activeElement;
             if (filterBox && filterBox.focus && (!active || active === document.body || (active.closest && active.closest('[inert]')))) filterBox.focus();
         },
+        // A dialog closed: focus goes back to what opened it. The entries on top whose dialogs have gone all closed by
+        // now, the one closing among them; the lowest is the one opened first, and its opener is still on the page. With
+        // none gone (a dialog left on the page), the top one closed.
         close: function () {
+            var entry = null;
+            while (openers.length && gone(openers[openers.length - 1])) entry = openers.pop();
+            if (!entry) entry = openers.pop();
+            var opener = entry && entry.opener;
             if (opener && opener.isConnected && opener.focus) opener.focus();
-            opener = null;
-        }
+        },
+        // A dialog closed and something else takes focus (the palette ran a command): forget it, leaving focus be.
+        forget: forget
     };
 })();

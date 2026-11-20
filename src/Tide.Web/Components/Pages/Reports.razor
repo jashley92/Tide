@@ -53,13 +53,13 @@ else
 
     <section class="tide-card" aria-labelledby="rep-headlines">
         <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
-        @Figures(r.Headlines)
+        @Figures(r.Headlines, "rep-headlines")
         @Assessment("headlines")
     </section>
 
     <section class="tide-card" aria-labelledby="rep-outcomes">
         <h2 id="rep-outcomes">2 &middot; Outcomes <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
-        @Figures(r.Outcomes)
+        @Figures(r.Outcomes, "rep-outcomes")
         @Assessment("outcomes")
     </section>
 
@@ -72,7 +72,7 @@ else
         else
         {
             <div class="table-responsive">
-                <table class="tide-table tide-report-table">
+                <table class="tide-table tide-report-table" aria-labelledby="rep-metrics">
                     <thead><tr><th scope="col">Metric</th><th scope="col" class="tide-table-num">Latest</th><th scope="col" class="tide-table-num">Average</th>
                         <th scope="col" class="tide-table-num">Range</th><th scope="col" class="tide-table-num">Days missing</th><th scope="col" class="tide-table-num">Days past a threshold</th></tr></thead>
                     <tbody>
@@ -152,10 +152,10 @@ else
     // A trend line's numbers open in Trends, on the line, for this period.
     private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
 
-    private RenderFragment Figures(IReadOnlyList<ReportFigure> figures) => __builder =>
+    private RenderFragment Figures(IReadOnlyList<ReportFigure> figures, string headingId) => __builder =>
     {
         <div class="table-responsive">
-            <table class="tide-table tide-report-table">
+            <table class="tide-table tide-report-table" aria-labelledby="@headingId">
                 <thead><tr><th scope="col">Measure</th><th scope="col" class="tide-table-num">@_period.Label</th><th scope="col" class="tide-table-num">@_period.Previous.Label</th><th scope="col" class="tide-table-num">Change</th></tr></thead>
                 <tbody>
                     @foreach (var f in figures)
