@@ -74,9 +74,6 @@ internal static partial class BriefChipPage
     /// <summary>The same in a narrow window.</summary>
     public static string Short(string text) => $"<span class=\"tide-brief-chip-short\">{Markup(text)}</span>";
 
-    /// <summary>The live chip's accessible name, the same at every width.</summary>
-    public static string Named(string text) => $" aria-label=\"{Markup(text)}\"";
-
     /// <summary>The whole wording, unseen, after the short form: the name a narrow chip has after the words it shows.</summary>
     public static string Said(string text) => $"<span class=\"tide-brief-chip-said visually-hidden\">, {Markup(text)}</span>";
 
@@ -235,7 +232,8 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
             var chip = BriefChipPage.In(html);
 
             chip.Should().StartWith("<a class=\"tide-brief-chip is-live\" href ");
-            chip.Should().Contain(BriefChipPage.Full("Brief is live")).And.Contain(BriefChipPage.Short("Live")).And.Contain(BriefChipPage.Named("Brief is live"));
+            chip.Should().Contain(BriefChipPage.Full("Brief is live")).And.Contain(BriefChipPage.Short("Live"))
+                .And.NotContain("aria-label", "named by the words it shows, so a narrow chip's name starts with Live");
             chip.Should().NotContain("step").And.NotContain("Join", "the banner below the top bar is where you join");
             html.Should().Contain("Brief meeting is live");
         }

@@ -17,7 +17,8 @@
     _liveDrawn = Live(view);
     @if (_liveDrawn)
     {
-        <a class="tide-brief-chip is-live" href="" aria-label="Brief is live" aria-current="@Current" title="Open Today">
+        @* Named by its words, as the other chip is: "Brief is live" wide, "Live" narrow. *@
+        <a class="tide-brief-chip is-live" href="" aria-current="@Current" title="Open Today">
             <span class="tide-live-dot" aria-hidden="true"></span>
             <span class="tide-brief-chip-full">Brief is live</span>
             <span class="tide-brief-chip-short">Live</span>
