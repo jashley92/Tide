@@ -33,6 +33,10 @@ public static class UserPreferences
 
     public const string ReadingAuto = "auto", ReadingOpen = "open", ReadingClosed = "closed";
 
+    /// <summary>Triage's promote form: whether "Add to today's brief" starts ticked. Off until the person ticks it, then
+    /// as they last left it.</summary>
+    public const string TriagePromoteToBrief = "triage.promoteToBrief";
+
     /// <summary>The release whose "What's new" the person last saw ("1.13.0"); none ("") until they've seen one.</summary>
     public const string WhatsNewSeen = "whatsnew.seen";
 
@@ -94,6 +98,7 @@ public static class UserPreferences
                 new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
                 new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
                 new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
+                new(TriagePromoteToBrief, [Off, On], Permission.WriteArticles),
                 // Everyone who reads release highlights reads the team edition (RoleGroups.For).
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
                 new(TourState, ["", TourDue, TourDone], Permission.ReadTeamEdition),

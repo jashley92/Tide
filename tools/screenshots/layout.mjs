@@ -4465,6 +4465,12 @@ const pages = [
   { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
     rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),
       visible('.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+  // The promote form (P), in the bar under the pane and, below 1400px, in the selected row: its three buttons (Promote
+  // and write, Promote and keep triaging, Cancel), the brief tick and the keys line fit, wrapping where there isn't room
+  // rather than spilling out. Opening it changes nothing.
+  { name: 'triage-promote-form', route: '/triage', setup: async page => { await page.keyboard.press('p'); await idle(page); }, widths: [[1366, 768], 780],
+    rules: [noSidewaysScroll, visible('form.tide-promote-form [data-promote-stay]'), visible('form.tide-promote-form #promote-brief'),
+      fits('form.tide-promote-form'), fits('.tide-triage-decide')] },
   // With the pane closed (by V, or below 1400px where it's hidden), the selected row stays a row: its excerpt a readable
   // measure of at most three lines, its why line and its buttons, Attach to… with them, one compact row, and its flags
   // on its meta line. Letters spaced wider. Each width signs in as its own person, as the pane's state is kept.

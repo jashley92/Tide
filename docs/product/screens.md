@@ -233,7 +233,9 @@ the page stops it after the source it's on.
   blocks whose class or id names an ad slot, the advert selectors and label lines listed on Sources ("Advertisement",
   "Story continues below"), and a source's own *Also remove* selector for one site's odd markup. CVEs, indicators and
   products on Our stack are marked, with the CVE chips under it. While the pane is open it follows J and K, showing a
-  report's text when it's already been read and offering to read it when it hasn't. *Read it here*, *Read again*
+  report's text when it's already been read and offering to read it when it hasn't. A slow page doesn't hold you up:
+  move on and read the next while it loads, and its text is kept for its own item, shown when you come back to it.
+  *Read it here*, *Read again*
   and *Open the site* sit in its head. The pane is as tall as its text, and a long text scrolls inside it. V again, or
   Esc, closes it.
 - **Kept for a week.** The text is kept on the item for `Intake:ReadingDays` (7), so a colleague reads it without
@@ -258,8 +260,22 @@ the page stops it after the source it's on.
 
 ### Promoting
 
-- **Inline promote form.** Clicking a title opens the promote form in place. It suggests a priority from the
+- **Inline promote form.** Clicking a title, or P, opens the promote form in place. It suggests a priority from the
   item's CVE data and says why ("Suggested P1: on KEV, CVSS 10").
+- **Two ways out.** **Promote and write** (Enter, the main button) makes the draft and opens it in the editor, as it
+  always has. **Promote and keep triaging** (Shift+Enter) makes the draft and stays on the inbox: the row leaves the
+  tab, the next one is selected, and a toast says what was made, with **Write it** (opens the draft) and **Undo**
+  (Alt+Z too). Undo deletes the draft and puts the item back where it was, Shortlisted included, as long as nobody has
+  worked on the draft since (an edit, a tag, a link, an AI draft, a review, an action: anything), and removes a brief
+  the promote started if nothing else has touched it. So four promotes cost no page changes, and the drafts wait on the Promoted tab and the
+  Articles list.
+- **Add to today's brief.** A tick in the form puts the draft on the end of today's running order (the next working
+  day's on a weekend), starting the brief if there's none, with either button. It's off until the analyst ticks it, and
+  then it stays as they left it. If the brief has been sent, the draft is still made and the toast says why it isn't on
+  the brief.
+
+![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
+
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
 
 ### What triage already knows
@@ -272,12 +288,17 @@ the page stops it after the source it's on.
 
 ### Several reports of one event
 
+- **Undo a single decision.** Shortlisting or dismissing one new item (S, X, or the button) says so in a toast with
+  *Undo* (or Alt+Z), which puts it back in New and selects it again, unless a colleague has decided it since (even
+  the same way). When the row was out of date and a colleague had already decided the item, there's no Undo: it
+  would put the item in New rather than back where the colleague left it.
 - **Attach to…** Any item can be kept as another report of a recent draft or ready article, instead of becoming a
   new one, and its CVEs go with it. When an article already covers the item, that's the main button.
 - **Looks like one event.** Reports from several feeds that share a CVE, or names and amounts in their headlines
   ("Binance", "$6.3 billion"), are suggested as one line. It opens to the reports themselves, each with its source and
-  excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click, and
-  a group has no "dismiss all". *Not the same* splits a suggested group for everyone, with Undo.
+  excerpt. *Promote as one article* makes one draft with every report's link. Nothing is merged without a click.
+  *Shortlist the N* and *Dismiss the N* (S, X) act on every report in it once confirmed, and dismissing asks for the
+  reason in the confirmation, as *Dismiss all* does. *Not the same* splits a suggested group for everyone, with Undo.
 
 ![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
 
