@@ -176,7 +176,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
                 LastBriefed = x.LastBriefed,
                 Status = x.Went && x.Row.Available ? ArticleStatus.Presented : x.Row.Status,
             })
-            .OrderBy(r => r.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(r => r.CreatedAtUtc).ToList();
+            // The id last, so articles written at the same moment keep one order however the database returns them.
+            .OrderBy(r => r.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(r => r.CreatedAtUtc).ThenBy(r => r.Id).ToList();
     }
 
     /// <summary>Adds an article to the end of the running order, or at position <paramref name="at"/> (from 0) when
