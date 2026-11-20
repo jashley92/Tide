@@ -42,7 +42,7 @@
                 <p class="tide-attach-empty">@(_targets is null ? "Loading…" : _targets.Count == 0 ? "No drafts or ready articles to attach it to." : "Nothing matches.")</p>
             }
             <div class="form-text m-0" aria-hidden="true">&uarr; &darr; to choose, Enter attaches, Esc closes</div>
-            <div class="visually-hidden" role="status">@(_targets is null ? "" : $"{shown.Count} article{(shown.Count == 1 ? "" : "s")}")</div>
+            <div class="visually-hidden" role="status">@(_targets is null ? "" : Ui.Plural(shown.Count, "article"))</div>
         </div>
     }
 </div>

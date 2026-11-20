@@ -163,7 +163,7 @@ else
                 case LeaseState.Unreachable: <text>The job lease couldn't be taken, so none runs here until the database answers. </text> break;
             }
             Each job's latest run, kept across restarts; the runs and failures are of the last @((int)JobRunLog.Keep.TotalDays) days.
-            @if (report.Sources.Enabled > 0) { <text>@report.Sources.Enabled source@(report.Sources.Enabled == 1 ? " is" : "s are") turned on; @report.Sources.Failing failing. </text> }
+            @if (report.Sources.Enabled > 0) { <text>@Ui.Plural(report.Sources.Enabled, "source is", "sources are") turned on; @report.Sources.Failing failing. </text> }
             @if (report.LastCveRun is { } cve) { <text>The last CVE refresh was @Ui.When(Clock, cve.AtUtc).</text> }
         </p>
         @* At a narrow width the jobs table scrolls within its card rather than widening the page. *@
@@ -206,7 +206,8 @@ else
                                 @if (j.LastSucceeded == false && j.LastError is { } error) { <div class="small text-danger">@error</div> }
                                 else if (j.LastErrorAtUtc is { } failedAt) { <div class="small tide-muted">Last failed @Ui.When(Clock, failedAt)</div> }
                             </td>
-                            <td class="text-nowrap">@(j.Enabled && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
+                            @* Standing by, no job runs here: a time left from when this process held the lease would be wrong. *@
+                            <td class="text-nowrap">@(j.Enabled && !report.JobHealth.StandingBy && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
                             <td class="text-end text-nowrap">
                                 @if (report.JobHistory.For(j.Job) is { } h)
                                 {

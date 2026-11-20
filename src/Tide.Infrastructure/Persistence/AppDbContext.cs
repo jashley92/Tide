@@ -88,6 +88,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
 
+    // Here, not where the provider is chosen, so every SQLite context gets it: the app's, start-up's migrations, the
+    // design-time tools' and the tests', however each was configured.
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) => SqliteText.Configure(optionsBuilder);
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<AppUser>(e =>
@@ -259,6 +263,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.Property(x => x.ExternalId).HasMaxLength(DetectionRule.MaxExternalId);
             e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
+            // A push reads, and an administrator removes, one caller's rules: thousands of a sync's among other callers'.
+            e.Property(x => x.Caller).HasMaxLength(DetectionRule.MaxExternalId);
+            e.HasIndex(x => new { x.Source, x.Caller });
             e.Property(x => x.Name).HasMaxLength(DetectionRule.MaxName);
             e.Property(x => x.Techniques).HasMaxLength(DetectionRule.MaxTechniques);
             e.Property(x => x.Platform).HasMaxLength(DetectionRule.MaxPlatform);
@@ -318,6 +325,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Events).HasMaxLength(200);
             e.Property(x => x.Secret).HasMaxLength(1000);
             e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.MomentCursor).HasMaxLength(64);
+            e.Property(x => x.OverdueCursor).HasMaxLength(32);
         });
 
         b.Entity<AiDraft>(e =>
@@ -523,9 +532,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.AssigneeId);
             e.HasIndex(x => x.ArticleId);
             e.HasIndex(x => x.ParentId);
+            // The webhook job reads the oldest actions raised after each hook's watermark, a run's worth at a time.
+            e.HasIndex(x => x.CreatedAtUtc);
             // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
             // Square brackets quote a name in SQL Server and SQLite alike.
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
+            // The daily prune of reminder marks reads the actions closed in a day's window, oldest first: only closed ones.
+            e.HasIndex(x => x.ClosedAtUtc).HasFilter("[ClosedAtUtc] IS NOT NULL");
             Person(e, x => x.DeletedById, x => x.DeletedByName);
             e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
         });

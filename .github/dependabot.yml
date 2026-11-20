@@ -34,7 +34,14 @@ updates:
     open-pull-requests-limit: 10
     # Low-risk minor/patch bumps arrive as one grouped PR; majors come individually so their
     # potential breaking changes get reviewed on their own.
+    # EF Core is pinned to an exact version, and the dotnet-ef tool in .config/dotnet-tools.json must
+    # match it or every `dotnet ef` run warns. This group comes first so the packages and the tool
+    # always move together in one PR (Dependabot puts a dependency in the first group it matches).
     groups:
+      ef-core:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "dotnet-ef"
       nuget-minor-patch:
         update-types:
           - "minor"
@@ -50,3 +57,21 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "dotnet-ef"
         update-types: ["version-update:semver-major"]
+
+  # The screenshot and layout tooling's Playwright (tools/screenshots), pinned exactly in package.json. A new
+  # Playwright brings a new browser build, so a bump comes as its own PR for the layout slices to prove it.
+  - package-ecosystem: "npm"
+    directory: "/tools/screenshots"
+    schedule:
+      interval: "weekly"
+    # Wait a week before proposing a newly published version, so a malicious or broken release is
+    # likely to be caught and pulled first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    # One grouped PR per run: Playwright and its playwright-core move together.
+    groups:
+      screenshots-npm:
+        patterns:
+          - "*"

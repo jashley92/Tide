@@ -139,6 +139,38 @@ public class SearchServiceTests : IDisposable
         (await Search().SearchAsync("zebrafish")).Articles.Items.Should().HaveCount(3);
     }
 
+    // Articles with the word in their title, a minute apart: their ids, newest first.
+    private async Task<List<Guid>> Many(string word, int count)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var made = Enumerable.Range(0, count).Select(i => new Article
+        {
+            Title = $"{word} {i}", Bluf = "Summary.", AuthorId = "S-1-5-21-TEST-1", AuthorName = "Test Analyst", CreatedAtUtc = now.AddMinutes(-i),
+        }).ToList();
+        await using var db = _db.PlainContext();
+        db.Articles.AddRange(made);
+        await db.SaveChangesAsync();
+        return made.Select(a => a.Id).ToList();
+    }
+
+    [Theory]
+    [InlineData(SearchService.MaxTake - 1, SearchService.MaxTake - 1, false)]
+    [InlineData(SearchService.MaxTake, SearchService.MaxTake, false)]
+    [InlineData(SearchService.MaxTake + 1, SearchService.MaxTake, true)]
+    public async Task Text_CountsArticlesExactly_UpToWhereThePagesGo_AndPastItOnlySaysThereAreMore(int matching, int total, bool more)
+    {
+        var newest = await Many("Wombat", matching);
+
+        var first = await Search().SearchAsync("wombat");
+        (first.Articles.Total, first.Articles.AtLeast, first.Articles.Beyond, first.Articles.More).Should().Be((total, more, more, true));
+        first.Articles.Items.Select(a => a.Id).Should().Equal(newest.Take(SearchService.MaxHits), "the newest first, as before");
+
+        var last = await Search().SearchAsync("wombat", new SearchPages(Articles: 99));
+        last.Articles.Items.Select(a => a.Id).Should().Equal(newest.Take(SearchService.MaxTake).Skip(SearchService.MaxTake - SearchService.MaxHits),
+            "the last page ends at the newest 1,000, whatever lies beyond");
+        (last.Articles.Total, last.Articles.AtLeast).Should().Be((total, more), "the count is the same whatever the page");
+    }
+
     [Fact]
     public async Task Lookup_Ip_ListsEveryArticle_AndWhatWasDone()
     {
@@ -405,6 +437,39 @@ public class SearchServiceTests : IDisposable
     {
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
         await FluentActions.Awaiting(() => Search().SearchAsync("anything")).Should().ThrowAsync<ForbiddenException>();
+    }
+}
+
+/// <summary>The search page's article count at and past where its pages go, on an app of its own (it adds two thousand articles).</summary>
+public class SearchCapPageTests(TideApp app) : IClassFixture<TideApp>
+{
+    private async Task Many(string word, int count)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+        for (var i = 0; i < count; i++)
+            db.Articles.Add(new Article { Title = $"{word} {i}", Bluf = "Summary.", AuthorId = SignIn.Analyst.UserId, AuthorName = SignIn.Analyst.Name, CreatedAtUtc = now.AddMinutes(-i) });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<string> Page(string q)
+    {
+        await using var r = await RenderAsync<Search>(app, "/search?q=" + Uri.EscapeDataString(q));
+        return WebUtility.HtmlDecode(await r.Html());
+    }
+
+    [Fact]
+    public async Task TheCount_IsExact_UpToWhereThePagesGo_AndPastItReads1000Plus()
+    {
+        await Many("Numbat", SearchService.MaxTake);
+        await Many("Bilby", SearchService.MaxTake + 1);
+
+        var at = await Page("numbat");
+        at.Should().Contain("(1–50 of 1,000)").And.NotContain("1,000+").And.NotContain("add a word to find the rest");
+
+        var over = await Page("bilby");
+        over.Should().Contain("(1–50 of 1,000+)").And.Contain("The pages go to the first 1,000; add a word to find the rest.");
     }
 }
 

@@ -231,7 +231,7 @@ else
 
     private RenderFragment NothingYet => @<text>@Words.NothingYet</text>;
 
-    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? $"1 {Words.One}" : $"{Listed.Count} {Words.Many}";
+    private string Status => Text.Length == 0 ? "" : Ui.Plural(Listed.Count, Words.One, Words.Many);
 
     private static string? Meta(TagPick p)
     {

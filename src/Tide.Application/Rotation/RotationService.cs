@@ -145,7 +145,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        return (await db.RotationChanges.AsNoTracking().ToListAsync(ct)).OrderByDescending(c => c.CreatedAtUtc).Take(take).ToList();
+        return await db.RotationChanges.AsNoTracking().OrderByDescending(c => c.CreatedAtUtc).Take(take).ToListAsync(ct);
     }
 
     // --- the roster and the rota (administrators) ----------------------------------------------------------------

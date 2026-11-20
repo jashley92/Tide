@@ -76,7 +76,7 @@
         {
             var others = d.Articles.Count(a => a.Id != ArticleId);
             var open = d.Actions.Count(a => !Tide.Domain.Entities.ActionItem.IsClosedStatus(a.Status));
-            <div class="small"><a href="@($"stack/{p.Id}")">@others other article@(others == 1 ? "" : "s") &middot; @open open action@(open == 1 ? "" : "s")</a></div>
+            <div class="small"><a href="@($"stack/{p.Id}")">@Ui.Plural(others, "other article") &middot; @Ui.Plural(open, "open action")</a></div>
         }
         @if (CanWrite && OnMention.HasDelegate)
         {

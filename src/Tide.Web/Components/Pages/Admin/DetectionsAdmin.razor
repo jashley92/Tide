@@ -66,7 +66,7 @@
             @foreach (var c in _callers)
             {
                 <li class="d-flex gap-2 align-items-center mb-1">
-                    <span>@c.Name: @c.Rules rule@(c.Rules == 1 ? "" : "s"), pushed @Ui.When(Clock, c.PushedAtUtc)</span>
+                    <span>@c.Name: @Ui.Plural(c.Rules, "rule"), pushed @Ui.When(Clock, c.PushedAtUtc)</span>
                     @if (!c.Counts) { <Badge Tone="BadgeTone.Warn">token revoked or expired: no longer counts</Badge> }
                     else if (c.Quiet) { <Badge>not pushed for @((int)(Clock.Now - c.PushedAtUtc).TotalDays) days</Badge> }
                     <button type="button" class="btn btn-sm btn-outline-danger ms-auto" disabled="@_busy" @onclick="() => Remove(c)">Remove</button>
@@ -151,12 +151,12 @@
     private async Task Remove(DetectionCallerSet c)
     {
         if (_busy) return;
-        if (!await _confirm.Ask($"Remove the rules pushed by {c.Name}?", $"Its {c.Rules} rule{(c.Rules == 1 ? "" : "s")} stop counting on Coverage now. If it pushes again, its new push counts.", "Remove")) return;
+        if (!await _confirm.Ask($"Remove the rules pushed by {c.Name}?", $"Its {Ui.Plural(c.Rules, "rule")} stop counting on Coverage now. If it pushes again, its new push counts.", "Remove")) return;
         _busy = true;
         try
         {
             var gone = await Detections.RemoveCallerAsync(c.Caller);
-            Toasts.Show($"Removed {gone} rule{(gone == 1 ? "" : "s")} pushed by {c.Name}.");
+            Toasts.Show($"Removed {Ui.Plural(gone, "rule")} pushed by {c.Name}.");
             await Load();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

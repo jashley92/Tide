@@ -48,7 +48,7 @@ else
             <div class="d-flex gap-2 mt-2 align-items-center">
                 <select class="form-select form-select-sm" aria-label="Playbook to apply" @bind="_playbookId">
                     <option value="">Apply a playbook…</option>
-                    @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@p.Steps.Count step@(p.Steps.Count == 1 ? "" : "s"))</option> }
+                    @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@Ui.Plural(p.Steps.Count, "step"))</option> }
                 </select>
                 <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || _playbookId is null)" @onclick="Apply">Apply</button>
             </div>
@@ -134,7 +134,7 @@ else
     {
         var added = await ActionSvc.ApplyPlaybookAsync(ActionId, _playbookId!.Value);
         _playbookId = null;
-        Toasts.Show(added == 0 ? "Its steps were all on the checklist already." : $"{added} step{(added == 1 ? "" : "s")} added.");
+        Toasts.Show(added == 0 ? "Its steps were all on the checklist already." : $"{Ui.Plural(added, "step")} added.");
     });
 
     private async Task Run(Func<Task> change)

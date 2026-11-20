@@ -4,6 +4,7 @@ using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Files;
 using Tide.Application.Security;
+using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
 namespace Tide.IntegrationTests;
@@ -462,6 +463,59 @@ public class BriefServiceTests : IDisposable
         offered.Single(c => c.Id == carried).Available.Should().BeTrue("a carried-over draft is still to be briefed, however old");
         offered.Single(c => c.Id == talked).Available.Should().BeFalse("it was presented on Friday");
         offered.Count(c => c.Available).Should().Be(1, "\"Add article (N ready, M drafts)\" counts only what's still to brief");
+    }
+
+    [Fact]
+    public async Task ThePicker_OffersTheSameArticles_InTheSameOrder_WithWhenEachWasLastBriefed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ids = new Dictionary<string, Guid>();
+        Guid thisBrief;
+        await using (var db = _db.PlainContext())
+        {
+            Article Add(string name, ArticleStatus status, TimeSpan age)
+            {
+                var a = new Article { Title = name, Status = status, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = now - age };
+                db.Articles.Add(a);
+                ids[name] = a.Id;
+                return a;
+            }
+            Brief On(DateOnly day, BriefStatus status, bool held, params Article[] articles)
+            {
+                var b = new Brief { BriefDate = day, Status = status, AnalystId = "S-1", AnalystName = "Analyst", CreatedAtUtc = now };
+                if (held) b.MeetingHeldAtUtc = now;
+                for (var k = 0; k < articles.Length; k++) b.Items.Add(new BriefItem { ArticleId = articles[k].Id, SortOrder = k });
+                db.Briefs.Add(b);
+                return b;
+            }
+            var readyNew = Add("ready, new", ArticleStatus.Ready, TimeSpan.FromDays(1));
+            var readyOld = Add("ready, old", ArticleStatus.Ready, TimeSpan.FromDays(100));
+            var readyHeld = Add("ready, on a held brief", ArticleStatus.Ready, TimeSpan.FromDays(5));
+            var readySent = Add("ready, on a brief sent without a meeting", ArticleStatus.Ready, TimeSpan.FromDays(2));
+            Add("draft, new", ArticleStatus.Draft, TimeSpan.FromDays(3));
+            Add("draft, old, never briefed", ArticleStatus.Draft, TimeSpan.FromDays(101));
+            var draftCarried = Add("draft, old, briefed twice", ArticleStatus.Draft, TimeSpan.FromDays(102));
+            Add("presented, new", ArticleStatus.Presented, TimeSpan.FromHours(1));
+            Add("presented, old", ArticleStatus.Presented, TimeSpan.FromDays(103));
+            var onThis = Add("on this brief", ArticleStatus.Ready, TimeSpan.FromHours(2));
+            thisBrief = On(Monday, BriefStatus.Draft, false, onThis).Id;
+            On(Monday.AddDays(-3), BriefStatus.Sent, false, readySent);
+            On(Monday.AddDays(-4), BriefStatus.Presented, true, readyHeld, draftCarried);
+            On(Monday.AddDays(-14), BriefStatus.Presented, true, draftCarried);
+            await db.SaveChangesAsync();
+        }
+
+        var offered = await _db.Briefs().CandidatesAsync(thisBrief);
+
+        offered.Select(c => (c.Title, c.Status, c.LastBriefed)).Should().Equal(
+            ("ready, new", ArticleStatus.Ready, null),
+            ("ready, on a held brief", ArticleStatus.Ready, Monday.AddDays(-4)),
+            ("ready, old", ArticleStatus.Ready, null),
+            ("presented, new", ArticleStatus.Presented, null),
+            ("ready, on a brief sent without a meeting", ArticleStatus.Presented, Monday.AddDays(-3)),
+            ("draft, new", ArticleStatus.Draft, null),
+            ("draft, old, briefed twice", ArticleStatus.Draft, Monday.AddDays(-4)));
+        offered.Should().OnlyContain(c => c.Id == ids[c.Title] && c.AuthorId == "S-1");
     }
 
     [Fact]

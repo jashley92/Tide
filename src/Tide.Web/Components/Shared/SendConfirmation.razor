@@ -15,7 +15,7 @@ else if (Plan.LastSentAtUtc is { } last)
 }
 <div class="small mb-1">Marked <TlpBadge Level="Plan.Marking" />: @Tlp.Meaning(Plan.Marking)</div>
 <div class="small mb-1">Subject: <strong>@Plan.Subject</strong></div>
-<div class="small mb-1">To @Plan.Recipients.Count recipient@(Plan.Recipients.Count == 1 ? "" : "s"):</div>
+<div class="small mb-1">To @Ui.Plural(Plan.Recipients.Count, "recipient"):</div>
 <div class="tide-recipients mb-2">@string.Join("; ", Plan.Recipients)</div>
 <div class="small tide-muted mb-1" title="@FingerprintHelp">Checked version <span class="tide-recipients">@ShortFingerprint(Plan.Fingerprint)</span><span class="visually-hidden">: @FingerprintHelp</span></div>
 <div class="small tide-muted">A copy of exactly what's sent is kept in the archive, and the brief is marked sent.@(Plan.Edition == Edition.Public ? " Readers will see it on the published briefs page." : "")</div>

@@ -179,10 +179,10 @@ else
                     <button type="button" class="btn-close" aria-label="Close" @onclick="() => Go(line: null)"></button>
                 </div>
                 <div class="small tide-muted mb-3">
-                    @if (isAction) { <span>@(_drillActions?.Count ?? 0) action@((_drillActions?.Count ?? 0) == 1 ? "" : "s")</span> }
+                    @if (isAction) { <span>@Ui.Plural(_drillActions?.Count ?? 0, "action")</span> }
                     else
                     {
-                        <span>@(_drillArticles?.Count ?? 0) article@((_drillArticles?.Count ?? 0) == 1 ? "" : "s")</span>
+                        <span>@Ui.Plural(_drillArticles?.Count ?? 0, "article")</span>
                         <span> · <a href="@ArticlesCsvUrl(_drillRow.Key, at)" download>Export CSV</a></span>
                     }
                 </div>
@@ -234,7 +234,7 @@ else
                                 <div class="small d-flex gap-2 flex-wrap align-items-center my-1">
                                     <TlpBadge Level="a.Tlp" /> <ClassBadge Classification="a.Classification" Priority="a.Priority" />
                                     <span class="tide-muted">@(a.Briefed ? "Briefed" : "Written") @Ui.ShortDay(a.CountedOn)</span>
-                                    @if (a.Actions > 0) { <span class="tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @a.Actions action@(a.Actions == 1 ? "" : "s")</span> }
+                                    @if (a.Actions > 0) { <span class="tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @Ui.Plural(a.Actions, "action")</span> }
                                 </div>
                                 @if (!string.IsNullOrWhiteSpace(a.Bluf)) { <div class="small">@a.Bluf</div> }
                                 @if (a.Tags.Count + a.Techniques.Count > 0)

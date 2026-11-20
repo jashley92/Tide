@@ -113,6 +113,9 @@ public class OutreachServiceTests : IDisposable
         return (await Action(team, article), product);
     }
 
+    // The action as its page reads it, emails and all (newest first): the one read the page makes.
+    private async Task<ActionDetail> Detail(ActionItem a) => (await _db.Actions().GetAsync(a.Number))!;
+
     private Task<OutreachMessage> Sent(ActionItem a, string to = "psirt@vendor.example") =>
         _db.Outreach().MarkSentAsync(a.Id, new OutreachSend { To = to, Subject = "Edge VPN: are we affected?", Body = "Hello,\n\nAre we affected?", Tlp = TlpLevel.Green });
 
@@ -197,7 +200,7 @@ public class OutreachServiceTests : IDisposable
         await _db.OutreachTemplates().DeleteAsync(id);
         await _db.OutreachTemplates().DeleteAsync(id);   // gone already: fine
 
-        var kept = (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().ContainSingle().Subject;
+        var kept = (await Detail(action)).Action.Outreach.Should().ContainSingle().Subject;
         (kept.TemplateId, kept.TemplateName).Should().Be(((Guid?)null, "Owner's question"), "an email keeps the name of the template it came from");
     }
 
@@ -225,7 +228,7 @@ public class OutreachServiceTests : IDisposable
         w.Draft.Unfilled.Should().BeEmpty();
         w.Recipients.Select(r => (r.Address, r.Label)).Should().Equal(("isac@isac.example", "the template's address"), ("psirt@vendor.example", $"{w.Product.Name}'s contact, Vendor PSIRT"));
         w.To.Should().Be("isac@isac.example");
-        (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty("writing saves nothing");
+        (await Detail(action)).Action.Outreach.Should().BeEmpty("writing saves nothing");
     }
 
     [Fact]
@@ -293,12 +296,11 @@ public class OutreachServiceTests : IDisposable
             TemplateId = template, To = "psirt@vendor.example; Security@Vendor.example, psirt@vendor.example", Subject = w.Draft.Subject, Body = w.Draft.Body, Tlp = w.Draft.Marking,
         });
 
-        var state = await _db.Outreach().ForActionAsync(action.Id);
-        var m = state.Messages.Should().ContainSingle().Subject;
+        var detail = await Detail(action);
+        var m = detail.Action.Outreach.Should().ContainSingle().Subject;
         (m.To, m.Subject, m.Tlp, m.SentByName, m.TemplateName).Should().Be(("psirt@vendor.example; Security@Vendor.example", w.Draft.Subject, TlpLevel.Green, "Test Analyst", "Are we affected?"));
         m.Body.Should().Be(w.Draft.Body.Trim());
-        state.Waiting.Should().BeTrue();
-        state.Oldest.Should().Be(m);
+        detail.Waiting.Should().BeSameAs(m);
         var history = (await _db.Actions().GetAsync(action.Number))!.Action.Events.Select(e => e.Text);
         history.Should().Contain($"Sent an email to psirt@vendor.example; Security@Vendor.example (TLP:GREEN): \"{w.Draft.Subject}\", from the template \"Are we affected?\".");
     }
@@ -325,7 +327,7 @@ public class OutreachServiceTests : IDisposable
         var ask = await Action(team);
         As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
         await FluentActions.Invoking(() => Sent(ask)).Should().ThrowAsync<ForbiddenException>();
-        (await _db.Outreach().ForActionAsync(ask.Id)).Messages.Should().BeEmpty("a Viewer reads it");
+        (await Detail(ask)).Action.Outreach.Should().BeEmpty("a Viewer reads it");
         As(Owner, "Olu Owner", AppRole.ActionOwner);
         (await Sent(ask)).SentByName.Should().Be("Olu Owner");
     }
@@ -344,7 +346,7 @@ public class OutreachServiceTests : IDisposable
         var a = (await _db.Actions().GetAsync(action.Number))!.Action;
         (a.Status, a.Outcome, a.OutcomeNote).Should().Be((ActionStatus.Done, ActionOutcome.NotAffected, "Not affected: fixed in 22.7R1."));
         a.Events.Select(e => e.Text).Should().Contain("Reply from psirt@vendor.example recorded (with reply.eml). Status: Open → Done (Not affected): Not affected: fixed in 22.7R1.");
-        var replied = (await _db.Outreach().ForActionAsync(action.Id)).Messages.Single();
+        var replied = (await Detail(action)).Action.Outreach.Single();
         (replied.IsWaiting, replied.ReplyNotes, replied.ReplyFileId, replied.ReplyRecordedByName).Should().Be((false, "Not affected: fixed in 22.7R1.", (Guid?)file.FileId, "Test Analyst"));
 
         await FluentActions.Invoking(() => _db.Outreach().RecordReplyAsync(m.Id, null, close: false)).Should().ThrowAsync<StaleEditException>().WithMessage("Test Analyst already recorded the reply*");
@@ -361,12 +363,11 @@ public class OutreachServiceTests : IDisposable
             .Should().ThrowAsync<ArgumentException>().WithMessage("That file isn't on this action.");
 
         await _db.Outreach().RecordReplyAsync(vendor.Id, "They're checking.", close: false);
-        var state = await _db.Outreach().ForActionAsync(action.Id);
-        state.Oldest!.Id.Should().Be(isac.Id, "the ISAC's is still waiting");
+        (await Detail(action)).Waiting!.Id.Should().Be(isac.Id, "the ISAC's is still waiting");
         (await _db.Actions().GetAsync(action.Number))!.Action.Status.Should().Be(ActionStatus.Open);
 
         await _db.Outreach().WithdrawAsync(isac.Id);
-        (await _db.Outreach().ForActionAsync(action.Id)).Waiting.Should().BeFalse();
+        (await Detail(action)).Waiting.Should().BeNull();
         (await _db.Actions().GetAsync(action.Number))!.Action.Events.Select(e => e.Text).Should()
             .Contain("Reply from psirt@vendor.example recorded: They're checking.")
             .And.Contain("Took back the email to isac@isac.example (\"Edge VPN: are we affected?\"): not sent after all.");
@@ -403,7 +404,7 @@ public class OutreachServiceTests : IDisposable
 
         await _db.Reminders(options, At(6)).RunDueAsync();   // Friday: four business days
         _db.Email.Sent.Should().BeEmpty();
-        var waiting = (await _db.Outreach(options, At(6)).ForActionAsync(action.Id)).Messages.Single();
+        var waiting = (await Detail(action)).Action.Outreach.Single();
         _db.Outreach(options, At(6)).FollowUpOn(waiting).Should().Be(new DateOnly(2026, 11, 9));
 
         await _db.Reminders(options, At(9)).RunDueAsync();   // the next Monday: five

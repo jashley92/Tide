@@ -427,6 +427,10 @@ public class SystemPagesTests(TideApp app) : IClassFixture<TideApp>
     {
         using var scope = app.Services.CreateScope();
         Audit.ServiceScopes.SignIn(scope, Permission.Administer);   // the service checks the user itself, as the page does
+        // The screenshot folder is made when the file store is first used. The intake job's first pass usually does that
+        // just after start-up, but on a busy machine this test can get there first and find no folder yet, which
+        // Diagnostics rightly reports. So the test uses the file store itself rather than racing the job.
+        scope.ServiceProvider.GetRequiredService<IFileStore>();
         var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
         report.Database.Reachable.Should().BeTrue();
         report.Database.Pending.Should().BeEmpty();
@@ -527,5 +531,67 @@ public class UpdatesUpgradeCommandTests(UpdateAvailableApp app) : IClassFixture<
             .And.Contain(@"cd .\tide-v0.1.0-alpha.3\deploy")
             .And.Contain(@".\Upgrade-Tide.ps1 -BundleZip ..\..\tide-v0.1.0-alpha.3.zip")
             .And.NotContain("Install-Tide.ps1", "the upgrade script, not a re-run of the installer");
+    }
+}
+
+/// <summary>A new server with its background jobs off, so nothing but start-up itself has touched the file store.</summary>
+public class NoJobsApp : TideApp
+{
+    /// <summary>Where the files go, when not the usual temporary folder.</summary>
+    protected virtual string? FilesPath => null;
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        if (FilesPath is { } files) builder.UseSetting("Files:RootPath", files);
+        builder.ConfigureTestServices(s =>
+        {
+            foreach (var job in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                         && d.ImplementationType?.Assembly == typeof(SystemDiagnostics).Assembly).ToList())
+                s.Remove(job);
+        });
+    }
+}
+
+/// <summary>A new server whose files folder can't be made: its path runs through a file.</summary>
+public sealed class UnmakeableFilesFolderApp : NoJobsApp
+{
+    private readonly string _blocker = Path.Combine(Path.GetTempPath(), "tide-tests-blocker-" + Guid.NewGuid().ToString("N"));
+
+    public UnmakeableFilesFolderApp() => File.WriteAllText(_blocker, "");
+
+    protected override string? FilesPath => Path.Combine(_blocker, "files");
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        try { File.Delete(_blocker); } catch (IOException) { /* best effort */ }
+    }
+}
+
+public class ScreenshotFolderAtStartTests(NoJobsApp app) : IClassFixture<NoJobsApp>
+{
+    [Fact]
+    public async Task ANewServer_FindsTheScreenshotFolderWritable_BeforeAnythingIsUploaded()
+    {
+        using var scope = app.Services.CreateScope();
+        Audit.ServiceScopes.SignIn(scope, Permission.Administer);
+        var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
+        report.Storage[0].Exists.Should().BeTrue("start-up makes the folder, not the first upload or the intake job");
+        report.Checks.Should().Contain(c => c.Label == "Screenshot folder" && c.Level == CheckLevel.Ok);
+    }
+}
+
+public class UnmakeableScreenshotFolderTests(UnmakeableFilesFolderApp app) : IClassFixture<UnmakeableFilesFolderApp>
+{
+    [Fact]
+    public async Task AFolderThatCantBeMade_DoesntStopStartUp_AndDiagnosticsSaysSo()
+    {
+        (await app.CreateClient().GetAsync("/health/live")).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var scope = app.Services.CreateScope();
+        Audit.ServiceScopes.SignIn(scope, Permission.Administer);
+        var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
+        report.Checks.Should().Contain(c => c.Label == "Screenshot folder" && c.Level == CheckLevel.Problem
+            && c.Detail == "Start-up couldn't create it. The Tide.Files warning in the log says why: usually the app pool's permissions, or a wrong Files:RootPath.");
     }
 }

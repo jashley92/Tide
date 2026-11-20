@@ -277,7 +277,7 @@ else
                         </ol>
                         @if (edition.WithheldArticles > 0)
                         {
-                            <div class="tide-present-help mt-2">@edition.WithheldArticles restricted item@(edition.WithheldArticles == 1 ? " is" : "s are") left out of this edition.</div>
+                            <div class="tide-present-help mt-2">@Ui.Plural(edition.WithheldArticles, "restricted item is", "restricted items are") left out of this edition.</div>
                         }
                     </div>
                 }
@@ -593,7 +593,7 @@ else
                                 }
                                 @if (ea.WithheldParts > 0)
                                 {
-                                    <div class="tide-present-help mt-2">@ea.WithheldParts restricted part@(ea.WithheldParts == 1 ? " is" : "s are") left out of this edition.</div>
+                                    <div class="tide-present-help mt-2">@Ui.Plural(ea.WithheldParts, "restricted part is", "restricted parts are") left out of this edition.</div>
                                 }
                                 @* Indicators and actions are the team's: the company-wide edition never carries them (ADR 0005). *@
                                 @if (TeamEdition)
@@ -640,7 +640,7 @@ else
                         <h2>That's the brief</h2>
                         @{ var threats = edition.Articles.Count(a => a.Article.Classification == Classification.Threat); }
                         <div class="tide-cover-meta">
-                            @threats threat@(threats == 1 ? "" : "s"),
+                            @Ui.Plural(threats, "threat"),
                             @edition.Articles.Count(a => a.Article.Classification == Classification.Informational) informational
                         </div>
                         @* What's left, as three short lists the room reads alike (the presenter's rail acts on them): the
@@ -2067,7 +2067,7 @@ else
         }
         await EndLive(seat);
         Toasts.Show(already ? "The meeting has ended."
-            : carriedTo is { } next ? $"Marked as presented. {carry.Count} article{(carry.Count == 1 ? "" : "s")} carried to {Ui.Day(next)}."
+            : carriedTo is { } next ? $"Marked as presented. {Ui.Plural(carry.Count, "article")} carried to {Ui.Day(next)}."
             : "Marked as presented.");
         Nav.NavigateTo(Ui.BriefUrl(_date));
     });
@@ -3010,7 +3010,7 @@ else
 
     /// <summary>What comes after the articles, before the wrap-up, for the title slide: "2 actions that need review"; null
     /// when the wrap-up follows them.</summary>
-    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review") : null;
+    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action that needs review", "actions that need review") : null;
 
 
     private Task HandsListDismissed() => InvokeAsync(() =>
