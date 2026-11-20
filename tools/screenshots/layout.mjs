@@ -3644,7 +3644,7 @@ const autosaved = autosaveAfter(async page => {
 });
 
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
-const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
+const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
