@@ -105,7 +105,6 @@ public static class DependencyInjection
         services.AddScoped<ActionFileService>();
         services.AddScoped<BriefService>();
         services.AddScoped<MeetingService>();
-        services.AddScoped<AttendanceCloser>();
         services.AddScoped<ScorecardService>();
         services.AddScoped<RoleMappingService>();
         services.AddScoped<DistributionSettings>();

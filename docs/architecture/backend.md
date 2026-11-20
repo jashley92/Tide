@@ -72,7 +72,6 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 | `AssistService` | `Assist/AssistService.cs` | Opt-in AI drafting, held to `Ai:MaxTlp` (ADR [0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)) | `DraftAsync`, `FetchAsync`, `FromPastedAsync`, `KeptTextAsync`, `OtherSourcesAsync`, `PromptAsync`, `RecordAsync`, `StatusAsync`, `TestFetchAsync` | WriteArticles to draft; Administer for its source settings |
 | `BriefService` | `Briefs/BriefService.cs` | The daily brief: which articles, their order, presenter, readiness and the meeting's progress | `GetOrStartAsync`, `GetAsync`, `ListAsync`, `AddArticleAsync`, `RemoveItemAsync`, `MoveItemAsync`, `ReorderAsync`, `SetDetailsAsync`, `SetTeamNoteAsync`, `MarkReadyAsync`, `MarkPresentedAsync`, `ReopenAsync`, `RunningOrderAsync`, `CandidatesAsync`, `EditionActionsAsync`, `SetDiscussedAsync` | ReadTeamEdition; WriteArticles to build; PresentBriefs to run the meeting |
 | `MeetingService` | `Briefs/MeetingService.cs` | The meeting's record: attendance and each person's notes | `GetAsync`, `JoinedAsync`, `LeftAsync`, `AddAttendeeAsync`, `RemoveAttendeeAsync`, `AddNoteAsync`, `EditNoteAsync`, `DeleteNoteAsync` | JoinMeetings, MeetingNotes, PresentBriefs, ReadTeamEdition |
-| `AttendanceCloser` | `Briefs/AttendanceCloser.cs` | Left times for a meeting nobody ended (dropped empty by the sweep, or lost to a restart); fills in only a missing one | `CloseAsync`, `CloseAllAsync` | none: the system's, called only by `MeetingAttendanceHostedService` |
 | `DistributionService` | `Distribution/DistributionService.cs` | Sending editions by email, freezing what went, the SharePoint copy, the published archive | `PlanAsync`, `SendAsync`, `SendTestAsync`, `SettleAsync`, `PreviewEmailAsync`, `EditionToSendAsync`, `MarkDistributedAsync`, `FinishNotSentAsync`, `SharePointAsync`, `SharePointImagesZipAsync`, `MarkSharePointPostedAsync`, `GetSendAsync`, `SendsAsync`, `PublishedAsync`, `GetPublishedAsync`, `PublishedBriefsAsync` | ReadTeamEdition to preview; PresentBriefs to send; ReadPublished for the archive |
 | `CorrectionService` | `Distribution/CorrectionService.cs` | Corrections to a sent edition (ADR [0015](../decisions/0015-corrections-after-send.md)) | `StartAsync`, `PlanAsync`, `SendAsync`, `SettleAsync`, `GetAsync`, `CorrectionsAsync` | ReadTeamEdition; PresentBriefs to send |
 | `DistributionSettings` | `Settings/DistributionSettings.cs` | The edition ceilings and recipient lists in force | `GetAsync`, `SaveAsync`, `GetRecipientsAsync`, `SaveRecipientsAsync` | Administer to save |
@@ -295,8 +294,9 @@ flowchart LR
 | `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`) | Every 30 seconds; at shutdown | The `JobLeases` row; the runs `JobMonitor` queued | The lease (renewed, or let go at shutdown); `JobRuns`, and deletes runs older than 30 days once a day | Always on; prunes only while it holds the lease | Logged as a Warning; runs it couldn't write are kept (up to 2,000) and written at the next pass. |
 
 `MeetingAttendanceHostedService` (`src/Tide.Web/Services/MeetingAttendanceHostedService.cs`) isn't a job: it has no
-loop and no lease. At start-up, before requests, it closes the attendance a restart left open; then it closes each
-meeting `LiveMeetings` drops empty (see [collaboration.md](collaboration.md#livemeetings)). A failure is logged.
+loop and no lease. It closes the attendance of each meeting `LiveMeetings` drops empty, through `AttendanceCloser`
+(internal to the web project and not in DI, so no page can use it: it asks no permission, as no one is signed in).
+See [collaboration.md](collaboration.md#livemeetings). A failure is logged.
 
 Every job but the upkeep runs only in the process holding the job lease. A run past its job's limit (30 minutes for
 most, 2 hours for the CVE refresh, 10 minutes for the update check, 15 for webhooks, 1 hour for the prune) is hung,

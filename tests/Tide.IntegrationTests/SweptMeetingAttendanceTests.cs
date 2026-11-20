@@ -3,14 +3,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tide.Application.Abstractions;
-using Tide.Application.Briefs;
 using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>A meeting nobody ended (everyone left, or the app restarted): the attendance record still says when each
-/// person left, written by the app itself with no one signed in.</summary>
+/// <summary>A meeting everyone left without ending it: the attendance record still says when each person left, as far
+/// as the meeting saw, written by the app itself with no one signed in.</summary>
 public sealed class SweptMeetingAttendanceTests : IDisposable
 {
     private static readonly DateOnly Day = new(2026, 9, 1);
@@ -24,9 +24,9 @@ public sealed class SweptMeetingAttendanceTests : IDisposable
     public SweptMeetingAttendanceTests()
     {
         _meetings = new LiveMeetings(_time);
-        // No one signed in: the closer is the app's, as the sweep and start-up are.
-        (_db.User.IsAuthenticated, _db.User.UserId, _db.User.Roles) = (false, "system", new HashSet<Tide.Domain.Enums.AppRole>());
-        _services = new ServiceCollection().AddSingleton<IAppDbContextFactory>(_db).AddScoped<AttendanceCloser>().BuildServiceProvider();
+        // No one signed in: the sweep is the app's.
+        (_db.User.IsAuthenticated, _db.User.UserId, _db.User.Roles) = (false, "system", new HashSet<AppRole>());
+        _services = new ServiceCollection().AddSingleton<IAppDbContextFactory>(_db).BuildServiceProvider();
     }
 
     public void Dispose()
@@ -36,12 +36,10 @@ public sealed class SweptMeetingAttendanceTests : IDisposable
         _db.Dispose();
     }
 
-    private Task<Guid> BriefWith(params MeetingAttendee[] people) => BriefWith(Day, people);
-
-    private async Task<Guid> BriefWith(DateOnly day, params MeetingAttendee[] people)
+    private async Task<Guid> BriefWith(params MeetingAttendee[] people)
     {
         await using var ctx = _db.Context();
-        var brief = new Brief { BriefDate = day, AnalystId = "pat", AnalystName = "Pat" };
+        var brief = new Brief { BriefDate = Day, AnalystId = "pat", AnalystName = "Pat" };
         ctx.Briefs.Add(brief);
         foreach (var p in people) p.BriefId = brief.Id;
         ctx.MeetingAttendees.AddRange(people);
@@ -56,84 +54,83 @@ public sealed class SweptMeetingAttendanceTests : IDisposable
     }
 
     private MeetingAttendanceHostedService Hosted() =>
-        new(_meetings, _services.GetRequiredService<IServiceScopeFactory>(), _time, NullLogger<MeetingAttendanceHostedService>.Instance);
+        new(_meetings, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<MeetingAttendanceHostedService>.Instance);
+
+    // Swept, through the hosted service as the app runs it; waits for its write (it's off the sweep's thread).
+    private async Task SweepAndWait(Guid brief, string name)
+    {
+        using var hosted = Hosted();
+        await hosted.StartAsync(CancellationToken.None);
+        _meetings.Sweep();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while ((await LeftTimes(brief))[name] is null && DateTime.UtcNow < deadline) await Task.Delay(20);
+        await hosted.StopAsync(CancellationToken.None);
+    }
 
     [Fact]
-    public async Task ASweptMeeting_GivesEveryoneStillThereALeftTime_WhenLastSeen_AndKeepsTheTimeOfWhoeverLeft()
+    public async Task ASweptMeeting_GivesWhoeverItSawLeaveTheirTime_KeepsAnEarlierOne_AndAsksNoOneSignedIn()
     {
         var samLeft = Nine.AddMinutes(5);
         var brief = await BriefWith(
             new MeetingAttendee { UserId = "pat", Name = "Pat", JoinedAtUtc = Nine },
             new MeetingAttendee { UserId = "sam", Name = "Sam", JoinedAtUtc = Nine, LeftAtUtc = samLeft },
-            new MeetingAttendee { UserId = "lee", Name = "Lee", JoinedAtUtc = Nine },
             new MeetingAttendee { Name = "Dana from Legal" });
-        var pat = _meetings.Start(Day, brief, "pat", "Pat", "c-pat", Guid.NewGuid(), 0);
+        _meetings.Start(Day, brief, "pat", "Pat", "c-pat", Guid.NewGuid(), 0);
         var sam = _meetings.Join(Day, "sam", "Sam", false, "c-sam", Guid.NewGuid(), 0)!;
-        DroppedMeeting? dropped = null;
-        _meetings.Dropped += d => dropped = d;
-
         _time.Now = Nine.AddMinutes(10);
         sam.Dispose();
         _time.Now = Nine.AddMinutes(20);
         _meetings.SetConnected("c-pat", false);   // the presenter's lid closed: last seen now
         _time.Now += LiveMeetings.Abandoned;
-        _meetings.Sweep();
+
+        await SweepAndWait(brief, "Pat");
 
         _meetings.Get(Day).Should().BeNull();
-        dropped.Should().NotBeNull().And.Match<DroppedMeeting>(d => d.BriefId == brief && d.AtUtc == _time.Now);
-        await new AttendanceCloser(_db).CloseAsync(brief, dropped!.LastSeenUtc, dropped.AtUtc);
-
         (await LeftTimes(brief)).Should().BeEquivalentTo(new Dictionary<string, DateTimeOffset?>
         {
-            ["Pat"] = Nine.AddMinutes(20),   // when their connection went
+            ["Pat"] = Nine.AddMinutes(20),   // when their connection went, not the sweep's time
             ["Sam"] = samLeft,               // left already: kept
-            ["Lee"] = _time.Now,             // not seen in this meeting: the sweep's time
             ["Dana from Legal"] = null,      // added by name: no times
         });
         await using var ctx = _db.Context();
         (await ctx.AuditLog.Where(e => e.EntityType == nameof(MeetingAttendee) && e.Action == "Modified").Select(e => e.UserName).ToListAsync())
-            .Should().HaveCount(2).And.OnlyContain(n => n == "system");
-        pat.Dispose();
+            .Should().ContainSingle().Which.Should().Be("system");
     }
 
     [Fact]
-    public async Task TheSweep_ClosesTheRecord_ThroughTheHostedService_AndAgainIsNoChange()
+    public async Task SomeoneTheSweptMeetingNeverSaw_StaysOpen_RatherThanGivenTheSweepsTime()
     {
-        var brief = await BriefWith(new MeetingAttendee { UserId = "pat", Name = "Pat", JoinedAtUtc = Nine });
+        var brief = await BriefWith(
+            new MeetingAttendee { UserId = "pat", Name = "Pat", JoinedAtUtc = Nine },
+            new MeetingAttendee { UserId = "lee", Name = "Lee", JoinedAtUtc = Nine.AddDays(-1) });   // from a meeting a restart lost
         _meetings.Start(Day, brief, "pat", "Pat", "c-pat", Guid.NewGuid(), 0);
-        using var hosted = Hosted();
-        await hosted.StartAsync(CancellationToken.None);   // the meeting is live: start-up leaves it
         _time.Now = Nine.AddMinutes(30);
         _meetings.RemoveCircuit("c-pat");
         _time.Now += LiveMeetings.Abandoned;
 
-        _meetings.Sweep();
+        await SweepAndWait(brief, "Pat");
 
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while ((await LeftTimes(brief))["Pat"] is null && DateTime.UtcNow < deadline) await Task.Delay(20);
-        (await LeftTimes(brief))["Pat"].Should().Be(Nine.AddMinutes(30));
-
-        (await new AttendanceCloser(_db).CloseAsync(brief, new Dictionary<string, DateTimeOffset>(), _time.Now.AddHours(1)))
-            .Should().Be(0, "closed already: the time stays");
-        await hosted.StopAsync(CancellationToken.None);
+        var left = await LeftTimes(brief);
+        left["Pat"].Should().Be(Nine.AddMinutes(30));
+        left["Lee"].Should().BeNull("the meeting has no time for them");
     }
 
     [Fact]
-    public async Task AtStartUp_WhoeverARestartLeftInAMeeting_IsClosed_ButNotSomeoneInAMeetingLiveAgain()
+    public async Task ALaterEnd_OverwritesATimeTheSweepRecorded()
     {
-        var lastRun = await BriefWith(new MeetingAttendee { UserId = "pat", Name = "Pat", JoinedAtUtc = Nine.AddDays(-1) },
-            new MeetingAttendee { UserId = "sam", Name = "Sam", JoinedAtUtc = Nine.AddDays(-1), LeftAtUtc = Nine.AddDays(-1).AddMinutes(5) });
-        var today = await BriefWith(Day.AddDays(1), new MeetingAttendee { UserId = "lee", Name = "Lee", JoinedAtUtc = Nine });
-        _meetings.Start(Day.AddDays(1), today, "lee", "Lee", "c-lee", Guid.NewGuid(), 0);
+        var brief = await BriefWith(new MeetingAttendee { UserId = "pat", Name = "Pat", JoinedAtUtc = Nine });
+        _meetings.Start(Day, brief, "pat", "Pat", "c-pat", Guid.NewGuid(), 0);
+        _time.Now = Nine.AddMinutes(10);
+        _meetings.RemoveCircuit("c-pat");
+        _time.Now += LiveMeetings.Abandoned;
+        await SweepAndWait(brief, "Pat");
+        (await LeftTimes(brief))["Pat"].Should().Be(Nine.AddMinutes(10));
 
-        using var hosted = Hosted();
-        await hosted.StartAsync(CancellationToken.None);
+        // Started again and ended by its presenter: End's times are the record's.
+        (_db.User.IsAuthenticated, _db.User.UserId, _db.User.Roles) = (true, "pat", new HashSet<AppRole> { AppRole.Analyst });
+        var ended = Nine.AddHours(1);
+        await _db.Meetings(_time).LeftAsync(brief, new Dictionary<string, DateTimeOffset> { ["pat"] = ended });
 
-        (await LeftTimes(lastRun)).Should().BeEquivalentTo(new Dictionary<string, DateTimeOffset?>
-        {
-            ["Pat"] = _time.Now, ["Sam"] = Nine.AddDays(-1).AddMinutes(5),
-        });
-        (await LeftTimes(today))["Lee"].Should().BeNull("their meeting is live");
-        await hosted.StopAsync(CancellationToken.None);
+        (await LeftTimes(brief))["Pat"].Should().Be(ended);
     }
 }

@@ -222,8 +222,9 @@ meeting runs, and `MeetingAccess` lets a Visitor read only the brief of a meetin
 ([security.md](security.md)). What's kept is the database's (`MeetingService`): attendees as they join and notes, each
 publishing `meeting:{briefId}`. A meeting the sweeper drops raises `Dropped`, with when each person was last seen (as
 `End` gives it); `MeetingAttendanceHostedService` then has `AttendanceCloser` give everyone still marked there a left
-time, as the system (no one is signed in), keeping any time already recorded. At start-up it closes whoever a restart
-left marked as there, at the start-up time, since when they were last seen went with the meeting. The meeting workflow is in [brief-and-meeting.md](../workflows/brief-and-meeting.md).
+time, as the system (no one is signed in), keeping any time already recorded. Only someone the meeting has a time for
+is closed; anyone else stays open. A restart loses the meeting and those times with it, so its rows stay open until
+the person rejoins (which reopens them anyway) or a later End records them. The meeting workflow is in [brief-and-meeting.md](../workflows/brief-and-meeting.md).
 
 ## Concurrency: claim in one statement
 

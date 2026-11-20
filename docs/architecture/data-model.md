@@ -886,13 +886,13 @@ An article's place on a brief. An article can be carried onto a later brief. Wri
 ### `MeetingAttendees` (A)
 
 Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting (or, with none live, whoever presents) adds someone
-who was there by name (no `UserId`, no times). Written by `MeetingService`; a meeting nobody ended (dropped empty, or lost to a restart) is closed by `AttendanceCloser`, as the system, which only fills in a missing `LeftAtUtc`.
+who was there by name (no `UserId`, no times). Written by `MeetingService`; a meeting dropped empty by the sweep is closed by `AttendanceCloser`, as the system, which only fills in a missing `LeftAtUtc`.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `Id`, `BriefId` | uniqueidentifier | no | `BriefId` FK → `Briefs`, **cascade**. |
 | `UserId`, `Name` | nvarchar(256) | no | `UserId` is empty for someone added by name. `(BriefId, UserId, Name)` is **unique**. |
-| `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. `LeftAtUtc` is null while they're there; a meeting nobody ended sets it to when they were last seen, or to when it was dropped (or the app started) if that isn't known. |
+| `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. `LeftAtUtc` is null while they're there; a meeting the sweep dropped sets it to when the meeting last saw them, and leaves it null if it has no time for them. A restart mid-meeting leaves it null until they rejoin or a later End records it. |
 | `AddedById` | nvarchar(256) | yes | Who added them by name: they, or the presenter, can take the row off. Null for someone who joined, or added before it was kept. |
 
 ### `MeetingNotes` (A)

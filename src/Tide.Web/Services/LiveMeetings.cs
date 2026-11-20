@@ -47,7 +47,7 @@ public readonly record struct MeetingScroll(DateOnly Day, Guid Origin, string? S
 
 /// <summary>
 /// A meeting the sweep dropped with no one in it (nobody ended it): when each person who came was last seen there, by user
-/// id, and when it was dropped, for the attendance record to be closed (<see cref="Tide.Application.Briefs.AttendanceCloser"/>).
+/// id, and when it was dropped, for the attendance record to be closed (<see cref="AttendanceCloser"/>).
 /// </summary>
 public sealed record DroppedMeeting(DateOnly Day, Guid BriefId, IReadOnlyDictionary<string, DateTimeOffset> LastSeenUtc, DateTimeOffset AtUtc);
 
