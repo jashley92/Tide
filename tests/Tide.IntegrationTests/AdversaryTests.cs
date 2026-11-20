@@ -207,6 +207,7 @@ public class AdversaryPageTests(TideApp app) : IClassFixture<TideApp>
         await using var profile = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.AdversariesPage>(app, $"/adversaries/{id}", new() { ["Id"] = id });
         var html = await profile.Html();
         html.Should().Contain("Timeline").And.Contain("Techniques seen in our articles").And.Contain("Stop watching").And.Contain("Our notes (Markdown, internal)");
+        html.Should().Contain("None yet.").And.NotContain("tide-adv-heat", "no techniques, no empty list");
     }
 
     [Fact]
