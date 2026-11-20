@@ -318,6 +318,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Events).HasMaxLength(200);
             e.Property(x => x.Secret).HasMaxLength(1000);
             e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.MomentCursor).HasMaxLength(64);
+            e.Property(x => x.OverdueCursor).HasMaxLength(32);
         });
 
         b.Entity<AiDraft>(e =>
@@ -523,6 +525,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.AssigneeId);
             e.HasIndex(x => x.ArticleId);
             e.HasIndex(x => x.ParentId);
+            // The webhook job reads the oldest actions raised after each hook's watermark, a run's worth at a time.
+            e.HasIndex(x => x.CreatedAtUtc);
             // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
             // Square brackets quote a name in SQL Server and SQLite alike.
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");

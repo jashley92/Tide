@@ -530,6 +530,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("AssigneeId");
 
+                    b.HasIndex("CreatedAtUtc");
+
                     b.HasIndex("EscalatedForDue")
                         .HasFilter("[EscalatedForDue] IS NOT NULL");
 
@@ -3628,6 +3630,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MomentCursor")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OverdueCursor")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly?>("OverdueSentFor")

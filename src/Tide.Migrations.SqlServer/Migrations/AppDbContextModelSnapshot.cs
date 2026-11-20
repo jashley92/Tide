@@ -535,6 +535,8 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.HasIndex("AssigneeId");
 
+                    b.HasIndex("CreatedAtUtc");
+
                     b.HasIndex("EscalatedForDue")
                         .HasFilter("[EscalatedForDue] IS NOT NULL");
 
@@ -3634,6 +3636,14 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("MomentCursor")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OverdueCursor")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<DateOnly?>("OverdueSentFor")
                         .HasColumnType("date");

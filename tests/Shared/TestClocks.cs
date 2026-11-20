@@ -5,6 +5,10 @@ public sealed class TestClock(DateTimeOffset now = default) : TimeProvider
 {
     public DateTimeOffset Now { get; set; } = now;
     public override DateTimeOffset GetUtcNow() => Now;
+
+    // The monotonic clock moves with Now too, so a test drives elapsed time (GetElapsedTime) by moving Now.
+    public override long GetTimestamp() => Now.UtcTicks;
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 }
 
 /// <summary>
