@@ -1034,7 +1034,8 @@ public class IntakeServiceTests : IDisposable
             var sameUrl = Add("Same address, tracked", "https://news.example/vpn?utm_source=mail", ArticleStatus.Presented, "CVE-2026-1111");
             var linked = Add("Links to it", "https://elsewhere.example/a", ArticleStatus.Ready);
             var onDraft = Add("Same first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
-            Add("Same second CVE", null, ArticleStatus.Ready, "CVE-2026-2222");
+            Add("Also the first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
+            Add("Same second CVE", null, ArticleStatus.Ready, "CVE-2026-2222");   // a sixth match: past the five shown
             Add("Another CVE", "https://elsewhere.example/b", ArticleStatus.Ready, "CVE-2026-3333");
             Add("Too old to match by address", "https://news.example/vpn", ArticleStatus.Ready).CreatedAtUtc = now.AddDays(-200);
             ctx.ArticleLinks.Add(new ArticleLink { ArticleId = linked.Id, Url = "https://news.example/vpn", Title = "x", AddedAtUtc = now, AddedByName = "Analyst" });
@@ -1061,9 +1062,11 @@ public class IntakeServiceTests : IDisposable
             (Tide.Application.Search.RelatedService.SameLink, "Links to it", (DateOnly?)null, (DateOnly?)null, true, action.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             ("CVE-2026-1111", "Same address, tracked", (DateOnly?)new DateOnly(2026, 10, 1), (DateOnly?)null, false, ""),
             ("CVE-2026-1111", "Same first CVE", (DateOnly?)null, (DateOnly?)new DateOnly(2026, 10, 9), true, ""),
-            ("CVE-2026-2222", "Same second CVE", (DateOnly?)null, (DateOnly?)null, true, ""),
+            ("CVE-2026-1111", "Also the first CVE", (DateOnly?)null, (DateOnly?)null, true, ""),
         ]);
-        coverage.Should().OnlyContain(c => c.ArticleId == ids[c.ArticleTitle]);
+        coverage.Skip(2).Should().OnlyContain(c => c.Why == "CVE-2026-1111", "then the item's CVEs in the order it names them");
+        coverage.Should().HaveCount(5).And.NotContain(c => c.ArticleTitle == "Same second CVE", "only the first five matches are shown")
+            .And.OnlyContain(c => c.ArticleId == ids[c.ArticleTitle]);
     }
 
     [Fact]
