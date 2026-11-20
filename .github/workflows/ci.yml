@@ -217,8 +217,10 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           # If the runner can't reach Ubuntu's package mirrors, fall back to the browser alone: the runner image
-          # already carries the system libraries Chromium needs.
-          ./node_modules/.bin/playwright install --with-deps --only-shell chromium \
+          # already carries the system libraries Chromium needs. apt can also stall on a mirror rather than fail, which
+          # would hold the job until its timeout, so the first try gets five minutes (then a kill 30s later if it
+          # ignores the stop) and a stall falls back like a failure.
+          timeout -k 30 300 ./node_modules/.bin/playwright install --with-deps --only-shell chromium \
             || ./node_modules/.bin/playwright install --only-shell chromium
 
       - name: Layout holds
