@@ -59,9 +59,9 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("id=\"org-zone\"").And.Contain("America/New York (UTC")
             .And.Contain("id=\"org-meeting\"").And.Contain("value=\"Cyber Threat Intelligence\"");
 
-        // The same zone saves without asking.
+        // The same zone saves without asking; nothing was changed, so nothing is written.
         await r.Click(c => c.Save());
-        (await Saved(OperationalSettings.TeamName)).Should().Be("Cyber Threat Intelligence");
+        (await Saved(OperationalSettings.TimeZone)).Should().BeNull();
 
         r.Component.Zone = "Asia/Tokyo";
         await r.Press(c => c.Save());
@@ -71,6 +71,41 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         app.Services.GetRequiredService<OrgClock>().Zone.Id.Should().NotBe("Asia/Tokyo");
     }
 
+    // Two administrators with the page open from before either saved: each save sends only what was changed on its page.
+    [Fact]
+    public async Task OrganizationSettings_TwoAdministratorsChangingDifferentSettings_BothChangesStand()
+    {
+        await using var first = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+        await using var second = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+
+        first.Component.StaleOpen = "7";
+        await first.Click(c => c.Save());
+        second.Component.StaleBlocked = "9";
+        await second.Click(c => c.Save());
+
+        (await Saved(OperationalSettings.StaleOpenDays)).Should().Be("7", "the second page didn't change it, so it doesn't put back what it showed");
+        (await Saved(OperationalSettings.StaleBlockedDays)).Should().Be("9");
+        Toasts(second).Select(t => t.Message).Should().Equal("Saved.");
+    }
+
+    [Fact]
+    public async Task OrganizationSettings_TwoAdministratorsChangingTheSameSetting_TheSecondIsToldToReload()
+    {
+        await using var first = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+        await using var second = await ComponentHarness.RenderAsync<OrganizationAdmin>(app, "/admin/organization");
+
+        first.Component.GuideLinkDays = "20";
+        await first.Click(c => c.Save());
+        second.Component.GuideLinkDays = "30";
+        await second.Click(c => c.Save());
+
+        (await Saved(OperationalSettings.GuideLinkDays)).Should().Be("20", "the first change isn't overwritten");
+        Toasts(second).Should().ContainSingle(t => t.Message.StartsWith("Someone else changed a setting you changed here"));
+    }
+
+    private static IReadOnlyList<Tide.Web.Services.ToastService.Toast> Toasts<T>(ComponentHarness.Rendered<T> r) where T : Microsoft.AspNetCore.Components.IComponent =>
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts;
+
     [Fact]
     public async Task TeamsAndSla_EditsTheReminders()
     {
@@ -79,9 +114,10 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("id=\"rem-time\"").And.Contain("id=\"rem-on-DueSoon\"").And.Contain("id=\"rem-digest-day\"")
             .And.Contain("id=\"rem-bnr-to\"").And.Contain("Save reminders").And.Contain("Run now");
         await r.Click(c => c.SaveReminders());
-        (await Saved(OperationalSettings.ReminderTime)).Should().Be("08:00", "the server's value, saved as the form showed it");
-        (await Saved(OperationalSettings.DigestDay)).Should().Be("Monday");
-        (await Saved(OperationalSettings.DueSoon)).Should().Be("false");
+        // Saved as the form showed it: nothing was changed, so the server's values stand and nothing is written.
+        (await Saved(OperationalSettings.ReminderTime)).Should().BeNull();
+        (await Saved(OperationalSettings.DigestDay)).Should().BeNull();
+        (await Saved(OperationalSettings.DueSoon)).Should().BeNull();
     }
 
     [Fact]
@@ -149,9 +185,10 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("id=\"cve-on\"").And.Contain("id=\"cve-hours\"").And.NotContain("Intake:Enabled");
         await r.Click(c => c.SaveIntake());
         await r.Click(c => c.SaveCve());
-        (await Saved(OperationalSettings.RetentionDays)).Should().Be("90");
-        (await Saved(OperationalSettings.ReadSeconds)).Should().Be("6");
-        (await Saved(OperationalSettings.CveRefreshHours)).Should().Be("24");
+        // Saved as shown, unchanged: the server's values stand, and nothing is written over them.
+        (await Saved(OperationalSettings.RetentionDays)).Should().BeNull();
+        (await Saved(OperationalSettings.ReadSeconds)).Should().BeNull();
+        (await Saved(OperationalSettings.CveRefreshHours)).Should().BeNull();
     }
 
     // The last run's error read as part of its summary: "2 from NVD.NVD: services.nvd.nist.gov didn't answer…".
@@ -241,9 +278,9 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         r.Component.Verdict().Marker.Should().Be("[Partner]", "the Test box uses the lists as typed");
 
         await r.Click(c => c.SaveSponsored());
-        (await Saved(OperationalSettings.SkipSponsored)).Should().Be("true");
+        (await Saved(OperationalSettings.SkipSponsored)).Should().BeNull("the switch wasn't changed, so it isn't written");
         (await Saved(OperationalSettings.SponsoredMarkers)).Should().EndWith("; Advertorial; [Partner]");
-        (await Saved(OperationalSettings.SponsoredExceptions)).Should().Be("state-sponsored; nation-state sponsored; government-sponsored");
+        (await Saved(OperationalSettings.SponsoredExceptions)).Should().BeNull("nor are the exceptions, left as they were");
     }
 
     [Fact]
@@ -318,7 +355,7 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<MetricImportsAdmin>(app, "/admin/metric-imports");
         (await r.Html()).Should().Contain("id=\"drop-on\"").And.Contain("id=\"drop-every\"").And.NotContain("Metrics:Import:DropFolderEnabled");
         await r.Click(c => c.SaveDropFolder());
-        (await Saved(OperationalSettings.DropFolderPollMinutes)).Should().Be("5");
+        (await Saved(OperationalSettings.DropFolderPollMinutes)).Should().BeNull("nothing was changed, so nothing is written");
     }
 
     [Fact]
@@ -327,7 +364,7 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<UpdatesAdmin>(app, "/admin/system/updates");
         (await r.Html()).Should().Contain("id=\"upd-hours\"").And.Contain("min=\"6\"").And.Contain("max=\"168\"");
         await r.Click(c => c.SaveInterval());
-        (await Saved(OperationalSettings.UpdateIntervalHours)).Should().Be("24");
+        (await Saved(OperationalSettings.UpdateIntervalHours)).Should().BeNull("nothing was changed, so nothing is written");
     }
 
     [Fact]

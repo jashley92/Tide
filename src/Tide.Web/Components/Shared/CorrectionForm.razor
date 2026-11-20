@@ -18,7 +18,7 @@
     }
     else
     {
-        <p class="small tide-muted mb-2">A correction is a short email of its own to the @_start.Send.RecipientCount @(_start.Send.RecipientCount == 1 ? "address" : "addresses") the send went to. It can't be recalled either.</p>
+        <p class="small tide-muted mb-2">A correction is a short email of its own to the @Ui.Plural(_start.Send.RecipientCount, "address", "addresses") the send went to. It can't be recalled either.</p>
         @if (_start.Last is { } last)
         {
             <div class="small mb-2 text-danger"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
@@ -102,7 +102,7 @@
                 <h4 class="tide-field-label" id="correct-confirm-h">What goes</h4>
                 <div class="small mb-1">Marked <TlpBadge Level="plan.Marking" />: @Tlp.Meaning(plan.Marking)</div>
                 <div class="small mb-1">Subject: <strong>@plan.Subject</strong></div>
-                <div class="small mb-1">To the @plan.Recipients.Count @(plan.Recipients.Count == 1 ? "address" : "addresses") the send went to:</div>
+                <div class="small mb-1">To the @Ui.Plural(plan.Recipients.Count, "address", "addresses") the send went to:</div>
                 <div class="tide-recipients mb-2">@string.Join("; ", plan.Recipients)</div>
                 @if (ListNote(plan) is { } differs)
                 {
@@ -183,7 +183,7 @@
 
     /// <summary>The tick's words, naming the marking and the original recipients.</summary>
     public static string CheckedLabel(CorrectionPlan plan) =>
-        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({plan.Recipients.Count} {(plan.Recipients.Count == 1 ? "address" : "addresses")} the send went to)";
+        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({Ui.Plural(plan.Recipients.Count, "address", "addresses")} the send went to)";
 
     /// <summary>The send button, named for what goes: "Send the correction to 12".</summary>
     public static string Label(CorrectionPlan plan) => $"Send the {(plan.Request.IsTlpSlip ? "slip notice" : "correction")} to {plan.Recipients.Count}";
@@ -193,7 +193,7 @@
     {
         if (plan.NewOnList == 0 && plan.OffList == 0) return null;
         var parts = new List<string>();
-        if (plan.NewOnList > 0) parts.Add($"{plan.NewOnList} {(plan.NewOnList == 1 ? "address" : "addresses")} on the list now didn't get the send, so won't get this");
+        if (plan.NewOnList > 0) parts.Add($"{Ui.Plural(plan.NewOnList, "address", "addresses")} on the list now didn't get the send, so won't get this");
         if (plan.OffList > 0) parts.Add($"{plan.OffList} that got the send {(plan.OffList == 1 ? "is" : "are")} no longer on the list, and still get{(plan.OffList == 1 ? "s" : "")} this");
         return "The edition's list has changed since: " + string.Join("; ", parts) + ".";
     }

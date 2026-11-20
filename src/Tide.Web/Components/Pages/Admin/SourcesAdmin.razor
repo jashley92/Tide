@@ -42,7 +42,7 @@
             @StarterList(false)
         </details>
         <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-primary btn-sm" disabled="@(_busy || Starter.Count == 0)" @onclick="AddStarter">Add @Starter.Count source@(Starter.Count == 1 ? "" : "s")</button>
+            <button class="btn btn-primary btn-sm" disabled="@(_busy || Starter.Count == 0)" @onclick="AddStarter">Add @Ui.Plural(Starter.Count, "source")</button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="() => Starter = null">Cancel</button>
         </div>
     </section>
@@ -64,7 +64,7 @@
             </div>
             <div class="col-md-4"><label class="tide-field-label" for="s-poll">Poll every (minutes)</label><input id="s-poll" type="number" min="@IntakeOptionsMonitor.CurrentValue.MinPollMinutes" class="form-control form-control-sm" @bind="_form.PollMinutes" /></div>
             <div class="col-12"><label class="tide-field-label" for="s-url">Feed address</label><input id="s-url" class="form-control form-control-sm tide-data" maxlength="2000" @bind="_form.Url" placeholder="@(_form.Kind == SourceKind.CisaKev ? Cves.Options.KevUrl : "https://example.org/feed.xml")" /></div>
-            <div class="col-md-4"><label class="tide-field-label">Articles start at</label><TlpSelect @bind-Value="_form.DefaultTlp" Label="Default TLP" /></div>
+            <div class="col-md-4"><label class="tide-field-label" for="src-default-tlp">Articles start at</label><TlpSelect @bind-Value="_form.DefaultTlp" Id="src-default-tlp" Label="Default TLP" /></div>
             <div class="col-md-4">
                 <label class="tide-field-label" for="s-rel">Reliability</label>
                 <select id="s-rel" class="form-select form-select-sm" @bind="_form.Reliability">
@@ -202,7 +202,7 @@
         @* Wider than a narrow window: the table scrolls in its own box, the page doesn't. *@
         <div class="table-responsive">
         <table class="tide-table">
-            <thead><tr><th>Source</th><th>Kind</th><th>Every</th><th>Last poll</th><th></th></tr></thead>
+            <thead><tr><th>Source</th><th>Kind</th><th>Every</th><th>Last poll</th><th class="position-relative"><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var s in _sources)
                 {
@@ -542,7 +542,61 @@
         AdLabels = Lines(i.AdLabels ?? Tide.Application.Assist.ArticleCleanup.DefaultLabels);
         var c = CveOptionsMonitor.CurrentValue;
         _cve = (c.Enabled, c.RefreshHours);
+        _loaded = new[] { IntakeValues(), AgentValues(custom: true), SponsoredValues(), AdValues(), AgeingValues(), GroupingValues(), CveValues() }
+            .SelectMany(v => v).ToDictionary();
     }
+
+    // The settings as the page showed them when it read them: a save sends only what was changed here, so another
+    // administrator's change to the rest stands, and one to a setting changed here too is refused rather than put back.
+    private Dictionary<string, string?> _loaded = [];
+
+    private Dictionary<string, string?> IntakeValues() => new()
+    {
+        [OperationalSettings.IntakeEnabled] = Switch(_intake.Enabled),
+        [OperationalSettings.MinPollMinutes] = _intake.MinPollMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.RetentionDays] = _intake.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.ReadSeconds] = _intake.ReadSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.PullNowMinutes] = _intake.PullNowMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.PulledBy] = PulledBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    // A custom string is kept for next time only as the custom choice saves it.
+    private Dictionary<string, string?> AgentValues(bool custom)
+    {
+        var values = new Dictionary<string, string?> { [OperationalSettings.UserAgent] = GlobalAgent.ToString() };
+        if (custom) values[OperationalSettings.CustomUserAgent] = CustomAgent;
+        return values;
+    }
+
+    private Dictionary<string, string?> SponsoredValues() => new()
+    {
+        [OperationalSettings.SkipSponsored] = Switch(_skipSponsored),
+        [OperationalSettings.SponsoredMarkers] = Markers,
+        [OperationalSettings.SponsoredExceptions] = Exceptions,
+    };
+
+    private Dictionary<string, string?> AdValues() => new()
+    {
+        [OperationalSettings.AdSelectors] = AdSelectors,
+        [OperationalSettings.AdLabels] = AdLabels,
+    };
+
+    private Dictionary<string, string?> AgeingValues() => new()
+    {
+        [OperationalSettings.AgeDays] = _ageDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    private Dictionary<string, string?> GroupingValues() => new()
+    {
+        [OperationalSettings.GroupWindowHours] = _groupHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.GroupIgnoredWords] = IgnoredWords,
+    };
+
+    private Dictionary<string, string?> CveValues() => new()
+    {
+        [OperationalSettings.CveEnabled] = Switch(_cve.Enabled),
+        [OperationalSettings.CveRefreshHours] = _cve.RefreshHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     private static string Switch(bool on) => on ? "true" : "false";
 
@@ -562,15 +616,7 @@
 
     private Task SaveIntakeSettings() => Run(async () =>
     {
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.IntakeEnabled] = Switch(_intake.Enabled),
-            [OperationalSettings.MinPollMinutes] = _intake.MinPollMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            [OperationalSettings.RetentionDays] = _intake.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            [OperationalSettings.ReadSeconds] = _intake.ReadSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            [OperationalSettings.PullNowMinutes] = _intake.PullNowMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            [OperationalSettings.PulledBy] = PulledBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
-        });
+        await Settings.SaveAsync(IntakeValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show(_intake.Enabled ? "Polling is on. Due sources are polled within a minute." : "Polling settings saved; polling is off.");
     });
@@ -586,10 +632,7 @@
         }
         return Run(async () =>
         {
-            var values = new Dictionary<string, string?> { [OperationalSettings.UserAgent] = GlobalAgent.ToString() };
-            // A custom string is kept for next time only as the custom choice saves it.
-            if (GlobalAgent == UserAgentChoice.Custom) values[OperationalSettings.CustomUserAgent] = CustomAgent;
-            await Settings.SaveAsync(values);
+            await Settings.SaveAsync(AgentValues(custom: GlobalAgent == UserAgentChoice.Custom), loaded: _loaded);
             ReadSettings();
             Toasts.Show("Saved. The next request sends " + UserAgents.Global(IntakeOptionsMonitor.CurrentValue));
         });
@@ -597,33 +640,21 @@
 
     internal Task SaveSponsored() => Run(async () =>
     {
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.SkipSponsored] = Switch(_skipSponsored),
-            [OperationalSettings.SponsoredMarkers] = Markers,
-            [OperationalSettings.SponsoredExceptions] = Exceptions,
-        });
+        await Settings.SaveAsync(SponsoredValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show(_skipSponsored ? "Sponsored items are skipped from the next poll." : "Sponsored-item settings saved; sponsored items are taken in.");
     });
 
     internal Task SaveAds() => Run(async () =>
     {
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.AdSelectors] = AdSelectors,
-            [OperationalSettings.AdLabels] = AdLabels,
-        });
+        await Settings.SaveAsync(AdValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show("Saved.");
     });
 
     internal Task SaveAgeing() => Run(async () =>
     {
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.AgeDays] = _ageDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        });
+        await Settings.SaveAsync(AgeingValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show("Saved.");
     });
@@ -631,11 +662,7 @@
     internal Task SaveGrouping() => Run(async () =>
     {
         var builtIn = BuiltInTyped();
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.GroupWindowHours] = _groupHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            [OperationalSettings.GroupIgnoredWords] = IgnoredWords,
-        });
+        await Settings.SaveAsync(GroupingValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show(builtIn.Count == 0 ? "Saved. Triage groups by these from its next load."
             : $"Saved, leaving out {string.Join(", ", builtIn.Take(5))}{(builtIn.Count > 5 ? "…" : "")}: always ignored already.");
@@ -643,11 +670,7 @@
 
     internal Task SaveCve() => Run(async () =>
     {
-        await Settings.SaveAsync(new Dictionary<string, string?>
-        {
-            [OperationalSettings.CveEnabled] = Switch(_cve.Enabled),
-            [OperationalSettings.CveRefreshHours] = _cve.RefreshHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        });
+        await Settings.SaveAsync(CveValues(), loaded: _loaded);
         ReadSettings();
         Toasts.Show(_cve.Enabled ? "CVE enrichment is on. A refresh that's due starts within a minute." : "CVE enrichment settings saved; the scheduled refresh is off.");
     });
@@ -710,7 +733,7 @@
     {
         var added = await Intake.AddStarterSourcesAsync(Starter!);
         Starter = null;
-        Toasts.Show($"Added {added} source{(added == 1 ? "" : "s")}, paused. Turn one on with Edit, then \"Poll it\".");
+        Toasts.Show($"Added {Ui.Plural(added, "source")}, paused. Turn one on with Edit, then \"Poll it\".");
     });
 
     private RenderFragment StarterList(bool recommended) => @<div class="row g-3">

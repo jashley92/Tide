@@ -530,6 +530,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("AssigneeId");
 
+                    b.HasIndex("ClosedAtUtc")
+                        .HasFilter("[ClosedAtUtc] IS NOT NULL");
+
                     b.HasIndex("CreatedAtUtc");
 
                     b.HasIndex("EscalatedForDue")
@@ -917,6 +920,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SourceUrlHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
@@ -958,6 +965,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("SourceUrlHash");
 
                     b.HasIndex("Status");
 
@@ -1083,9 +1092,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("UrlHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("UrlHash");
 
                     b.ToTable("ArticleLinks");
                 });
@@ -1776,6 +1791,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Caller")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 
@@ -1805,6 +1824,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Source", "Caller");
 
                     b.HasIndex("Source", "ExternalId")
                         .IsUnique();
@@ -3630,6 +3651,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MomentCursor")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OverdueCursor")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly?>("OverdueSentFor")

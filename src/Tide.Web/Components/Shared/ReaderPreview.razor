@@ -446,7 +446,7 @@
     private static string VerdictText(ArticlePreview p) => p.Verdict switch
     {
         EditionVerdict.LeftOut => $"Left out: the article is {Tlp.Label(p.Article.Tlp)}, above {Tlp.Label(p.Ceiling)}",
-        EditionVerdict.Partly => $"Partly included: {p.Cut!.WithheldParts} part{(p.Cut.WithheldParts == 1 ? "" : "s")} above {Tlp.Label(p.Ceiling)} left out",
+        EditionVerdict.Partly => $"Partly included: {Ui.Plural(p.Cut!.WithheldParts, "part")} above {Tlp.Label(p.Ceiling)} left out",
         _ => "Included in full",
     };
 

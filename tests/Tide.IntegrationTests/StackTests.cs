@@ -431,7 +431,7 @@ public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
 
         var html = await After(page, p => p.SetWords("sift"));
         Names(html).Should().Equal(["Sift Beta Never", "Sift Mid Orphan", "Sift Zeta Old", "Sift Alpha Fresh"], "those that need a look, by name, then the rest");
-        html.Should().Contain("<th scope=\"col\">Right now</th>").And.Contain("Never checked").And.Contain($"Over {StackService.CheckOldAfterDays} days ago").And.Contain("Nothing new");
+        html.Should().Contain("<th scope=\"col\" role=\"columnheader\">Right now</th>").And.Contain("Never checked").And.Contain($"Over {StackService.CheckOldAfterDays} days ago").And.Contain("Nothing new");
         var lastYear = today.AddYears(-1);
         html.Should().Contain($"{Ui.ShortDay(lastYear)}, {lastYear.Year}", "a check from another year says which").And.NotContain($"{Ui.ShortDay(today)}, {today.Year}", "this year's doesn't");
         Ui.ShortDay(new DateOnly(2025, 9, 16), new DateOnly(2026, 11, 10)).Should().Be("Tue Sep 16, 2025");
@@ -513,10 +513,31 @@ public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
         var orphan = html[html.IndexOf(">Flagpole Orphan</a>", StringComparison.Ordinal)..];
         orphan = orphan[..orphan.IndexOf("</tr>", StringComparison.Ordinal)];
         orphan.Should().Contain("<span class=\"tide-badge tide-badge-neutral tide-badge-off\">No team</span>", "a product no team owns says so as a flag, as the No owning team filter does")
-            .And.NotContain("<td>—</td>");
+            .And.NotContain("<td role=\"cell\" data-label=\"Team\">—</td>");
         var owned = html[html.IndexOf(">Flagpole Owned</a>", StringComparison.Ordinal)..];
         owned = owned[..owned.IndexOf("</tr>", StringComparison.Ordinal)];
-        owned.Should().Contain("<td data-label=\"Team\">Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
+        owned.Should().Contain("<td role=\"cell\" data-label=\"Team\">Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
+    }
+
+    // On a narrow window the rows stack, their cells laid out as blocks, and Safari then stops reading the list as a
+    // table: the roles say it is one. Every cell is named in the stacked view, the product's too.
+    [Fact]
+    public async Task TheList_StaysATableToScreenReaders_AndNamesEveryCellWhenItsRowsStack()
+    {
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Rolecall Router" });
+
+        await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+        var html = await After(page, p => p.SetWords("rolecall"));
+        html.Should().Contain("<table class=\"tide-table tide-stack-table\" role=\"table\">")
+            .And.Contain("<thead role=\"rowgroup\"><tr role=\"row\"><th scope=\"col\" role=\"columnheader\">Product</th>")
+            .And.Contain("<tbody role=\"rowgroup\">");
+        var row = html[html.LastIndexOf("<tr ", html.IndexOf(">Rolecall Router</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
+        row.Should().Contain("role=\"row\"").And.Contain("<td role=\"cell\" data-label=\"Product\"><a href=");
+        row.Split("<td ").Should().HaveCount(8, "a product has seven columns");
+        row.Split("<td role=\"cell\" ").Should().HaveCount(8, "every cell says it is one");
+        row.Split(" data-label=\"").Should().HaveCount(8, "and every cell is named");
     }
 
     // An article's open "we run" card shows a colleague's tag and untag: they're heard on the article's tags topic.
@@ -543,6 +564,6 @@ public partial class StackPageTests(TideApp app) : IClassFixture<TideApp>
         (await robin.Html()).Should().NotContain("Untag Card Test Gateway");
     }
 
-    [GeneratedRegex("<td><a href=\"stack/[0-9a-f-]+\">([^<]+)</a>")]
+    [GeneratedRegex("<td role=\"cell\" data-label=\"Product\"><a href=\"stack/[0-9a-f-]+\">([^<]+)</a>")]
     private static partial Regex StackName();
 }

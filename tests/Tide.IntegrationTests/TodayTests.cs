@@ -372,7 +372,7 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
         var label = Tide.Web.Components.Shared.Ui.ActionLabel(shown.Number);
         var toasts = r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>();
         toasts.Toasts.Should().Contain(t => t.IsError && t.Message == $"{Colleague.Name} took {label} on a moment ago.");
-        (await r.Html()).Should().NotContain($"Take {label} on", "the queue was read again, without it");
+        (await r.Html()).Should().NotContain($"Take it: {label},", "the queue was read again, without it");
 
         // A colleague's change heard a moment later says so without pushing the refusal out.
         await using (var asColleague = ComponentHarness.SignedIn(app, Colleague))

@@ -24,10 +24,20 @@ public static class NameOrder
     {
         // Culture-aware on purpose: reading order is the point, and the ordinal fallback keeps it a total order.
 #pragma warning disable CA1309
-        var c = string.Compare(a, b, CultureInfo.InvariantCulture, CompareOptions.IgnoreCase);
+        var c = string.Compare(a, b, Invariant, IgnoreCase);
 #pragma warning restore CA1309
         return c != 0 ? c : string.CompareOrdinal(a, b);
     }
+
+    /// <summary>
+    /// Whether two pieces of text are the same ignoring case, by the comparison <see cref="Compare"/> sorts with (before its
+    /// tie-break): "É" is "é", but "e" isn't "é", as SQL Server's accent-sensitive default has it. SQLite's LIKE matches
+    /// letters with it.
+    /// </summary>
+    public static bool SameIgnoringCase(ReadOnlySpan<char> a, ReadOnlySpan<char> b) => Invariant.CompareInfo.Compare(a, b, IgnoreCase) == 0;
+
+    private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
+    private const CompareOptions IgnoreCase = CompareOptions.IgnoreCase;
 
     private static readonly IComparer<string> Reading = Comparer<string>.Create(Compare);
 

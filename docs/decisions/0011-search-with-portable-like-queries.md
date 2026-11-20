@@ -31,3 +31,7 @@ trust ("not seen" must mean not seen).
   can replace the matching inside `SearchService` without changing the page.
 - Leading-wildcard LIKE scans the tables it searches; at a team's scale that's milliseconds, and hits are capped at 50
   per kind.
+- Case is ignored for every letter on both databases, accents still count (SQL Server's default collation). SQLite's
+  own LIKE folds A to Z only, so on SQLite `EF.Functions.Like` also runs a .NET matcher, but only for a term with a
+  letter beyond ASCII (`SqliteLike`). Such a search scans several times slower there than an ASCII one (about 0.4 s
+  against 0.08 s in the scale harness); an ASCII search runs as SQLite's own LIKE did.

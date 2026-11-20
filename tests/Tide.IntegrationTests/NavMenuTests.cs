@@ -106,15 +106,16 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
         newItems.Should().BePositive("the sample data has items to triage");
 
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/articles");
-        nav.Html.Should().MatchRegex($"href=\"triage\"[^>]*aria-label=\"Triage, {newItems} new\"");
-        nav.Html.Should().MatchRegex("href=\"actions\"[^>]*aria-label=\"Actions, 1 overdue for you\"");
+        nav.Html.Should().MatchRegex($"href=\"triage\"[^>]*aria-label=\"{Regex.Escape(NavMenu.CountTitle("Triage", newItems, "new"))}\"");
+        nav.Html.Should().MatchRegex("href=\"actions\"[^>]*aria-label=\"Actions 1 overdue for you\"");
         nav.Html.Should().Contain("<span class=\"tide-nav-count is-alert\" aria-hidden=\"true\">1</span>");
     }
 
     [Fact]
-    public void CountTitle_NamesTheLink_WithItsCountWhenThereIsOne()
+    public void CountTitle_NamesTheLink_StartingWithWhatItShows_WithItsCountWhenThereIsOne()
     {
-        NavMenu.CountTitle("Triage", 4, "new").Should().Be("Triage, 4 new");
+        NavMenu.CountTitle("Triage", 4, "new").Should().Be("Triage 4 new");
+        NavMenu.CountTitle("Triage", 120, "new").Should().Be("Triage 99+, 120 new", "the badge shows 99+ past 99");
         NavMenu.CountTitle("Triage", 0, "new").Should().Be("Triage");
     }
 }

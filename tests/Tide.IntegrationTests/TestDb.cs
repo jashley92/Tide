@@ -567,7 +567,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// <summary>The meetings going on, as the services see them (a Visitor's reads go through only from a seat in one).</summary>
     public IMeetingsInProgress? Live { get; set; }
 
-    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live);
+    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Settings(), Live);
 
     public ArticleService Articles() => new(this, User, Screenshots(), Clock, Settings());
 
@@ -649,7 +649,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Tide.Application.Api.WebhookService Webhooks(TimeProvider? time = null) =>
         new(this, User, new FakeSecrets(), Posts, Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), time ?? TimeProvider.System,
-            Settings());
+            Settings(), Microsoft.Extensions.Logging.Abstractions.NullLogger<Tide.Application.Api.WebhookService>.Instance);
 
     public Tide.Application.Adversaries.AdversaryService Adversaries() => new(this, User, Clock, Http);
 

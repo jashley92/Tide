@@ -1,4 +1,5 @@
 using Tide.Application.Actions;
+using Tide.Application.Content;
 using Tide.Application.Operations;
 
 namespace Tide.Web.Services;
@@ -35,6 +36,6 @@ public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonito
             // An email the relay may not have taken isn't sent again by itself: Diagnostics says to check it arrived.
             var problems = pass.Failed.Select(f => $"{f.Kind}: {f.Error}").Concat(pass.Unsure.Select(u => $"{u.Kind}: {u.Note}")).ToList();
             if (problems.Count > 0) throw new JobProblemException(string.Join("; ", problems));
-            return pass.Sent > 0 ? $"{pass.Sent} email{(pass.Sent == 1 ? "" : "s")}" : null;
+            return pass.Sent > 0 ? Words.Plural(pass.Sent, "email") : null;
         }, log, "A reminder scan failed; it's tried again at the next poll.", stoppingToken);
 }
