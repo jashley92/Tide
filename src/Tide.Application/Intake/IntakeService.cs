@@ -1062,6 +1062,19 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// <summary>Puts an item back in the inbox as new (undoes a shortlist, dismissal or duplicate; never a promotion).</summary>
     public Task RestoreAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.New, null, null, ct);
 
+    /// <summary>
+    /// Undoes a new item's shortlist or dismissal (its toast's Undo): back to new, only while it's still
+    /// <paramref name="decided"/>, so a colleague's decision on it since stands. Whether it went back.
+    /// </summary>
+    public async Task<bool> UndoDecisionAsync(Guid id, FeedItemStatus decided, CancellationToken ct = default)
+    {
+        if (decided is not (FeedItemStatus.Shortlisted or FeedItemStatus.Dismissed))
+            throw new ArgumentException("Only a shortlist or a dismissal is undone this way.", nameof(decided));
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        return await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == decided), FeedItemStatus.New, null, null, ct) > 0;
+    }
+
     // FeedItem.DismissKept as a query: a dismissal no one has said was right since it was made.
     private static readonly System.Linq.Expressions.Expression<Func<FeedItem, bool>> NotKept =
         i => i.DismissKeptAtUtc == null || (i.StatusAtUtc != null && i.DismissKeptAtUtc < i.StatusAtUtc);
