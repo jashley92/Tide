@@ -210,7 +210,7 @@ public class BriefStepperTests(TideApp app) : IClassFixture<TideApp>
 
         // Narrow, Edit leaves the rail where it is (closed, or over the page when asked for); Preview puts it in the page,
         // in place of the fields.
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-tabbar.tide-ws-switch { display: none; }")
             .And.Contain("html:not([data-rail-over]) main:has(.tide-editor[data-pane=\"preview\"]) > .tide-rail { display: flex; position: static;")
             .And.Contain(".tide-editor[data-pane=\"preview\"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }");
@@ -233,7 +233,7 @@ public class BriefStepperTests(TideApp app) : IClassFixture<TideApp>
         bar[bar.IndexOf("<aside", StringComparison.Ordinal)..].Should().StartWith("<aside id=\"tide-rail\"").And.Contain("The preview");
 
         // Narrow, in Preview, the fields go and the bar stays at the foot of the window, over the preview.
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-editor[data-pane=\"preview\"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }")
             .And.Contain(".tide-editor[data-pane=\"preview\"] .tide-sticky-save { position: fixed;")
             .And.Contain("html:has(.tide-sticky-save) { scroll-padding-bottom:")
