@@ -32,7 +32,14 @@ window.tideTips = (function () {
     var nudged = false;
     var root = document.documentElement;
 
-    function shown(el) { return !!el && el.isConnected && el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'); }
+    // Shown, and big enough to point at: a visually hidden element (clipped to 1px for screen readers) has a box, but no
+    // card's arrow can show it.
+    var POINTABLE = 2;
+    function shown(el) {
+        if (!el || !el.isConnected || el.getClientRects().length === 0 || el.closest('[inert], [hidden]')) return false;
+        var r = el.getBoundingClientRect();
+        return r.width >= POINTABLE && r.height >= POINTABLE;
+    }
 
     function clamp(n, lo, hi) { return Math.max(lo, Math.min(n, hi)); }
 

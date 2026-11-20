@@ -7,6 +7,7 @@
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -14,6 +15,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { AxeReport, axeOn, scan, widest } from './axe.mjs';
 import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
@@ -2024,6 +2026,20 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
     return start >= px ? [] : [`cell ${i + 1}'s text starts ${Math.round(start)}px from the row's edge, under its accent`];
   }));
 }, [row, px]);
+
+/** Our stack's table as stacked rows (`true`: its headings hidden from view but still there, each product a grid of
+ *  named cells) or as a table (`false`: the header row shown, each product a table row). */
+const stackRows = stacked => holds(stacked ? 'Our stack\'s rows stacked' : 'Our stack a table', stacked => {
+  const table = document.querySelector('.tide-stack-table');
+  const head = table?.querySelector('thead'), rows = [...(table?.querySelectorAll('tbody > tr') ?? [])];
+  if (!head || !rows.length) return ['no Our stack table with rows'];
+  const headShown = head.getBoundingClientRect().height > 2;
+  const asRows = rows.filter(r => getComputedStyle(r).display === 'grid').length;
+  if (stacked) return [...(headShown ? ['its header row is shown'] : []),
+    ...(head.querySelectorAll('th').length === 7 ? [] : ['its headings are gone, not hidden']),
+    ...(asRows === rows.length ? [] : [`${rows.length - asRows} of ${rows.length} rows aren't stacked`])];
+  return [...(headShown ? [] : ['its header row is hidden']), ...(asRows === 0 ? [] : [`${asRows} of ${rows.length} rows are stacked`])];
+}, stacked);
 
 /** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
 const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
@@ -4582,17 +4598,20 @@ const pages = [
   { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
-  // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
+  // fifth column; and where the list is narrow (under 800px: a 1100px window with the sidebar open) each row's cells
+  // stacked, so the table never scrolls sideways inside its card.
   { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
       says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
-      fits('.tide-stack-list')] },
+      fits('.tide-stack-list'), [1440, stackRows(false)]] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
-  // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
-  // sections (facts, the buttons, in triage now, articles, open actions, notes) each fit the column. Below 1500px it's
-  // closed until `]` opens it over the page, where it's a modal dialog. The 780px stacked rows stay.
+  // beside the page, which has about 873px at 1500px: there the rows stack (stack-rail-docked), wider it's a table, and
+  // either way it fits beside the rail with no sideways scroll; the rail's flat sections (facts, the buttons, in triage
+  // now, articles, open actions, notes) each fit the column. Below 1500px it's closed until `]` opens it over the page,
+  // where it's a modal dialog. The 780px stacked rows stay.
   { name: 'stack-rail', route: '/stack', setup: wideFont, widths: [1920, 1600, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), fits('.tide-stack-list'), fits('.tide-stack-table td'),
+      [1600, stackRows(false)],
       visible('.tide-stack-item.selected'), attr('.tide-stack-item.selected', 'aria-current', 'true'), attr('#tide-rail', 'role', null),
       visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'),
       fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
@@ -4600,13 +4619,18 @@ const pages = [
       visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
       linksAlike('#tide-rail .tide-rail-list a'),
       ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // At 1500px the docked rail leaves the list under 800px, too narrow for seven columns (the headings broke mid-word and
+  // a CVE's chip spilled), so its rows stack by the list's width, as on a narrow window, and each fits.
+  { name: 'stack-rail-docked', route: '/stack', setup: wideFont, widths: [1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), stackRows(true), fits('.tide-stack-list'),
+      fits('.tide-stack-table td'), fits('.tide-stack-now .tide-chip'), clearOfEdge('.tide-stack-item.selected', 5)] },
   // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
-  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [stackRows(true), clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
       [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
-    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), stackRows(false)] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },
@@ -5183,6 +5207,9 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
+  // Report only: what axe finds is written and printed, never added to the problems.
+  const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
+  const axe = axeOn ? new AxeReport(label) : null;
   try {
     for (const p of list) {
       if (p.when && !p.when(demo)) {
@@ -5208,6 +5235,15 @@ async function check(list, demo) {
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
+          // Once a page, at its widest width, as its rules left it.
+          if (axe && size === widest(p.widths)) {
+            const start = Date.now();
+            try {
+              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+            } catch (e) {
+              axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
+            }
+          }
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {
@@ -5217,6 +5253,7 @@ async function check(list, demo) {
     }
   } finally {
     await browser.close();
+    axe?.write();
   }
   return problems;
 }

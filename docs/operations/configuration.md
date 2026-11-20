@@ -87,6 +87,12 @@ A saved row that no longer passes its check (a hand-edited database, a rule tigh
 by `SavedSettings.RefreshAsync`, so the server's value holds. Two administrators saving at once can't undo each other:
 refreshes run one at a time.
 
+Nor can two administrators with the same page open. Each settings form sends what it showed when it loaded along with
+what it saves, and only the settings changed on that page are written (and audited); a save that changes nothing
+writes nothing. If someone else has saved a setting this page changed since it loaded (to a different value than this
+page sends), the save is refused whole, asking the administrator to reload, rather than putting the other change back.
+The check and the write run in one serializable transaction, so two saves at the same moment can't both pass it.
+
 **The other in-app settings** are read from the `Settings` table each time they're used, with the server's value as
 the fallback: the edition ceilings and recipient lists (`DistributionSettings`), the SLA targets (`SlaSettings`), the
 update check's on/off (`UpdateSettings`) and the rotation's manager emails (`RotationService.ManagerEmailsAsync`).
@@ -377,6 +383,7 @@ These rows live in the `Settings` table with no server default.
 | `EmailTemplate:{id}:{Subject\|Heading\|Body}` | A reworded notification email part. | **Email templates** | Yes |
 | `Cve:LastRun` | When CVE enrichment last ran (ISO 8601). | Written by `CveService` | No (bookkeeping) |
 | `Data:IndicatorsCanonical` | Marks a one-time pass over stored indicators as done (`DatabaseInitializer.CanonicalizeIndicatorsAsync`). | Written at start-up | No |
+| `Data:UrlHashesToFill` | Says older articles and links may still be without their address hash (`UrlHashFill`, filled by the "Hashing stored addresses" job); while it's there, triage's past coverage reads every recent address. | Written by the migration that added the hashes when there were addresses to fill; deleted by the job when it's done | No |
 | `Data:StarterSavedQueries`, `Data:StarterOutreachTemplates`, `Data:StarterPlaybooks` | Mark each library's starter set as offered, so it's added once, only to an empty library, and starters the team removes don't return (`DatabaseInitializer.SeedStarterLibrariesAsync`). | Written at start-up | No |
 
 `SettingsCatalog.IsInApp` decides which rows are an administrator's (and so travel in a bundle) and which are the

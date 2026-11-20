@@ -27,11 +27,13 @@ namespace Tide.IntegrationTests;
 /// configuration, so the saved settings are laid over the server's as they are in the app.</summary>
 public sealed class SettingsRig : IDisposable
 {
-    public TestDb Db { get; } = new();
+    public TestDb Db { get; }
     public ServiceProvider Provider { get; }
 
-    public SettingsRig(Dictionary<string, string?>? server = null)
+    // A connection per context when two saves run at once, as two administrators' would.
+    public SettingsRig(Dictionary<string, string?>? server = null, bool connectionPerContext = false)
     {
+        Db = new TestDb(connectionPerContext: connectionPerContext);
         Db.User.Roles = new HashSet<AppRole> { AppRole.Admin };
         var services = new ServiceCollection();
         // The organization's boundary is the sending address's domain, example.org, unless the test's server says otherwise.
@@ -130,6 +132,164 @@ public class OperationalSettingsTests
         ctx.Settings.Single(s => s.Key == OperationalSettings.BriefNotReadyRecipients).Value.Should().Be("lead@example.org; desk@example.org");
         ctx.Settings.Single(s => s.Key == OperationalSettings.ReminderTime).UpdatedBy.Should().Be(rig.Db.User.UserId);
         ctx.AuditLog.Should().Contain(a => a.EntityType == nameof(AppSetting), "a setting saved in the app is audited like any change");
+    }
+
+    // What two administrators' pages showed when both opened, before either saved.
+    private static Dictionary<string, string?> OrgPage(string reminder = "07:30", string zone = "Europe/London") => new()
+    {
+        [OperationalSettings.ReminderTime] = reminder,
+        [OperationalSettings.TimeZone] = zone,
+        [OperationalSettings.TeamName] = "Server CTI",
+    };
+
+    [Fact]
+    public async Task TwoAdministratorsOnStalePages_ChangingDifferentSettings_BothChangesStand()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+        await settings.SaveAsync(OrgPage(zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00", "the second page didn't change it, so it doesn't put back what it showed");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Select(s => s.Key).Should().BeEquivalentTo([OperationalSettings.ReminderTime, OperationalSettings.TimeZone],
+            "a setting neither changed isn't written");
+        ctx.AuditLog.Count(a => a.EntityType == nameof(AppSetting)).Should().Be(2, "each save audits only what it changed");
+    }
+
+    [Fact]
+    public async Task TwoAdministratorsOnStalePages_ChangingTheSameSetting_TheSecondIsRefused_AndNothingIsOverwritten()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+
+        var second = () => settings.SaveAsync(OrgPage(reminder: "08:15", zone: "Asia/Tokyo"), loaded: loaded);
+
+        (await second.Should().ThrowAsync<Tide.Application.Articles.StaleEditException>())
+            .Which.Message.Should().Be("Someone else changed a setting you changed here since you opened this page, so nothing was saved. " +
+                                       "Reload to see their change, then make yours again.");
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Europe/London", "the refused save is refused whole");
+
+        // Reloaded, the same change saves.
+        await settings.SaveAsync(OrgPage(reminder: "08:15"), loaded: OrgPage(reminder: "06:00"));
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("08:15");
+    }
+
+    [Fact]
+    public async Task TwoAdministratorsSavingTheSameSettingAtTheSameMoment_TheSecondIsRefused_AndTheFirstStands()
+    {
+        using var rig = new SettingsRig(Server, connectionPerContext: true);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        var saving = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Db.BeforeSave = ctx =>
+        {
+            if (!ctx.ChangeTracker.Entries<AppSetting>().Any(e => e.State == EntityState.Added)) return;
+            if (saving.TrySetResult()) Thread.Sleep(400);   // the first has checked and is about to save
+        };
+
+        var first = Task.Run(() => settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded));
+        await saving.Task;
+        var second = Task.Run(() => settings.SaveAsync(OrgPage(reminder: "08:15"), loaded: loaded));
+        await first;
+        await second.Invoking(t => t).Should().ThrowAsync<Tide.Application.Articles.StaleEditException>();
+        rig.Db.BeforeSave = null;
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00", "the second waited, read what the first saved and was refused");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Single(s => s.Key == OperationalSettings.ReminderTime).Value.Should().Be("06:00");
+    }
+
+    [Fact]
+    public async Task SomeoneElseHavingSavedTheSameValue_DoesntRefuseTheSave()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+
+        await settings.SaveAsync(OrgPage(reminder: "6:00", zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo", "nothing of theirs would be lost, so the rest saves");
+    }
+
+    [Fact]
+    public async Task ASaveWithNoChanges_WritesNothing()
+    {
+        using var rig = new SettingsRig(Server);
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(), loaded: OrgPage());
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(reminder: "7:30"), loaded: OrgPage());   // the same time, typed differently
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Should().BeEmpty("the server's values stand rather than being written over with the same");
+        ctx.AuditLog.Should().NotContain(a => a.EntityType == nameof(AppSetting));
+    }
+
+    [Fact]
+    public async Task AnotherSaveAddingTheSameSettingsRowFirst_RefusesTheSave_AsStale()
+    {
+        using var rig = new SettingsRig(Server);
+        var added = false;
+        // Another administrator's save adds the row in the moment between this save's check and its write.
+        rig.Db.BeforeSave = ctx =>
+        {
+            if (added || !ctx.ChangeTracker.Entries<AppSetting>().Any(e => e.State == EntityState.Added)) return;
+            added = true;
+            ctx.Database.ExecuteSqlRaw("INSERT INTO \"Settings\" (\"Key\", \"Value\", \"UpdatedAtUtc\", \"UpdatedBy\") VALUES ({0}, '06:00', 0, 'someone')",
+                OperationalSettings.ReminderTime);
+        };
+
+        var save = () => rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(reminder: "08:15"), loaded: OrgPage());
+
+        await save.Should().ThrowAsync<Tide.Application.Articles.StaleEditException>();
+        rig.Db.BeforeSave = null;
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("07:30", "nothing was saved");
+    }
+
+    [Fact]
+    public void OnlyARowAddedTwice_CountsAsTheKeyTaken()
+    {
+        static DbUpdateException Failed(string? inner) => new("save failed", inner is null ? null : new InvalidOperationException(inner));
+        OperationalSettingsService.KeyTaken(Failed("SQLite Error 19: 'UNIQUE constraint failed: Settings.Key'.")).Should().BeTrue();
+        OperationalSettingsService.KeyTaken(Failed("Violation of PRIMARY KEY constraint 'PK_Settings'.")).Should().BeTrue();
+        OperationalSettingsService.KeyTaken(Failed("UNIQUE constraint failed: Articles.Id")).Should().BeFalse("another table's key");
+        OperationalSettingsService.KeyTaken(Failed(null)).Should().BeFalse("no database error to read");
+        OperationalSettingsService.KeyTaken(new DbUpdateConcurrencyException("stale", new InvalidOperationException("PK_Settings")))
+            .Should().BeFalse("a concurrency failure isn't a row added twice");
+    }
+
+    [Theory]
+    [InlineData("Pacific Standard Time")]   // a server's Windows id: shown, but not one the app saves
+    [InlineData(null)]
+    public async Task APageThatShowedAValueTheAppCantSave_SavesTheZoneChosenInItsPlace(string? shown)
+    {
+        using var rig = new SettingsRig(Server);
+        var loaded = OrgPage();
+        loaded[OperationalSettings.TimeZone] = shown;
+
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Select(s => s.Key).Should().Equal(OperationalSettings.TimeZone);
+    }
+
+    [Fact]
+    public void ASavedValue_IsLaidOverTheDefaultOptionsOnly()
+    {
+        var applied = new List<string>();
+        using var saved = new SavedSettings();
+        var overlay = new OptionsOverlay<SavedSettings, OrgOptions>(saved, (_, o) => applied.Add(o.TimeZone));
+        overlay.PostConfigure("named", new OrgOptions { TimeZone = "named" });
+        overlay.PostConfigure(Options.DefaultName, new OrgOptions { TimeZone = "default" });
+        applied.Should().Equal("default");
+        overlay.Name.Should().Be(Options.DefaultName);
     }
 
     [Fact]

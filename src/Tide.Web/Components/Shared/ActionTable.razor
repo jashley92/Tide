@@ -4,15 +4,16 @@
    a row the person may take), progress (its checklist, then how its hunt went or how long since anything happened to
    it), due date and SLA, and status (a menu to change it, for whoever may work the action).
    One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. A page that
-   gives Selected has a selected row (RowSelection), which its keys move (RowKeys). *@
+   gives Selected has a selected row (RowSelection), which its keys move (RowKeys). A narrower window stacks each row
+   (app.css), so the table names its parts with ARIA roles (Stacks). *@
 
 <DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
            FilterLabel="Filter actions" FilterPlaceholder="Title, A-number, team, person or article" Filter="@Filter" DefaultSort="DefaultSort"
            RowClass="RuleClass" GroupBy="Grouping" GroupOrder="GroupNames" Toolbar="Toolbar" Empty="Empty" PageInAddress="PageInAddress"
            ServerSide="ServerSide" Total="Total" OnQuery="OnQuery" GroupTotals="GroupTotals" PageSize="PageSize" Filtered="Filtered" FilterBox="!ServerSide"
-           Selected="@(SelectedId is null ? null : r => r.Id == SelectedId)" OnSelect="OnSelect" GroupNote="GroupNote">
+           Selected="@(SelectedId is null ? null : r => r.Id == SelectedId)" OnSelect="OnSelect" GroupNote="GroupNote" Stacks="true">
     <RowTemplate Context="r">
-        <td>
+        <td role="cell">
             @if (r.ParentNumber is { } parent)
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
@@ -46,8 +47,8 @@
                 <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
             }
         </td>
-        <td class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
-        <td class="small">
+        <td role="cell" class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
+        <td role="cell" class="small">
             @r.TeamName<div class="tide-muted"><HolderText Label="@r.Holder("Unassigned")" Short="true" /></div>
             @if (CanTake?.Invoke(r) == true)
             {
@@ -55,7 +56,7 @@
                         aria-label="@($"Take it: {Ui.ActionLabel(r.Number)}, {r.Title}")">Take it</button>
             }
         </td>
-        <td class="small tide-col-progress">
+        <td role="cell" class="small tide-col-progress">
             @if (r.ChecklistTotal > 0)
             {
                 <div>Checklist @r.ChecklistDone of @r.ChecklistTotal</div>
@@ -70,11 +71,11 @@
                 <div class="tide-muted">@quiet</div>
             }
         </td>
-        <td class="small text-nowrap">
+        <td role="cell" class="small text-nowrap">
             @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
             <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
         </td>
-        <td class="small">
+        <td role="cell" class="small">
             @if (CanWork?.Invoke(r) == true)
             {
                 @* The status, as a menu of the others to move it to (the board's Move menu, in place). *@

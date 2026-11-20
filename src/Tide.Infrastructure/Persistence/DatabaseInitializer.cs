@@ -8,6 +8,7 @@ using Tide.Application.Actions;
 using Tide.Application.Operations;
 using Tide.Application.Org;
 using Tide.Application.Scorecard;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Security;
@@ -292,7 +293,7 @@ public sealed class DatabaseInitializer(
         var now = DateTimeOffset.UtcNow;
         FeedItem Item(string title, string url, string excerpt, int hoursAgo, string? cves = null, Source? from = null) => new()
         {
-            SourceId = (from ?? feed).Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            SourceId = (from ?? feed).Id, Title = title, Url = url, UrlHash = UrlCanonicalizer.Hash(url),
             TitleKey = Application.Intake.TitleMatch.Key(title), Excerpt = excerpt, Cves = cves,
             PublishedAtUtc = now.AddHours(-hoursAgo), FetchedAtUtc = now.AddHours(-hoursAgo + 1),
         };

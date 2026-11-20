@@ -293,6 +293,35 @@ public class EscalationTests : IDisposable
     }
 
     [Fact]
+    public async Task ARunKilledAfterItsFirstEmail_DoesntSendThatEmailAgain_AndTheNextRunFinishesTheClimb()
+    {
+        var team = await Internal();
+        var a = await Due(team, "Rotate the keys", Tuesday);
+        var options = Ladder("after 3: remind, contact, raise");
+        // The process dies just after the team's reminder went: the contact's copy never starts, and nothing after it runs
+        // (the save of the climb included, which a finally would otherwise still make).
+        _db.Email.Fault = e => e.To.Contains("pat.lee@example.org") ? new InvalidOperationException("the process is going down") : null;
+        _db.BeforeSave = context =>
+        {
+            if (context.ChangeTracker.Entries<ActionEvent>().Any()) throw new InvalidOperationException("the process is going down");
+        };
+
+        await Climb(1, month: 12, options: options);
+        _db.Email.Sent.Select(e => e.To.Single()).Should().Equal("network-team@example.org");
+        (await Read(a)).Priority.Should().Be(Priority.P3, "the climb itself was never saved");
+
+        (_db.Email.Fault, _db.BeforeSave) = (null, null);
+        await Climb(1, month: 12, options: options);
+
+        _db.Email.Sent.Select(e => e.To.Single()).Should().Equal(["network-team@example.org", "pat.lee@example.org"],
+            "the reminder went before the run died, so only the contact's copy is sent now");
+        (await Read(a)).Priority.Should().Be(Priority.P2);
+        (await Escalations(a)).Should().Equal(
+            "Escalated, 3 business days late: priority P3 → P2; reminded network-team@example.org; copied Pat Lee, the escalation contact for Network Engineering.");
+        (await Climb(2, month: 12, options: options)).Should().Be(2, "the step is done");
+    }
+
+    [Fact]
     public async Task EveryEmailFailing_WaitsForTheNextPoll_ButEmailTurnedOff_StillClimbs()
     {
         var team = await Internal();
@@ -463,6 +492,49 @@ public class EscalationTests : IDisposable
         await using var ctx = _db.Context();
         (await ctx.NotificationMarks.CountAsync(m => m.Kind == "escalation")).Should().Be(2);
     }
+
+    [Fact]
+    public async Task AClimbOverManyActions_ReadsAndSavesNoMoreOftenThanOverAFew()
+    {
+        var few = await ClimbCost(3);
+        var many = await ClimbCost(40);
+
+        few.Emails.Should().Be(2, "the team's reminder and its contact's copy");
+        many.Emails.Should().Be(few.Emails, "one email per recipient, however many actions it lists");
+        many.Saves.Should().Be(many.Emails + 1,
+            "each email's marks are saved as soon as it went, so a run killed partway doesn't send it again; then every climb together");
+        many.Queries.Should().Be(few.Queries, "the actions, their marks, teams and recipients are each read once, not once per action");
+    }
+
+    // What one run of the ladder (remind, copy the contact, raise and flag) costs over this many actions of one team: the
+    // queries it reads with, its saves, and its emails. Each on a database of its own, so the two runs compare.
+    private static async Task<(int Queries, int Saves, int Emails)> ClimbCost(int actions)
+    {
+        using var db = new TestDb();
+        (db.User.UserId, db.User.DisplayName, db.User.Roles) = ("S-1-5-21-TEST-1", "Test Analyst", new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin });
+        var team = await db.Teams().AddAsync("Network Engineering", null, "network-team@example.org");
+        var form = TeamForm.From((await db.Teams().ListAsync()).Single(t => t.Id == team));
+        (form.EscalationName, form.EscalationEmail, form.ConfirmOutside) = ("Pat Lee", "pat.lee@example.org", true);
+        await db.Teams().UpdateAsync(team, form);
+        for (var i = 0; i < actions; i++)
+            await db.Actions().CreateAsync(new ActionForm { Title = $"Block domain {i}", TeamId = team, Priority = Priority.P3 });
+        await using (var ctx = db.Context())
+            await ctx.Actions.ExecuteUpdateAsync(s => s.SetProperty(a => a.DueDate, Tuesday));
+
+        var saves = 0;
+        db.BeforeSave = _ => saves++;
+        db.Commands.Reset();
+        db.Commands.Record = true;
+        await db.Reminders(Ladder("after 3: remind, contact, raise, flag"), At(1, month: 12)).RunAsync(ReminderKind.Escalation);
+        db.Commands.Record = false;
+
+        await using (var ctx = db.Context())
+            (await ctx.NotificationMarks.CountAsync(m => m.Kind == "escalation")).Should().Be(actions, "every action climbed");
+        return (db.Commands.Sql.Count(IsQuery), saves, db.Email.Sent.Count);
+    }
+
+    // A read, not one of the rows a save writes (SQLite runs each of those as a command of its own).
+    private static bool IsQuery(string sql) => sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase);
 
     // --- the escalation contacts -----------------------------------------------------------------------------------
 

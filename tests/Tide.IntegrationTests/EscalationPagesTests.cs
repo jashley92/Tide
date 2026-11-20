@@ -164,7 +164,8 @@ public class EscalationPagesTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(c => c.SaveEscalation());
         (await Saved(OperationalSettings.EscalationScope)).Should().Be("ExternalOnly");
         (await Saved(OperationalSettings.EscalationSteps)).Should().Be("before 2: remind; after 3: contact; after 7: raise, flag");
-        (await Saved(OperationalSettings.Escalation)).Should().Be("false");
+        (await Saved(OperationalSettings.Escalation)).Should().BeNull("left off, as the server has it, it isn't written");
+        r.Component.Escalation.On.Should().BeFalse();
 
         r.Component.Escalation.Steps.Add(new StepRow { When = StepWhen.After, Days = 3, Does = EscalationDoes.CopyContact });
         await r.Click(c => c.SaveEscalation());

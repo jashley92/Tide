@@ -330,7 +330,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
         GroupHeading().Matches(html).Select(m => (m.Groups["name"].Value.Trim(), int.Parse(m.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture))).ToList();
 
     // A group heading: its name, then its count.
-    [GeneratedRegex("scope=\"rowgroup\">(?<name>[^<]+)<span class=\"tide-count\">(?<n>[0-9]+)</span>")]
+    [GeneratedRegex("scope=\"rowgroup\" role=\"rowheader\">(?<name>[^<]+)<span class=\"tide-count\">(?<n>[0-9]+)</span>")]
     private static partial Regex GroupHeading();
 
     [Fact]

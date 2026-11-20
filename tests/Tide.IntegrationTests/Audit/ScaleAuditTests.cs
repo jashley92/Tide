@@ -8,6 +8,7 @@ using Tide.Application.Articles;
 using Tide.Application.Exports;
 using Tide.Application.Intake;
 using Tide.Application.Trends;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Xunit.Abstractions;
@@ -73,6 +74,8 @@ public class ScaleAuditTests(ITestOutputHelper output) : IDisposable
 
         // Search
         await Time("Search(\"ransomware vendor\")", async () => (await _db.Search().SearchAsync("ransomware vendor")).Articles is var hits && hits.AtLeast ? $"{hits.Total}+ articles" : $"{hits.Total} articles");
+        // A letter beyond ASCII takes SQLite's search through .NET (SqliteLike), so it is timed apart.
+        await Time("Search(\"rançongiciel vendor\")", async () => (await _db.Search().SearchAsync("rançongiciel vendor")).Articles is var hits && hits.AtLeast ? $"{hits.Total}+ articles" : $"{hits.Total} articles");
         await Time("Search(indicator)", async () => $"{(await _db.Search().SearchAsync("10.0.7.9")).Indicator?.Sightings.Total} sightings");
         await Time("Search(CVE)", async () => $"{(await _db.Search().SearchAsync("CVE-2025-0042")).Cve?.Articles} articles");
 

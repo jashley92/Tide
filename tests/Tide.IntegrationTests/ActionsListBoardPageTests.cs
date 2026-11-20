@@ -366,7 +366,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await DueToday(token, 2, SignIn.Analyst);
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view={view}&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
-        html.Should().MatchRegex("<th colspan=\"\\d+\" scope=\"rowgroup\">\\s*Due today <span class=\"tide-count\">2</span>[\\s\\S]*?2 have no owner",
+        html.Should().MatchRegex("<th colspan=\"\\d+\" scope=\"rowgroup\" role=\"rowheader\">\\s*Due today <span class=\"tide-count\">2</span>[\\s\\S]*?2 have no owner",
             "the group's heading says how many of it nobody has");
     }
 
