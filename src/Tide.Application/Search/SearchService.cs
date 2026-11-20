@@ -33,13 +33,19 @@ public sealed record ActionHit(
 /// <summary>A story that matched.</summary>
 public sealed record StoryHit(Guid Id, string Name, StoryStatus Status, int Articles, string? Snippet);
 
-/// <summary>Hits of one kind: one page of them, and how many there are in all.</summary>
-public sealed record HitList<T>(IReadOnlyList<T> Items, int Total)
+/// <summary>
+/// Hits of one kind: one page of them, and how many there are in all. With <see cref="AtLeast"/>, <see cref="Total"/> is
+/// only a floor: there are more than that, uncounted (the article hits stop counting at <see cref="SearchService.MaxTake"/>).
+/// </summary>
+public sealed record HitList<T>(IReadOnlyList<T> Items, int Total, bool AtLeast = false)
 {
     public static readonly HitList<T> None = new([], 0);
 
     /// <summary>There are more than this page shows.</summary>
-    public bool More => Total > Items.Count;
+    public bool More => AtLeast || Total > Items.Count;
+
+    /// <summary>There are more than the pages go to (<see cref="SearchService.MaxTake"/>).</summary>
+    public bool Beyond => AtLeast || Total > SearchService.MaxTake;
 }
 
 /// <summary>
@@ -234,11 +240,15 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
                 || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape)), term, tagged, profiled));
         }
-        var total = await q.CountAsync(ct);
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
         // page neither repeats nor skips what an earlier one ranked differently. Only ids and titles: cheap at this size.
-        var candidates = await q.OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxTake)
+        // The match is a scan of every article, so it runs once: one more than MaxTake says there are more than the pages
+        // go to ("1,000+"), and up to MaxTake the rows read are the count, with no second scan to count them.
+        var candidates = await q.OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxTake + 1)
             .Select(a => new { a.Id, a.Title }).ToListAsync(ct);
+        var capped = candidates.Count > MaxTake;
+        if (capped) candidates.RemoveAt(MaxTake);
+        var total = candidates.Count;
         var forms = SearchText.AllForms(terms);
         var picked = candidates
             .OrderByDescending(c => forms.Any(f => c.Title.Contains(f, StringComparison.OrdinalIgnoreCase)))
@@ -259,7 +269,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                     .Concat(a.Screenshots.Select(s => s.Caption))
                     .Append(string.Join(", ", actors[a.Id])).Append(a.Sectors),
                 forms, a.Bluf))).ToList();
-        return new HitList<ArticleHit>(hits, total);
+        return new HitList<ArticleHit>(hits, total, capped);
     }
 
     private static async Task<HitList<ActionHit>> ActionsAsync(IAppDbContext db, IReadOnlyList<string> terms, int skip, int take, CancellationToken ct)
