@@ -427,6 +427,10 @@ public class SystemPagesTests(TideApp app) : IClassFixture<TideApp>
     {
         using var scope = app.Services.CreateScope();
         Audit.ServiceScopes.SignIn(scope, Permission.Administer);   // the service checks the user itself, as the page does
+        // The screenshot folder is made when the file store is first used. The intake job's first pass usually does that
+        // just after start-up, but on a busy machine this test can get there first and find no folder yet, which
+        // Diagnostics rightly reports. So the test uses the file store itself rather than racing the job.
+        scope.ServiceProvider.GetRequiredService<IFileStore>();
         var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
         report.Database.Reachable.Should().BeTrue();
         report.Database.Pending.Should().BeEmpty();
