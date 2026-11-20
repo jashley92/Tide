@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
@@ -35,7 +36,7 @@ public sealed record AddedWebhook(Guid Id, string Secret);
 /// each action posted carries its article's marking.
 /// </summary>
 public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, ISecretProtector secrets, IWebhookPoster poster, OrgClock clock,
-    IOptions<AppOptions> app, TimeProvider time, Settings.DistributionSettings editions)
+    IOptions<AppOptions> app, TimeProvider time, Settings.DistributionSettings editions, ILogger<WebhookService> log)
 {
     /// <summary>The Data Protection purpose a webhook's signing secret is kept under.</summary>
     public const string SecretPurpose = "Tide.Webhooks.Secret.v1";
@@ -48,6 +49,15 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
 
     /// <summary>How old an action raised or a brief sent must be before a run posts it.</summary>
     public static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long one run may spend posting, shared among the hooks. A post may take up to 15 seconds (the poster's timeout)
+    /// and a hook may send <see cref="MaxPerRun"/> a run, so a receiver that answers just in time would hold a run for some
+    /// 25 minutes a hook: past the job's 15-minute hang limit (<see cref="Operations.JobMonitor.Webhooks"/>), shown as hung,
+    /// with every other hook waiting behind it. Five minutes leaves that limit plenty of room for the queries and a last
+    /// post begun just before the budget ran out; what's left goes in the next run, a minute later.
+    /// </summary>
+    public static readonly TimeSpan RunBudget = TimeSpan.FromMinutes(5);
 
     public async Task<IReadOnlyList<WebhookRow>> ListAsync(CancellationToken ct = default)
     {
@@ -118,6 +128,8 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>
     /// The background job: for each enabled hook, posts what happened since its last run (actions raised, briefs sent)
     /// and, once a day, the actions that became overdue. A hook stops at its first failure and tries again next run.
+    /// The run keeps to <see cref="RunBudget"/>, each hook in turn getting an even share of what's left, so a slow receiver
+    /// can't hold up the others: a hook whose share is spent stops between moments and goes on from there next run.
     /// Returns how many posts were made.
     /// </summary>
     public async Task<int> DeliverDueAsync(CancellationToken ct = default)
@@ -125,8 +137,11 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         var now = time.GetUtcNow();
         var today = clock.Today;
         await using var db = await dbs.CreateAsync(ct);
-        var hooks = await db.Webhooks.AsNoTracking().Where(w => w.Enabled).ToListAsync(ct);
+        // The hook that posted longest ago goes first, so one cut short by the hooks before it (a share is only checked
+        // before a post, so a slow one can overrun by a post) is first in line next run.
+        var hooks = (await db.Webhooks.AsNoTracking().Where(w => w.Enabled).ToListAsync(ct)).OrderBy(w => w.LastAtUtc).ThenBy(w => w.Id).ToList();
         if (hooks.Count == 0) return 0;
+        var runEnds = now + RunBudget;
         // A receiver is at least as wide as the team edition's list (a SOAR, a ticket queue), so it gets what that edition
         // would: an action raised from an article above its ceiling is left out, as the brief leaves the article out with
         // its actions. Left out of the query, it's passed by the watermark like anything already sent.
@@ -134,9 +149,15 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         // Brief sends are a few a day: read once for every hook, from the oldest watermark of those that post them.
         var sends = await SendsAsync(db, hooks, ct);
         var posted = 0;
-        foreach (var hook in hooks)
+        for (var h = 0; h < hooks.Count; h++)
         {
+            var hook = hooks[h];
             var read = (hook.SentUpToUtc, hook.OverdueSentFor);
+            // This hook's share: an even part of what's left of the budget, so time one hook didn't need goes to the rest.
+            var started = time.GetUtcNow();
+            var deadline = started + (runEnds - started) / (hooks.Count - h);
+            var outOfTime = false;
+            bool Spent() => outOfTime = outOfTime || time.GetUtcNow() >= deadline;
             var after = hook.SentUpToUtc;
             var events = EventsOf(hook.Events);
             async Task<bool> Post(string name, string id, object data)
@@ -190,16 +211,19 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
             var ordered = due.OrderBy(d => d.At).ToList();
             var take = Math.Min(MaxPerRun, ordered.Count);
             while (take < ordered.Count && ordered[take].At == ordered[take - 1].At) take++;
+            // The budget is checked only before a moment's first post: stopping inside a moment would send its first events
+            // again next run, the watermark being unable to pass part of one.
             var ok = true;
             for (var i = 0; i < take && ok; i++)
             {
+                if ((i == 0 || ordered[i].At != ordered[i - 1].At) && Spent()) break;
                 ok = await Post(ordered[i].Event, ordered[i].Id, ordered[i].Data);
                 if (ok && (i + 1 == ordered.Count || ordered[i + 1].At != ordered[i].At)) hook.SentUpToUtc = ordered[i].At;
             }
-            if (ok && take == ordered.Count && complete > hook.SentUpToUtc) hook.SentUpToUtc = complete;
+            if (ok && !outOfTime && take == ordered.Count && complete > hook.SentUpToUtc) hook.SentUpToUtc = complete;
 
             // Then the newly overdue, a due date at a time, so a backlog of those drains too.
-            if (ok && events.Contains(ActionOverdue) && hook.OverdueSentFor != today.AddDays(-1))
+            if (ok && events.Contains(ActionOverdue) && hook.OverdueSentFor != today.AddDays(-1) && !Spent())
             {
                 var overdueFrom = hook.OverdueSentFor?.AddDays(1) ?? today.AddDays(-1);
                 var days = (await Rows(db.Actions.WhereOpen())
@@ -209,6 +233,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
                 var d = 0;
                 for (; d < days.Count && ok && left > 0; d++)
                 {
+                    if (d > 0 && Spent()) break;
                     foreach (var a in days[d])
                         if (!(ok = await Post(ActionOverdue, OverdueId(a), Action(a)))) break;
                     if (ok) hook.OverdueSentFor = days[d].Key;
@@ -217,6 +242,9 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
                 if (ok && d == days.Count) hook.OverdueSentFor = today.AddDays(-1);
             }
             await SaveAsync(db, hook, read, ct);
+            if (outOfTime)
+                log.LogInformation("Webhook {WebhookId} used its share of the run's {Budget} time budget; the rest is sent from where it stopped in the next run.",
+                    hook.Id, RunBudget);
         }
         return posted;
     }

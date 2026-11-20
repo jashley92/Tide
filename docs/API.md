@@ -874,6 +874,11 @@ sequenceDiagram
   the others.
 - **Batching.** At most 100 events a run per webhook (more only to finish events stamped at the same moment), and the
   overdue posts a due date at a time, so a backlog drains over several runs.
+- **Time budget.** A run spends at most **5 minutes** posting (`WebhookService.RunBudget`), well under the job's
+  15-minute hang limit, since a slow receiver could otherwise hold a run for most of half an hour. Each webhook in turn
+  gets an even share of what's left, so one slow receiver doesn't hold up the others. A webhook whose share is spent
+  stops between events (never inside events stamped at the same moment) and the next run goes on from there: nothing
+  is skipped or sent twice. The log says so at Information.
 - **Failure.** A post fails on any status outside 200 to 299, a timeout (15 seconds), a connection error, or a
   redirect (redirects aren't followed; a 3xx is reported). The webhook's run stops at its first failure; the next run,
   a minute later, tries again from the same event with the **same `id`**. There's no back-off and no limit: it retries

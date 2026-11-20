@@ -188,7 +188,8 @@ public class JobLeaseTests
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
         var flaky = new FlakyDbs(db);
         var webhooks = new WebhookService(flaky, db.User, new FakeSecrets(), db.Posts, db.Clock,
-            Microsoft.Extensions.Options.Options.Create(new Tide.Application.Distribution.AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System, db.Settings());
+            Microsoft.Extensions.Options.Options.Create(new Tide.Application.Distribution.AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System, db.Settings(),
+            NullLogger<WebhookService>.Instance);
         await using var provider = new ServiceCollection().AddSingleton(webhooks).BuildServiceProvider();
         var jobs = new JobMonitor(TimeProvider.System);
         var hosted = new WebhookHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(),

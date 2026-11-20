@@ -589,6 +589,83 @@ public class WebhookDeliveryTests : IDisposable
         (await _db.Webhooks(clock).DeliverDueAsync()).Should().Be(0);
     }
 
+    // A receiver that takes 14 seconds a post, just under the poster's 15-second limit: the run's clock moves on by that
+    // much for each post to an address on that host.
+    private void SlowAt(string host, TestClock clock) => _db.Posts.During = () =>
+    {
+        if (_db.Posts.Posted[^1].Url.Contains(host, StringComparison.Ordinal)) clock.Now += TimeSpan.FromSeconds(14);
+        return Task.CompletedTask;
+    };
+
+    private static int Number(string body) => JsonElement.Parse(body).GetProperty("data").GetProperty("number").GetInt32();
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ASlowReceiver_StopsAtTheRunsTimeBudget_BetweenMoments_AndTheNextRunGoesOn_NoneSkippedOrSentTwice(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        DateTimeOffset from;
+        await using (var db = _db.Context()) from = (await db.Webhooks.AsNoTracking().SingleAsync()).SentUpToUtc;
+        await using (var db = _db.Context())
+        {
+            for (var n = 1; n <= 50; n++) db.Actions.Add(new ActionItem { Number = n, Title = $"Action {n}", TeamId = team });
+            await db.SaveChangesAsync();
+        }
+        // 20–25 share one moment, across where the budget runs out (after the 22nd post at 14 seconds each).
+        await using (var db = _db.Context())
+            for (var n = 1; n <= 50; n++)
+            {
+                var at = from.AddSeconds(1) + TimeSpan.FromMilliseconds(n is >= 20 and <= 25 ? 20 : n);
+                await db.Actions.Where(a => a.Number == n).ExecuteUpdateAsync(u => u.SetProperty(a => a.CreatedAtUtc, at));
+            }
+        var clock = new TestClock(DateTimeOffset.UtcNow.AddMinutes(5));
+        SlowAt("slow.example.org", clock);
+
+        var runs = new List<int>();
+        for (var i = 0; i < 4; i++)
+        {
+            var started = clock.Now;
+            runs.Add(await _db.Webhooks(clock).DeliverDueAsync());
+            (clock.Now - started).Should().BeLessThan(WebhookService.RunBudget + TimeSpan.FromMinutes(1),
+                "a run keeps to its budget, finishing at most the moment it was in");
+            clock.Now += TimeSpan.FromMinutes(1);
+        }
+
+        runs.Should().Equal([25, 22, 3, 0], "the first run's budget ran out inside the moment 20–25, so it finished that moment and stopped");
+        _db.Posts.Posted.Select(p => Number(p.Body)).Should().Equal(Enumerable.Range(1, 50), "each once, oldest first");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ASlowReceiver_DoesntHoldUpAnotherHook_ItStillGetsItsPostsInTheSameRun(string provider)
+    {
+        _db = _db.On(provider);
+        await _db.Webhooks().AddAsync("https://slow.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        await _db.Webhooks().AddAsync("https://quick.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        for (var i = 0; i < 50; i++) await _db.Actions().CreateAsync(new ActionForm { Title = $"Block host {i}", TeamId = team });
+        var clock = new TestClock(DateTimeOffset.UtcNow.AddMinutes(5));
+        SlowAt("slow.example.org", clock);
+        int[] To(string host) => [.. _db.Posts.Posted.Where(p => p.Url.Contains(host, StringComparison.Ordinal)).Select(p => Number(p.Body))];
+
+        var started = clock.Now;
+        await _db.Webhooks(clock).DeliverDueAsync();
+
+        To("quick.example.org").Should().HaveCount(50, "the slow hook had only its share of the run");
+        To("slow.example.org").Should().NotBeEmpty().And.HaveCountLessThan(50, "it stopped at the budget");
+        (clock.Now - started).Should().BeLessThan(WebhookService.RunBudget + TimeSpan.FromSeconds(15));
+
+        for (var i = 0; i < 6; i++)
+        {
+            clock.Now += TimeSpan.FromMinutes(1);
+            await _db.Webhooks(clock).DeliverDueAsync();
+        }
+        To("slow.example.org").Should().Equal(To("quick.example.org"), "the slow hook gets every one in the end, each once, in the same order");
+        To("quick.example.org").Should().OnlyHaveUniqueItems();
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task AFailure_StopsTheRun_AndTheNextPicksUpWhereItStopped(string provider)
