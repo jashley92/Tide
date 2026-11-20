@@ -196,16 +196,30 @@ public class ActionsListPagingTests : IDisposable
         var sql = _db.Commands.Sql;
         _db.Commands.Record = false;
 
+        // The rows' read (the one projecting a row's columns) is cut to the page in its FROM: the actions it reads come
+        // from an ordered, paged set (LIMIT ... OFFSET on SQLite, OFFSET ... FETCH NEXT on SQL Server). The scalar
+        // subqueries in its column list (a parent's number, LIMIT 1; the counts) are left out, so they can't stand in for it.
+        var rowsRead = sql.Where(s => s.Contains("RecommendationLine", StringComparison.Ordinal)).Should().ContainSingle().Subject;
+        var from = TopLevelFrom(rowsRead);
+        from.Should().MatchRegex(@"(LIMIT @\w+ OFFSET @\w+|OFFSET @\w+ ROWS FETCH NEXT @\w+ ROWS ONLY)\s*\)",
+            "a page reads a page of actions from the database, not every one of them");
+        from.Should().MatchRegex(@"(?i)ORDER BY lower\(", "the title sort runs in the database, in any case, before the page is cut");
         page.Rows.Should().HaveCount(Size);
         page.Total.Should().Be(260);
-        // Every read of the actions table either counts, groups, or is cut to the page (LIMIT/OFFSET on SQLite, OFFSET ...
-        // FETCH on SQL Server): none reads every action to sort and cut them here.
-        var reads = sql.Where(s => s.Contains("Actions", StringComparison.Ordinal) && s.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)).ToList();
-        reads.Should().NotBeEmpty();
-        reads.Should().OnlyContain(s => s.Contains("COUNT(", StringComparison.OrdinalIgnoreCase) || s.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("LIMIT", StringComparison.Ordinal) || s.Contains("FETCH", StringComparison.Ordinal), "a page reads a page of actions, not all of them");
-        reads.Should().Contain(s => s.Contains("ORDER BY", StringComparison.Ordinal)
-            && (s.Contains("lower(", StringComparison.OrdinalIgnoreCase)), "the title sort runs in the database, in any case");
+    }
+
+    // A SELECT from its top-level FROM on: the column list, with its parenthesised subqueries, cut off.
+    private static string TopLevelFrom(string select)
+    {
+        var depth = 0;
+        for (var i = 0; i < select.Length; i++)
+        {
+            if (select[i] == '(') depth++;
+            else if (select[i] == ')') depth--;
+            else if (depth == 0 && string.CompareOrdinal(select, i, "FROM ", 0, 5) == 0 && (i == 0 || char.IsWhiteSpace(select[i - 1])))
+                return select[i..];
+        }
+        throw new InvalidOperationException("The command has no top-level FROM.");
     }
 
     [Theory]
