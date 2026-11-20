@@ -208,7 +208,7 @@ else if (_results is { Terms.Count: > 0 } r)
                     <div class="d-flex gap-2 align-items-center flex-wrap">
                         <a class="tide-hit-title" href="stories/@s.Id"><Highlight Text="@s.Name" Forms="_forms" /></a>
                         <Badge>@s.Status</Badge>
-                        <span class="small tide-muted">@s.Articles article@(s.Articles == 1 ? "" : "s")</span>
+                        <span class="small tide-muted">@Ui.Plural(s.Articles, "article")</span>
                     </div>
                     @if (s.Snippet is not null) { <div class="tide-hit-snippet"><Highlight Text="@s.Snippet" Forms="_forms" /></div> }
                 </div>

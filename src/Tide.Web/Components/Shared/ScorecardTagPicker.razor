@@ -133,7 +133,7 @@
         return _grouped = (ScorecardTagSearch.Chosen(Categories, Chosen), ScorecardTagSearch.Gone(Categories, Chosen));
     }
 
-    private string? Status => Typed.Length == 0 ? null : _found.Count == 1 ? "1 tag found" : $"{_found.Count} tags found";
+    private string? Status => Typed.Length == 0 ? null : Ui.Plural(_found.Count, "tag") + " found";
 
     private RenderFragment NoMatch => @<text>No tags match “@Typed”.</text>;
 
