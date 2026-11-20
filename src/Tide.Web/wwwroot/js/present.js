@@ -50,11 +50,19 @@ window.tidePresent = (function () {
     // What Space and Page Down page: the body of a panel open over the slide (an action, a product's card, the tag
     // panel), which is what's in view, rather than the slide hidden behind it; else the slide's body.
     // An action beside the slide (a column of the page, not over it) leaves them to the slide, whose scroll the room shares.
-    function pagedBody() {
+    function pagedBody() { return cardOver() || slideBody(); }
+
+    // The body of the panel open over the slide (the last one, if more than one is), or null with none, or with one only
+    // beside the slide.
+    function cardOver() {
         const open = Array.from(document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body'))
             .filter(function (body) { return getComputedStyle(body.parentElement).position === 'fixed'; });
-        return open.length ? open[open.length - 1] : slideBody();
+        return open.length ? open[open.length - 1] : null;
     }
+
+    // The keys that move the slide. A panel open over the slide holds them: it's what's in view, and moving on would close
+    // it under someone reading it (Escape closes it). One beside the slide leaves them to the slide.
+    const moves = { next: true, prev: true, first: true, last: true };
 
     function behavior(instant) { return instant || window.tideShortcuts.still() ? 'instant' : 'smooth'; }
 
@@ -307,7 +315,9 @@ window.tidePresent = (function () {
     // --- keys ------------------------------------------------------------------------------------------------------------
 
     // Space and Page Down page the slide's body down first, Shift+Space and Page Up up; only at its end do they change
-    // the slide. The arrows and the other keys change it at once.
+    // the slide. The arrows and the other keys change it at once. With a panel open over the slide, Space and the page
+    // keys page it and stop at its top and end, and no key changes the slide (cardOver), with the presenter's rail or a
+    // step of Learn to present open too.
     function paging(e) {
         if (e.key === 'PageDown') return 'down';
         if (e.key === 'PageUp') return 'up';
@@ -323,12 +333,14 @@ window.tidePresent = (function () {
             const move = stepKeys[e.key];
             if (!move || document.querySelector('.tide-modal:not([data-guide-card])') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
             e.preventDefault();
+            if (moves[move] && cardOver()) return;   // a card over the slide holds them, as below
             ref.invokeMethodAsync('OnPresentKey', move).catch(function () { });
             return;
         }
         // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
         // and Escape close it (not while typing). The slide's keys that press nothing in the rail still work, as its D
-        // hint says: D ticks the article, the arrows, Home and End move the slide under it, and focus stays in the rail.
+        // hint says: D ticks the article, the arrows, Home and End move the slide under it (not with a card open over the
+        // slide: cardOver), and focus stays in the rail.
         // Enter, Space and Backspace are the rail's own; Tab is dialog.js's. A dialog open over it (a confirmation from
         // Raise or Add) has the keys: its Escape cancels it alone.
         const rail = ref && document.querySelector('#present-rail[aria-modal="true"]');
@@ -338,6 +350,7 @@ window.tidePresent = (function () {
             const action = e.key === ']' || e.key === 'Escape' ? 'rail' : railKeys[e.key];
             if (!action || action === 'discussed' && !window.tideShortcuts.on()) return;
             e.preventDefault();
+            if (moves[action] && cardOver()) return;   // a card over the slide holds them, as below
             ref.invokeMethodAsync('OnPresentKey', action).then(function () {
                 if (action !== 'rail' && rail.isConnected && !rail.contains(document.activeElement)) rail.focus();
             }).catch(function () { });
@@ -356,6 +369,7 @@ window.tidePresent = (function () {
             e.preventDefault();
             const el = pagedBody(), forward = page === 'down';
             if (!atEdge(el, forward)) { pageBy(el, forward); return; }
+            if (cardOver()) return;   // at the panel's end: it stays open
             ref.invokeMethodAsync('OnPresentKey', forward ? 'next' : 'prev').catch(function () { });
             return;
         }
@@ -363,6 +377,7 @@ window.tidePresent = (function () {
         if (!action) return;
         // Escape leaves full screen by itself; only a second Escape (not in full screen) closes the zoomed image.
         if (action === 'close' && document.fullscreenElement) return;
+        if (moves[action] && cardOver()) { e.preventDefault(); return; }
         e.preventDefault();
         if (action === 'fullscreen') { toggleFullscreen(); return; }
         ref.invokeMethodAsync('OnPresentKey', action).catch(function () { });

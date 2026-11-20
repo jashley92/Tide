@@ -52,8 +52,16 @@ public class EscalationTests : IDisposable
     private async Task<Guid> Internal(string name = "Network Engineering", string? mailbox = "network-team@example.org", string? contact = "pat.lee@example.org")
     {
         var id = await _db.Teams().AddAsync(name, null, mailbox);
-        if (contact is not null) await _db.Teams().SetEscalationContactAsync(id, "Pat Lee", contact, confirmOutside: true);
+        if (contact is not null) await Contact(id, "Pat Lee", contact, confirmOutside: true);
         return id;
+    }
+
+    // Sets an internal team's escalation contact as Teams & SLA does: its form, saved.
+    private async Task Contact(Guid id, string? name, string? email, bool confirmOutside = false)
+    {
+        var form = TeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == id));
+        (form.EscalationName, form.EscalationEmail, form.ConfirmOutside) = (name, email, confirmOutside);
+        await _db.Teams().UpdateAsync(id, form);
     }
 
     private Task<Guid> External(string name = "Network Engineering", string? contact = "duty-manager@network.example", bool remindersOn = true) =>
@@ -466,26 +474,32 @@ public class EscalationTests : IDisposable
         (await _db.Teams().ListAsync()).Single(t => t.Id == inside).Should().Match<Team>(t => t.EscalationName == "Pat Lee" && t.EscalationEmail == "pat.lee@example.org");
         ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside)).EscalationEmail.Should().Be("duty-manager@network.example");
 
-        var bad = () => _db.Teams().SetEscalationContactAsync(inside, "Pat", "not an address");
+        var bad = () => Contact(inside, "Pat", "not an address");
         await bad.Should().ThrowAsync<ArgumentException>().WithMessage("*isn't an email address*");
-        await _db.Teams().SetEscalationContactAsync(inside, "  ", " ");
+        await Contact(inside, "  ", " ");
         (await _db.Teams().ListAsync()).Single(t => t.Id == inside).EscalationEmail.Should().BeNull("blank clears it");
 
+        var internalForm = TeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == inside));
         As("S-1-5-21-OWNER", "Owner", AppRole.ActionOwner);
-        var internalOne = () => _db.Teams().SetEscalationContactAsync(inside, "Sam", "sam@example.org");
+        internalForm.EscalationEmail = "sam@example.org";
+        var internalOne = () => _db.Teams().UpdateAsync(inside, internalForm);
         await internalOne.Should().ThrowAsync<ForbiddenException>();
-        await _db.Teams().SetEscalationContactAsync(outside, "Jo", "jo@network.example", confirmOutside: true);
         var form = ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside));
+        (form.EscalationName, form.EscalationEmail, form.ConfirmOutside) = ("Jo", "jo@network.example", true);
+        await _db.Teams().UpdateExternalAsync(outside, form);
+        form = ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside));
         (form.EscalationName, form.EscalationEmail).Should().Be(("Jo", "jo@network.example"));
         (form.EscalationEmail, form.ConfirmOutside) = ("kim@network.example", true);
         await _db.Teams().UpdateExternalAsync(outside, form);
         (await _db.Teams().ListAsync()).Single(t => t.Id == outside).EscalationEmail.Should().Be("kim@network.example");
 
-        As("S-1-5-21-VIEWER", "Viewer", AppRole.Viewer);
-        var viewer = () => _db.Teams().SetEscalationContactAsync(outside, "X", "x@example.org");
-        await viewer.Should().ThrowAsync<ForbiddenException>();
-        var gone = () => _db.Teams().SetEscalationContactAsync(Guid.NewGuid(), "X", "x@example.org");
+        var gone = () => _db.Teams().UpdateExternalAsync(Guid.NewGuid(), form);
         await gone.Should().ThrowAsync<KeyNotFoundException>();
+        form = ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside));
+        As("S-1-5-21-VIEWER", "Viewer", AppRole.Viewer);
+        form.EscalationEmail = "x@example.org";
+        var viewer = () => _db.Teams().UpdateExternalAsync(outside, form);
+        await viewer.Should().ThrowAsync<ForbiddenException>();
 
         await using var ctx = _db.Context();
         (await ctx.AuditLog.CountAsync(e => e.EntityType == nameof(Team) && e.ChangesJson!.Contains("EscalationEmail"))).Should().BeGreaterThanOrEqualTo(3);
@@ -533,5 +547,30 @@ public class EscalationTests : IDisposable
         negative.Should().Throw<ArgumentException>().WithMessage("Step 1:*");
         EscalationForm.From(new EscalationOptions { Steps = "nonsense" }).Steps.Should().BeEmpty();
         EscalationForm.Scopes.Select(s => s.Scope).Should().Equal(Enum.GetValues<EscalationScope>());
+    }
+
+    [Fact]
+    public void SavedStepsThatDontRead_AreKept_UntilTheAdministratorReplacesThem()
+    {
+        var form = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        form.Steps.Should().BeEmpty();
+        form.Unreadable.Should().Contain("Step 1");
+        form.StepsText().Should().BeNull("saving leaves the saved steps as they are, not an empty ladder");
+
+        form.Add();
+        form.Unreadable.Should().BeNull("a step added replaces them");
+        form.StepsText().Should().Be("after 1: ");
+
+        var defaults = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        defaults.UseDefaults();
+        defaults.Unreadable.Should().BeNull();
+        defaults.StepsText().Should().Be(EscalationLadder.DefaultText);
+
+        var cleared = EscalationForm.From(new EscalationOptions { Steps = "after 99: flag" });
+        cleared.ClearUnreadable();
+        cleared.Unreadable.Should().BeNull();
+        cleared.StepsText().Should().BeEmpty("cleared on purpose, none are saved");
+
+        EscalationForm.From(new EscalationOptions { Steps = "" }).Unreadable.Should().BeNull("no steps is a ladder that reads");
     }
 }

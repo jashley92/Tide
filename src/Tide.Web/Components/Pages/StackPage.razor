@@ -164,7 +164,7 @@ else
     <div class="tide-page-head">
         <div>
             <h1>@p.Name @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h1>
-            <div class="tide-sub">@(_detail.TeamName is { } t ? $"{t} · " : "")@(p.CheckedOn is { } c ? $"checked {Ui.ShortDay(c)}" : "not checked yet")
+            <div class="tide-sub">@(_detail.TeamName is { } t ? $"{t} · " : "")@(p.CheckedOn is { } c ? $"checked {Ui.ShortDay(c, Clock.Today)}" : "not checked yet")
                 @if (p.ModifiedAtUtc is { } m) { <text> &middot; edited @Ui.When(Clock, m)</text> }</div>
         </div>
         @if (_canWrite)
@@ -225,7 +225,7 @@ else
                     @foreach (var a in _detail.Articles)
                     {
                         <li class="tide-stack-row"><a href="@($"articles/{a.Id}")">@a.Title</a>
-                            <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
+                            <span class="small tide-muted">@Ui.ShortDay(a.On, Clock.Today) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
                     }
                 </ul>
             </section>

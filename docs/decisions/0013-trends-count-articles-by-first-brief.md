@@ -38,5 +38,7 @@ and the number has to match that list exactly, or the report can't be checked.
   reflect the best current tagging, not a frozen mistake. A board pack that must not change is the downloaded CSV.
 - A story that runs for weeks counts once, in the month it first appeared, not every month it's updated. A future
   "updates" line could count carried-over articles separately.
-- The report reads every article's brief dates and every action on each request. That's fine for a team's volume
-  (thousands of articles a year); a snapshot table can come later if it isn't.
+- The report reads the brief dates and actions on each request. Since November 2026 it reads only its own span: the
+  articles first briefed or written in it (each article's first brief worked out in the database), and the actions
+  raised, closed or open in it, so a long history doesn't slow a six-month report. A snapshot table can come later if
+  a team's volume outgrows that.

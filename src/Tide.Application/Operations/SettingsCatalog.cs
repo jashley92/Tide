@@ -59,6 +59,8 @@ public static class SettingsCatalog
         new("Intake", "Time limit per request (seconds)", "Intake:TimeoutSeconds"),
         new("Intake", "Largest response (KB)", "Intake:MaxResponseKB"),
 
+        new("Webhooks", "Private networks allowed", "Webhooks:AllowPrivateNetworks"),
+
         new("CVE enrichment", "NVD API key", "Cve:NvdApiKey", SettingKind.Secret),
         new("CVE enrichment", "NVD address", "Cve:NvdUrl", SettingKind.Url),
         new("CVE enrichment", "EPSS address", "Cve:EpssUrl", SettingKind.Url),

@@ -6,7 +6,7 @@
    link, splitting off more) in ChildContent, under the legend. *@
 
 <section class="tide-card tide-lineage" aria-labelledby="lineage-title">
-    <h2 id="lineage-title">Lineage <span class="tide-count tide-muted fw-normal">(@Lineage.Parts.Count part@(Lineage.Parts.Count == 1 ? "" : "s"))</span></h2>
+    <h2 id="lineage-title">Lineage <span class="tide-count tide-muted fw-normal">(@Ui.Plural(Lineage.Parts.Count, "part"))</span></h2>
     <ol class="tide-lin-flow" data-lineage>
         @if (Lineage.Article is { } article)
         {
@@ -34,7 +34,7 @@
             </a>
         </li>
         <li class="tide-lin-step" data-node="parts">
-            <span class="visually-hidden">Split into @Lineage.Parts.Count part@(Lineage.Parts.Count == 1 ? "" : "s"):</span>
+            <span class="visually-hidden">Split into @Ui.Plural(Lineage.Parts.Count, "part"):</span>
             <ul class="tide-lin-parts">
                 @foreach (var part in Lineage.Parts)
                 {

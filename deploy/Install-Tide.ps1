@@ -84,6 +84,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Before anything is read or asked for: the install works through the IIS: drive, which PowerShell 7 doesn't have.
+. (Join-Path $PSScriptRoot 'lib\TideIis.ps1')
+Assert-TideWindowsPowerShell 'Install-Tide.ps1'
 function Write-Step([string] $m) { Write-Host "==> $m" -ForegroundColor Cyan }
 
 # --- Merge an optional answers file (explicit -Params win; passwords are never read from it) ---
@@ -141,7 +144,6 @@ $repoRoot  = Split-Path -Parent $deployDir
 $webProj   = Join-Path $repoRoot 'src\Tide.Web\Tide.Web.csproj'
 # A release bundle (tide-<version>.zip) has the published app in app\ beside deploy\, and no source.
 $bundleApp = Join-Path $repoRoot 'app'
-. (Join-Path $deployDir 'lib\TideIis.ps1')
 . (Join-Path $deployDir 'lib\TideAdGroups.ps1')
 . (Join-Path $deployDir 'lib\TideWebSockets.ps1')
 Import-Module WebAdministration -ErrorAction Stop
