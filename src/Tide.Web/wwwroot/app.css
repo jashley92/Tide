@@ -358,8 +358,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 /* A wide table scrolls sideways; a sub-pixel rounding at its foot mustn't add a vertical scrollbar beside a short one. */
 .table-responsive { overflow-y: hidden; }
-/* TableScroll's box takes focus, so the keyboard can scroll it: its ring sits just outside, clear of the table's lines. */
-.tide-table-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+/* TableScroll's box and the action rail's hunt query take focus, so the keyboard can scroll them: the ring sits just outside, clear of the table's lines. */
+.tide-table-scroll:focus-visible, #rail-hunt-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); padding: .5rem .6rem; border-bottom: 1px solid var(--tide-border); text-align: left; white-space: nowrap; }
 .tide-table td { padding: .6rem; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
 /* What each role can do (Role mappings): the activities read as text, not as column headings. */
