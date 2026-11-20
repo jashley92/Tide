@@ -509,6 +509,7 @@ else
         "overdue" => ActionDue.Overdue,
         "week" => ActionDue.ThisWeek,
         "none" => ActionDue.None,
+        "soon" => ActionDue.Soon,
         _ => null,
     };
 
@@ -517,6 +518,7 @@ else
         ActionDue.Overdue => "overdue",
         ActionDue.ThisWeek => "week",
         ActionDue.None => "none",
+        ActionDue.Soon => "soon",
         _ => null,
     };
 
@@ -541,7 +543,7 @@ else
     private static readonly IReadOnlyList<FilterOption> KindOptions = FilterOption.ForEnum<ActionKind>(ActionService.KindName);
     private static readonly IReadOnlyList<FilterOption> PriorityOptions = FilterOption.ForEnum<Priority>();
     private static readonly IReadOnlyList<FilterOption> DueOptions =
-        [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
+        [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.Soon), "Soon"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
     private static readonly IReadOnlyList<FilterOption> OpenStatusOptions = StatusOptionsOf(OpenStatuses), ClosedStatusOptions = StatusOptionsOf(ClosedStatuses);
 
     private static IReadOnlyList<FilterOption> StatusOptionsOf(IEnumerable<ActionStatus> statuses) =>

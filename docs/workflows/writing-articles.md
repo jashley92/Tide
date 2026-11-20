@@ -228,7 +228,9 @@ what keep Presented to the meeting. A Presented article stays editable: that's h
 
 `ArticleChecks.For(article, companyCeiling)` is pure, and the same list shows in the editor's preview, the brief's
 running order and the edition check. A blocking check stops Mark ready on the article and Mark ready on a brief that
-holds it (`BriefService.MarkReadyAsync`).
+holds it (`BriefService.MarkReadyAsync`). In the editor, checked on what's on screen, it disables *Save and mark ready*
+and says why beside it (`ArticleChecks.NotReady`: *It isn't ready yet: Add the bottom line (BLUF).*), so the button
+never saves and then refuses; the service refuses with the same words.
 
 | Check | Blocking |
 |---|---|

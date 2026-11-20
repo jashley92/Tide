@@ -620,6 +620,35 @@ public class ActionServiceTests : IDisposable
         (await svc.ListAsync(new ActionFilter(ActionView.Open, AssigneeId: ActionFilter.Unassigned))).Should().OnlyContain(r => r.AssigneeId == null).And.NotBeEmpty();
     }
 
+    // Workload's Due soon, Blocked and P1 link to the list filtered due=soon, status=blocked and priority=p1: each lists
+    // the actions its count counted.
+    [Fact]
+    public async Task WorkloadsDueSoonBlockedAndP1_AreTheActionsTheListFiltersShow()
+    {
+        var team = await Team();
+        var svc = _db.Actions();
+        var today = _db.Clock.Today;
+        var next = _db.Clock.Days.Next(today);
+        async Task<Guid> Make(string title, DateOnly? due, Priority priority = Priority.P3) =>
+            (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = title, Kind = ActionKind.PatchRemediate, TeamId = team, DueDate = due, Priority = priority })))!.Action.Id;
+        await Make("due today", today);
+        await Make("due next working day", next, Priority.P1);
+        await Make("due after that", _db.Clock.Days.Next(next));
+        await Make("late", today.AddDays(-3), Priority.P1);
+        await svc.SetStatusAsync(await Make("blocked", null), ActionStatus.Blocked, ActionOutcome.None, null);
+        await svc.SetStatusAsync(await Make("done today", today, Priority.P1), ActionStatus.Done, ActionOutcome.Remediated, null);
+
+        var load = (await svc.WorkloadAsync()).Single(t => t.Team.Id == team);
+        async Task<string[]> Listed(ActionFilter f) => [.. (await svc.ListAsync(f with { View = ActionView.Open, TeamId = team })).Select(r => r.Title).Order()];
+
+        var soon = await Listed(new ActionFilter { Due = ActionDue.Soon });
+        soon.Should().Equal("due next working day", "due today").And.HaveCount(load.DueSoon);
+        var blocked = await Listed(new ActionFilter { Status = ActionStatus.Blocked });
+        blocked.Should().Equal("blocked").And.HaveCount(load.Blocked);
+        var p1 = await Listed(new ActionFilter { Priorities = [Priority.P1] });
+        p1.Should().Equal("due next working day", "late").And.HaveCount(load.P1);
+    }
+
     [Fact]
     public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
     {
