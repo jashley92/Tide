@@ -260,7 +260,8 @@ is logged as `Tide.Health` ("Background jobs is Unhealthy: jobs …").
 ### Diagnostics
 
 **Administration › System › Diagnostics** is the deeper check, for administrators: the build and uptime; the
-database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file);
+database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file; the app makes the folder at start-up, and
+logs a `Tide.Files` warning if it can't);
 the key ring is on disk; email is on, signs in properly, and isn't backed off; which sources are failing; each
 background job's last run, result and next run, whether it's failing, overdue or hung, and its runs and failures over
 30 days; which process holds the job lease (or that this one is standing by); whether the role mappings loaded; whether WebSockets are in use (this
