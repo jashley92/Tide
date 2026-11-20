@@ -124,7 +124,7 @@ public class PresentPresentersTests(MeetingClockApp app) : IClassFixture<Meeting
 /// <see cref="MeetingClockApp"/>'s app, whose database a test can take away for a moment (<see cref="Outage"/>): every
 /// context asked for meanwhile fails, as a dropped connection would.
 /// </summary>
-public sealed class DatabaseOutageApp : TideApp
+public sealed class MeetingOutageApp : TideApp
 {
     public TestClock Clock { get; } = new(DateTimeOffset.UtcNow);
 
@@ -163,13 +163,13 @@ public sealed class DatabaseOutageApp : TideApp
 /// Keeping who presented on the brief is best effort: the database failing as the meeting changes hands leaves the
 /// meeting going, in the new presenter's hands, and the meeting's end writes who presented it.
 /// </summary>
-public class PresentPresentersOutageTests(DatabaseOutageApp app) : IClassFixture<DatabaseOutageApp>
+public class PresentPresentersOutageTests(MeetingOutageApp app) : IClassFixture<MeetingOutageApp>
 {
     private static readonly SignIn Robin = new("dev:outage-robin", "Robin Analyst", "Analyst");
     private static readonly SignIn Sam = new("dev:outage-sam", "Sam Analyst", "Analyst");
 
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
-    private DatabaseOutageApp.Outage Outage => app.Services.GetRequiredService<DatabaseOutageApp.Outage>();
+    private MeetingOutageApp.Outage Outage => app.Services.GetRequiredService<MeetingOutageApp.Outage>();
 
     private async Task<Brief> Read(DateOnly day)
     {
