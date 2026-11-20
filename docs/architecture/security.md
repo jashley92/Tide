@@ -486,7 +486,8 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   anything else is refused). The inline endpoint sniffs again before serving and uses the sniffed type, never the
   stored one.
 - `ScreenshotService.OpenAsync` decides who sees which image: the team (`ReadTeamEdition`) any article screenshot; a
-  Visitor only a screenshot of the brief they're seated in; a Reader only a frozen copy in a sent company-wide edition
+  Visitor only a screenshot of the brief they're seated in, and only when the article and the screenshot are both within
+  the team edition's ceiling (as the meeting's slides show it); a Reader only a frozen copy in a sent company-wide edition
   (ADR [0007](../decisions/0007-frozen-sends-and-cid-email.md)), so an image above the public ceiling, or never sent,
   can't be fetched by guessing its id.
 - The browser keeps a copy five minutes, then revalidates with the `ETag` (the hash): a 304 while the bytes match and
@@ -516,7 +517,9 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   minted for, good for 10 minutes. A link written by hand, a forged or expired pass, or one minted for another file or
   person is sent to the zip. Under `Always` there's no "as is" link and even a valid pass is refused with a 403: no
   action's or comment's file is ever sent plain. The API's file download (`?zip=true`) zips every file under `Always`
-  too, whatever `zip` says.
+  too, whatever `zip` says. A person signed in to the API (not a token) gets the zip whenever `/files/{id}/download`
+  would send it, whatever `zip` says, since they may simply have followed a link; a token gets the file as it is unless
+  it asks for the zip.
 - `ActionFileService.OpenAsync` checks access per file. Removing keeps the bytes, hash and row with who, when and why;
   only an administrator restores.
 
