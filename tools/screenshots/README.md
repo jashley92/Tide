@@ -143,17 +143,26 @@ A setup that can't be done (a page that won't load, a meeting that won't start) 
 its other widths aren't tried: they would only wait out the same timeouts.
 
 `ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages on its own fresh
-demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after them, so they
-stay together, in order, at the end of the last slice: put a new page that changes the demo there, and any other before
-the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR` with
-`NO_BUILD=1` (or publish once and give each `APP_DIR`, as CI does).
+demo; CI runs the four side by side. The pages from the first `changesTheDemo(...)` mark on change the demo for those
+after them. Each mark starts a chain (Today's queue and saves, the presenter's strips, the live meeting and so on) that
+runs whole, in order, after its slice's other pages. As every slice starts on a fresh demo, a page may lean on what an
+earlier page of its own chain did, but never on another chain's. Put a page that reads the demo before the first mark;
+a page that changes it in the chain whose pages it touches, or, if it leans on none, under a mark of its own. A chain
+must hold whichever chains share its slice, so run one you add to or change alone too:
+`CHAIN="the live meeting" node tools/screenshots/layout.mjs` runs just that chain's pages on a fresh demo. A page's
+setup starts from what it needs rather than from where the page before left things (the meeting on its wrap-up, say),
+as the pages before it can change when the slices are cut afresh. To run
+the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR` with `NO_BUILD=1` (or
+publish once and give each `APP_DIR`, as CI does).
 
-The slices take about as long as each other by what each page took in CI (`shards.mjs`): the pages before the marker
-are placed longest first, each on the slice with least so far, and each slice keeps the pages' own order. What a page
+The slices take about as long as each other by what each page took in CI (`shards.mjs`): each page before the first
+mark, and each chain as one, is placed longest first on the slice with least so far, and each slice keeps the pages'
+own order, so its chains come after its other pages. What a page
 takes is in `layout-weights.json`, in seconds for all its widths; a page not in it yet (a new one, or one renamed) is
 counted by its widths at the median per width (`perWidth`, `perPresentWidth` for a Present page), so adding a page
 never breaks the split, it's only placed less exactly. Every sharded run checks that the slices hold every page exactly
-once and fails if not. `PLAN=1 node tools/screenshots/layout.mjs` prints each slice's pages and expected seconds, and
+once, each in the list's order, each chain whole in one slice and after that slice's pages that read the demo, and
+fails if not. `PLAN=1 node tools/screenshots/layout.mjs` prints each slice's pages, expected seconds and chains, and
 names the pages not yet timed, without starting anything (`SHARD=1/5` with it plans five).
 
 Refresh the weights when the slices drift apart in CI (a shard several minutes longer than the others) or after adding
