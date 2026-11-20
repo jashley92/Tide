@@ -2938,10 +2938,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-hunt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) 0; }
 .tide-w-days { width: 5rem; }
 /* Our stack: the team chosen from its own list; on a narrow window each row's cells stacked, each named, so the list
-   never scrolls sideways inside its card. */
+   never scrolls sideways inside its card. The headings are hidden from view but stay for screen readers. */
 .tide-stack-team { width: auto; }
 @media (max-width: 1099.98px) {
-    .tide-stack-table thead { display: none; }
+    .tide-stack-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .tide-stack-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-1) var(--tide-space-3);
         padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
     .tide-stack-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }

@@ -29,7 +29,7 @@
     <DataTable TItem="AuditRow" Items="_rows" Columns="Columns" Key="r => r.Id" One="change" Many="changes" Caption="Audit log"
                FilterLabel="Search the changed values" FilterPlaceholder="Search the changed values" Filter="@_filter.Search"
                ServerSide="true" Total="_total" PageSize="AuditLogService.PageSize" PageInAddress="true" Busy="_reading"
-               Filtered="@(_filter.Narrowed || _since is not null)" OnQuery="Query">
+               Filtered="@(_filter.Narrowed || _since is not null)" OnQuery="Query" Stacks="true">
         <Toolbar>
             @* The filter bar after the search box: Deleted and Downloads as pills, a chip for each other filter (a link to the log without
                it) and + Filter for who, the kind of record, the action and the dates. *@
@@ -57,10 +57,10 @@
             }
         </Empty>
         <RowTemplate Context="r">
-            <td class="small text-nowrap">@When(r.AtUtc)</td>
-            <td class="small">@r.UserName</td>
-            <td class="small">@r.What</td>
-            <td class="tide-audit-record">
+            <td role="cell" class="small text-nowrap">@When(r.AtUtc)</td>
+            <td role="cell" class="small">@r.UserName</td>
+            <td role="cell" class="small">@r.What</td>
+            <td role="cell" class="tide-audit-record">
                 <div class="small tide-muted">@r.Kind</div>
                 @if (r.Href is { } href)
                 {
@@ -75,7 +75,7 @@
                     <div><a class="small" href="@Href(_filter with { Kind = r.EntityType, Key = r.EntityKey })" aria-label="Only this record: @r.Record">Only this record</a></div>
                 }
             </td>
-            <td class="small tide-audit-changes">
+            <td role="cell" class="small tide-audit-changes">
                 @if (r.Changes.Count == 0)
                 {
                     <span class="tide-muted">@(r.Action switch { AuditAction.Deleted => "Deleted.", AuditAction.Downloaded => "Downloaded.", _ => "No tracked fields changed." })</span>
