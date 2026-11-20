@@ -533,6 +533,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("ClosedAtUtc")
                         .HasFilter("[ClosedAtUtc] IS NOT NULL");
 
+                    b.HasIndex("CreatedAtUtc");
+
                     b.HasIndex("EscalatedForDue")
                         .HasFilter("[EscalatedForDue] IS NOT NULL");
 

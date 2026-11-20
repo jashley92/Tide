@@ -1058,7 +1058,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `DeletedById`, `DeletedByName` | nvarchar(256) | yes | Who deleted it. Cleared on restore. |
 | `DeleteReason` | nvarchar(500) | yes | Why, as they wrote it (required to delete). Cleared on restore; the history keeps it. |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
-| stamps | | | **S** columns. |
+| stamps | | | **S** columns. `CreatedAtUtc` is indexed: the webhook job reads the oldest actions raised after each hook's watermark. |
 
 ### Action child tables
 
