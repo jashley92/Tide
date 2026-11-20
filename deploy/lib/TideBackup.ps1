@@ -76,6 +76,31 @@ function Get-TideScratchRefusal([string] $Scratch, [string] $LiveName) {
     return $null
 }
 
+# The restore drill marks the scratch database it restores with a database-level extended property, and replaces an
+# existing database of that name only when it carries the mark: a name given by hand can be another install's live
+# database on a shared instance, and a drill's restore is then the only proof the database is a drill's.
+function Get-TideDrillMarkerName { return 'TideRestoreDrill' }
+
+# The SQL that marks $Database as a drill's scratch database.
+function Get-TideDrillMarkerSql([string] $Database) {
+    return "EXEC $(Get-SqlName $Database).sys.sp_addextendedproperty @name = N'$(Get-TideDrillMarkerName)', @value = N'1';"
+}
+
+# The SQL that counts the mark on $Database (0 or 1).
+function Get-TideDrillMarkerQuery([string] $Database) {
+    return "SELECT COUNT(*) FROM $(Get-SqlName $Database).sys.extended_properties WHERE class = 0 AND name = N'$(Get-TideDrillMarkerName)'"
+}
+
+# Why the drill may not drop the existing database $Scratch, or $null when it carries the drill's mark.
+function Get-TideScratchDropRefusal([string] $Scratch, [string] $SqlInstance, [bool] $Marked) {
+    if ($Marked) { return $null }
+    return ("$SqlInstance already has a database named $Scratch, and it isn't one a restore drill made (it lacks the " +
+            "$(Get-TideDrillMarkerName) mark), so the drill won't drop it: it may be another install's database. Nothing has " +
+            "been changed. Give -ScratchDatabase a name no database has, or leave it out to use " +
+            "Tide_RestoreDrill_<server>_<site folder>. If it's a scratch database left by a drill from before the mark, " +
+            "drop it yourself once you've checked.")
+}
+
 # Whether a backup set should hold the Data Protection key ring: when the backup that made it had DataProtection:KeyPath
 # set, as backup-set.json records (a folder labelled dp-keys, even one that wasn't there to copy). A set from before
 # backup-set.json listed its folders goes by the site's setting now. Without the setting the app keeps its keys in memory

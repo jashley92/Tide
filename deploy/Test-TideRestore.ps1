@@ -14,7 +14,8 @@
         -HashAll for every one) hash to their recorded SHA-256;
       - the set holds the Data Protection key ring (skipped, and said so, when DataProtection:KeyPath isn't set, as then
         there's none to back up) and the site's appsettings.Production.json.
-    It refuses a -ScratchDatabase named like the live database, on any instance.
+    It refuses a -ScratchDatabase named like the live database, on any instance, and replaces an existing database of
+    the scratch name only when an earlier drill restored it (it marks each with a TideRestoreDrill extended property).
     The findings are written as restore-check-<time>.json in the set. A failed check exits with code 2, which a scheduled
     task reports. The scratch database is dropped afterwards unless -KeepRestored.
 
@@ -100,6 +101,12 @@ try {
     try {
         $exists = Invoke-TideSqlScalar -Connection $conn -Sql 'SELECT COUNT(*) FROM sys.databases WHERE name = @n' -Parameters @{ '@n' = $ScratchDatabase }
         if ([int]$exists -gt 0) {
+            # Only a database a drill restored (it carries the marker) is dropped: on a shared instance the name given
+            # can be another install's live database. One that can't be read (offline, restoring) isn't proven a drill's.
+            $marked = $false
+            try { $marked = [int](Invoke-TideSqlScalar -Connection $conn -Sql (Get-TideDrillMarkerQuery $ScratchDatabase)) -gt 0 } catch { }
+            $dropRefusal = Get-TideScratchDropRefusal -Scratch $ScratchDatabase -SqlInstance $SqlInstance -Marked $marked
+            if ($dropRefusal) { throw $dropRefusal }
             Write-Host "  Removing the scratch database left by an earlier drill." -ForegroundColor Gray
             $null = Invoke-TideSqlQuery -Connection $conn -Sql "ALTER DATABASE $(Get-SqlName $ScratchDatabase) SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE $(Get-SqlName $ScratchDatabase);"
         }
@@ -116,9 +123,18 @@ try {
             $params["@p$i"] = $dir.TrimEnd('\', '/') + $sep + "$ScratchDatabase-$($f.LogicalName)$ext"
             $moves += "MOVE @l$i TO @p$i"; $i++
         }
-        $null = Invoke-TideSqlQuery -Connection $conn -Parameters $params -Sql (
-            "RESTORE DATABASE $(Get-SqlName $ScratchDatabase) FROM DISK = @bak WITH CHECKSUM, RECOVERY, " + ($moves -join ', '))
+        try {
+            $null = Invoke-TideSqlQuery -Connection $conn -Parameters $params -Sql (
+                "RESTORE DATABASE $(Get-SqlName $ScratchDatabase) FROM DISK = @bak WITH CHECKSUM, RECOVERY, " + ($moves -join ', '))
+        } catch {
+            # The name was free before the restore, so a database there now is this restore's, left half done: removed,
+            # so it doesn't stand unmarked in the next drill's way.
+            try { $null = Invoke-TideSqlQuery -Connection $conn -Sql "IF DB_ID(N'$($ScratchDatabase.Replace("'", "''"))') IS NOT NULL DROP DATABASE $(Get-SqlName $ScratchDatabase);" } catch { }
+            throw
+        }
         $restoredHere = $true
+        # Marked as the drill's at once, so a later drill may replace it and nothing else ever is.
+        $null = Invoke-TideSqlQuery -Connection $conn -Sql (Get-TideDrillMarkerSql $ScratchDatabase)
         Add-Check 'restore' $true "restored $bak"
 
         Write-Host "  DBCC CHECKDB" -ForegroundColor Gray

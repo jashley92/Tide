@@ -89,7 +89,10 @@ The restore drill. It takes the newest set of this install (or `-BackupSet`) and
 
 It writes `restore-check-<time>.json` into the set, drops the scratch database (unless `-KeepRestored`), and exits with
 code 2 on a failed check. `-Register` schedules it every fourth Sunday. It refuses a scratch name that's the live
-database's on any instance, since `.`, `localhost` and the server's full name all reach the live one.
+database's on any instance, since `.`, `localhost` and the server's full name all reach the live one. It marks each
+scratch database it restores (a `TideRestoreDrill` extended property) and replaces an existing database of the scratch
+name only when it carries that mark, so on a shared instance it never drops another install's database. A scratch
+database kept from a drill before the mark is refused once: drop it yourself after checking.
 
 ### Upgrade-Tide.ps1
 

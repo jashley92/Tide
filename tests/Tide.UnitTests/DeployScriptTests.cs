@@ -658,6 +658,37 @@ public partial class DeployScriptPowerShellTests
             "the instance's name proves nothing");
     }
 
+    [Fact]
+    public void The_drill_drops_only_a_scratch_database_a_drill_restored_and_marks_each_one_it_restores()
+    {
+        // On a shared instance -ScratchDatabase Tide_Site2 could name another install's live database, which the drill
+        // used to drop as "left by an earlier drill".
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                marked   = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $true
+                unmarked = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $false
+                mark     = Get-TideDrillMarkerSql 'Tide]Drill'
+                query    = Get-TideDrillMarkerQuery 'Tide]Drill'
+            })
+            """);
+        r.GetProperty("marked").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("unmarked").GetString().Should().Contain("SQLHOST01 already has a database named Tide_Site2")
+            .And.Contain("TideRestoreDrill").And.Contain("Nothing has been changed");
+        r.GetProperty("mark").GetString().Should().Be("EXEC [Tide]]Drill].sys.sp_addextendedproperty @name = N'TideRestoreDrill', @value = N'1';");
+        r.GetProperty("query").GetString().Should().Be("SELECT COUNT(*) FROM [Tide]]Drill].sys.extended_properties WHERE class = 0 AND name = N'TideRestoreDrill'");
+
+        // The order in the script: the mark is checked before the DROP, and set straight after the restore.
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        int At(string s) { var i = drill.IndexOf(s, StringComparison.Ordinal); i.Should().BeGreaterThan(-1, s); return i; }
+        var check = At("Get-TideDrillMarkerQuery $ScratchDatabase");
+        var refuse = At("if ($dropRefusal) { throw $dropRefusal }");
+        var drop = At("Removing the scratch database left by an earlier drill");
+        var restore = At("\"RESTORE DATABASE $(Get-SqlName $ScratchDatabase)");
+        var mark = At("Get-TideDrillMarkerSql $ScratchDatabase");
+        var dbcc = At("DBCC CHECKDB(");
+        new[] { check, refuse, drop, restore, mark, dbcc }.Should().BeInAscendingOrder();
+    }
+
     [WindowsFact]
     public void The_restore_drill_refuses_the_live_databases_name_before_it_connects_anywhere()
     {
