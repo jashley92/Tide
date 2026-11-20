@@ -43,7 +43,12 @@
     </div>
 </div>
 
-@if (_report is not { } r)
+@if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the report" /></div>
+}
+else if (_report is not { } r)
 {
     <LoadingBlock />
 }
@@ -115,6 +120,7 @@ else
 
     private Period _period;
     private PeriodReport? _report;
+    private bool _failed;
     private readonly Dictionary<string, string> _notes = new();
 
     protected override async Task OnParametersSetAsync()
@@ -124,9 +130,13 @@ else
         // one period would otherwise stay in its box, and print, under the next. Each period starts with empty boxes.
         if (period != _period) _notes.Clear();
         _period = period;
-        _report = null;
+        (_report, _failed) = (null, false);
         try { _report = await ReportSvc.BuildAsync(_period); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
     }
 
     private void Go(Period p) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("p", p.Key));

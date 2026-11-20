@@ -32,7 +32,12 @@
         <div class="form-text">Matches briefs containing every word.</div>
     </div>
     <div class="tide-card">
-        @if (_list is null)
+        @if (_failed)
+        {
+            @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+            <EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the published briefs" />
+        }
+        else if (_list is null)
         {
             <LoadingBlock />
         }
@@ -101,7 +106,12 @@ else
             @if (_send is not null) { <div class="tide-sub">Sent @Ui.When(Clock, _send.SentAtUtc) &middot; <TlpBadge Level="_send.Marking" /></div> }
         </div>
     </div>
-    @if (!_loaded)
+    @if (_failed)
+    {
+        @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+        <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the published brief" /></div>
+    }
+    else if (!_loaded)
     {
         <LoadingBlock />
     }
@@ -158,7 +168,7 @@ else
     private BriefSend? _send;
     private IReadOnlyList<BriefCorrection> _corrections = [];
     private DateOnly _date;
-    private bool _valid, _loaded;
+    private bool _valid, _loaded, _failed;
 
     private static string PublishedUrl(DateOnly d) => "published/" + Ui.IsoDay(d);
 
@@ -169,24 +179,33 @@ else
     protected override async Task OnParametersSetAsync()
     {
         var (day, q) = (Day, Q);
-        _loaded = false;
-        if (day is null)
+        (_loaded, _failed) = (false, false);
+        try
         {
-            _text = q ?? "";
-            _take = PageSize;
-            var list = await Distribution.PublishedBriefsAsync(q, _take + 1);
+            if (day is null)
+            {
+                _text = q ?? "";
+                _take = PageSize;
+                var list = await Distribution.PublishedBriefsAsync(q, _take + 1);
+                if (Day != day || Q != q) return;
+                (_list, _more) = (list, list.Count > _take);
+            }
+            else
+            {
+                _valid = Ui.TryParseDay(day, out var date);
+                var send = _valid ? await Distribution.GetPublishedAsync(date) : null;
+                IReadOnlyList<BriefCorrection> corrections = _valid ? await Distribution.PublishedCorrectionsAsync(date) : [];
+                if (Day != day) return;
+                (_date, _send, _corrections) = (date, send, corrections);
+            }
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
             if (Day != day || Q != q) return;
-            (_list, _more) = (list, list.Count > _take);
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
         }
-        else
-        {
-            _valid = Ui.TryParseDay(day, out var date);
-            var send = _valid ? await Distribution.GetPublishedAsync(date) : null;
-            IReadOnlyList<BriefCorrection> corrections = _valid ? await Distribution.PublishedCorrectionsAsync(date) : [];
-            if (Day != day) return;
-            (_date, _send, _corrections) = (date, send, corrections);
-        }
-        _loaded = true;
     }
 
     // The next page of older briefs, under the same filter. A read that fails says so, and leaves the list as it was.
