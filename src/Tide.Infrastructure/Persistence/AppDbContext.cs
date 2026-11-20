@@ -88,6 +88,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
 
+    // Here, not where the provider is chosen, so every SQLite context gets it: the app's, start-up's migrations, the
+    // design-time tools' and the tests', however each was configured.
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) => SqliteText.Configure(optionsBuilder);
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<AppUser>(e =>

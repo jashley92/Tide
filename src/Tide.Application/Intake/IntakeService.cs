@@ -184,7 +184,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     }
 
     // Sources by name ignoring case, as SQL Server's collation sorts them: SQLite's own order is case-sensitive, which put
-    // "alpha blog" after "Zeta wire". ToLower runs in the database (lower(), LOWER()), never in .NET, so no culture applies.
+    // "alpha blog" after "Zeta wire". ToLower runs in the database (lower(), LOWER()), never in .NET, so the server's culture
+    // doesn't apply (on SQLite, accents sort as NameOrder.Compare puts them).
 #pragma warning disable CA1304, CA1311
     private static IOrderedQueryable<Source> ByName(IQueryable<Source> sources) => sources.OrderBy(s => s.Name.ToLower()).ThenBy(s => s.Name);
 #pragma warning restore CA1304, CA1311

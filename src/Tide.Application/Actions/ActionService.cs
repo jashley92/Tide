@@ -713,7 +713,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 return o!;
             case ActionSort.Number: By(a => a.Number, descending); break;
             // Letters in any case together, as the table sorts them: ToLower runs in the database (lower(), LOWER()), never
-            // in .NET, so no culture applies.
+            // in .NET, so the server's culture doesn't apply (on SQLite, accents sort as NameOrder.Compare puts them).
 #pragma warning disable CA1304, CA1311
             case ActionSort.Title: By(a => a.Title.ToLower(), descending); break;
             case ActionSort.Kind: By(a => a.Kind, descending); break;
