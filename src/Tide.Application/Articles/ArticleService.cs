@@ -6,6 +6,7 @@ using Tide.Application.Mitre;
 using Tide.Application.Org;
 using Tide.Application.Search;
 using Tide.Application.Security;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Domain.Observables;
@@ -257,9 +258,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         await using var db = await dbs.CreateAsync(ct);
         var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.SourceUrl }).FirstOrDefaultAsync(ct)
             ?? throw new KeyNotFoundException("That article no longer exists.");
-        var canonical = Intake.UrlCanonicalizer.Canonicalize(clean) ?? clean;
+        var canonical = UrlCanonicalizer.Canonicalize(clean) ?? clean;
         var known = (await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == articleId).Select(l => l.Url).ToListAsync(ct))
-            .Append(article.SourceUrl).Select(u => Intake.UrlCanonicalizer.Canonicalize(u) ?? u);
+            .Append(article.SourceUrl).Select(u => UrlCanonicalizer.Canonicalize(u) ?? u);
         if (known.Contains(canonical)) throw new ArgumentException("That report is already on the article.");
         var link = new ArticleLink
         {

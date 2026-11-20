@@ -174,6 +174,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Title).HasMaxLength(300);
             e.Property(x => x.SourceName).HasMaxLength(200);
             e.Property(x => x.SourceUrl).HasMaxLength(2000);
+            // Triage's "already covered" looks articles up by the address an item has (IntakeService.CoverageAsync).
+            e.Property(x => x.SourceUrlHash).HasMaxLength(64);
+            e.HasIndex(x => x.SourceUrlHash);
             e.Property(x => x.Bluf).HasMaxLength(600);
             e.Property(x => x.Actors).HasMaxLength(500);
             e.Property(x => x.Sectors).HasMaxLength(500);
@@ -348,6 +351,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             OfArticle(e, x => x.ArticleId);
             e.Property(x => x.Url).HasMaxLength(2000);
+            e.Property(x => x.UrlHash).HasMaxLength(64);
+            e.HasIndex(x => x.UrlHash);
             e.Property(x => x.Title).HasMaxLength(ArticleLink.MaxTitle);
             e.Property(x => x.SourceName).HasMaxLength(200);
             e.Property(x => x.AddedByName).HasMaxLength(256);

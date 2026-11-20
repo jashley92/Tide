@@ -8,6 +8,7 @@ using Tide.Application.Articles;
 using Tide.Application.Exports;
 using Tide.Application.Intake;
 using Tide.Application.Trends;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Xunit.Abstractions;

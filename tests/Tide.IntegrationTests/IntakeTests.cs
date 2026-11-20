@@ -4,6 +4,7 @@ using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
 using Tide.Application.Security;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.TestSupport;
@@ -1067,6 +1068,83 @@ public class IntakeServiceTests : IDisposable
         coverage.Skip(2).Should().OnlyContain(c => c.Why == "CVE-2026-1111", "then the item's CVEs in the order it names them");
         coverage.Should().HaveCount(5).And.NotContain(c => c.ArticleTitle == "Same second CVE", "only the first five matches are shown")
             .And.OnlyContain(c => c.ArticleId == ids[c.ArticleTitle]);
+    }
+
+    [Fact]
+    public async Task AddressHashes_AreStoredOnEveryWrite_SoCoverageFollowsAnEditedAddressAndARemovedLink()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Okta session theft", "https://vendor.example/okta", null), ("Okta, more", "https://other.example/okta-report", null),
+            ("Okta, a third", "https://third.example/okta", null)));
+        await _db.Intake().PollNowAsync(source);
+        var items = (await _db.Intake().InboxAsync(new InboxFilter())).ToDictionary(r => r.Item.Url, r => r.Item.Id);
+        async Task<string?> ArticleHash(Guid id)
+        {
+            await using var ctx = _db.PlainContext();
+            return await ctx.Articles.Where(a => a.Id == id).Select(a => a.SourceUrlHash).SingleAsync();
+        }
+        async Task<Dictionary<string, string?>> LinkHashes(Guid id)
+        {
+            await using var ctx = _db.PlainContext();
+            return await ctx.ArticleLinks.Where(l => l.ArticleId == id).ToDictionaryAsync(l => l.Url, l => l.UrlHash);
+        }
+        async Task<IReadOnlyList<string>> CoveredBy(string url) =>
+            (await _db.Intake().InboxAsync(new InboxFilter())).Single(r => r.Item.Url == url).Coverage.Select(c => c.ArticleTitle).ToList();
+
+        // Created, with a tracking tag, a trailing slash and a host in capitals: stored as the canonical address's hash.
+        var written = await _db.Articles().CreateAsync("Written by hand", "Vendor", "https://Vendor.EXAMPLE/okta/?utm_source=mail");
+        (await ArticleHash(written)).Should().Be(UrlCanonicalizer.Hash("https://vendor.example/okta"));
+        (await CoveredBy("https://vendor.example/okta")).Should().Equal("Written by hand");
+
+        // Edited: the hash follows the address, and so does coverage; cleared, there's none.
+        var form = ArticleForm.From((await _db.Articles().GetAsync(written))!);
+        form.SourceUrl = "https://third.example/okta";
+        await _db.Articles().SaveAsync(form);
+        (await ArticleHash(written)).Should().Be(UrlCanonicalizer.Hash("https://third.example/okta"));
+        (await CoveredBy("https://vendor.example/okta")).Should().BeEmpty();
+        (await CoveredBy("https://third.example/okta")).Should().Equal("Written by hand");
+        form = ArticleForm.From((await _db.Articles().GetAsync(written))!);
+        form.SourceUrl = null;
+        await _db.Articles().SaveAsync(form);
+        (await ArticleHash(written)).Should().BeNull();
+
+        // A link added by hand, then removed.
+        var link = await _db.Articles().AddLinkAsync(written, "https://other.example/okta-report/?fbclid=x", null);
+        (await LinkHashes(written)).Should().Equal(new Dictionary<string, string?> { [link.Url] = UrlCanonicalizer.Hash("https://other.example/okta-report") });
+        (await CoveredBy("https://other.example/okta-report")).Should().Equal("Written by hand");
+        await _db.Articles().RemoveLinkAsync(link.Id);
+        (await CoveredBy("https://other.example/okta-report")).Should().BeEmpty();
+
+        // Promoted from triage, and another report attached to it.
+        var promoted = await _db.Intake().PromoteAsync(items["https://vendor.example/okta"]);
+        await _db.Intake().AttachAsync(items["https://other.example/okta-report"], promoted);
+        (await ArticleHash(promoted)).Should().Be(UrlCanonicalizer.Hash("https://vendor.example/okta"));
+        (await LinkHashes(promoted)).Should().Equal(new Dictionary<string, string?>
+            { ["https://other.example/okta-report"] = UrlCanonicalizer.Hash("https://other.example/okta-report") });
+    }
+
+    [Fact]
+    public async Task Coverage_MatchesAnAddressAsCanonicalized_TrackingTagsTrailingSlashAndHostCase_ButNotAPathsCase()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Edge VPN bug", "https://news.example/vpn/story?id=7", null)));
+        await _db.Intake().PollNowAsync(source);
+        await using (var ctx = _db.PlainContext())
+        {
+            foreach (var (title, url) in new[]
+            {
+                ("Tagged", "https://news.example/vpn/story?utm_source=rss&id=7&utm_medium=feed"), ("Slashed", "https://news.example/vpn/story/?id=7"),
+                ("Shouted", "HTTPS://NEWS.EXAMPLE/vpn/story?id=7#top"), ("Another path", "https://news.example/VPN/story?id=7"),
+                ("Another query", "https://news.example/vpn/story?id=8"),
+            })
+                ctx.Articles.Add(new Article { Title = title, SourceUrl = url, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+
+        var coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage;
+
+        coverage.Select(c => c.ArticleTitle).Should().BeEquivalentTo(["Tagged", "Slashed", "Shouted"], "a path's case is part of the address");
+        coverage.Should().OnlyContain(c => c.Why == Tide.Application.Search.RelatedService.SameLink);
     }
 
     [Fact]

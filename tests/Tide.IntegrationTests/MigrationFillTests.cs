@@ -3,6 +3,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Logging.Abstractions;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
@@ -300,6 +302,64 @@ public class MigrationFillTests
             (a.WhyItMattersKeptTlp, a.WhyItMattersKeptById, a.WhyItMattersKeptByName, a.WhyItMattersKeptAtUtc, a.WhyItMattersKept)
                 .Should().Be(((TlpLevel?)TlpLevel.Clear, "dev:robin", "Robin", (DateTimeOffset?)Decided, true));
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task UrlHashes_AreFilledAtStartUp_ABatchAtATime_WithoutTouchingTheArticles_AndOnlyOnce(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var urls = new[]
+        {
+            "https://news.example/vpn?utm_source=mail", "HTTPS://News.Example/vpn/", "https://news.example/VPN", "http://other.example:8080/a?b=2&a=1",
+            "https://third.example/x#part", "ftp://files.example/x", "not an address", null,
+        };
+        var articles = urls.Select((u, i) => new Article { Title = "Article " + i, SourceUrl = u, AuthorId = "x", AuthorName = "X", ModifiedAtUtc = Decided }).ToList();
+        var links = new[] { "https://linked.example/a/?fbclid=1", "https://linked.example/b", "mailto:someone@example.com" }
+            .Select(u => new ArticleLink { ArticleId = articles[0].Id, Url = u, Title = u, AddedAtUtc = Decided, AddedByName = "X" }).ToList();
+        await using (var ctx = database.Context())
+        {
+            ctx.Articles.AddRange(articles);
+            ctx.ArticleLinks.AddRange(links);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ArticleUrlHashes");
+
+        // The columns as stored, not entities (whose setters would hash the address again).
+        async Task<(Dictionary<Guid, string?> Articles, Dictionary<Guid, string?> Links)> Stored()
+        {
+            await using var ctx = database.Context();
+            return (await ctx.Articles.ToDictionaryAsync(a => a.Id, a => a.SourceUrlHash), await ctx.ArticleLinks.ToDictionaryAsync(l => l.Id, l => l.UrlHash));
+        }
+        var before = await Stored();
+        before.Articles.Values.Concat(before.Links.Values).Should().AllSatisfy(h => h.Should().BeNull(), "the rows were saved before the hash was kept");
+
+        await using (var ctx = database.Context())
+            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance, batch: 2)).Should().Be(5 + 2, "every address with a canonical form");
+
+        var after = await Stored();
+        after.Articles.Should().Equal(articles.ToDictionary(a => a.Id, a => UrlCanonicalizer.HashOf(a.SourceUrl)));
+        after.Links.Should().Equal(links.ToDictionary(l => l.Id, l => UrlCanonicalizer.HashOf(l.Url)));
+        articles.Take(2).Select(a => after.Articles[a.Id]).Should().AllBe(UrlCanonicalizer.Hash("https://news.example/vpn"), "a tracking tag, a trailing slash and a host's case aside");
+        after.Articles[articles[2].Id].Should().NotBe(after.Articles[articles[0].Id], "a path's case is part of the address");
+        await using (var ctx = database.Context())
+        {
+            var stamps = await ctx.Articles.ToDictionaryAsync(a => a.Id, a => (a.EditVersion, a.ModifiedAtUtc));
+            stamps.Should().Equal(articles.ToDictionary(a => a.Id, a => (a.EditVersion, (DateTimeOffset?)Decided)), "filling a hash isn't an edit");
+            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance)).Should().Be(0, "it runs once");
+        }
+
+        // A start that stopped partway carries on: what's still without a hash is filled, and only that.
+        await using (var ctx = database.Context())
+        {
+            ctx.Settings.RemoveRange(ctx.Settings.Where(s => s.Key == DatabaseInitializer.UrlHashesKey));
+            await ctx.SaveChangesAsync();
+            var undone = articles.Take(3).Select(a => a.Id).ToList();
+            await ctx.Articles.Where(a => undone.Contains(a.Id)).ExecuteUpdateAsync(s => s.SetProperty(a => a.SourceUrlHash, (string?)null));
+            (await DatabaseInitializer.FillUrlHashesAsync(ctx, NullLogger.Instance, batch: 2)).Should().Be(3);
+        }
+        (await Stored()).Articles.Should().Equal(after.Articles);
     }
 
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.

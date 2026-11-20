@@ -204,7 +204,7 @@ can't be reached to record the failure leaves it unrecorded; the source is tried
 | Feed filter | `FeedFilter.For(source).Keeps` | Feeds only. With an "only" list, an item passes with an only-tag or an only-word in its title. A skip-tag or skip-word leaves it out. Tags match ignoring case; title words match as whole words. The tags the last read carried are kept in `SeenCategories` to choose from. |
 | Sponsored filter | `SponsoredFilter.For(options).Match` | While `Intake:SkipSponsored` is on (the default). See below. |
 | Retention cut | `IntakeService.StoreAsync` | An item published before the retention cutoff isn't taken in, so a feed that still lists a pruned item (the KEV catalog lists a year or more) doesn't bring it back as new. An item dated after the fetch is dated when it was fetched, so a wrong year can't hold it at the top of New. |
-| Canonical address | `UrlCanonicalizer.Canonicalize`, `Hash` | Tracking parameters (`utm_*`, `fbclid`, `gclid` and others) removed, the remaining query sorted, a trailing slash dropped. The SHA-256 of that is `FeedItem.UrlHash`, unique. The same story from two feeds, or polled twice, is one item. |
+| Canonical address | `UrlCanonicalizer.Canonicalize`, `Hash` | Tracking parameters (`utm_*`, `fbclid`, `gclid` and others) removed, the remaining query sorted, a trailing slash dropped. The SHA-256 of that is `FeedItem.UrlHash`, unique (and `Article.SourceUrlHash` and `ArticleLink.UrlHash`, for past coverage). The same story from two feeds, or polled twice, is one item. |
 | Repeat check | `TitleMatch.Key`, `Similarity` | The title reduced to its significant words (`TitleKey`), compared with items fetched in the last 7 days (`IntakeService.SimilarWindow`). A Jaccard similarity of 0.75 or more sets `SimilarToId` to the first match. Set once, at intake. |
 | CVEs | `FeedParser.CvesIn` | CVE ids in the title and summary, comma-separated in `FeedItem.Cves` (at most 40 when the list is long). |
 
@@ -307,7 +307,7 @@ the address is rewritten to say so. Tab counts stay totals, and Older pages too.
 |---|---|---|
 | Source | Name, TLP, reliability, licence note | The item's `Source`. |
 | Similar | "Looks like" a recent item | `SimilarToId`. |
-| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days. At most 5. `Coverage.Attachable` says whether a report can still be added. |
+| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days, looked up by the stored hash of the canonical address (`SourceUrlHash`, `UrlHash`). At most 5. `Coverage.Attachable` says whether a report can still be added. |
 | Same CVE | Other New items sharing a CVE: one story from several outlets | New tab only, read over every New item, not just the page shown. |
 | Group | "Looks like one event" | `TriageGroups.Find`, New and Shortlisted, over the page shown. See below. |
 | We run | A product on Our stack the item names | `StackService.Matcher`. Items naming one sort first in New and never age. |
@@ -651,7 +651,7 @@ shortlisted since it was read stays. Its `FeedItemText` and `TriageSplit` rows g
 | States and kinds | `src/Tide.Domain/Enums/AppEnums.cs` (`FeedItemStatus`, `SourceKind`, `SourceReliability`, `ArticleFetch`) |
 | The pipeline, inbox, decisions, promotion, attach, splits, API proposals, pruning | `src/Tide.Application/Intake/IntakeService.cs` |
 | Settings | `src/Tide.Application/Intake/IOutboundHttp.cs` (`IntakeOptions`); `src/Tide.Application/Intake/CveService.cs` (`CveOptions`) |
-| Parsing, canonical URLs, title matching | `src/Tide.Application/Intake/FeedParsing.cs` (`FeedParser`, `UrlCanonicalizer`, `TitleMatch`) |
+| Parsing, canonical URLs, title matching | `src/Tide.Application/Intake/FeedParsing.cs` (`FeedParser`, `TitleMatch`), `src/Tide.Domain/Common/UrlCanonicalizer.cs` |
 | Feed filter | `src/Tide.Application/Intake/FeedFilter.cs` |
 | Sponsored filter and its log | `src/Tide.Application/Intake/SponsoredFilter.cs` (`SponsoredFilter`, `SponsoredLog`) |
 | Grouping | `src/Tide.Application/Intake/TriageGroups.cs` |
