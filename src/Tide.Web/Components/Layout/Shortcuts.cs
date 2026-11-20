@@ -114,11 +114,11 @@ public static class Shortcuts
         new(["←", "Backspace"], "Previous slide"),
         new(["Space", "Page Down"], "Scroll a long slide down; at its end, the next slide"),
         new(["Shift Space", "Page Up"], "Scroll a long slide up; at its top, the previous slide"),
-        new(["Home", "End"], "First and last slide"),
+        new(["Home", "End"], "First and last slide. None of these moves on while a card is open over the slide: Esc closes it"),
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
         new(["]"], "Presenting: show or hide the presenter's controls", Letter: true),
-        new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
+        new(["Esc"], "Leave full screen, then close a zoomed screenshot or the card open over the slide"),
     ]);
 
     private static readonly ShortcutGroup Stack = new("Our stack",

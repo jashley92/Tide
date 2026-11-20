@@ -50,11 +50,19 @@ window.tidePresent = (function () {
     // What Space and Page Down page: the body of a panel open over the slide (an action, a product's card, the tag
     // panel), which is what's in view, rather than the slide hidden behind it; else the slide's body.
     // An action beside the slide (a column of the page, not over it) leaves them to the slide, whose scroll the room shares.
-    function pagedBody() {
+    function pagedBody() { return cardOver() || slideBody(); }
+
+    // The body of the panel open over the slide (the last one, if more than one is), or null with none, or with one only
+    // beside the slide.
+    function cardOver() {
         const open = Array.from(document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body'))
             .filter(function (body) { return getComputedStyle(body.parentElement).position === 'fixed'; });
-        return open.length ? open[open.length - 1] : slideBody();
+        return open.length ? open[open.length - 1] : null;
     }
+
+    // The keys that move the slide. A panel open over the slide holds them: it's what's in view, and moving on would close
+    // it under someone reading it (Escape closes it). One beside the slide leaves them to the slide.
+    const moves = { next: true, prev: true, first: true, last: true };
 
     function behavior(instant) { return instant || window.tideShortcuts.still() ? 'instant' : 'smooth'; }
 
@@ -307,7 +315,8 @@ window.tidePresent = (function () {
     // --- keys ------------------------------------------------------------------------------------------------------------
 
     // Space and Page Down page the slide's body down first, Shift+Space and Page Up up; only at its end do they change
-    // the slide. The arrows and the other keys change it at once.
+    // the slide. The arrows and the other keys change it at once. With a panel open over the slide, they page it and
+    // none of them changes the slide (cardOver).
     function paging(e) {
         if (e.key === 'PageDown') return 'down';
         if (e.key === 'PageUp') return 'up';
@@ -356,6 +365,7 @@ window.tidePresent = (function () {
             e.preventDefault();
             const el = pagedBody(), forward = page === 'down';
             if (!atEdge(el, forward)) { pageBy(el, forward); return; }
+            if (cardOver()) return;   // at the panel's end: it stays open
             ref.invokeMethodAsync('OnPresentKey', forward ? 'next' : 'prev').catch(function () { });
             return;
         }
@@ -363,6 +373,7 @@ window.tidePresent = (function () {
         if (!action) return;
         // Escape leaves full screen by itself; only a second Escape (not in full screen) closes the zoomed image.
         if (action === 'close' && document.fullscreenElement) return;
+        if (moves[action] && cardOver()) { e.preventDefault(); return; }
         e.preventDefault();
         if (action === 'fullscreen') { toggleFullscreen(); return; }
         ref.invokeMethodAsync('OnPresentKey', action).catch(function () { });
