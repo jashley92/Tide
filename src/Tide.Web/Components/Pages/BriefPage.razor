@@ -463,7 +463,14 @@ else
         return topics;
     }
 
-    private IEnumerable<BriefItem> Ordered() => _brief!.Items.Where(i => i.Article is not null).OrderBy(i => i.SortOrder);
+    private IEnumerable<BriefItem> Ordered() => Listed(_brief!);
+
+    // The running order draws only the items whose article loaded with the brief.
+    private static IEnumerable<BriefItem> Listed(Brief brief) => brief.Items.Where(i => i.Article is not null).OrderBy(i => i.SortOrder);
+
+    /// <summary>"3 articles" beside Running order: the number it lists (<see cref="Listed"/>), with the noun taken from
+    /// that same number, so an item left out of the list can't leave "1 articles" or "2 article".</summary>
+    internal static string ArticleCount(Brief brief) => Ui.Plural(Listed(brief).Count(), "article");
 
     // A colleague's save to this brief, or to an article on it: re-read in place. Unsaved presenter or opening-note edits
     // are kept, and if the colleague changed those too, ChangedElsewhere says so. The day's numbers re-read alone (the
@@ -1002,7 +1009,7 @@ else
                 }
                 <section class="tide-card" aria-labelledby="running-order-h">
                     <h2 id="running-order-h">Running order
-                        <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
+                        <span class="ms-auto small fw-normal tide-muted">@ArticleCount(_brief) &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
                     <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
                                   PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                   CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
