@@ -201,7 +201,7 @@ else
     internal const string StarterSubject = "{{product.name}}: are we affected? ({{article.title}})";
 
     internal const string StarterBody = """
-        Hello {{product.contact}},
+        Hello {{product.contact|there}},
 
         We run {{product.name}} {{product.versions}}. We're looking at the report below and would like to know whether our versions are affected, and if so what you recommend.
 

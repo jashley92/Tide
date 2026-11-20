@@ -157,9 +157,83 @@ public static partial class OutreachFill
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    // A name, a modifier after a colon, and a closing ? that makes it optional ("{{article.other-links?}}").
-    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    // A name, a modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the
+    // text written when it's empty ("{{product.contact|there}}").
+    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?(?:\|([^{}\r\n]*))?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Pattern();
+
+    // A section's tags: {{#name}} opens one, {{else}} starts what's written when it's empty, {{/name}} closes it.
+    [GeneratedRegex(@"\{\{\s*(?:([#/])\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?|(else))\s*\}\}", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex SectionPattern();
+
+    /// <summary>The word that starts a section's other branch: <c>{{else}}</c>.</summary>
+    public const string ElseName = "else";
+
+    // A section tag: where it starts and ends (its whole line, when nothing else is on it), '#', '/' or 'e' for else,
+    // and the placeholder it's about.
+    private sealed record SectionTag(int Start, int End, char Kind, string Name, string? Modifier)
+    {
+        public string Written => Kind == 'e' ? "{{" + ElseName + "}}" : "{{" + Kind + Name + (Modifier is null ? "" : ":" + Modifier) + "}}";
+
+        public bool Closes(SectionTag open) => string.Equals(Name, open.Name, StringComparison.OrdinalIgnoreCase)
+                                               && string.Equals(Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The section tags in the text, in order. A tag alone on its line takes the line with it, so a section leaves no
+    // blank lines behind.
+    private static List<SectionTag> Tags(string text)
+    {
+        var tags = new List<SectionTag>();
+        foreach (Match m in SectionPattern().Matches(text))
+        {
+            int start = m.Index, end = m.Index + m.Length;
+            var lineStart = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+            var lineEnd = text.IndexOf('\n', end);
+            if (lineEnd < 0) lineEnd = text.Length;
+            if (string.IsNullOrWhiteSpace(text[lineStart..start]) && string.IsNullOrWhiteSpace(text[end..lineEnd]))
+                (start, end) = (lineStart, lineEnd < text.Length ? lineEnd + 1 : lineEnd);
+            tags.Add(new SectionTag(start, end, m.Groups[4].Success ? 'e' : m.Groups[1].Value[0], m.Groups[2].Value.ToLowerInvariant(),
+                m.Groups[3].Success ? m.Groups[3].Value : null));
+        }
+        return tags;
+    }
+
+    // Refuses sections that don't pair up, or are about a placeholder TIDE doesn't fill; gives the text without their tags.
+    private static string CheckSections(string text)
+    {
+        SectionTag? open = null;
+        var sawElse = false;
+        var rest = new StringBuilder();
+        var pos = 0;
+        foreach (var t in Tags(text))
+        {
+            switch (t.Kind)
+            {
+                case '#':
+                    if (open is not null)
+                        throw new ArgumentException($"{t.Written} is inside {open.Written}: close it with {{{{/{open.Name}}}}} first. A section can't hold another.");
+                    if (string.Equals(t.Name, TlpName, StringComparison.OrdinalIgnoreCase))
+                        throw new ArgumentException($"{t.Written} can't start a section: the email always carries its TLP.");
+                    CheckPlaceholder(t.Name, t.Modifier);
+                    (open, sawElse) = (t, false);
+                    break;
+                case 'e':
+                    if (open is null) throw new ArgumentException($"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
+                    if (sawElse) throw new ArgumentException($"{open.Written} has two {{{{{ElseName}}}}}s: a section takes one at most.");
+                    sawElse = true;
+                    break;
+                default:
+                    if (open is null) throw new ArgumentException($"{t.Written} closes a section that isn't open: start it with {{{{#{t.Name}}}}}.");
+                    if (!t.Closes(open)) throw new ArgumentException($"{t.Written} doesn't close {open.Written}: write {{{{/{open.Name}{(open.Modifier is null ? "" : ":" + open.Modifier)}}}}}.");
+                    open = null;
+                    break;
+            }
+            rest.Append(text, pos, t.Start - pos).Append('\n');
+            pos = t.End;
+        }
+        if (open is not null) throw new ArgumentException($"{open.Written} is never closed: end the section with {{{{/{open.Name}}}}}.");
+        return rest.Append(text, pos, text.Length - pos).ToString();
+    }
 
     /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
     public const string TodayName = "today";
@@ -199,29 +273,44 @@ public static partial class OutreachFill
     /// </summary>
     public static void Check(string text)
     {
-        foreach (Match m in Pattern().Matches(text ?? ""))
+        var rest = CheckSections(text ?? "");
+        foreach (Match m in Pattern().Matches(rest))
         {
             var name = m.Groups[1].Value;
-            if (!Names.Contains(name))
-                throw new ArgumentException($"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
-            if (m.Groups[3].Success && string.Equals(name, TlpName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{{{{{TlpName}?}}}} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
-            if (!m.Groups[2].Success) continue;
-            if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
-            {
-                if (DaysAheadOf(m.Groups[2].Value) is null)
-                    throw new ArgumentException($"{{{{{TodayName}:{m.Groups[2].Value}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
-                continue;
-            }
-            if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
-            if (HuntQueryBuilder.KindNamed(m.Groups[2].Value) is null)
-                throw new ArgumentException($"{{{{{IndicatorsName}:{m.Groups[2].Value}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
+            var optional = m.Groups[3].Success;
+            var fallback = m.Groups[4].Success;
+            if (string.Equals(name, ElseName, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"{m.Value} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
+            CheckPlaceholder(name, m.Groups[2].Success ? m.Groups[2].Value : null);
+            if ((optional || fallback) && string.Equals(name, TlpName, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"{m.Value} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
+            if (optional && fallback)
+                throw new ArgumentException($"{m.Value} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
+            if (fallback && string.IsNullOrWhiteSpace(m.Groups[4].Value))
+                throw new ArgumentException($"{m.Value} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
         }
         // Braces round a name that doesn't parse ("{{today: +2}}", "{{article_title}}") would go out in every email as
         // typed: Fill leaves them, and they aren't a marker that holds the send back.
-        if (LooksLikePlaceholder().Match(Pattern().Replace(text ?? "", "")) is { Success: true } typo)
+        if (LooksLikePlaceholder().Match(Pattern().Replace(rest, "")) is { Success: true } typo)
             throw new ArgumentException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon or before a closing ?, and a name of letters, dots and hyphens, as in {{{{article.title}}}}, {{{{{TodayName}:+2}}}} or {{{{article.other-links?}}}}.");
+    }
+
+    // Refuses a name TIDE doesn't fill, or a modifier it doesn't take, saying what it can use.
+    private static void CheckPlaceholder(string name, string? modifier)
+    {
+        if (!Names.Contains(name))
+            throw new ArgumentException($"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
+        if (modifier is null) return;
+        if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (DaysAheadOf(modifier) is null)
+                throw new ArgumentException($"{{{{{TodayName}:{modifier}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
+            return;
+        }
+        if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
+        if (HuntQueryBuilder.KindNamed(modifier) is null)
+            throw new ArgumentException($"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
     }
 
     // Double braces round something with a letter in it, on one line: what a placeholder with a typo looks like.
@@ -284,8 +373,10 @@ public static partial class OutreachFill
         : clean;
 
     /// <summary>
-    /// Fills a template's subject and body from <paramref name="facts"/>. Each placeholder becomes its value; one with
-    /// nothing to fill, or held back by the ceiling, becomes a marker and is listed. The marking is the highest TLP of
+    /// Fills a template's subject and body from <paramref name="facts"/>. A section (<c>{{#name}}…{{else}}…{{/name}}</c>)
+    /// keeps its first branch when its placeholder has a value, else the other (or nothing). Each placeholder becomes its
+    /// value; one with nothing to fill, or held back by the ceiling, is dropped when it ends in <c>?</c>, becomes the
+    /// text after its <c>|</c> when it has one, and otherwise becomes a marker and is listed. The marking is the highest TLP of
     /// what was filled in (CLEAR when nothing marked was), and the body starts with a TLP line unless it places
     /// <c>{{tlp}}</c> itself.
     /// </summary>
@@ -294,19 +385,59 @@ public static partial class OutreachFill
         var marking = TlpLevel.Clear;
         var unfilled = new List<string>();
         var used = new HashSet<string>(StringComparer.Ordinal);
-        string Replace(string text) => Pattern().Replace(text ?? "", m =>
+
+        // A placeholder's label as markers write it, and its value, TLP and whether the ceiling held it back.
+        (string Label, string? Value, TlpLevel Tlp, bool Above) Look(string name, string? modifier)
         {
-            var name = m.Groups[1].Value.ToLowerInvariant();
             used.Add(name);
-            if (name == TlpName) return TlpSlot;   // filled once the marking is known
-            var scope = m.Groups[2].Success && name == IndicatorsName ? HuntQueryBuilder.KindNamed(m.Groups[2].Value) : null;
-            var ahead = m.Groups[2].Success && name == TodayName ? DaysAheadOf(m.Groups[2].Value) : null;
+            var scope = modifier is not null && name == IndicatorsName ? HuntQueryBuilder.KindNamed(modifier) : null;
+            var ahead = modifier is not null && name == TodayName ? DaysAheadOf(modifier) : null;
             var label = scope is { } k ? IndicatorsNameOf(k) : ahead is { } n ? $"{TodayName}:{n:+0;-0}" : name;
             var (value, tlp, above) = ValueOf(name, scope, ahead, facts);
+            return (label, value, tlp, above);
+        }
+
+        // Each section kept as its first branch when its placeholder has a value, else as what follows {{else}} (or
+        // nothing). Choosing says something about the part, so a kept first branch carries its marking. Sections that
+        // don't pair up are refused when a template is saved; an older one that slipped through is left as it is.
+        string Sections(string text)
+        {
+            try { CheckSections(text); }
+            catch (ArgumentException) { return text; }
+            var tags = Tags(text);
+            if (tags.Count == 0) return text;
+            var sb = new StringBuilder();
+            var pos = 0;
+            var (inside, has, inElse) = (false, false, false);
+            foreach (var t in tags)
+            {
+                if (!inside || has != inElse) sb.Append(text, pos, t.Start - pos);
+                pos = t.End;
+                switch (t.Kind)
+                {
+                    case '#':
+                        var (_, value, tlp, _) = Look(t.Name, t.Modifier);
+                        (inside, has, inElse) = (true, !string.IsNullOrWhiteSpace(value), false);
+                        if (has && tlp > marking) marking = tlp;
+                        break;
+                    case 'e': inElse = true; break;
+                    default: inside = false; break;
+                }
+            }
+            return sb.Append(text, pos, text.Length - pos).ToString();
+        }
+
+        string Replace(string text) => Pattern().Replace(Sections(text ?? ""), m =>
+        {
+            var name = m.Groups[1].Value.ToLowerInvariant();
+            if (name == TlpName) { used.Add(name); return TlpSlot; }   // filled once the marking is known
+            var (label, value, tlp, above) = Look(name, m.Groups[2].Success ? m.Groups[2].Value : null);
             if (string.IsNullOrWhiteSpace(value))
             {
                 // Optional: dropped, with its line when nothing else is on it. What the ceiling held back is still said.
                 if (m.Groups[3].Success) return GoneSlot;
+                // With text for when it's empty: that text, which carries no marking.
+                if (m.Groups[4].Success && m.Groups[4].Value.Trim() is { Length: > 0 } instead) return instead;
                 var written = "{{" + label + "}}";
                 if (!unfilled.Contains(written)) unfilled.Add(written);
                 return Marker(label, above ? facts.Ceiling : null);
