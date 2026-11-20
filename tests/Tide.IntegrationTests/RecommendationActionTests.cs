@@ -255,7 +255,7 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
         reco.Should().Contain("Apply the vendor hotfix to both gateways").And.Contain($"A-{linked}").And.Contain("Hunt for the indicators in VPN logs");
         html.Should().Contain("aria-label=\"Change the kind and team for: Hunt for the indicators in VPN logs\"", "the line not raised yet is raised from the rail");
         others.Should().Contain($"A-{byHand}").And.NotContain($"A-{linked}", "listed once, against its line").And.Contain("Other actions");
-        html.Should().Contain($"aria-label=\"Take A-{byHand}\"", "Take it says which action (in the rail)");
+        html.Should().Contain($"aria-label=\"Take it: A-{byHand}\"", "Take it says which action (in the rail)");
     }
 
     [Fact]

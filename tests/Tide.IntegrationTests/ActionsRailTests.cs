@@ -96,7 +96,7 @@ public class ActionsRailTests(TideApp app) : IClassFixture<TideApp>
 
         rail.Should().Contain($"aria-label=\"About A-{selected}\"", "the rail is named for the selected action");
         rail.Should().Contain("data-rail-next").And.Contain("Nobody has it");
-        rail.Should().Contain("tide-rail-take").And.Contain($"aria-label=\"Take A-{selected} on\"").And.Contain("aria-keyshortcuts=\"T\"").And.Contain(">T</kbd>");
+        rail.Should().Contain("tide-rail-take").And.Contain($"Take it<span class=\"visually-hidden\">: A-{selected}</span>").And.Contain("aria-keyshortcuts=\"T\"").And.Contain(">T</kbd>");
         rail.Should().Contain($"href=\"actions/{selected}?do=edit\"").And.Contain("Assign…").And.NotContain("Move to", "the list's rail assigns; the board's moves");
         rail.Should().Contain($"href=\"actions/{selected}\"").And.Contain(">Open</a>");
         rail.Should().Contain("<dt>Kind</dt>").And.Contain("<dt>Team</dt>").And.Contain("<dt>In Open</dt>").And.Contain("<dt>Checklist</dt>");

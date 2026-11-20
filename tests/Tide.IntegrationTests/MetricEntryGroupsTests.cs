@@ -52,7 +52,7 @@ public class MetricEntryGroupsTests(TideApp app) : IClassFixture<TideApp>
 
     private static string Chip(string html, string name)
     {
-        var at = html.IndexOf("aria-label=\"" + name + ",", StringComparison.Ordinal);
+        var at = html.IndexOf("aria-label=\"" + name + " ", StringComparison.Ordinal);
         at.Should().BePositive();
         var start = html.LastIndexOf('<', at);
         return html[start..html.IndexOf("</button>", at, StringComparison.Ordinal)];
@@ -73,8 +73,8 @@ public class MetricEntryGroupsTests(TideApp app) : IClassFixture<TideApp>
 
         var all = (await DayOf(day)).Groups.SelectMany(g => g.Tiles).ToList();
         html.Should().Contain($">{all.Count(t => t.Value is not null)} of {all.Count} entered<");
-        Chip(html, "Email triage").Should().Contain("aria-label=\"Email triage, 2 of 4 entered\"").And.Contain("2/4").And.NotContain("bi-check-lg");
-        Chip(html, "Cases").Should().Contain("aria-label=\"Cases, 2 of 2 entered\"").And.Contain("is-done").And.Contain("bi-check-lg", "a finished group's chip has a tick");
+        Chip(html, "Email triage").Should().Contain("aria-label=\"Email triage 2/4: 2 of 4 entered\"").And.Contain("2/4").And.NotContain("bi-check-lg");
+        Chip(html, "Cases").Should().Contain("aria-label=\"Cases 2/2: 2 of 2 entered\"").And.Contain("is-done").And.Contain("bi-check-lg", "a finished group's chip has a tick");
         Panel(html, email.Group).Should().Contain(">2 of 4").And.Contain("tide-metric-row");
         Panel(html, cases.Group).Should().Contain(">2 of 2").And.Contain("tide-mentry-folded", "finished when the form opened, it's folded")
             .And.Contain("aria-expanded=\"false\"").And.Contain("Opened").And.NotContain("tide-metric-row");
@@ -173,7 +173,7 @@ public class MetricEntryGroupsTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<MetricEntry>(app, "/", new() { ["Date"] = day }, Owner);
         var html = await r.Html();
 
-        html.Should().Contain("<span class=\"visually-hidden\">Web filtering, 1 of 1 entered</span>").And.NotContain("<button type=\"button\" class=\"tide-mentry-chip");
+        html.Should().Contain("<span class=\"visually-hidden\">Web filtering 1/1: 1 of 1 entered</span>").And.NotContain("<button type=\"button\" class=\"tide-mentry-chip");
         Panel(html, g.Group).Should().Contain("31").And.NotContain("tide-mentry-folded", "nothing folds when there's nothing to type").And.NotContain("<input");
     }
 

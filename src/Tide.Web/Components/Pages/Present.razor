@@ -3153,7 +3153,7 @@ else
                 @* Taken only by a member of its team, as it's only given to one; an external team has none. *@
                 @if (r.AssigneeId != _me && OnTeam(r))
                 {
-                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take it: @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }
             </span>
         }</text>;

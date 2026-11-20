@@ -2,7 +2,7 @@
    step 3 of 5 · Order"), as a link to Today. For those who read the team edition and write the brief, as Today's step
    strip is; nothing is drawn for anyone else. While the meeting is live it says so and leaves joining to the banner
    (LiveMeetingJoin). A narrow window shows the short form ("10:30 AM · 3/5"); app.css says where. The link's name
-   is the full wording at every width, and on Today it's marked as the current page.
+   starts with what it shows and carries the full wording at every width, and on Today it's marked as the current page.
    What it says comes from BriefChipSource, which keeps it for the circuit: drawing the top bar reads nothing. It's read
    again when the change feed says the brief changed (a colleague's save, or this circuit's own), and checked on each
    navigation, which costs nothing unless the day has turned. *@
@@ -25,11 +25,14 @@
     }
     else
     {
-        @* Cut short where the top bar is tight (app.css): the title has the whole wording. *@
-        <a class="tide-brief-chip" href="" aria-label="@view.Name" aria-current="@Current" title="@($"{view.Name}. Open Today")">
+        @* Cut short where the top bar is tight (app.css): the title has the whole wording. The link is named by what it
+           shows, so its name starts with the words on screen at every width (speech input says what it sees); where the
+           short form shows, the whole wording follows it, unseen, for someone who hears only the name. *@
+        <a class="tide-brief-chip" href="" aria-current="@Current" title="@($"{view.Name}. Open Today")">
             <span class="bi bi-journal-text" aria-hidden="true"></span>
             <span class="tide-brief-chip-full">@view.Full</span>
             <span class="tide-brief-chip-short">@view.Short</span>
+            <span class="tide-brief-chip-said visually-hidden">@($", {view.Name}")</span>
         </a>
     }
 }
