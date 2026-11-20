@@ -129,6 +129,14 @@ Beside the brief, in the context rail:
   taken);
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
+- **Since you last looked**: what changed for you since you last marked it seen, grouped *For you* (your actions, or
+  your team's nobody has, that a colleague raised, handed over, changed or commented on; reviews decided or commented
+  on your articles), *Your work, changed by others* (your articles a colleague edited) and *The day* (briefs a
+  colleague sent; for whoever triages, new items on KEV). Each line links to the thing. At most the last 7 days and 50
+  lines ("And N more"). Your own changes never appear. **Mark all seen** clears it (up to when it was read, so
+  anything newer stays) and it then says "You're up to date"; the heading folds it away. On your first Today it lists
+  nothing and starts counting from then. An action owner or Viewer has it at the top of their rail. When you last
+  looked is kept for you alone ([ADR 0030](../decisions/0030-since-you-last-looked-is-yours-alone.md));
 - **reviews asked of you**;
 - **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place;
 - **coming up** for you on the rotation, and the brief's **history**.

@@ -42,6 +42,10 @@ public static class UserPreferences
 
     public const string TourDue = "due", TourDone = "done";
 
+    /// <summary>When the person last marked Today's "Since you last looked" seen (a round-trip UTC time, "O"); none ("")
+    /// before their first look. Theirs alone, like every preference (ADR 0030).</summary>
+    public const string SeenToday = "seen.today";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -97,6 +101,7 @@ public static class UserPreferences
                 // Everyone who reads release highlights reads the team edition (RoleGroups.For).
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
                 new(TourState, ["", TourDue, TourDone], Permission.ReadTeamEdition),
+                Definition.Matching(SeenToday, "", v => v == "" || History.SeenMark.Parse(v) is not null, Permission.ReadTeamEdition),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             // Each page's tip: the release whose tip the person dismissed there, for whoever can use the page.

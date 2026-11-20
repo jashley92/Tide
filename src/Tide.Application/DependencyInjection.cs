@@ -101,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<Adversaries.AdversaryService>();
         services.AddScoped<Detections.DetectionService>();
         services.AddScoped<Reviews.ReviewService>();
+        services.AddScoped<History.ActivityService>();
         services.AddScoped<ScreenshotService>();
         services.AddScoped<ActionFileService>();
         services.AddScoped<BriefService>();
