@@ -80,11 +80,12 @@ and a DBA runs it again from each new bundle before upgrading, with `Invoke-Sqlc
 separators and non-ASCII text, so give `sqlcmd` these switches:
 
 ```powershell
-sqlcmd -S SQLHOST\PROD -E -d Tide -b -I -x -f i:65001 -i .\deploy\sql\tide-schema-sqlserver.sql
+sqlcmd -S SQLHOST\PROD -E -d Tide -b -I -x -X1 -f i:65001 -i .\deploy\sql\tide-schema-sqlserver.sql
 ```
 
 `-b` stops at the first error, `-I` sets QUOTED_IDENTIFIER for the filtered indexes, `-x` leaves `$(...)` in the text
-alone, and `-f i:65001` reads it as UTF-8. `Upgrade-Tide.ps1` doesn't apply it: on a DbaApplies install it checks the
+alone, `-X1` refuses sqlcmd's shell (`!!`) and editor commands and stops if one appears (the script has none), and
+`-f i:65001` reads it as UTF-8. `Upgrade-Tide.ps1` doesn't apply it: on a DbaApplies install it checks the
 DBA has, and stops until they have.
 
 The script isn't in the repository; the release workflow generates it. To make one from a source checkout (with the

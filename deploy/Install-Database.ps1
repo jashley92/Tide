@@ -242,15 +242,17 @@ if ($BackupAccount) {
 if ($SchemaMode -eq 'DbaApplies' -and $ApplySchema) {
     Write-Host "==> Applying schema from $([System.IO.Path]::GetFileName($schemaSql))" -ForegroundColor Cyan
     # The script is EF's idempotent migration script: GO-separated batches, which both engines split on. Its text is
-    # SQL, not a sqlcmd template, so $(...) in it is left alone (-DisableVariables, -x) rather than read as a variable,
-    # and UTF-8 with non-ASCII text, which sqlcmd.exe is told (-f i:65001) rather than reading it in the console's code page.
+    # SQL, not a sqlcmd template: $(...) in it is left alone (-DisableVariables, -x) rather than read as a variable, and
+    # sqlcmd's shell and editor commands are refused (-DisableCommands, -X1, which stops if one appears; it has none).
+    # It's UTF-8 with non-ASCII text, which sqlcmd.exe is told (-f i:65001) rather than reading it in the console's code page.
     if ($useModule) {
         $noVars = @{}
         if ($sqlcmdCmd.Parameters.ContainsKey('DisableVariables')) { $noVars.DisableVariables = $true }
+        if ($sqlcmdCmd.Parameters.ContainsKey('DisableCommands')) { $noVars.DisableCommands = $true }
         Invoke-Sqlcmd -ServerInstance $SqlInstance -Database $DbName -InputFile $schemaSql @noVars `
                       @moduleTls -QueryTimeout 0 -OutputSqlErrors $true -AbortOnError -ErrorAction Stop
     } else {
-        & sqlcmd.exe -S $SqlInstance -E -b @sqlcmdTrust -I -x -f i:65001 -d $DbName -i $schemaSql   # -I: filtered indexes; -f: UTF-8 text
+        & sqlcmd.exe -S $SqlInstance -E -b @sqlcmdTrust -I -x -X1 -f i:65001 -d $DbName -i $schemaSql   # -I: filtered indexes; -f: UTF-8 text
         if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed applying schema (exit $LASTEXITCODE)" }
     }
 }

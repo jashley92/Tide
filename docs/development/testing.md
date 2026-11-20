@@ -376,8 +376,15 @@ a `[GeneratedRegex]` method) is a suggestion by default; `.editorconfig` makes i
 
 1. Applies the SQL Server migrations to a fresh database, twice (the second is a no-op).
 2. Generates the DBA schema script as the release does and applies it with `sqlcmd` to an empty database, twice
-   (`tools/ci/check-sqlserver-schema-script.sh`). Every migration must be in its history, EF must see none pending,
-   and its columns, indexes and foreign keys must match the database the migrations made.
+   (`tools/ci/check-sqlserver-schema-script.sh`). Every migration must be in its history and EF must see none
+   pending. It must then match the database step 1 migrated, compared from the catalog views:
+   - every column: its type, length, precision, scale, nullability and identity;
+   - every index: its kind (clustered or not), primary key, unique constraint or unique, key columns in order with
+     their direction, included columns, and filter;
+   - every foreign key: its columns in order, the table and columns it references, and its delete action;
+   - every default constraint: its definition, per table and column (not by name, which SQL Server makes up).
+
+   Each side must read back columns, indexes, foreign keys and defaults, so a query that failed on both can't pass.
 3. Runs `dotnet test tests/Tide.IntegrationTests --filter "DisplayName~SqlServer"` with `TIDE_TEST_SQL` set.
 4. Runs the upgrade test from each of the three newest release tags reachable from HEAD, and the first release.
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -40,23 +41,36 @@ public sealed class IdempotentScriptSqlGenerator(MigrationsSqlGeneratorDependenc
         base.Generate(new SqlOperation { Sql = wrapped.ToString(), SuppressTransaction = operation.SuppressTransaction }, model, builder);
     }
 
-    /// <summary>The non-blank batches of <paramref name="sql"/>, split on GO lines as sqlcmd (and EF) split them.</summary>
+    /// <summary>
+    /// The batches of <paramref name="sql"/>, split as SQL Server's generator splits a migration's SQL for Migrate(), so
+    /// the script runs the same batches: a line starting with GO (any case, after any indent, then the end of the line or
+    /// whitespace) ends one, and <c>GO n</c> runs it n times (a count that isn't a number means once, as for EF). A
+    /// backslash at a line's end joins it to the next. Blank batches are dropped: EXEC of nothing does nothing.
+    /// </summary>
     internal static IEnumerable<string> Batches(string sql)
     {
         var batch = new StringBuilder();
-        foreach (var line in sql.ReplaceLineEndings("\n").Split('\n'))
+        var lines = sql.Replace("\\\r\n", "", StringComparison.Ordinal).Replace("\\\n", "", StringComparison.Ordinal)
+            .ReplaceLineEndings("\n").Split('\n');
+        foreach (var line in lines)
         {
-            var t = line.Trim();
-            if (t.Equals("GO", StringComparison.OrdinalIgnoreCase))
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("GO", StringComparison.OrdinalIgnoreCase) && (trimmed.Length == 2 || char.IsWhiteSpace(trimmed[2])))
             {
-                if (!string.IsNullOrWhiteSpace(batch.ToString())) yield return batch.ToString().Trim('\n');
+                var text = batch.ToString().Trim('\n');
                 batch.Clear();
+                var count = trimmed.Length >= 4 && int.TryParse(trimmed.AsSpan(3), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+                    ? n
+                    : 1;
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                for (var i = 0; i < count; i++) yield return text;
             }
             else
             {
                 batch.Append(line).Append('\n');
             }
         }
-        if (!string.IsNullOrWhiteSpace(batch.ToString())) yield return batch.ToString().Trim('\n');
+        var last = batch.ToString().Trim('\n');
+        if (!string.IsNullOrWhiteSpace(last)) yield return last;
     }
 }

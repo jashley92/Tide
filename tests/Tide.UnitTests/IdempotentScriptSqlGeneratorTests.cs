@@ -37,6 +37,33 @@ public class IdempotentScriptSqlGeneratorTests
     }
 
     [Fact]
+    public void GO_with_a_count_runs_the_batch_that_many_times_each_through_EXEC()
+    {
+        var commands = Generate(MigrationsSqlGenerationOptions.Idempotent, "INSERT INTO T DEFAULT VALUES;\nGO 3\nSELECT 1;");
+
+        commands.Should().Equal(
+            "EXEC(N'INSERT INTO T DEFAULT VALUES;')", "EXEC(N'INSERT INTO T DEFAULT VALUES;')", "EXEC(N'INSERT INTO T DEFAULT VALUES;')",
+            "EXEC(N'SELECT 1;')");
+    }
+
+    // The script must run exactly the batches Migrate() runs: EF's own splitter, for the plain script, is the reference.
+    [Theory]
+    [InlineData("UPDATE A SET X = 1;\nGO 2\nUPDATE B SET Y = 2;")]
+    [InlineData("UPDATE A SET X = 1;\n   go\nUPDATE B SET Y = 'a';")]
+    [InlineData("UPDATE A SET X = 1;\nGO -- not a count\nUPDATE B SET Y = 2;")]
+    [InlineData("UPDATE A SET X = 1;\r\nGO\r\nGO\r\nUPDATE B SET Y = 2;\r\nGO")]
+    [InlineData("UPDATE A SET X = 1;\nGOTO_LABEL:\nUPDATE B SET Y = 2;")]
+    [InlineData("UPDATE A SET X = \\\n1;\nGO\t4\nSELECT 1;")]
+    public void The_idempotent_script_runs_the_same_batches_as_Migrate_each_through_EXEC(string sql)
+    {
+        var plain = Generate(MigrationsSqlGenerationOptions.Default, sql).Where(c => c.Length > 0).ToArray();
+        var idempotent = Generate(MigrationsSqlGenerationOptions.Idempotent, sql);
+
+        plain.Should().NotBeEmpty();
+        idempotent.Should().Equal(plain.Select(p => "EXEC(N'" + p.Replace("'", "''", StringComparison.Ordinal) + "')"));
+    }
+
+    [Fact]
     public void Migrate_and_a_plain_script_run_a_migrations_SQL_as_it_is_written()
     {
         var commands = Generate(MigrationsSqlGenerationOptions.Default, "UPDATE s SET Outcome = N'it''s done' FROM BriefSends s;");

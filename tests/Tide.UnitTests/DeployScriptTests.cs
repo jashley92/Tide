@@ -935,9 +935,9 @@ public partial class DeployScriptPowerShellTests
 
             New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value {
                 [CmdletBinding()] param($ServerInstance, $Query, $InputFile, $Variable, $Database, $QueryTimeout, $OutputSqlErrors,
-                    [switch] $AbortOnError, [string] $Encrypt, [switch] $TrustServerCertificate, [switch] $DisableVariables)
+                    [switch] $AbortOnError, [string] $Encrypt, [switch] $TrustServerCertificate, [switch] $DisableVariables, [switch] $DisableCommands)
                 if ($Query) { return [pscustomobject]@{ RunAs = 'CONTOSO\dba'; IsSysadmin = 1; CanCreateDb = 1; CanCreateLogin = 1; DbExists = 0; LoginExists = 0; ControlsDb = 0 } }
-                $global:sqlLog += "$([IO.Path]::GetFileName($InputFile)) db=$Database novars=$([bool]$DisableVariables)"
+                $global:sqlLog += "$([IO.Path]::GetFileName($InputFile)) db=$Database novars=$([bool]$DisableVariables) nocmds=$([bool]$DisableCommands)"
             } | Out-Null
             $out = [ordered]@{}
             try {
@@ -970,11 +970,11 @@ public partial class DeployScriptPowerShellTests
         Calls("missingCalls").Should().BeEmpty("the database isn't created when its schema can't follow");
 
         r.GetProperty("module").GetString().Should().Be("ok");
-        Calls("moduleCalls").Should().Equal("01-Create-Database.sql db= novars=False", "tide-schema-sqlserver.sql db=Tide novars=True");
+        Calls("moduleCalls").Should().Equal("01-Create-Database.sql db= novars=False nocmds=False", "tide-schema-sqlserver.sql db=Tide novars=True nocmds=True");
 
         r.GetProperty("sqlcmd").GetString().Should().Be("ok");
         Calls("sqlcmdCalls").Should().HaveCount(2);
-        Calls("sqlcmdCalls")[1].Should().Contain("-d Tide").And.Contain("-i tide-schema-sqlserver.sql").And.Contain(" -x ").And.Contain(" -I ").And.Contain(" -b ")
+        Calls("sqlcmdCalls")[1].Should().Contain("-d Tide").And.Contain("-i tide-schema-sqlserver.sql").And.Contain(" -x ").And.Contain(" -X1 ").And.Contain(" -I ").And.Contain(" -b ")
             .And.Contain(" -f i:65001 ", "the script has non-ASCII text, read as UTF-8 whatever the console's code page");
     }
 
