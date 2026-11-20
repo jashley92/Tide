@@ -147,7 +147,11 @@ demo; CI runs the four side by side. The pages from the first `changesTheDemo(..
 after them. Each mark starts a chain (Today's queue and saves, the presenter's strips, the live meeting and so on) that
 runs whole, in order, after its slice's other pages. As every slice starts on a fresh demo, a page may lean on what an
 earlier page of its own chain did, but never on another chain's. Put a page that reads the demo before the first mark;
-a page that changes it in the chain whose pages it touches, or, if it leans on none, under a mark of its own. To run
+a page that changes it in the chain whose pages it touches, or, if it leans on none, under a mark of its own. A chain
+must hold whichever chains share its slice, so run one you add to or change alone too:
+`CHAIN="the live meeting" node tools/screenshots/layout.mjs` runs just that chain's pages on a fresh demo. A page's
+setup starts from what it needs rather than from where the page before left things (the meeting on its wrap-up, say),
+as the pages before it can change when the slices are cut afresh. To run
 the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR` with `NO_BUILD=1` (or
 publish once and give each `APP_DIR`, as CI does).
 

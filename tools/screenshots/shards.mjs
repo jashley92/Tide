@@ -110,6 +110,17 @@ export function shard(list, spec) {
   return cut[i - 1];
 }
 
+/**
+ * The pages of the chain named `what` alone, as a slice that holds no other chain runs it: what CHAIN=… checks, since a
+ * chain must hold on a fresh demo whichever chains share its slice. Throws naming the chains if there's none by that name.
+ */
+export function chainAlone(list, what) {
+  const { chains: tail } = chains(list);
+  const found = tail.find(c => c.what === what);
+  if (!found) throw new Error(`No chain named ${what}. There are: ${tail.map(c => c.what).join('; ')}`);
+  return found.pages;
+}
+
 /** One line per slice: its pages, the seconds the weights expect it to take, and the chains it runs. */
 export function describe(list, n) {
   const cut = slices(list, n);

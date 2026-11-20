@@ -45,3 +45,8 @@ pauses of 25ms to 1.5s), which was both slow and, on a slow runner, not always l
   `metrics-grid`, which changes nothing, moved before the marks. A new page that changes the demo goes in the chain
   whose pages it touches, or under a mark of its own. By the weights the slices went from 373, 373, 373 and 432 seconds
   to 388, 388, 388 and 387: the run's 1,550 seconds spread evenly, so shorter slices now need a fifth.
+  The first CI run found one page that had leaned on another chain without saying so: `present-beside-follower` opened
+  its action from wherever the meeting stood, which the wrap-up pages leave on the wrap-up. In the old order, the pages
+  run before them had changed today's brief, which kept it off that slide. It now starts from the title and refuses
+  the wrap-up. `CHAIN="…"` runs one chain alone on a fresh demo, the condition every chain must meet, so a chain that is
+  added or changed can be checked for it.

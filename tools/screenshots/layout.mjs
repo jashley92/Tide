@@ -6,6 +6,7 @@
 //   ONLY=slide-article node tools/screenshots/layout.mjs                 just these pages
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
+//   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -13,7 +14,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { changesTheDemo, cost, describe, shard } from './shards.mjs';
+import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
@@ -2470,18 +2471,23 @@ const actionBeside = as => async (page, demo) => {
   meetingGuests = { key: `beside/${as}`, contexts: [] };
   const present = async p => {
     await startOrTakeUp(p);
+    // From the title, unless the page before left an action open for the room: the wrap-up pages leave the meeting on
+    // the wrap-up, the last slide, where toArticleSlide's ArrowRight goes nowhere; and the wrap-up is no slide to check
+    // this on, as a follower's has the Attended box the presenter's hasn't (their fits differ by design).
+    if (!(await p.locator(BESIDE).count())) { await p.keyboard.press('Home'); await idle(p); }
     await toArticleSlide(p);
     // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
-    // links): the first slide with an action on it, from this article's on and then from the title. The pages before
-    // may have changed today's running order; the actions that need review have some, whatever the articles have (each
-    // row opens its action from a button over its cell).
-    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
+    // links): the first slide with an action on it, from this article's on and then from the title, never the
+    // wrap-up's. The pages before may have changed today's running order; the actions that need review have some,
+    // whatever the articles have (each row opens its action from a button over its cell).
+    const opener = p.locator('.tide-slide:not(:has([data-slide-key="wrap"])) :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
       await idle(p);
     }
     if (!(await p.locator(BESIDE).count())) await opener.first().click();
     await p.locator(BESIDE).waitFor();
+    if (await p.locator('[data-slide-key="wrap"]').count()) throw new Error('the action beside the slide is open on the wrap-up, not an article\'s slide');
     await idle(p);
   };
   if (as === 'presenter') {
@@ -5147,7 +5153,8 @@ if (/^(1|true|yes)$/i.test(process.env.PLAN ?? '')) {
   for (const l of describe(pages, n)) console.log(l);
   process.exit(0);
 }
-const wanted = pick(shard(pages, process.env.SHARD), 'page');
+// CHAIN="the live meeting" runs that chain alone, on a fresh demo, as a slice with no other chain would.
+const wanted = pick(process.env.CHAIN ? chainAlone(pages, process.env.CHAIN) : shard(pages, process.env.SHARD), 'page');
 if (process.env.SHARD) console.log(`Slice ${process.env.SHARD}: ${wanted.length} pages, about ${Math.round(wanted.reduce((sum, p) => sum + cost(p), 0))}s by layout-weights.json.`);
 
 let server;
