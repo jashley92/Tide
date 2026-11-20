@@ -170,10 +170,60 @@ public partial class DeployScriptTests
 
         migrationCheck.Should().BeLessThan(whatIf);
         whatIf.Should().BeLessThan(dbBackup);
-        new[] { dbBackup, snapshot, settings, carveOut, stop, copy, stale, warm }.Should().BeInAscendingOrder();
+        var verify = At("RESTORE VERIFYONLY FROM DISK = @bak WITH CHECKSUM");
+        new[] { dbBackup, verify, snapshot, settings, carveOut, stop, copy, stale, warm }.Should().BeInAscendingOrder();
         script.Should().Contain("/XF appsettings.Production.json VERSION.txt /XD logs App_Data", "the deploy keeps the settings, logs and App_Data");
         script.Should().Contain("COPY_ONLY", "the pre-upgrade backup doesn't reset the scheduled backups' chain");
         script.Should().NotContain("Join-Path $bakDir", "the backup folder is on the SQL Server, whose drive the web server may not have");
+    }
+
+    [Fact]
+    public void Whatever_fails_between_stopping_the_pool_and_starting_it_rolls_back_and_every_rollback_asks_whether_the_old_build_fits()
+    {
+        // A file the stale-file removal can't delete, an IIS setting that won't take, a pool that won't start: each throws
+        // under $ErrorActionPreference = 'Stop', and used to leave the site down and half deployed.
+        var script = Read("deploy", "Upgrade-Tide.ps1");
+        int At(string s, int from = 0)
+        {
+            var i = script.IndexOf(s, from, StringComparison.Ordinal);
+            i.Should().BeGreaterThan(-1, "the script has '{0}'", s);
+            return i;
+        }
+        var open = At("$deployStep = 'the copy'\ntry {");
+        var close = At("    Start-WebAppPool -Name $AppPoolName\n} catch {", open);
+        foreach (var step in new[] { "& robocopy $appSrc $SitePath", "Remove-TideStaleFiles -From $appSrc", "recycling.periodicRestart.time",
+                     "Set-TideSingleWorkerProcess -Name $AppPoolName" })
+            At(step, open).Should().BeLessThan(close, "{0} is inside the rollback's try", step);
+        var handler = script[close..At("\n}\n", close)];
+        handler.Should().Contain("Restore-PreviousBuild $failure").And.Contain("Complete-Rollback $failure");
+
+        // Both rollbacks decide by what the previous build knows, not by what this run saw before deploying.
+        script.Should().Contain("Complete-Rollback \"the new build didn't start\"");
+        script.Should().Contain("Get-TideBuildMigrations $rollbackDir").And.Contain("Get-TideRollbackDecision -Applied $now -Known $rollbackKnows");
+        script.Should().NotContain("$appliedBeforeDeploy -notcontains", "a re-run's snapshot already has the first run's migrations");
+        script.Should().Contain("-PoolWasRunning $poolWasRunning");
+        At("$poolWasRunning = (Get-WebAppPoolState").Should().BeLessThan(At("Stop-TideAppPool -Name $AppPoolName\n"),
+            "the pool's state is read before this run stops it");
+    }
+
+    [Fact]
+    public void The_scripts_that_manage_IIS_refuse_PowerShell_7_before_they_change_anything_and_the_rest_run_there()
+    {
+        foreach (var name in new[] { "Install-Tide.ps1", "Upgrade-Tide.ps1", "Verify-Install.ps1" })
+        {
+            var text = Read("deploy", name);
+            var script = text[text.IndexOf("\n#>", StringComparison.Ordinal)..];   // the code, after the help
+            var assert = script.IndexOf($"Assert-TideWindowsPowerShell '{name}'", StringComparison.Ordinal);
+            assert.Should().BeGreaterThan(-1, "{0} refuses PowerShell 7", name);
+            foreach (var later in new[] { "Import-Module WebAdministration", "Get-Credential", "Invoke-WebRequest", "IIS:\\", "Write-Step \"" })
+            {
+                var at = script.IndexOf(later, StringComparison.Ordinal);
+                if (at >= 0) at.Should().BeGreaterThan(assert, "{0} refuses before {1}", name, later);
+            }
+        }
+        // Documented to run in PowerShell 7 too (Test-TideBundle.ps1), or not using the IIS: drive.
+        foreach (var name in new[] { "Test-TideBundle.ps1", "Backup-Tide.ps1", "Test-TideRestore.ps1", "Install-Database.ps1", "New-TideConfig.ps1" })
+            Read("deploy", name).Should().NotContain("Assert-TideWindowsPowerShell", name);
     }
 
     [Fact]
@@ -182,6 +232,12 @@ public partial class DeployScriptTests
         var release = Read(".github", "workflows", "release.yml");
         release.Should().Contain("cp -r deploy \"$root/deploy\"", "every deploy script, the upgrade's included, ships in the bundle");
         release.Should().Contain("\"$root/migrations-sqlserver.txt\"");
+        release.Should().Contain("bash tools/ci/sqlserver-schema-script.sh publish/tide-schema-sqlserver.sql --no-build")
+            .And.Contain("cp publish/tide-schema-sqlserver.sql \"$root/deploy/sql/tide-schema-sqlserver.sql\"",
+                "the DBA schema script is where Install-Database.ps1 -ApplySchema looks, inside the signed zip");
+        Read("deploy", "Install-Database.ps1").Should().Contain(@"Join-Path $scriptDir 'sql\tide-schema-sqlserver.sql'");
+        release.IndexOf("deploy/sql/tide-schema-sqlserver.sql", StringComparison.Ordinal)
+            .Should().BeLessThan(release.IndexOf("zip -qr", StringComparison.Ordinal));
         release.Should().Contain("tide-${version}.zip.sha256");
         release.Should().Contain("\"bundle/tide-${version}.zip.sig\" \"${args[@]}\"", "the signature is published with the bundle");
         release.Should().Contain("RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}").And.Contain("The RELEASE_SIGNING_KEY secret isn't set");
@@ -245,6 +301,9 @@ public partial class DeployScriptTests
 public partial class DeployScriptPowerShellTests
 {
     private static readonly string Lib = Path.Combine(DeployScriptTests.Deploy, "lib");
+
+    [GeneratedRegex(@"^\d{14}_", RegexOptions.None, 1000)]
+    private static partial Regex MigrationFile();
 
     /// <summary>Runs <paramref name="script"/> with the deploy\lib helpers loaded and returns what it wrote, as JSON.</summary>
     private static JsonElement Run(string script, string? shell = null)
@@ -391,6 +450,180 @@ public partial class DeployScriptPowerShellTests
         Case("newer").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "unknown" && !c.Ok);
         Case("noHistory").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "no-history" && !c.Ok);
         Case("diverged").Should().Match<(string Verdict, bool Ok, string[] Pending, string Message)>(c => c.Verdict == "baseline" && !c.Ok);
+    }
+
+    [Fact]
+    public void A_failed_upgrade_starts_the_previous_build_only_on_a_database_it_knows()
+    {
+        var r = Run("""
+            $old = @('20260101000000_Initial', '20260201000000_Next')
+            $new = '20260301000000_Later'
+            $d = { param($a, $k, $b, $he, $ke, [hashtable] $more = @{}) Get-TideRollbackDecision -Applied $a -Known $k -AppliedBefore $b -HistoryError $he -KnownError $ke @more }
+            $cases = [ordered]@{
+                same       = & $d $old $old $old
+                empty      = & $d @() $old @()
+                older      = & $d @('20260101000000_Initial') $old @('20260101000000_Initial')
+                migrated   = & $d ($old + $new) $old $old
+                rerun      = & $d ($old + $new) $old ($old + $new)
+                rerunCopy  = & $d ($old + $new) $old ($old + $new) $null $null @{ NewBuildRan = $false }
+                noHistory  = & $d @() $old $old 'Login failed'
+                noBuild    = & $d ($old + $new) @() $old $null 'Tide.Migrations.SqlServer.dll isn''t there.'
+                noBefore   = & $d ($old + $new) $old @() $null $null @{ BeforeError = 'timeout' }
+                dbaCopy    = & $d ($old + $new) $old ($old + $new) $null $null @{ DbaApplies = $true; NewBuildRan = $false }
+                dbaWarmup  = & $d ($old + $new) $old ($old + $new) $null $null @{ DbaApplies = $true }
+                dbaNew     = & $d ($old + $new) $old $old $null $null @{ DbaApplies = $true }
+                copyNoHist = & $d @() $old $old 'Login failed' $null @{ NewBuildRan = $false }
+                copyBlind  = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed'; PoolWasRunning = $true }
+                copyNoBld  = & $d $old @() $old $null 'no dll' @{ NewBuildRan = $false; PoolWasRunning = $true }
+                rerunNoBld = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false }
+                rerunBlind = & $d @() $old @() 'Login failed' $null @{ NewBuildRan = $false; BeforeError = 'Login failed' }
+                dbaNoBld   = & $d ($old + $new) @() ($old + $new) $null 'no dll' @{ NewBuildRan = $false; DbaApplies = $true }
+            }
+            ConvertTo-Json -Depth 4 -Compress -InputObject $cases
+            """);
+        (bool Safe, string Verdict, string[] Unknown, bool EarlierRun, string? Message) Case(string name)
+        {
+            var c = r.GetProperty(name);
+            var unknown = c.GetProperty("Unknown");
+            return (c.GetProperty("Safe").GetBoolean(), c.GetProperty("Verdict").GetString()!,
+                unknown.ValueKind == JsonValueKind.Array ? unknown.EnumerateArray().Select(x => x.GetString()!).ToArray() : [unknown.GetString()!],
+                c.GetProperty("EarlierRun").GetBoolean(), c.GetProperty("Message").GetString());
+        }
+        Case("same").Safe.Should().BeTrue();
+        Case("empty").Safe.Should().BeTrue("a database with no history has nothing the previous build doesn't know");
+        Case("older").Safe.Should().BeTrue();
+
+        var migrated = Case("migrated");
+        (migrated.Safe, migrated.Verdict, migrated.EarlierRun).Should().Be((false, "unknown", false));
+        migrated.Unknown.Should().Equal("20260301000000_Later");
+        migrated.Message.Should().Contain("STOPPED").And.Contain("20260301000000_Later").And.Contain("restore the pre-upgrade database backup");
+
+        // Re-run without restoring: this run's snapshot of the history already had the new migration, which used to read
+        // as "nothing new" and start the previous build on a schema it doesn't know.
+        var rerun = Case("rerun");
+        (rerun.Safe, rerun.EarlierRun).Should().Be((false, true));
+        rerun.Message.Should().Contain("earlier upgrade").And.Contain("this run's pre-upgrade backup has them too").And.Contain("-preupgrade-");
+
+        var noHistory = Case("noHistory");
+        (noHistory.Safe, noHistory.Verdict).Should().Be((false, "history-unreadable"));
+        noHistory.Message.Should().Contain("STOPPED").And.Contain("Login failed").And.Contain("20260201000000_Next", "the previous build's newest, to compare with");
+
+        var noBuild = Case("noBuild");
+        (noBuild.Safe, noBuild.Verdict).Should().Be((false, "build-unreadable"));
+        noBuild.Message.Should().Contain("STOPPED").And.Contain("isn't there").And.Contain("20260301000000_Later", "the database's newest, to compare with");
+
+        // AppMigrates re-run whose copy fails: the new build never ran, but the database still has the first run's migration.
+        (Case("rerunCopy").Safe, Case("rerunCopy").EarlierRun).Should().Be((false, true));
+        (Case("noBefore").Safe, Case("noBefore").Verdict).Should().Be((false, "before-unreadable"));
+
+        // DbaApplies: the preflight requires the DBA to have applied the new release's migrations already, and the previous
+        // build ran on them until the pool stopped. Restoring the backup would undo the DBA's schema.
+        foreach (var dba in new[] { "dbaCopy", "dbaWarmup" })
+        {
+            var c = Case(dba);
+            (c.Safe, c.Verdict).Should().Be((true, "dba-ahead"), dba);
+            r.GetProperty(dba).GetProperty("Note").GetString().Should().Contain("by the DBA").And.Contain("20260301000000_Later");
+        }
+        (Case("dbaNew").Safe, Case("dbaNew").Verdict).Should().Be((false, "unknown"), "one that wasn't there before this run is the new build's");
+
+        // A failure before the pool was started: the database is as it was, so the history only has to be read once.
+        Case("copyNoHist").Safe.Should().BeTrue("the history from before the run stands in");
+        // With nothing to compare, unchanged is enough only when the previous build was running on it when the run began
+        // (or on DbaApplies, where only the DBA changes the schema).
+        foreach (var blind in new[] { "copyBlind", "copyNoBld", "dbaNoBld" })
+        {
+            (Case(blind).Safe, Case(blind).Verdict).Should().Be((true, "unchanged"), blind);
+            r.GetProperty(blind).GetProperty("Note").GetString().Should().StartWith("The new build never ran");
+        }
+        // AppMigrates re-run without restoring, whose copy fails: the pool was already stopped by the first, migrated run,
+        // and the before-deploy history has its migrations too, so "unchanged" proves nothing.
+        foreach (var rerunBlind in new[] { "rerunNoBld", "rerunBlind" })
+        {
+            (Case(rerunBlind).Safe, Case(rerunBlind).Verdict).Should().Be((false, "unchanged-unproven"), rerunBlind);
+            Case(rerunBlind).Message.Should().Contain("STOPPED").And.Contain("already stopped").And.Contain("-preupgrade-");
+        }
+        Case("rerunNoBld").Message.Should().Contain("20260301000000_Later", "the database's newest, to compare with");
+    }
+
+    [Fact]
+    public void A_backup_that_cant_be_read_back_for_want_of_permission_only_warns_and_one_that_reads_back_wrong_stops_the_upgrade()
+    {
+        // Stand-ins for the exceptions Invoke-DbScalar throws: a MethodInvocationException-like wrapper around a
+        // SqlException-like one, with its Number and Errors.
+        var r = Run("""
+            $sql = { param($n, $m) [pscustomobject]@{ Message = $m; Number = $n; Errors = @([pscustomobject]@{ Number = $n }); InnerException = $null } }
+            $wrap = { param($inner) [pscustomobject]@{ Message = 'Exception calling "ExecuteScalar"'; InnerException = $inner } }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                denied   = Get-TideVerifyFailureKind (& $wrap (& $sql 262 "CREATE DATABASE permission denied in database 'master'."))
+                byText   = Get-TideVerifyFailureKind (& $wrap ([pscustomobject]@{ Message = 'CREATE DATABASE permission denied'; InnerException = $null }))
+                terminated = Get-TideVerifyFailureKind (& $wrap (& $sql 3013 'VERIFY DATABASE is terminating abnormally.'))
+                checksum = Get-TideVerifyFailureKind (& $wrap (& $sql 3189 'Damage to the backup set was detected.'))
+                media    = Get-TideVerifyFailureKind (& $wrap (& $sql 3241 'The media family on device is incorrectly formed.'))
+                osDenied = Get-TideVerifyFailureKind (& $wrap (& $sql 3201 'Cannot open backup device. Operating system error 5(Access is denied.).'))
+                plain    = Get-TideVerifyFailureKind ([Exception]::new('timeout'))
+            })
+            """);
+        r.GetProperty("denied").GetString().Should().Be("permission");
+        r.GetProperty("byText").GetString().Should().Be("permission");
+        foreach (var hard in new[] { "terminated", "checksum", "media", "osDenied", "plain" })
+            r.GetProperty(hard).GetString().Should().Be("failed", hard);
+        DeployScriptTests.ReadText("deploy", "Upgrade-Tide.ps1").Should().Contain("if ((Get-TideVerifyFailureKind $_.Exception) -ne 'permission') {");
+    }
+
+    [Fact]
+    public void The_upgrade_reads_the_migrations_a_build_knows_from_its_assembly()
+    {
+        // The real assembly (built with these tests) against the migration files: every id, and nothing else.
+        var expected = Directory.EnumerateFiles(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Migrations.SqlServer", "Migrations"), "*.cs")
+            .Select(Path.GetFileNameWithoutExtension)
+            .Where(n => MigrationFile().IsMatch(n!) && !n!.EndsWith(".Designer", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        expected.Should().NotBeEmpty();
+        var r = Run("""
+            $bin = '__BIN__'
+            $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-build-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            try {
+                # An id-like string that isn't an attribute's (no length byte before it) doesn't count.
+                [IO.File]::WriteAllBytes((Join-Path $dir 'Tide.Migrations.SqlServer.dll'), [Text.Encoding]::ASCII.GetBytes("MZ x20260101000000_Initial`0"))
+                $none = try { Get-TideBuildMigrations $dir; 'read' } catch { $_.Exception.Message }
+                $missing = try { Get-TideBuildMigrations (Join-Path $dir 'nowhere'); 'read' } catch { $_.Exception.Message }
+            } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{ ids = @(Get-TideBuildMigrations $bin); none = $none; missing = $missing })
+            """.Replace("__BIN__", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar).Replace("'", "''")));
+        r.GetProperty("ids").EnumerateArray().Select(x => x.GetString()).Order(StringComparer.Ordinal).Should().Equal(expected);
+        r.GetProperty("none").GetString().Should().Contain("names no migration");
+        r.GetProperty("missing").GetString().Should().Contain("isn't there");
+    }
+
+    [Fact]
+    public void A_script_that_manages_IIS_says_how_to_run_it_when_started_in_PowerShell_7()
+    {
+        var r = Run("""
+            . (Join-Path (Join-Path $deploy 'lib') 'TideIis.ps1')
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                core = Get-TideEditionRefusal 'Upgrade-Tide.ps1' -Edition 'Core'
+                desktop = Get-TideEditionRefusal 'Upgrade-Tide.ps1' -Edition 'Desktop'
+            })
+            """);
+        r.GetProperty("core").GetString().Should().StartWith("Upgrade-Tide.ps1 runs in Windows PowerShell 5.1, not PowerShell 7")
+            .And.Contain("Nothing has been changed").And.Contain("powershell.exe");
+        r.GetProperty("desktop").ValueKind.Should().Be(JsonValueKind.Null);
+
+        // Started for real in each PowerShell here: PowerShell 7 refuses before any check runs; Windows PowerShell gets past
+        // it (and isn't run further, since the checks would reach for IIS).
+        foreach (var shell in Shells())
+        {
+            var run = Run("""
+                $out = if ($PSVersionTable.PSEdition -ne 'Core') { 'not run' } else {
+                    try { & (Join-Path $deploy 'Verify-Install.ps1') -Url 'http://127.0.0.1:9/' 6>$null | Out-Null; 'ran' } catch { $_.Exception.Message }
+                }
+                ConvertTo-Json -Compress -InputObject ([ordered]@{ edition = $PSVersionTable.PSEdition; out = $out })
+                """, shell);
+            if (run.GetProperty("edition").GetString() == "Core")
+                run.GetProperty("out").GetString().Should().StartWith("Verify-Install.ps1 runs in Windows PowerShell 5.1", shell);
+        }
     }
 
     [Fact]
@@ -635,6 +868,109 @@ public partial class DeployScriptPowerShellTests
         r.GetProperty("mine").EnumerateArray().Select(x => x.GetString()).Should().Equal("TIDE-WEB1-tide-20260103-0130", "TIDE-20260101-0130");
         r.GetProperty("all").GetArrayLength().Should().Be(5, "a folder without backup-set.json isn't a set; an unreadable one is, unfiltered");
         r.GetProperty("prefix").GetString().Should().Be("TIDE-WEB-1-tide-test-");
+    }
+
+    [Fact]
+    public void The_restore_drill_never_takes_the_live_databases_name_whatever_the_instance_is_called()
+    {
+        // The drill drops its scratch database first. '.' (or localhost, or the FQDN) is the live instance by another name,
+        // so the old check, the instance names compared as text, let -ScratchDatabase <live name> through to DROP DATABASE.
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                same      = Get-TideScratchRefusal 'Tide' 'Tide'
+                otherCase = Get-TideScratchRefusal 'tide ' 'Tide'
+                otherName = Get-TideScratchRefusal 'Tide_RestoreDrill' 'Tide'
+                blank     = Get-TideScratchRefusal ' ' 'Tide'
+            })
+            """);
+        r.GetProperty("same").GetString().Should().StartWith("The scratch database can't be named").And.Contain("Nothing has been changed");
+        r.GetProperty("otherCase").GetString().Should().StartWith("The scratch database can't be named");
+        r.GetProperty("otherName").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("blank").GetString().Should().Contain("-ScratchDatabase is empty");
+        DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1").Should().NotContain("$SqlInstance -eq $live.Instance",
+            "the instance's name proves nothing");
+    }
+
+    [Fact]
+    public void The_drill_drops_only_a_scratch_database_a_drill_restored_and_marks_each_one_it_restores()
+    {
+        // On a shared instance -ScratchDatabase Tide_Site2 could name another install's live database, which the drill
+        // used to drop as "left by an earlier drill".
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                marked   = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $true
+                unmarked = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $false
+                mark     = Get-TideDrillMarkerSql 'Tide]Drill'
+                query    = Get-TideDrillMarkerQuery 'Tide]Drill'
+            })
+            """);
+        r.GetProperty("marked").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("unmarked").GetString().Should().Contain("SQLHOST01 already has a database named Tide_Site2")
+            .And.Contain("TideRestoreDrill").And.Contain("Nothing has been changed");
+        r.GetProperty("mark").GetString().Should().Be("EXEC [Tide]]Drill].sys.sp_addextendedproperty @name = N'TideRestoreDrill', @value = N'1';");
+        r.GetProperty("query").GetString().Should().Be("SELECT COUNT(*) FROM [Tide]]Drill].sys.extended_properties WHERE class = 0 AND name = N'TideRestoreDrill'");
+
+        // The order in the script: the mark is checked before the DROP, and set straight after the restore.
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        int At(string s) { var i = drill.IndexOf(s, StringComparison.Ordinal); i.Should().BeGreaterThan(-1, s); return i; }
+        var check = At("Get-TideDrillMarkerQuery $ScratchDatabase");
+        var refuse = At("if ($dropRefusal) { throw $dropRefusal }");
+        var drop = At("Removing the scratch database left by an earlier drill");
+        var restore = At("\"RESTORE DATABASE $(Get-SqlName $ScratchDatabase)");
+        var mark = At("Get-TideDrillMarkerSql $ScratchDatabase");
+        var dbcc = At("DBCC CHECKDB(");
+        new[] { check, refuse, drop, restore, mark, dbcc }.Should().BeInAscendingOrder();
+    }
+
+    [WindowsFact]
+    public void The_restore_drill_refuses_the_live_databases_name_before_it_connects_anywhere()
+    {
+        // The script itself, under each PowerShell here, with the instance spelled three ways. It throws before opening a
+        // connection, so no SQL Server is needed. The drill reads the connection string with SqlClient, as on the server.
+        foreach (var shell in Shells())
+        {
+            var r = Run("""
+                $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-drill-' + [guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $dir | Out-Null
+                try {
+                    Set-Content -Path (Join-Path $dir 'appsettings.Production.json') -Value '{ "Database": { "Provider": "SqlServer" }, "ConnectionStrings": { "Default": "Server=SQLHOST01;Database=Tide;Integrated Security=true" } }'
+                    $drill = { param($scratch, $instance) try { & (Join-Path $deploy 'Test-TideRestore.ps1') -SitePath $dir -BackupSet $dir -ScratchDatabase $scratch -SqlInstance $instance 6>$null | Out-Null; 'ran' } catch { $_.Exception.Message } }
+                    $out = [ordered]@{ dot = & $drill 'Tide' '.'; fqdn = & $drill 'tide' 'sqlhost01.contoso.com'; same = & $drill 'Tide' 'SQLHOST01' }
+                } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+                ConvertTo-Json -Compress -InputObject $out
+                """, shell);
+            foreach (var refused in new[] { "dot", "fqdn", "same" })
+                r.GetProperty(refused).GetString().Should().StartWith("The scratch database can't be named", "{0} under {1}", refused, shell);
+        }
+    }
+
+    [Fact]
+    public void The_drill_checks_the_key_ring_only_in_a_set_whose_backup_had_one_to_take()
+    {
+        // Without DataProtection:KeyPath, Backup-Tide.ps1 has no key ring to copy, and the drill used to fail every run.
+        var r = Run("""
+            $set = { param($folders) ('{ "format": 1, "folders": ' + $folders + ' }') | ConvertFrom-Json }
+            $site = { param($keyPath) [pscustomobject]@{ Folder = 'D:\inetpub\tide'; Layers = @([pscustomobject]@{ DataProtection = [pscustomobject]@{ KeyPath = $keyPath } }) } }
+            $noKeys = & $site ''
+            $keys = & $site 'E:\TideData\dp-keys'
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                withRing   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys" }]') $noKeys
+                notThere   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys", "note": "not there" }]') $noKeys
+                withoutKey = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }]') $keys
+                noFolders  = Test-TideSetHasKeyRing (& $set '[]') $keys
+                oldSetSet  = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $keys
+                oldSetNone = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $noKeys
+            })
+            """);
+        r.GetProperty("withRing").GetBoolean().Should().BeTrue();
+        r.GetProperty("notThere").GetBoolean().Should().BeTrue("a key path set but not found is a real failure");
+        r.GetProperty("withoutKey").GetBoolean().Should().BeFalse("the set records what its backup had, not what the site has now");
+        r.GetProperty("noFolders").GetBoolean().Should().BeFalse();
+        r.GetProperty("oldSetSet").GetBoolean().Should().BeTrue("a set that lists no folders goes by the site's setting");
+        r.GetProperty("oldSetNone").GetBoolean().Should().BeFalse();
+
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        drill.Should().Contain("if (Test-TideSetHasKeyRing $manifest $site) {").And.Contain("Add-Check 'dp-keys' $true -Skipped");
     }
 
     [Fact]
@@ -909,6 +1245,67 @@ public partial class DeployScriptPowerShellTests
             Case("bare/trust-nosqlcmd").Result.Should().Contain("can't encrypt the connection");
             Case("v22/trust-nosqlcmd").Result.Should().Be("ok");
         }
+    }
+
+    [Fact]
+    public void ApplySchema_runs_the_bundles_schema_script_in_the_database_and_refuses_before_anything_when_it_is_missing()
+    {
+        // A bundle's layout (tide-<version>\deploy\sql) in a temp folder, with stand-ins for Invoke-Sqlcmd (SqlServer 22) and
+        // sqlcmd.exe that record the script each step runs. The schema script is EF's idempotent one: GO batches, and text
+        // that isn't a sqlcmd template, so $(...) must not be read as a variable. Nothing connects anywhere.
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-bundle-' + [guid]::NewGuid().ToString('N'))
+            $bundleDeploy = Join-Path $root 'tide-v9.9.9\deploy'
+            New-Item -ItemType Directory -Path (Join-Path $bundleDeploy 'sql') | Out-Null
+            Copy-Item (Join-Path $deploy 'Install-Database.ps1') $bundleDeploy
+            Copy-Item (Join-Path $deploy 'sql\01-Create-Database.sql') (Join-Path $bundleDeploy 'sql')
+            $schema = Join-Path $bundleDeploy 'sql\tide-schema-sqlserver.sql'
+            $install = Join-Path $bundleDeploy 'Install-Database.ps1'
+            $go = @{ SqlInstance = 'SQLHOST'; AppAccount = 'CONTOSO\svc-tide$'; SchemaMode = 'DbaApplies'; ApplySchema = $true }
+
+            New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value {
+                [CmdletBinding()] param($ServerInstance, $Query, $InputFile, $Variable, $Database, $QueryTimeout, $OutputSqlErrors,
+                    [switch] $AbortOnError, [string] $Encrypt, [switch] $TrustServerCertificate, [switch] $DisableVariables, [switch] $DisableCommands)
+                if ($Query) { return [pscustomobject]@{ RunAs = 'CONTOSO\dba'; IsSysadmin = 1; CanCreateDb = 1; CanCreateLogin = 1; DbExists = 0; LoginExists = 0; ControlsDb = 0 } }
+                $global:sqlLog += "$([IO.Path]::GetFileName($InputFile)) db=$Database novars=$([bool]$DisableVariables) nocmds=$([bool]$DisableCommands)"
+            } | Out-Null
+            $out = [ordered]@{}
+            try {
+                $global:sqlLog = @()
+                $out.missing = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.missingCalls = @($global:sqlLog)
+
+                Set-Content -LiteralPath $schema -Value "SELECT N'`$(not a variable)';`nGO`n"
+                $global:sqlLog = @()
+                $out.module = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.moduleCalls = @($global:sqlLog)
+
+                # An Invoke-Sqlcmd that can't encrypt: every step goes to sqlcmd.exe.
+                New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value { param($ServerInstance) } | Out-Null
+                New-Item -Path function: -Name sqlcmd.exe -Force -Value {
+                    if ($args -contains '-Q') { 'CONTOSO\dba|1|1|1|0|0|0' }
+                    elseif ($args -contains '-i') { $global:sqlLog += ($args | ForEach-Object { if ("$_" -like '*.sql') { [IO.Path]::GetFileName("$_") } else { "$_" } }) -join ' ' }
+                    $global:LASTEXITCODE = 0
+                } | Out-Null
+                $global:sqlLog = @()
+                $out.sqlcmd = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.sqlcmdCalls = @($global:sqlLog)
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+            ConvertTo-Json -Depth 4 -Compress -InputObject $out
+            """);
+        string[] Calls(string name) => r.GetProperty(name).EnumerateArray().Select(x => x.GetString()!).ToArray();
+
+        r.GetProperty("missing").GetString().Should().StartWith("Missing ").And.Contain("tide-schema-sqlserver.sql")
+            .And.Contain("Nothing was changed");
+        Calls("missingCalls").Should().BeEmpty("the database isn't created when its schema can't follow");
+
+        r.GetProperty("module").GetString().Should().Be("ok");
+        Calls("moduleCalls").Should().Equal("01-Create-Database.sql db= novars=False nocmds=False", "tide-schema-sqlserver.sql db=Tide novars=True nocmds=True");
+
+        r.GetProperty("sqlcmd").GetString().Should().Be("ok");
+        Calls("sqlcmdCalls").Should().HaveCount(2);
+        Calls("sqlcmdCalls")[1].Should().Contain("-d Tide").And.Contain("-i tide-schema-sqlserver.sql").And.Contain(" -x ").And.Contain(" -X1 ").And.Contain(" -I ").And.Contain(" -b ")
+            .And.Contain(" -f i:65001 ", "the script has non-ASCII text, read as UTF-8 whatever the console's code page");
     }
 
     [WindowsFact]

@@ -278,7 +278,8 @@ public sealed class SystemDiagnostics(
         var screenshots = storage[0];
         checks.Add(screenshots.Writable == true
             ? new("Screenshot folder", CheckLevel.Ok, "Writable.")
-            : new("Screenshot folder", CheckLevel.Problem, screenshots.Exists ? "The app pool can't write to it." : "It doesn't exist yet: it's made at the first upload.",
+            : new("Screenshot folder", CheckLevel.Problem, screenshots.Exists ? "The app pool can't write to it."
+                : "Start-up couldn't create it. The Tide.Files warning in the log says why: usually the app pool's permissions, or a wrong Files:RootPath.",
                 "admin/system/server"));
         var keys = storage[1];
         checks.Add(keys.Path is not null

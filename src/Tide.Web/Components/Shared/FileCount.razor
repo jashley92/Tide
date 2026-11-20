@@ -7,5 +7,5 @@
 @code {
     [Parameter, EditorRequired] public int Count { get; set; }
 
-    private string Label => Count == 1 ? "1 file" : $"{Count} files";
+    private string Label => Ui.Plural(Count, "file");
 }

@@ -25,6 +25,10 @@
     /// <summary>Discard and leave: drops what was typed, before the page goes.</summary>
     [Parameter] public EventCallback Discard { get; set; }
 
+    /// <summary>True as the question opens, false once it's answered and dealt with (after the save or the discard): for
+    /// something that saves by itself to wait meanwhile, so it doesn't save what Discard and leave is about to drop.</summary>
+    [Parameter] public EventCallback<bool> Asking { get; set; }
+
     private LeaveDialog _leave = default!;
 
     /// <summary>The question, for a test to answer as a click would.</summary>
@@ -64,15 +68,20 @@
     /// <summary>Asks what to do with the unsaved changes, and does it: whether to go ahead.</summary>
     public async Task<bool> Ask()
     {
-        switch (await _leave.Ask(Message, canSave: Save is not null))
+        await Asking.InvokeAsync(true);
+        try
         {
-            case LeaveDialog.Choice.Save:
-                return await Save!();
-            case LeaveDialog.Choice.Discard:
-                await Discard.InvokeAsync();
-                return true;
-            default:
-                return false;
+            switch (await _leave.Ask(Message, canSave: Save is not null))
+            {
+                case LeaveDialog.Choice.Save:
+                    return await Save!();
+                case LeaveDialog.Choice.Discard:
+                    await Discard.InvokeAsync();
+                    return true;
+                default:
+                    return false;
+            }
         }
+        finally { await Asking.InvokeAsync(false); }
     }
 }

@@ -71,15 +71,6 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     /// <summary>The most addresses one email is marked sent to.</summary>
     public const int MaxRecipients = 10;
 
-    /// <summary>The action's emails and the follow-up wait in force (null when the reminder is off).</summary>
-    public async Task<OutreachState> ForActionAsync(Guid actionId, CancellationToken ct = default)
-    {
-        ActionService.RequireRead(user);
-        await using var db = await dbs.CreateAsync(ct);
-        var messages = await db.OutreachMessages.AsNoTracking().Where(m => m.ActionId == actionId).ToListAsync(ct);
-        return new OutreachState([.. messages.OrderByDescending(m => m.SentAtUtc)], FollowUpDays);
-    }
-
     /// <summary>How many business days after it's sent an unanswered email is followed up, or null when the reminder is off.</summary>
     public int? FollowUpDays => reminders.CurrentValue.OutreachFollowUp is { Enabled: true } f ? ReminderOptions.FollowUpOptions.Clamp(f.Days) : null;
 

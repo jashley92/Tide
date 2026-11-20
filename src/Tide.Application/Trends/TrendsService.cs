@@ -202,34 +202,39 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
         var first = periods[0].Start;
         var last = end.End;
 
+        // The report's days as instants: from the start of its first local day to the start of the day after its last.
+        var (startUtc, endUtc) = (clock.StartOfDay(first), clock.StartOfDay(last.AddDays(1)));
+
         await using var db = await dbs.CreateAsync(ct);
 
-        // When each article counts: its first brief, else the day it was written (drafts never briefed don't count).
-        var firstBriefed = await ArticleDates.FirstBriefedAsync(db, ct);
-        var articles = await db.Articles.AsNoTracking()
-            .Select(a => new { a.Id, a.Status, a.CreatedAtUtc, a.Classification, a.Priority }).ToListAsync(ct);
+        // When each article counts: its first brief, else the day it was written (drafts never briefed don't count). Only
+        // the articles counted in the report's days are read, with their tags and techniques joined to the same query, so
+        // a long history costs no more than the report's own span and no list of ids goes back to the database.
+        var articleQuery = CountedIn(db, first, last, startUtc, endUtc);
+        var articles = await articleQuery.ToListAsync(ct);
         var countedOn = new Dictionary<Guid, DateOnly>();
         foreach (var a in articles)
         {
-            DateOnly day;
-            if (firstBriefed.TryGetValue(a.Id, out var briefed)) day = briefed;
-            else if (a.Status == ArticleStatus.Draft) continue;
-            else day = LocalDay(a.CreatedAtUtc);
+            var day = a.FirstBriefed ?? LocalDay(a.CreatedAtUtc);
             if (day >= first && day <= last) countedOn[a.Id] = day;
         }
         var counted = countedOn.Keys.ToList();
 
-        var tagLinks = await db.ArticleTags.AsNoTracking().Where(t => counted.Contains(t.ArticleId))
-            .Select(t => new { t.ArticleId, t.TagId }).ToListAsync(ct);
-        var techniqueLinks = await db.ArticleTechniques.AsNoTracking().Where(t => counted.Contains(t.ArticleId))
-            .Select(t => new { t.ArticleId, t.TechniqueId }).ToListAsync(ct);
+        var tagLinks = await db.ArticleTags.AsNoTracking().Join(articleQuery, t => t.ArticleId, a => a.Id, (t, _) => new { t.ArticleId, t.TagId })
+            .ToListAsync(ct);
+        var techniqueLinks = await db.ArticleTechniques.AsNoTracking().Join(articleQuery, t => t.ArticleId, a => a.Id, (t, _) => new { t.ArticleId, t.TechniqueId })
+            .ToListAsync(ct);
+        tagLinks.RemoveAll(t => !countedOn.ContainsKey(t.ArticleId));
+        techniqueLinks.RemoveAll(t => !countedOn.ContainsKey(t.ArticleId));
         var categories = (await db.ScorecardCategories.AsNoTracking().Include(c => c.Tags).ToListAsync(ct)).InOrder(c => c.SortOrder, c => c.Name).ToList();
 
-        // Each line's ids, split by period.
+        // Each line's ids, split by period: each counted article's period is found once, and a line's ids go through once.
+        var periodOf = countedOn.ToDictionary(x => x.Key, x => periods.FindIndex(p => p.Contains(x.Value)));
         IReadOnlyList<IReadOnlyList<Guid>> Split(IEnumerable<Guid> ids)
         {
-            var set = ids.Distinct().ToList();
-            return periods.Select(p => (IReadOnlyList<Guid>)set.Where(id => p.Contains(countedOn[id])).OrderBy(id => countedOn[id]).ToList()).ToList();
+            var split = periods.Select(_ => new List<Guid>()).ToList();
+            foreach (var id in ids.Distinct()) split[periodOf[id]].Add(id);
+            return split.Select(p => (IReadOnlyList<Guid>)p.OrderBy(id => countedOn[id]).ToList()).ToList();
         }
 
         var articleRows = new List<TrendRow>
@@ -277,11 +282,45 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
                 .Select(g => new TrendRow($"{TacticKey(tactic)}:{g.Key}", TechniqueName(g.Key, tactic), AttackMatrix.TacticName(tactic), Split(g.Select(x => x.ArticleId))))))
             .ToList();
 
-        var (actionRows, outcomes) = await ActionRowsAsync(db, periods, ct);
+        var (actionRows, outcomes) = await ActionRowsAsync(db, periods, startUtc, endUtc, ct);
         return new TrendReport(periods, rollUpSubtechniques, articleRows, tagRows, attackRows, tacticTechniqueRows, actionRows, countedOn) { Outcomes = outcomes };
     }
 
     private static string TacticKey(MitreTactic t) => "tactic:" + AttackMatrix.TacticId(t);
+
+    // Set by name, not by a constructor, so the query it ends can be joined to further.
+    private sealed class CountedArticle
+    {
+        public Guid Id { get; init; }
+        public DateTimeOffset CreatedAtUtc { get; init; }
+        public Classification Classification { get; init; }
+        public Priority? Priority { get; init; }
+        public DateOnly? FirstBriefed { get; init; }
+    }
+
+    /// <summary>
+    /// The articles a report from <paramref name="first"/> to <paramref name="last"/> counts (ADR 0013): those first
+    /// briefed in those days, and those never briefed, not drafts, written in them (<paramref name="start"/> up to
+    /// <paramref name="end"/>). Only the articles on a brief in those days can have been first briefed in them, so the
+    /// first brief (the earliest of all an article's briefs, grouped) is worked out for those alone, found from the briefs'
+    /// dates; the rest are found from the day they were written. Both by index, so a long history isn't read.
+    /// </summary>
+    private static IQueryable<CountedArticle> CountedIn(IAppDbContext db, DateOnly first, DateOnly last, DateTimeOffset start, DateTimeOffset end)
+    {
+        var onABrief = db.Briefs.Where(b => b.BriefDate >= first && b.BriefDate <= last)
+            .Join(db.BriefItems, b => b.Id, i => i.BriefId, (b, i) => i.ArticleId);
+        var firstBriefs = db.BriefItems.Where(i => onABrief.Contains(i.ArticleId))
+            .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate })
+            .GroupBy(x => x.ArticleId).Select(g => new { ArticleId = g.Key, Day = g.Min(x => x.BriefDate) })
+            .Where(f => f.Day >= first);
+        var briefed = db.Articles.AsNoTracking().Join(firstBriefs, a => a.Id, f => f.ArticleId, (a, f) => new CountedArticle
+            { Id = a.Id, CreatedAtUtc = a.CreatedAtUtc, Classification = a.Classification, Priority = a.Priority, FirstBriefed = f.Day });
+        var written = db.Articles.AsNoTracking()
+            .Where(a => a.CreatedAtUtc >= start && a.CreatedAtUtc < end && a.Status != ArticleStatus.Draft && !db.BriefItems.Any(i => i.ArticleId == a.Id))
+            .Select(a => new CountedArticle
+                { Id = a.Id, CreatedAtUtc = a.CreatedAtUtc, Classification = a.Classification, Priority = a.Priority, FirstBriefed = null });
+        return briefed.Concat(written);
+    }
 
     private static IEnumerable<TrendRow> MostCounted(IEnumerable<TrendRow> rows) =>
         rows.OrderByDescending(r => r.Current).ThenByDescending(r => r.Ids.Sum(p => p.Count)).ThenBy(r => r.Key, StringComparer.Ordinal);
@@ -290,11 +329,19 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
     /// The work generated: actions raised (by kind and team), closed (done on time or late, by outcome; or cancelled),
     /// hunted (a hunt result recorded), and open or overdue when each period ended.
     /// </summary>
-    private async Task<(List<TrendRow> Rows, List<TrendOutcome> Outcomes)> ActionRowsAsync(IAppDbContext db, IReadOnlyList<Period> periods, CancellationToken ct)
+    private async Task<(List<TrendRow> Rows, List<TrendOutcome> Outcomes)> ActionRowsAsync(IAppDbContext db, IReadOnlyList<Period> periods,
+        DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
     {
+        // Only the actions a line can count: raised in the report's days, closed in them, or open at some point in them
+        // (raised by its last day and not closed before its first). Raised is the day it was raised for, else the local
+        // day it was recorded, so start and end are that day's bounds.
+        var (first, last) = (periods[0].Start, periods[^1].End);
         var actions = await db.Actions.AsNoTracking()
+            .Where(a => ((a.RaisedOn != null ? a.RaisedOn <= last : a.CreatedAtUtc < end)
+                    && (a.ClosedDate == null || a.ClosedDate >= first || (a.RaisedOn != null ? a.RaisedOn >= first : a.CreatedAtUtc >= start)))
+                || (a.ClosedDate >= first && a.ClosedDate <= last))
             .Select(a => new { a.Id, a.CreatedAtUtc, a.RaisedOn, a.ClosedDate, a.DueDate, a.Kind, a.TeamId, a.Status, a.Outcome, a.Priority }).ToListAsync(ct);
-        var hunts = await db.HuntQueries.AsNoTracking().Where(h => h.Result != HuntResult.NotRun && h.RunAtUtc != null)
+        var hunts = await db.HuntQueries.AsNoTracking().Where(h => h.Result != HuntResult.NotRun && h.RunAtUtc >= start && h.RunAtUtc < end)
             .Select(h => new { h.ActionId, h.RunAtUtc, h.Result }).ToListAsync(ct);
         var teams = (await db.Teams.AsNoTracking().ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name).ToList();
         // An action raised for a past day's brief counts on that day, like the brief's articles (ADR 0013).

@@ -174,7 +174,18 @@ It does two things:
 It runs in one of two modes:
 
 - **AppMigrates** (the default) makes the account `db_owner`, and the app applies its schema at startup.
-- **DbaApplies** grants only read, write and EXECUTE, and a DBA applies the schema.
+- **DbaApplies** grants only read, write and EXECUTE, and a DBA applies the schema: the bundle's
+  `deploy\sql\tide-schema-sqlserver.sql`, every migration of the release in one idempotent script. Add `-ApplySchema`
+  to run it now, as the sysadmin running the script:
+
+  ```powershell
+  .\deploy\Install-Database.ps1 -ConfigFile .\deploy\tide.config.psd1 -SchemaMode DbaApplies -ApplySchema
+  ```
+
+  Or the DBA runs it later with `sqlcmd`, with the switches in
+  [deploy/README.md](../deploy/README.md#the-dba-schema-script). Either way, apply it before the app's first start: with
+  DbaApplies the app never migrates, and refuses to start while a migration is pending. Each new release's bundle
+  carries its own; apply that before upgrading ([UPGRADE.md](UPGRADE.md#upgrading-with-upgrade-tideps1)).
 
 ### The SQL Server certificate
 

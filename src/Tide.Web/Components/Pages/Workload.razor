@@ -45,9 +45,10 @@ else
                 <div class="tide-load-nums">
                     <div><a href="@($"actions?view=open&team={t.Team.Id}")" aria-label="@t.Open open for @t.Team.Name"><strong class="@Tick(t, "open")">@t.Open</strong></a><span>Open</span></div>
                     <div class="@(t.Overdue > 0 ? "bad" : "")"><a href="@($"actions?view=overdue&team={t.Team.Id}")" aria-label="@t.Overdue overdue for @t.Team.Name"><strong class="@Tick(t, "overdue")">@t.Overdue</strong></a><span>Overdue</span></div>
-                    <div><strong class="@Tick(t, "soon")">@t.DueSoon</strong><span>Due soon</span></div>
-                    <div><strong class="@Tick(t, "blocked")">@t.Blocked</strong><span>Blocked</span></div>
-                    <div class="@(t.P1 > 0 ? "bad" : "")"><strong class="@Tick(t, "p1")">@t.P1</strong><span>P1</span></div>
+                    @* Each count opens the Actions list filtered to what it counts. *@
+                    <div><a href="@($"actions?view=open&team={t.Team.Id}&due=soon")" aria-label="@t.DueSoon due soon for @t.Team.Name"><strong class="@Tick(t, "soon")">@t.DueSoon</strong></a><span>Due soon</span></div>
+                    <div><a href="@($"actions?view=open&team={t.Team.Id}&status=blocked")" aria-label="@t.Blocked blocked for @t.Team.Name"><strong class="@Tick(t, "blocked")">@t.Blocked</strong></a><span>Blocked</span></div>
+                    <div class="@(t.P1 > 0 ? "bad" : "")"><a href="@($"actions?view=open&team={t.Team.Id}&priority=p1")" aria-label="@t.P1 P1 for @t.Team.Name"><strong class="@Tick(t, "p1")">@t.P1</strong></a><span>P1</span></div>
                 </div>
                 <div class="small tide-muted mb-2">Last 7 days: @t.ClosedLastWeek done, @t.MetLastWeek on time</div>
                 @if (t.ByAssignee.Count > 0)

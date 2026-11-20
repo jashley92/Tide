@@ -23,12 +23,12 @@
     <p class="tide-muted small">Anything marked above an edition's ceiling (article, bullet or screenshot) is left out of it. Company-wide: the SharePoint copy. Team: the security teams' copy and the meeting.</p>
     <div class="row g-3 align-items-end">
         <div class="col-md-4">
-            <label class="tide-field-label">Company-wide (public) edition</label>
-            <TlpSelect @bind-Value="_public" Label="Public edition ceiling" />
+            <label class="tide-field-label" for="ceiling-public">Company-wide (public) edition</label>
+            <TlpSelect @bind-Value="_public" Id="ceiling-public" DescribedBy="@CeilingError" Label="Public edition ceiling" />
         </div>
         <div class="col-md-4">
-            <label class="tide-field-label">Team edition</label>
-            <TlpSelect @bind-Value="_team" Label="Team edition ceiling" />
+            <label class="tide-field-label" for="ceiling-team">Team edition</label>
+            <TlpSelect @bind-Value="_team" Id="ceiling-team" DescribedBy="@CeilingError" Label="Team edition ceiling" />
         </div>
         <div class="col-md-4">
             <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveCeilings">Save ceilings</button>
@@ -36,7 +36,7 @@
     </div>
     @if (_public > _team)
     {
-        <div class="text-danger small mt-2">The company-wide edition can't carry more than the team edition.</div>
+        <div id="ceiling-error" class="text-danger small mt-2" role="alert">The company-wide edition can't carry more than the team edition.</div>
     }
 </div>
 
@@ -185,6 +185,9 @@
     private string? _group;
     private AppRole _role = AppRole.Analyst;
     private TlpLevel _public, _team;
+
+    // The message under the ceilings while they're the wrong way round, which each select names as its description.
+    private string? CeilingError => _public > _team ? "ceiling-error" : null;
     private string? _teamRecipients, _publicRecipients;
     private Tide.Application.Reviews.ReviewRule _reviewRule;
 

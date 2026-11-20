@@ -210,7 +210,7 @@ public class StackServiceTests : IDisposable
         inNew.Select(r => r.Item.Title).Should().BeEquivalentTo("fresh story", "stale GitLab runner fix", "new GitLab advisory");
         inNew.Take(2).Select(r => r.WeRun?.Name).Should().Equal("GitLab", "GitLab");
         inNew[^1].WeRun.Should().BeNull();
-        (await intake.OlderCountAsync()).Should().Be(1, "only the stale story aged; the GitLab one never does");
+        (await intake.TallyAsync()).Older.Should().Be(1, "only the stale story aged; the GitLab one never does");
     }
 
     // Puts an article on the brief of daysAgo days ago, carrying the CVEs given.

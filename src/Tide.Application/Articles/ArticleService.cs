@@ -89,7 +89,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         var total = await q.CountAsync(ct);
         // Titles ignoring case, as SQL Server's collation compares them and the other lists sort: SQLite's own order is
         // case-sensitive, which put every lower-case title after the last capital one. ToLower runs in the database (lower(),
-        // LOWER()), never in .NET, so no culture applies; EF doesn't translate ToLowerInvariant.
+        // LOWER()), never in .NET, so the server's culture doesn't apply (on SQLite, accents sort as NameOrder.Compare puts
+        // them); EF doesn't translate ToLowerInvariant.
 #pragma warning disable CA1304, CA1311
         IOrderedQueryable<Article> ordered = (sort, descending) switch
         {
@@ -526,8 +527,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         await using var db = await dbs.CreateAsync(ct);
         var a = await WithEverything(db.Articles).FirstOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw new KeyNotFoundException("That article no longer exists.");
-        if (status == ArticleStatus.Ready && ArticleChecks.For(a).FirstOrDefault(c => c.Blocking) is { } gap)
-            throw new InvalidOperationException("It isn't ready yet: " + gap.Message);
+        if (status == ArticleStatus.Ready && ArticleChecks.NotReady(ArticleChecks.For(a)) is { } notReady)
+            throw new InvalidOperationException(notReady);
         var was = a.EditVersion;
         a.Status = status;
         a.EditVersion = Guid.NewGuid();

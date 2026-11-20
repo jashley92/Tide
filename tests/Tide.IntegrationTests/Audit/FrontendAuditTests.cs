@@ -168,7 +168,7 @@ public partial class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
         app.Services.GetRequiredService<ChangeFeed>().Publish(ChangeFeed.Triage);
         (await r.HtmlOnce("audit-dismiss late")).Should().Contain("audit-dismiss late");
 
-        var dialog = (ConfirmDialog)GetField(r.Component, "_dismissAll")!;
+        var dialog = (ConfirmDialog)GetField(r.Component, "_dismissMany")!;
         // The confirm click, on the page's thread (as the button would, keeping the sign-in the question was asked with).
         await r.Renderer.Dispatcher.InvokeAsync(dialog.Confirm);
         for (var i = 0; i < 50 && StatusOf("shown") == FeedItemStatus.New; i++) await Task.Delay(100);

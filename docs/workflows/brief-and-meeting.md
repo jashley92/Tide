@@ -93,7 +93,7 @@ it when an analyst first opens it:
 |---|---|
 | `BriefDate` | The day. Refused on a weekend or holiday (`OrgClock.Days.DayOffReason`, ADR [0018](../decisions/0018-holidays-are-days-off-like-weekends.md)). |
 | `AnalystId`, `AnalystName` | Who the rotation names for that day (`IPresenterLookup`), else the analyst starting it. A past day's brief is presented by whoever starts it. |
-| `PresentedByName` | Set as the live meeting ends: whoever held its presenter's seat ("Pat", or "Pat and Sam" when it changed hands). The brief page and the editions say "Presented by" this, else `AnalystName` (presented without a live meeting). Back to ready clears it. |
+| `PresentedByName` | Whoever held the live meeting's presenter's seat ("Pat", or "Pat and Sam" when it changed hands): written as the meeting starts and each time it changes hands (`BriefService.RecordPresentersAsync`), so a meeting dropped once everyone left, or lost to a restart, and then ended from the brief page still names who ran it; and again as it ends, the final word. Not changed once the brief is sent. The brief page and the editions say "Presented by" this, else `AnalystName` (presented without a live meeting). Back to ready clears it. |
 | `TeamNote` | The latest earlier brief's note, so standing items roll forward. A note cleared on that brief stays cleared. |
 | `Status` | Draft. |
 
@@ -424,7 +424,7 @@ A `DbUpdateException` (a colleague editing, starting or sending the next brief a
 read again and redone, up to three attempts, so the meeting never ends with its carry lost.
 
 Then present mode ends the live meeting (`LiveMeetings.End`), everyone in it lands on the wrap-up, and `LeftAsync`
-records when each person left. The brief page keeps who attended and the notes, by article. It says who attended once
+records when each person left. A meeting everyone left without ending still gets its left times: see the edge cases below. The brief page keeps who attended and the notes, by article. It says who attended once
 the meeting has been held (`BriefService.MeetingHeld`), while it runs, or once the brief's day has gone (a meeting
 that ran and was never ended, as after a restart, still had who it had); never before, so people recorded at a meeting
 started ahead of its day and never ended (a version before 1.13 allowed that start) aren't shown as having attended
@@ -520,8 +520,8 @@ meeting time (`OrgClock.MeetingStart`), and the presenter can pick another time 
 | A brief for a weekend or holiday | `GetOrStartAsync` refuses it. |
 | Two presenters press Start the meeting | `LiveMeetings.Start` refuses the second, which joins. |
 | The presenter's laptop drops | Away at once; after 30 seconds another analyst can take over. |
-| Everyone leaves without ending | The meeting is dropped after 15 minutes; the brief stays as it was. |
-| The server restarts mid-meeting | The live meeting is lost; attendees and notes are in the database; start it again. |
+| Everyone leaves without ending | The meeting is dropped after 15 minutes; the brief stays as it was. Each attendee still marked there is given a left time, when the meeting last saw them (`AttendanceCloser`, as the system); one it has no time for stays open. |
+| The server restarts mid-meeting | The live meeting is lost; attendees and notes are in the database; start it again. Attendees still marked there stay open (when they left went with the meeting) until they rejoin or a later End records it. |
 | Ending while a colleague edits the next brief | One save; retried up to three times. |
 | Carrying to a next brief that's already sent | Refused before anything changes. |
 | Ending from present mode just after Back to ready on the brief page | Present mode re-reads the brief and asks again. |

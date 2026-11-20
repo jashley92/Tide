@@ -15,7 +15,9 @@
    Autosave: a pause of AutosavePause in typing saves the form for someone who can edit (ArticleService.AutosaveAsync,
    the one save path), and the bar says "Saving…", then "Saved at 10:12", or why it didn't: a marking changed or
    something now reaches everyone, the article is on a sent brief (each waits for Save), or a colleague saved meanwhile
-   (autosave stops; what was typed stays in the form). *@
+   (autosave stops; what was typed stays in the form). It waits while Discard's question or the leave question is open,
+   so what the answer drops isn't saved first, and it tries again after another pause when an upload or another save
+   held it up. *@
 @inject ArticleService ArticleSvc
 @inject ScreenshotService Shots
 @inject BriefService Briefs
@@ -30,6 +32,7 @@
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject PrerenderHandoff Handoff
+@inject TimeProvider Time
 @implements IDisposable
 
 <PageTitle>@(_form?.Title ?? "Article") · TIDE</PageTitle>
@@ -44,7 +47,7 @@ else if (_form is null || _article is null)
 }
 else
 {
-    <UnsavedGuard @ref="_guard" Dirty="_dirty" Message="You've changed this article since it was last saved." Save="Save" Discard="DiscardChanges" />
+    <UnsavedGuard @ref="_guard" Dirty="_dirty" Message="You've changed this article since it was last saved." Save="Save" Discard="DiscardChanges" Asking="HoldAutosaveWhile" />
     <ChangedElsewhere By="@_changedBy" What="article" OnReload="ReloadTheirs" />
 
     <div class="tide-page-head">
@@ -127,7 +130,7 @@ else
                         </div>
                     }
                     <div>
-                        <label class="tide-field-label">Article TLP</label>
+                        <label class="tide-field-label" for="f-tlp">Article TLP</label>
                         <TlpSelect Id="f-tlp" Value="_form.Tlp" ValueChanged="SetTlp" Label="The article's TLP" Disabled="@(!_canWrite)" />
                     </div>
                 </div>
@@ -344,7 +347,7 @@ else
                 @if (_form.Indicators.Count > 0)
                 {
                     <table class="tide-table tide-ind-table mb-2">
-                        <thead><tr><th class="tide-col-md">Type</th><th>Value (shown defanged)</th><th class="tide-col-third">Note</th><th></th></tr></thead>
+                        <thead><tr><th class="tide-col-md">Type</th><th>Value (shown defanged)</th><th class="tide-col-third">Note</th><th class="position-relative"><span class="visually-hidden">Remove</span></th></tr></thead>
                         <tbody>
                             @foreach (var ind in _form.Indicators.ToList())
                             {
@@ -453,7 +456,15 @@ else
                     <button type="button" class="btn btn-primary" data-guide="save" disabled="@(_busy || !_dirty)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
                     @if (_article.Status == ArticleStatus.Draft)
                     {
-                        <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@_busy" @onclick="MarkReady">Save and mark ready</button>
+                        @* A blocking check failing on what's on screen: the button is disabled and says why beside it (as
+                           Start the meeting does), rather than saving and then being refused. *@
+                        var notReady = ArticleChecks.NotReady(checks);
+                        <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@(_busy || notReady is not null)"
+                                aria-describedby="@(notReady is null ? null : _notReadyId)" @onclick="MarkReady">Save and mark ready</button>
+                        @if (notReady is not null)
+                        {
+                            <span id="@_notReadyId" class="small tide-muted">@notReady</span>
+                        }
                     }
                     else if (_article.Status == ArticleStatus.Ready)
                     {
@@ -623,6 +634,9 @@ else
 
     /// <summary>The unsaved-changes question, for a test to answer as a click would.</summary>
     internal LeaveDialog Leave => _guard.Leave;
+
+    /// <summary>The confirmation (Discard's, for one), for a test to answer as a click would.</summary>
+    internal ConfirmDialog Confirm => _confirm;
     private readonly Dictionary<ArticlePart, ElementReference> _heads = [];
     private Guid? _loadedId;
 
@@ -713,6 +727,7 @@ else
     protected override void OnInitialized()
     {
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
+        _autosavePause = new((int)AutosavePause.TotalMilliseconds, Time);
         if (StartPane == PreviewPane) _pane = PreviewPane;
     }
 
@@ -741,7 +756,7 @@ else
     public void Dispose()
     {
         _live?.Dispose();
-        _autosavePause.Now();   // a pause still running saves nothing once the editor has gone
+        _autosavePause?.Now();   // a pause still running saves nothing once the editor has gone
         _disposed = true;
     }
 
@@ -750,6 +765,9 @@ else
     {
         if (_loadedId == Id) return;
         _loadedId = Id;
+        // A question still open about the article before (Discard's, Delete's, a screenshot's) is answered Cancel: it was
+        // about that one, and Discard's would otherwise hold this one's autosave until it was answered.
+        _confirm?.Cancel();
         _topic = ChangeFeed.Article(Id);
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
@@ -852,8 +870,8 @@ else
 
     // Autosave: the pause (each edit starts it again; Save and leaving supersede it), what the bar says about it while
     // something is unsaved ("Saving…", or why it held off), and when it last saved. A colleague's save heard, or refused
-    // as stale, stops it (_changedBy) until the article is reloaded.
-    private readonly TypingPause _autosavePause = new((int)AutosavePause.TotalMilliseconds);
+    // as stale, stops it (_changedBy) until the article is reloaded. The pause runs on the app's clock (a test moves its own on).
+    private TypingPause _autosavePause = null!;
     private string? _autosaveNote;
     private DateTimeOffset? _autosavedAt;
     private bool _disposed;
@@ -869,8 +887,30 @@ else
 
     private void ScheduleAutosave()
     {
-        if (!_canWrite || _changedBy is not null) return;
+        if (!_canWrite || _changedBy is not null || _held > 0) return;
         _ = AutosaveAfterPause();
+    }
+
+    // How many questions about the unsaved changes are open (Discard's, the leave question's: one can open over the
+    // other). While any is, autosave waits: saving what the answer is about to drop would leave it saved after Discard.
+    private int _held;
+
+    private void HoldAutosave()
+    {
+        _held++;
+        _autosavePause.Now();   // the pause already running saves nothing
+    }
+
+    // Answered: Stay or Cancel keeps the edits, so a pause starts again; Discard has left nothing unsaved by now.
+    private void ReleaseAutosave()
+    {
+        if (--_held == 0 && _dirty) ScheduleAutosave();
+    }
+
+    private void HoldAutosaveWhile(bool asking)
+    {
+        if (asking) HoldAutosave();
+        else ReleaseAutosave();
     }
 
     private async Task AutosaveAfterPause()
@@ -892,7 +932,14 @@ else
 
     private async Task AutosaveAsync()
     {
-        if (_form is null || !_canWrite || !_dirty || _busy || _uploading || _changedBy is not null) return;
+        if (_form is null || !_canWrite || !_dirty || _held > 0 || _changedBy is not null) return;
+        // An upload or another save under way: what was typed meanwhile is tried again after another pause, rather than
+        // left unsaved until the next keystroke. One try a pause, so a long upload doesn't spin.
+        if (_busy || _uploading)
+        {
+            ScheduleAutosave();
+            return;
+        }
         _busy = true;
         var edits = _edits;
         _autosaveNote = "Saving…";
@@ -925,13 +972,21 @@ else
         if (saved && _dirty) ScheduleAutosave();
     }
 
-    // Unsaved changes dropped on purpose, after asking: the saved article is read again.
-    private async Task Discard()
+    // Unsaved changes dropped on purpose, after asking: the saved article is read again. Autosave waits until it's
+    // answered, so a slow answer doesn't save what it then drops. Asked about one article, it never reloads another
+    // (moving on cancels it, as Delete's is).
+    internal async Task Discard()
     {
-        if (!await _confirm.Ask("Discard your changes?", "Everything you've changed since the last save is dropped, and the saved article is loaded again. Screenshots you added stay: they're saved as they're added.", "Discard changes")) return;
-        await Reload();
-        Toasts.Show("Changes discarded.");
-        _focusSaved = true;   // the Discard button that asked has gone: focus lands on "All changes saved" instead
+        var id = Id;
+        HoldAutosave();
+        try
+        {
+            if (!await _confirm.Ask("Discard your changes?", "What isn't saved yet is dropped, and the article is loaded again as it was last saved. What was already saved, automatically or with Save, stays, and so do screenshots you added.", "Discard changes") || id != Id) return;
+            await Reload();
+            Toasts.Show("Changes discarded.");
+            _focusSaved = true;   // the Discard button that asked has gone: focus lands on "All changes saved" instead
+        }
+        finally { ReleaseAutosave(); }
     }
 
     private ElementReference _savedNote, _onBriefNote;
@@ -1000,7 +1055,7 @@ else
     private Task SetTlp(TlpLevel t)
     {
         var raised = _form!.SetTlp(t);
-        if (raised > 0) Toasts.Show($"Raised {raised} part{(raised == 1 ? "" : "s")} to {Tlp.Label(t)} to match the article.");
+        if (raised > 0) Toasts.Show($"Raised {Ui.Plural(raised, "part")} to {Tlp.Label(t)} to match the article.");
         return Touch();
     }
 
@@ -1133,14 +1188,14 @@ else
         return Touch();
     }
 
-    private async Task OnFiles(InputFileChangeEventArgs e)
+    internal async Task OnFiles(InputFileChangeEventArgs e)
     {
         _uploading = true;
         try
         {
             var room = Article.MaxScreenshots - _form!.Screenshots.Count;
             var files = e.GetMultipleFiles(Article.MaxScreenshots);
-            if (files.Count > room) throw new ArgumentException($"Only {room} more screenshot{(room == 1 ? "" : "s")} fit on this article.");
+            if (files.Count > room) throw new ArgumentException($"Only {Ui.Plural(room, "more screenshot")} fit on this article.");
             var uploads = new List<ScreenshotUpload>();
             foreach (var f in files)
             {
@@ -1261,8 +1316,16 @@ else
         finally { _busy = false; }
     }
 
-    private async Task MarkReady()
+    private readonly string _notReadyId = Ui.NewId("not-ready");
+
+    internal async Task MarkReady()
     {
+        // Checked on what's on screen before saving, so a refusal isn't "Saved." followed by "It isn't ready yet".
+        if (ArticleChecks.NotReady(Checks().Checks) is { } notReady)
+        {
+            Toasts.Error(notReady);
+            return;
+        }
         if (_dirty && !await Save()) return;
         await SetStatus(ArticleStatus.Ready, "Marked ready for a brief.");
     }
@@ -1345,6 +1408,9 @@ else
 
     /// <summary>Whether a save or an answer is under way (for the tests).</summary>
     internal bool Busy => _busy;
+
+    /// <summary>Whether screenshots are uploading (for the tests).</summary>
+    internal bool Uploading => _uploading;
 
     /// <summary>
     /// Whether to let a navigation go ahead (UnsavedGuard): at once when nothing is unsaved; otherwise as the person
