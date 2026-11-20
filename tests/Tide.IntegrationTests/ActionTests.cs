@@ -1026,6 +1026,45 @@ public class ReminderTests : IDisposable
     }
 
     [Fact]
+    public async Task Digest_ForTwoTeams_ListsEachTeamsOwnActions()
+    {
+        var defense = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
+        var vuln = await _db.Teams().AddAsync("Vulnerability Management", null, "vuln@example.org");
+        var today = _db.Clock.Today;
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Defense later", TeamId = defense, DueDate = today.AddDays(9) });
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Defense late", TeamId = defense, DueDate = today.AddDays(-2) });
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Vuln one", TeamId = vuln, DueDate = today.AddDays(3) });
+
+        (await _db.Reminders().RunAsync(ReminderKind.Digest)).Should().Be(2);
+
+        var forDefense = _db.Email.Sent.Single(m => m.To.Contains("defense@example.org")).Html;
+        forDefense.Should().Contain("Defense late").And.Contain("Defense later").And.NotContain("Vuln one").And.Contain("1</strong> overdue");
+        forDefense.IndexOf("Defense late", StringComparison.Ordinal).Should().BeLessThan(forDefense.IndexOf("Defense later", StringComparison.Ordinal), "open actions are listed soonest due first");
+        _db.Email.Sent.Single(m => m.To.Contains("vuln@example.org")).Html.Should().Contain("Vuln one").And.NotContain("Defense late");
+        (await _db.Reminders().RunAsync(ReminderKind.Digest)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Overdue_AlreadySent_IsntSentAgain_UntilItsDueDateMoves()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
+        var today = _db.Clock.Today;
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Patch it", TeamId = team, DueDate = today.AddDays(-3) });
+
+        (await _db.Reminders().RunAsync(ReminderKind.Overdue)).Should().Be(1);
+        (await _db.Reminders().RunAsync(ReminderKind.Overdue)).Should().Be(0, "it was marked");
+
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Patch that", TeamId = team, DueDate = today.AddDays(-1) });
+        (await _db.Reminders().RunAsync(ReminderKind.Overdue)).Should().Be(1);
+        _db.Email.Sent.Last().Html.Should().Contain("Patch that").And.NotContain("Patch it");
+
+        await using (var ctx = _db.Context())
+            await ctx.Actions.Where(a => a.Title == "Patch it").ExecuteUpdateAsync(s => s.SetProperty(a => a.DueDate, today.AddDays(-2)));
+        (await _db.Reminders().RunAsync(ReminderKind.Overdue)).Should().Be(1, "a new due date earns a new reminder");
+        _db.Email.Sent.Last().Html.Should().Contain("Patch it").And.NotContain("Patch that");
+    }
+
+    [Fact]
     public async Task TheLastSevenDays_AreTodayAndTheSixBefore_InWorkloadAndTheDigest()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
