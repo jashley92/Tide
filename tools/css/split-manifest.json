@@ -1,0 +1,20 @@
+{
+  "note": "Written by split-app-css.mjs. StylesheetSplitTests checks that wwwroot/css/*.css, joined in this order, is the app.css this hash is of (line endings as LF).",
+  "source": "src/Tide.Web/wwwroot/app.css",
+  "sourceBytesLf": 314421,
+  "sourceSha256Lf": "f79c70869704a0df64b6478b3a875af0ce86a0a01b422c172450c65eea794d35",
+  "parts": [
+    "00-tokens.css",
+    "10-shell.css",
+    "20-editor.css",
+    "25-feedback.css",
+    "30-present.css",
+    "31-metrics.css",
+    "32-distribution.css",
+    "40-actions.css",
+    "41-intake.css",
+    "50-today.css",
+    "60-rail-and-pages.css",
+    "90-option-e.css"
+  ]
+}
