@@ -278,8 +278,10 @@ Each post carries `X-Tide-Event`, `X-Tide-Event-Id`, `X-Tide-Timestamp` and `X-T
 "timestamp.body" with the hook's secret>`. The secret is shown once and stored encrypted with the Data Protection key
 ring, so restoring without `dp-keys` means re-adding each webhook.
 
-**Failure behaviour.** `WebhookHostedService` runs every minute. It posts events at least 30 seconds old, oldest first,
-at most 100 per hook per run, and overdue actions once a day. A hook stops at its first failure and tries again next
+**Failure behaviour.** `WebhookHostedService` runs every minute while a webhook is on (Diagnostics shows the job Off
+otherwise, and Standing by on a server that doesn't hold the job lease). It posts events at least 30 seconds old,
+oldest first, at most 100 per hook per run (a few more only to finish events stamped at the same moment), and overdue
+actions once a day. A hook stops at its first failure and tries again next
 run; the page shows each hook's last status and error. **Ping** sends a test now.
 
 ## The REST API

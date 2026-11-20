@@ -479,7 +479,7 @@
     /// <summary>"3 people opted out" or "5 people get a personal digest".</summary>
     internal static string CountText(string pref, int n)
     {
-        var people = n == 1 ? "1 person" : $"{n} people";
+        var people = Ui.Plural(n, "person", "people");
         return pref == UserPreferences.NotifyDigest
             ? n == 0 ? "No one gets a personal digest" : $"{people} get{(n == 1 ? "s" : "")} a personal digest"
             : n == 0 ? "No one opted out" : $"{people} opted out";
@@ -714,7 +714,7 @@
         try
         {
             var sent = await Reminders.RunNowAsync(kind);
-            Toasts.Show($"{KindText(kind)}: {sent} email{(sent == 1 ? "" : "s")} sent.");
+            Toasts.Show($"{KindText(kind)}: {Ui.Plural(sent, "email")} sent.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -737,7 +737,7 @@
         {
             var handed = await TeamSvc.RemoveMemberAsync(teamId, userId);
             await Load();
-            Toasts.Show(handed == 0 ? $"{name} is off {team}." : $"{name} is off {team}; {handed} open action{(handed == 1 ? "" : "s")} went back to the team.");
+            Toasts.Show(handed == 0 ? $"{name} is off {team}." : $"{name} is off {team}; {Ui.Plural(handed, "open action")} went back to the team.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }

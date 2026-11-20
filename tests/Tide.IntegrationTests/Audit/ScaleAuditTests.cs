@@ -72,7 +72,7 @@ public class ScaleAuditTests(ITestOutputHelper output) : IDisposable
         await Time("Articles.ListAsync(200)", async () => $"{(await _db.Articles().ListAsync()).Count} rows");
 
         // Search
-        await Time("Search(\"ransomware vendor\")", async () => $"{(await _db.Search().SearchAsync("ransomware vendor")).Articles.Total} articles");
+        await Time("Search(\"ransomware vendor\")", async () => (await _db.Search().SearchAsync("ransomware vendor")).Articles is var hits && hits.AtLeast ? $"{hits.Total}+ articles" : $"{hits.Total} articles");
         await Time("Search(indicator)", async () => $"{(await _db.Search().SearchAsync("10.0.7.9")).Indicator?.Sightings.Total} sightings");
         await Time("Search(CVE)", async () => $"{(await _db.Search().SearchAsync("CVE-2025-0042")).Cve?.Articles} articles");
 

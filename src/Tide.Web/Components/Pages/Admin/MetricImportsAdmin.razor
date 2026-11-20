@@ -91,7 +91,7 @@
                             else if (i.Problems is { Length: > 0 })
                             {
                                 <details class="small">
-                                    <summary>Why @i.Skipped row@(i.Skipped == 1 ? " was" : "s were") skipped</summary>
+                                    <summary>Why @Ui.Plural(i.Skipped, "row was", "rows were") skipped</summary>
                                     <ul class="mb-0 ps-3">
                                         @foreach (var line in i.Problems.Split('\n'))
                                         {
