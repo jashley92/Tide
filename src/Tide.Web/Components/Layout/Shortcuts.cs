@@ -110,15 +110,15 @@ public static class Shortcuts
 
     private static readonly ShortcutGroup Present = new("Present mode",
     [
-        new(["→", "Enter"], "Next slide"),
-        new(["←", "Backspace"], "Previous slide"),
-        new(["Space", "Page Down"], "Scroll a long slide down; at its end, the next slide"),
-        new(["Shift Space", "Page Up"], "Scroll a long slide up; at its top, the previous slide"),
-        new(["Home", "End"], "First and last slide"),
+        new(["→", "Enter"], "Next slide; not while a card is open over the slide"),
+        new(["←", "Backspace"], "Previous slide; not while a card is open over the slide"),
+        new(["Space", "Page Down"], "Scroll a long slide down; at its end, the next slide. A card open over the slide scrolls instead, and stops at its end"),
+        new(["Shift Space", "Page Up"], "Scroll a long slide up; at its top, the previous slide. A card open over the slide scrolls instead, and stops at its top"),
+        new(["Home", "End"], "First and last slide; not while a card is open over the slide"),
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
         new(["]"], "Presenting: show or hide the presenter's controls", Letter: true),
-        new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
+        new(["Esc"], "Leave full screen, then close a zoomed screenshot or the card open over the slide"),
     ]);
 
     private static readonly ShortcutGroup Stack = new("Our stack",
