@@ -491,7 +491,9 @@ public class IntakeHostedServiceSettingsTests
     [Fact]
     public async Task ASlowCveRefresh_DoesntHoldUpThePasses()
     {
-        using var rig = new SettingsRig(new() { ["Intake:Enabled"] = "false", ["Cve:Enabled"] = "true" });
+        // A connection per context, as the app has: the refresh reads the database on its own thread while the pass prunes,
+        // and one shared SQLite connection used from both at once fails either of them at random.
+        using var rig = new SettingsRig(new() { ["Intake:Enabled"] = "false", ["Cve:Enabled"] = "true" }, connectionPerContext: true);
         var o = rig.Now<CveOptions>();
         var slow = new TaskCompletionSource();
         rig.Db.Http.Holds[o.KevUrl] = slow.Task;
