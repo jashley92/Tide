@@ -87,6 +87,12 @@ A saved row that no longer passes its check (a hand-edited database, a rule tigh
 by `SavedSettings.RefreshAsync`, so the server's value holds. Two administrators saving at once can't undo each other:
 refreshes run one at a time.
 
+Nor can two administrators with the same page open. Each settings form sends what it showed when it loaded along with
+what it saves, and only the settings changed on that page are written (and audited); a save that changes nothing
+writes nothing. If someone else has saved a setting this page changed since it loaded (to a different value than this
+page sends), the save is refused whole, asking the administrator to reload, rather than putting the other change back.
+The check and the write run in one serializable transaction, so two saves at the same moment can't both pass it.
+
 **The other in-app settings** are read from the `Settings` table each time they're used, with the server's value as
 the fallback: the edition ceilings and recipient lists (`DistributionSettings`), the SLA targets (`SlaSettings`), the
 update check's on/off (`UpdateSettings`) and the rotation's manager emails (`RotationService.ManagerEmailsAsync`).
