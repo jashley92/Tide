@@ -1,0 +1,58 @@
+@inject OrgClock Clock
+
+@* For whoever writes the brief: the drafts still being written (the page picks them, from the same candidates as Add
+   article: the last two weeks' drafts not on today's brief), so a colleague's half-written article is seen before the
+   meeting. Yours first (a draft handed to you says so, with the note it came with), then the team's, each by when it
+   was last edited, with who is writing it now (ADR 0031). *@
+
+<section class="tide-card" aria-labelledby="drafts-h">
+    <h2 id="drafts-h">Drafts in progress <span class="tide-count">(@Drafts.Count)</span></h2>
+    @if (Drafts.Count == 0)
+    {
+        <p class="small tide-muted mb-0">No drafts in progress.</p>
+    }
+    <ul class="list-unstyled mb-0">
+        @foreach (var c in Drafts.Take(Shown))
+        {
+            var mine = c.WriterId == Me;
+            <li class="mb-2" @key="c.Id">
+                <a href="articles/@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
+                <div class="tide-run-meta">
+                    <ClassBadge Classification="c.Classification" Priority="c.Priority" />
+                    <TlpBadge Level="c.Tlp" />
+                    @if (mine && HandedToMe(c))
+                    {
+                        <Badge Tone="BadgeTone.Info">Handed to you</Badge>
+                    }
+                    <span>@(mine ? "You're writing it" : c.WriterName) &middot; edited @Ui.When(Clock, c.EditedAtUtc ?? c.CreatedAtUtc)</span>
+                </div>
+                @if (mine && HandedToMe(c) && c.HandoffNote is { } note)
+                {
+                    <div class="small tide-muted">“@note”</div>
+                }
+            </li>
+        }
+    </ul>
+    @if (Drafts.Count > Shown)
+    {
+        <a class="small" href="articles?status=draft">All @Drafts.Count drafts</a>
+    }
+</section>
+
+@code {
+    private const int Shown = 6;
+
+    /// <summary>The drafts in progress, in the order to list them (<see cref="Order"/>).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<BriefCandidate> Drafts { get; set; } = default!;
+
+    /// <summary>The signed-in person's id: their drafts lead.</summary>
+    [Parameter, EditorRequired] public string Me { get; set; } = "";
+
+    /// <summary>The order the card lists drafts in: <paramref name="me"/>'s first, then the team's, each most recently
+    /// edited first.</summary>
+    public static IReadOnlyList<BriefCandidate> Order(IEnumerable<BriefCandidate> drafts, string me) =>
+        [.. drafts.OrderBy(c => c.WriterId == me ? 0 : 1).ThenByDescending(c => c.EditedAtUtc ?? c.CreatedAtUtc).ThenBy(c => c.Id)];
+
+    // Handed on, rather than started by the person writing it.
+    private static bool HandedToMe(BriefCandidate c) => c.WriterId != c.AuthorId;
+}
