@@ -37,7 +37,7 @@ public sealed record ScreenshotUpload(string FileName, byte[] Bytes, string? Dec
 
 /// <summary>Screenshots on articles: stored as files on disk, checked to be real raster images, shown inline.</summary>
 public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options,
-    Briefs.IMeetingsInProgress? meetings = null)
+    Briefs.IMeetingsInProgress? meetings = null, Settings.DistributionSettings? editions = null)
 {
     public long MaxBytes => options.Value.MaxImageBytes;
 
@@ -320,14 +320,18 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
 
     private async Task<bool> MaySeeAsync(IAppDbContext db, Guid fileId, CancellationToken ct)
     {
-        // A Visitor, from a seat in a live meeting: a screenshot on an article of that meeting's brief (MeetingAccess). Not
-        // an action's or a comment's file, nor another brief's. Then whatever a Reader may see.
+        // A Visitor, from a seat in a live meeting: a screenshot on an article of that meeting's brief (MeetingAccess), as
+        // the meeting's slides show it: only when both the article and the screenshot are within the team edition's ceiling,
+        // since the slides leave out anything above it. Not an action's or a comment's file, nor another brief's. Then
+        // whatever a Reader may see.
         if (Briefs.MeetingAccess.Seats(user, meetings) is { Count: > 0 } seats)
         {
             var briefs = seats.Select(x => x.BriefId).ToList();
+            var ceiling = await TeamCeilingAsync(ct);
             if (await (from s in db.ArticleScreenshots
                        join i in db.BriefItems on s.ArticleId equals i.ArticleId
-                       where s.FileId == fileId && briefs.Contains(i.BriefId)
+                       join a in db.Articles on s.ArticleId equals a.Id
+                       where s.FileId == fileId && briefs.Contains(i.BriefId) && a.Tlp <= ceiling && s.Tlp <= ceiling
                        select s.Id).AnyAsync(ct))
                 return true;
         }
@@ -347,6 +351,10 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         return await Distribution.DistributionService.Published(db)
             .AnyAsync(s => s.Images.Any(i => i.FileId == fileId), ct);
     }
+
+    // The team edition's ceiling, which a meeting's slides are cut at; the default when the settings aren't wired in.
+    private async Task<TlpLevel> TeamCeilingAsync(CancellationToken ct) =>
+        editions is not null ? (await editions.ReadAsync(ct)).Team : new Settings.DistributionOptions().TeamMaxTlp;
 
     internal async Task DeleteFilesAsync(IEnumerable<Guid> fileIds, CancellationToken ct)
     {

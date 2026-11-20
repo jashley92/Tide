@@ -497,7 +497,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// <summary>The meetings going on, as the services see them (a Visitor's reads go through only from a seat in one).</summary>
     public IMeetingsInProgress? Live { get; set; }
 
-    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live);
+    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live, Settings());
 
     public ArticleService Articles() => new(this, User, Screenshots(), Clock, Settings());
 

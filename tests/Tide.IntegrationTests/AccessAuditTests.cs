@@ -179,6 +179,37 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
         }
         finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
     }
+
+    [Fact]
+    public async Task TheApi_ZipsARiskyFileForAPerson_AsTheAppsOwnDownloadDoes_ButATokenGetsItAsItIs()
+    {
+        var (number, fileId) = await ActionWithFile("api-dropper.exe", Samples.FakeProgram);
+        var (calmNumber, calmId) = await ActionWithFile("api-person-calm.txt", Samples.Text("calm"));
+        var token = await As(async sp => (await sp.GetRequiredService<ApiTokenService>().IssueAsync("risky as is", [ApiScopes.ActionsRead], TlpLevel.Amber, 1)).Token);
+        var tokenClient = app.CreateClient();
+        tokenClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var person = app.CreateClient();
+        var url = $"/api/v1/actions/{number}/files/{fileId}";
+        await SetZip(Application.Files.ZipDownloads.RiskyOnly);
+
+        var zipped = await person.GetAsync(url);
+        zipped.StatusCode.Should().Be(HttpStatusCode.OK);
+        zipped.Content.Headers.ContentType!.MediaType.Should().Be("application/zip", "a person who follows a link gets the zip, as the app's own download would send");
+        (await person.GetAsync(url + "?zip=false")).Content.Headers.ContentType!.MediaType.Should().Be("application/zip", "?zip can't turn zip first off");
+        (await person.GetAsync($"/api/v1/actions/{calmNumber}/files/{calmId}")).Content.Headers.ContentType!.MediaType
+            .Should().Be("application/octet-stream", "a file that can't run isn't zipped first");
+
+        var plain = await tokenClient.GetAsync(url);
+        plain.Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "a token chooses, as before");
+        (await plain.Content.ReadAsByteArrayAsync()).Should().Equal(Samples.FakeProgram);
+
+        try
+        {
+            await SetZip(Application.Files.ZipDownloads.Never);
+            (await person.GetAsync(url)).Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "under Never every file is sent as it is");
+        }
+        finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
+    }
 }
 
 /// <summary>Reminders go only to people who still have access: roles (as last seen) that show what the email shows, and a
