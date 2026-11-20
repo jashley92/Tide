@@ -9,6 +9,7 @@ using Tide.Application.Articles;
 using Tide.Application.Intake;
 using Tide.Application.Security;
 using Tide.Application.Stack;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 

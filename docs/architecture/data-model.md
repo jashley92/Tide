@@ -751,6 +751,7 @@ Written by `ArticleService` (editor saves, status, delete). `ArticleForm` applie
 | `Title` | nvarchar(300) | no | |
 | `SourceName` | nvarchar(200) | yes | The source as the analyst names it ("FS-ISAC"). |
 | `SourceUrl` | nvarchar(2000) | yes | The citation, kept live. An indicator never goes here. |
+| `SourceUrlHash` | nvarchar(64) | yes | SHA-256 of `SourceUrl`'s canonical form (`UrlCanonicalizer`), lower-case hex; null when it has none. Set with `SourceUrl`. Indexed: triage's past coverage looks articles up by it. Rows saved before it was kept are filled by a background job after an upgrade (`UrlHashFill`); until it has finished (while the setting `Data:UrlHashesToFill` is there), coverage reads every recent address instead. |
 | `PublishedAtUtc` | datetimeoffset | yes | |
 | `Tlp` | int | no | The article's TLP. No part of the article counts lower than this. |
 | `Classification` | int | no | `Classification`: 0 Informational, 1 Threat. |
@@ -784,7 +785,7 @@ where noted, they're written by `ArticleService` and `ArticleForm`.
 | `ArticleTechniques` | `(ArticleId, TechniqueId)` | `TechniqueId` nvarchar(16) | An ATT&CK id ("T1566.001") from the embedded catalog, so there's no FK. Indexed. No tactic is stored; `MitreTactic` isn't persisted anywhere. |
 | `ArticleIndicators` | `Id` | `ArticleId` (indexed), `Type` int, `Value` nvarchar(2000), `Note` nvarchar(300) null | Stored in live, canonical form (`IocObservable.Normalize`) and shown defanged. `ActionService` adds to it when an indicator is added on an action raised from the article. |
 | `ArticleCves` | `(ArticleId, CveId)` | `CveId` nvarchar(24) | Indexed by `CveId`. `IntakeService` adds the item's CVEs on promote. |
-| `ArticleLinks` | `Id` | `ArticleId` (indexed), `Url` nvarchar(2000), `Title` nvarchar(500), `SourceName` nvarchar(200) null, `PublishedAtUtc` null, `AddedAtUtc`, `AddedByName` nvarchar(256) | Other reports of the same story, added from triage. Written by `ArticleService` and `IntakeService`. |
+| `ArticleLinks` | `Id` | `ArticleId` (indexed), `Url` nvarchar(2000), `Title` nvarchar(500), `SourceName` nvarchar(200) null, `PublishedAtUtc` null, `AddedAtUtc`, `AddedByName` nvarchar(256), `UrlHash` nvarchar(64) null (indexed) | Other reports of the same story, added from triage. Written by `ArticleService` and `IntakeService`. `UrlHash` is SHA-256 of `Url`'s canonical form, set with `Url`, as `Articles.SourceUrlHash` is. |
 | `ArticleProducts` | `(ArticleId, ProductId)` | | `ProductId` FK → `StackProducts`, **restrict**. "We run" tags. Written by `StackService`. |
 | `ArticleAdversaries` | `(ArticleId, AdversaryId)` | | `AdversaryId` FK → `Adversaries`, **restrict**. Written by `AdversaryService`, which also moves tags when profiles are merged. |
 
