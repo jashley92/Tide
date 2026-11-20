@@ -1,6 +1,7 @@
 # Deploy scripts
 
-Windows PowerShell 5.1, ASCII only. See [docs/INSTALL.md](../docs/INSTALL.md) for the walkthrough.
+Windows PowerShell 5.1, ASCII only. `Install-Tide.ps1`, `Upgrade-Tide.ps1` and `Verify-Install.ps1` work through the
+`IIS:` drive, which PowerShell 7 doesn't have, and refuse to run there before changing anything. See [docs/INSTALL.md](../docs/INSTALL.md) for the walkthrough.
 
 | Script | Does |
 |---|---|
