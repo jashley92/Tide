@@ -339,13 +339,19 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     // (shutdown, a database error, a later send failing) doesn't email the same people again next time.
     private static async Task MarkAsync(IAppDbContext db, string kind, IEnumerable<string> keys)
     {
+        if (AddMarks(db, kind, keys)) await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    // Adds marks to the next save, and says whether there were any.
+    private static bool AddMarks(IAppDbContext db, string kind, IEnumerable<string> keys)
+    {
         var added = false;
         foreach (var key in keys)
         {
             db.NotificationMarks.Add(new NotificationMark { Kind = kind, Key = key, SentAtUtc = DateTimeOffset.UtcNow });
             added = true;
         }
-        if (added) await db.SaveChangesAsync(CancellationToken.None);
+        return added;
     }
 
     private bool IsTime(ReminderKind kind)
