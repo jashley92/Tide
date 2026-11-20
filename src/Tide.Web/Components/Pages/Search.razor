@@ -34,6 +34,11 @@
 {
     <p class="tide-muted">Searching&hellip;</p>
 }
+else if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than an empty page. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the search results" /></div>
+}
 else if (_results is { Terms.Count: 0 } none && none.Query.Length > 0)
 {
     @* Only one-letter words (or quotes and spaces): nothing is searched for, which would otherwise show nothing at all. *@
@@ -167,7 +172,7 @@ else if (_results is { Terms.Count: > 0 } r)
                         @a.AuthorName &middot; @Ui.When(Clock, a.CreatedAtUtc)
                         @if (a.BriefDates.Count > 0)
                         {
-                            <span> &middot; On the brief for @foreach (var (d, i) in a.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : " ")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }</span>
+                            <span> &middot; On the brief for @foreach (var (d, i) in a.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : " ")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d, Clock.Today)</a> }</span>
                         }
                     </div>
                 </div>
@@ -190,7 +195,7 @@ else if (_results is { Terms.Count: > 0 } r)
                         <HuntBadge Result="a.Hunted" />
                     </div>
                     @if (a.Snippet is not null) { <div class="tide-hit-snippet"><Highlight Text="@a.Snippet" Forms="_forms" /></div> }
-                    <div class="small tide-muted">@a.TeamName &middot; <HolderText Label="@a.Holder("Unassigned")" Short="true" />@(a.DueDate is { } due ? $" · due {Ui.ShortDay(due)}" : "")</div>
+                    <div class="small tide-muted">@a.TeamName &middot; <HolderText Label="@a.Holder("Unassigned")" Short="true" />@(a.DueDate is { } due ? $" · due {Ui.ShortDay(due, Clock.Today)}" : "")</div>
                 </div>
             }
             <Pager Page="_pages.Actions" Pages="Pages(r.Actions)" Many="actions" Busy="_more" OnPage="p => More(_pages with { Actions = p })" />
@@ -225,7 +230,7 @@ else if (_results is { Terms.Count: > 0 } r)
     private string? _text, _query, _searched;
     private SearchResults? _results;
     private IReadOnlyList<string> _forms = [];
-    private bool _loading, _more, _withRelated, _withTravels, _canOpenActions, _taking;
+    private bool _loading, _failed, _more, _withRelated, _withTravels, _canOpenActions, _taking;
     // A lookup's articles are listed with the lookup, so the article hits leave them out.
     private static readonly SearchPages FirstPages = SearchPages.First with { LookupOnce = true };
     private SearchPages _pages = FirstPages;
@@ -243,9 +248,17 @@ else if (_results is { Terms.Count: > 0 } r)
     protected override async Task OnParametersSetAsync()
     {
         _canOpenActions = CurrentUser.Has(Permission.ReadActions);
-        if (Q == _searched && _results is not null) return;
+        // A render with the same words (the rail, a live change) keeps the results, or the failure; Search pressed again
+        // re-runs them (Go).
+        if (Q == _searched && (_results is not null || _failed)) return;
+        await Run();
+    }
+
+    private async Task Run()
+    {
         _searched = Q;
         _text = Q;
+        _failed = false;
         _query = null;
         (_withRelated, _withTravels) = (false, false);
         _takeable = new HashSet<Guid>();
@@ -273,7 +286,7 @@ else if (_results is { Terms.Count: > 0 } r)
         catch (Exception ex)
         {
             if (q != Q) return;
-            _results = null;
+            (_results, _failed) = (null, true);
             Toasts.Error(UserFacingError.For(ex));
         }
         finally { if (q == Q) _loading = false; }
@@ -295,10 +308,14 @@ else if (_results is { Terms.Count: > 0 } r)
         finally { _more = false; }
     }
 
-    private void Go()
+    // The same words again leave the address as it is, so no new parameters arrive: the search runs again here, for
+    // results changed since (an article just saved, a story just made).
+    internal async Task Go()
     {
         if (string.IsNullOrWhiteSpace(_text)) return;
-        Nav.NavigateTo("search?q=" + Uri.EscapeDataString(_text.Trim()));
+        var text = _text.Trim();
+        if (text == Q) await Run();
+        else Nav.NavigateTo("search?q=" + Uri.EscapeDataString(text));
     }
 
     // The query for the indicator looked up, built in memory: nothing is saved and no action's history hears of it.
@@ -399,9 +416,9 @@ else if (_results is { Terms.Count: > 0 } r)
             <span>@(s.Articles == 0 ? "Not on any article yet" : $"On {Words.Plural(s.Articles, "article")}")</span>
             @if (s.Articles > 0)
             {
-                <span> &middot; @if (s.LastBriefed is { } day) { <text>briefed <a href="@Ui.BriefUrl(day)">@Ui.ShortDay(day)</a></text> }
-                    else if (s.OnBrief == Clock.Today) { <text>on <a href="@Ui.BriefUrl(Clock.Today)">today's brief</a>, not presented yet</text> }
-                    else if (s.OnBrief is { } planned) { <text>on the brief for <a href="@Ui.BriefUrl(planned)">@Ui.ShortDay(planned)</a>, not presented yet</text> }
+                <span> &middot; @if (s.LastBriefed is { } day) { <text>briefed <a href="@Ui.BriefUrl(day)">@Ui.ShortDay(day, Clock.Today)</a></text> }
+                    else if (s.OnBrief == Clock.CurrentBriefDate) { <text>on <a href="@Ui.BriefUrl(Clock.CurrentBriefDate)">today's brief</a>, not presented yet</text> }
+                    else if (s.OnBrief is { } planned) { <text>on the brief for <a href="@Ui.BriefUrl(planned)">@Ui.ShortDay(planned, Clock.Today)</a>, not presented yet</text> }
                     else { <text>not on a brief yet</text> }</span>
             }
             <span> &middot; @ActionsSaid(s, moreActions)</span>
@@ -444,8 +461,9 @@ else if (_results is { Terms.Count: > 0 } r)
         }
     </div>;
 
-    private static RenderFragment BriefLinks(IEnumerable<LookupBrief> briefs) => @<text>
-        @foreach (var (b, i) in briefs.Select((b, i) => (b, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(b.Day)">@Ui.ShortDay(b.Day)</a> }
+    // A brief's day with its year when it isn't this year's: a lookup reaches back to articles briefed long ago.
+    private RenderFragment BriefLinks(IEnumerable<LookupBrief> briefs) => @<text>
+        @foreach (var (b, i) in briefs.Select((b, i) => (b, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(b.Day)">@Ui.ShortDay(b.Day, Clock.Today)</a> }
     </text>;
 
     // The articles a lookup found, a row each: the article with its badges, what matched (the column named

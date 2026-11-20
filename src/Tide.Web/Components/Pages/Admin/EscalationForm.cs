@@ -49,12 +49,17 @@ public sealed class EscalationForm
     public EscalationScope Scope { get; set; }
     public List<StepRow> Steps { get; private set; } = [];
 
-    public static EscalationForm From(EscalationOptions o) => new()
+    /// <summary>Why the saved steps don't read (a hand-edited server value), until the steps are edited here: the form
+    /// then shows none, and saving leaves the saved value as it is rather than writing an empty ladder over it.</summary>
+    public string? Unreadable { get; private set; }
+
+    public static EscalationForm From(EscalationOptions o)
     {
-        On = o.Enabled,
-        Scope = o.Scope,
-        Steps = [.. EscalationLadder.ParseOrNone(o.Steps).Select(StepRow.From)],
-    };
+        var form = new EscalationForm { On = o.Enabled, Scope = o.Scope };
+        try { form.Steps = [.. EscalationLadder.Parse(o.Steps).Select(StepRow.From)]; }
+        catch (ArgumentException ex) { form.Unreadable = ex.Message; }
+        return form;
+    }
 
     /// <summary>Whether another step may be added (<see cref="EscalationLadder.MaxSteps"/>).</summary>
     public bool CanAdd => Steps.Count < EscalationLadder.MaxSteps;
@@ -63,6 +68,7 @@ public sealed class EscalationForm
     public void Add()
     {
         if (!CanAdd) return;
+        Unreadable = null;
         var last = Steps.Count == 0 ? 0 : Steps.Max(s => s.Offset);
         Steps.Add(new StepRow { When = StepWhen.After, Days = Math.Clamp(last + 1, 1, EscalationLadder.MaxDays) });
     }
@@ -79,10 +85,14 @@ public sealed class EscalationForm
     }
 
     /// <summary>Back to the defaults (<see cref="EscalationLadder.Defaults"/>).</summary>
-    public void UseDefaults() => Steps = [.. EscalationLadder.Defaults.Select(StepRow.From)];
+    public void UseDefaults() => (Steps, Unreadable) = ([.. EscalationLadder.Defaults.Select(StepRow.From)], null);
 
-    /// <summary>The steps as the setting stores them; throws <see cref="ArgumentException"/> for one that can't be.</summary>
-    public string StepsText() => EscalationLadder.Format(Steps.Select((s, i) => s.ToStep(i + 1)));
+    /// <summary>Replaces saved steps that don't read with none, on purpose.</summary>
+    public void ClearUnreadable() => (Steps, Unreadable) = ([], null);
+
+    /// <summary>The steps as the setting stores them, or null to leave the saved ones as they are (they don't read and
+    /// haven't been replaced here); throws <see cref="ArgumentException"/> for one that can't be.</summary>
+    public string? StepsText() => Unreadable is not null ? null : EscalationLadder.Format(Steps.Select((s, i) => s.ToStep(i + 1)));
 
     /// <summary>The ladder's scopes and how the page names them.</summary>
     public static readonly IReadOnlyList<(EscalationScope Scope, string Text)> Scopes =

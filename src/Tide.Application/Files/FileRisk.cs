@@ -44,20 +44,22 @@ public static class FileRisk
 
     private static readonly HashSet<string> RunnableExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Windows programs, libraries, installers and control-panel items
+        // Windows programs, libraries, installers, update and troubleshooter packages, and control-panel items
         ".exe", ".dll", ".scr", ".com", ".pif", ".cpl", ".sys", ".drv", ".ocx", ".msi", ".msp", ".msc", ".mst", ".appx",
-        ".appxbundle", ".msix", ".msixbundle", ".application", ".gadget", ".xll",
+        ".appxbundle", ".msix", ".msixbundle", ".application", ".appref-ms", ".xbap", ".gadget", ".xll", ".cab", ".msu",
+        ".diagcab",
         // scripts
-        ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".vbe", ".js", ".jse", ".mjs", ".wsf", ".wsh", ".wsc", ".sct",
-        ".sh", ".bash", ".zsh", ".py", ".pyw", ".pl", ".rb", ".php", ".jar", ".class",
+        ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".ps1xml", ".psc1", ".vb", ".vbs", ".vbe", ".js", ".jse", ".mjs", ".ws",
+        ".wsf", ".wsh", ".wsc", ".sct", ".sh", ".bash", ".zsh", ".py", ".pyw", ".pl", ".rb", ".php", ".jar", ".class", ".jnlp",
         // shortcuts, settings and help files that run things
-        ".hta", ".lnk", ".url", ".scf", ".reg", ".inf", ".chm", ".settingcontent-ms", ".library-ms",
+        ".hta", ".lnk", ".url", ".website", ".scf", ".reg", ".inf", ".chm", ".settingcontent-ms", ".library-ms", ".search-ms",
+        ".rdp", ".wsb",
         // disk images that mount and can autorun
         ".iso", ".img", ".vhd", ".vhdx",
         // other platforms' programs and packages
         ".apk", ".app", ".dmg", ".pkg", ".deb", ".rpm", ".elf", ".so", ".dylib", ".run",
         // Office files with macros, and OneNote (which carries attachments that run)
-        ".docm", ".dotm", ".xlsm", ".xltm", ".xlsb", ".xlam", ".pptm", ".potm", ".ppam", ".ppsm", ".sldm", ".one",
+        ".docm", ".dotm", ".xlsm", ".xltm", ".xlsb", ".xlam", ".xla", ".pptm", ".potm", ".ppam", ".ppsm", ".sldm", ".one",
         // pages that run script when opened from disk
         ".html", ".htm", ".xhtml", ".svg", ".mht", ".mhtml", ".xht",
     };

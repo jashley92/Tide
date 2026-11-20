@@ -985,7 +985,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
   from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
   `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
-  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
+  `ActionFilter.Priorities`), due (`due`, with `soon` for due today or the next working day, the SLA's Due soon, and `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
   ones) and, when an administrator shows card rules as filters, the rule (`rule`, each with its count). Recently closed
   adds how far back (`closed=7` or `closed=30`, *Closed in the last 7 days*; `ActionFilter.ClosedDays`, never past its
   90) and only your teams' (`on=myteams`, `ActionFilter.OnMyTeams`). Each is a chip while set, unless a
@@ -1043,7 +1043,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   Shown only when there are any: first on an action owner's Today, above the actions card on an analyst's.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
   last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
-  "4 of 5 active" for a team with a limit. Over longer windows, each team against its due dates is on
+  "4 of 5 active" for a team with a limit. Each count links to the Actions list filtered to it (the team, and `due=soon`,
+  `status=blocked` or `priority=p1`). Over longer windows, each team against its due dates is on
   [Team commitments](metrics-and-trends.md#team-commitments).
 
 ![Workload](../screenshots/workload.png)
