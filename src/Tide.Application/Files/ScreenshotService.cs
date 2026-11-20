@@ -37,7 +37,7 @@ public sealed record ScreenshotUpload(string FileName, byte[] Bytes, string? Dec
 
 /// <summary>Screenshots on articles: stored as files on disk, checked to be real raster images, shown inline.</summary>
 public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options,
-    Briefs.IMeetingsInProgress? meetings = null, Settings.DistributionSettings? editions = null)
+    Settings.DistributionSettings editions, Briefs.IMeetingsInProgress? meetings = null)
 {
     public long MaxBytes => options.Value.MaxImageBytes;
 
@@ -352,9 +352,8 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
             .AnyAsync(s => s.Images.Any(i => i.FileId == fileId), ct);
     }
 
-    // The team edition's ceiling, which a meeting's slides are cut at; the default when the settings aren't wired in.
-    private async Task<TlpLevel> TeamCeilingAsync(CancellationToken ct) =>
-        editions is not null ? (await editions.ReadAsync(ct)).Team : new Settings.DistributionOptions().TeamMaxTlp;
+    // The team edition's ceiling in force, which a meeting's slides are cut at.
+    private async Task<TlpLevel> TeamCeilingAsync(CancellationToken ct) => (await editions.ReadAsync(ct)).Team;
 
     internal async Task DeleteFilesAsync(IEnumerable<Guid> fileIds, CancellationToken ct)
     {

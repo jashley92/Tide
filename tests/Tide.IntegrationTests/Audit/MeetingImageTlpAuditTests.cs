@@ -74,4 +74,28 @@ public sealed class MeetingImageTlpAuditTests : IDisposable
         As("S-1-5-21-TEST-9", "Vic Visitor", AppRole.Visitor);
         (await _db.Screenshots().OpenAsync(allowed)).Should().BeNull("the team ceiling is now GREEN, below the AMBER article");
     }
+
+    [Fact]
+    public async Task AnAmberStrictSlideImage_LoadsAtAnAmberStrictCeiling_AndIsRefusedAtAmber()
+    {
+        AsAdmin();
+        var strict = await _db.Articles().CreateAsync("Within our walls", tlp: TlpLevel.AmberStrict);
+        var brief = await _db.Briefs().GetOrStartAsync(Day);
+        await _db.Briefs().AddArticleAsync(brief.Id, strict);
+        var shot = await ShotOn(strict, "console.png", TlpLevel.AmberStrict);
+        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.AmberStrict);
+
+        using var presenter = _meetings.Start(Day, brief.Id, "S-1-5-21-TEST-1", "Test Analyst", "c-presenter", Guid.NewGuid(), 0);
+        As("S-1-5-21-TEST-9", "Vic Visitor", AppRole.Visitor);
+        using var seat = _meetings.Join(Day, _db.User.UserId, _db.User.DisplayName, false, "c-visitor", Guid.NewGuid(), 0)!;
+
+        var open = await _db.Screenshots().OpenAsync(shot);
+        open.Should().NotBeNull("AMBER+STRICT is at the ceiling, not above it");
+        await open!.Content!.DisposeAsync();
+
+        AsAdmin();
+        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Amber);
+        As("S-1-5-21-TEST-9", "Vic Visitor", AppRole.Visitor);
+        (await _db.Screenshots().OpenAsync(shot)).Should().BeNull("AMBER+STRICT is above an AMBER ceiling");
+    }
 }
