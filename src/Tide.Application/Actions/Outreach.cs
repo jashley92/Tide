@@ -147,6 +147,14 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         var cveIds = cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
+        // The other reports added to the article, only when the ceiling lets it through.
+        List<string> links = [];
+        if (cut.Article is { } kept)
+        {
+            var id = kept.Article.Id;
+            links = await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == id)
+                .OrderBy(l => l.AddedAtUtc).Select(l => l.Url).ToListAsync(ct);
+        }
 
         products ??= await ProductsAsync(db, a, ct);
         StackProduct? product = null;
@@ -163,6 +171,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             FromArticle = a.Article is not null,
             Article = cut.Article,
             Cves = cves,
+            ArticleLinks = links,
             Indicators = indicators,
             IndicatorsTlp = cut.IndicatorsTlp,
             IndicatorsHeldBack = cut.IndicatorsHeldBack,

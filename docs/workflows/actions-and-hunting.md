@@ -601,10 +601,15 @@ marked by the setting `Data:StarterOutreachTemplates`, as the starter saved quer
 
 | Placeholder group | Placeholders (`OutreachFill.All`) |
 |---|---|
-| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link`, `article.cves` (with KEV and EPSS), `article.tlp` |
+| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link` (the source), `article.other-links` (each other report added to the article, one a line), `article.cves` (with KEV and EPSS), `article.cve-links` (each CVE's NVD page, one a line), `article.tlp` |
 | Indicators | `indicators` (every indicator on the article and action, defanged), `indicators:domain` and the like (one `HuntValueKind`) |
 | Product | `product.name`, `product.versions`, `product.team`, `product.contact` |
 | Action and sender | `action.number`, `action.link` (needs `App:BaseUrl`), `action.due`, `sender.name`, `sender.team`, `today`, `today:+N` and `today:-N` (N business days after or before today, 1 to 60, skipping weekends and holidays: "reply by {{today:+2}}", "since {{today:-2}}"), `tlp` |
+
+Any placeholder but `tlp` can be made optional with a closing `?` (`{{article.other-links?}}`, `{{indicators:domain?}}`).
+With nothing to fill, or held back by the ceiling, an optional one is dropped rather than left as a `[[…]]` marker: its
+line goes when nothing else is on it, else the gap closes. It isn't listed as unfilled, but what the ceiling held back
+is still said.
 
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 

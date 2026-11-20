@@ -134,6 +134,73 @@ public class OutreachFillTests
     }
 
     [Fact]
+    public void TheOtherLinks_FollowTheSourceOnlyWhereTheTemplateSays_EachOnce_AndCveLinksPointAtTheNvd()
+    {
+        var facts = Facts(Article(TlpLevel.Green), TlpLevel.Green) with
+        {
+            ArticleLinks = ["https://news.example/follow-up", "https://VENDOR.example/advisory", "https://blog.example/analysis", "https://news.example/follow-up"],
+        };
+        var d = OutreachFill.Fill("x", "{{article.link}}\n\n{{article.other-links}}\n\n{{article.cve-links}}", facts);
+
+        d.Body.Should().EndWith("\n\nhttps://vendor.example/advisory\n\nhttps://news.example/follow-up\nhttps://blog.example/analysis\n\n"
+            + "https://nvd.nist.gov/vuln/detail/CVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n",
+            "the source isn't listed again among the others");
+        OutreachFill.Fill("x", "{{article.link}}", facts).Body.Should().EndWith("\n\nhttps://vendor.example/advisory\n", "the source alone");
+        d.Marking.Should().Be(TlpLevel.Green, "the links carry the article's marking");
+        d.Unfilled.Should().BeEmpty();
+
+        var noCves = Article();
+        noCves.Cves = [];
+        var none = OutreachFill.Fill("x", "{{article.cve-links}}", Facts(noCves, TlpLevel.Clear));
+        none.Unfilled.Should().Equal("{{article.cve-links}}");
+        OutreachFill.Fill("x", "{{article.cve-links}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green)).Body
+            .Should().Contain("[[article.cve-links: above TLP:GREEN, left out]]");
+    }
+
+    // --- optional placeholders ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void AnOptionalPlaceholder_WithNothingToFill_IsDropped_WithItsLineWhenAlone_AndIsntUnfilled()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);   // no other links
+        var d = OutreachFill.Fill("About {{article.other-links?}} {{article.title}}",
+            "{{article.link}}\n{{article.other-links?}}\nSee {{indicators:sha256?}} and the rest.\n{{indicators:sha256?}}{{article.other-links?}}\nThanks", facts);
+
+        d.Subject.Should().Be("About Edge VPN zero-day exploited");
+        d.Body.Should().EndWith("\n\nhttps://vendor.example/advisory\nSee and the rest.\nThanks\n", "a line left empty goes; one with other text closes the gap");
+        d.Unfilled.Should().BeEmpty();
+        OutreachFill.HasMarker(d.Body).Should().BeFalse("nothing holds the send back");
+    }
+
+    [Fact]
+    public void AnOptionalPlaceholder_WithAValue_FillsAsUsual()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear) with { ArticleLinks = ["https://news.example/follow-up"] };
+        OutreachFill.Fill("x", "Further:\n{{article.other-links?}}\n{{today:+1?}}", facts).Body
+            .Should().EndWith("\n\nFurther:\nhttps://news.example/follow-up\nMonday, November 9, 2026\n");
+    }
+
+    [Fact]
+    public void AnOptionalPlaceholder_HeldBackByTheCeiling_IsDropped_ButStillSaidToBeLeftOut()
+    {
+        var d = OutreachFill.Fill("x", "{{article.title?}}\n{{product.name}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green));
+        d.Body.Should().EndWith("\n\nEdge VPN\n").And.NotContain("zero-day");
+        d.Unfilled.Should().BeEmpty();
+        d.LeftOut.Should().ContainSingle().Which.Should().StartWith("The article is TLP:AMBER, above this template's TLP:GREEN");
+    }
+
+    [Theory]
+    [InlineData("{{article.other-links?}} {{indicators:domain?}} {{today:+2?}} {{Article.CVES?}}")]
+    public void Check_AcceptsAClosingQuestionMark(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
+
+    [Theory]
+    [InlineData("{{tlp?}}", "{{tlp?}} can't be optional*")]
+    [InlineData("{{article.title ?}}", "{{article.title ?}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("{{article.titel?}}", "{{article.titel}} isn't a placeholder TIDE fills*")]
+    public void Check_RefusesAnOptionalTlp_OrAQuestionMarkThatDoesntParse(string text, string message) =>
+        FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
+    [Fact]
     public void TheIndicators_AreDefanged_AllOfThem_OrOneKindByTheHuntsNames()
     {
         var facts = Facts(Article(), TlpLevel.Clear);

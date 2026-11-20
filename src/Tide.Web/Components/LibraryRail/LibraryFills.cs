@@ -15,7 +15,8 @@ public sealed record LibraryFact(string Label, string Value);
 /// what an action fills each with: what the rail's "Fills in" lists.</summary>
 public static partial class LibraryFills
 {
-    [GeneratedRegex(@"\{\{([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    // A name, a modifier after a colon, and an outreach template's closing ? that makes it optional.
+    [GeneratedRegex(@"\{\{([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Pattern();
 
     /// <summary>A saved query's: <c>{{days}}</c>, <c>{{values}}</c> and a kind's values (<c>{{values:sha256}}</c>).</summary>
@@ -43,6 +44,6 @@ public static partial class LibraryFills
     private static List<LibraryFill> Found(string text, Func<string, string?, string?> means) =>
         [.. Pattern().Matches(text).Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(written => Pattern().Match(written) is var m && means(m.Groups[1].Value.ToLowerInvariant(), m.Groups[2].Success ? m.Groups[2].Value : null) is { } said
-                ? new LibraryFill(written, said) : null)
+                ? new LibraryFill(written, m.Groups[3].Success ? said + " Left out when there's nothing to fill." : said) : null)
             .OfType<LibraryFill>()];
 }
