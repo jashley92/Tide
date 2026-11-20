@@ -118,7 +118,7 @@ All of these run in the one TIDE process ([known-issues.md](known-issues.md#scal
 | CVE refresh | Every `Cve:RefreshHours` (24) | At most 40 NVD lookups a run (`Cve:MaxNvdPerRun`, held to 500), 6.5 s apart without an NVD key, 0.7 s with one; a record rechecked at NVD after 7 days; each NVD request may take 60 s (`Cve:NvdTimeoutSeconds`) and is tried up to 3 times, so a run can take many minutes, beside the feed polling | `CveService` |
 | Prune | Daily | Feed items after `Intake:RetentionDays` (90); kept article text after `Intake:ReadingDays` (7) | `IntakeService.PruneAsync`, `ReadingService.PruneAsync` |
 | Reminders and digests | Every 5 minutes | Each kind at its time of day, once (marks) | `ReminderHostedService.PollInterval` |
-| Webhooks | Every minute | At most 100 posts a hook a run; events at least 30 s old | `WebhookHostedService.PollInterval`, `WebhookService.MaxPerRun`, `SettleDelay` |
+| Webhooks | Every minute, while a webhook is on | At most 100 posts a hook a run (more only to finish events stamped at one moment), read oldest first in the database; events at least 30 s old | `WebhookHostedService.PollInterval`, `WebhookService.MaxPerRun`, `SettleDelay` |
 | Metrics drop folder | Every `Metrics:Import:PollMinutes` (5, held to 1 to 60); every minute when off | A file must be unchanged for 30 s; processed files kept 90 days | `MetricImportHostedService`, `MetricDropFolder.Settle`, `KeepFor` |
 | Update check | Every `Updates:CheckIntervalHours` (24, held to 6 to 168), first after 2 minutes | 10 s a check; a manual check at most once a minute | `UpdateCheckHostedService`, `UpdateCheckService` |
 | Session permissions re-derived | Every 2 minutes per open circuit | In-memory lookups | `PermissionRevalidatingAuthStateProvider.Interval` |
