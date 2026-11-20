@@ -375,8 +375,11 @@ a `[GeneratedRegex]` method) is a suggestion by default; `.editorconfig` makes i
 **`sql-server`** (Ubuntu, a SQL Server 2022 service container with a throwaway `sa` password):
 
 1. Applies the SQL Server migrations to a fresh database, twice (the second is a no-op).
-2. Runs `dotnet test tests/Tide.IntegrationTests --filter "DisplayName~SqlServer"` with `TIDE_TEST_SQL` set.
-3. Runs the upgrade test from each of the three newest release tags reachable from HEAD, and the first release.
+2. Generates the DBA schema script as the release does and applies it with `sqlcmd` to an empty database, twice
+   (`tools/ci/check-sqlserver-schema-script.sh`). Every migration must be in its history, EF must see none pending,
+   and its columns, indexes and foreign keys must match the database the migrations made.
+3. Runs `dotnet test tests/Tide.IntegrationTests --filter "DisplayName~SqlServer"` with `TIDE_TEST_SQL` set.
+4. Runs the upgrade test from each of the three newest release tags reachable from HEAD, and the first release.
 
 ### `release.yml`
 
@@ -384,8 +387,9 @@ Runs on a pushed `v*` tag. Its `gates` job runs `ci.yml` on the tagged commit (a
 such as a docs-only one). The `release` job then requires the tag to be on `main`, asks SonarQube Cloud whether the
 quality gate passed for that commit on `main` (`tools/ci/check-sonar-quality-gate.sh`, because CI skips Sonar on
 tags), checks the migrations again, extracts the release notes from `docs/UPGRADE.md`
-(`tools/ci/extract-release-notes.sh`), builds and publishes with the tag's version, assembles the bundle (the app, the
-`deploy` folder, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, signs it with the
+(`tools/ci/extract-release-notes.sh`), builds and publishes with the tag's version, generates the DBA schema script
+(`tools/ci/sqlserver-schema-script.sh`), assembles the bundle (the app, the `deploy` folder with that script in
+`deploy/sql`, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, signs it with the
 `RELEASE_SIGNING_KEY` secret (and fails without it, or when the repository doesn't pin its key), checks the signature
 with `deploy/Test-TideBundle.ps1`, and creates the GitHub Release with the zip, the `.sha256` and the `.sig` (a
 pre-release for `-alpha`, `-beta` or `-rc` tags). The key and the signing are in [releasing.md](releasing.md). How releases are cut is in [UPGRADE.md](../UPGRADE.md).
@@ -442,4 +446,4 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | How the email looks in mail clients | Render tests check its structure; open the `.eml` from development in Outlook. |
 | Long polling, reconnection after sleep, several server processes | Not simulated. TIDE runs as one process ([reference/known-issues.md](../reference/known-issues.md)). |
 | Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. See [reference/performance.md](../reference/performance.md). |
-| A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off, and no schema script ships ([reference/known-issues.md](../reference/known-issues.md)). |
+| A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off. CI applies the DBA schema script to SQL Server and compares the result with the migrations, but doesn't start the app on it. |

@@ -66,7 +66,8 @@ failure and counts, not content.
   `migrations-sqlserver.txt` and names the missing ones.
 - **Fix:**
   - **AppMigrates:** grant `db_owner` (`Install-Database.ps1` mode AppMigrates) and recycle.
-  - **DbaApplies:** the DBA applies the release's schema script from the bundle's `deploy\sql`, then start or rerun the
+  - **DbaApplies:** the DBA applies the release's schema script, the bundle's `deploy\sql\tide-schema-sqlserver.sql`
+    (idempotent: it applies only what's missing), then start or rerun the
     upgrade. Don't flip `ApplyMigrations` to `true` on a pool without `db_owner`.
   - "There is already an object named …": the database has TIDE's tables but no migration history. Don't force it;
     see [UPGRADE.md](../UPGRADE.md#upgrading-with-upgrade-tideps1) (preflight).

@@ -182,6 +182,12 @@ public partial class DeployScriptTests
         var release = Read(".github", "workflows", "release.yml");
         release.Should().Contain("cp -r deploy \"$root/deploy\"", "every deploy script, the upgrade's included, ships in the bundle");
         release.Should().Contain("\"$root/migrations-sqlserver.txt\"");
+        release.Should().Contain("bash tools/ci/sqlserver-schema-script.sh publish/tide-schema-sqlserver.sql --no-build")
+            .And.Contain("cp publish/tide-schema-sqlserver.sql \"$root/deploy/sql/tide-schema-sqlserver.sql\"",
+                "the DBA schema script is where Install-Database.ps1 -ApplySchema looks, inside the signed zip");
+        Read("deploy", "Install-Database.ps1").Should().Contain(@"Join-Path $scriptDir 'sql\tide-schema-sqlserver.sql'");
+        release.IndexOf("deploy/sql/tide-schema-sqlserver.sql", StringComparison.Ordinal)
+            .Should().BeLessThan(release.IndexOf("zip -qr", StringComparison.Ordinal));
         release.Should().Contain("tide-${version}.zip.sha256");
         release.Should().Contain("\"bundle/tide-${version}.zip.sig\" \"${args[@]}\"", "the signature is published with the bundle");
         release.Should().Contain("RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}").And.Contain("The RELEASE_SIGNING_KEY secret isn't set");
@@ -909,6 +915,67 @@ public partial class DeployScriptPowerShellTests
             Case("bare/trust-nosqlcmd").Result.Should().Contain("can't encrypt the connection");
             Case("v22/trust-nosqlcmd").Result.Should().Be("ok");
         }
+    }
+
+    [Fact]
+    public void ApplySchema_runs_the_bundles_schema_script_in_the_database_and_refuses_before_anything_when_it_is_missing()
+    {
+        // A bundle's layout (tide-<version>\deploy\sql) in a temp folder, with stand-ins for Invoke-Sqlcmd (SqlServer 22) and
+        // sqlcmd.exe that record the script each step runs. The schema script is EF's idempotent one: GO batches, and text
+        // that isn't a sqlcmd template, so $(...) must not be read as a variable. Nothing connects anywhere.
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-bundle-' + [guid]::NewGuid().ToString('N'))
+            $bundleDeploy = Join-Path $root 'tide-v9.9.9\deploy'
+            New-Item -ItemType Directory -Path (Join-Path $bundleDeploy 'sql') | Out-Null
+            Copy-Item (Join-Path $deploy 'Install-Database.ps1') $bundleDeploy
+            Copy-Item (Join-Path $deploy 'sql\01-Create-Database.sql') (Join-Path $bundleDeploy 'sql')
+            $schema = Join-Path $bundleDeploy 'sql\tide-schema-sqlserver.sql'
+            $install = Join-Path $bundleDeploy 'Install-Database.ps1'
+            $go = @{ SqlInstance = 'SQLHOST'; AppAccount = 'CONTOSO\svc-tide$'; SchemaMode = 'DbaApplies'; ApplySchema = $true }
+
+            New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value {
+                [CmdletBinding()] param($ServerInstance, $Query, $InputFile, $Variable, $Database, $QueryTimeout, $OutputSqlErrors,
+                    [switch] $AbortOnError, [string] $Encrypt, [switch] $TrustServerCertificate, [switch] $DisableVariables)
+                if ($Query) { return [pscustomobject]@{ RunAs = 'CONTOSO\dba'; IsSysadmin = 1; CanCreateDb = 1; CanCreateLogin = 1; DbExists = 0; LoginExists = 0; ControlsDb = 0 } }
+                $global:sqlLog += "$([IO.Path]::GetFileName($InputFile)) db=$Database novars=$([bool]$DisableVariables)"
+            } | Out-Null
+            $out = [ordered]@{}
+            try {
+                $global:sqlLog = @()
+                $out.missing = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.missingCalls = @($global:sqlLog)
+
+                Set-Content -LiteralPath $schema -Value "SELECT N'`$(not a variable)';`nGO`n"
+                $global:sqlLog = @()
+                $out.module = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.moduleCalls = @($global:sqlLog)
+
+                # An Invoke-Sqlcmd that can't encrypt: every step goes to sqlcmd.exe.
+                New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value { param($ServerInstance) } | Out-Null
+                New-Item -Path function: -Name sqlcmd.exe -Force -Value {
+                    if ($args -contains '-Q') { 'CONTOSO\dba|1|1|1|0|0|0' }
+                    elseif ($args -contains '-i') { $global:sqlLog += ($args | ForEach-Object { if ("$_" -like '*.sql') { [IO.Path]::GetFileName("$_") } else { "$_" } }) -join ' ' }
+                    $global:LASTEXITCODE = 0
+                } | Out-Null
+                $global:sqlLog = @()
+                $out.sqlcmd = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.sqlcmdCalls = @($global:sqlLog)
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+            ConvertTo-Json -Depth 4 -Compress -InputObject $out
+            """);
+        string[] Calls(string name) => r.GetProperty(name).EnumerateArray().Select(x => x.GetString()!).ToArray();
+
+        r.GetProperty("missing").GetString().Should().StartWith("Missing ").And.Contain("tide-schema-sqlserver.sql")
+            .And.Contain("Nothing was changed");
+        Calls("missingCalls").Should().BeEmpty("the database isn't created when its schema can't follow");
+
+        r.GetProperty("module").GetString().Should().Be("ok");
+        Calls("moduleCalls").Should().Equal("01-Create-Database.sql db= novars=False", "tide-schema-sqlserver.sql db=Tide novars=True");
+
+        r.GetProperty("sqlcmd").GetString().Should().Be("ok");
+        Calls("sqlcmdCalls").Should().HaveCount(2);
+        Calls("sqlcmdCalls")[1].Should().Contain("-d Tide").And.Contain("-i tide-schema-sqlserver.sql").And.Contain(" -x ").And.Contain(" -I ").And.Contain(" -b ")
+            .And.Contain(" -f i:65001 ", "the script has non-ASCII text, read as UTF-8 whatever the console's code page");
     }
 
     [WindowsFact]

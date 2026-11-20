@@ -113,6 +113,12 @@ jobs:
           dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
             --project src/Tide.Infrastructure --startup-project src/Tide.Web --context AppDbContext
 
+      # The schema script a DbaApplies install's DBA applies (Install-Database.ps1 -ApplySchema; docs/INSTALL.md): every SQL
+      # Server migration, idempotent, from this build. The gates' sql-server job applied one generated the same way to a
+      # real SQL Server and checked it against the migrations (tools/ci/check-sqlserver-schema-script.sh).
+      - name: DBA schema script
+        run: bash tools/ci/sqlserver-schema-script.sh publish/tide-schema-sqlserver.sql --no-build
+
       # Framework-dependent, portable publish (no RID), the same shape Install-Tide.ps1 produces, so the app runs under IIS
       # in-process with the .NET 10 Hosting Bundle.
       - name: Publish web app
@@ -126,6 +132,8 @@ jobs:
           mkdir -p "$root"
           cp -r publish/app "$root/app"
           cp -r deploy "$root/deploy"
+          # Where Install-Database.ps1 -ApplySchema looks for it; inside the zip, so the signature covers it.
+          cp publish/tide-schema-sqlserver.sql "$root/deploy/sql/tide-schema-sqlserver.sql"
           # The SQL Server migration ids this release carries, for comparing with a database's __EFMigrationsHistory.
           ls src/Tide.Migrations.SqlServer/Migrations \
             | grep -E '^[0-9]+_.*\.cs$' | grep -v '\.Designer\.cs$' \

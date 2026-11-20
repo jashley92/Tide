@@ -98,8 +98,10 @@ What it does, in order:
      has a migration the release doesn't (a newer or different lineage), or TIDE's tables but no history, the state
      that makes the app fail at startup with "There is already an object named ...";
    - **DbaApplies:** it stops unless the database already has every migration the release lists, and names the ones
-     missing. The upgrade never migrates a DbaApplies database: have the DBA apply the release's schema script from
-     the bundle's `deploy\sql` folder first, then run the upgrade again;
+     missing. The upgrade never migrates a DbaApplies database: have the DBA apply the release's schema script,
+     `deploy\sql\tide-schema-sqlserver.sql` in the new bundle, first (it's idempotent, so it applies only what's
+     missing; the `sqlcmd` switches are in [deploy/README.md](../deploy/README.md#the-dba-schema-script)), then run
+     the upgrade again;
    - settings a newer release added that the file lacks: a data folder (added under the data root; pass `-DataRoot`
      when it can't be worked out), or a server setting (added at the value the app already uses without it, so nothing
      changes until you edit it). A setting already there is never changed, and secrets (`Email__SmtpPassword`,

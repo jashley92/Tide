@@ -46,7 +46,11 @@
 
 .PARAMETER ApplySchema
     When SchemaMode=DbaApplies, also execute deploy/sql/tide-schema-sqlserver.sql
-    against the database (as the sysadmin running this script).
+    against the database (as the sysadmin running this script). Each release bundle
+    carries that script: every migration of the release, idempotent, so it creates the
+    schema in a new database, brings one from an earlier release up to date, and does
+    nothing to one already there. Run it again from each new release's bundle before
+    upgrading (docs/UPGRADE.md).
 
 .PARAMETER ValidateServerCertificate
     Check the SQL Server's TLS certificate (it must chain to a root this machine trusts and name the instance's host).
@@ -121,6 +125,12 @@ $backupSql = Join-Path $scriptDir 'sql\02-Grant-Backup.sql'
 $schemaSql = Join-Path $scriptDir 'sql\tide-schema-sqlserver.sql'
 
 if (-not (Test-Path $createSql)) { throw "Missing $createSql" }
+# Checked before anything is created, so a missing script doesn't leave a database with no schema behind. The release
+# bundle carries it; a source checkout doesn't (tools/ci/sqlserver-schema-script.sh writes it).
+if ($SchemaMode -eq 'DbaApplies' -and $ApplySchema -and -not (Test-Path $schemaSql)) {
+    throw ("Missing $schemaSql. Each release bundle carries it in deploy\sql: run this script from the bundle's deploy " +
+           "folder. From a source checkout, generate it with tools/ci/sqlserver-schema-script.sh (deploy/README.md). Nothing was changed.")
+}
 
 # Whether the instance's certificate is checked: Invoke-Sqlcmd's -TrustServerCertificate and sqlcmd's -C skip it.
 $trustCert = -not $ValidateServerCertificate
@@ -230,13 +240,17 @@ if ($BackupAccount) {
 }
 
 if ($SchemaMode -eq 'DbaApplies' -and $ApplySchema) {
-    if (-not (Test-Path $schemaSql)) { throw "Missing $schemaSql (see deploy/README.md)" }
     Write-Host "==> Applying schema from $([System.IO.Path]::GetFileName($schemaSql))" -ForegroundColor Cyan
+    # The script is EF's idempotent migration script: GO-separated batches, which both engines split on. Its text is
+    # SQL, not a sqlcmd template, so $(...) in it is left alone (-DisableVariables, -x) rather than read as a variable,
+    # and UTF-8 with non-ASCII text, which sqlcmd.exe is told (-f i:65001) rather than reading it in the console's code page.
     if ($useModule) {
-        Invoke-Sqlcmd -ServerInstance $SqlInstance -Database $DbName -InputFile $schemaSql `
+        $noVars = @{}
+        if ($sqlcmdCmd.Parameters.ContainsKey('DisableVariables')) { $noVars.DisableVariables = $true }
+        Invoke-Sqlcmd -ServerInstance $SqlInstance -Database $DbName -InputFile $schemaSql @noVars `
                       @moduleTls -QueryTimeout 0 -OutputSqlErrors $true -AbortOnError -ErrorAction Stop
     } else {
-        & sqlcmd.exe -S $SqlInstance -E -b @sqlcmdTrust -I -d $DbName -i $schemaSql   # -I: the schema has filtered indexes
+        & sqlcmd.exe -S $SqlInstance -E -b @sqlcmdTrust -I -x -f i:65001 -d $DbName -i $schemaSql   # -I: filtered indexes; -f: UTF-8 text
         if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed applying schema (exit $LASTEXITCODE)" }
     }
 }
