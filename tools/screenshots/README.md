@@ -197,6 +197,31 @@ renamed class or a seed without the case can't pass it unseen. `hidden(selector)
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
 than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.
 
+## Accessibility scan (report only)
+
+`layout.mjs` also runs [axe-core](https://github.com/dequelabs/axe-core) (`axe.mjs`, the version locked in
+`package-lock.json`) on each page it checks, once, at the page's widest width, after that width's layout rules: the page
+as its setup and rules left it (a dialog open, a rail docked). It checks the WCAG 2.0 and 2.1 A and AA rules
+(`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`) in the top document.
+
+It only reports. What it finds never fails the run, and a scan that can't run says so and moves on. Each page prints a
+line such as `today at 1920x900: axe, 2 rules broken on 5 elements (report only)`, and the run writes
+`tools/screenshots/.axe/axe-<slice>.json` and `.md` (`axe-2-of-4`, or `axe-all` without `SHARD`; git-ignored):
+
+- The `.md` is a summary: each rule broken, its impact (`critical`, `serious`, `moderate`, `minor`), how many elements
+  break it on how many pages, and the first pages. The rule's name links to Deque's page on what it means and how to
+  fix it.
+- The `.json` has every page scanned, at what size, and for each rule broken there every element's selector
+  (`targets`): open the page in the demo at that size and find the element to see what axe saw. `rules` totals them, as
+  the summary does.
+
+In CI each slice at the default letter spacing scans (`AXE=1`; the `.12em` jobs set `AXE=0`, as the wider letters
+would find the same), adds its summary to the job's summary page, and uploads `.axe/` as the `axe-<n>-of-4` artifact,
+kept 14 days. `AXE=0` turns the scan off locally.
+
+The plan is to make it a gate once the findings are fixed: first fail on new `critical` and `serious` findings, then on
+any, with an allow-list for what's known and tracked.
+
 ## Before and after pictures
 
 `baseline.mjs` uses the same demo database and server to take a picture of each main screen before a change to the UI,
