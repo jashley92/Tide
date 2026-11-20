@@ -184,7 +184,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     }
 
     // Sources by name ignoring case, as SQL Server's collation sorts them: SQLite's own order is case-sensitive, which put
-    // "alpha blog" after "Zeta wire". ToLower runs in the database (lower(), LOWER()), never in .NET, so no culture applies.
+    // "alpha blog" after "Zeta wire". ToLower runs in the database (lower(), LOWER()), never in .NET, so the server's culture
+    // doesn't apply (on SQLite, accents sort as NameOrder.Compare puts them).
 #pragma warning disable CA1304, CA1311
     private static IOrderedQueryable<Source> ByName(IQueryable<Source> sources) => sources.OrderBy(s => s.Name.ToLower()).ThenBy(s => s.Name);
 #pragma warning restore CA1304, CA1311
@@ -917,15 +918,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     // Before this, an untouched new item may have aged into Older (IntakeOptions.AgeDays, at least a day).
     private DateTimeOffset AgeCutoff() => time.GetUtcNow().AddDays(-Math.Max(1, options.CurrentValue.AgeDays));
 
-    /// <summary>How many new items aged out of New into Older (see <see cref="IntakeOptions.AgeDays"/>).</summary>
-    public async Task<int> OlderCountAsync(CancellationToken ct = default)
-    {
-        RequireTriage();
-        await using var db = await dbs.CreateAsync(ct);
-        return await OlderCount(db, ct);
-    }
-
-    // Only items older than the cutoff can have aged, so only those are read.
+    // How many new items aged out of New into Older (see IntakeOptions.AgeDays). Only items older than the cutoff can
+    // have aged, so only those are read.
     private async Task<int> OlderCount(IAppDbContext db, CancellationToken ct)
     {
         var cutoff = AgeCutoff();
@@ -1202,24 +1196,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     public async Task<Guid> PromoteAsync(Guid id, PromoteForm form, CancellationToken ct = default) => (await PromoteManyAsync([id], form, ct)).ArticleId;
 
     /// <summary>
-    /// "Promote as one article": makes one draft from a suggested group's reports (<see cref="TriageGroup.Ids"/>). The
-    /// newest report makes the article, as <see cref="PromoteAsync(Guid, PromoteForm, CancellationToken)"/> would, at the
-    /// most restrictive of the sources' TLPs unless the form chooses one; each of the others is added to it as another
-    /// report, as <see cref="AttachAsync"/> adds one, with its CVEs. Every item is claimed at once or none is: if any has
-    /// just been promoted, attached or claimed by someone else, nothing changes and the analyst is told. Returns the
-    /// article's id (the one they all made, when that's already happened).
-    /// </summary>
-    public async Task<Guid> PromoteAsOneAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default)
-    {
-        if (ids.Distinct().Count() < 2) throw new ArgumentException($"Promote 2 to {TriageGroups.MaxSize} reports as one article.");
-        return (await PromoteManyAsync(ids, form, ct)).ArticleId;
-    }
-
-    /// <summary>
-    /// Triage's promote of one report (<see cref="PromoteAsync(Guid, PromoteForm, CancellationToken)"/>) or of a group as
-    /// one article (<see cref="PromoteAsOneAsync"/>), saying what came of it: when a colleague promoted or attached the
-    /// reports first, all into one article, that's the article given, with <see cref="PromoteOutcome.Made"/> false and who
-    /// put them there, so the page never says it promoted what it didn't.
+    /// Triage's promote of one report (<see cref="PromoteAsync(Guid, PromoteForm, CancellationToken)"/>) or, "Promote as
+    /// one article", of a suggested group's reports (<see cref="TriageGroup.Ids"/>). For a group the newest report makes
+    /// the article, at the most restrictive of the sources' TLPs unless the form chooses one; each of the others is added
+    /// to it as another report, as <see cref="AttachAsync"/> adds one, with its CVEs. Every item is claimed at once or
+    /// none is: if any has just been promoted, attached or claimed by someone else, nothing changes and the analyst is
+    /// told. Says what came of it: when a colleague promoted or attached the reports first, all into one article, that's
+    /// the article given, with <see cref="PromoteOutcome.Made"/> false and who put them there, so the page never says it
+    /// promoted what it didn't.
     /// </summary>
     public Task<PromoteOutcome> PromoteOrJoinAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default) =>
         PromoteManyAsync(ids, form, ct);

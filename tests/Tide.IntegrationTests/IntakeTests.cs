@@ -249,7 +249,6 @@ public class IntakeServiceTests : IDisposable
         (await intake.InboxAsync(new InboxFilter())).Select(r => r.Item.Title).Should().BeEquivalentTo("fresh story", "stale kev", "stale epss");
 
         (await intake.InboxAsync(new InboxFilter(Older: true))).Select(r => r.Item.Title).Should().BeEquivalentTo("stale story", "stale low epss");
-        (await intake.OlderCountAsync()).Should().Be(2);
         (await intake.CountsAsync())[FeedItemStatus.New].Should().Be(3, "New counts what's still in New");
         (await intake.TallyAsync()).Should().Match<(IReadOnlyDictionary<FeedItemStatus, int> Counts, int Older)>(t => t.Counts[FeedItemStatus.New] == 3 && t.Older == 2,
             "Triage's tabs and its Older fold, from one count");
@@ -487,7 +486,7 @@ public class IntakeServiceTests : IDisposable
         var (reports, other) = await BinanceReports();
         var intake = _db.Intake();
 
-        var articleId = await intake.PromoteAsOneAsync(reports, new PromoteForm { Classification = Classification.Threat, Priority = Priority.P1 });
+        var articleId = (await intake.PromoteOrJoinAsync(reports, new PromoteForm { Classification = Classification.Threat, Priority = Priority.P1 })).ArticleId;
 
         var article = (await _db.Articles().GetAsync(articleId))!;
         article.Title.Should().Be("Binance links $6.3 billion crypto theft to compromised DevOps laptop", "the newest report makes the article");
@@ -507,7 +506,7 @@ public class IntakeServiceTests : IDisposable
         links.Select(l => l.SourceName).Should().Equal("Amber feed", "News Feed");
         (await _db.Articles().SourceExcerptAsync(articleId)).Should().Be("Excerpt of " + article.Title, "the editor shows the excerpt of the report it was made from");
 
-        (await intake.PromoteAsOneAsync(reports, new PromoteForm())).Should().Be(articleId, "promoting them again goes to the article they made");
+        (await intake.PromoteOrJoinAsync(reports, new PromoteForm())).Should().Match<PromoteOutcome>(o => o.ArticleId == articleId && !o.Made, "promoting them again goes to the article they made");
     }
 
     [Fact]
@@ -526,7 +525,7 @@ public class IntakeServiceTests : IDisposable
 
         async Task<Guid?> Try()
         {
-            try { return await _db.Intake().PromoteAsOneAsync(reports, new PromoteForm()); }
+            try { return (await _db.Intake().PromoteOrJoinAsync(reports, new PromoteForm())).ArticleId; }
             catch (InvalidOperationException) { return null; }
         }
     }
@@ -538,7 +537,7 @@ public class IntakeServiceTests : IDisposable
         var intake = _db.Intake();
         var single = await intake.PromoteAsync(reports[1]);   // another analyst got to one report first
 
-        var group = () => intake.PromoteAsOneAsync(reports, new PromoteForm());
+        var group = () => intake.PromoteOrJoinAsync(reports, new PromoteForm());
         await group.Should().ThrowAsync<InvalidOperationException>().WithMessage("*none of them was promoted*");
 
         await using var ctx = _db.Context();
@@ -559,7 +558,7 @@ public class IntakeServiceTests : IDisposable
             if (context.ChangeTracker.Entries<ArticleLink>().Any(e => e.State == EntityState.Added)) throw new DbUpdateException("database busy");
         };
 
-        var failed = () => _db.Intake().PromoteAsOneAsync(reports, new PromoteForm());
+        var failed = () => _db.Intake().PromoteOrJoinAsync(reports, new PromoteForm());
         await failed.Should().ThrowAsync<DbUpdateException>();
         _db.BeforeSave = null;
 
@@ -570,16 +569,16 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PromoteAsOne_TakesTwoToEightReports_AndRefusesOneGone()
+    public async Task PromoteAsOne_TakesUpToEightReports_AndRefusesOneGone()
     {
         var (reports, _) = await BinanceReports();
         var intake = _db.Intake();
-        var one = () => intake.PromoteAsOneAsync([reports[0], reports[0]], new PromoteForm());
-        await one.Should().ThrowAsync<ArgumentException>().WithMessage("Promote 2 to 8*");
-        var gone = () => intake.PromoteAsOneAsync([reports[0], Guid.NewGuid()], new PromoteForm());
+        var nine = () => intake.PromoteOrJoinAsync([.. Enumerable.Range(0, 9).Select(_ => Guid.NewGuid())], new PromoteForm());
+        await nine.Should().ThrowAsync<ArgumentException>().WithMessage("Promote 1 to 8*");
+        var gone = () => intake.PromoteOrJoinAsync([reports[0], Guid.NewGuid()], new PromoteForm());
         await gone.Should().ThrowAsync<KeyNotFoundException>().WithMessage("One of those items is gone.");
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
-        var reader = () => intake.PromoteAsOneAsync(reports, new PromoteForm());
+        var reader = () => intake.PromoteOrJoinAsync(reports, new PromoteForm());
         await reader.Should().ThrowAsync<ForbiddenException>();
     }
 

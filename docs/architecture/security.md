@@ -281,7 +281,7 @@ as well as a claim:
 - **Keeping the teams** (`TeamService`): an external team (one that works outside TIDE, ADR
   [0020](../decisions/0020-external-teams-are-emailed-without-tide.md)) with `WorkActions`; an internal team, its
   members and every team's active limit with `Administer`. A team's escalation contact follows the same rule
-  (`TeamService.SetEscalationContactAsync`): an external team's with `WorkActions`, an internal team's with
+  (the team's form, `TeamService.UpdateExternalAsync` or `UpdateAsync`): an external team's with `WorkActions`, an internal team's with
   `Administer`. An external team can't have members, so adding one grants nobody access.
 - **Handing an action off** (`HandoffService.HandOffAsync`): whoever can work it. **Splitting** one: `WriteArticles`.
 - **The team libraries** (saved queries, outreach templates, playbooks; `TeamLibrary`): `WorkActions` adds, edits,

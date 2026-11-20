@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Tide.Application.Abstractions;
 
 namespace Tide.Infrastructure.Persistence;
@@ -28,8 +29,10 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
         var provider = DependencyInjection.DatabaseProvider(Environment.GetEnvironmentVariable("TIDE_MIGRATIONS_PROVIDER"));
         var builder = new DbContextOptionsBuilder<AppDbContext>();
         if (provider == "SqlServer")
+            // The release's DBA schema script (an idempotent script) is generated through here: see IdempotentScriptSqlGenerator.
             builder.UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=Tide;Trusted_Connection=True;TrustServerCertificate=True;",
-                sql => sql.MigrationsAssembly(SqlServerMigrationsAssembly));
+                    sql => sql.MigrationsAssembly(SqlServerMigrationsAssembly))
+                .ReplaceService<IMigrationsSqlGenerator, IdempotentScriptSqlGenerator>();
         else
             builder.UseSqlite("Data Source=App_Data/tide-design.db");
         return new AppDbContext(builder.Options);
