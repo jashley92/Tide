@@ -33,12 +33,12 @@
       "rowsRead": 201
     },
     "Brief.Candidates": {
-      "reads": 10,
+      "reads": 9,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1110,
-      "maxParameters": 1100,
-      "rowsRead": 2094
+      "parameters": 10,
+      "maxParameters": 2,
+      "rowsRead": 1048
     },
     "Reminders(BriefNotReady)": {
       "reads": 4,
@@ -65,12 +65,12 @@
       "rowsRead": 10
     },
     "Reminders(Escalation)": {
-      "reads": 13,
-      "saves": 1,
-      "rowsWritten": 990,
-      "parameters": 6737,
+      "reads": 14,
+      "saves": 2,
+      "rowsWritten": 992,
+      "parameters": 6943,
       "maxParameters": 200,
-      "rowsRead": 812
+      "rowsRead": 813
     },
     "Reminders(ExternalReminder)": {
       "reads": 1,
@@ -113,100 +113,100 @@
       "rowsRead": 6
     },
     "Reports(month)": {
-      "reads": 10,
+      "reads": 9,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1302,
-      "maxParameters": 650,
-      "rowsRead": 7065
+      "parameters": 20,
+      "maxParameters": 4,
+      "rowsRead": 3033
     },
     "Search(CVE)": {
-      "reads": 23,
+      "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 141,
+      "parameters": 140,
       "maxParameters": 11,
-      "rowsRead": 105
+      "rowsRead": 103
     },
     "Search(indicator)": {
-      "reads": 23,
+      "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 54,
+      "parameters": 51,
       "maxParameters": 6,
-      "rowsRead": 35
+      "rowsRead": 33
     },
     "Search(text)": {
-      "reads": 15,
+      "reads": 14,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 373,
+      "parameters": 369,
       "maxParameters": 50,
-      "rowsRead": 1122
+      "rowsRead": 1120
     },
     "Today": {
-      "reads": 41,
+      "reads": 42,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 2405,
-      "maxParameters": 750,
-      "rowsRead": 3788
+      "parameters": 495,
+      "maxParameters": 100,
+      "rowsRead": 2471
     },
     "Trends(24 months)": {
-      "reads": 8,
+      "reads": 7,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 4000,
-      "maxParameters": 2000,
-      "rowsRead": 10615
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 8422
     },
     "Trends(6 months)": {
-      "reads": 8,
+      "reads": 7,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1300,
-      "maxParameters": 650,
-      "rowsRead": 6975
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 2943
     },
     "Triage.Inbox(Dismissed)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2837,
-      "maxParameters": 900,
-      "rowsRead": 3025
-    },
-    "Triage.Inbox(Duplicate)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2517,
-      "maxParameters": 800,
-      "rowsRead": 2770
-    },
-    "Triage.Inbox(New)": {
-      "reads": 28,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 5707,
-      "maxParameters": 1100,
-      "rowsRead": 6010
-    },
-    "Triage.Inbox(Promoted)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2837,
-      "maxParameters": 900,
-      "rowsRead": 2996
-    },
-    "Triage.Inbox(Shortlisted)": {
       "reads": 18,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 2567,
-      "maxParameters": 800,
-      "rowsRead": 2772
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1749
+    },
+    "Triage.Inbox(Duplicate)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 667,
+      "maxParameters": 150,
+      "rowsRead": 1459
+    },
+    "Triage.Inbox(New)": {
+      "reads": 30,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 2147,
+      "maxParameters": 450,
+      "rowsRead": 3456
+    },
+    "Triage.Inbox(Promoted)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1699
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "reads": 19,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 717,
+      "maxParameters": 150,
+      "rowsRead": 1460
     },
     "Webhooks.Deliver": {
       "reads": 5,
@@ -251,12 +251,12 @@
       "rowsRead": 201
     },
     "Brief.Candidates": {
-      "reads": 10,
+      "reads": 9,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1110,
-      "maxParameters": 1100,
-      "rowsRead": 2094
+      "parameters": 10,
+      "maxParameters": 2,
+      "rowsRead": 1048
     },
     "Reminders(BriefNotReady)": {
       "reads": 4,
@@ -283,12 +283,12 @@
       "rowsRead": 10
     },
     "Reminders(Escalation)": {
-      "reads": 13,
-      "saves": 1,
-      "rowsWritten": 24,
-      "parameters": 6737,
+      "reads": 14,
+      "saves": 2,
+      "rowsWritten": 25,
+      "parameters": 6943,
       "maxParameters": 336,
-      "rowsRead": 812
+      "rowsRead": 813
     },
     "Reminders(ExternalReminder)": {
       "reads": 1,
@@ -331,100 +331,100 @@
       "rowsRead": 6
     },
     "Reports(month)": {
-      "reads": 10,
+      "reads": 9,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1302,
-      "maxParameters": 650,
-      "rowsRead": 7065
+      "parameters": 20,
+      "maxParameters": 4,
+      "rowsRead": 3033
     },
     "Search(CVE)": {
-      "reads": 23,
+      "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 172,
+      "parameters": 162,
       "maxParameters": 11,
-      "rowsRead": 105
+      "rowsRead": 103
     },
     "Search(indicator)": {
-      "reads": 23,
+      "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 147,
+      "parameters": 117,
       "maxParameters": 31,
-      "rowsRead": 35
+      "rowsRead": 33
     },
     "Search(text)": {
-      "reads": 15,
+      "reads": 14,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 435,
+      "parameters": 413,
       "maxParameters": 50,
-      "rowsRead": 1122
+      "rowsRead": 1120
     },
     "Today": {
-      "reads": 41,
+      "reads": 42,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 2405,
-      "maxParameters": 750,
-      "rowsRead": 3788
+      "parameters": 495,
+      "maxParameters": 100,
+      "rowsRead": 2471
     },
     "Trends(24 months)": {
-      "reads": 8,
+      "reads": 7,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 4000,
-      "maxParameters": 2000,
-      "rowsRead": 10615
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 8422
     },
     "Trends(6 months)": {
-      "reads": 8,
+      "reads": 7,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 1300,
-      "maxParameters": 650,
-      "rowsRead": 6975
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 2943
     },
     "Triage.Inbox(Dismissed)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2837,
-      "maxParameters": 900,
-      "rowsRead": 3025
-    },
-    "Triage.Inbox(Duplicate)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2517,
-      "maxParameters": 800,
-      "rowsRead": 2770
-    },
-    "Triage.Inbox(New)": {
-      "reads": 28,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 5707,
-      "maxParameters": 1100,
-      "rowsRead": 6010
-    },
-    "Triage.Inbox(Promoted)": {
-      "reads": 17,
-      "saves": 0,
-      "rowsWritten": 0,
-      "parameters": 2837,
-      "maxParameters": 900,
-      "rowsRead": 2996
-    },
-    "Triage.Inbox(Shortlisted)": {
       "reads": 18,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 2567,
-      "maxParameters": 800,
-      "rowsRead": 2772
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1739
+    },
+    "Triage.Inbox(Duplicate)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 667,
+      "maxParameters": 150,
+      "rowsRead": 1459
+    },
+    "Triage.Inbox(New)": {
+      "reads": 30,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 2147,
+      "maxParameters": 450,
+      "rowsRead": 3423
+    },
+    "Triage.Inbox(Promoted)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1699
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "reads": 19,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 717,
+      "maxParameters": 150,
+      "rowsRead": 1460
     },
     "Webhooks.Deliver": {
       "reads": 5,
