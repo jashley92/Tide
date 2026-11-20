@@ -2937,7 +2937,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* Our stack: the team chosen from its own list; on a narrow window each row's cells stacked, each named, so the list
    never scrolls sideways inside its card. */
 .tide-stack-team { width: auto; }
-@media (max-width: 899.98px) {
+@media (max-width: 1099.98px) {
     .tide-stack-table thead { display: none; }
     .tide-stack-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-1) var(--tide-space-3);
         padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
@@ -3275,7 +3275,9 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-stack-item:focus-visible, .tide-adv-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-stack-table th { white-space: normal; }
 .tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
-@media (min-width: 900px) {
+/* Seven columns need 1100px of window: narrower, the headings broke mid-word ("VERSIO NS") and a CVE's chip spilled
+   out of its cell, so below that each row stacks (the max-width: 1099.98px rules). */
+@media (min-width: 1100px) {
     .tide-stack-table { table-layout: fixed; width: 100%; }
     .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; }
     .tide-stack-table th:nth-child(1) { width: 19%; }
@@ -3290,7 +3292,7 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-stack-table .tide-stack-now { min-width: 0; }
 .tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
 /* Stacked, every row keeps its text clear of the left edge, where the selected row's accent is drawn. */
-@media (max-width: 899.98px) {
+@media (max-width: 1099.98px) {
     .tide-stack-table tr { padding-left: var(--tide-space-3); padding-right: var(--tide-space-2); }
     .tide-stack-item.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
     .tide-stack-item.selected > td { background: none; }
