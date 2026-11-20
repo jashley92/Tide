@@ -40,6 +40,7 @@ public sealed class ShiftedClock(TimeSpan by) : TimeProvider
 
 /// <summary>
 /// A clock whose timers fire only when the test moves it on (<see cref="Advance"/>). Its time of day is the system's.
+/// A timer with a period (a PeriodicTimer's) fires again a period after it last fired, at most once per move.
 /// Safe to hand an app: pages make and drop timers from their own threads.
 /// </summary>
 public sealed class ManualClock : TimeProvider
@@ -58,7 +59,7 @@ public sealed class ManualClock : TimeProvider
         {
             _now += by;
             due = _timers.Where(t => t.Due <= _now).ToList();
-            foreach (var t in due) t.Due = null;
+            foreach (var t in due) t.Due = t.Repeats ? _now + t.Period : null;
         }
         foreach (var t in due) t.Callback(t.State);
     }
@@ -76,10 +77,16 @@ public sealed class ManualClock : TimeProvider
         public TimerCallback Callback => callback;
         public object? State => state;
         public TimeSpan? Due { get; set; }
+        public TimeSpan Period { get; private set; }
+        public bool Repeats => Period > TimeSpan.Zero && Period != Timeout.InfiniteTimeSpan;
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
-            lock (owner._timers) Due = dueTime == Timeout.InfiniteTimeSpan ? null : owner._now + dueTime;
+            lock (owner._timers)
+            {
+                Due = dueTime == Timeout.InfiniteTimeSpan ? null : owner._now + dueTime;
+                Period = period;
+            }
             return true;
         }
 
