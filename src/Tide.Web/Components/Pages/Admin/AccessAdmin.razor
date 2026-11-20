@@ -196,17 +196,29 @@
         _reviewRule = await Reviews.RuleAsync();
         _requireSharePoint = DistributionOptions.CurrentValue.RequireSharePoint;
         _domains = string.Join("; ", Boundary.OrganizationDomains);
+        _loaded = Shown();
         await Load();
     }
 
     private bool _requireSharePoint;
+
+    // The settings as the page showed them when it loaded (or last saved them): a save sends only what was changed here,
+    // and one someone else has changed since is refused rather than put back.
+    private Dictionary<string, string?> _loaded = [];
+
+    private Dictionary<string, string?> Shown() => new()
+    {
+        [Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false",
+        [Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains,
+    };
 
     internal Task SaveSharePoint() => Run(async () =>
     {
         await Operational.SaveAsync(new Dictionary<string, string?>
         {
             [Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false",
-        });
+        }, loaded: _loaded);
+        _loaded[Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false";
         Toasts.Show("Saved.");
     });
 
@@ -237,8 +249,9 @@
         await Operational.SaveAsync(new Dictionary<string, string?>
         {
             [Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains,
-        });
+        }, loaded: _loaded);
         _domains = string.Join("; ", Boundary.OrganizationDomains);
+        _loaded[Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains;
         Toasts.Show($"Saved. Inside your organization: {Boundary.Current.Describe}.");
     });
 

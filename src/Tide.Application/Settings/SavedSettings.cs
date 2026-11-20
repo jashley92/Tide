@@ -96,25 +96,35 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
     /// <summary>Saves the values given (key to value), all or none: one that doesn't pass its check refuses the lot,
     /// saying why. A value the same as the one saved is left alone. An address outside the organization added to who's
     /// told there's no brief is refused (<see cref="Distribution.OutsideAddressesException"/>, naming it) unless
-    /// <paramref name="confirmOutside"/>; the organization's domains saved with it are the ones it's checked against.</summary>
-    public async Task SaveAsync(IReadOnlyDictionary<string, string?> values, bool confirmOutside = false, CancellationToken ct = default)
+    /// <paramref name="confirmOutside"/>; the organization's domains saved with it are the ones it's checked against.
+    /// <para>A page passes what it showed when it loaded as <paramref name="loaded"/>. Then only the values changed on it
+    /// are saved, so another administrator's change to a setting this page left alone stands; and a setting changed here
+    /// that someone else has saved since the page loaded refuses the save (<see cref="Articles.StaleEditException"/>)
+    /// rather than putting theirs back.</para></summary>
+    public async Task SaveAsync(IReadOnlyDictionary<string, string?> values, bool confirmOutside = false,
+        IReadOnlyDictionary<string, string?>? loaded = null, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change these settings.");
-        var checkedValues = values.ToDictionary(v => v.Key, v => OperationalSettings.Normalize(v.Key, v.Value));
+        var checkedValues = values.ToDictionary(v => v.Key, v => OperationalSettings.Normalize(v.Key, v.Value), StringComparer.OrdinalIgnoreCase);
+        var changed = loaded is null ? checkedValues
+            : checkedValues.Where(v => !loaded.TryGetValue(v.Key, out var was) || AsStored(v.Key, was) != v.Value)
+                .ToDictionary(v => v.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
+        if (changed.Count == 0) return;
         await using (var db = await dbs.CreateAsync(ct))
         {
-            var keys = checkedValues.Keys.ToList();
+            var keys = changed.Keys.ToList();
             var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
-            if (checkedValues.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
+            if (loaded is not null) NotChangedSince(loaded, keys, rows);
+            if (changed.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
             {
-                var inside = checkedValues.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
+                var inside = changed.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
                     ? boundary.With(OperationalSettings.SplitAddresses(domains))
                     : boundary.CurrentOrUnknown();
                 inside.CheckAdded(OperationalSettings.SplitAddresses(told),
                     OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value), confirmOutside,
                     "They're told each morning there's no brief yet.");
             }
-            foreach (var (key, value) in checkedValues)
+            foreach (var (key, value) in changed)
             {
                 if (rows.TryGetValue(key, out var row) && row.Value == value) continue;
                 if (row is null) db.Settings.Add(row = new AppSetting { Key = key });
@@ -125,5 +135,21 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
             await db.SaveChangesAsync(ct);
         }
         await saved.RefreshAsync(dbs, ct);
+    }
+
+    // A value as it would be stored, to compare what a page showed with what it sends and with what's saved now. One
+    // that doesn't pass its check (a server's Windows time zone id, say) is compared as it is.
+    private static string AsStored(string key, string? value) =>
+        OperationalSettings.Problem(key, value) is null ? OperationalSettings.Normalize(key, value) : (value ?? "").Trim();
+
+    // A setting changed on the page that someone else has saved since it loaded: saving would put back what they set, so
+    // nothing is saved. A saved row that no longer passes its check isn't in force (the page showed the server's value),
+    // so it doesn't count; nor does no row, as no one has saved one.
+    private static void NotChangedSince(IReadOnlyDictionary<string, string?> loaded, IEnumerable<string> keys, Dictionary<string, AppSetting> rows)
+    {
+        if (keys.Any(k => loaded.TryGetValue(k, out var was) && rows.TryGetValue(k, out var row)
+                && OperationalSettings.Problem(k, row.Value) is null && OperationalSettings.Normalize(k, row.Value) != AsStored(k, was)))
+            throw new Articles.StaleEditException("Someone else changed a setting you changed here since you opened this page, so " +
+                "nothing was saved. Reload to see their change, then make yours again.");
     }
 }

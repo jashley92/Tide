@@ -128,6 +128,64 @@ public class OperationalSettingsTests
         ctx.AuditLog.Should().Contain(a => a.EntityType == nameof(AppSetting), "a setting saved in the app is audited like any change");
     }
 
+    // What two administrators' pages showed when both opened, before either saved.
+    private static Dictionary<string, string?> OrgPage(string reminder = "07:30", string zone = "Europe/London") => new()
+    {
+        [OperationalSettings.ReminderTime] = reminder,
+        [OperationalSettings.TimeZone] = zone,
+        [OperationalSettings.TeamName] = "Server CTI",
+    };
+
+    [Fact]
+    public async Task TwoAdministratorsOnStalePages_ChangingDifferentSettings_BothChangesStand()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+        await settings.SaveAsync(OrgPage(zone: "Asia/Tokyo"), loaded: loaded);
+
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00", "the second page didn't change it, so it doesn't put back what it showed");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Asia/Tokyo");
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Select(s => s.Key).Should().BeEquivalentTo([OperationalSettings.ReminderTime, OperationalSettings.TimeZone],
+            "a setting neither changed isn't written");
+        ctx.AuditLog.Count(a => a.EntityType == nameof(AppSetting)).Should().Be(2, "each save audits only what it changed");
+    }
+
+    [Fact]
+    public async Task TwoAdministratorsOnStalePages_ChangingTheSameSetting_TheSecondIsRefused_AndNothingIsOverwritten()
+    {
+        using var rig = new SettingsRig(Server);
+        var settings = rig.Get<OperationalSettingsService>();
+        var loaded = OrgPage();
+        await settings.SaveAsync(OrgPage(reminder: "06:00"), loaded: loaded);
+
+        var second = () => settings.SaveAsync(OrgPage(reminder: "08:15", zone: "Asia/Tokyo"), loaded: loaded);
+
+        (await second.Should().ThrowAsync<Tide.Application.Articles.StaleEditException>())
+            .Which.Message.Should().Be("Someone else changed a setting you changed here since you opened this page, so nothing was saved. " +
+                                       "Reload to see their change, then make yours again.");
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("06:00");
+        rig.Get<OrgClock>().Zone.Id.Should().Be("Europe/London", "the refused save is refused whole");
+
+        // Reloaded, the same change saves.
+        await settings.SaveAsync(OrgPage(reminder: "08:15"), loaded: OrgPage(reminder: "06:00"));
+        rig.Now<ReminderOptions>().ReminderTime.Should().Be("08:15");
+    }
+
+    [Fact]
+    public async Task ASaveWithNoChanges_WritesNothing()
+    {
+        using var rig = new SettingsRig(Server);
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(), loaded: OrgPage());
+        await rig.Get<OperationalSettingsService>().SaveAsync(OrgPage(reminder: "7:30"), loaded: OrgPage());   // the same time, typed differently
+        await using var ctx = rig.Db.Context();
+        ctx.Settings.Should().BeEmpty("the server's values stand rather than being written over with the same");
+        ctx.AuditLog.Should().NotContain(a => a.EntityType == nameof(AppSetting));
+    }
+
     [Fact]
     public async Task OrgClock_FollowsASavedTimeZone_MeetingTimeAndName()
     {
