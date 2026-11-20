@@ -84,6 +84,7 @@ public static class DependencyInjection
         services.AddSingleton<PublishedContentCache>();
 
         services.AddScoped<ArticleService>();
+        services.AddScoped<ArticleHandoffService>();
         services.AddScoped<AssistService>();
         services.AddScoped<HolidayService>();
         services.AddScoped<Preferences.UserPreferenceService>();

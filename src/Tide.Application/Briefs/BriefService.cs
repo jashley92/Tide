@@ -20,9 +20,12 @@ public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string PresentedB
 public sealed record Reopening(int Carried, DateOnly? CarriedTo, string? Blocked = null);
 
 /// <summary>An article that could go on a brief: recent, and not on it yet. <see cref="LastBriefed"/> is the latest
-/// other brief it's on, if any (on a past day that can be a later one).</summary>
+/// other brief it's on, if any (on a past day that can be a later one). <see cref="WriterId"/> is who is writing it now
+/// (ADR 0031: the author until it's handed on), <see cref="EditedAtUtc"/> when it was last saved, or made.</summary>
 public sealed record BriefCandidate(Guid Id, string Title, Classification Classification, Priority? Priority, TlpLevel Tlp,
-    ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "")
+    ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "",
+    string WriterId = "", string WriterName = "", DateTimeOffset? EditedAtUtc = null, DateTimeOffset? WriterSinceUtc = null,
+    string? HandoffNote = null)
 {
     /// <summary>Whether it's still to be briefed: Draft or Ready, as an article carried over from an earlier brief's "not
     /// discussed" stays. "Add article (N ready, M drafts)" counts these; a presented one is shown only on request.</summary>
@@ -156,7 +159,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             .Where(a => a.CreatedAtUtc >= since || a.Status == ArticleStatus.Ready
                         || (a.Status == ArticleStatus.Draft && db.BriefItems.Any(i => i.ArticleId == a.Id)))
             .Select(a => new BriefCandidate(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName,
-                a.CreatedAtUtc, null, a.AuthorId))
+                a.CreatedAtUtc, null, a.AuthorId, a.WriterId ?? a.AuthorId, a.WriterName ?? a.AuthorName,
+                a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote))
             .ToListAsync(ct);
         var ids = rows.Select(r => r.Id).ToList();
         var on = await db.BriefItems.AsNoTracking().Where(i => ids.Contains(i.ArticleId))

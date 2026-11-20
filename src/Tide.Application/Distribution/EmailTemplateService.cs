@@ -316,6 +316,10 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["RequestList"] = ReminderService.RequestList(SampleExternal(today), today, clock.Days),
             ["Days"] = "5 business days",
             ["WaitingList"] = ReminderService.WaitingList([(44, "psirt@vendor.example", today.AddDays(-7))]),
+            ["Writer"] = "Sam",
+            ["Before"] = "Robin",
+            ["Article"] = "Fortinet FortiOS SSL-VPN heap overflow exploited",
+            ["ArticleLink"] = " (" + Link("open it", "articles") + ")",
         };
         return values;
     }
