@@ -238,6 +238,22 @@ public class OutreachServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ADraft_IsFilledAsASavedTemplateIs_SavesNothing_AndIsRefusedWhenTideCantFillIt()
+    {
+        var (action, _) = await Scene();
+        var w = await _db.Outreach().PreviewAsync(action.Id, "{{product.name}}: are we affected? [{{tlp}}]", Body, TlpLevel.Green);
+        w.Draft.Body.Should().Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n");
+        w.Draft.Marking.Should().Be(TlpLevel.Green);
+        (await _db.OutreachTemplates().ListAsync()).Should().BeEmpty("a preview saves no template");
+        (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty();
+
+        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, "x", "{{article.titel}}", TlpLevel.Green))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("{{article.titel}} isn't a placeholder TIDE fills*");
+        As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
+        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, "x", "y", TlpLevel.Green)).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
     public async Task WritingTheEmail_HoldsTheArticleToTheTemplatesCeiling_SaysWhatItLeftOut_AndMarksWhatItCouldntFill()
     {
         var (action, _) = await Scene(TlpLevel.Amber);
@@ -576,6 +592,73 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
         var read = await viewer.Html();
         read.Should().Contain("Ask the PSIRT " + tag).And.Contain(" Copy</button>")
             .And.NotContain("New template").And.NotContain("aria-label=\"Edit ").And.NotContain("aria-label=\"Retire ").And.NotContain("aria-label=\"Delete ");
+    }
+
+    [Fact]
+    public async Task TheForm_OffersTheInsertMenu_AndTypingBraces_OnTheSubjectAndBody()
+    {
+        await using var r = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates");
+        await r.Click(p => { p.New(); return Task.CompletedTask; });
+        var form = await r.Html();
+        form.Should().Contain("data-oi data-oi-names=\"[{&quot;n&quot;:&quot;article.title&quot;")
+            .And.Contain("&quot;n&quot;:&quot;else&quot;", "a section's {{else}} is offered too")
+            .And.Contain("aria-controls=\"ot-f-insert\"").And.Contain("Insert placeholder")
+            .And.Contain("Or type {{ in the subject or body to pick one as you write.");
+        form.Should().MatchRegex("<input id=\"ot-f-subject\"[^>]*data-oi-target[^>]*aria-autocomplete=\"list\" aria-controls=\"ot-f-subject-list\"");
+        form.Should().MatchRegex("<textarea id=\"ot-f-body\"[^>]*data-oi-target data-oi-default[^>]*aria-describedby=\"ot-f-check ot-f-body-help\"");
+        form.Should().Contain("<ul id=\"ot-f-body-list\" class=\"tide-oi-suggest\" role=\"listbox\" aria-label=\"Placeholders\" data-oi-list-for=\"ot-f-body\" hidden></ul>")
+            .And.Contain("data-oi-status").And.Contain("id=\"ot-f-check\"").And.Contain("TIDE can fill this:");
+    }
+
+    [Fact]
+    public async Task TheInsertMenu_FindsAPlaceholder_AndOffersEachWayToPutItIn()
+    {
+        await using var r = await RenderAsync<OutreachInsertMenu>(app, "/library/templates", new() { ["PanelId"] = "oi-test" });
+        (await r.Html()).Should().Contain("aria-expanded=\"false\"").And.NotContain("data-oi-insert");
+
+        await r.Click(m => { m.Toggle(); return Task.CompletedTask; });
+        r.Component.Shown.Should().HaveCount(OutreachFill.All.Count);
+        var cves = OutreachFill.All.Single(p => p.Name == "article.cves");
+        await r.Click(m => { m.Choose(cves); return Task.CompletedTask; });
+        var html = await r.Html();
+        html.Should().Contain("aria-expanded=\"true\"").And.Contain("role=\"group\" aria-label=\"Insert a placeholder\"")
+            .And.Contain("data-oi-insert=\"{{article.cves}}\"").And.Contain("data-oi-insert=\"{{article.cves?}}\"")
+            .And.Contain("data-oi-section=\"article.cves\"").And.Contain("aria-pressed=\"true\"");
+        html.Should().Contain("disabled data-oi-insert=\"{{article.cves|}}\"", "nothing typed for when it's empty yet");
+
+        var tlp = OutreachFill.All.Single(p => p.Name == OutreachFill.TlpName);
+        await r.Click(m => { m.Choose(tlp); return Task.CompletedTask; });
+        (await r.Html()).Should().Contain("data-oi-insert=\"{{tlp}}\"").And.NotContain("data-oi-insert=\"{{tlp?}}\"").And.NotContain("data-oi-section=\"tlp\"",
+            "the email always carries its TLP");
+    }
+
+    [Fact]
+    public async Task TheDraft_SaysWhetherTideCanFillIt_AndPreviewsItOnAnOpenAction()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var number = await OutreachAction("Ask the vendor " + tag);
+        await using (var bad = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
+        {
+            ["CheckId"] = "c", ["Subject"] = "About {{action.number}}", ["Body"] = "{{#article.cves}}\nCVEs", ["Ceiling"] = TlpLevel.Clear,
+        }))
+        {
+            bad.Component.Problem.Should().Be("{{#article.cves}} is never closed: end the section with {{/article.cves}}.");
+            (await bad.Html()).Should().Contain("class=\"small tide-oi-check is-problem\" role=\"status\"");
+        }
+
+        await using var r = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
+        {
+            ["CheckId"] = "c", ["Subject"] = "About {{action.number}}", ["Ceiling"] = TlpLevel.Clear,
+            ["Body"] = "Hello {{product.contact|there}},\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{else}}\nNo CVEs yet.\n{{/article.cves}}",
+        });
+        r.Component.Problem.Should().BeNull();
+        (await r.Html()).Should().Contain("TIDE can fill this: 4 placeholders.").And.Contain("Preview this draft on an action");
+        await r.Click(d => d.TogglePreview());
+        var action = (await Read(number)).Action;
+        await r.Click(d => d.ChooseAction(action.Id));
+        r.Component.Preview!.Draft.Subject.Should().Be($"About A-{number}");
+        r.Component.Preview.Draft.Body.Should().EndWith("Hello there,\n\nNo CVEs yet.\n");
+        (await r.Html()).Should().Contain($"Subject: About A-{number}");
     }
 
     [Fact]

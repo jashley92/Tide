@@ -154,17 +154,21 @@
     private async Task Fill()
     {
         var asked = ++_asked;
-        if (_actionId is not { } id) { (_preview, _previewError) = (null, null); return; }
-        if (_problem is { } problem) { (_preview, _previewError) = (null, "Fix the draft to preview it: " + problem); return; }
-        try
+        if (_actionId is not { } id) (_preview, _previewError) = (null, null);
+        else if (_problem is { } problem) (_preview, _previewError) = (null, "Fix the draft to preview it: " + problem);
+        else
         {
-            var written = await OutreachSvc.PreviewAsync(id, Subject ?? "", Body ?? "", Ceiling);
-            if (asked == _asked) (_preview, _previewError) = (written, null);
+            try
+            {
+                var written = await OutreachSvc.PreviewAsync(id, Subject ?? "", Body ?? "", Ceiling);
+                if (asked == _asked) (_preview, _previewError) = (written, null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (asked == _asked) (_preview, _previewError) = (null, UserFacingError.For(ex));
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            if (asked == _asked) (_preview, _previewError) = (null, UserFacingError.For(ex));
-        }
+        StateHasChanged();
     }
 
     public void Dispose()

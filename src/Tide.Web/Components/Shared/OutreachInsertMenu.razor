@@ -100,9 +100,14 @@
     {
         _open = !_open;
         if (_open) (_find, _instead, _chosen, _focusFind) = ("", "", null, true);
+        StateHasChanged();
     }
 
-    internal void Choose(OutreachPlaceholder p) => _chosen = p;
+    internal void Choose(OutreachPlaceholder p)
+    {
+        _chosen = p;
+        StateHasChanged();
+    }
 
     // After an insert the cursor is in the box written to (js/outreach-editor.js): focus stays there.
     internal void Close() => _open = false;
