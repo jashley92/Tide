@@ -1779,6 +1779,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Caller")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("bit");
 
@@ -1808,6 +1812,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(1000)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Source", "Caller");
 
                     b.HasIndex("Source", "ExternalId")
                         .IsUnique();

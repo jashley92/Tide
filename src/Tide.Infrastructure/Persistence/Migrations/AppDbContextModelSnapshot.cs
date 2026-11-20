@@ -1774,6 +1774,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Caller")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 
@@ -1803,6 +1807,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Source", "Caller");
 
                     b.HasIndex("Source", "ExternalId")
                         .IsUnique();

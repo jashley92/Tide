@@ -433,6 +433,64 @@ public class DetectionServiceTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task EachRule_KeepsItsCaller_AndAPushOrARemoval_ReadsOnlyThatCallersRules(string provider)
+    {
+        _db = _db.On(provider);
+        void As(string id, string name) => (_db.User.UserId, _db.User.DisplayName) = (id, name);
+        async Task<Dictionary<string, string?>> Stored()
+        {
+            await using var ctx = _db.Context();
+            return (await ctx.DetectionRules.Select(r => new { r.Name, r.Caller }).ToListAsync()).ToDictionary(r => r.Name, r => r.Caller);
+        }
+        // The rules each save had loaded (and so tracks): what the read before it brought back.
+        var loaded = new List<string?>();
+        _db.BeforeSave = ctx => loaded.AddRange(ctx.ChangeTracker.Entries<DetectionRule>().Where(e => e.State != EntityState.Added).Select(e => e.Entity.Caller));
+
+        await Detections().ImportAsync(DetectionSource.Csv, "rules.csv", Csv("Imported,T1078,yes,r1"));
+        As("api:0a1b2c3d4e5f4a6b8c7d9e0f1a2b3c4d", "Sentinel sync");
+        await Detections().PushAsync([new ParsedRule("1001", "Sentinel MFA", ["T1621"], null, true), new ParsedRule("1002", "Sentinel VPN", ["T1133"], null, true)]);
+        As("api:ffffffffffffffffffffffffffffffff", "Splunk sync");
+        await Detections().PushAsync([new ParsedRule("1001", "Splunk accounts", ["T1078"], null, true)]);
+        As("S-1-5-21-TEST-7", "SOAR gMSA");
+        await Detections().PushAsync([new ParsedRule("x", "SOAR rule", ["T1110"], null, true)]);
+        await using (var ctx = _db.Context())
+        {
+            ctx.DetectionRules.Add(new DetectionRule { Source = DetectionSource.Api, ExternalId = "old-1", Name = "Old push", Techniques = "T1078", LastSeenAtUtc = _time.Now });
+            await ctx.SaveChangesAsync();
+        }
+
+        (await Stored()).Should().Equal(new Dictionary<string, string?>
+        {
+            ["Imported"] = null, ["Sentinel MFA"] = "api:sentinel sync", ["Sentinel VPN"] = "api:sentinel sync", ["Splunk accounts"] = "api:splunk sync",
+            ["SOAR rule"] = "s-1-5-21-test-7", ["Old push"] = null,
+        });
+
+        // A change through each path keeps the caller; each reads its own set and no one else's.
+        _time.Now += TimeSpan.FromSeconds(1);
+        loaded.Clear();
+        As("api:ffffffffffffffffffffffffffffffff", "Splunk sync");
+        (await Detections().PushAsync([new ParsedRule("1001", "Splunk accounts renamed", ["T1078"], null, true)])).Changed.Should().Be(1);
+        loaded.Should().Equal(["api:splunk sync"]);
+        loaded.Clear();
+        As("S-1-5-21-TEST-1", "Test Analyst");
+        (await Detections().ImportAsync(DetectionSource.Csv, "rules.csv", Csv("Imported renamed,T1078,yes,r1"))).Changed.Should().Be(1);
+        loaded.Should().Equal([(string?)null]);
+        loaded.Clear();
+        (await Detections().RemoveCallerAsync("api:sentinel sync")).Should().Be(2);
+        loaded.Should().Equal(["api:sentinel sync", "api:sentinel sync"]);
+        loaded.Clear();
+        (await Detections().RemoveCallerAsync("")).Should().Be(1, "the push from before callers were kept");
+        loaded.Should().Equal([(string?)null]);
+
+        (await Stored()).Should().Equal(new Dictionary<string, string?>
+        {
+            ["Imported renamed"] = null, ["Splunk accounts renamed"] = "api:splunk sync", ["SOAR rule"] = "s-1-5-21-test-7",
+        });
+        (await Detections().CallersAsync()).Select(s => (s.Caller, s.Rules)).Should().BeEquivalentTo([("api:splunk sync", 1), ("s-1-5-21-test-7", 1)]);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task TwoLongIds_ThatDifferOnlyAtTheEnd_StayTwoRules_AndThePushSaysSo(string provider)
     {
         _db = _db.On(provider);
@@ -462,6 +520,9 @@ public class DetectionPageTests(TideApp app) : IClassFixture<TideApp>
         var response = await client.PostAsJsonAsync("/api/v1/detections", new { rules = new[] { new { id = "page-1", name = "page-test pushed rule", techniques = new[] { "T1078" } } } });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("added").GetInt32().Should().Be(1);
+        await using (var scope = app.Services.CreateAsyncScope())
+            (await scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>().DetectionRules
+                .Where(r => r.Name == "page-test pushed rule").Select(r => r.Caller).SingleAsync()).Should().Be("api:detections push", "the token's set, by its name");
         (await client.PostAsJsonAsync("/api/v1/detections", new { rules = Array.Empty<object>() })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await client.PostAsJsonAsync("/api/v1/detections", new { rules = new object?[] { null } })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 

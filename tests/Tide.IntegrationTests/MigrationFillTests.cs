@@ -302,6 +302,37 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task DetectionRuleCaller_IsFilledFromEachPushedRulesId_AsTheAppReadsIt(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        DetectionRule Rule(DetectionSource source, string id) => new() { Source = source, ExternalId = id, Name = id, LastSeenAtUtc = Decided };
+        var rules = new[]
+        {
+            Rule(DetectionSource.Api, "api:splunk sync\u001F1001"), Rule(DetectionSource.Api, "s-1-5-21-test-7\u001Fx\u001Fy"),
+            Rule(DetectionSource.Api, "old-1"), Rule(DetectionSource.Api, "\u001Fno caller"), Rule(DetectionSource.Csv, "csv\u001Fr1"),
+            Rule(DetectionSource.Sigma, "sigma-1"),
+        };
+        await using (var ctx = database.Context())
+        {
+            ctx.DetectionRules.AddRange(rules);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("DetectionRuleCaller");
+
+        await using (var ctx = database.Context())
+        {
+            // The columns as stored, not an entity (whose setters would read the caller again).
+            var stored = (await ctx.DetectionRules.Select(r => new { r.ExternalId, r.Caller }).ToListAsync()).ToDictionary(r => r.ExternalId, r => r.Caller);
+            stored.Should().Equal(rules.ToDictionary(r => r.ExternalId, r => DetectionRule.CallerOf(r.Source, r.ExternalId)));
+            stored["api:splunk sync\u001F1001"].Should().Be("api:splunk sync");
+            stored["s-1-5-21-test-7\u001Fx\u001Fy"].Should().Be("s-1-5-21-test-7", "up to the first mark");
+            stored.Where(s => s.Value is not null).Should().HaveCount(2, "an imported rule, and a push from before callers were kept, has none");
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {
