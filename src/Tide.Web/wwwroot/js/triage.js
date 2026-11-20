@@ -4,7 +4,8 @@
 // alone. "o", or Enter on a row, opens the item's source (the link its icon by the title has) in a new tab here, without
 // a referrer or opener. "d" marks it a duplicate of the similar article. A click on the title itself is .NET's: it opens
 // the promote form.
-// While a row's promote form is open the keys are the form's: only Esc, which closes it and focuses the row again.
+// While a row's promote form is open the keys are the form's: Enter promotes and writes (the form's submit), Shift+Enter
+// promotes and keeps triaging, and Esc closes it and focuses the row again.
 // A suggested group ("Looks like one event") is a line of its own: Enter on it opens or closes it, the right arrow opens
 // it, and the left arrow (on it or on a report under it) closes it. J/K and the up and down arrows move over it.
 // "v" reads the selected item in the reading pane (EP-76), and pressed again closes it; Esc closes it too. Open or closed
@@ -14,13 +15,20 @@ window.tideTriage = (function () {
     const rows = window.tideRows;
     let started = 0, room = null, tellRoom = null;
 
-    // While the promote form is open, only Esc is the page's.
+    // While the promote form is open, only Esc is the page's, and Shift+Enter is the form's second way out: Promote and
+    // keep triaging, its button pressed (plain Enter submits the form, Promote and write, as it always has). Not on a
+    // button, where Shift+Enter presses that button.
     function held(e) {
-        if (!document.querySelector('.tide-promote-form')) return false;
+        const form = document.querySelector('.tide-promote-form');
+        if (!form) return false;
         if (e.key === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
             rows.send('cancel');
+        } else if (e.key === 'Enter' && e.shiftKey && !e.repeat && !e.isComposing && form.contains(e.target) && e.target.tagName !== 'BUTTON') {
+            e.preventDefault();
+            const stay = form.querySelector('[data-promote-stay]');
+            if (stay && !stay.disabled) stay.click();
         }
         return true;
     }

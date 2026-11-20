@@ -260,8 +260,21 @@ the page stops it after the source it's on.
 
 ### Promoting
 
-- **Inline promote form.** Clicking a title opens the promote form in place. It suggests a priority from the
+- **Inline promote form.** Clicking a title, or P, opens the promote form in place. It suggests a priority from the
   item's CVE data and says why ("Suggested P1: on KEV, CVSS 10").
+- **Two ways out.** **Promote and write** (Enter, the main button) makes the draft and opens it in the editor, as it
+  always has. **Promote and keep triaging** (Shift+Enter) makes the draft and stays on the inbox: the row leaves the
+  tab, the next one is selected, and a toast says what was made, with **Write it** (opens the draft) and **Undo**
+  (Alt+Z too). Undo deletes the draft and puts the item back where it was, Shortlisted included, as long as nobody has
+  worked on the draft since. So four promotes cost no page changes, and the drafts wait on the Promoted tab and the
+  Articles list.
+- **Add to today's brief.** A tick in the form puts the draft on the end of today's running order (the next working
+  day's on a weekend), starting the brief if there's none, with either button. It's off until the analyst ticks it, and
+  then it stays as they left it. If the brief has been sent, the draft is still made and the toast says why it isn't on
+  the brief.
+
+![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
+
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
 
 ### What triage already knows

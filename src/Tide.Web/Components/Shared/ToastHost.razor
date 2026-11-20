@@ -35,6 +35,11 @@
                     <span class="visually-hidden"> Press @UndoKeys to undo.</span>
                 }
             </span>
+            @* Where it made something (Triage's promote that stays on the inbox): a link on to it. *@
+            @if (t.Link is { } link)
+            {
+                <a class="tide-toast-link" href="@link.Href" @onclick="() => Dismiss(t.Id)">@link.Text</a>
+            }
             @if (t.Undo is not null)
             {
                 <button type="button" class="tide-toast-undo" data-toast-undo="@(newest ? "newest" : null)" aria-keyshortcuts="@(newest ? UndoKeys : null)"

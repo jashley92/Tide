@@ -13,8 +13,14 @@ public sealed class ToastService(TimeProvider? time = null)
 
     /// <summary>A message; <see cref="Undo"/>, when there is one, takes back what it reports (a button on the toast).
     /// <see cref="IsWarning"/>: it worked in part (some of what was asked failed), shown as a confirmation is, marked as a
-    /// warning.</summary>
-    public sealed record Toast(Guid Id, string Message, bool IsError, Func<Task>? Undo = null, bool IsWarning = false);
+    /// warning. <see cref="Link"/>, when there is one, goes on to what it made (Triage's "Write it").</summary>
+    public sealed record Toast(Guid Id, string Message, bool IsError, Func<Task>? Undo = null, bool IsWarning = false)
+    {
+        public ToastLink? Link { get; init; }
+    }
+
+    /// <summary>A link on a toast: where it goes (relative, so it holds under the app's path base) and its words.</summary>
+    public sealed record ToastLink(string Href, string Text);
 
     // Confirmations dismiss themselves from a timer thread while the circuit may be rendering the list, so it's only
     // changed under the lock and readers get a copy.
@@ -26,8 +32,8 @@ public sealed class ToastService(TimeProvider? time = null)
     private readonly Dictionary<Guid, ITimer> _timers = [];
     private bool _held;
 
-    /// <summary>How long a confirmation shows: longer with an Undo, to give time to reach it.</summary>
-    public static TimeSpan Lasts(Toast toast) => TimeSpan.FromSeconds(toast.Undo is null ? 4 : 10);
+    /// <summary>How long a confirmation shows: longer with an Undo or a link, to give time to reach it.</summary>
+    public static TimeSpan Lasts(Toast toast) => TimeSpan.FromSeconds(toast.Undo is null && toast.Link is null ? 4 : 10);
 
     /// <summary>Whether the confirmations' timers are held.</summary>
     internal bool Held
@@ -66,6 +72,10 @@ public sealed class ToastService(TimeProvider? time = null)
     /// time to reach the button.</summary>
     public void Show(string message, Func<Task> undo) => Add(message, false, undo);
 
+    /// <summary>A confirmation with a link to what it made, and an Undo when <paramref name="undo"/> is given; marked as a
+    /// warning when part of what was asked didn't happen.</summary>
+    public void Show(string message, ToastLink link, Func<Task>? undo = null, bool warning = false) => Add(message, false, undo, warning: warning, link: link);
+
     /// <summary>Runs a toast's Undo, once: the toast goes as it starts.</summary>
     public Task UndoAsync(Guid id)
     {
@@ -95,9 +105,9 @@ public sealed class ToastService(TimeProvider? time = null)
         Changed?.Invoke();
     }
 
-    private void Add(string message, bool isError, Func<Task>? undo = null, bool clearsErrors = true, bool warning = false)
+    private void Add(string message, bool isError, Func<Task>? undo = null, bool clearsErrors = true, bool warning = false, ToastLink? link = null)
     {
-        var toast = new Toast(Guid.NewGuid(), message, isError, undo, warning);
+        var toast = new Toast(Guid.NewGuid(), message, isError, undo, warning) { Link = link };
         lock (_lock)
         {
             // A confirmation means the last attempt worked, so errors left from earlier attempts no longer apply.

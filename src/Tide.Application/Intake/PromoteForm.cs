@@ -19,4 +19,8 @@ public sealed class PromoteForm
 
     /// <summary>The article's TLP; null for the source's default.</summary>
     public TlpLevel? Tlp { get; set; }
+
+    /// <summary>Put the new draft at the end of today's brief as well (<see cref="TriagePromoter"/>), starting the brief
+    /// if there's none yet. Ignored by <see cref="IntakeService"/>'s own promotes.</summary>
+    public bool AddToBrief { get; set; }
 }
