@@ -352,7 +352,23 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     {
         private readonly List<string> _sql = [];
 
-        public int Count { get; private set; }
+        private int _count, _writes, _parameters, _maxParameters, _rows;
+
+        /// <summary>The reads (queries and scalars) since the last <see cref="Reset"/>.</summary>
+        public int Count => _count;
+
+        /// <summary>The writes (ExecuteUpdate, ExecuteDelete, raw SQL) since the last <see cref="Reset"/>; a save is a read
+        /// on SQLite and SQL Server alike (its batch returns the generated values), so it's in <see cref="Count"/>.</summary>
+        public int Writes => _writes;
+
+        /// <summary>The parameters sent with every command since the last <see cref="Reset"/>, and the most any one
+        /// carried: an IN list built from a collection grows the second with the data.</summary>
+        public int Parameters => _parameters;
+        public int MaxParameters => _maxParameters;
+
+        /// <summary>The rows the client read back since the last <see cref="Reset"/>: a page that reads a whole table to
+        /// show fifty of it grows this with the data.</summary>
+        public int Rows => _rows;
 
         /// <summary>The commands since the last <see cref="Reset"/>, when <see cref="Record"/> is on.</summary>
         public IReadOnlyList<string> Sql { get { lock (_sql) return _sql.ToList(); } }
@@ -361,7 +377,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
         public void Reset()
         {
-            Count = 0;
+            (_count, _writes, _parameters, _maxParameters, _rows) = (0, 0, 0, 0, 0);
             lock (_sql) _sql.Clear();
         }
 
@@ -371,9 +387,13 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         /// for a test that needs a colleague's change to land between a service's read and its write (a race).</summary>
         public void Before(Func<string, bool> matches, Action hook) => _before = (matches, hook);
 
-        private void Note(System.Data.Common.DbCommand command)
+        private void Note(System.Data.Common.DbCommand command, bool write = false)
         {
-            Count++;
+            if (write) Interlocked.Increment(ref _writes);
+            else Interlocked.Increment(ref _count);
+            Interlocked.Add(ref _parameters, command.Parameters.Count);
+            int max;
+            while (command.Parameters.Count > (max = _maxParameters) && Interlocked.CompareExchange(ref _maxParameters, command.Parameters.Count, max) != max) { }
             if (Record) lock (_sql) _sql.Add(command.CommandText);
             Hook(command);
         }
@@ -387,13 +407,28 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
             }
         }
 
-        // Not counted (the counts are of reads); only the race hook.
+        // Counted as writes, apart from Count (the counts tests compare are of reads).
         public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(
             System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
             Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            Hook(command);
+            Note(command, write: true);
             return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> NonQueryExecuting(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result)
+        {
+            Note(command, write: true);
+            return base.NonQueryExecuting(command, eventData, result);
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult DataReaderDisposing(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.DataReaderDisposingEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult result)
+        {
+            Interlocked.Add(ref _rows, eventData.ReadCount);
+            return base.DataReaderDisposing(command, eventData, result);
         }
 
         public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
@@ -418,6 +453,14 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         {
             Note(command);
             return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object> ScalarExecuting(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object> result)
+        {
+            Note(command);
+            return base.ScalarExecuting(command, eventData, result);
         }
     }
 

@@ -150,7 +150,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-CandidateDays);
+        var since = clock.Now.ToUniversalTime().AddDays(-CandidateDays);
         var rows = await db.Articles.AsNoTracking()
             .Where(a => !db.BriefItems.Any(i => i.BriefId == briefId && i.ArticleId == a.Id))
             .Where(a => a.CreatedAtUtc >= since || a.Status == ArticleStatus.Ready

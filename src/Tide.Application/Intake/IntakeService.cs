@@ -740,7 +740,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             : Enumerable.Empty<(string Cve, Guid Id)>().ToLookup(x => x.Cve, x => x.Id);
         var similarIds = items.Select(i => i.SimilarToId).OfType<Guid>().Distinct().ToList();
         var similar = await db.FeedItems.AsNoTracking().Where(i => similarIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, ct);
-        var coverage = await CoverageAsync(db, items, ct);
+        var coverage = await CoverageAsync(db, items, time.GetUtcNow(), ct);
         // Reports that look like one event, among the items still to decide: worked out now, from what's shown, and never
         // stored. What's shown is this page: a group's reports came out close together, so they share a page, unless the
         // page ends among them (the rest group on the next). Only what someone split is (EP-84): those reports never group
@@ -877,7 +877,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (dismissed.Count == 0) return [];
         var kev = await KevAsync(db, dismissed, ct);
         var watched = await Adversaries.AdversaryService.WatchedAsync(db, ct);
-        var coverage = await CoverageAsync(db, dismissed, ct);
+        var coverage = await CoverageAsync(db, dismissed, time.GetUtcNow(), ct);
         var watchedIds = watched.Select(w => w.Id).ToList();
         var recently = since.AddDays(-MissedDays);
         var tagged = (await db.ArticleAdversaries.AsNoTracking().Where(l => watchedIds.Contains(l.AdversaryId))
@@ -989,13 +989,13 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     }
 
     // Past coverage: articles about the same CVE, or with the same canonical address, and the brief they were on.
-    private static async Task<Dictionary<Guid, IReadOnlyList<Coverage>>> CoverageAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, CancellationToken ct)
+    private static async Task<Dictionary<Guid, IReadOnlyList<Coverage>>> CoverageAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, DateTimeOffset now, CancellationToken ct)
     {
         var cves = items.SelectMany(i => i.CveList).Distinct().ToList();
         var byCve = cves.Count == 0 ? [] : await db.ArticleCves.AsNoTracking().Where(c => cves.Contains(c.CveId))
             .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title, a.SourceUrl })
             .ToListAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-120);
+        var since = now.AddDays(-120);
         var recentLinks = (await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.CreatedAtUtc >= since)
                 .Select(a => new { a.Id, a.Title, a.SourceUrl }).ToListAsync(ct))
             .Concat(await db.ArticleLinks.AsNoTracking().Where(l => l.AddedAtUtc >= since)

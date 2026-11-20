@@ -1,0 +1,330 @@
+{
+  "Sqlite": {
+    "Actions.Board": {
+      "commands": 3,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 204
+    },
+    "Actions.List(Closed)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 112
+    },
+    "Actions.List(Mine)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 51
+    },
+    "Actions.List(Open)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 201
+    },
+    "Brief.Candidates": {
+      "commands": 10,
+      "parameters": 1110,
+      "maxParameters": 1100,
+      "rows": 2094
+    },
+    "Reminders(BriefNotReady)": {
+      "commands": 4,
+      "parameters": 5,
+      "maxParameters": 2,
+      "rows": 11
+    },
+    "Reminders(Digest)": {
+      "commands": 6,
+      "parameters": 10,
+      "maxParameters": 3,
+      "rows": 119
+    },
+    "Reminders(DueSoon)": {
+      "commands": 6,
+      "parameters": 16,
+      "maxParameters": 4,
+      "rows": 10
+    },
+    "Reminders(Escalation)": {
+      "commands": 1003,
+      "parameters": 6737,
+      "maxParameters": 200,
+      "rows": 812
+    },
+    "Reminders(ExternalReminder)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 1
+    },
+    "Reminders(OutreachFollowUp)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 1
+    },
+    "Reminders(Overdue)": {
+      "commands": 202,
+      "parameters": 1195,
+      "maxParameters": 201,
+      "rows": 396
+    },
+    "Reminders(PersonalDigest)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 1
+    },
+    "Reminders(Presenting)": {
+      "commands": 4,
+      "parameters": 8,
+      "maxParameters": 2,
+      "rows": 6
+    },
+    "Reports(month)": {
+      "commands": 10,
+      "parameters": 1302,
+      "maxParameters": 650,
+      "rows": 7065
+    },
+    "Search(CVE)": {
+      "commands": 23,
+      "parameters": 141,
+      "maxParameters": 11,
+      "rows": 105
+    },
+    "Search(indicator)": {
+      "commands": 23,
+      "parameters": 54,
+      "maxParameters": 6,
+      "rows": 35
+    },
+    "Search(text)": {
+      "commands": 15,
+      "parameters": 373,
+      "maxParameters": 50,
+      "rows": 1122
+    },
+    "Today": {
+      "commands": 41,
+      "parameters": 2405,
+      "maxParameters": 750,
+      "rows": 3788
+    },
+    "Trends(24 months)": {
+      "commands": 8,
+      "parameters": 4000,
+      "maxParameters": 2000,
+      "rows": 10615
+    },
+    "Trends(6 months)": {
+      "commands": 8,
+      "parameters": 1300,
+      "maxParameters": 650,
+      "rows": 6975
+    },
+    "Triage.Inbox(Dismissed)": {
+      "commands": 17,
+      "parameters": 2837,
+      "maxParameters": 900,
+      "rows": 3025
+    },
+    "Triage.Inbox(Duplicate)": {
+      "commands": 17,
+      "parameters": 2517,
+      "maxParameters": 800,
+      "rows": 2770
+    },
+    "Triage.Inbox(New)": {
+      "commands": 28,
+      "parameters": 5707,
+      "maxParameters": 1100,
+      "rows": 6010
+    },
+    "Triage.Inbox(Promoted)": {
+      "commands": 17,
+      "parameters": 2837,
+      "maxParameters": 900,
+      "rows": 2996
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "commands": 18,
+      "parameters": 2567,
+      "maxParameters": 800,
+      "rows": 2772
+    },
+    "Webhooks.Deliver": {
+      "commands": 6,
+      "parameters": 15,
+      "maxParameters": 6,
+      "rows": 12
+    }
+  },
+  "SqlServer": {
+    "Actions.Board": {
+      "commands": 3,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 204
+    },
+    "Actions.List(Closed)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 112
+    },
+    "Actions.List(Mine)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 51
+    },
+    "Actions.List(Open)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 201
+    },
+    "Brief.Candidates": {
+      "commands": 10,
+      "parameters": 1110,
+      "maxParameters": 1100,
+      "rows": 2094
+    },
+    "Reminders(BriefNotReady)": {
+      "commands": 4,
+      "parameters": 5,
+      "maxParameters": 2,
+      "rows": 11
+    },
+    "Reminders(Digest)": {
+      "commands": 6,
+      "parameters": 10,
+      "maxParameters": 3,
+      "rows": 119
+    },
+    "Reminders(DueSoon)": {
+      "commands": 6,
+      "parameters": 16,
+      "maxParameters": 4,
+      "rows": 10
+    },
+    "Reminders(Escalation)": {
+      "commands": 37,
+      "parameters": 6737,
+      "maxParameters": 336,
+      "rows": 812
+    },
+    "Reminders(ExternalReminder)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 1
+    },
+    "Reminders(OutreachFollowUp)": {
+      "commands": 1,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rows": 1
+    },
+    "Reminders(Overdue)": {
+      "commands": 12,
+      "parameters": 1195,
+      "maxParameters": 201,
+      "rows": 396
+    },
+    "Reminders(PersonalDigest)": {
+      "commands": 1,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rows": 1
+    },
+    "Reminders(Presenting)": {
+      "commands": 4,
+      "parameters": 8,
+      "maxParameters": 2,
+      "rows": 6
+    },
+    "Reports(month)": {
+      "commands": 10,
+      "parameters": 1302,
+      "maxParameters": 650,
+      "rows": 7065
+    },
+    "Search(CVE)": {
+      "commands": 23,
+      "parameters": 172,
+      "maxParameters": 11,
+      "rows": 105
+    },
+    "Search(indicator)": {
+      "commands": 23,
+      "parameters": 147,
+      "maxParameters": 31,
+      "rows": 35
+    },
+    "Search(text)": {
+      "commands": 15,
+      "parameters": 435,
+      "maxParameters": 50,
+      "rows": 1122
+    },
+    "Today": {
+      "commands": 41,
+      "parameters": 2405,
+      "maxParameters": 750,
+      "rows": 3788
+    },
+    "Trends(24 months)": {
+      "commands": 8,
+      "parameters": 4000,
+      "maxParameters": 2000,
+      "rows": 10615
+    },
+    "Trends(6 months)": {
+      "commands": 8,
+      "parameters": 1300,
+      "maxParameters": 650,
+      "rows": 6975
+    },
+    "Triage.Inbox(Dismissed)": {
+      "commands": 17,
+      "parameters": 2837,
+      "maxParameters": 900,
+      "rows": 3025
+    },
+    "Triage.Inbox(Duplicate)": {
+      "commands": 17,
+      "parameters": 2517,
+      "maxParameters": 800,
+      "rows": 2770
+    },
+    "Triage.Inbox(New)": {
+      "commands": 28,
+      "parameters": 5707,
+      "maxParameters": 1100,
+      "rows": 6010
+    },
+    "Triage.Inbox(Promoted)": {
+      "commands": 17,
+      "parameters": 2837,
+      "maxParameters": 900,
+      "rows": 2996
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "commands": 18,
+      "parameters": 2567,
+      "maxParameters": 800,
+      "rows": 2772
+    },
+    "Webhooks.Deliver": {
+      "commands": 6,
+      "parameters": 15,
+      "maxParameters": 6,
+      "rows": 12
+    }
+  }
+}
