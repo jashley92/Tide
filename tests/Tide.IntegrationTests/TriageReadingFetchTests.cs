@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Domain.Entities;
 using Tide.Infrastructure.Persistence;
@@ -111,5 +112,120 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
         // The window widens: the pane shows, with the selected item's kept text.
         await r.Click(t => t.OnReadingRoom(true));
         (await r.Html()).Should().Contain($"<h2 class=\"tide-reading-title\">Narrow item 1 {key[..6]}");
+    }
+
+    private static string Page(string words) => "<html><body><article>" + string.Concat(Enumerable.Range(0, 6).Select(i =>
+        $"<p>{words} Attackers chained two gateway flaws on appliance {i}, and the vendor shipped fixes for every branch.</p>")) + "</article></body></html>";
+
+    // Three new items of a feed of their own, newest first (A, B, C), none read yet; A's page is slow until the hold is
+    // released, A's and B's answer with their text.
+    private async Task<(Guid Source, Guid A, string Prefix, TaskCompletionSource Slow)> SlowFeed(string name)
+    {
+        var key = Guid.NewGuid().ToString("N");
+        var prefix = $"https://{name}.example/{key}/";
+        Guid source, a;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var feed = new Source { Name = $"{name} feed {key[..6]}", Url = prefix + "feed" };
+            var now = DateTimeOffset.UtcNow;
+            var items = Enumerable.Range(0, 3).Select(n => new FeedItem
+            {
+                Source = feed, Title = $"{name} item {"ABC"[n]} {key[..6]}", Url = $"{prefix}{"abc"[n]}", UrlHash = $"{name}-{key}-{n}",
+                PublishedAtUtc = now.AddMinutes(-n), FetchedAtUtc = now.AddMinutes(-n),
+            }).ToList();
+            db.Add(feed);
+            db.AddRange(items);
+            await db.SaveChangesAsync();
+            (source, a) = (feed.Id, items[0].Id);
+        }
+        var slow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        app.Http.Holds[prefix + "a"] = slow.Task;
+        app.Http.Set(prefix + "a", Page("Slow page text about the hospitals."));
+        app.Http.Set(prefix + "b", Page("Fast page text about the browser."));
+        return (source, a, prefix, slow);
+    }
+
+    private int Fetches(string prefix)
+    {
+        lock (app.Http.Requests) return app.Http.Requests.Count(r => r.Url.StartsWith(prefix, StringComparison.Ordinal));
+    }
+
+    private async Task<bool> Kept(Guid id)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<AppDbContext>().FeedItemTexts.AnyAsync(t => t.FeedItemId == id);
+    }
+
+    // The head's "Read it here" button, up to its label.
+    private static string ReadButton(string html)
+    {
+        var at = html.IndexOf("Read it here <span class=\"tide-kbd\">V</span>", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(0, "the pane offers to read the item");
+        return html[html.LastIndexOf("<button", at, StringComparison.Ordinal)..at];
+    }
+
+    [Fact]
+    public async Task ASlowFetch_DoesntHoldUpReadingAnotherRow_AndItsLateTextStaysWithItsOwnItem()
+    {
+        var (source, a, prefix, slow) = await SlowFeed("slowread");
+        var who = new ComponentHarness.SignIn("slowread:" + prefix, "Slow tester", "Analyst");
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
+        await r.HtmlOnce("slowread item C");
+
+        // V on A: its page is asked for and doesn't answer yet.
+        await r.Press(t => t.OnTriageKey("read"));
+        for (var i = 0; i < 200 && Fetches(prefix) == 0; i++) await Task.Delay(50);
+        Fetches(prefix).Should().Be(1);
+        await r.Drawn();
+        (await r.Html()).Should().Contain("aria-busy=\"true\"");
+
+        // On to B, C and back to B while A loads: B isn't busy and can be read, and moving fetched nothing.
+        await r.Click(t => t.OnTriageKey("next"));
+        await r.Click(t => t.OnTriageKey("next"));
+        await r.Click(t => t.OnTriageKey("prev"));
+        var html = await r.Html();
+        html.Should().Contain("<h2 class=\"tide-reading-title\">slowread item B").And.Contain("aria-busy=\"false\"").And.Contain("Not read yet.");
+        ReadButton(html).Should().NotContain("disabled", "B isn't the item being fetched");
+        Fetches(prefix).Should().Be(1, "moving between rows fetches nothing, even while a fetch is under way");
+
+        await r.Click(t => t.OnTriageKey("read"));
+        (await r.Html()).Should().Contain("Fast page text about the browser.", "B is read while A is still loading");
+        Fetches(prefix).Should().Be(2);
+
+        // A's page answers late: its text is kept for A, and B's pane still shows B's.
+        slow.SetResult();
+        for (var i = 0; i < 200 && !await Kept(a); i++) await Task.Delay(50);
+        (await Kept(a)).Should().BeTrue("A's fetch went on, for A");
+        await Task.Delay(200);
+        await r.Drawn();
+        (await r.Html()).Should().Contain("Fast page text about the browser.").And.NotContain("Slow page text", "a late text never shows in another item's pane");
+
+        // Back on A, its kept text shows, with no fetch.
+        await r.Click(t => t.OnTriageKey("prev"));
+        (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">slowread item A").And.Contain("Slow page text about the hospitals.");
+        Fetches(prefix).Should().Be(2, "each item was fetched once, when the analyst asked");
+    }
+
+    [Fact]
+    public async Task BackOnAnItemStillBeingRead_ThePaneIsBusy_AndShowsItsTextWhenItLands()
+    {
+        var (source, _, prefix, slow) = await SlowFeed("backread");
+        var who = new ComponentHarness.SignIn("backread:" + prefix, "Back tester", "Analyst");
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
+        await r.HtmlOnce("backread item C");
+
+        await r.Press(t => t.OnTriageKey("read"));
+        for (var i = 0; i < 200 && Fetches(prefix) == 0; i++) await Task.Delay(50);
+        await r.Click(t => t.OnTriageKey("next"));
+        (await r.Html()).Should().Contain("aria-busy=\"false\"", "B isn't being read");
+        await r.Click(t => t.OnTriageKey("prev"));
+        (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">backread item A").And.Contain("aria-busy=\"true\"", "A still is");
+
+        await r.Click(t => t.OnTriageKey("read"));
+        Fetches(prefix).Should().Be(1, "V on an item being read doesn't fetch it twice");
+
+        slow.SetResult();
+        (await r.HtmlOnce("Slow page text about the hospitals.")).Should().Contain("Slow page text about the hospitals.").And.Contain("aria-busy=\"false\"");
     }
 }

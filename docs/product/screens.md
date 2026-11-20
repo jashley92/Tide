@@ -233,7 +233,9 @@ the page stops it after the source it's on.
   blocks whose class or id names an ad slot, the advert selectors and label lines listed on Sources ("Advertisement",
   "Story continues below"), and a source's own *Also remove* selector for one site's odd markup. CVEs, indicators and
   products on Our stack are marked, with the CVE chips under it. While the pane is open it follows J and K, showing a
-  report's text when it's already been read and offering to read it when it hasn't. *Read it here*, *Read again*
+  report's text when it's already been read and offering to read it when it hasn't. A slow page doesn't hold you up:
+  move on and read the next while it loads, and its text is kept for its own item, shown when you come back to it.
+  *Read it here*, *Read again*
   and *Open the site* sit in its head. The pane is as tall as its text, and a long text scrolls inside it. V again, or
   Esc, closes it.
 - **Kept for a week.** The text is kept on the item for `Intake:ReadingDays` (7), so a colleague reads it without

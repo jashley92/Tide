@@ -325,13 +325,17 @@ else
     private bool _reading => _readingPref != UserPreferences.ReadingClosed;
 
     private string ReadingCss => !_reading ? "" : _readingPref == UserPreferences.ReadingAuto ? " reading reading-auto" : " reading";
-    private Guid? _fetching;   // the item being fetched, one at a time
+    // The items being fetched. A fetch belongs to its item: the analyst can move on and read another while a slow site
+    // answers, and the first one's text is still kept for its item (ReadingService keeps it) but is shown only if its
+    // item is the one in the pane by then. It isn't cancelled: the site has been asked already, and the analyst asked for
+    // that text, so it's kept for when they come back to it.
+    private readonly HashSet<Guid> _fetching = [];
     private ReadingText? _read;
     private InboxRow? _readRow;
     private IReadOnlyDictionary<string, CveRecord> _readCves = new Dictionary<string, CveRecord>();
 
     // Whether the item the pane shows is the one being fetched.
-    private bool ReadingBusy => _fetching is { } f && f == _readRow?.Item.Id;
+    private bool ReadingBusy => _readRow is { } r && _fetching.Contains(r.Item.Id);
 
     private InboxRow? ReadableRow => Current is { } line ? line.Row ?? line.Members.FirstOrDefault() : null;
 
@@ -353,7 +357,12 @@ else
         _readRow = row;
         _read = null;
         if (row is null) return;
-        try { await Show(await Reading.KeptAsync(row.Item.Id)); }
+        try
+        {
+            var kept = await Reading.KeptAsync(row.Item.Id);
+            // Its own fetch can land meanwhile (the analyst came back to an item still being read): that text stays.
+            if (kept is not null || _read is null) await Show(row.Item.Id, kept);
+        }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
@@ -377,7 +386,7 @@ else
     /// <summary>V or "Read it here": opens the pane on the selected item and fetches its text when it isn't kept.</summary>
     internal async Task Read(bool again = false)
     {
-        if (ReadableRow is not { } row || _fetching is not null) return;
+        if (ReadableRow is not { } row || _fetching.Contains(row.Item.Id)) return;
         // Open from here on (kept for the next visit while the text is read, not before it).
         var kept = KeepReading(UserPreferences.ReadingOpen);
         try
@@ -387,11 +396,11 @@ else
             if (!again && _readRow?.Item.Id == row.Item.Id && _read is not null) return;
             _readRow = row;
             _read = null;
-            _fetching = row.Item.Id;
+            _fetching.Add(row.Item.Id);
             StateHasChanged();
-            try { await Show(await Reading.ReadAsync(row.Item.Id, again)); }
-            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
-            finally { _fetching = null; }
+            try { await Show(row.Item.Id, await Reading.ReadAsync(row.Item.Id, again)); }
+            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(row.Item.Id, ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
+            finally { _fetching.Remove(row.Item.Id); }
         }
         finally { await kept; }
     }
@@ -400,7 +409,7 @@ else
     /// it hasn't been read, and otherwise closes, so V opens and closes the pane in turn.</summary>
     internal Task ToggleReading()
     {
-        if (_fetching is not null) return Task.CompletedTask;
+        if (ReadingBusy) return Task.CompletedTask;
         return _read is null && ReadableRow is not null ? Read() : CloseReading();
     }
 
@@ -416,10 +425,11 @@ else
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
-    // A slow fetch can finish after the selection moved on: its text is dropped unless its item is still the one shown.
-    private async Task Show(ReadingText? text)
+    // A slow fetch or lookup can finish after the selection moved on: what it found is dropped unless its item is still
+    // the one shown (it's kept for its item all the same).
+    private async Task Show(Guid itemId, ReadingText? text)
     {
-        if (text is not null && text.ItemId != _readRow?.Item.Id) return;
+        if (itemId != _readRow?.Item.Id) return;
         _read = text;
         _readCves = text is { Cves.Count: > 0 } ? await Cves.GetAsync(text.Cves) : new Dictionary<string, CveRecord>();
     }
@@ -448,7 +458,7 @@ else
                         }
                         else
                         {
-                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
                         }
                         @if (!string.IsNullOrWhiteSpace(row.Item.Url))
                         {
