@@ -284,6 +284,16 @@ jobs:
               --context AppDbContext --connection "$CONN"
           done
 
+      # The DBA schema script the release bundle carries (deploy/sql/tide-schema-sqlserver.sql), generated as the release
+      # generates it and applied with sqlcmd to an empty database, twice: it must leave every migration applied, none
+      # pending, and the same columns, indexes and keys as the migrations applied above (TideCi).
+      - name: The DBA schema script builds the same schema as the migrations
+        env:
+          TIDE_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+          SQL_CONTAINER: ${{ job.services.mssql.id }}
+          SQLCMD: docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ${{ env.SA_PASSWORD }}
+        run: bash tools/ci/check-sqlserver-schema-script.sh TideCi
+
       # Tests that need production's database engine, skipped in the SQLite run above: [SqlServerFact] tests (e.g. every
       # page rendered on SQL Server, whose queries yield where SQLite's finish at once) and the SqlServer rows of
       # TestDb.Providers theories (ordering, dates, bulk updates). Each gets a throwaway database on this server.
