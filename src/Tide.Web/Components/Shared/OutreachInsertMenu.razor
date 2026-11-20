@@ -1,0 +1,122 @@
+@* The Insert menu over an outreach template's subject and body (OutreachTemplatesPage): every placeholder, grouped as
+   the help lists them and found by typing, and how to put the one chosen in: as it is, optional (?), with text for when
+   it's empty (|), or as a section round what's selected. The buttons carry what they write (data-oi-insert,
+   data-oi-section); js/outreach-editor.js writes it where the cursor was in the box last used, then this closes. *@
+
+<div class="tide-oi-menu">
+    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId"
+            @onclick="Toggle" @ref="_toggle">
+        <span class="bi bi-braces" aria-hidden="true"></span> Insert placeholder
+    </button>
+    @if (_open)
+    {
+        <div id="@PanelId" class="tide-oi-panel" role="group" aria-label="Insert a placeholder" @onkeydown="Keys">
+            <input type="search" class="form-control form-control-sm tide-oi-find" placeholder="Find a placeholder" aria-label="Find a placeholder"
+                   @bind="_find" @bind:event="oninput" @ref="_findBox" />
+            <div class="tide-oi-choices">
+                @foreach (var group in Shown.GroupBy(p => p.Group))
+                {
+                    <div class="tide-field-label mt-2 mb-1">@group.Key</div>
+                    <ul class="tide-oi-list" role="list">
+                        @foreach (var p in group)
+                        {
+                            <li>
+                                <button type="button" class="tide-oi-choice @(_chosen == p ? "is-chosen" : "")" aria-pressed="@(_chosen == p ? "true" : "false")"
+                                        @onclick="() => Choose(p)">
+                                    <span class="tide-data">@p.Written</span>
+                                    <span class="tide-oi-what">@p.Description</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (!Shown.Any())
+                {
+                    <p class="small tide-muted mb-0 mt-2">No placeholder matches “@_find”.</p>
+                }
+            </div>
+            @if (_chosen is { } c)
+            {
+                var name = c.Name;
+                <div class="tide-oi-how" role="group" aria-label="@($"How to insert {c.Written}")">
+                    <div class="tide-field-label mb-1">Insert <span class="tide-data">@c.Written</span></div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <button type="button" class="btn btn-primary btn-sm" data-oi-insert="@("{{" + name + "}}")" @onclick="Close">As it is</button>
+                        @if (!IsTlp(name))
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-oi-insert="@("{{" + name + "?}}")" @onclick="Close"
+                                    title="Dropped when there's nothing to fill, with its line when nothing else is on it">Optional</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-oi-section="@name" @onclick="Close"
+                                    title="Round what's selected: kept only when there's something to fill, with an else part for when there isn't">As a section</button>
+                        }
+                    </div>
+                    @if (!IsTlp(name))
+                    {
+                        <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                            <label class="small" for="@(PanelId + "-instead")">Or, when there's nothing to fill, write</label>
+                            <input id="@(PanelId + "-instead")" class="form-control form-control-sm tide-oi-instead" placeholder="there" maxlength="100"
+                                   @bind="_instead" @bind:event="oninput" />
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Instead.Length == 0)"
+                                    data-oi-insert="@("{{" + name + "|" + Instead + "}}")" @onclick="Close">Insert with it</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The panel's id, unique on the page.</summary>
+    [Parameter, EditorRequired] public string PanelId { get; set; } = "";
+
+    private bool _open;
+    private string _find = "";
+    private string _instead = "";
+    private OutreachPlaceholder? _chosen;
+    private ElementReference _toggle, _findBox;
+    private bool _focusFind, _focusToggle;
+
+    // The text for when it's empty, as a placeholder can carry it: on one line, no braces.
+    private string Instead => new string([.. (_instead ?? "").Where(ch => ch is not ('{' or '}' or '\r' or '\n'))]).Trim();
+
+    private static bool IsTlp(string name) => string.Equals(name, OutreachFill.TlpName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The placeholders whose name or description has every word typed.</summary>
+    internal IEnumerable<OutreachPlaceholder> Shown
+    {
+        get
+        {
+            var words = (_find ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return OutreachFill.All.Where(p => words.All(w => p.Name.Contains(w, StringComparison.OrdinalIgnoreCase)
+                                                           || p.Description.Contains(w, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    internal bool IsOpen => _open;
+    internal OutreachPlaceholder? Chosen => _chosen;
+
+    internal void Toggle()
+    {
+        _open = !_open;
+        if (_open) (_find, _instead, _chosen, _focusFind) = ("", "", null, true);
+    }
+
+    internal void Choose(OutreachPlaceholder p) => _chosen = p;
+
+    // After an insert the cursor is in the box written to (js/outreach-editor.js): focus stays there.
+    internal void Close() => _open = false;
+
+    private void Keys(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        _open = false;
+        _focusToggle = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusFind && _open) { _focusFind = false; await _findBox.FocusAsync(); }
+        if (_focusToggle) { _focusToggle = false; await _toggle.FocusAsync(); }
+    }
+}

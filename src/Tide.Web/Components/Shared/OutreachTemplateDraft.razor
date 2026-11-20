@@ -1,0 +1,175 @@
+@using Tide.Web.Components.LibraryRail
+@implements IDisposable
+@inject LibraryUseService UseSvc
+@inject OutreachService OutreachSvc
+@inject ICurrentUser CurrentUser
+@* Under an outreach template being written (OutreachTemplatesPage): whether TIDE can fill it, checked a moment after
+   typing stops by the check that runs on save (OutreachFill.Check), and, for whoever can try entries on actions, the
+   draft filled for one of their open Outreach actions (OutreachService.PreviewAsync, read only: nothing is saved). The
+   check's line is a status, so a screen reader hears it when it changes, not on every key. *@
+
+<div class="tide-oi-draft">
+    <div id="@CheckId" class="small tide-oi-check @(_problem is null ? "is-ok" : "is-problem")" role="status">
+        @if (_problem is { } problem)
+        {
+            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @problem
+        }
+        else if (_checked)
+        {
+            <span class="bi bi-check2" aria-hidden="true"></span> @OkText
+        }
+    </div>
+
+    @if (LibraryUseService.CanTry(CurrentUser))
+    {
+        <div class="tide-oi-preview">
+            <button type="button" class="btn btn-link btn-sm px-0" aria-expanded="@(_previewing ? "true" : "false")" aria-controls="@(CheckId + "-preview")"
+                    @onclick="TogglePreview">
+                <span class="bi @(_previewing ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> Preview this draft on an action
+            </button>
+            @if (_previewing)
+            {
+                <div id="@(CheckId + "-preview")">
+                    @if (_offered is null)
+                    {
+                        <LoadingBlock />
+                    }
+                    else if (_offered.Count == 0)
+                    {
+                        <p class="small tide-muted mb-0">No open @ActionService.KindName(ActionKind.Outreach) action of yours to preview it on.</p>
+                    }
+                    else
+                    {
+                        <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The action to preview it on" value="@_actionId"
+                                @onchange="e => ChooseAction(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                            @foreach (var a in _offered)
+                            {
+                                <option value="@a.Id">@Ui.ActionLabel(a.Number) @a.Title</option>
+                            }
+                        </select>
+                        @if (_previewError is { } error)
+                        {
+                            <p class="small tide-muted mb-0 mt-1">@error</p>
+                        }
+                        else if (_preview is { } p)
+                        {
+                            <pre class="tide-email-text mt-1 mb-0">Subject: @p.Draft.Subject
+
+@p.Draft.Body</pre>
+                            @if (p.Draft.LeftOut.Count > 0)
+                            {
+                                <p class="small tide-muted mb-0 mt-1">Left out: @string.Join(" ", p.Draft.LeftOut)</p>
+                            }
+                        }
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The check line's id, which the subject and body name in aria-describedby.</summary>
+    [Parameter, EditorRequired] public string CheckId { get; set; } = "";
+    [Parameter] public string? Subject { get; set; }
+    [Parameter] public string? Body { get; set; }
+    [Parameter] public TlpLevel Ceiling { get; set; }
+
+    /// <summary>How long after the last key the draft is checked and the preview filled again.</summary>
+    internal static TimeSpan Pause { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    private string? _problem;
+    private bool _checked;
+    private bool _previewing;
+    private IReadOnlyList<WorkableAction>? _offered;
+    private Guid? _actionId;
+    private OutreachWritten? _preview;
+    private string? _previewError;
+    private (string? Subject, string? Body, TlpLevel Ceiling)? _seen;
+    private CancellationTokenSource? _wait;
+    private int _asked;
+
+    internal string? Problem => _problem;
+    internal OutreachWritten? Preview => _preview;
+
+    private string OkText
+    {
+        get
+        {
+            var n = LibraryFills.OfTemplate(Subject ?? "", Body ?? "").Count;
+            return n == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(n, "placeholder")}.";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var now = (Subject, Body, Ceiling);
+        if (_seen == now) return;
+        var first = _seen is null;
+        _seen = now;
+        if (first) { Check(); return; }
+        // Typing: wait for a pause, so neither the check nor the preview runs on every key.
+        _wait?.Cancel();
+        _wait?.Dispose();
+        var wait = _wait = new CancellationTokenSource();
+        try { await Task.Delay(Pause, wait.Token); }
+        catch (TaskCanceledException) { return; }
+        Check();
+        if (_previewing) await Fill();
+    }
+
+    // The check that runs on save, on the subject and the body.
+    internal void Check()
+    {
+        _checked = true;
+        try
+        {
+            OutreachFill.Check(Subject ?? "");
+            OutreachFill.Check(Body ?? "");
+            _problem = null;
+        }
+        catch (ArgumentException ex) { _problem = ex.Message; }
+    }
+
+    internal async Task TogglePreview()
+    {
+        _previewing = !_previewing;
+        if (!_previewing) return;
+        if (_offered is null)
+        {
+            var workable = await UseSvc.WorkableAsync();
+            _offered = [.. workable.Where(a => LibraryUseService.Suits(LibraryKind.OutreachTemplate, a.Kind))];
+            _actionId ??= (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
+        }
+        await Fill();
+    }
+
+    internal async Task ChooseAction(Guid? id)
+    {
+        _actionId = id;
+        await Fill();
+    }
+
+    // The draft filled for the action chosen; a draft TIDE can't fill says why, as the check does.
+    private async Task Fill()
+    {
+        var asked = ++_asked;
+        if (_actionId is not { } id) { (_preview, _previewError) = (null, null); return; }
+        if (_problem is { } problem) { (_preview, _previewError) = (null, "Fix the draft to preview it: " + problem); return; }
+        try
+        {
+            var written = await OutreachSvc.PreviewAsync(id, Subject ?? "", Body ?? "", Ceiling);
+            if (asked == _asked) (_preview, _previewError) = (written, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (asked == _asked) (_preview, _previewError) = (null, UserFacingError.For(ex));
+        }
+    }
+
+    public void Dispose()
+    {
+        _wait?.Cancel();
+        _wait?.Dispose();
+    }
+}

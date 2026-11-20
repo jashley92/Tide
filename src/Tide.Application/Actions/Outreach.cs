@@ -133,7 +133,27 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         var template = await db.OutreachTemplates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == templateId, ct)
                        ?? throw new KeyNotFoundException("That template no longer exists.");
         if (template.IsRetired) throw new InvalidOperationException($"{template.Name} is retired. Restore it in the Library, on Outreach templates, to use it.");
+        return await WriteAsync(db, a, template, productId, products, ct);
+    }
 
+    /// <summary>
+    /// A template not yet saved, as it's being written, filled for the action as <see cref="WriteAsync(Guid, Guid, Guid?, IReadOnlyList{StackProduct}?, CancellationToken)"/>
+    /// fills a saved one, for whoever works the action. Saves nothing. Text <see cref="OutreachFill.Check"/> refuses is refused.
+    /// </summary>
+    public async Task<OutreachWritten> PreviewAsync(Guid actionId, string subject, string body, TlpLevel ceiling, CancellationToken ct = default)
+    {
+        OutreachFill.Check(subject);
+        OutreachFill.Check(body);
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await ActionService.HuntActionAsync(db, actionId, tracked: false, ct);
+        await ActionService.RequireWork(db, user, a, ct);
+        var draft = new OutreachTemplate { Name = "This draft", Subject = subject ?? "", Body = body ?? "", Ceiling = ceiling };
+        return await WriteAsync(db, a, draft, null, null, ct);
+    }
+
+    private async Task<OutreachWritten> WriteAsync(IAppDbContext db, ActionItem a, OutreachTemplate template, Guid? productId, IReadOnlyList<StackProduct>? products,
+        CancellationToken ct)
+    {
         // The article's parts the cut reads, beside the indicators the hunt loader brought.
         if (a.Article is { } article)
         {
