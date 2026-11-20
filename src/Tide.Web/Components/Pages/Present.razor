@@ -2059,6 +2059,8 @@ else
         try
         {
             if (!already) carriedTo = await BriefSvc.MarkPresentedAsync(_brief!.Id, held, carry: carry);
+            // Ended from the brief page already: who took it over since still goes on the brief.
+            else await BriefSvc.RecordPresentersAsync(_brief!.Id);
         }
         catch (KeyNotFoundException)
         {
@@ -2240,6 +2242,7 @@ else
             Meetings.Show(_seat, card);
             _popup.Open(card, presenting: true, inMeeting: true);
         }
+        await RecordPresenters();
         await Seated();
     });
 
@@ -2590,6 +2593,17 @@ else
         CloseHandedOn();
         Toasts.Show("You're presenting.");
         await ShareScroll();
+        await RecordPresenters();
+    }
+
+    // Who has presented the meeting so far goes on the brief as it starts and changes hands (BriefService
+    // .RecordPresentersAsync), so it outlasts a meeting dropped once everyone left, or lost to a restart. A save that fails
+    // here (a colleague's at the same moment, thrice) is left: the meeting's end writes it again.
+    private async Task RecordPresenters()
+    {
+        if (_brief is null) return;
+        try { await BriefSvc.RecordPresentersAsync(_brief.Id); }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException) { }
     }
 
     // The meeting changed hands, which closed what was open over the slide for the room: this page's goes too (this
@@ -3039,12 +3053,12 @@ else
 
     internal void ChooseHandOff(ChangeEventArgs e) => _handTo = e.Value is string to && to.Length > 0 ? to : null;
 
-    internal void ConfirmHandOff()
+    internal async Task ConfirmHandOff()
     {
-        if (_handTo is { } to) HandOff(to);
+        if (_handTo is { } to) await HandOff(to);
     }
 
-    internal void HandOff(string to)
+    internal async Task HandOff(string to)
     {
         _handTo = null;
         if (!InCharge || _seat is null || to.Length == 0) return;
@@ -3063,6 +3077,7 @@ else
         (_following, _summons) = (true, _view?.Summons ?? _summons);
         if (_view is not null) _slide = SlideFor(_view);
         Toasts.Show($"{name} is presenting.");
+        await RecordPresenters();
     }
 
     private async Task CopyLink()
