@@ -15,6 +15,7 @@ change.
 - [Tests that keep docs in step](#tests-that-keep-docs-in-step)
 - [The TLP leak tests](#the-tlp-leak-tests)
 - [The scale harness](#the-scale-harness)
+- [The query budget](#the-query-budget)
 - [Continuous integration](#continuous-integration)
 - [The upgrade test](#the-upgrade-test)
 - [What isn't covered](#what-isnt-covered)
@@ -65,6 +66,7 @@ infrastructure audits:
 | `Audit/FrontendAuditTests.cs` | Pages kept open from one record to the next, confirmations that act on what they counted, steps that can't run twice. |
 | `Audit/InfraAuditTests.cs` | Outbound HTTP (redirects, private addresses), directory lookups that hang. |
 | `Audit/ScaleAuditTests.cs` | The opt-in scale harness (below). |
+| `Audit/QueryBudgetTests.cs` | The query budget: the hot paths' reads, saves, rows written, parameters and rows read against `Golden/query-budget.json` (below). |
 
 `CapabilitiesTests.cs` holds each row of the "What each role can do" table to the service check or page policy it
 names, for every role.
@@ -90,7 +92,8 @@ Environment variables the tests read:
 | `TIDE_TEST_SQL` | A SQL Server connection string with no database. Turns on the `[SqlServerFact]` tests and the SQL Server rows of provider theories. |
 | `TIDE_UPDATE_GOLDEN=1` | Golden-file tests write what the code produces into `tests/Tide.UnitTests/Golden` instead of comparing. |
 | `TIDE_UPDATE_DOCS=1` | `CapabilitiesTests.TheInstallGuidesTable_IsTheCodesTable` writes the code's role table into `docs/INSTALL.md`. |
-| `TIDE_SCALE` (and `TIDE_SCALE_OUT`) | Runs the scale harness and writes its timings and SQL there. |
+| `TIDE_SCALE` (and `TIDE_SCALE_OUT`, `TIDE_SCALE_F`) | Runs the scale harness and writes its timings and SQL there; `TIDE_SCALE_F` scales its data (1 by default). |
+| `TIDE_UPDATE_BUDGET=1` | `QueryBudgetTests` writes what it measured into `tests/Tide.IntegrationTests/Golden/query-budget.json` instead of comparing. |
 
 ## The integration harness
 
@@ -122,8 +125,10 @@ carries:
   listen to);
 - `ColumnLengthCheck`, which fails a save that writes a string longer than its column. SQLite keeps any length, and
   SQL Server refuses it, so this catches in SQLite what would fail in production;
-- `CommandLog` (`TestDb.Commands`), which counts SQL commands and records their text, and can run a hook just before
-  a matching command (`Before`) to stage a race;
+- `CommandLog` (`TestDb.Commands`), which counts SQL commands (queries in `Count`, a save's batches among them; the
+  queries alone in `Reads`; `SaveChanges` calls in `Saves`; commands that write in `Writes`), the parameters they send
+  (`Parameters`, `MaxParameters`) and the rows read back (`Rows`), records their text, and can run a hook just before a
+  matching command (`Before`) to stage a race;
 - a retrying execution strategy (`RetryingStrategy`), as production's SQL Server has, so a transaction a service opens
   must run inside the strategy.
 
@@ -284,12 +289,62 @@ A change to anything that renders or sends a brief, an export, the API or a webh
 briefed; 2,000 briefs of five articles; 5,000 actions with comments, events and checklists; 50,000 feed items; 2,000
 metric values; a three-person rotation), then times the hot service calls and counts the SQL each runs. It's off
 unless `TIDE_SCALE` is set (it takes a minute or two), and writes a timings table and every command's text to
-`TIDE_SCALE_OUT` (or the temp folder). It runs on in-memory SQLite, so its timings compare calls with each other
+`TIDE_SCALE_OUT` (or the temp folder). `TIDE_SCALE_F` scales the data (`0.5` for half, `2` for double). The data comes
+from `Audit/ScaleSeed.cs`, which the query budget (below) seeds too. It runs on in-memory SQLite, so its timings compare calls with each other
 rather than predict SQL Server: see [reference/performance.md](../reference/performance.md).
 
 ```bash
 TIDE_SCALE=1 TIDE_SCALE_OUT=./scale dotnet test tests/Tide.IntegrationTests --filter "FullyQualifiedName~ScaleAuditTests"
 ```
+
+## The query budget
+
+Timings are too noisy to fail a PR on (the same call varies by half from run to run), but the regressions that matter
+have signatures that don't vary: a query or a save per row, an IN list that grows with the data, a whole table read to
+show a page of it. `Audit/QueryBudgetTests.HotPaths_StayWithinTheirQueryBudget` runs on every change and measures those.
+
+It seeds the scale harness's data at a fifth of its size (`QueryBudgetTests.Factor`: 2,000 articles, 1,000 actions,
+10,000 feed items) on a fixed clock (`QueryBudgetTests.At`, a Wednesday at 11:00 New York time) from a fixed random
+seed, then runs each hot operation as its page or pass does and counts, through `TestDb.Commands`:
+
+| Number | What grows it |
+|---|---|
+| `reads` | Round trips that read (`Reads`: queries and scalars, not a save's batches): a query per row. |
+| `saves` | `SaveChanges` calls (`Saves`): a save per row. |
+| `rowsWritten` | Commands that write (`Writes`: a save's batches, `ExecuteUpdate`, `ExecuteDelete`). SQLite sends a save a row at a time, so this is about the rows written there; SQL Server batches, so it's fewer. |
+| `parameters` | Parameters sent across all commands: IN lists built from collections. |
+| `maxParameters` | The most in any one command: an IN list heading for SQL Server's limit of 2,100. |
+| `rowsRead` | Rows the client read back (EF's read count as each reader closes): an unbounded read, paging in memory. |
+
+The operations are Today (what the start page reads, but for the candidates), `Brief.Candidates`, each Triage tab
+(`Triage.Inbox(<status>)`: the page of items, the missed reports on New, the tab counts, the sources), the Actions
+board and list (Open, Mine, Closed), Search (text, CVE, indicator), Trends over 6 and 24 months, the monthly report,
+each reminder scan (`Reminders(<kind>)`) and the webhook pass. Each is compared with `Golden/query-budget.json`, which
+holds the numbers as last accepted for each provider: `Sqlite`, checked in the `build-test` job, and `SqlServer`,
+checked by the `sql-server` job (the theory's SQL Server row). A number may go over by a tenth, and at least by a read
+or a save or a few parameters or rows (`QueryBudgetTests.Allowance`), before the test fails; the failure names each
+operation and number that grew. `rowsWritten` is held more loosely (half again, and at least 20): it's the one number
+that means different things on the two providers, and a save per row already fails on `saves`. `reads` and `saves` are
+the numbers to watch for round trips; they come out the same on both providers. A number that fell well below its budget is noted in the test's output, so the budget
+can be tightened. The run takes about 10 s on SQLite and 20 s on SQL Server.
+
+The numbers are the same on every run: none comes from a timing, and the services the operations call read the time
+from the clock `TestDb` is given rather than the system's. Keep it that way: a hot read that takes
+`DateTimeOffset.UtcNow` rather than `OrgClock` or the injected `TimeProvider` makes the budget drift with the calendar.
+
+To accept a deliberate change (a query that earns its place, data a page now needs), run the test with
+`TIDE_UPDATE_BUDGET=1` on each provider, review the diff and commit it with the change, saying why in the PR:
+
+```bash
+TIDE_UPDATE_BUDGET=1 dotnet test tests/Tide.IntegrationTests -c Release --filter "FullyQualifiedName~QueryBudgetTests"
+TIDE_TEST_SQL="Server=localhost,1433;User Id=sa;Password=...;TrustServerCertificate=True" TIDE_UPDATE_BUDGET=1 \
+  dotnet test tests/Tide.IntegrationTests -c Release --filter "FullyQualifiedName~QueryBudgetTests&DisplayName~SqlServer"
+git diff tests/Tide.IntegrationTests/Golden/query-budget.json
+```
+
+Without a SQL Server to hand ([a throwaway one in Docker](getting-started.md#a-throwaway-sql-server-in-docker) takes a
+minute), set the `SqlServer` entries to the numbers the `sql-server` job's failure names. A new hot operation is added
+to `QueryBudgetTests.MeasureAsync` and gets its budget the same way: until it has one, the test fails naming it.
 
 ## Continuous integration
 
@@ -466,5 +521,5 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | Browser behaviour: the JavaScript in `wwwroot/js`, layout, focus, keyboard, drag and drop | Only the layout check runs a browser in CI, and it checks layout rules, not script behaviour. Component tests check markup and semantics (`AccessibilityTests`, `MarkdownToolbarTests`), not script behaviour. Three scripts' logic runs in Node over a small stand-in for the page (`FilterMenuKeysTests` for `filters.js`, `AutogrowTests` for `autogrow.js`, `DialogTabTests` for `dialog.js`'s Tab cycle; Node must be on the PATH); the rest of the JavaScript has no tests, and none has coverage. |
 | How the email looks in mail clients | Render tests check its structure; open the `.eml` from development in Outlook. |
 | Long polling, reconnection after sleep, several server processes | Not simulated. TIDE runs as one process ([reference/known-issues.md](../reference/known-issues.md)). |
-| Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. See [reference/performance.md](../reference/performance.md). |
+| Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. The query budget runs on both providers on every change, but counts reads, saves, parameters and rows, not time. See [reference/performance.md](../reference/performance.md). |
 | A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off. CI applies the DBA schema script to SQL Server and compares the result with the migrations, but doesn't start the app on it. |

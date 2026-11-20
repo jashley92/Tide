@@ -537,7 +537,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public const int ClosedListDays = 90;
 
     // The list's actions for a view: the open ones, or for Closed, those closed within its reach.
-    private static IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionFilter filter)
+    private IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionFilter filter)
     {
         if (filter.View != ActionView.Closed) return q.WhereOpen();
         var since = ClosedListSince(filter.ClosedDays);
@@ -545,7 +545,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     // How far back Recently closed reaches: the filter's days, a day to ClosedListDays (its longest, and its default).
-    private static DateTimeOffset ClosedListSince(int? days) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days ?? ClosedListDays, 1, ClosedListDays));
+    private DateTimeOffset ClosedListSince(int? days) => clock.Now.ToUniversalTime().AddDays(-Math.Clamp(days ?? ClosedListDays, 1, ClosedListDays));
 
     /// <summary>Rows on a page of the actions list.</summary>
     public const int ListPageSize = 50;
@@ -779,7 +779,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     // How far back the board's closed strip counts: the last closedDays days, a day to BoardOlderDays.
-    private static DateTimeOffset BoardClosedSince(int closedDays) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays, 1, BoardOlderDays));
+    private DateTimeOffset BoardClosedSince(int closedDays) => clock.Now.ToUniversalTime().AddDays(-Math.Clamp(closedDays, 1, BoardOlderDays));
 
     // The rows of q (the board's cards, or a page of the list) with whether each one's article names a CVE on CISA's KEV
     // list, in one read for them all, on their own query (so no list of ids is sent). Only for someone who may read the
