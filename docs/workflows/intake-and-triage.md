@@ -420,7 +420,7 @@ Notes on the diagram:
 | Dismiss | `DismissAsync`, `DismissManyAsync` ("dismiss the rest", only items still New) | The reason (any short text; offered: Not relevant, Already covered, Out of scope, Low quality, Paywalled) in `DismissReason` |
 | Duplicate | `MarkDuplicateAsync(id, ofId)` | `DuplicateOfId`: the item named, or by default its `SimilarToId`. An item can't repeat itself. |
 | Restore | `RestoreAsync` | Back to New, the stamps cleared |
-| Undo a shortlist or dismissal | `UndoDecisionAsync(id, decided)` (the toast's Undo after S or X on a new item) | Back to New, the stamps cleared, only while it's still what was decided, so a colleague's decision since stands. Not offered from another tab, where putting it back would land it in New rather than where it was. |
+| Undo a shortlist or dismissal | `UndoDecisionAsync(id, decided, at)` (the toast's Undo after S or X on a new item) | Back to New, the stamps cleared, only while the item still carries this person's decision stamped `at` (the `TriageDecision` that `ShortlistAsync` and `DismissAsync` return), so a colleague's decision since stands, the same one made again included. Offered only when the decision replaced New, which the service checks as it writes (`TriageDecision.FromNew`): a stale row may still show New after a colleague's decision, and putting that item in New would be wrong. |
 | Dismiss the same story | `DismissSameCveAsync(id, shown)` | Dismisses as "Already covered" the rows shown as sharing a CVE, only those still New |
 
 Every decision is one `ExecuteUpdate` statement whose `WHERE` clause re-checks the state as it writes. A dismissal that

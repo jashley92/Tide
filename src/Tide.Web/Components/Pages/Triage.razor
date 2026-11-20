@@ -1723,10 +1723,11 @@ else
         var item = row.Item;
         try
         {
+            TriageDecision? decision = null;
             switch (what)
             {
-                case TriageStep.Shortlist: await Intake.ShortlistAsync(item.Id); break;
-                case TriageStep.Dismiss: await Intake.DismissAsync(item.Id, _itemReason); break;
+                case TriageStep.Shortlist: decision = await Intake.ShortlistAsync(item.Id); break;
+                case TriageStep.Dismiss: decision = await Intake.DismissAsync(item.Id, _itemReason); break;
                 case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(item.Id); break;
                 case TriageStep.Restore: await Intake.RestoreAsync(item.Id); break;
             }
@@ -1736,15 +1737,15 @@ else
             // now belongs to the next item) or the page.
             _focus = "tideTriage.focusRow";
             // S or X on a new item is one keypress and the row leaves the list: the toast's Undo (or Alt+Z) puts it back.
-            // Only from New, where putting it back is the exact inverse; from another tab it would land in New rather
-            // than where it was.
-            if (what is TriageStep.Shortlist or TriageStep.Dismiss && item.Status == FeedItemStatus.New)
+            // Only when it was new as it was decided (the service says; this row may be stale), where putting it back is
+            // the exact inverse; otherwise it would land in New rather than where it was.
+            if (decision is { FromNew: true } d)
             {
                 var decided = what == TriageStep.Shortlist ? FeedItemStatus.Shortlisted : FeedItemStatus.Dismissed;
                 Toasts.Show($"{(decided == FeedItemStatus.Shortlisted ? "Shortlisted" : "Dismissed")}: {Short(item.Title)}", async () =>
                 {
                     // From the toast: this page re-renders itself, as the click wasn't on it.
-                    await UndoDecision(item, decided);
+                    await UndoDecision(item, decided, d.At);
                     StateHasChanged();
                 });
             }
@@ -1754,18 +1755,20 @@ else
     }
 
     // Undo of a single shortlist or dismissal, from its toast: back in New, unless a colleague has decided it since. The
-    // row is selected again where it's shown; nothing is fetched (the reading pane shows only text already kept).
-    internal async Task UndoDecision(FeedItem item, FeedItemStatus decided)
+    // row is selected again where it's shown, and an open reading pane follows it; nothing is fetched (Follow shows
+    // only text already kept).
+    internal async Task UndoDecision(FeedItem item, FeedItemStatus decided, DateTimeOffset at)
     {
         if (_busy) return;
         _busy = true;
         try
         {
-            Toasts.Show(await Intake.UndoDecisionAsync(item.Id, decided)
+            Toasts.Show(await Intake.UndoDecisionAsync(item.Id, decided, at)
                 ? $"Put back in New: {Short(item.Title)}" : "Nothing to undo: a colleague already changed it.");
             Announce();
             await Load();
-            SelectItem(item.Id);
+            // Load has already followed the selection it made; the pane follows this one.
+            if (SelectItem(item.Id)) await Follow();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
