@@ -163,7 +163,7 @@ else
                 case LeaseState.Unreachable: <text>The job lease couldn't be taken, so none runs here until the database answers. </text> break;
             }
             Each job's latest run, kept across restarts; the runs and failures are of the last @((int)JobRunLog.Keep.TotalDays) days.
-            @if (report.Sources.Enabled > 0) { <text>@report.Sources.Enabled source@(report.Sources.Enabled == 1 ? " is" : "s are") turned on; @report.Sources.Failing failing. </text> }
+            @if (report.Sources.Enabled > 0) { <text>@Ui.Plural(report.Sources.Enabled, "source is", "sources are") turned on; @report.Sources.Failing failing. </text> }
             @if (report.LastCveRun is { } cve) { <text>The last CVE refresh was @Ui.When(Clock, cve.AtUtc).</text> }
         </p>
         @* At a narrow width the jobs table scrolls within its card rather than widening the page. *@

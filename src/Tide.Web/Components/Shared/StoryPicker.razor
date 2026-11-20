@@ -162,7 +162,7 @@
 
     private string Meta(StoryRow s)
     {
-        var parts = new List<string> { s.Articles == 1 ? "1 article" : $"{s.Articles} articles" };
+        var parts = new List<string> { Ui.Plural(s.Articles, "article") };
         if (s.LastArticleAtUtc is { } last) parts.Add("latest " + Clock.ToLocal(last).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture));
         if (s.Status == StoryStatus.Closed) parts.Add("closed");
         return string.Join(" · ", parts);

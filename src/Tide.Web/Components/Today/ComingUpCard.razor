@@ -6,7 +6,7 @@
     {
         @if (up.ToApprove.Count > 0)
         {
-            <div class="small text-danger mb-1"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> <a href="rotation">@up.ToApprove.Count swap or cover request@(up.ToApprove.Count == 1 ? "" : "s") waiting for you</a></div>
+            <div class="small text-danger mb-1"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> <a href="rotation">@Ui.Plural(up.ToApprove.Count, "swap or cover request") waiting for you</a></div>
         }
         @if (up.MyRuns.Count == 0)
         {

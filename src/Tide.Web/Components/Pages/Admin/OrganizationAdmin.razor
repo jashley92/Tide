@@ -126,7 +126,7 @@
             </tbody>
         </table>
     }
-    @if (_earlier > 0) { <p class="small tide-muted">@_earlier earlier holiday@(_earlier == 1 ? "" : "s") kept, for the rota and deadlines of those days.</p> }
+    @if (_earlier > 0) { <p class="small tide-muted">@Ui.Plural(_earlier, "earlier holiday") kept, for the rota and deadlines of those days.</p> }
     <div class="row g-2 align-items-end">
         <div class="col-sm-4 col-md-3">
             <label class="tide-field-label" for="holiday-date">Date</label>
@@ -249,7 +249,7 @@
     private void Report(HolidayImport result, string from)
     {
         _skipped = result.Skipped;
-        Toasts.Show(result.Added.Count == 0 ? "No holidays added." : $"{result.Added.Count} holiday{(result.Added.Count == 1 ? "" : "s")} added {from}.");
+        Toasts.Show(result.Added.Count == 0 ? "No holidays added." : $"{Ui.Plural(result.Added.Count, "holiday")} added {from}.");
     }
 
     private async Task Change(Func<Task> change)
