@@ -456,7 +456,15 @@ else
                     <button type="button" class="btn btn-primary" data-guide="save" disabled="@(_busy || !_dirty)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
                     @if (_article.Status == ArticleStatus.Draft)
                     {
-                        <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@_busy" @onclick="MarkReady">Save and mark ready</button>
+                        @* A blocking check failing on what's on screen: the button is disabled and says why beside it (as
+                           Start the meeting does), rather than saving and then being refused. *@
+                        var notReady = ArticleChecks.NotReady(checks);
+                        <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@(_busy || notReady is not null)"
+                                aria-describedby="@(notReady is null ? null : _notReadyId)" @onclick="MarkReady">Save and mark ready</button>
+                        @if (notReady is not null)
+                        {
+                            <span id="@_notReadyId" class="small tide-muted">@notReady</span>
+                        }
                     }
                     else if (_article.Status == ArticleStatus.Ready)
                     {
@@ -1308,8 +1316,16 @@ else
         finally { _busy = false; }
     }
 
-    private async Task MarkReady()
+    private readonly string _notReadyId = Ui.NewId("not-ready");
+
+    internal async Task MarkReady()
     {
+        // Checked on what's on screen before saving, so a refusal isn't "Saved." followed by "It isn't ready yet".
+        if (ArticleChecks.NotReady(Checks().Checks) is { } notReady)
+        {
+            Toasts.Error(notReady);
+            return;
+        }
         if (_dirty && !await Save()) return;
         await SetStatus(ArticleStatus.Ready, "Marked ready for a brief.");
     }

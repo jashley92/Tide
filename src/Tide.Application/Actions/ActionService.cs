@@ -283,6 +283,9 @@ public enum ActionDue
 
     /// <summary>No due date.</summary>
     None = 2,
+
+    /// <summary>Open and due today or the next working day: the SLA's Due soon (<see cref="SlaState.DueSoon"/>), as Workload counts it.</summary>
+    Soon = 3,
 }
 
 /// <summary>What the actions list is sorted by. <see cref="Closed"/> is most recently closed first, the closed view's own.</summary>
@@ -855,6 +858,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 break;
             case ActionDue.None:
                 q = q.Where(a => a.DueDate == null);
+                break;
+            case ActionDue.Soon:
+                var nextDay = clock.Days.Next(today);
+                q = q.WhereOpen().Where(a => a.DueDate != null && a.DueDate >= today && a.DueDate <= nextDay);
                 break;
         }
         return q;
