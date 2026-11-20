@@ -21,7 +21,8 @@ public partial class DialogFocusTests
             .Where(x => x.File != "Lightbox.razor")
             .ToList();
 
-        modals.Select(x => x.File).Should().Contain(["ConfirmDialog.razor", "LeaveDialog.razor", "ShortcutsOverlay.razor", "ScreenshotDialog.razor", "AttackMatrixPicker.razor"]);
+        // ModalShell is the frame of the confirmations, the leave dialog, the screenshot dialog, the shortcuts list and What's new.
+        modals.Select(x => x.File).Should().Contain(["ModalShell.razor", "AttackMatrixPicker.razor"]);
         modals.Where(x => !x.Tag.Contains("tabindex=\"-1\"", StringComparison.Ordinal)).Select(x => x.File)
             .Should().BeEmpty("a click on the dialog's text keeps focus in it, so Escape still closes it");
     }
