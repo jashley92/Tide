@@ -114,7 +114,8 @@ Long lists are read a page at a time, with the count of every match. The triage 
 filter depend on what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned
 counts), so those read every matching item light and page that. Its suggested groups are worked out over the page shown.
 The actions list (`ActionService.PageAsync`, 50 rows) sorts, groups and pages in SQL; the board loads every open card and
-caps each column on screen. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
+caps each column on screen, and `ListAsync` (every match, for the API and the brief) reads them all; both sort in SQL in the
+list's default order. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
 
 ### Rotation, metrics, trends and search
 
