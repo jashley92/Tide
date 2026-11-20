@@ -24,7 +24,7 @@
                     <a class="tide-related-title" href="articles/@a.Id">@a.Title</a>
                     <div class="tide-related-meta">
                         @string.Join(", ", a.Why) &middot;
-                        @(a.LastBriefed is { } d ? "Briefed " + Ui.ShortDay(d) : "Not briefed yet") &middot; @a.AuthorName
+                        @(a.LastBriefed is { } d ? "Briefed " + Ui.ShortDay(d, Clock.Today) : "Not briefed yet") &middot; @a.AuthorName
                         @if (a.StoryName is { } story) { <text> &middot; Story: @story</text> }
                     </div>
                     @if (CanWrite && (a.StoryId is null || a.StoryId != StoryId))
@@ -43,7 +43,7 @@
                                         <ActionRef Number="x.Number" Title="@x.Title" />
                                         <div class="tide-related-meta">
                                             @ActionService.StatusName(x.Status) &middot; @x.TeamName &middot; <HolderText Label="@x.Holder("Unassigned")" Short="true" />
-                                            @if (x.DueDate is { } due) { <text> &middot; due @Ui.ShortDay(due)</text> }
+                                            @if (x.DueDate is { } due) { <text> &middot; due @Ui.ShortDay(due, Clock.Today)</text> }
                                             @if (ActionSla.LateText(x.DueDate, Clock.Today) is { } late) { <text> &middot; </text><span class="tide-related-late">@late</span> }
                                         </div>
                                     </div>

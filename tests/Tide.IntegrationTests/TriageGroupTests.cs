@@ -191,4 +191,43 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
         }
         finally { await SetAside(ids); }
     }
+
+    [Fact]
+    public async Task DismissingAGroup_AsksForTheReasonInTheConfirmation_AndUsesIt()
+    {
+        // X on a group's line used the single item's reason, which a group's line doesn't show.
+        const string key = "e";
+        var ids = await Seed(key, 500);
+        try
+        {
+            await using var r = await ComponentHarness.RenderAsync<Triage>(app, "/triage");
+            await r.HtmlOnce("Looks like one event");
+            const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            typeof(Triage).GetField("_itemReason", Private)!.SetValue(r.Component, "Paywalled");
+
+            await r.Press(t => t.OnTriageKey("dismiss"));
+            var html = System.Net.WebUtility.HtmlDecode(await r.HtmlOnce("Dismiss them as"));
+            html.Should().Contain(">Dismiss the 3 reports?</h2>").And.Contain("for=\"dismiss-all-reason\">Dismiss them as</label>")
+                .And.Contain(">Dismiss 3</button>");
+            foreach (var reason in Tide.Application.Intake.IntakeService.DismissReasons) html.Should().Contain($">{reason}</option>");
+
+            // The reason picked in the dialog, as the select would set it, then the confirm button.
+            await r.Renderer.Dispatcher.InvokeAsync(() => typeof(Triage).GetField("_reason", Private)!.SetValue(r.Component, "Out of scope"));
+            var dialog = (Tide.Web.Components.Shared.ConfirmDialog)typeof(Triage).GetField("_dismissMany", Private)!.GetValue(r.Component)!;
+            await r.Renderer.Dispatcher.InvokeAsync(dialog.Confirm);
+
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            List<FeedItem> items = [];
+            for (var i = 0; i < 50; i++)
+            {
+                items = await db.FeedItems.AsNoTracking().Where(f => ids.Contains(f.Id)).ToListAsync();
+                if (items.All(f => f.Status == FeedItemStatus.Dismissed)) break;
+                await Task.Delay(100);
+            }
+            items.Should().OnlyContain(f => f.Status == FeedItemStatus.Dismissed && f.DismissReason == "Out of scope",
+                "the reason chosen in the confirmation goes with every report, not the single item's");
+        }
+        finally { await SetAside(ids); }
+    }
 }

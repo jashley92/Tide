@@ -178,7 +178,7 @@ else
                 @if (lineage.Parent.Id == a.Id)
                 {
                     <div class="d-flex gap-2 flex-wrap align-items-center mt-3">
-                        <a class="small me-auto" href="@($"actions?view=open&layout=board&parent={a.Number}")">Open its @_detail.Children.Count action@(_detail.Children.Count == 1 ? "" : "s") on the board</a>
+                        <a class="small me-auto" href="@($"actions?view=open&layout=board&parent={a.Number}")">Open its @Ui.Plural(_detail.Children.Count, "action") on the board</a>
                         @if (_detail.CanEditAll)
                         {
                             <a class="btn btn-outline-secondary btn-sm" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> Split off a part for a team</a>
@@ -198,7 +198,7 @@ else
         @{ var feed = ActionFeed.Window(_feed, _feedAll, _editingComment); }
         <section class="tide-card tide-feed" aria-labelledby="feed-h">
             <div class="tide-feed-head">
-                <h2 id="feed-h" class="tide-card-title">What's happened <span class="tide-count tide-muted fw-normal">(@a.Comments.Count comment@(a.Comments.Count == 1 ? "" : "s"))</span></h2>
+                <h2 id="feed-h" class="tide-card-title">What's happened <span class="tide-count tide-muted fw-normal">(@Ui.Plural(a.Comments.Count, "comment"))</span></h2>
                 @if (feed.Earlier > 0)
                 {
                     <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="ShowAll">Show @feed.Earlier earlier</button>

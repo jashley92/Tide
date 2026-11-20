@@ -16,7 +16,7 @@ public class TrendsServiceTests : IDisposable
     private static readonly Period Sep = new(PeriodKind.Month, 2026, 9);
     private static readonly Period Aug = Sep.Previous;
 
-    private readonly TestDb _db = new();
+    private TestDb _db = new();
 
     public TrendsServiceTests() => _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
 
@@ -360,6 +360,493 @@ public class TrendsServiceTests : IDisposable
         page.Total.Should().Be(3, "updated, the briefed draft and the month-end article");
         page.Rows.Should().ContainSingle();
     }
+
+    /// <summary>
+    /// Articles and actions either side of a report's first and last days, for reports that read only those days: each
+    /// line's count in each period, written out by title. The expected text is what the report gave when it read every
+    /// article, brief and action, so reading less must leave every number as it was.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task TheReport_CountsTheSame_AtItsEdges_AsWhenItReadEverything(string provider)
+    {
+        _db = _db.On(provider);
+        static DateTimeOffset NewYork(int year, int month, int day, int hour, int minute) => new(year, month, day, hour, minute, 0, TimeSpan.FromHours(-4));
+        static DateOnly D(int year, int month, int day) => new(year, month, day);
+        var cat = new ScorecardCategory { Key = "ransomware", Name = "Ransomware & extortion" };
+        var ransomware = new ScorecardTag { Key = "ransomware", Name = "Ransomware", Category = cat };
+        var retired = new ScorecardTag { Key = "old-lure", Name = "Old lure", Category = cat, SortOrder = 1, IsRetired = true };
+        var fraudCat = new ScorecardCategory { Key = "fraud", Name = "Fraud", SortOrder = 1 };
+        var phishing = new ScorecardTag { Key = "phishing", Name = "Phishing", Category = fraudCat };
+        var titles = new Dictionary<Guid, string>();
+        var articles = new List<Article>();
+        var briefs = new Dictionary<DateOnly, Brief>();
+        var written = new List<(Guid Id, DateTimeOffset At)>();
+        Article Make(string title, DateTimeOffset at, ScorecardTag[] tags, string[] techniques, ArticleStatus status = ArticleStatus.Ready,
+            Classification classification = Classification.Informational, params DateOnly[] briefed)
+        {
+            var a = Article(title, status, classification);
+            a.Tags = tags.Select(t => new ArticleTag { ArticleId = a.Id, TagId = t.Id }).ToList();
+            a.Techniques = techniques.Select(id => new ArticleTechnique { ArticleId = a.Id, TechniqueId = id }).ToList();
+            articles.Add(a);
+            titles[a.Id] = title;
+            written.Add((a.Id, at));
+            foreach (var day in briefed)
+            {
+                var b = briefs.TryGetValue(day, out var on) ? on : briefs[day] = new Brief { BriefDate = day };
+                b.Items.Add(new BriefItem { ArticleId = a.Id, SortOrder = b.Items.Count });
+            }
+            return a;
+        }
+        Make("Briefed Mar 31, again Apr 1", NewYork(2026, 3, 30, 9, 0), [ransomware], ["T1566.001"], briefed: [D(2026, 3, 31), D(2026, 4, 1)]);
+        Make("Briefed Apr 1", NewYork(2026, 3, 31, 9, 0), [phishing], ["T1566.002"], classification: Classification.Threat, briefed: [D(2026, 4, 1)]);
+        Make("Briefed Sep 30, again Oct 1", NewYork(2026, 9, 29, 9, 0), [ransomware, phishing], ["T1078.004", "T1059"], classification: Classification.Threat,
+            briefed: [D(2026, 9, 30), D(2026, 10, 1)]);
+        Make("First briefed Oct 1", NewYork(2026, 9, 30, 9, 0), [phishing], ["T1566"], briefed: [D(2026, 10, 1)]);
+        Make("Written 23:30 Mar 31", NewYork(2026, 3, 31, 23, 30), [ransomware], ["T1486"]);
+        Make("Written 00:10 Apr 1", NewYork(2026, 4, 1, 0, 10), [retired], ["T1486"], classification: Classification.Threat);
+        Make("Written 23:59 Sep 30", NewYork(2026, 9, 30, 23, 59), [], ["T1190"]);
+        Make("Written 00:01 Oct 1", NewYork(2026, 10, 1, 0, 1), [phishing], ["T1190"]);
+        Make("Draft written in June", NewYork(2026, 6, 10, 9, 0), [ransomware], ["T1566"], ArticleStatus.Draft);
+        Make("Draft briefed Jul 2", NewYork(2026, 6, 30, 9, 0), [phishing], ["T1566.001"], ArticleStatus.Draft, briefed: [D(2026, 7, 2)]);
+        Make("Written in January, briefed Jun 15 and Jun 1", NewYork(2026, 1, 5, 9, 0), [ransomware], [], classification: Classification.Threat,
+            briefed: [D(2026, 6, 15), D(2026, 6, 1)]);
+        Make("Written in February, never briefed", NewYork(2026, 2, 10, 9, 0), [phishing], ["T1078"]);
+        Make("Written after the brief it's on", NewYork(2026, 10, 3, 9, 0), [ransomware], ["T1059.001"], briefed: [D(2026, 9, 14)]);
+        Make("Briefed a year before", NewYork(2025, 8, 4, 9, 0), [phishing], ["T1566.002"], briefed: [D(2025, 8, 5), D(2026, 5, 5)]);
+        Make("Briefed Jul 1 2025", NewYork(2025, 6, 30, 9, 0), [ransomware], ["T1190"], classification: Classification.Threat, briefed: [D(2025, 7, 1)]);
+        Make("Briefed Jun 30 2025", NewYork(2025, 6, 29, 9, 0), [ransomware], ["T1190"], briefed: [D(2025, 6, 30)]);
+        foreach (var a in articles.Where(a => a.Classification == Classification.Threat && a.Title.Contains("Apr", StringComparison.Ordinal))) a.Priority = Priority.P1;
+
+        var team = new Team { Key = "cyber-defense", Name = "Cyber Defense" };
+        var other = new Team { Key = "vm", Name = "Vulnerability Management", IsRetired = true };
+        var actions = new List<(ActionItem Action, DateTimeOffset At)>();
+        void Act(string title, DateTimeOffset at, ActionKind kind = ActionKind.Block, DateOnly? raisedOn = null, DateOnly? closed = null,
+            ActionStatus? status = null, DateOnly? due = null, Priority priority = Priority.P3, Team? by = null)
+        {
+            var x = new ActionItem
+            {
+                Number = actions.Count + 1, Title = title, Kind = kind, Team = by ?? team, RaisedOn = raisedOn, ClosedDate = closed, DueDate = due, Priority = priority,
+                Status = status ?? (closed is null ? ActionStatus.Open : ActionStatus.Done), Outcome = closed is null ? ActionOutcome.None : ActionOutcome.NoHits,
+            };
+            actions.Add((x, at));
+            titles[x.Id] = title;
+        }
+        Act("Raised Mar 20, closed Apr 5", NewYork(2026, 3, 20, 9, 0), closed: D(2026, 4, 5), due: D(2026, 4, 1));
+        Act("Raised Mar 1, open, due Mar 15", NewYork(2026, 3, 1, 9, 0), due: D(2026, 3, 15), priority: Priority.P1);
+        Act("Raised Feb 1, closed Mar 31", NewYork(2026, 2, 1, 9, 0), closed: D(2026, 3, 31));
+        Act("Raised 23:30 Sep 30", NewYork(2026, 9, 30, 23, 30), ActionKind.IocSweep);
+        Act("Raised 00:30 Oct 1", NewYork(2026, 10, 1, 0, 30), ActionKind.IocSweep);
+        Act("For Mar 31's brief, recorded Apr 2", NewYork(2026, 4, 2, 9, 0), raisedOn: D(2026, 3, 31), due: D(2026, 4, 30));
+        Act("For Apr 1's brief, recorded Apr 3", NewYork(2026, 4, 3, 9, 0), ActionKind.PatchRemediate, raisedOn: D(2026, 4, 1), closed: D(2026, 4, 20),
+            due: D(2026, 4, 10), priority: Priority.P1);
+        Act("Raised Sep 10, closed Oct 2", NewYork(2026, 9, 10, 9, 0), closed: D(2026, 10, 2), due: D(2026, 9, 20), priority: Priority.P2);
+        Act("Raised Aug 1, done late Sep 30", NewYork(2026, 8, 1, 9, 0), ActionKind.PatchRemediate, closed: D(2026, 9, 30), due: D(2026, 9, 15), priority: Priority.P1);
+        Act("Raised Jan 1, closed Oct 5", NewYork(2026, 1, 1, 9, 0), closed: D(2026, 10, 5), by: other);
+        Act("Raised Jun 1, cancelled Jun 30", NewYork(2026, 6, 1, 9, 0), closed: D(2026, 6, 30), status: ActionStatus.NotApplicable);
+        Act("Raised Jun 30 2025, closed Jul 1 2025", NewYork(2025, 6, 30, 9, 0), closed: D(2025, 7, 1), priority: Priority.P2);
+        var swept = actions[3].Action;
+        var hunts = new[]
+        {
+            new HuntQuery { ActionId = swept.Id, Dialect = "kql", Result = HuntResult.Hits, RunAtUtc = NewYork(2026, 3, 31, 23, 0) },
+            new HuntQuery { ActionId = swept.Id, Dialect = "kql", Result = HuntResult.NoHits, RunAtUtc = NewYork(2026, 4, 1, 0, 30) },
+            new HuntQuery { ActionId = actions[4].Action.Id, Dialect = "kql", Result = HuntResult.Hits, RunAtUtc = NewYork(2026, 9, 30, 23, 59) },
+            new HuntQuery { ActionId = actions[4].Action.Id, Dialect = "kql", Result = HuntResult.Hits, RunAtUtc = NewYork(2026, 10, 1, 0, 1) },
+        };
+        await Add([cat, ransomware, retired, fraudCat, phishing, .. articles, .. briefs.Values, team, other, .. actions.Select(x => x.Action), .. hunts]);
+        foreach (var (id, at) in written) await Written(id, at);
+        foreach (var (action, at) in actions) await Raised(action.Id, at);
+
+        var midOctober = new OrgClock(Microsoft.Extensions.Options.Options.Create(new OrgOptions()), new TestClock(NewYork(2026, 10, 15, 11, 0)));
+        var trends = new TrendsService(_db, _db.User, midOctober);
+        var text = new System.Text.StringBuilder();
+        foreach (var (end, rolledUp, span) in new (Period, bool, int?)[]
+        {
+            (Sep, true, null), (Sep, false, null), (Sep, true, 24), (new Period(PeriodKind.Quarter, 2026, 3), true, null),
+            (new Period(PeriodKind.Quarter, 2026, 4), true, null), (Period.Of(PeriodKind.Week, D(2026, 4, 1)), true, null),
+        })
+        {
+            var report = await trends.ReportAsync(end, rolledUp, span);
+            text.Append("== ").Append(end).Append(rolledUp ? " rolled up" : "").Append(span is { } n ? $" over {n}" : "").Append('\n');
+            foreach (var row in report.Articles.Concat(report.Tags).Concat(report.Attack).Concat(report.TacticTechniques).Concat(report.Actions))
+            {
+                text.Append(row.Key);
+                for (var i = 0; i < report.Periods.Count; i++)
+                    if (row.Ids[i].Count > 0) text.Append(" | ").Append(report.Periods[i]).Append(": ").AppendJoin("; ", row.Ids[i].Select(id => titles[id]).Order(StringComparer.Ordinal));
+                text.Append('\n');
+            }
+            foreach (var o in report.Outcomes) text.Append(o.Key).Append(": ").Append(o.Current).Append(" / ").Append(o.Previous).Append('\n');
+            text.AppendJoin("; ", report.CountedOn.Select(x => $"{titles[x.Key]} {x.Value:yyyy-MM-dd}").Order(StringComparer.Ordinal)).Append('\n');
+        }
+
+        text.ToString().Should().Be(EdgesExpected.ReplaceLineEndings("\n"));
+    }
+
+    private const string EdgesExpected = """
+== 2026-09 rolled up
+articles:all | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30; Written after the brief it's on
+articles:threat | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:p1-p2 | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:informational | 2026-07: Draft briefed Jul 2 | 2026-09: Written 23:59 Sep 30; Written after the brief it's on
+category:ransomware | 2026-04: Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:ransomware | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:old-lure | 2026-04: Written 00:10 Apr 1
+category:fraud | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:phishing | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:none | 2026-09: Written 23:59 Sep 30
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30
+tactic:TA0002 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-04: Written 00:10 Apr 1
+technique:T1059 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+technique:T1078 | 2026-09: Briefed Sep 30, again Oct 1
+technique:T1190 | 2026-09: Written 23:59 Sep 30
+technique:T1566 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2
+technique:T1486 | 2026-04: Written 00:10 Apr 1
+technique:none | 2026-06: Written in January, briefed Jun 15 and Jun 1
+tactic:TA0001:T1078 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0001:T1190 | 2026-09: Written 23:59 Sep 30
+tactic:TA0001:T1566 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2
+tactic:TA0002:T1059 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003:T1078 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004:T1078 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005:T1078 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0040:T1486 | 2026-04: Written 00:10 Apr 1
+actions:raised | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-kind:IocSweep | 2026-09: Raised 23:30 Sep 30
+actions:raised-kind:Block | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Sep 10, closed Oct 2
+actions:raised-kind:PatchRemediate | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-08: Raised Aug 1, done late Sep 30
+actions:raised-team:cyber-defense | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:closed | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:done | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:on-time
+actions:late | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:no-due
+actions:cancelled | 2026-06: Raised Jun 1, cancelled Jun 30
+actions:outcome:NoHits | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:hunted | 2026-04: Raised 23:30 Sep 30 | 2026-09: Raised 00:30 Oct 1
+actions:hits | 2026-09: Raised 00:30 Oct 1
+actions:no-hits | 2026-04: Raised 23:30 Sep 30
+actions:open-at-end | 2026-04: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Aug 1, done late Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised 23:30 Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+actions:overdue-at-end | 2026-04: Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+median-days:P1: 60 / 
+median-days:P2:  / 
+Briefed Apr 1 2026-04-01; Briefed Sep 30, again Oct 1 2026-09-30; Draft briefed Jul 2 2026-07-02; Written 00:10 Apr 1 2026-04-01; Written 23:59 Sep 30 2026-09-30; Written after the brief it's on 2026-09-14; Written in January, briefed Jun 15 and Jun 1 2026-06-01
+== 2026-09
+articles:all | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30; Written after the brief it's on
+articles:threat | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:p1-p2 | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:informational | 2026-07: Draft briefed Jul 2 | 2026-09: Written 23:59 Sep 30; Written after the brief it's on
+category:ransomware | 2026-04: Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:ransomware | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:old-lure | 2026-04: Written 00:10 Apr 1
+category:fraud | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:phishing | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:none | 2026-09: Written 23:59 Sep 30
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30
+tactic:TA0002 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-04: Written 00:10 Apr 1
+technique:T1059 | 2026-09: Briefed Sep 30, again Oct 1
+technique:T1059.001 | 2026-09: Written after the brief it's on
+technique:T1078.004 | 2026-09: Briefed Sep 30, again Oct 1
+technique:T1190 | 2026-09: Written 23:59 Sep 30
+technique:T1486 | 2026-04: Written 00:10 Apr 1
+technique:T1566.001 | 2026-07: Draft briefed Jul 2
+technique:T1566.002 | 2026-04: Briefed Apr 1
+technique:none | 2026-06: Written in January, briefed Jun 15 and Jun 1
+tactic:TA0001:T1078.004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0001:T1190 | 2026-09: Written 23:59 Sep 30
+tactic:TA0001:T1566.001 | 2026-07: Draft briefed Jul 2
+tactic:TA0001:T1566.002 | 2026-04: Briefed Apr 1
+tactic:TA0002:T1059 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0002:T1059.001 | 2026-09: Written after the brief it's on
+tactic:TA0003:T1078.004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004:T1078.004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005:T1078.004 | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0040:T1486 | 2026-04: Written 00:10 Apr 1
+actions:raised | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-kind:IocSweep | 2026-09: Raised 23:30 Sep 30
+actions:raised-kind:Block | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Sep 10, closed Oct 2
+actions:raised-kind:PatchRemediate | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-08: Raised Aug 1, done late Sep 30
+actions:raised-team:cyber-defense | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:closed | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:done | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:on-time
+actions:late | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:no-due
+actions:cancelled | 2026-06: Raised Jun 1, cancelled Jun 30
+actions:outcome:NoHits | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:hunted | 2026-04: Raised 23:30 Sep 30 | 2026-09: Raised 00:30 Oct 1
+actions:hits | 2026-09: Raised 00:30 Oct 1
+actions:no-hits | 2026-04: Raised 23:30 Sep 30
+actions:open-at-end | 2026-04: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Aug 1, done late Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised 23:30 Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+actions:overdue-at-end | 2026-04: Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+median-days:P1: 60 / 
+median-days:P2:  / 
+Briefed Apr 1 2026-04-01; Briefed Sep 30, again Oct 1 2026-09-30; Draft briefed Jul 2 2026-07-02; Written 00:10 Apr 1 2026-04-01; Written 23:59 Sep 30 2026-09-30; Written after the brief it's on 2026-09-14; Written in January, briefed Jun 15 and Jun 1 2026-06-01
+== 2026-09 rolled up over 24
+articles:all | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2025-08: Briefed a year before | 2026-02: Written in February, never briefed | 2026-03: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30; Written after the brief it's on
+articles:threat | 2025-07: Briefed Jul 1 2025 | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:p1-p2 | 2025-07: Briefed Jul 1 2025 | 2026-04: Briefed Apr 1; Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1
+articles:informational | 2025-06: Briefed Jun 30 2025 | 2025-08: Briefed a year before | 2026-02: Written in February, never briefed | 2026-03: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-07: Draft briefed Jul 2 | 2026-09: Written 23:59 Sep 30; Written after the brief it's on
+category:ransomware | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2026-03: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-04: Written 00:10 Apr 1 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:ransomware | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2026-03: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-06: Written in January, briefed Jun 15 and Jun 1 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:old-lure | 2026-04: Written 00:10 Apr 1
+category:fraud | 2025-08: Briefed a year before | 2026-02: Written in February, never briefed | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:phishing | 2025-08: Briefed a year before | 2026-02: Written in February, never briefed | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1
+tag:none | 2026-09: Written 23:59 Sep 30
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2025-08: Briefed a year before | 2026-02: Written in February, never briefed | 2026-03: Briefed Mar 31, again Apr 1 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2 | 2026-09: Briefed Sep 30, again Oct 1; Written 23:59 Sep 30
+tactic:TA0002 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-03: Written 23:30 Mar 31 | 2026-04: Written 00:10 Apr 1
+technique:T1059 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+technique:T1190 | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2026-09: Written 23:59 Sep 30
+technique:T1078 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+technique:T1566 | 2025-08: Briefed a year before | 2026-03: Briefed Mar 31, again Apr 1 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2
+technique:T1486 | 2026-03: Written 23:30 Mar 31 | 2026-04: Written 00:10 Apr 1
+technique:none | 2026-06: Written in January, briefed Jun 15 and Jun 1
+tactic:TA0001:T1190 | 2025-06: Briefed Jun 30 2025 | 2025-07: Briefed Jul 1 2025 | 2026-09: Written 23:59 Sep 30
+tactic:TA0001:T1078 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0001:T1566 | 2025-08: Briefed a year before | 2026-03: Briefed Mar 31, again Apr 1 | 2026-04: Briefed Apr 1 | 2026-07: Draft briefed Jul 2
+tactic:TA0002:T1059 | 2026-09: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003:T1078 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0004:T1078 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0005:T1078 | 2026-02: Written in February, never briefed | 2026-09: Briefed Sep 30, again Oct 1
+tactic:TA0040:T1486 | 2026-03: Written 23:30 Mar 31 | 2026-04: Written 00:10 Apr 1
+actions:raised | 2025-06: Raised Jun 30 2025, closed Jul 1 2025 | 2026-01: Raised Jan 1, closed Oct 5 | 2026-02: Raised Feb 1, closed Mar 31 | 2026-03: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-kind:IocSweep | 2026-09: Raised 23:30 Sep 30
+actions:raised-kind:Block | 2025-06: Raised Jun 30 2025, closed Jul 1 2025 | 2026-01: Raised Jan 1, closed Oct 5 | 2026-02: Raised Feb 1, closed Mar 31 | 2026-03: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Sep 10, closed Oct 2
+actions:raised-kind:PatchRemediate | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-08: Raised Aug 1, done late Sep 30
+actions:raised-team:cyber-defense | 2025-06: Raised Jun 30 2025, closed Jul 1 2025 | 2026-02: Raised Feb 1, closed Mar 31 | 2026-03: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-04: For Apr 1's brief, recorded Apr 3 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-08: Raised Aug 1, done late Sep 30 | 2026-09: Raised 23:30 Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-team:vm | 2026-01: Raised Jan 1, closed Oct 5
+actions:closed | 2025-07: Raised Jun 30 2025, closed Jul 1 2025 | 2026-03: Raised Feb 1, closed Mar 31 | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:done | 2025-07: Raised Jun 30 2025, closed Jul 1 2025 | 2026-03: Raised Feb 1, closed Mar 31 | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:on-time
+actions:late | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-09: Raised Aug 1, done late Sep 30
+actions:no-due | 2025-07: Raised Jun 30 2025, closed Jul 1 2025 | 2026-03: Raised Feb 1, closed Mar 31
+actions:cancelled | 2026-06: Raised Jun 1, cancelled Jun 30
+actions:outcome:NoHits | 2025-07: Raised Jun 30 2025, closed Jul 1 2025 | 2026-03: Raised Feb 1, closed Mar 31 | 2026-04: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-06: Raised Jun 1, cancelled Jun 30 | 2026-09: Raised Aug 1, done late Sep 30
+actions:hunted | 2026-03: Raised 23:30 Sep 30 | 2026-04: Raised 23:30 Sep 30 | 2026-09: Raised 00:30 Oct 1
+actions:hits | 2026-03: Raised 23:30 Sep 30 | 2026-09: Raised 00:30 Oct 1
+actions:no-hits | 2026-04: Raised 23:30 Sep 30
+actions:open-at-end | 2025-06: Raised Jun 30 2025, closed Jul 1 2025 | 2026-01: Raised Jan 1, closed Oct 5 | 2026-02: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5 | 2026-03: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-04: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Aug 1, done late Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised 23:30 Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+actions:overdue-at-end | 2026-03: Raised Mar 1, open, due Mar 15 | 2026-04: Raised Mar 1, open, due Mar 15 | 2026-05: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-06: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-07: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-08: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-09: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+median-days:P1: 60 / 
+median-days:P2:  / 
+Briefed Apr 1 2026-04-01; Briefed Jul 1 2025 2025-07-01; Briefed Jun 30 2025 2025-06-30; Briefed Mar 31, again Apr 1 2026-03-31; Briefed Sep 30, again Oct 1 2026-09-30; Briefed a year before 2025-08-05; Draft briefed Jul 2 2026-07-02; Written 00:10 Apr 1 2026-04-01; Written 23:30 Mar 31 2026-03-31; Written 23:59 Sep 30 2026-09-30; Written after the brief it's on 2026-09-14; Written in February, never briefed 2026-02-10; Written in January, briefed Jun 15 and Jun 1 2026-06-01
+== 2026-Q3 rolled up
+articles:all | 2025-Q3: Briefed Jul 1 2025; Briefed a year before | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31; Written in February, never briefed | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2; Written 23:59 Sep 30; Written after the brief it's on
+articles:threat | 2025-Q3: Briefed Jul 1 2025 | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1
+articles:p1-p2 | 2025-Q3: Briefed Jul 1 2025 | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1
+articles:informational | 2025-Q3: Briefed a year before | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31; Written in February, never briefed | 2026-Q3: Draft briefed Jul 2; Written 23:59 Sep 30; Written after the brief it's on
+category:ransomware | 2025-Q3: Briefed Jul 1 2025 | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:ransomware | 2025-Q3: Briefed Jul 1 2025 | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-Q2: Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:old-lure | 2026-Q2: Written 00:10 Apr 1
+category:fraud | 2025-Q3: Briefed a year before | 2026-Q1: Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2
+tag:phishing | 2025-Q3: Briefed a year before | 2026-Q1: Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2
+tag:none | 2026-Q3: Written 23:59 Sep 30
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2025-Q3: Briefed Jul 1 2025; Briefed a year before | 2026-Q1: Briefed Mar 31, again Apr 1; Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2; Written 23:59 Sep 30
+tactic:TA0002 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0004 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0005 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+technique:T1059 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+technique:T1566 | 2025-Q3: Briefed a year before | 2026-Q1: Briefed Mar 31, again Apr 1 | 2026-Q2: Briefed Apr 1 | 2026-Q3: Draft briefed Jul 2
+technique:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+technique:T1190 | 2025-Q3: Briefed Jul 1 2025 | 2026-Q3: Written 23:59 Sep 30
+technique:T1486 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+technique:none | 2026-Q2: Written in January, briefed Jun 15 and Jun 1
+tactic:TA0001:T1566 | 2025-Q3: Briefed a year before | 2026-Q1: Briefed Mar 31, again Apr 1 | 2026-Q2: Briefed Apr 1 | 2026-Q3: Draft briefed Jul 2
+tactic:TA0001:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0001:T1190 | 2025-Q3: Briefed Jul 1 2025 | 2026-Q3: Written 23:59 Sep 30
+tactic:TA0002:T1059 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0004:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0005:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0040:T1486 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+actions:raised | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised 23:30 Sep 30; Raised Aug 1, done late Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-kind:IocSweep | 2026-Q3: Raised 23:30 Sep 30
+actions:raised-kind:Block | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised Sep 10, closed Oct 2
+actions:raised-kind:PatchRemediate | 2026-Q2: For Apr 1's brief, recorded Apr 3 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:raised-team:cyber-defense | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised 23:30 Sep 30; Raised Aug 1, done late Sep 30; Raised Sep 10, closed Oct 2
+actions:raised-team:vm | 2026-Q1: Raised Jan 1, closed Oct 5
+actions:closed | 2025-Q3: Raised Jun 30 2025, closed Jul 1 2025 | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:done | 2025-Q3: Raised Jun 30 2025, closed Jul 1 2025 | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:on-time
+actions:late | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:no-due | 2025-Q3: Raised Jun 30 2025, closed Jul 1 2025 | 2026-Q1: Raised Feb 1, closed Mar 31
+actions:cancelled | 2026-Q2: Raised Jun 1, cancelled Jun 30
+actions:outcome:NoHits | 2025-Q3: Raised Jun 30 2025, closed Jul 1 2025 | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:hunted | 2026-Q1: Raised 23:30 Sep 30 | 2026-Q2: Raised 23:30 Sep 30 | 2026-Q3: Raised 00:30 Oct 1
+actions:hits | 2026-Q1: Raised 23:30 Sep 30 | 2026-Q3: Raised 00:30 Oct 1
+actions:no-hits | 2026-Q2: Raised 23:30 Sep 30
+actions:open-at-end | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-Q3: For Mar 31's brief, recorded Apr 2; Raised 23:30 Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+actions:overdue-at-end | 2026-Q1: Raised Mar 1, open, due Mar 15 | 2026-Q2: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-Q3: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2
+median-days:P1: 60 / 19
+median-days:P2:  / 
+Briefed Apr 1 2026-04-01; Briefed Jul 1 2025 2025-07-01; Briefed Mar 31, again Apr 1 2026-03-31; Briefed Sep 30, again Oct 1 2026-09-30; Briefed a year before 2025-08-05; Draft briefed Jul 2 2026-07-02; Written 00:10 Apr 1 2026-04-01; Written 23:30 Mar 31 2026-03-31; Written 23:59 Sep 30 2026-09-30; Written after the brief it's on 2026-09-14; Written in February, never briefed 2026-02-10; Written in January, briefed Jun 15 and Jun 1 2026-06-01
+== 2026-Q4 rolled up
+articles:all | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31; Written in February, never briefed | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2; Written 23:59 Sep 30; Written after the brief it's on | 2026-Q4: First briefed Oct 1; Written 00:01 Oct 1
+articles:threat | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1
+articles:p1-p2 | 2026-Q2: Briefed Apr 1; Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1
+articles:informational | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31; Written in February, never briefed | 2026-Q3: Draft briefed Jul 2; Written 23:59 Sep 30; Written after the brief it's on | 2026-Q4: First briefed Oct 1; Written 00:01 Oct 1
+category:ransomware | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1; Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:ransomware | 2026-Q1: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31 | 2026-Q2: Written in January, briefed Jun 15 and Jun 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tag:old-lure | 2026-Q2: Written 00:10 Apr 1
+category:fraud | 2026-Q1: Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2 | 2026-Q4: First briefed Oct 1; Written 00:01 Oct 1
+tag:phishing | 2026-Q1: Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2 | 2026-Q4: First briefed Oct 1; Written 00:01 Oct 1
+tag:none | 2026-Q3: Written 23:59 Sep 30
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2026-Q1: Briefed Mar 31, again Apr 1; Written in February, never briefed | 2026-Q2: Briefed Apr 1 | 2026-Q3: Briefed Sep 30, again Oct 1; Draft briefed Jul 2; Written 23:59 Sep 30 | 2026-Q4: First briefed Oct 1; Written 00:01 Oct 1
+tactic:TA0002 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0004 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0005 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+technique:T1566 | 2026-Q1: Briefed Mar 31, again Apr 1 | 2026-Q2: Briefed Apr 1 | 2026-Q3: Draft briefed Jul 2 | 2026-Q4: First briefed Oct 1
+technique:T1190 | 2026-Q3: Written 23:59 Sep 30 | 2026-Q4: Written 00:01 Oct 1
+technique:T1059 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+technique:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+technique:T1486 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+technique:none | 2026-Q2: Written in January, briefed Jun 15 and Jun 1
+tactic:TA0001:T1566 | 2026-Q1: Briefed Mar 31, again Apr 1 | 2026-Q2: Briefed Apr 1 | 2026-Q3: Draft briefed Jul 2 | 2026-Q4: First briefed Oct 1
+tactic:TA0001:T1190 | 2026-Q3: Written 23:59 Sep 30 | 2026-Q4: Written 00:01 Oct 1
+tactic:TA0001:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0002:T1059 | 2026-Q3: Briefed Sep 30, again Oct 1; Written after the brief it's on
+tactic:TA0003:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0004:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0005:T1078 | 2026-Q1: Written in February, never briefed | 2026-Q3: Briefed Sep 30, again Oct 1
+tactic:TA0040:T1486 | 2026-Q1: Written 23:30 Mar 31 | 2026-Q2: Written 00:10 Apr 1
+actions:raised | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised 23:30 Sep 30; Raised Aug 1, done late Sep 30; Raised Sep 10, closed Oct 2 | 2026-Q4: Raised 00:30 Oct 1
+actions:raised-kind:IocSweep | 2026-Q3: Raised 23:30 Sep 30 | 2026-Q4: Raised 00:30 Oct 1
+actions:raised-kind:Block | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised Sep 10, closed Oct 2
+actions:raised-kind:PatchRemediate | 2026-Q2: For Apr 1's brief, recorded Apr 3 | 2026-Q3: Raised Aug 1, done late Sep 30
+actions:raised-team:cyber-defense | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Feb 1, closed Mar 31; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30 | 2026-Q3: Raised 23:30 Sep 30; Raised Aug 1, done late Sep 30; Raised Sep 10, closed Oct 2 | 2026-Q4: Raised 00:30 Oct 1
+actions:raised-team:vm | 2026-Q1: Raised Jan 1, closed Oct 5
+actions:closed | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30 | 2026-Q4: Raised Jan 1, closed Oct 5; Raised Sep 10, closed Oct 2
+actions:done | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30 | 2026-Q4: Raised Jan 1, closed Oct 5; Raised Sep 10, closed Oct 2
+actions:on-time
+actions:late | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30 | 2026-Q4: Raised Sep 10, closed Oct 2
+actions:no-due | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q4: Raised Jan 1, closed Oct 5
+actions:cancelled | 2026-Q2: Raised Jun 1, cancelled Jun 30
+actions:outcome:NoHits | 2026-Q1: Raised Feb 1, closed Mar 31 | 2026-Q2: For Apr 1's brief, recorded Apr 3; Raised Jun 1, cancelled Jun 30; Raised Mar 20, closed Apr 5 | 2026-Q3: Raised Aug 1, done late Sep 30 | 2026-Q4: Raised Jan 1, closed Oct 5; Raised Sep 10, closed Oct 2
+actions:hunted | 2026-Q1: Raised 23:30 Sep 30 | 2026-Q2: Raised 23:30 Sep 30 | 2026-Q3: Raised 00:30 Oct 1 | 2026-Q4: Raised 00:30 Oct 1
+actions:hits | 2026-Q1: Raised 23:30 Sep 30 | 2026-Q3: Raised 00:30 Oct 1 | 2026-Q4: Raised 00:30 Oct 1
+actions:no-hits | 2026-Q2: Raised 23:30 Sep 30
+actions:open-at-end | 2026-Q1: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-Q2: For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-Q3: For Mar 31's brief, recorded Apr 2; Raised 23:30 Sep 30; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2 | 2026-Q4: For Mar 31's brief, recorded Apr 2; Raised 00:30 Oct 1; Raised 23:30 Sep 30; Raised Mar 1, open, due Mar 15
+actions:overdue-at-end | 2026-Q1: Raised Mar 1, open, due Mar 15 | 2026-Q2: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15 | 2026-Q3: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15; Raised Sep 10, closed Oct 2 | 2026-Q4: For Mar 31's brief, recorded Apr 2; Raised Mar 1, open, due Mar 15
+median-days:P1:  / 60
+median-days:P2: 22 / 
+Briefed Apr 1 2026-04-01; Briefed Mar 31, again Apr 1 2026-03-31; Briefed Sep 30, again Oct 1 2026-09-30; Draft briefed Jul 2 2026-07-02; First briefed Oct 1 2026-10-01; Written 00:01 Oct 1 2026-10-01; Written 00:10 Apr 1 2026-04-01; Written 23:30 Mar 31 2026-03-31; Written 23:59 Sep 30 2026-09-30; Written after the brief it's on 2026-09-14; Written in February, never briefed 2026-02-10; Written in January, briefed Jun 15 and Jun 1 2026-06-01
+== 2026-W14 rolled up
+articles:all | 2026-W07: Written in February, never briefed | 2026-W14: Briefed Apr 1; Briefed Mar 31, again Apr 1; Written 00:10 Apr 1; Written 23:30 Mar 31
+articles:threat | 2026-W14: Briefed Apr 1; Written 00:10 Apr 1
+articles:p1-p2 | 2026-W14: Briefed Apr 1; Written 00:10 Apr 1
+articles:informational | 2026-W07: Written in February, never briefed | 2026-W14: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31
+category:ransomware | 2026-W14: Briefed Mar 31, again Apr 1; Written 00:10 Apr 1; Written 23:30 Mar 31
+tag:ransomware | 2026-W14: Briefed Mar 31, again Apr 1; Written 23:30 Mar 31
+tag:old-lure | 2026-W14: Written 00:10 Apr 1
+category:fraud | 2026-W07: Written in February, never briefed | 2026-W14: Briefed Apr 1
+tag:phishing | 2026-W07: Written in February, never briefed | 2026-W14: Briefed Apr 1
+tag:none
+tactic:TA0043
+tactic:TA0042
+tactic:TA0001 | 2026-W07: Written in February, never briefed | 2026-W14: Briefed Apr 1; Briefed Mar 31, again Apr 1
+tactic:TA0002
+tactic:TA0003 | 2026-W07: Written in February, never briefed
+tactic:TA0004 | 2026-W07: Written in February, never briefed
+tactic:TA0005 | 2026-W07: Written in February, never briefed
+tactic:TA0112
+tactic:TA0006
+tactic:TA0007
+tactic:TA0008
+tactic:TA0009
+tactic:TA0011
+tactic:TA0010
+tactic:TA0040 | 2026-W14: Written 00:10 Apr 1; Written 23:30 Mar 31
+technique:T1486 | 2026-W14: Written 00:10 Apr 1; Written 23:30 Mar 31
+technique:T1566 | 2026-W14: Briefed Apr 1; Briefed Mar 31, again Apr 1
+technique:T1078 | 2026-W07: Written in February, never briefed
+technique:none
+tactic:TA0001:T1566 | 2026-W14: Briefed Apr 1; Briefed Mar 31, again Apr 1
+tactic:TA0001:T1078 | 2026-W07: Written in February, never briefed
+tactic:TA0003:T1078 | 2026-W07: Written in February, never briefed
+tactic:TA0004:T1078 | 2026-W07: Written in February, never briefed
+tactic:TA0005:T1078 | 2026-W07: Written in February, never briefed
+tactic:TA0040:T1486 | 2026-W14: Written 00:10 Apr 1; Written 23:30 Mar 31
+actions:raised | 2026-W09: Raised Mar 1, open, due Mar 15 | 2026-W12: Raised Mar 20, closed Apr 5 | 2026-W14: For Apr 1's brief, recorded Apr 3; For Mar 31's brief, recorded Apr 2
+actions:raised-kind:Block | 2026-W09: Raised Mar 1, open, due Mar 15 | 2026-W12: Raised Mar 20, closed Apr 5 | 2026-W14: For Mar 31's brief, recorded Apr 2
+actions:raised-kind:PatchRemediate | 2026-W14: For Apr 1's brief, recorded Apr 3
+actions:raised-team:cyber-defense | 2026-W09: Raised Mar 1, open, due Mar 15 | 2026-W12: Raised Mar 20, closed Apr 5 | 2026-W14: For Apr 1's brief, recorded Apr 3; For Mar 31's brief, recorded Apr 2
+actions:closed | 2026-W14: Raised Feb 1, closed Mar 31; Raised Mar 20, closed Apr 5
+actions:done | 2026-W14: Raised Feb 1, closed Mar 31; Raised Mar 20, closed Apr 5
+actions:on-time
+actions:late | 2026-W14: Raised Mar 20, closed Apr 5
+actions:no-due | 2026-W14: Raised Feb 1, closed Mar 31
+actions:cancelled
+actions:outcome:NoHits | 2026-W14: Raised Feb 1, closed Mar 31; Raised Mar 20, closed Apr 5
+actions:hunted | 2026-W14: Raised 23:30 Sep 30
+actions:hits | 2026-W14: Raised 23:30 Sep 30
+actions:no-hits | 2026-W14: Raised 23:30 Sep 30
+actions:open-at-end | 2026-W07: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5 | 2026-W08: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5 | 2026-W09: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-W10: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-W11: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15 | 2026-W12: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-W13: Raised Feb 1, closed Mar 31; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15; Raised Mar 20, closed Apr 5 | 2026-W14: For Apr 1's brief, recorded Apr 3; For Mar 31's brief, recorded Apr 2; Raised Jan 1, closed Oct 5; Raised Mar 1, open, due Mar 15
+actions:overdue-at-end | 2026-W12: Raised Mar 1, open, due Mar 15 | 2026-W13: Raised Mar 1, open, due Mar 15 | 2026-W14: Raised Mar 1, open, due Mar 15
+median-days:P1:  / 
+median-days:P2:  / 
+Briefed Apr 1 2026-04-01; Briefed Mar 31, again Apr 1 2026-03-31; Written 00:10 Apr 1 2026-04-01; Written 23:30 Mar 31 2026-03-31; Written in February, never briefed 2026-02-10
+
+""";
 
     [Fact]
     public async Task Reader_CantSeeTrends()

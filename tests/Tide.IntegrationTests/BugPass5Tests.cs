@@ -22,14 +22,14 @@ public class BugPass5Tests : IDisposable
     private HolidayService Holidays() => new(_db, _db.User, _db.Clock);
 
     [Fact]
-    public async Task TheEditorsPickers_ListLiveNames_WithoutMatchingArticles()
+    public async Task TheAdversaryAndStackLists_ListLiveNamesOnly()
     {
         await _db.Adversaries().SaveAsync(new AdversaryForm { Name = "Scattered Spider", Aliases = "Octo Tempest" });
         var gone = await _db.Adversaries().SaveAsync(new AdversaryForm { Name = "Old Crew" });
         await _db.Adversaries().SetRetiredAsync(gone, true);
         await _db.Stack().SaveAsync(new StackForm { Name = "Ivanti Connect Secure", OtherNames = "Pulse Secure" });
 
-        (await _db.Adversaries().ProfilesAsync()).Select(p => p.Name).Should().Equal("Scattered Spider");
+        (await _db.Adversaries().ListAsync()).Select(r => r.Adversary.Name).Should().Equal("Scattered Spider");
         var products = (await _db.Stack().ListAsync()).Select(r => r.Product).ToList();
         products.Select(p => p.Name).Should().Equal("Ivanti Connect Secure");
         StackService.Names(StackService.Entry(products[0]), StackService.Words("Pulse-Secure flaw exploited", null))

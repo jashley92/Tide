@@ -887,13 +887,13 @@ An article's place on a brief. An article can be carried onto a later brief. Wri
 ### `MeetingAttendees` (A)
 
 Someone at a brief's meeting. The row is made when they join in TIDE, or when someone in the live meeting (or, with none live, whoever presents) adds someone
-who was there by name (no `UserId`, no times). Written by `MeetingService`.
+who was there by name (no `UserId`, no times). Written by `MeetingService`; a meeting dropped empty by the sweep is closed by `AttendanceCloser`, as the system, which only fills in a missing `LeftAtUtc`.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `Id`, `BriefId` | uniqueidentifier | no | `BriefId` FK → `Briefs`, **cascade**. |
 | `UserId`, `Name` | nvarchar(256) | no | `UserId` is empty for someone added by name. `(BriefId, UserId, Name)` is **unique**. |
-| `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. |
+| `JoinedAtUtc`, `LeftAtUtc` | datetimeoffset | yes | First join and last leave. `LeftAtUtc` is null while they're there; a meeting the sweep dropped sets it to when the meeting last saw them, and leaves it null if it has no time for them. A restart mid-meeting leaves it null until they rejoin or a later End records it. |
 | `AddedById` | nvarchar(256) | yes | Who added them by name: they, or the presenter, can take the row off. Null for someone who joined, or added before it was kept. |
 
 ### `MeetingNotes` (A)
@@ -1014,7 +1014,7 @@ The escalation contact (EP-88 part C), on any team, internal or external:
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `EscalationName` | nvarchar(200) | yes | Who the escalation ladder copies when the team's actions slip: a manager, a duty lead. |
-| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (`TeamService.SetEscalationContactAsync`). The migration left existing rows null. |
+| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (the team's form: `TeamService.UpdateAsync`, `UpdateExternalAsync`). The migration left existing rows null. |
 
 `TeamMembers` has key `(TeamId, UserId)` and is cascade-deleted with its team. Columns: `UserId`/`DisplayName`
 nvarchar(256) and `AddedAtUtc`. `UserId` is indexed. Members are the people who may work the team's actions, with
@@ -1043,7 +1043,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `Status` | int | no | `ActionStatus`. |
 | `Outcome` | int | no | `ActionOutcome`. |
 | `OutcomeNote` | nvarchar(2000) | yes | |
-| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. |
+| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. `ClosedAtUtc` is indexed, closed ones only, for the daily prune of reminder marks. |
 | `TicketRef`, `TicketUrl` | nvarchar(100), nvarchar(2000) | yes | A ticket in an ITSM tool that tracks the same work. |
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |
@@ -1059,7 +1059,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `DeletedById`, `DeletedByName` | nvarchar(256) | yes | Who deleted it. Cleared on restore. |
 | `DeleteReason` | nvarchar(500) | yes | Why, as they wrote it (required to delete). Cleared on restore; the history keeps it. |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
-| stamps | | | **S** columns. |
+| stamps | | | **S** columns. `CreatedAtUtc` is indexed: the webhook job reads the oldest actions raised after each hook's watermark. |
 
 ### Action child tables
 
@@ -1090,6 +1090,17 @@ reordering the steps doesn't run one again. Only a step that ran is marked: one 
 That an external team's contact was reminded about an action today, by either, is `contact-reminded` and
 `{action}:{day}:{contact}` (the address as a short hash), so the other is skipped that day. `Kind` is nvarchar(32), `Key`
 nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
+
+The reminder job prunes it once a day (`ReminderService.PruneMarksAsync`, `Actions/ReminderMarks.cs`; when it last ran is
+the mark `marks-pruned`/`last`). A mark goes only when its absence can't send anything twice, after
+`MarkRetentionDays` (90): a past period's (`digest`, `personal-digest`, `brief-not-ready`, `presenting`,
+`contact-reminded`, which a scan only looks up by the current period's key), and, for an action closed that long ago
+(deleted ones too), its recipients' `due-soon` and `overdue` marks (the action's own mark for that kind and due date
+stays, and a scan that finds it reads no further), its `digest-seen` marks, and the `outreach-follow-up` marks of its
+answered emails. An open action keeps every mark. A closed one keeps what its scans would read again were it reopened
+(its own `due-soon` and `overdue`, `escalation`, `external-reminder`, an unanswered email's follow-up), so reopening it
+sends nothing twice; its next personal digest may list it as new again. Deletes name their keys, a few hundred a
+statement.
 
 ## Hunting, outreach and playbooks
 
@@ -1191,6 +1202,7 @@ single `AuditLog` entry itself when an administrator removes a pushed set.
 | `Id` | uniqueidentifier | no | |
 | `Source` | int | no | `DetectionSource`. **Unique** with `ExternalId`. |
 | `ExternalId` | nvarchar(300) | no | The rule's own id in its source, or its name when it has none. |
+| `Caller` | nvarchar(300) | yes | For a pushed rule, the API caller whose set holds it (a token as `api:<name>`, or a person's id): the start of `ExternalId`, up to the U+001F mark. Null for an imported rule and a push from before callers were kept. Set with `ExternalId`; indexed with `Source`, so a push or a removal reads only its caller's rules. |
 | `Name` | nvarchar(300) | no | |
 | `Techniques` | nvarchar(1000) | no | ATT&CK ids, comma-separated, upper case. |
 | `Platform` | nvarchar(100) | yes | |
@@ -1439,6 +1451,8 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 | `Enabled` | bit | no | |
 | `SentUpToUtc` | datetimeoffset | no | Everything up to this moment has been sent or tried. |
 | `OverdueSentFor` | date | yes | The last day whose newly overdue actions were sent. |
+| `MomentCursor` | nvarchar(64) | yes | How far into the moment just after `SentUpToUtc` a run that stopped inside it got: the moment's ticks and the last event posted (`{ticks}\|A0000000012` for an action, `\|B{send}` for a brief). |
+| `OverdueCursor` | nvarchar(32) | yes | How far into the due date just after `OverdueSentFor` a run that stopped inside it got: the date and the last action number posted (`2026-11-18\|42`). |
 | `LastAtUtc`, `LastStatus`, `LastError` | datetimeoffset, int, nvarchar(500) | yes | The last delivery, updated with `ExecuteUpdateAsync`. |
 | stamps | | | **S** columns. |
 

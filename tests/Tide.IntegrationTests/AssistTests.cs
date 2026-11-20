@@ -363,8 +363,8 @@ public class DraftAssistCardTests(TideApp app) : IClassFixture<TideApp>
             var b = new FeedItem { Source = source, Title = "card-group B", Url = "https://cardgroup.example/b", UrlHash = "card-group-b", FetchedAtUtc = DateTimeOffset.UtcNow };
             db.AddRange(a, b);
             await db.SaveChangesAsync();
-            id = await scope.ServiceProvider.GetRequiredService<IntakeService>().PromoteAsOneAsync([a.Id, b.Id],
-                new PromoteForm { Title = "card-group", Classification = Classification.Informational });
+            id = (await scope.ServiceProvider.GetRequiredService<IntakeService>().PromoteOrJoinAsync([a.Id, b.Id],
+                new PromoteForm { Title = "card-group", Classification = Classification.Informational })).ArticleId;
         }
 
         await using var page = await ComponentHarness.RenderAsync<ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });

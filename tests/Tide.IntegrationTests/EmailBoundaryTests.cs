@@ -47,6 +47,14 @@ public class EmailBoundaryTests : IDisposable
         return row;
     }
 
+    // Sets an internal team's escalation contact as Teams & SLA does: its form, saved.
+    private async Task Contact(Guid id, string name, string email, bool confirmOutside = false)
+    {
+        var form = TeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == id));
+        (form.EscalationName, form.EscalationEmail, form.ConfirmOutside) = (name, email, confirmOutside);
+        await _db.Teams().UpdateAsync(id, form);
+    }
+
     private Task<Guid> Red() => _db.Articles().CreateAsync("Partner RED report", "Partner", null, TlpLevel.Red);
 
     // --- A1: what goes outside is held to the team edition's ceiling ----------------------------------------------
@@ -80,9 +88,9 @@ public class EmailBoundaryTests : IDisposable
     public async Task TheEscalationContactsEmail_IsHeldToTheCeiling_ForAnExternalTeam_AndForAContactOutsideTheOrganization()
     {
         var inside = await _db.Teams().AddAsync("Identity", null, "identity@example.org");
-        await _db.Teams().SetEscalationContactAsync(inside, "Pat Lee", "pat.lee@example.org");
+        await Contact(inside, "Pat Lee", "pat.lee@example.org");
         var outside = await _db.Teams().AddAsync("Facilities", null, "facilities@example.org");
-        await _db.Teams().SetEscalationContactAsync(outside, "Sam", "sam@contractor.example", confirmOutside: true);
+        await Contact(outside, "Sam", "sam@contractor.example", confirmOutside: true);
         var external = await _db.Teams().AddExternalAsync(new ExternalTeamForm
         {
             Name = "Network Engineering", ContactEmail = "network@network.example", EscalationName = "Morgan", EscalationEmail = "morgan@network.example",
@@ -201,8 +209,7 @@ public class EmailBoundaryTests : IDisposable
     {
         var teams = _db.Teams();
         var id = await teams.AddAsync("Identity", null, null);
-        await teams.SetEscalationContactAsync(id, "Pat", "pat@example.org");
-        await FluentActions.Invoking(() => teams.SetEscalationContactAsync(id, "Pat", "pat@home.example")).Should().ThrowAsync<OutsideAddressesException>();
+        await Contact(id, "Pat", "pat@example.org");
         var form = TeamForm.From((await teams.ListAsync()).Single(t => t.Id == id));
         form.EscalationEmail = "pat@home.example";
         await FluentActions.Invoking(() => teams.UpdateAsync(id, form)).Should().ThrowAsync<OutsideAddressesException>();

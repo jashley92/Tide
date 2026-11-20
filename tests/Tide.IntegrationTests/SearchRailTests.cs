@@ -87,7 +87,8 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("data-copy-target=\"lookup-query\"").And.Contain("id=\"lookup-travels\"")
             .And.Contain("id=\"lookup-sweeps-h\"").And.Contain("id=\"lookup-sweeping\"").And.Contain("Rail lookup sweep").And.Contain($"href=\"actions/{sweep}\"")
             .And.Contain("id=\"lookup-export-h\"").And.Contain($"exports/lookup/{ExportService.LookupKey(domain)}?format=stix")
-            .And.Contain($"exports/lookup/{ExportService.LookupKey(domain)}?format=csv").And.Contain("aria-label=\"Highest TLP to include\"");
+            .And.Contain($"exports/lookup/{ExportService.LookupKey(domain)}?format=csv").And.MatchRegex("<label class=\"tide-field-label\" for=\"(export-ceiling-[0-9a-f]+)\">Include articles marked up to</label>\\s*<select id=\"\\1\"",
+                "the ceiling's visible label names it");
 
         page.Should().Contain("id=\"lookup-summary\"").And.Contain("tide-lookup-articles").And.Contain("id=\"lookup-actions\"").And.Contain("id=\"lookup-seen-with\"");
         page.Should().NotContain("id=\"lookup-query\"").And.NotContain("lookup-query-tools").And.NotContain("lookup-sweeping")
@@ -105,7 +106,7 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await Open(domain, Person(role));
         var rail = Split(await r.Html()).Rail;
 
-        rail.Should().MatchRegex("<select[^>]*aria-label=\"Highest TLP to include\"[^>]*value=\"Clear\"|<select[^>]*value=\"Clear\"[^>]*aria-label=\"Highest TLP to include\"",
+        rail.Should().MatchRegex("<select[^>]*title=\"Highest TLP to include\"[^>]*value=\"Clear\"|<select[^>]*value=\"Clear\"[^>]*title=\"Highest TLP to include\"",
             "the ceiling starts at TLP:CLEAR");
         var key = ExportService.LookupKey(domain);
         rail.Should().Contain($"exports/lookup/{key}?format=stix&amp;tlp=clear").And.Contain($"exports/lookup/{key}?format=csv&amp;tlp=clear")

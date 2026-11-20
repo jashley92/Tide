@@ -68,7 +68,9 @@ public class OwnerDecisionsTeamsTests : IDisposable
         await FluentActions.Invoking(() => teams.UpdateExternalAsync(id, limited)).Should().ThrowAsync<StaleEditException>();
 
         var contacted = ExternalTeamForm.From(await Get(id));
-        await teams.SetEscalationContactAsync(id, "Lee", "lee@example.org");
+        var other = ExternalTeamForm.From(await Get(id));   // a colleague's, opened now and saved first
+        (other.EscalationName, other.EscalationEmail) = ("Lee", "lee@example.org");
+        await teams.UpdateExternalAsync(id, other);
         await FluentActions.Invoking(() => teams.UpdateExternalAsync(id, contacted)).Should().ThrowAsync<StaleEditException>();
         (await Get(id)).EscalationEmail.Should().Be("lee@example.org", "the form opened before can't clear it");
 

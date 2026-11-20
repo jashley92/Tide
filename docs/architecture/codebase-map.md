@@ -227,7 +227,8 @@ Windows PowerShell 5.1 scripts, ASCII only. [`deploy/README.md`](../../deploy/RE
 | `appsettings.Production.template.json` | What the installer fills in. |
 | `lib/*.ps1` | Shared helpers for IIS, AD group names, SQL, settings, upgrade, backup, dates, JSON, paths and WebSockets. |
 
-There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
+The DBA schema script, `sql/tide-schema-sqlserver.sql`, isn't in the repository: the release workflow generates it
+into the bundle (`tools/ci/sqlserver-schema-script.sh`, through `Persistence/IdempotentScriptSqlGenerator.cs`).
 
 ## `tools` and CI
 
@@ -235,11 +236,13 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 |---|---|
 | `tools/ci/check-migrations-immutable.sh` | Fails CI when a migration that shipped in a release tag was changed or removed. |
 | `tools/ci/check-sonar-quality-gate.sh` | Reads the SonarQube Cloud quality gate. |
+| `tools/ci/sqlserver-schema-script.sh` | Writes the DBA schema script (every SQL Server migration, idempotent) the release bundle carries. |
+| `tools/ci/check-sqlserver-schema-script.sh` | Applies that script to an empty SQL Server database, twice, and checks it against the migrations. |
 | `tools/ci/extract-release-notes.sh` | Release notes for the release workflow. |
 | `tools/signing/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
 | `tools/upgrade-test/upgrade-path.sh` | Installs older releases into SQL Server, starts this tree against the same database, and checks it comes up healthy with data intact. |
-| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, SQL Server tests, the upgrade path). |
-| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
+| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, the DBA schema script, SQL Server tests, the upgrade path). |
+| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts with the DBA schema script, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
 
 ## If you need to change X, start in Y
 

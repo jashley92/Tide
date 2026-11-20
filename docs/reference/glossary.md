@@ -82,7 +82,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | Term | Meaning | Code name |
 |---|---|---|
 | **Escalated** | An open action a step of the escalation ladder flagged for the due date it still has: a red badge, Today's Escalated card, first in the meeting's overdue list. Closing it or moving its date ends it. | `ActionItem.EscalatedForDue`, `IsEscalated`, `ActionQueries.WhereEscalated`, `EscalatedBadge`, `TeamQueue.Escalated` |
-| **Escalation contact** | Who the escalation ladder copies when a team's actions slip: a name and email on a team, internal or external (a manager, a duty lead). An internal team's is set by an administrator, an external team's by whoever works actions. | `Team.EscalationName`, `Team.EscalationEmail`, `TeamService.SetEscalationContactAsync`; the `escalation` email template |
+| **Escalation contact** | Who the escalation ladder copies when a team's actions slip: a name and email on a team, internal or external (a manager, a duty lead). An internal team's is set by an administrator, an external team's by whoever works actions. | `Team.EscalationName`, `Team.EscalationEmail`, `TeamService.UpdateAsync`, `UpdateExternalAsync`; the `escalation` email template |
 | **Escalation ladder** | An administrator's short list of steps that run by themselves on an open action as it slips: each a number of business days before, on or after the due date, and what it does (remind the team, copy the escalation contact, raise priority, flag escalated). Once per action and due date, in the reminder sweep. | `EscalationLadder`, `EscalationStep`, `EscalationOptions`, `ReminderService.EscalateAsync`; [ADR 0021](../decisions/0021-escalation-is-an-administered-ladder.md) |
 | **External team** | A team tracked in TIDE that works elsewhere: no members or assignees, kept by anyone who works actions, and emailed about its actions due soon or overdue at its contact address, with no TIDE links. | `Team.IsExternal`, `TeamService.AddExternalAsync`, `ExternalCadence`; [ADR 0020](../decisions/0020-external-teams-are-emailed-without-tide.md) |
 | **Earlier note** | What an article's old free-text Threat actors box held, kept after the field became an *adversary* picker. Names a profile goes by are offered as one-click tags; the rest stays visible until cleared. | `Article.Actors`, `AdversaryService.ForArticleAsync` |
@@ -104,7 +104,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Group (triage)** | "Looks like one event": triage items from two or more feeds that share a CVE or distinctive headline names and amounts, suggested as one line. Worked out each time the inbox loads; nothing is stored or merged without a click. | `TriageGroups.Find`, `InboxRow.Group`, `IntakeService.PromoteAsOneAsync` |
+| **Group (triage)** | "Looks like one event": triage items from two or more feeds that share a CVE or distinctive headline names and amounts, suggested as one line. Worked out each time the inbox loads; nothing is stored or merged without a click. | `TriageGroups.Find`, `InboxRow.Group`, `IntakeService.PromoteOrJoinAsync` |
 | **Group (metrics)** | See *metric group*. | |
 
 ## H
@@ -181,7 +181,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Presenter's rail** | In present mode, the column of controls only the presenter uses (take, raise, notes, Mark discussed, hands, ending). Drawn only on the presenting page, never on a follower's. | `Present.razor` (`Rail`, `InCharge`) |
 | **Primary button** | The one button an action's page offers first, chosen by where the action stands and its kind (Write the email, Record the reply, Record an update, Take it, Start work, Unblock, Close with outcome); everything else is under *More*. | `ActionGuide.Primary`, `ActionFlow` |
 | **Priority** | How urgent a threat is, P1 (most urgent) to P4. An action raised in the meeting takes its article's priority. | `Priority` |
-| **Promote** | In triage: turn an item into a draft article, claimed in one statement so two analysts can't make two. *Promote as one article* does it for a whole *group*. | `IntakeService.PromoteAsync`, `PromoteAsOneAsync`, `FeedItemStatus.Promoted` |
+| **Promote** | In triage: turn an item into a draft article, claimed in one statement so two analysts can't make two. *Promote as one article* does it for a whole *group*. | `IntakeService.PromoteAsync`, `PromoteOrJoinAsync`, `FeedItemStatus.Promoted` |
 
 ## R
 

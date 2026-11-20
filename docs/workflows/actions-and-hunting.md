@@ -81,8 +81,8 @@ policy, and the services check again, so a page that forgets can't write.
 | Remove a file | who added it, an analyst, or an administrator; restore: administrator | `ActionFileService.RemoveAsync`, `RestoreAsync` |
 | Hand an action off (the button, or another team in the editor) | whoever can work it | `HandoffService.HandOffAsync`, `ActionService.SaveAsync` |
 | Split an action to teams | `WriteArticles` | `HandoffService.SplitAsync` |
-| Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync`, `SetEscalationContactAsync` |
-| Set an internal team's escalation contact | `Administer` | `TeamService.SetEscalationContactAsync` |
+| Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync` |
+| Set an internal team's escalation contact | `Administer` | `TeamService.UpdateAsync` (its form) |
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
 | Add, edit, reorder, retire and restore playbooks; delete one you made (an administrator, any) | `WorkActions` | `PlaybookService` |
 | Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
@@ -779,7 +779,7 @@ administrator has turned off *New external teams start with their reminders on* 
 the team isn't emailed until someone turns them on. The schedule a new team starts with (2 days before, then every 3)
 is an administrator's to change there too. Teams already added keep theirs. They can be retired like any team.
 
-**Saying when one won't be emailed** (`ExternalCadence.NotEmailedWhy`, `NotEmailedNote`). Wherever work is given to an
+**Saying when one won't be emailed** (`ExternalCadence.NotEmailed`, `NotEmailedNote`). Wherever work is given to an
 external team, TIDE says when that team won't hear about it, and why: the team's own reminders are off, or it has no
 contact email. While external team reminders are off for everyone, the note says nothing: that's an administrator's
 choice, not the team's gap, and *Not emailed* on External teams still says so. It shows under the hand-off dialog's
@@ -985,7 +985,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
   from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
   `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
-  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
+  `ActionFilter.Priorities`), due (`due`, with `soon` for due today or the next working day, the SLA's Due soon, and `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
   ones) and, when an administrator shows card rules as filters, the rule (`rule`, each with its count). Recently closed
   adds how far back (`closed=7` or `closed=30`, *Closed in the last 7 days*; `ActionFilter.ClosedDays`, never past its
   90) and only your teams' (`on=myteams`, `ActionFilter.OnMyTeams`). Each is a chip while set, unless a
@@ -1043,7 +1043,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   Shown only when there are any: first on an action owner's Today, above the actions card on an analyst's.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
   last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
-  "4 of 5 active" for a team with a limit. Over longer windows, each team against its due dates is on
+  "4 of 5 active" for a team with a limit. Each count links to the Actions list filtered to it (the team, and `due=soon`,
+  `status=blocked` or `priority=p1`). Over longer windows, each team against its due dates is on
   [Team commitments](metrics-and-trends.md#team-commitments).
 
 ![Workload](../screenshots/workload.png)

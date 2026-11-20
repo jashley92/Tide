@@ -5,6 +5,8 @@
 //   node tools/screenshots/layout.mjs                build, seed a demo database, start TIDE, check every page
 //   ONLY=slide-article node tools/screenshots/layout.mjs                 just these pages
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
+//   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
+//   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -12,6 +14,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
@@ -2468,18 +2471,23 @@ const actionBeside = as => async (page, demo) => {
   meetingGuests = { key: `beside/${as}`, contexts: [] };
   const present = async p => {
     await startOrTakeUp(p);
+    // From the title, unless the page before left an action open for the room: the wrap-up pages leave the meeting on
+    // the wrap-up, the last slide, where toArticleSlide's ArrowRight goes nowhere; and the wrap-up is no slide to check
+    // this on, as a follower's has the Attended box the presenter's hasn't (their fits differ by design).
+    if (!(await p.locator(BESIDE).count())) { await p.keyboard.press('Home'); await idle(p); }
     await toArticleSlide(p);
     // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
-    // links): the first slide with an action on it, from this article's on and then from the title. The pages before
-    // may have changed today's running order; the actions that need review have some, whatever the articles have (each
-    // row opens its action from a button over its cell).
-    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
+    // links): the first slide with an action on it, from this article's on and then from the title, never the
+    // wrap-up's. The pages before may have changed today's running order; the actions that need review have some,
+    // whatever the articles have (each row opens its action from a button over its cell).
+    const opener = p.locator('.tide-slide:not(:has([data-slide-key="wrap"])) :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
       await idle(p);
     }
     if (!(await p.locator(BESIDE).count())) await opener.first().click();
     await p.locator(BESIDE).waitFor();
+    if (await p.locator('[data-slide-key="wrap"]').count()) throw new Error('the action beside the slide is open on the wrap-up, not an article\'s slide');
     await idle(p);
   };
   if (as === 'presenter') {
@@ -3636,7 +3644,7 @@ const autosaved = autosaveAfter(async page => {
 });
 
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
-const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
+const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
@@ -3952,8 +3960,6 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
-/** Where, in the pages, those that change the demo begin (see shard). */
-const CHANGES_THE_DEMO = Symbol('changes the demo');
 
 /** The footer's buttons, each row of them on one baseline (a link styled as a button sits a few px off otherwise). */
 const footerOnOneLine = selector => holds(`its buttons share a baseline: ${selector}`, selector => {
@@ -4214,7 +4220,7 @@ const pages = [
   // Below 1500px the rail is closed until asked for, and the form is the same one column, nothing scrolling sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits, editorReadingOrder, editorMeasure,
-      [901, hidden('.tide-ws-switch')]] },
+      [900, hidden('.tide-ws-switch')]] },
   // A bullet starts a line high and grows with its text, whatever was dragged at its corner.
   { name: 'editor-bullet-grows', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920], rules: [bulletGrows] },
   // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
@@ -4577,9 +4583,9 @@ const pages = [
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
   // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
-  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
-      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
+      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
       fits('.tide-stack-list')] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
   // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
@@ -4598,7 +4604,7 @@ const pages = [
   { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
-      [901, fits('.tide-stack-table td')]] },
+      [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
@@ -4711,6 +4717,8 @@ const pages = [
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
+    rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // The article slide is the room's: each recommended line (one row, the action it became beside a raised one: the
   // sample's hotfix line is A-2) and the article's other actions, with none of the presenter's controls (the rail has
   // them, shut at these widths).
@@ -4905,8 +4913,11 @@ const pages = [
     rules: [noSidewaysScroll, railControlsUnscrolled, fits('#present-rail'), fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
       oneRow('#present-rail .tide-quick-add-row'), oneRow('#present-rail .tide-present-rail-bar'), oneRow('#present-rail .tide-present-rail-note'),
       railSelectsWhole, railPlaceholdersReadable, visible('#present-rail .tide-present-rail-chip-edit select')] },
-  // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
-  CHANGES_THE_DEMO,
+  // From here on, pages change the demo for those after them, in chains (shards.mjs): each mark starts one, and a sharded
+  // run keeps each chain whole and in order, after its slice's other pages. A slice starts on a fresh demo, so a page
+  // may lean on what an earlier page of its own chain did, never on another chain's; a page that does goes in that chain.
+  // Each signs in new people (What's new marked seen, tips put away, tours taken), a different person at each width.
+  changesTheDemo("what's new, tips and the tour"),
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;
   // it's marked seen as it opens, so a different person at each width): a dialog in the window, its highlights
   // scrolling between the title and the buttons, focus on Got it, in both themes.
@@ -4985,6 +4996,8 @@ const pages = [
     rules: [visible('.tide-tip'), visible('nav[aria-label="Reports"].tide-tip-target'), inClient('.tide-tip'), inWindow('.tide-tip'), pointsAtTarget('.tide-tip')] },
   // Got it from the keyboard: the tip goes, and focus is on the page's heading, not lost.
   { name: 'tip-got-it', route: '/help', setup: tipGotIt({ 1440: 'Rio' }), widths: [1440], rules: [hidden('.tide-tip'), focusOn('main h1')] },
+  // The presenter's strips and rail, with no meeting: they keep the opening note and enter the missing number.
+  changesTheDemo("the presenter's strips and rail"),
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },
@@ -5022,10 +5035,8 @@ const pages = [
     rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
   { name: 'present-rail-shut', route: '/present/{today}', setup: presenterRail(), widths: [1440, 780],
     rules: [hidden('#present-rail'), visible('#present-rail-toggle'), attr('#present-rail-toggle', 'aria-expanded', 'false'), hidden('.tide-slide .tide-quick-add'), slideFits] },
-  { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
-    rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
-  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
-  // article's Add. Last, as it changes today's brief.
+  // Today's: a queue row taken live, the brief saved while someone types, an article added back to it.
+  changesTheDemo("Today's queue, saves and brief"),
   // A colleague takes the row that has focus in the rail's queue: focus moves to the next row's Take it. Last too: it
   // puts people on a team.
   { name: 'today-queue-live', route: '/', setup: colleagueTakesFocusedRow, widths: [1920],
@@ -5035,17 +5046,22 @@ const pages = [
   { name: 'today-typing-intro', route: '/', setup: colleagueSavesWhileTyping('intro'), widths: [1920], rules: [keptWhatsTyped('intro', '#tide-rail section[aria-labelledby="meeting-h"]')] },
   { name: 'today-typing-note', route: '/', setup: colleagueSavesWhileTyping('team-note'), widths: [1920], rules: [keptWhatsTyped('team-note', '#main-content .tide-page-head')] },
   { name: 'today-toast', route: '/', setup: toastBesideRail, widths: [1920, 1600], rules: [allBesides('.tide-toast', '#tide-rail')] },
+  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
+  // article's Add. Last, as it changes today's brief.
   { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
     rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
-  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
-  // Last, as each closes one of the demo's actions.
   // A clicked decision in Triage's bar moves focus on to the next selected row, as its key does. Late, as each sets
   // one of the demo's new items aside.
+  changesTheDemo("Triage's decisions"),
   { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   // Mark checked in the rail: the button goes (it's checked today), and focus goes to the Checked fact it changed, not to
   // the page's body. Late, as it marks the demo's first product checked.
+  changesTheDemo('a product marked checked'),
   { name: 'stack-mark-checked', route: '/stack', setup: markCheckedFromRail, widths: [1920], rules: [focusIn('#tide-rail [data-rail-checked]')] },
+  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
+  // Last, as each closes one of the demo's actions.
+  changesTheDemo('actions closed, a query written, a default tab'),
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
   // Last: it adds a query to the demo's sweep.
@@ -5054,13 +5070,16 @@ const pages = [
   { name: 'actions-board-close-address', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [addressFollowsAfterClose] },
   // Last: it changes the demo analyst's default tab and layout.
   { name: 'actions-default-layout', route: '/actions?view=open&layout=list', setup: analystOnATeam, widths: [[1600, 1000]], rules: [defaultKeepsLayout] },
+  // Today's meeting, live: its people and hands, the wrap-up, an action beside the slide. One chain: its pages take up
+  // the meeting the one before left live (and may keep its guests' browsers, meetingGuests), and the last leave it live.
+  changesTheDemo('the live meeting'),
   // A live meeting of eight, with none, two or five hands up, seen by the presenter and by someone following: who is
   // here and whose hands are up sit in the top bar. By construction, for any number of people and hands: the dots stop
   // at five and a "+N"; how many are here is always whole; the hands show as their count, then as many whole names as
   // fit; and the tools never leave the window (the top bar takes a second row, at most, instead). The footer no longer
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
-    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
+    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 900, 899, 780],
       rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
@@ -5089,7 +5108,7 @@ const pages = [
       inWindow('.tide-wrap-add button'), visible('.tide-attendance button[aria-label="Remove Sam from the SOC"]'),
       pillClear('.tide-attendance li'), contrastAtLeast('.tide-wrap-add input[placeholder]', 4.5, '::placeholder'), hidden('#present-rail')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
-  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
+  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 900, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
   // An action opened beside the slide (Org:ActionBesideSlide, on for this run): from 1200px a column between the slide
   // and the presenter's rail, as wide for a follower as for the presenter, whose slide, fit and scroll the follower's
@@ -5121,37 +5140,22 @@ const pages = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const wanted = pick(shard(pages, process.env.SHARD), 'page');
-
 /**
- * `SHARD=i/n` (1-based) runs one of n slices of the pages, in their order, so n runs side by side (each on its own fresh
- * demo) check them all. The pages before CHANGES_THE_DEMO change nothing a later page reads, so they're cut into slices
- * of about as many widths each; the pages from it on stay together, in order, at the end of the last slice. With no
- * SHARD, every page, in one run.
+ * `SHARD=i/n` (1-based) runs one of n slices of the pages, so n runs side by side (each on its own fresh demo) check them
+ * all, each about as long by what its pages took in CI (shards.mjs, layout-weights.json); every page is in exactly one
+ * slice, and each chain of pages that change the demo whole, in order, after its slice's other pages, checked on every
+ * sharded run. With no SHARD, every page, in one run. `PLAN=1` (with SHARD=i/n, or 4 slices) prints the slices, what
+ * each should take and the chains each runs, and starts nothing.
  */
-function shard(list, spec) {
-  const changesAt = list.indexOf(CHANGES_THE_DEMO);
-  if (changesAt < 0) throw new Error('The pages have lost their CHANGES_THE_DEMO marker.');
-  const all = list.filter(p => p !== CHANGES_THE_DEMO);
-  if (!spec) return all;
-  const [i, n] = spec.split('/').map(Number);
-  if (!(Number.isInteger(i) && Number.isInteger(n) && i >= 1 && i <= n)) throw new Error(`SHARD=${spec} isn't i/n with 1 <= i <= n.`);
-  const head = list.slice(0, changesAt), tail = list.slice(changesAt + 1);
-  // A width of a Present page (a meeting to start, people to seat) takes about twice as long as one elsewhere.
-  const weight = ps => ps.reduce((sum, p) => sum + p.widths.length * (p.route.startsWith('/present') ? 2 : 1), 0);
-  // Each slice about as long, the last with the tail in it: when the tail is a slice's worth or more, the first n-1 share
-  // the head between them.
-  const share = Math.min((weight(head) + weight(tail)) / n, weight(head) / Math.max(1, n - 1));
-  // The first n-1 slices take the head in turn until each has its share; the last has what's left of it, then the tail.
-  const slices = [[]];
-  for (const p of head) {
-    if (slices.length < n && weight(slices.at(-1)) >= share) slices.push([]);
-    slices.at(-1).push(p);
-  }
-  while (slices.length < n) slices.push([]);
-  slices[n - 1].push(...tail);
-  return slices[i - 1];
+if (/^(1|true|yes)$/i.test(process.env.PLAN ?? '')) {
+  const n = Number((process.env.SHARD ?? '1/4').split('/')[1]);
+  console.log(`${n} slices of ${shard(pages).length} pages, by layout-weights.json:`);
+  for (const l of describe(pages, n)) console.log(l);
+  process.exit(0);
 }
+// CHAIN="the live meeting" runs that chain alone, on a fresh demo, as a slice with no other chain would.
+const wanted = pick(process.env.CHAIN ? chainAlone(pages, process.env.CHAIN) : shard(pages, process.env.SHARD), 'page');
+if (process.env.SHARD) console.log(`Slice ${process.env.SHARD}: ${wanted.length} pages, about ${Math.round(wanted.reduce((sum, p) => sum + cost(p), 0))}s by layout-weights.json.`);
 
 let server;
 try {

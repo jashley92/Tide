@@ -1,4 +1,5 @@
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Microsoft.Extensions.Options;
 using Tide.Application.Intake;
 using Tide.Application.Operations;
@@ -55,7 +56,7 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         {
             var taken = await sp.GetRequiredService<IntakeService>().PollDueAsync(stoppingToken);
             if (taken > 0) changes.Publish(ChangeFeed.Triage);
-            return $"{taken} new item{(taken == 1 ? "" : "s")}";
+            return Words.Plural(taken, "new item");
         }, stoppingToken);
         // The CVE refresh runs beside the passes, not in them: with NVD slow (and tried again) it can take many minutes,
         // and the feeds are polled meanwhile. A pass while one is running doesn't start another.
@@ -66,7 +67,7 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
             {
                 var items = await sp.GetRequiredService<IntakeService>().PruneAsync(stoppingToken);
                 var texts = await sp.GetRequiredService<ReadingService>().PruneAsync(stoppingToken);
-                return $"{items} removed, {texts} kept text{(texts == 1 ? "" : "s")} expired";
+                return $"{items} removed, {Words.Plural(texts, "kept text")} expired";
             }, stoppingToken))
             _lastPrune = now;
         jobs.Scheduled(JobMonitor.Prune, true, now - _lastPrune > TimeSpan.FromDays(1) ? now + PollInterval : _lastPrune + TimeSpan.FromDays(1));

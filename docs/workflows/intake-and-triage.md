@@ -358,8 +358,8 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 | Key | Does |
 |---|---|
 | J / ↓, K / ↑ | Next, previous row. J on a page's last row goes on to the next page's first; K on a page's first row goes back to the previous page's last. |
-| S | Shortlist |
-| X | Dismiss |
+| S | Shortlist (a new item: Undo on the toast, or Alt+Z) |
+| X | Dismiss (a new item: Undo on the toast, or Alt+Z) |
 | D | Mark duplicate (of the item it looks like) |
 | P | Promote (opens the promote form) |
 | R | Restore to New |
@@ -420,6 +420,7 @@ Notes on the diagram:
 | Dismiss | `DismissAsync`, `DismissManyAsync` ("dismiss the rest", only items still New) | The reason (any short text; offered: Not relevant, Already covered, Out of scope, Low quality, Paywalled) in `DismissReason` |
 | Duplicate | `MarkDuplicateAsync(id, ofId)` | `DuplicateOfId`: the item named, or by default its `SimilarToId`. An item can't repeat itself. |
 | Restore | `RestoreAsync` | Back to New, the stamps cleared |
+| Undo a shortlist or dismissal | `UndoDecisionAsync(id, decided, at)` (the toast's Undo after S or X on a new item) | Back to New, the stamps cleared, only while the item still carries this person's decision stamped `at` (the `TriageDecision` that `ShortlistAsync` and `DismissAsync` return), so a colleague's decision since stands, the same one made again included. Offered only when the decision replaced New, which the service checks as it writes (`TriageDecision.FromNew`): a stale row may still show New after a colleague's decision, and putting that item in New would be wrong. |
 | Dismiss the same story | `DismissSameCveAsync(id, shown)` | Dismisses as "Already covered" the rows shown as sharing a CVE, only those still New |
 
 Every decision is one `ExecuteUpdate` statement whose `WHERE` clause re-checks the state as it writes. A dismissal that
@@ -531,7 +532,9 @@ no group.**
 - Groups are connected runs of such pairs, joined tightest pair first, held to 8 items (`TriageGroups.MaxSize`).
 - A group is offered only with two or more items from two or more feeds.
 
-Triage shows a group as one line that opens to its reports' own rows. There's no "dismiss all" for a group.
+Triage shows a group as one line that opens to its reports' own rows. *Shortlist the N* and *Dismiss the N* (S and X
+on the group's line) act on every report still New, once confirmed. The single item's dismiss reason isn't on a
+group's line, so dismissing a group asks for the reason in its confirmation, the same dialog as *Dismiss all*.
 
 ![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
 
@@ -545,7 +548,7 @@ Triage shows a group as one line that opens to its reports' own rows. There's no
 split it, with **Undo** (`UndoSplitAsync`, deletes the batch; anyone who triages can). Both are audited and heard on
 the triage topic. A report's split rows go with it when it's pruned (cascade).
 
-**Promote as one article** (`IntakeService.PromoteAsOneAsync`, 2 to 8 reports):
+**Promote as one article** (`IntakeService.PromoteOrJoinAsync`, 2 to 8 reports):
 
 ```mermaid
 sequenceDiagram
@@ -554,7 +557,7 @@ sequenceDiagram
     participant I as IntakeService
     participant Db as Database
     participant Ar as ArticleService
-    A->>I: PromoteAsOneAsync(ids, form)
+    A->>I: PromoteOrJoinAsync(ids, form)
     I->>Db: BEGIN transaction inside the execution strategy
     I->>Db: UPDATE FeedItems SET Promoted WHERE id IN ids AND claimable
     alt claimed fewer than all

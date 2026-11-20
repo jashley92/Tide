@@ -31,6 +31,8 @@
     <ProjectReference Include="..\..\src\Tide.Domain\Tide.Domain.csproj" />
     <ProjectReference Include="..\..\src\Tide.Application\Tide.Application.csproj" />
     <ProjectReference Include="..\..\src\Tide.Infrastructure\Tide.Infrastructure.csproj" />
+    <!-- For its built assembly only: DeployScriptTests checks the upgrade reads a build's migration ids from it. -->
+    <ProjectReference Include="..\..\src\Tide.Migrations.SqlServer\Tide.Migrations.SqlServer.csproj" />
   </ItemGroup>
 
 </Project>

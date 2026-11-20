@@ -57,7 +57,7 @@ public class PresentBeforeItsDayTests(SaturdayApp app) : IClassFixture<SaturdayA
             wrap = await r.Html();
         }
         wrap.Should().Contain("<h2>That's the brief</h2>")
-            .And.Contain("<div class=\"tide-present-help mt-2\">The meeting can start on Mon Nov 16, the brief&#x27;s day.</div>")
+            .And.Contain("<div id=\"present-end-when\" class=\"tide-present-help mt-2\">The meeting can start on Mon Nov 16, the brief&#x27;s day.</div>")
             .And.NotContain("id=\"present-end\"");
 
         await using var rehearsal = await Rehearse(app, Monday, SignIn.Analyst);
