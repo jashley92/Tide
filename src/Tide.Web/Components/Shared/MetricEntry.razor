@@ -53,7 +53,7 @@
         @if (_day.Missing.Count > 0)
         {
             <div class="tide-missing mb-2"><span class="bi bi-exclamation-circle" aria-hidden="true"></span>
-                @_day.Missing.Count metric@(_day.Missing.Count == 1 ? " has" : "s have") no value for this day.</div>
+                @Ui.Plural(_day.Missing.Count, "metric has", "metrics have") no value for this day.</div>
         }
         @* Where you are: the overall count and a chip per group, kept in view while the form scrolls. *@
         <div class="tide-mentry-bar">

@@ -824,7 +824,7 @@ else
     {
         if (blocked) return null;
         var parts = new List<string>();
-        if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")} on the running order");
+        if (warnings > 0) parts.Add($"{Ui.Plural(warnings, "warning")} on the running order");
         if (missingNumbers > 0) parts.Add($"{BriefSteps.Numbers(missingNumbers)} not entered");
         return parts.Count == 0 ? null : string.Join(" and ", parts) + ".";
     }
@@ -841,7 +841,7 @@ else
         "The brief goes back to Ready and the meeting can be presented again. Its articles go back to how they were before it; "
         + "the meeting's notes, attendees and discussed ticks are kept."
         + (plan is { Carried: > 0, CarriedTo: { } day }
-            ? $" The {plan.Carried} article{(plan.Carried == 1 ? "" : "s")} it carried to {Ui.Day(day)} come{(plan.Carried == 1 ? "s" : "")} off that brief and back to this one."
+            ? $" The {Ui.Plural(plan.Carried, "article")} it carried to {Ui.Day(day)} come{(plan.Carried == 1 ? "s" : "")} off that brief and back to this one."
             : "");
 
     internal async Task AskReopen()
@@ -865,7 +865,7 @@ else
         {
             var done = await BriefSvc.ReopenAsync(_brief!.Id);
             _reopened = done is { Carried: > 0, CarriedTo: { } day }
-                ? $"Back to ready. {done.Carried} article{(done.Carried == 1 ? "" : "s")} came back from {Ui.Day(day)}."
+                ? $"Back to ready. {Ui.Plural(done.Carried, "article")} came back from {Ui.Day(day)}."
                 : "Back to ready.";
         }, null, () => Toasts.Show(_reopened ?? "Back to ready."));
     }
@@ -1020,7 +1020,7 @@ else
                 }
                 <section class="tide-card" aria-labelledby="running-order-h">
                     <h2 id="running-order-h">Running order
-                        <span class="ms-auto small fw-normal tide-muted">@ArticleCount(_brief) &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
+                        <span class="ms-auto small fw-normal tide-muted">@ArticleCount(_brief) &middot; @Ui.Plural(Count(Classification.Threat), "threat") &middot; @Count(Classification.Informational) informational</span></h2>
                     <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
                                   PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                   CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"

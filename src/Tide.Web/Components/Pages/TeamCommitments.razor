@@ -46,7 +46,7 @@ else if (_card is not { } c)
 else
 {
     <section class="tide-card" aria-labelledby="tc-title">
-        <h2 id="tc-title">@Range(c) <span class="tide-count tide-muted fw-normal">(@c.Teams.Count team@(c.Teams.Count == 1 ? "" : "s"))</span></h2>
+        <h2 id="tc-title">@Range(c) <span class="tide-count tide-muted fw-normal">(@Ui.Plural(c.Teams.Count, "team"))</span></h2>
         @if (c.Teams.Count == 0)
         {
             <EmptyState Icon="bi-people" Title="@(c.ExternalOnly ? "No external teams" : "No teams yet")" Compact="true" />

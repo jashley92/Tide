@@ -42,7 +42,7 @@
             @StarterList(false)
         </details>
         <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-primary btn-sm" disabled="@(_busy || Starter.Count == 0)" @onclick="AddStarter">Add @Starter.Count source@(Starter.Count == 1 ? "" : "s")</button>
+            <button class="btn btn-primary btn-sm" disabled="@(_busy || Starter.Count == 0)" @onclick="AddStarter">Add @Ui.Plural(Starter.Count, "source")</button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="() => Starter = null">Cancel</button>
         </div>
     </section>
@@ -710,7 +710,7 @@
     {
         var added = await Intake.AddStarterSourcesAsync(Starter!);
         Starter = null;
-        Toasts.Show($"Added {added} source{(added == 1 ? "" : "s")}, paused. Turn one on with Edit, then \"Poll it\".");
+        Toasts.Show($"Added {Ui.Plural(added, "source")}, paused. Turn one on with Edit, then \"Poll it\".");
     });
 
     private RenderFragment StarterList(bool recommended) => @<div class="row g-3">
