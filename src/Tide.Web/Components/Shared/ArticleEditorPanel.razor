@@ -757,6 +757,9 @@ else
     {
         if (_loadedId == Id) return;
         _loadedId = Id;
+        // A question still open about the article before (Discard's, Delete's, a screenshot's) is answered Cancel: it was
+        // about that one, and Discard's would otherwise hold this one's autosave until it was answered.
+        _confirm?.Cancel();
         _topic = ChangeFeed.Article(Id);
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
@@ -962,13 +965,15 @@ else
     }
 
     // Unsaved changes dropped on purpose, after asking: the saved article is read again. Autosave waits until it's
-    // answered, so a slow answer doesn't save what it then drops.
+    // answered, so a slow answer doesn't save what it then drops. Asked about one article, it never reloads another
+    // (moving on cancels it, as Delete's is).
     internal async Task Discard()
     {
+        var id = Id;
         HoldAutosave();
         try
         {
-            if (!await _confirm.Ask("Discard your changes?", "What isn't saved yet is dropped, and the article is loaded again as it was last saved. What was already saved, automatically or with Save, stays, and so do screenshots you added.", "Discard changes")) return;
+            if (!await _confirm.Ask("Discard your changes?", "What isn't saved yet is dropped, and the article is loaded again as it was last saved. What was already saved, automatically or with Save, stays, and so do screenshots you added.", "Discard changes") || id != Id) return;
             await Reload();
             Toasts.Show("Changes discarded.");
             _focusSaved = true;   // the Discard button that asked has gone: focus lands on "All changes saved" instead

@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Hosting;
@@ -101,7 +102,31 @@ public class ArticleAutosaveTimingTests(AutosaveClockApp app) : IClassFixture<Au
         (await r.Until(p => !p.Dirty)).Should().BeTrue("the saved article is loaded again");
 
         var saved = await Saved(id);
-        (saved.WhyItMatters, saved.EditVersion).Should().Be((before.WhyItMatters, before.EditVersion), "nothing was saved while the question was open");    }
+        (saved.WhyItMatters, saved.EditVersion).Should().Be((before.WhyItMatters, before.EditVersion), "nothing was saved while the question was open");
+    }
+
+    // The editor stays open from one article to the next (the brief's stepper, Ctrl+K): Discard's question about the
+    // first is cancelled, so it neither holds the next one's autosave nor drops its edits.
+    [Fact]
+    public async Task Discard_LeftOpen_WhenTheNextArticleOpens_IsCancelled_AndTheNextOneAutosaves()
+    {
+        var first = await NewArticle();
+        var next = await NewArticle();
+        var before = await Saved(first);
+        await using var r = await Editor(first);
+        await r.Click(p => p.MentionAsync("Typed on the first."));
+        await r.Press(p => p.Discard());
+        (await r.Html()).Should().Contain("Discard your changes?");
+
+        await r.Click(p => p.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Id"] = next })));
+        (await r.Until(p => !p.Dirty)).Should().BeTrue("the next article is loaded");
+        (await r.Html()).Should().NotContain("Discard your changes?", "the question about the first article has gone");
+        await r.Click(p => p.MentionAsync(Typed));
+
+        (await SavedInTheEnd(r, next)).Should().BeTrue("nothing holds the next article's autosave");
+        (await Saved(first)).EditVersion.Should().Be(before.EditVersion);
+        r.Component.Dirty.Should().BeFalse();
+    }
 
     [Fact]
     public async Task Discard_Cancelled_StillAutosavesAfterAPause()
