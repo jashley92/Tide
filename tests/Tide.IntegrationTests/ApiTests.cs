@@ -529,6 +529,48 @@ public class WebhookDeliveryTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task TwoHooks_AtDifferentWatermarks_EachGetsTheBriefSendsAfterItsOwn(string provider)
+    {
+        _db = _db.On(provider);
+        var behind = await _db.Webhooks().AddAsync("https://behind.example.org/hooks/tide", [WebhookService.BriefSent]);
+        var ahead = await _db.Webhooks().AddAsync("https://ahead.example.org/hooks/tide", [WebhookService.BriefSent]);
+        var start = DateTimeOffset.UtcNow.AddMinutes(-10);
+        BriefSend Send(string subject, DateTimeOffset at) => new()
+        {
+            Edition = Edition.Team, Status = SendStatus.Sent, Ceiling = TlpLevel.Green, Marking = TlpLevel.Green, Subject = subject,
+            Recipients = "soc@example.org", RecipientCount = 1, SentAtUtc = at, SentById = "x", SentByName = "X", EmailHtml = "<p>brief</p>", WebHtml = "<p>brief</p>",
+        };
+        await using (var ctx = _db.Context())
+        {
+            var brief = new Brief { BriefDate = _db.Clock.Today, AnalystName = "Robin" };
+            ctx.Briefs.Add(brief);
+            foreach (var send in new[] { Send("Before both", start.AddMinutes(1)), Send("Between", start.AddMinutes(3)), Send("After both", start.AddMinutes(5)) })
+            {
+                send.BriefId = brief.Id;
+                send.BriefDate = brief.BriefDate;
+                ctx.BriefSends.Add(send);
+            }
+            await ctx.SaveChangesAsync();
+        }
+        // One hook's watermark is before "Between", the other's after it.
+        await using (var ctx = _db.Context())
+        {
+            var (old, recent) = (start.AddMinutes(2), start.AddMinutes(4));
+            await ctx.Webhooks.Where(w => w.Id == behind.Id).ExecuteUpdateAsync(u => u.SetProperty(w => w.SentUpToUtc, old));
+            await ctx.Webhooks.Where(w => w.Id == ahead.Id).ExecuteUpdateAsync(u => u.SetProperty(w => w.SentUpToUtc, recent));
+        }
+
+        await _db.Webhooks().DeliverDueAsync();
+        await _db.Webhooks().DeliverDueAsync();
+
+        string[] To(string host) => [.. _db.Posts.Posted.Where(p => p.Url.Contains(host, StringComparison.Ordinal))
+            .Select(p => JsonElement.Parse(p.Body).GetProperty("data").GetProperty("subject").GetString()!)];
+        To("behind.example.org").Should().Equal(["Between", "After both"], "the hook further behind still gets what's between the two watermarks");
+        To("ahead.example.org").Should().Equal(["After both"], "nothing from before its own watermark");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task AnEvent_IsPostedOnceItsThirtySecondsOld_AndTheWatermarkWaitsForIt(string provider)
     {
         _db = _db.On(provider);

@@ -180,6 +180,42 @@ public class JobLeaseTests
         jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null);
         jobs.TakeFinished().Should().BeEmpty("no run is made");
     }
+
+    [Fact]
+    public async Task TheWebhookJob_WhenItCantTellWhetherAWebhookIsOn_StaysAsItWas_AndShowsTheFailureOnlyIfItWasOn()
+    {
+        using var db = new TestDb();
+        db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var flaky = new FlakyDbs(db);
+        var webhooks = new WebhookService(flaky, db.User, new FakeSecrets(), db.Posts, db.Clock,
+            Microsoft.Extensions.Options.Options.Create(new Tide.Application.Distribution.AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System, db.Settings());
+        await using var provider = new ServiceCollection().AddSingleton(webhooks).BuildServiceProvider();
+        var jobs = new JobMonitor(TimeProvider.System);
+        var hosted = new WebhookHostedService(provider.GetRequiredService<IServiceScopeFactory>(), jobs, new HeldLease(), TimeProvider.System,
+            NullLogger<WebhookHostedService>.Instance);
+
+        // Off, and the database down: it stays off, with no failure to show for a job that isn't on.
+        flaky.Down = true;
+        await hosted.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => !s.Enabled && s.NextDueUtc == null && s.LastSucceeded == null);
+        jobs.TakeFinished().Should().BeEmpty();
+
+        flaky.Down = false;
+        await db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised]);
+        await hosted.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => s.Enabled && s.LastSucceeded == true);
+
+        // On, and the database down: it stays on and due, the failure shown (scrubbed), and the pass doesn't throw.
+        flaky.Down = true;
+        await hosted.PassAsync(CancellationToken.None);
+        var down = jobs.Get(JobMonitor.Webhooks);
+        down.Should().Match<JobState>(s => s.Enabled && s.NextDueUtc > DateTimeOffset.UtcNow && s.LastSucceeded == false && s.FailuresInARow == 1 && !s.Running);
+        down.LastError.Should().Contain("network-related").And.NotContain("hunter2");
+
+        flaky.Down = false;
+        await hosted.PassAsync(CancellationToken.None);
+        jobs.Get(JobMonitor.Webhooks).Should().Match<JobState>(s => s.Enabled && s.LastSucceeded == true && s.FailuresInARow == 0);
+    }
 }
 
 public class JobRunLogTests
