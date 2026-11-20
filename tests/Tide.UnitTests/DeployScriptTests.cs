@@ -638,6 +638,78 @@ public partial class DeployScriptPowerShellTests
     }
 
     [Fact]
+    public void The_restore_drill_never_takes_the_live_databases_name_whatever_the_instance_is_called()
+    {
+        // The drill drops its scratch database first. '.' (or localhost, or the FQDN) is the live instance by another name,
+        // so the old check, the instance names compared as text, let -ScratchDatabase <live name> through to DROP DATABASE.
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                same      = Get-TideScratchRefusal 'Tide' 'Tide'
+                otherCase = Get-TideScratchRefusal 'tide ' 'Tide'
+                otherName = Get-TideScratchRefusal 'Tide_RestoreDrill' 'Tide'
+                blank     = Get-TideScratchRefusal ' ' 'Tide'
+            })
+            """);
+        r.GetProperty("same").GetString().Should().StartWith("The scratch database can't be named").And.Contain("Nothing has been changed");
+        r.GetProperty("otherCase").GetString().Should().StartWith("The scratch database can't be named");
+        r.GetProperty("otherName").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("blank").GetString().Should().Contain("-ScratchDatabase is empty");
+        DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1").Should().NotContain("$SqlInstance -eq $live.Instance",
+            "the instance's name proves nothing");
+    }
+
+    [WindowsFact]
+    public void The_restore_drill_refuses_the_live_databases_name_before_it_connects_anywhere()
+    {
+        // The script itself, under each PowerShell here, with the instance spelled three ways. It throws before opening a
+        // connection, so no SQL Server is needed. The drill reads the connection string with SqlClient, as on the server.
+        foreach (var shell in Shells())
+        {
+            var r = Run("""
+                $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-drill-' + [guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $dir | Out-Null
+                try {
+                    Set-Content -Path (Join-Path $dir 'appsettings.Production.json') -Value '{ "Database": { "Provider": "SqlServer" }, "ConnectionStrings": { "Default": "Server=SQLHOST01;Database=Tide;Integrated Security=true" } }'
+                    $drill = { param($scratch, $instance) try { & (Join-Path $deploy 'Test-TideRestore.ps1') -SitePath $dir -BackupSet $dir -ScratchDatabase $scratch -SqlInstance $instance 6>$null | Out-Null; 'ran' } catch { $_.Exception.Message } }
+                    $out = [ordered]@{ dot = & $drill 'Tide' '.'; fqdn = & $drill 'tide' 'sqlhost01.contoso.com'; same = & $drill 'Tide' 'SQLHOST01' }
+                } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+                ConvertTo-Json -Compress -InputObject $out
+                """, shell);
+            foreach (var refused in new[] { "dot", "fqdn", "same" })
+                r.GetProperty(refused).GetString().Should().StartWith("The scratch database can't be named", "{0} under {1}", refused, shell);
+        }
+    }
+
+    [Fact]
+    public void The_drill_checks_the_key_ring_only_in_a_set_whose_backup_had_one_to_take()
+    {
+        // Without DataProtection:KeyPath, Backup-Tide.ps1 has no key ring to copy, and the drill used to fail every run.
+        var r = Run("""
+            $set = { param($folders) ('{ "format": 1, "folders": ' + $folders + ' }') | ConvertFrom-Json }
+            $site = { param($keyPath) [pscustomobject]@{ Folder = 'D:\inetpub\tide'; Layers = @([pscustomobject]@{ DataProtection = [pscustomobject]@{ KeyPath = $keyPath } }) } }
+            $noKeys = & $site ''
+            $keys = & $site 'E:\TideData\dp-keys'
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                withRing   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys" }]') $noKeys
+                notThere   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys", "note": "not there" }]') $noKeys
+                withoutKey = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }]') $keys
+                noFolders  = Test-TideSetHasKeyRing (& $set '[]') $keys
+                oldSetSet  = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $keys
+                oldSetNone = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $noKeys
+            })
+            """);
+        r.GetProperty("withRing").GetBoolean().Should().BeTrue();
+        r.GetProperty("notThere").GetBoolean().Should().BeTrue("a key path set but not found is a real failure");
+        r.GetProperty("withoutKey").GetBoolean().Should().BeFalse("the set records what its backup had, not what the site has now");
+        r.GetProperty("noFolders").GetBoolean().Should().BeFalse();
+        r.GetProperty("oldSetSet").GetBoolean().Should().BeTrue("a set that lists no folders goes by the site's setting");
+        r.GetProperty("oldSetNone").GetBoolean().Should().BeFalse();
+
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        drill.Should().Contain("if (Test-TideSetHasKeyRing $manifest $site) {").And.Contain("Add-Check 'dp-keys' $true -Skipped");
+    }
+
+    [Fact]
     public void Backup_helpers_find_the_folders_and_files_a_set_holds()
     {
         var r = Run("""

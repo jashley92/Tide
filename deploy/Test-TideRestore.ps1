@@ -12,7 +12,9 @@
       - the restored database has TIDE's migration history;
       - every screenshot the database lists is in the set's files folder at its recorded size, and -Sample of them (200;
         -HashAll for every one) hash to their recorded SHA-256;
-      - the set holds the Data Protection key ring and the site's appsettings.Production.json.
+      - the set holds the Data Protection key ring (skipped, and said so, when DataProtection:KeyPath isn't set, as then
+        there's none to back up) and the site's appsettings.Production.json.
+    It refuses a -ScratchDatabase named like the live database, on any instance.
     The findings are written as restore-check-<time>.json in the set. A failed check exits with code 2, which a scheduled
     task reports. The scratch database is dropped afterwards unless -KeepRestored.
 
@@ -67,7 +69,9 @@ $live = Get-TideDatabase $site
 if (-not $SqlInstance) { $SqlInstance = $live.Instance }
 # Each install's drill its own scratch database, so two drilling on one instance can't drop each other's.
 if (-not $PSBoundParameters.ContainsKey('ScratchDatabase')) { $ScratchDatabase = 'Tide_RestoreDrill_' + ((Get-TideInstallTag $site) -replace '-', '_') }
-if ($ScratchDatabase -eq $live.Name -and $SqlInstance -eq $live.Instance) { throw "The scratch database can't be the live one ($($live.Name))." }
+# Refused by name alone, whatever -SqlInstance says: '.', localhost and the server's FQDN are all the live instance.
+$scratchRefusal = Get-TideScratchRefusal $ScratchDatabase $live.Name
+if ($scratchRefusal) { throw $scratchRefusal }
 if (-not $BackupSet) {
     if (-not $Destination) { throw 'Give -Destination (the newest backup set there is used) or -BackupSet.' }
     $BackupSet = @(Get-TideBackupSets $Destination -Server $env:COMPUTERNAME -Site $site.Folder | Select-Object -First 1 -ExpandProperty FullName)[0]
@@ -79,7 +83,13 @@ $stamp = Get-TideStamp -Format 'yyyyMMdd-HHmm'
 $checks = @()
 $restoredHere = $false
 function Open-Master { New-TideSqlConnection -SqlInstance $SqlInstance -DbName 'master' -SqlCredential $SqlCredential -ValidateServerCertificate:$live.ValidateServerCertificate -ApplicationName 'TIDE restore drill' }
-function Add-Check([string] $Name, [bool] $Passed, [string] $Detail) {
+function Add-Check([string] $Name, [bool] $Passed, [string] $Detail, [switch] $Skipped) {
+    # A check skipped because there's nothing to check counts as passed, and says why.
+    if ($Skipped) {
+        $script:checks += [ordered]@{ check = $Name; passed = $true; skipped = $true; detail = $Detail }
+        Write-Host "  [SKIP] ${Name}: $Detail" -ForegroundColor Yellow
+        return
+    }
     $script:checks += [ordered]@{ check = $Name; passed = $Passed; detail = $Detail }
     Write-Host "  [$(if ($Passed) { ' OK ' } else { 'FAIL' })] ${Name}: $Detail" -ForegroundColor $(if ($Passed) { 'Green' } else { 'Red' })
 }
@@ -141,8 +151,16 @@ try {
     if ($wrongHash.Count) { $fileDetail += "; $($wrongHash.Count) with the wrong SHA-256 (first: $($wrongHash[0]))" }
     Add-Check 'files' (($missing.Count + $wrongSize.Count + $wrongHash.Count) -eq 0) $fileDetail
 
-    $keyRing = @(Get-ChildItem -Path (Join-Path $BackupSet 'files\dp-keys') -Filter '*.xml' -File -ErrorAction SilentlyContinue)
-    Add-Check 'dp-keys' ($keyRing.Count -gt 0) "$($keyRing.Count) key(s) in the Data Protection key ring"
+    # Without DataProtection:KeyPath the backup has no key ring to take (lib\TideBackup.ps1, Get-TideBackupFolders), so
+    # failing here would fail every drill of such an install.
+    if (Test-TideSetHasKeyRing $manifest $site) {
+        $keyRing = @(Get-ChildItem -Path (Join-Path $BackupSet 'files\dp-keys') -Filter '*.xml' -File -ErrorAction SilentlyContinue)
+        Add-Check 'dp-keys' ($keyRing.Count -gt 0) "$($keyRing.Count) key(s) in the Data Protection key ring"
+    } else {
+        Add-Check 'dp-keys' $true -Skipped -Detail ("DataProtection:KeyPath isn't set, so the app keeps its keys in memory " +
+            "and the set has no key ring to check. Set it (the installer uses <data root>\dp-keys) so sign-ins and saved " +
+            "secrets survive a recycle and a restore (docs/operations/configuration.md).")
+    }
     $settingsCopy = Join-Path $BackupSet 'files\site\appsettings.Production.json'
     $settingsOk = $false
     try { $null = Read-TideJsonFile $settingsCopy; $settingsOk = $true } catch { }
