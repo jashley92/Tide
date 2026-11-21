@@ -120,14 +120,14 @@ public class OutreachFillTests
     // --- each group ---------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheArticle_FillsItsTitleBottomLineLinkCvesAndTlp_WithKevAndEpssWhereKnown()
+    public void TheArticle_FillsItsTitleBottomLineLinkCvesAndTlp_TheCvesAsNumbersOnly()
     {
         var d = OutreachFill.Fill("{{article.title}}", "{{article.bottom-line}}\n{{article.link}}\n{{article.cves}}\n{{article.tlp}}", Facts(Article(TlpLevel.Green), TlpLevel.Green));
 
         d.Subject.Should().Be("Edge VPN zero-day exploited");
         d.Body.Should().Be("TLP:GREEN: Limited disclosure: may be shared within the community, not publicly.\n\n"
             + "A pre-auth flaw in the VPN gateway is exploited in the wild.\nhttps://vendor.example/advisory\n"
-            + "CVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list, used in ransomware; EPSS 94.1%)\nTLP:GREEN\n");
+            + "CVE-2026-0002\nCVE-2026-1234\nTLP:GREEN\n", "what TIDE knows of each CVE is {{article.cves-detailed}}'s");
         d.Marking.Should().Be(TlpLevel.Green);
         d.Unfilled.Should().BeEmpty();
         d.LeftOut.Should().BeEmpty("the key point and why it matters held back aren't in this template");
