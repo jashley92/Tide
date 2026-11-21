@@ -20,6 +20,39 @@ public sealed record OutreachPlaceholder(string Name, string Group, string Descr
     public string Written => "{{" + Name + "}}";
 }
 
+/// <summary>What a piece of a template between double braces is.</summary>
+public enum OutreachTokenKind
+{
+    /// <summary>A placeholder: <c>{{name}}</c>, <c>{{name:modifier}}</c>, <c>{{name?}}</c> or <c>{{name|text}}</c>.</summary>
+    Placeholder,
+
+    /// <summary>A section's start: <c>{{#name}}</c>.</summary>
+    Open,
+
+    /// <summary>A section's other branch: <c>{{else}}</c>.</summary>
+    Else,
+
+    /// <summary>A section's end: <c>{{/name}}</c>.</summary>
+    Close,
+}
+
+/// <summary>
+/// A piece of an outreach template between double braces, as <see cref="OutreachFill.Tokens"/> reads it: the one reading
+/// the check on save, the fill and the Library rail's "Fills in" share.
+/// </summary>
+/// <param name="Kind">What it is.</param>
+/// <param name="Written">As the template writes it.</param>
+/// <param name="Index">Where it starts in the text.</param>
+/// <param name="Name">The placeholder it's about, lower case ("article.cves"); <c>else</c> for <see cref="OutreachTokenKind.Else"/>.</param>
+/// <param name="Modifier">What follows a colon ("domain" in <c>{{indicators:domain}}</c>), or null.</param>
+/// <param name="Optional">Whether it ends in <c>?</c>: dropped when there's nothing to fill.</param>
+/// <param name="Fallback">The text after a <c>|</c>, as written (not trimmed), or null when there's no <c>|</c>.</param>
+public sealed record OutreachToken(OutreachTokenKind Kind, string Written, int Index, string Name, string? Modifier, bool Optional, string? Fallback)
+{
+    /// <summary>Where it ends in the text.</summary>
+    public int End => Index + Written.Length;
+}
+
 /// <summary>
 /// What an outreach email is filled from, already cut to the template's ceiling (<see cref="OutreachFill.Cut"/>):
 /// <see cref="Article"/> holds only the parts the ceiling lets through, and <see cref="Indicators"/> only the indicators
@@ -157,43 +190,54 @@ public static partial class OutreachFill
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    // A name, a modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the
-    // text written when it's empty ("{{product.contact|there}}").
-    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?(?:\|([^{}\r\n]*))?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex Pattern();
+    // Every piece between double braces a template may use: {{else}}; or a name with a section's # or / before it, a
+    // modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the text
+    // written when it's empty ("{{product.contact|there}}"). The check on save says which mixes a template can't use.
+    [GeneratedRegex(@"\{\{\s*(?:(?<else>else)|(?<sign>[#/])?\s*(?<name>[A-Za-z][A-Za-z0-9.\-]*)(?::(?<mod>[A-Za-z0-9+\-]*))?(?<opt>\?)?(?:\|(?<alt>[^{}\r\n]*))?)\s*\}\}",
+        RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex TokenPattern();
 
-    // A section's tags: {{#name}} opens one, {{else}} starts what's written when it's empty, {{/name}} closes it.
-    [GeneratedRegex(@"\{\{\s*(?:([#/])\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?|(else))\s*\}\}", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex SectionPattern();
+    /// <summary>The pieces of <paramref name="text"/> between double braces that a template may use, in order.</summary>
+    public static IReadOnlyList<OutreachToken> Tokens(string? text) => [.. TokenPattern().Matches(text ?? "").Select(TokenOf)];
+
+    private static OutreachToken TokenOf(Match m)
+    {
+        if (m.Groups["else"].Success) return new(OutreachTokenKind.Else, m.Value, m.Index, ElseName, null, false, null);
+        var kind = m.Groups["sign"].Value switch { "#" => OutreachTokenKind.Open, "/" => OutreachTokenKind.Close, _ => OutreachTokenKind.Placeholder };
+        return new(kind, m.Value, m.Index, m.Groups["name"].Value.ToLowerInvariant(), m.Groups["mod"].Success ? m.Groups["mod"].Value : null,
+            m.Groups["opt"].Success, m.Groups["alt"].Success ? m.Groups["alt"].Value : null);
+    }
 
     /// <summary>The word that starts a section's other branch: <c>{{else}}</c>.</summary>
     public const string ElseName = "else";
 
-    // A section tag: where it starts and ends (its whole line, when nothing else is on it), '#', '/' or 'e' for else,
-    // and the placeholder it's about.
-    private sealed record SectionTag(int Start, int End, char Kind, string Name, string? Modifier)
+    // A section tag: where it starts and ends (its whole line, when nothing else is on it), and what it is.
+    private sealed record SectionTag(int Start, int End, OutreachToken Token)
     {
-        public string Written => Kind == 'e' ? "{{" + ElseName + "}}" : "{{" + Kind + Name + (Modifier is null ? "" : ":" + Modifier) + "}}";
+        public OutreachTokenKind Kind => Token.Kind;
+        public string Name => Token.Name;
+        public string? Modifier => Token.Modifier;
+        public string Written => Kind == OutreachTokenKind.Else ? "{{" + ElseName + "}}"
+            : "{{" + (Kind == OutreachTokenKind.Open ? "#" : "/") + Name + (Modifier is null ? "" : ":" + Modifier) + "}}";
 
         public bool Closes(SectionTag open) => Name == open.Name
                                                && string.Equals(Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
-    // The section tags in the text, in order. A tag alone on its line takes the line with it, so a section leaves no
-    // blank lines behind.
-    private static List<SectionTag> Tags(string text)
+    // The section tags among the tokens, in order. A tag alone on its line takes the line with it, so a section leaves
+    // no blank lines behind.
+    private static List<SectionTag> Tags(string text, IEnumerable<OutreachToken> tokens)
     {
         var tags = new List<SectionTag>();
-        foreach (Match m in SectionPattern().Matches(text))
+        foreach (var t in tokens.Where(t => t.Kind != OutreachTokenKind.Placeholder))
         {
-            int start = m.Index, end = m.Index + m.Length;
+            int start = t.Index, end = t.End;
             var lineStart = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
             var lineEnd = text.IndexOf('\n', end);
             if (lineEnd < 0) lineEnd = text.Length;
             if (string.IsNullOrWhiteSpace(text[lineStart..start]) && string.IsNullOrWhiteSpace(text[end..lineEnd]))
                 (start, end) = (lineStart, lineEnd < text.Length ? lineEnd + 1 : lineEnd);
-            tags.Add(new SectionTag(start, end, m.Groups[4].Success ? 'e' : m.Groups[1].Value[0], m.Groups[2].Value.ToLowerInvariant(),
-                m.Groups[3].Success ? m.Groups[3].Value : null));
+            tags.Add(new SectionTag(start, end, t));
         }
         return tags;
     }
@@ -205,9 +249,11 @@ public static partial class OutreachFill
         var sawElse = false;
         foreach (var t in tags)
         {
+            if (t.Token.Optional || t.Token.Fallback is not null)
+                throw new ArgumentException($"{t.Token.Written} is a section's tag: it takes no ? or |. Write it as {t.Written}.");
             switch (t.Kind)
             {
-                case '#':
+                case OutreachTokenKind.Open:
                     if (open is not null)
                         throw new ArgumentException($"{t.Written} is inside {open.Written}: close it with {{{{/{open.Name}}}}} first. A section can't hold another.");
                     if (string.Equals(t.Name, TlpName, StringComparison.OrdinalIgnoreCase))
@@ -215,7 +261,7 @@ public static partial class OutreachFill
                     CheckPlaceholder(t.Name, t.Modifier);
                     (open, sawElse) = (t, false);
                     break;
-                case 'e':
+                case OutreachTokenKind.Else:
                     if (open is null) throw new ArgumentException($"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
                     if (sawElse) throw new ArgumentException($"{open.Written} has two {{{{{ElseName}}}}}s: a section takes one at most.");
                     sawElse = true;
@@ -269,26 +315,25 @@ public static partial class OutreachFill
     public static void Check(string text)
     {
         text ??= "";
-        CheckSections(Tags(text));
-        var rest = SectionPattern().Replace(text, "\n");
-        foreach (Match m in Pattern().Matches(rest))
+        var tokens = Tokens(text);
+        CheckSections(Tags(text, tokens));
+        foreach (var t in tokens.Where(t => t.Kind == OutreachTokenKind.Placeholder))
         {
-            var name = m.Groups[1].Value;
-            var optional = m.Groups[3].Success;
-            var fallback = m.Groups[4].Success;
-            if (string.Equals(name, ElseName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{m.Value} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
-            CheckPlaceholder(name, m.Groups[2].Success ? m.Groups[2].Value : null);
-            if ((optional || fallback) && string.Equals(name, TlpName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{m.Value} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
-            if (optional && fallback)
-                throw new ArgumentException($"{m.Value} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
-            if (fallback && string.IsNullOrWhiteSpace(m.Groups[4].Value))
-                throw new ArgumentException($"{m.Value} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
+            var fallback = t.Fallback is not null;
+            if (t.Name == ElseName)
+                throw new ArgumentException($"{t.Written} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
+            CheckPlaceholder(t.Name, t.Modifier);
+            if ((t.Optional || fallback) && t.Name == TlpName)
+                throw new ArgumentException($"{t.Written} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
+            if (t.Optional && fallback)
+                throw new ArgumentException($"{t.Written} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
+            if (fallback && string.IsNullOrWhiteSpace(t.Fallback))
+                throw new ArgumentException($"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
         }
         // Braces round a name that doesn't parse ("{{today: +2}}", "{{article_title}}") would go out in every email as
         // typed: Fill leaves them, and they aren't a marker that holds the send back.
-        if (LooksLikePlaceholder().Match(Pattern().Replace(rest, "")) is { Success: true } typo)
+        var rest = TokenPattern().Replace(text, "\n");
+        if (LooksLikePlaceholder().Match(rest) is { Success: true } typo)
             throw new ArgumentException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon or before a closing ?, and a name of letters, dots and hyphens, as in {{{{article.title}}}}, {{{{{TodayName}:+2}}}} or {{{{article.other-links?}}}}.");
     }
 
@@ -403,7 +448,7 @@ public static partial class OutreachFill
         // don't pair up are refused when a template is saved; an older one that slipped through is left as it is.
         string Sections(string text)
         {
-            var tags = Tags(text);
+            var tags = Tags(text, Tokens(text));
             if (tags.Count == 0) return text;
             try { CheckSections(tags); }
             catch (ArgumentException) { return text; }
@@ -416,29 +461,31 @@ public static partial class OutreachFill
                 pos = t.End;
                 switch (t.Kind)
                 {
-                    case '#':
+                    case OutreachTokenKind.Open:
                         var (_, value, tlp, _) = Look(t.Name, t.Modifier);
                         (inside, has, inElse) = (true, !string.IsNullOrWhiteSpace(value), false);
                         if (has && tlp > marking) marking = tlp;
                         break;
-                    case 'e': inElse = true; break;
+                    case OutreachTokenKind.Else: inElse = true; break;
                     default: inside = false; break;
                 }
             }
             return sb.Append(text, pos, text.Length - pos).ToString();
         }
 
-        string Replace(string text) => Pattern().Replace(Sections(text ?? ""), m =>
+        // Section tags still there belong to sections that don't pair up, and are left as they are.
+        string Replace(string text) => TokenPattern().Replace(Sections(text ?? ""), m =>
         {
-            var name = m.Groups[1].Value.ToLowerInvariant();
-            if (name == TlpName) { used.Add(name); return TlpSlot; }   // filled once the marking is known
-            var (label, value, tlp, above) = Look(name, m.Groups[2].Success ? m.Groups[2].Value : null);
+            var t = TokenOf(m);
+            if (t.Kind != OutreachTokenKind.Placeholder) return m.Value;
+            if (t.Name == TlpName) { used.Add(t.Name); return TlpSlot; }   // filled once the marking is known
+            var (label, value, tlp, above) = Look(t.Name, t.Modifier);
             if (string.IsNullOrWhiteSpace(value))
             {
                 // Optional: dropped, with its line when nothing else is on it. What the ceiling held back is still said.
-                if (m.Groups[3].Success) return GoneSlot;
+                if (t.Optional) return GoneSlot;
                 // With text for when it's empty: that text, which carries no marking.
-                if (m.Groups[4].Success && m.Groups[4].Value.Trim() is { Length: > 0 } instead) return instead;
+                if (t.Fallback?.Trim() is { Length: > 0 } instead) return instead;
                 var written = "{{" + label + "}}";
                 if (!unfilled.Contains(written)) unfilled.Add(written);
                 return Marker(label, above ? facts.Ceiling : null);

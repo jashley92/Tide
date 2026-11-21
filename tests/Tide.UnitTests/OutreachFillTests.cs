@@ -270,8 +270,26 @@ public class OutreachFillTests
     [InlineData("{{article.cves|}}", "{{article.cves|}} has nothing after the |*")]
     [InlineData("{{tlp|none}}", "{{tlp|none}} can't be optional*")]
     [InlineData("{{else|x}}", "{{else|x}} isn't written as a section's {{else}}*")]
+    [InlineData("{{#article.cves?}}x{{/article.cves}}", "{{#article.cves?}} is a section's tag: it takes no ? or |. Write it as {{#article.cves}}.")]
+    [InlineData("{{#article.cves}}x{{/article.cves|y}}", "{{/article.cves|y}} is a section's tag*")]
     public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
+    // The one reading of the syntax the check, the fill and the Library rail share.
+    [Fact]
+    public void Tokens_ReadEachPieceBetweenBraces_AsTheCheckAndTheFillDo()
+    {
+        var text = "Hi {{ Product.Contact|there }},{{#indicators:Domain}}{{indicators:domain?}}{{else}}none{{/indicators:domain}} {{nope }} {not}";
+        OutreachFill.Tokens(text).Select(t => (t.Kind, t.Name, t.Modifier, t.Optional, t.Fallback)).Should().Equal(
+            (OutreachTokenKind.Placeholder, "product.contact", null, false, "there "),
+            (OutreachTokenKind.Open, "indicators", "Domain", false, null),
+            (OutreachTokenKind.Placeholder, "indicators", "domain", true, null),
+            (OutreachTokenKind.Else, "else", null, false, null),
+            (OutreachTokenKind.Close, "indicators", "domain", false, null),
+            (OutreachTokenKind.Placeholder, "nope", null, false, null));
+        var first = OutreachFill.Tokens(text)[0];
+        (first.Written, first.Index, first.End).Should().Be(("{{ Product.Contact|there }}", 3, 30));
+    }
 
     // --- optional placeholders ----------------------------------------------------------------------------------------
 
