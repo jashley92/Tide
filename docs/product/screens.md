@@ -1133,7 +1133,9 @@ list says each one's TLP ceiling and how many emails were written from it. Its f
 
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
-and *Internal inquiry: are we impacted?*.
+and *Internal inquiry: are we impacted?*. A starter TIDE added to an earlier version and nobody has changed since says
+TIDE has a newer version of it, with **Use it** for whoever works actions: the newer body takes its place, and its name,
+To address and ceiling are kept.
 
 ### Playbooks
 
