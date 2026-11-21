@@ -67,7 +67,7 @@ public sealed record OutreachFacts
 
     public EditionArticle? Article { get; init; }
 
-    /// <summary>The enrichment of the article's CVEs, where TIDE has it, by id.</summary>
+    /// <summary>What TIDE knows of the article's CVEs, by id; read only for <see cref="OutreachFill.CvesDetailedName"/>.</summary>
     public IReadOnlyDictionary<string, CveRecord> Cves { get; init; } = new Dictionary<string, CveRecord>();
 
     /// <summary>The addresses of the other reports added to the article (<see cref="ArticleLink"/>), oldest first, which
