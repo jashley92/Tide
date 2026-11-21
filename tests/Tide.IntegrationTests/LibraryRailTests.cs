@@ -82,6 +82,18 @@ public partial class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         return (html[..at], html[at..]);
     }
 
+    // A template's placeholders are read as the fill reads them: spaces inside the braces, a section, ? and |text.
+    [Fact]
+    public void ATemplatesFillsIn_AreReadAsTheFillReadsThem()
+    {
+        var fills = Tide.Web.Components.LibraryRail.LibraryFills.OfTemplate("{{ article.title }}",
+            "{{#article.cves}}{{article.cves}}{{else}}none{{/article.cves}} {{article.link?}} {{product.contact|there}} {{nope}}");
+        fills.Select(f => f.Written).Should().Equal("{{ article.title }}", "{{#article.cves}}", "{{article.cves}}", "{{article.link?}}", "{{product.contact|there}}");
+        fills[1].Means.Should().EndWith("Its section shows only when there's something to fill.");
+        fills[3].Means.Should().EndWith("Left out when there's nothing to fill.");
+        fills[4].Means.Should().EndWith("\"there\" when there's nothing to fill.");
+    }
+
     [Fact]
     public async Task TheSelectedQuery_ShowsItsFacts_WhatItFillsIn_ItTriedOnAnOpenAction_AndWhereItWasUsed_InTheRail()
     {

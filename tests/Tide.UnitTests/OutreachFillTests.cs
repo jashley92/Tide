@@ -193,7 +193,132 @@ public class OutreachFillTests
             OutreachFill.Check(s.Body);
             var d = OutreachFill.Fill(s.Subject, s.Body, facts);
             d.Unfilled.Should().BeEmpty(s.Name);
+            d.Body.Should().NotContain("CVEs:", "the heading goes with the empty list").And.NotContain("{{").And.NotContain("\n\n\n", s.Name);
         }
+    }
+
+    // --- sections and text for when it's empty ---------------------------------------------------------------------
+
+    private const string CvesSection = "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{else}}\nNo CVEs yet.\n\n{{/article.cves}}\nThanks";
+
+    [Fact]
+    public void ASection_KeepsItsFirstBranch_WhenThereIsSomethingToFill_AndItsTagLinesLeaveNoGaps()
+    {
+        var d = OutreachFill.Fill("x", CvesSection, Facts(Article(), TlpLevel.Clear));
+        d.Body.Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
+    }
+
+    [Fact]
+    public void ASection_KeepsWhatFollowsElse_WhenThereIsNothing_OrDropsWhole_WithoutElse()
+    {
+        var article = Article();
+        article.Cves = [];
+        var facts = Facts(article, TlpLevel.Clear);
+        OutreachFill.Fill("x", CvesSection, facts).Body.Should().EndWith("\n\nHello,\n\nNo CVEs yet.\n\nThanks\n");
+
+        var dropped = OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nThanks", facts);
+        dropped.Body.Should().EndWith("\n\nHello,\n\nThanks\n");
+        dropped.Unfilled.Should().BeEmpty();
+
+        OutreachFill.Fill("Re: {{#article.cves}}{{article.cves}}{{else}}no CVE{{/article.cves}}", "x", facts).Subject.Should().Be("Re: no CVE", "inline too");
+    }
+
+    // A section's tags go as an empty optional placeholder does: blank lines round a section that goes leave one, as
+    // round a line of {{x?}}, and a section that goes mid-sentence leaves one space.
+    [Fact]
+    public void ASectionThatGoes_LeavesTheBlankLinesAndSpaces_AnOptionalPlaceholderWould()
+    {
+        var article = Article();
+        article.Cves = [];
+        var facts = Facts(article, TlpLevel.Clear);
+        OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", facts).Body
+            .Should().EndWith("\n\nHello,\n\nThanks\n").And.Be(OutreachFill.Fill("x", "Hello,\n\n{{article.cves?}}\n\nThanks", facts).Body);
+        OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", Facts(Article(), TlpLevel.Clear)).Body
+            .Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
+        OutreachFill.Fill("Patch {{#article.cves}}{{article.cves}} {{/article.cves}}today", "x", facts).Subject.Should().Be("Patch today");
+    }
+
+    [Fact]
+    public void ASectionHeldBackByTheCeiling_TakesItsElse_AndWhatWasHeldBackIsStillSaid()
+    {
+        var d = OutreachFill.Fill("x", CvesSection, Facts(Article(TlpLevel.Amber), TlpLevel.Green));
+        d.Body.Should().Contain("No CVEs yet.").And.NotContain("CVE-2026");
+        d.LeftOut.Should().ContainSingle().Which.Should().StartWith("The article is TLP:AMBER");
+        d.Marking.Should().Be(TlpLevel.Clear);
+    }
+
+    [Fact]
+    public void ASectionKeptForAMarkedPart_CarriesItsMarking_EvenWithoutThePlaceholderInside()
+    {
+        var d = OutreachFill.Fill("x", "{{#article.cves}}This report names CVEs.{{/article.cves}}", Facts(Article(TlpLevel.Green), TlpLevel.Green));
+        d.Body.Should().EndWith("This report names CVEs.\n");
+        d.Marking.Should().Be(TlpLevel.Green, "keeping it says the GREEN article has CVEs");
+    }
+
+    [Fact]
+    public void TextAfterABar_IsWritten_WhenThereIsNothingToFill_AndTheValueOtherwise()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);
+        var none = Facts(Article(), TlpLevel.Clear);
+        none.Product!.ContactName = null;
+        OutreachFill.Fill("x", "Hello {{product.contact|there}},", none).Body.Should().EndWith("\n\nHello there,\n");
+        OutreachFill.Fill("x", "Hello {{product.contact|there}},", facts).Body.Should().EndWith("\n\nHello Vendor PSIRT,\n");
+        OutreachFill.Fill("x", "{{indicators:sha256| none seen }}", facts).Body.Should().EndWith("\n\nnone seen\n");
+        OutreachFill.Fill("x", "{{article.title|untitled}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green)).Unfilled.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("{{#article.cves}}\nCVEs: {{article.cves}}\n{{else}}\nNone.\n{{/article.cves}}\n{{#indicators:domain}}{{indicators:domain}}{{/Indicators:Domain}}")]
+    [InlineData("Hello {{product.contact|there}}, {{today:+2|soon}}")]
+    public void Check_AcceptsSectionsAndTextAfterABar(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
+
+    [Theory]
+    [InlineData("{{#article.cves}}{{#indicators}}x{{/indicators}}{{/article.cves}}", "{{#indicators}} is inside {{#article.cves}}*")]
+    [InlineData("{{#article.cves}} x", "{{#article.cves}} is never closed*")]
+    [InlineData("{{#article.cves}} x {{/indicators}}", "{{/indicators}} doesn't close {{#article.cves}}: write {{/article.cves}}.")]
+    [InlineData("x {{/article.cves}}", "{{/article.cves}} closes a section that isn't open*")]
+    [InlineData("x {{else}} y", "{{else}} only goes inside a section*")]
+    [InlineData("{{#article.cves}}a{{else}}b{{else}}c{{/article.cves}}", "{{#article.cves}} has two {{else}}s*")]
+    [InlineData("{{#tlp}}x{{/tlp}}", "{{#tlp}} can't start a section*")]
+    [InlineData("{{#article.cvs}}x{{/article.cvs}}", "{{article.cvs}} isn't a placeholder TIDE fills*")]
+    [InlineData("{{article.cves?|none}}", "{{article.cves?|none}} is both optional and has text for when it's empty*")]
+    [InlineData("{{article.cves|}}", "{{article.cves|}} has nothing after the |*")]
+    [InlineData("{{tlp|none}}", "{{tlp|none}} can't be optional*")]
+    [InlineData("{{else|x}}", "{{else|x}} isn't written as a section's {{else}}*")]
+    [InlineData("{{#article.cves?}}x{{/article.cves}}", "{{#article.cves?}} is a section's tag: it takes no ? or |. Write it as {{#article.cves}}.")]
+    [InlineData("{{#article.cves}}x{{/article.cves|y}}", "{{/article.cves|y}} is a section's tag*")]
+    public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
+        FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
+    // Spaces after {{ with nothing to close them are read once, not tried every way they could split: a template of them
+    // can't hold the server up.
+    [Theory]
+    [InlineData("{{")]
+    [InlineData("{{#")]
+    [InlineData("{{article.title|")]
+    public void ALongRunOfSpacesAfterBraces_IsReadQuickly(string start)
+    {
+        var text = start + new string(' ', 30_000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        OutreachFill.Check(text);
+        OutreachFill.Tokens(text).Should().BeEmpty();
+        watch.ElapsedMilliseconds.Should().BeLessThan(200);
+    }
+
+    // The one reading of the syntax the check, the fill and the Library rail share.
+    [Fact]
+    public void Tokens_ReadEachPieceBetweenBraces_AsTheCheckAndTheFillDo()
+    {
+        var text = "Hi {{ Product.Contact|there }},{{#indicators:Domain}}{{indicators:domain?}}{{else}}none{{/indicators:domain}} {{nope }} {not}";
+        OutreachFill.Tokens(text).Select(t => (t.Kind, t.Name, t.Modifier, t.Optional, t.Fallback)).Should().Equal(
+            (OutreachTokenKind.Placeholder, "product.contact", null, false, "there "),
+            (OutreachTokenKind.Open, "indicators", "Domain", false, null),
+            (OutreachTokenKind.Placeholder, "indicators", "domain", true, null),
+            (OutreachTokenKind.Else, "else", null, false, null),
+            (OutreachTokenKind.Close, "indicators", "domain", false, null),
+            (OutreachTokenKind.Placeholder, "nope", null, false, null));
+        var first = OutreachFill.Tokens(text)[0];
+        (first.Written, first.Index, first.End).Should().Be(("{{ Product.Contact|there }}", 3, 30));
     }
 
     // --- optional placeholders ----------------------------------------------------------------------------------------
