@@ -143,7 +143,7 @@ public static partial class OutreachFill
     /// <summary>The placeholder for the email's TLP marking.</summary>
     public const string TlpName = "tlp";
 
-    /// <summary>The placeholder for the article's CVE numbers, one a line (<see cref="CvesDetailedName"/> starts the same).</summary>
+    /// <summary>The placeholder for the article's CVE numbers, one a line.</summary>
     public const string CvesName = "article.cves";
 
     /// <summary>The placeholder for what TIDE knows of each of the article's CVEs, a paragraph a CVE.</summary>
