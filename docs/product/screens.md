@@ -1135,7 +1135,9 @@ The team's outreach emails, kept beside Saved queries and in the same way, 20 to
 with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.link}}` (its source),
 `{{article.other-links}}` (the other reports added to it), `{{article.cves}}` (their numbers), `{{article.cve-links}}` (each CVE's NVD
 page), `{{article.cves-detailed}}` (a paragraph a CVE), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
-`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. The
+`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. The form has an *Insert placeholder* menu,
+a list of matching names when `{{` is typed, a line under the body saying whether TIDE can fill the draft, and a preview
+of the draft filled for one of the writer's open Outreach actions. Whoever works actions keeps them. The
 list says each one's TLP ceiling and how many emails were written from it. Its filter bar is the search box with
 **Show retired** as a switch, as on Saved queries.
 

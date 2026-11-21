@@ -75,9 +75,12 @@ public class OutreachFillTests
     public void Check_AcceptsTheNamesTideFills_InAnyCase(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
 
     [Theory]
-    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Use one of: {{article.title}}*")]
-    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills*")]
-    [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or one of: {{indicators:ipv4}}*")]
+    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Did you mean {{article.title}}?")]
+    [InlineData("{{sender.nme}}", "{{sender.nme}} isn't a placeholder TIDE fills. Did you mean {{sender.name}}?")]
+    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills. Insert placeholder lists the ones it does.")]
+    [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Did you mean {{indicators:sha1}}?")]
+    [InlineData("{{indicators:Domian}}", "{{indicators:Domian}} isn't a kind of indicator TIDE knows. Did you mean {{indicators:domain}}?")]
+    [InlineData("{{indicators:cve}}", "{{indicators:cve}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or a kind from Insert placeholder.")]
     [InlineData("{{article.title:domain}}", "{{article.title}} takes nothing after a colon: only {{indicators:…}} and {{today:+2}} do.")]
     [InlineData("{{today:2}}", "{{today:2}} isn't a number of business days. Write it as {{today:+2}} or {{today:-2}}, up to 60.")]
     [InlineData("{{today:-61}}", "{{today:-61}} isn't a number of business days*")]
@@ -289,6 +292,19 @@ public class OutreachFillTests
     [InlineData("{{#article.cves}}x{{/article.cves|y}}", "{{/article.cves|y}} is a section's tag*")]
     public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
+    // Every refusal says where the trouble is, so the editor can select it.
+    [Theory]
+    [InlineData("Hi {{article.titel}} there", "{{article.titel}}")]
+    [InlineData("Hi {{article.cves?|x}}", "{{article.cves?|x}}")]
+    [InlineData("a {{#article.cves}} b", "{{#article.cves}}")]
+    [InlineData("{{#article.cves}}a{{/indicators}}", "{{/indicators}}")]
+    [InlineData("{{#article.cves}}{{article.cves}}{{/article.cves}} {{today: +2}}", "{{today: +2}}")]
+    public void Check_SaysWhereTheTroubleIs(string text, string at)
+    {
+        var refused = FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<OutreachTemplateException>().Which;
+        text.Substring(refused.Index, refused.Length).Should().Be(at);
+    }
 
     // Spaces after {{ with nothing to close them are read once, not tried every way they could split: a template of them
     // can't hold the server up.

@@ -1,33 +1,21 @@
-@* What an outreach template's placeholders become, under the box it's written in (Outreach templates). *@
+@* Under the box an outreach template is written in (Outreach templates): what happens to its placeholders, and the
+   ways to say what happens when one has nothing to fill. Every placeholder, with what it becomes, is in the Insert
+   menu (OutreachInsertMenu), and whether TIDE can fill the draft is the check line above this. *@
 <div class="form-text" id="@Id">
-    Placeholders are filled from the action when the email is written, held to the template's TLP ceiling: a part above
-    it is left out and named. A placeholder TIDE doesn't know is refused when you save. One with nothing to fill is
-    marked for you to deal with before sending, unless you say otherwise (Placeholders, below, shows how).
+    Filled from the action when the email is written. Parts above the TLP ceiling are left out, and anything with
+    nothing to fill is marked for you to fix before sending.
 </div>
 <details class="tide-outreach-help small mt-1">
-    <summary>Placeholders</summary>
-    <div class="tide-field-label mt-2 mb-1">When there's nothing to fill</div>
-    <dl class="tide-outreach-placeholders">
+    <summary>When there's nothing to fill</summary>
+    <dl class="tide-outreach-placeholders mt-2">
         <dt class="tide-data">{{article.other-links?}}</dt>
-        <dd>Ending in ?, it's dropped, with its line when nothing else is on it.</dd>
+        <dd>Dropped, with its line when it's alone on it.</dd>
         <dt class="tide-data">{{product.contact|there}}</dt>
-        <dd>After a |, the text written instead, as in "Hello {{product.contact|there}},".</dd>
+        <dd>"there" is written instead.</dd>
         <dt class="tide-data">{{#article.cves}} … {{else}} … {{/article.cves}}</dt>
-        <dd>A section: what's before {{else}} when there's something to fill, what's after it when there isn't. Without
-            {{else}}, the whole section goes, so a heading goes with it. A tag alone on its line takes the line with it.
-            A section can't hold another.</dd>
+        <dd>What's before {{else}} when there's something to fill, what's after it when there isn't. Without {{else}},
+            the whole section goes, heading and all.</dd>
     </dl>
-    @foreach (var group in OutreachFill.All.GroupBy(p => p.Group))
-    {
-        <div class="tide-field-label mt-2 mb-1">@group.Key</div>
-        <dl class="tide-outreach-placeholders">
-            @foreach (var p in group)
-            {
-                <dt class="tide-data">@p.Written</dt>
-                <dd>@p.Description</dd>
-            }
-        </dl>
-    }
 </details>
 
 @code {

@@ -1,0 +1,220 @@
+@using Tide.Web.Components.LibraryRail
+@inject LibraryUseService UseSvc
+@inject OutreachService OutreachSvc
+@inject ICurrentUser CurrentUser
+@* Under an outreach template being written (OutreachTemplatesPage): whether TIDE can fill it, checked when typing
+   pauses (js/outreach-editor.js tells the page then) by the check that runs on save (OutreachFill.Check), with a button
+   that selects the trouble in the box it's in; and, for whoever can try entries on actions, the draft filled for one of
+   their open Outreach actions and one of its products, what's left to fill marked. What the action fills it with is read
+   once for the action, product and ceiling (OutreachService.PreviewAsync, read only: nothing is saved), and the draft is
+   filled again from it as the text changes. The check's line is a status, so a screen reader hears it when it changes. *@
+
+<div class="tide-oi-draft">
+    <div class="d-flex flex-wrap gap-2 align-items-baseline">
+        <div id="@CheckId" class="small tide-oi-check @(_problem is null ? "is-ok" : "is-problem")" role="status">
+            @if (_problem is { } problem)
+            {
+                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @problem
+            }
+            else
+            {
+                <span class="bi bi-check2" aria-hidden="true"></span> @(_fills == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(_fills, "placeholder")}.")
+            }
+        </div>
+        @if (_where is { } w)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-oi-select="@w.Field" data-oi-from="@w.Index" data-oi-text="@w.Text">Show where</button>
+        }
+    </div>
+
+    @if (LibraryUseService.CanTry(CurrentUser))
+    {
+        <div class="tide-oi-preview">
+            <button type="button" class="tide-disclosure small" aria-expanded="@(_previewing ? "true" : "false")" aria-controls="@(CheckId + "-preview")"
+                    @onclick="TogglePreview">
+                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> Preview this draft on an action
+            </button>
+            @if (_previewing)
+            {
+                <div id="@(CheckId + "-preview")" class="mt-1">
+                    @if (_offered is null)
+                    {
+                        <LoadingBlock />
+                    }
+                    else if (_offered.Count == 0)
+                    {
+                        <p class="small tide-muted mb-0">No open @ActionService.KindName(ActionKind.Outreach) action of yours to preview it on.</p>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-2">
+                            <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The action to preview it on" value="@_actionId"
+                                    @onchange="e => ChooseAction(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                                @foreach (var a in _offered)
+                                {
+                                    <option value="@a.Id">@Ui.ActionLabel(a.Number) @a.Title</option>
+                                }
+                            </select>
+                            @if (_preview is { Products.Count: > 1 } withProducts)
+                            {
+                                <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The product to fill it for" value="@withProducts.Facts.Product?.Id"
+                                        @onchange="e => ChooseProduct(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                                    @foreach (var p in withProducts.Products)
+                                    {
+                                        <option value="@p.Id">@p.Name</option>
+                                    }
+                                </select>
+                            }
+                        </div>
+                        @if (_previewError is { } error)
+                        {
+                            <p class="small tide-muted mb-0 mt-1">@error</p>
+                        }
+                        else if (_draft is { } d)
+                        {
+                            <pre class="tide-email-text mt-1 mb-0">Subject: @Marked(d.Subject)
+
+@Marked(d.Body)</pre>
+                            @if (d.Unfilled.Count > 0)
+                            {
+                                <p class="small tide-oi-to-fix mb-0 mt-1">To fill before sending: @string.Join(", ", d.Unfilled).</p>
+                            }
+                            @if (d.LeftOut.Count > 0)
+                            {
+                                <p class="small tide-muted mb-0 mt-1">Left out: @string.Join(" ", d.LeftOut)</p>
+                            }
+                        }
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The check line's id, which the subject and body name in aria-describedby.</summary>
+    [Parameter, EditorRequired] public string CheckId { get; set; } = "";
+    /// <summary>The subject's box, which "Show where" selects in.</summary>
+    [Parameter, EditorRequired] public string SubjectId { get; set; } = "";
+    /// <summary>The body's box.</summary>
+    [Parameter, EditorRequired] public string BodyId { get; set; } = "";
+    [Parameter] public string? Subject { get; set; }
+    [Parameter] public string? Body { get; set; }
+    [Parameter] public TlpLevel Ceiling { get; set; }
+
+    private string? _problem;
+    private (string Field, int Index, string Text)? _where;
+    private int _fills;
+    private bool _previewing;
+    private IReadOnlyList<WorkableAction>? _offered;
+    private Guid? _actionId;
+    private OutreachPreview? _preview;
+    private OutreachDraft? _draft;
+    private string? _previewError;
+    private (string? Subject, string? Body, TlpLevel Ceiling)? _seen;
+    private int _asked;
+
+    internal string? Problem => _problem;
+    internal OutreachDraft? Draft => _draft;
+
+    // The page hears the subject and body when typing pauses, so they're checked (and the preview filled) then. The facts
+    // are read again only for another ceiling.
+    protected override async Task OnParametersSetAsync()
+    {
+        var now = (Subject, Body, Ceiling);
+        if (_seen == now) return;
+        _seen = now;
+        Check();
+        if (!_previewing) return;
+        if (_preview?.Facts.Ceiling == Ceiling) Refill();
+        else await Load();
+    }
+
+    // The check that runs on save, on the subject and the body: how many placeholders it found, or what's wrong and where.
+    internal void Check()
+    {
+        _fills = LibraryFills.OfTemplate(Subject ?? "", Body ?? "").Count;
+        (_problem, _where) = (null, null);
+        foreach (var (field, text) in new[] { (SubjectId, Subject ?? ""), (BodyId, Body ?? "") })
+        {
+            try { OutreachFill.Check(text); }
+            catch (OutreachTemplateException ex)
+            {
+                (_problem, _where) = (ex.Message, (field, ex.Index, text.Substring(ex.Index, ex.Length)));
+                return;
+            }
+        }
+    }
+
+    internal async Task TogglePreview()
+    {
+        _previewing = !_previewing;
+        if (!_previewing) return;
+        if (_offered is null)
+        {
+            var workable = await UseSvc.WorkableAsync();
+            _offered = [.. workable.Where(a => LibraryUseService.Suits(LibraryKind.OutreachTemplate, a.Kind))];
+            _actionId ??= (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
+        }
+        // What was read is kept while the preview is folded away, and used again for the same ceiling.
+        if (_preview?.Facts.Ceiling == Ceiling)
+        {
+            Refill();
+            StateHasChanged();
+        }
+        else await Load();
+    }
+
+    internal async Task ChooseAction(Guid? id)
+    {
+        _actionId = id;
+        await Load();
+    }
+
+    // Another of the action's products: filled from what was read, with nothing more read.
+    internal void ChooseProduct(Guid? id)
+    {
+        if (_preview?.Products.FirstOrDefault(p => p.Id == id) is not { } product) return;
+        _preview = _preview.For(product);
+        Refill();
+        StateHasChanged();
+    }
+
+    // What the chosen action and product fill it with, read once, then the draft filled from it.
+    private async Task Load()
+    {
+        var asked = ++_asked;
+        (_preview, _draft, _previewError) = (null, null, null);
+        if (_actionId is { } id)
+        {
+            try
+            {
+                var preview = await OutreachSvc.PreviewAsync(id, Ceiling);
+                if (asked != _asked) return;
+                _preview = preview;
+                Refill();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (asked == _asked) _previewError = UserFacingError.For(ex);
+            }
+        }
+        StateHasChanged();
+    }
+
+    // The draft filled again from what was read; a draft TIDE can't fill says why, as the check does.
+    private void Refill()
+    {
+        _draft = _problem is null ? _preview!.Fill(Subject ?? "", Body ?? "") : null;
+        _previewError = _problem is null ? null : "Fix the draft to preview it: " + _problem;
+    }
+
+    // The text with each marker (a gap left to fill before sending) marked out.
+    private static RenderFragment Marked(string text) => __builder =>
+    {
+        foreach (var run in OutreachFill.Pieces(text))
+        {
+            if (run.Hit) { <mark class="tide-oi-gap">@run.Text</mark> } else { @run.Text }
+        }
+    };
+}
