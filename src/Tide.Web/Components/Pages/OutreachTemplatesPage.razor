@@ -206,9 +206,10 @@ else
         We run {{product.name}} {{product.versions}}. We're looking at the report below and would like to know whether our versions are affected, and if so what you recommend.
 
         {{article.title}}
-        {{article.link}}
+        {{article.link?}}
+        {{article.other-links?}}
 
-        {{article.cves}}
+        {{article.cves?}}
 
         Thank you,
         {{sender.name}}

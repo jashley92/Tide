@@ -15,7 +15,8 @@ public sealed record LibraryFact(string Label, string Value);
 /// what an action fills each with: what the rail's "Fills in" lists.</summary>
 public static partial class LibraryFills
 {
-    [GeneratedRegex(@"\{\{([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    // A name, a modifier after a colon, and an outreach template's closing ? that makes it optional.
+    [GeneratedRegex(@"\{\{([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Pattern();
 
     /// <summary>A saved query's: <c>{{days}}</c>, <c>{{values}}</c> and a kind's values (<c>{{values:sha256}}</c>).</summary>
@@ -41,8 +42,8 @@ public static partial class LibraryFills
     // Each placeholder once, those the describer knows; a name it doesn't know is left out (a template's typo is refused
     // when it's saved, so one is only an old entry's).
     private static List<LibraryFill> Found(string text, Func<string, string?, string?> means) =>
-        [.. Pattern().Matches(text).Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(written => Pattern().Match(written) is var m && means(m.Groups[1].Value.ToLowerInvariant(), m.Groups[2].Success ? m.Groups[2].Value : null) is { } said
-                ? new LibraryFill(written, said) : null)
+        [.. Pattern().Matches(text).DistinctBy(m => m.Value, StringComparer.OrdinalIgnoreCase)
+            .Select(m => means(m.Groups[1].Value.ToLowerInvariant(), m.Groups[2].Success ? m.Groups[2].Value : null) is { } said
+                ? new LibraryFill(m.Value, m.Groups[3].Success ? said + " Left out when there's nothing to fill." : said) : null)
             .OfType<LibraryFill>()];
 }

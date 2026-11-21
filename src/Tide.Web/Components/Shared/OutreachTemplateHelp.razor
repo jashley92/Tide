@@ -1,7 +1,9 @@
 @* What an outreach template's placeholders become, under the box it's written in (Outreach templates). *@
 <div class="form-text" id="@Id">
     Placeholders are filled from the action when the email is written, held to the template's TLP ceiling: a part above
-    it is left out and named. A placeholder TIDE doesn't know is refused when you save.
+    it is left out and named. A placeholder TIDE doesn't know is refused when you save. One with nothing to fill is
+    marked for you to deal with before sending; end it with <span class="tide-data">?</span>, as in
+    <span class="tide-data">{{article.other-links?}}</span>, to drop it instead, with its line when nothing else is on it.
 </div>
 <details class="tide-outreach-help small mt-1">
     <summary>Placeholders</summary>
