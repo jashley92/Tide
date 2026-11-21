@@ -212,6 +212,28 @@ public static partial class OutreachFill
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    // The name TIDE fills that a mistyped one is nearest to: two letters off at most, a typo rather than another word.
+    private static string? Nearest(string name) =>
+        Names.Select(n => (n, d: Distance(name, n))).Where(x => x.d <= 2).OrderBy(x => x.d).Select(x => x.n).FirstOrDefault();
+
+    // How many letters must be added, dropped or changed to turn one name into the other.
+    private static int Distance(string a, string b)
+    {
+        var row = Enumerable.Range(0, b.Length + 1).ToArray();
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var diagonal = row[0];
+            row[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var above = row[j];
+                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), diagonal + (char.ToLowerInvariant(a[i - 1]) == char.ToLowerInvariant(b[j - 1]) ? 0 : 1));
+                diagonal = above;
+            }
+        }
+        return row[b.Length];
+    }
+
     // Every piece between double braces a template may use: {{else}}; or a name with a section's # or / before it, a
     // modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the text
     // written when it's empty ("{{product.contact|there}}"). The check on save says which mixes a template can't use.
@@ -346,12 +368,14 @@ public static partial class OutreachFill
             throw Refused(t, $"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
     }
 
-    // Refuses a name TIDE doesn't fill, or a modifier it doesn't take, saying what it can use.
+    // Refuses a name TIDE doesn't fill, offering the one it was likely meant to be, or a modifier it doesn't take.
     private static void CheckPlaceholder(OutreachToken t)
     {
         var (name, modifier) = (t.Name, t.Modifier);
         if (!Names.Contains(name))
-            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
+            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. " + (Nearest(name) is { } near
+                ? $"Did you mean {{{{{near}}}}}?"
+                : "Insert placeholder lists the ones it does."));
         if (modifier is null) return;
         if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
         {
