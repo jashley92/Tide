@@ -139,6 +139,26 @@
         apply(el, edit);
     }, true);
 
+    // The check's "Show where": the trouble selected in its box. The page heard the text when typing last paused, so if
+    // it has moved since, the nearest place it's written is taken.
+    doc.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-oi-select]');
+        if (!btn) return;
+        var el = doc.getElementById(btn.getAttribute('data-oi-select'));
+        if (!el) return;
+        var text = btn.getAttribute('data-oi-text') || '';
+        var from = parseInt(btn.getAttribute('data-oi-from'), 10) || 0;
+        if (text && el.value.substr(from, text.length) !== text) {
+            var before = el.value.lastIndexOf(text, from), after = el.value.indexOf(text, from);
+            from = before < 0 ? after : after < 0 ? before : (from - before <= after - from ? before : after);
+            if (from < 0) from = 0;
+        }
+        el.focus();
+        el.setSelectionRange(from, Math.min(el.value.length, from + text.length));
+        el.scrollIntoView({ block: 'nearest' });
+        remember(el);
+    });
+
     ['focusin', 'keyup', 'mouseup', 'select'].forEach(function (type) {
         doc.addEventListener(type, function (e) { if (isTarget(e.target)) remember(e.target); }, true);
     });

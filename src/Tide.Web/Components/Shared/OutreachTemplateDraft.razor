@@ -3,19 +3,27 @@
 @inject OutreachService OutreachSvc
 @inject ICurrentUser CurrentUser
 @* Under an outreach template being written (OutreachTemplatesPage): whether TIDE can fill it, checked when typing
-   pauses (js/outreach-editor.js tells the page then) by the check that runs on save (OutreachFill.Check), and, for whoever can try entries on actions, the
-   draft filled for one of their open Outreach actions (OutreachService.PreviewAsync, read only: nothing is saved). The
-   check's line is a status, so a screen reader hears it when it changes, not on every key. *@
+   pauses (js/outreach-editor.js tells the page then) by the check that runs on save (OutreachFill.Check), with a button
+   that selects the trouble in the box it's in; and, for whoever can try entries on actions, the draft filled for one of
+   their open Outreach actions and one of its products, what's left to fill marked. What the action fills it with is read
+   once for the action, product and ceiling (OutreachService.PreviewAsync, read only: nothing is saved), and the draft is
+   filled again from it as the text changes. The check's line is a status, so a screen reader hears it when it changes. *@
 
 <div class="tide-oi-draft">
-    <div id="@CheckId" class="small tide-oi-check @(_problem is null ? "is-ok" : "is-problem")" role="status">
-        @if (_problem is { } problem)
+    <div class="d-flex flex-wrap gap-2 align-items-baseline">
+        <div id="@CheckId" class="small tide-oi-check @(_problem is null ? "is-ok" : "is-problem")" role="status">
+            @if (_problem is { } problem)
+            {
+                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @problem
+            }
+            else
+            {
+                <span class="bi bi-check2" aria-hidden="true"></span> @(_fills == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(_fills, "placeholder")}.")
+            }
+        </div>
+        @if (_where is { } w)
         {
-            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @problem
-        }
-        else
-        {
-            <span class="bi bi-check2" aria-hidden="true"></span> @(_fills == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(_fills, "placeholder")}.")
+            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-oi-select="@w.Field" data-oi-from="@w.Index" data-oi-text="@w.Text">Show where</button>
         }
     </div>
 
@@ -39,25 +47,41 @@
                     }
                     else
                     {
-                        <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The action to preview it on" value="@_actionId"
-                                @onchange="e => ChooseAction(Guid.TryParse(e.Value as string, out var id) ? id : null)">
-                            @foreach (var a in _offered)
+                        <div class="d-flex flex-wrap gap-2">
+                            <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The action to preview it on" value="@_actionId"
+                                    @onchange="e => ChooseAction(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                                @foreach (var a in _offered)
+                                {
+                                    <option value="@a.Id">@Ui.ActionLabel(a.Number) @a.Title</option>
+                                }
+                            </select>
+                            @if (_preview is { Products.Count: > 1 } withProducts)
                             {
-                                <option value="@a.Id">@Ui.ActionLabel(a.Number) @a.Title</option>
+                                <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The product to fill it for" value="@withProducts.Product?.Id"
+                                        @onchange="e => ChooseProduct(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                                    @foreach (var p in withProducts.Products)
+                                    {
+                                        <option value="@p.Id">@p.Name</option>
+                                    }
+                                </select>
                             }
-                        </select>
+                        </div>
                         @if (_previewError is { } error)
                         {
                             <p class="small tide-muted mb-0 mt-1">@error</p>
                         }
-                        else if (_preview is { } p)
+                        else if (_draft is { } d)
                         {
-                            <pre class="tide-email-text mt-1 mb-0">Subject: @p.Draft.Subject
+                            <pre class="tide-email-text mt-1 mb-0">Subject: @Marked(d.Subject)
 
-@p.Draft.Body</pre>
-                            @if (p.Draft.LeftOut.Count > 0)
+@Marked(d.Body)</pre>
+                            @if (d.Unfilled.Count > 0)
                             {
-                                <p class="small tide-muted mb-0 mt-1">Left out: @string.Join(" ", p.Draft.LeftOut)</p>
+                                <p class="small tide-oi-to-fix mb-0 mt-1">To fill before sending: @string.Join(", ", d.Unfilled).</p>
+                            }
+                            @if (d.LeftOut.Count > 0)
+                            {
+                                <p class="small tide-muted mb-0 mt-1">Left out: @string.Join(" ", d.LeftOut)</p>
                             }
                         }
                     }
@@ -70,45 +94,57 @@
 @code {
     /// <summary>The check line's id, which the subject and body name in aria-describedby.</summary>
     [Parameter, EditorRequired] public string CheckId { get; set; } = "";
+    /// <summary>The subject's box, which "Show where" selects in.</summary>
+    [Parameter, EditorRequired] public string SubjectId { get; set; } = "";
+    /// <summary>The body's box.</summary>
+    [Parameter, EditorRequired] public string BodyId { get; set; } = "";
     [Parameter] public string? Subject { get; set; }
     [Parameter] public string? Body { get; set; }
     [Parameter] public TlpLevel Ceiling { get; set; }
 
     private string? _problem;
+    private (string Field, int Index, string Text)? _where;
     private int _fills;
     private bool _previewing;
     private IReadOnlyList<WorkableAction>? _offered;
-    private Guid? _actionId;
-    private OutreachWritten? _preview;
+    private Guid? _actionId, _productId;
+    private OutreachPreview? _preview;
+    private TlpLevel _previewCeiling;
+    private OutreachDraft? _draft;
     private string? _previewError;
     private (string? Subject, string? Body, TlpLevel Ceiling)? _seen;
     private int _asked;
 
     internal string? Problem => _problem;
-    internal OutreachWritten? Preview => _preview;
+    internal OutreachDraft? Draft => _draft;
 
-    // The page hears the subject and body when typing pauses, so they're checked (and the preview filled) then.
+    // The page hears the subject and body when typing pauses, so they're checked (and the preview filled) then. The facts
+    // are read again only for another ceiling.
     protected override async Task OnParametersSetAsync()
     {
         var now = (Subject, Body, Ceiling);
         if (_seen == now) return;
-        var first = _seen is null;
         _seen = now;
         Check();
-        if (!first && _previewing) await Fill();
+        if (!_previewing) return;
+        if (_preview is not null && _previewCeiling == Ceiling) Refill();
+        else await Load();
     }
 
-    // The check that runs on save, on the subject and the body, and how many placeholders it found.
+    // The check that runs on save, on the subject and the body: how many placeholders it found, or what's wrong and where.
     internal void Check()
     {
         _fills = LibraryFills.OfTemplate(Subject ?? "", Body ?? "").Count;
-        try
+        (_problem, _where) = (null, null);
+        foreach (var (field, text) in new[] { (SubjectId, Subject ?? ""), (BodyId, Body ?? "") })
         {
-            OutreachFill.Check(Subject ?? "");
-            OutreachFill.Check(Body ?? "");
-            _problem = null;
+            try { OutreachFill.Check(text); }
+            catch (OutreachTemplateException ex)
+            {
+                (_problem, _where) = (ex.Message, (field, ex.Index, text.Substring(ex.Index, ex.Length)));
+                return;
+            }
         }
-        catch (ArgumentException ex) { _problem = ex.Message; }
     }
 
     internal async Task TogglePreview()
@@ -121,33 +157,65 @@
             _offered = [.. workable.Where(a => LibraryUseService.Suits(LibraryKind.OutreachTemplate, a.Kind))];
             _actionId ??= (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
         }
-        await Fill();
+        await Load();
     }
 
     internal async Task ChooseAction(Guid? id)
     {
-        _actionId = id;
-        await Fill();
+        (_actionId, _productId) = (id, null);
+        await Load();
     }
 
-    // The draft filled for the action chosen; a draft TIDE can't fill says why, as the check does.
-    private async Task Fill()
+    internal async Task ChooseProduct(Guid? id)
+    {
+        _productId = id;
+        await Load();
+    }
+
+    // What the chosen action and product fill it with, read once, then the draft filled from it.
+    private async Task Load()
     {
         var asked = ++_asked;
-        if (_actionId is not { } id) (_preview, _previewError) = (null, null);
-        else if (_problem is { } problem) (_preview, _previewError) = (null, "Fix the draft to preview it: " + problem);
-        else
+        (_preview, _draft, _previewError) = (null, null, null);
+        if (_actionId is { } id)
         {
             try
             {
-                var written = await OutreachSvc.PreviewAsync(id, Subject ?? "", Body ?? "", Ceiling);
-                if (asked == _asked) (_preview, _previewError) = (written, null);
+                var preview = await OutreachSvc.PreviewAsync(id, Ceiling, _productId);
+                if (asked != _asked) return;
+                (_preview, _previewCeiling) = (preview, Ceiling);
+                Refill();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (asked == _asked) (_preview, _previewError) = (null, UserFacingError.For(ex));
+                if (asked == _asked) _previewError = UserFacingError.For(ex);
             }
         }
         StateHasChanged();
     }
+
+    // The draft filled again from what was read; a draft TIDE can't fill says why, as the check does.
+    private void Refill()
+    {
+        if (_preview is null) return;
+        (_draft, _previewError) = _problem is { } problem ? (null, "Fix the draft to preview it: " + problem)
+            : (_preview.Fill(Subject ?? "", Body ?? ""), (string?)null);
+        StateHasChanged();
+    }
+
+    // The text with each marker (a gap left to fill before sending) marked out.
+    private static RenderFragment Marked(string text) => __builder =>
+    {
+        foreach (var (piece, isMarker) in OutreachFill.Pieces(text))
+        {
+            if (isMarker)
+            {
+                <mark class="tide-oi-gap">@piece</mark>
+            }
+            else
+            {
+                @piece
+            }
+        }
+    };
 }

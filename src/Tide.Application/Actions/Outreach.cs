@@ -22,6 +22,27 @@ public sealed record OutreachWritten(OutreachTemplate Template, OutreachDraft Dr
     public string To => Recipients.Count > 0 ? Recipients[0].Address : "";
 }
 
+/// <summary>
+/// What a template being written is filled from on one action, read once (<see cref="OutreachService.PreviewAsync"/>):
+/// the draft is filled again from it as the text changes, with nothing more read.
+/// </summary>
+public sealed class OutreachPreview(OutreachFacts facts, IReadOnlyList<StackProduct> products, StackProduct? product)
+{
+    /// <summary>The products the action names, any of which the preview can be filled for.</summary>
+    public IReadOnlyList<StackProduct> Products { get; } = products;
+
+    /// <summary>The product it's filled for.</summary>
+    public StackProduct? Product { get; } = product;
+
+    /// <summary>The subject and body filled. Text <see cref="OutreachFill.Check"/> refuses is refused.</summary>
+    public OutreachDraft Fill(string subject, string body)
+    {
+        OutreachFill.Check(subject);
+        OutreachFill.Check(body);
+        return OutreachFill.Fill(subject, body, facts);
+    }
+}
+
 /// <summary>What the analyst marks sent: the template it came from, to whom, and the subject and body as they sent them.</summary>
 public sealed class OutreachSend
 {
@@ -137,22 +158,41 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     }
 
     /// <summary>
-    /// A template not yet saved, as it's being written, filled for the action as <see cref="WriteAsync(Guid, Guid, Guid?, IReadOnlyList{StackProduct}?, CancellationToken)"/>
-    /// fills a saved one, for whoever works the action. Saves nothing. Text <see cref="OutreachFill.Check"/> refuses is refused.
+    /// What a template not yet saved, as it's being written, is filled from on the action, as
+    /// <see cref="WriteAsync(Guid, Guid, Guid?, IReadOnlyList{StackProduct}?, CancellationToken)"/> fills a saved one, for
+    /// whoever works the action, held to <paramref name="ceiling"/> and for <paramref name="productId"/> (else the first
+    /// product the action names). Read once, whichever placeholders the text uses, so the draft is filled again as it
+    /// changes without reading more. Saves nothing.
     /// </summary>
-    public async Task<OutreachWritten> PreviewAsync(Guid actionId, string subject, string body, TlpLevel ceiling, CancellationToken ct = default)
+    public async Task<OutreachPreview> PreviewAsync(Guid actionId, TlpLevel ceiling, Guid? productId = null, CancellationToken ct = default)
     {
-        OutreachFill.Check(subject);
-        OutreachFill.Check(body);
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.HuntActionAsync(db, actionId, tracked: false, ct);
         await ActionService.RequireWork(db, user, a, ct);
-        var draft = new OutreachTemplate { Name = "This draft", Subject = subject, Body = body, Ceiling = ceiling };
-        return await WriteAsync(db, a, draft, null, null, ct);
+        var (facts, product, products) = await FactsAsync(db, a, ceiling, _ => true, productId, null, ct);
+        return new OutreachPreview(facts, products, product);
     }
 
     private async Task<OutreachWritten> WriteAsync(IAppDbContext db, ActionItem a, OutreachTemplate template, Guid? productId, IReadOnlyList<StackProduct>? products,
         CancellationToken ct)
+    {
+        bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
+                                  || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
+        var (facts, product, all) = await FactsAsync(db, a, template.Ceiling, Uses, productId, products, ct);
+        var draft = OutreachFill.Fill(template.Subject, template.Body, facts);
+
+        var to = new List<OutreachRecipient>();
+        if (template.To is { } fixedTo) to.Add(new(fixedTo, "the template's address"));
+        foreach (var p in all.Prepend(product).OfType<StackProduct>().DistinctBy(p => p.Id))
+            if (!string.IsNullOrWhiteSpace(p.ContactEmail) && !to.Exists(r => string.Equals(r.Address, p.ContactEmail, StringComparison.OrdinalIgnoreCase)))
+                to.Add(new(p.ContactEmail, $"{p.Name}'s contact{(p.ContactName is { } n ? ", " + n : "")}"));
+        return new OutreachWritten(template, draft, to, product);
+    }
+
+    // What the action fills a template held to the ceiling with, for the product, and the products it names. What TIDE
+    // knows of the CVEs, and the other reports added to the article, are read only when the template uses them.
+    private async Task<(OutreachFacts Facts, StackProduct? Product, IReadOnlyList<StackProduct> Products)> FactsAsync(IAppDbContext db, ActionItem a,
+        TlpLevel ceiling, Func<string, bool> uses, Guid? productId, IReadOnlyList<StackProduct>? products, CancellationToken ct)
     {
         // The article's parts the cut reads, beside the indicators the hunt loader brought.
         if (a.Article is { } article)
@@ -160,19 +200,15 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             article.Bullets = await db.ArticleBullets.AsNoTracking().Where(b => b.ArticleId == article.Id).ToListAsync(ct);
             article.Cves = await db.ArticleCves.AsNoTracking().Where(c => c.ArticleId == article.Id).ToListAsync(ct);
         }
-        var cut = OutreachFill.Cut(a.Article, a.Indicators.Count, template.Ceiling);
+        var cut = OutreachFill.Cut(a.Article, a.Indicators.Count, ceiling);
         // Only what the ceiling lets through is merged, as a hunt merges the article's indicators and the action's own.
         var indicators = ActionService.HuntIndicators(cut.Article is null ? [] : a.Article!.Indicators, cut.OwnIndicators ? a.Indicators : []);
 
-        // What TIDE knows of the CVEs, and the other reports added to the article: read only when the ceiling lets the
-        // article through and the template has a placeholder that shows them.
-        bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
-                                  || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
-        var cveIds = Uses(OutreachFill.CvesName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
+        var cveIds = uses(OutreachFill.CvesName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
         List<string> links = [];
-        if (cut.Article is { } kept && Uses(OutreachFill.OtherLinksName))
+        if (cut.Article is { } kept && uses(OutreachFill.OtherLinksName))
         {
             var id = kept.Article.Id;
             links = await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == id)
@@ -190,7 +226,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         var baseUrl = app.Value.BaseUrl?.TrimEnd('/');
         var facts = new OutreachFacts
         {
-            Ceiling = template.Ceiling,
+            Ceiling = ceiling,
             FromArticle = a.Article is not null,
             Article = cut.Article,
             Cves = cves,
@@ -208,14 +244,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             Days = clock.Days,
             LeftOut = cut.LeftOut,
         };
-        var draft = OutreachFill.Fill(template.Subject, template.Body, facts);
-
-        var to = new List<OutreachRecipient>();
-        if (template.To is { } fixedTo) to.Add(new(fixedTo, "the template's address"));
-        foreach (var p in products.Prepend(product).OfType<StackProduct>().DistinctBy(p => p.Id))
-            if (!string.IsNullOrWhiteSpace(p.ContactEmail) && !to.Exists(r => string.Equals(r.Address, p.ContactEmail, StringComparison.OrdinalIgnoreCase)))
-                to.Add(new(p.ContactEmail, $"{p.Name}'s contact{(p.ContactName is { } n ? ", " + n : "")}"));
-        return new OutreachWritten(template, draft, to, product);
+        return (facts, product, products);
     }
 
     // The sender's team: the action's when they're on it, else the first of theirs by name, else the organization's.

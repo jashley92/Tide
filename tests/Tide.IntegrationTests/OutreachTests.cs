@@ -238,19 +238,23 @@ public class OutreachServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ADraft_IsFilledAsASavedTemplateIs_SavesNothing_AndIsRefusedWhenTideCantFillIt()
+    public async Task ADraft_IsFilledAsASavedTemplateIs_FromWhatsReadOnce_SavesNothing_AndIsRefusedWhenTideCantFillIt()
     {
         var (action, _) = await Scene();
-        var w = await _db.Outreach().PreviewAsync(action.Id, "{{product.name}}: are we affected? [{{tlp}}]", Body, TlpLevel.Green);
-        w.Draft.Body.Should().Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n");
-        w.Draft.Marking.Should().Be(TlpLevel.Green);
+        var preview = await _db.Outreach().PreviewAsync(action.Id, TlpLevel.Green);
+        var d = preview.Fill("{{product.name}}: are we affected? [{{tlp}}]", Body);
+        d.Body.Should().Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n");
+        d.Marking.Should().Be(TlpLevel.Green);
+        preview.Fill("{{article.cve-links}}", "x").Subject.Should().Contain("nvd.nist.gov", "read once, whichever placeholders the text uses");
+        preview.Products.Should().NotBeEmpty();
+        preview.Product.Should().Be(preview.Products[0]);
         (await _db.OutreachTemplates().ListAsync()).Should().BeEmpty("a preview saves no template");
         (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty();
 
-        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, "x", "{{article.titel}}", TlpLevel.Green))
-            .Should().ThrowAsync<ArgumentException>().WithMessage("{{article.titel}} isn't a placeholder TIDE fills*");
+        FluentActions.Invoking(() => preview.Fill("x", "{{article.titel}}"))
+            .Should().Throw<ArgumentException>().WithMessage("{{article.titel}} isn't a placeholder TIDE fills*");
         As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
-        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, "x", "y", TlpLevel.Green)).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, TlpLevel.Green)).Should().ThrowAsync<ForbiddenException>();
     }
 
     [Fact]
@@ -634,32 +638,35 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheDraft_SaysWhetherTideCanFillIt_AndPreviewsItOnAnOpenAction()
+    public async Task TheDraft_SaysWhetherTideCanFillIt_AndWhere_AndPreviewsItOnAnOpenAction_ItsGapsMarked()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         var number = await OutreachAction("Ask the vendor " + tag);
         await using (var bad = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
         {
-            ["CheckId"] = "c", ["Subject"] = "About {{action.number}}", ["Body"] = "{{#article.cves}}\nCVEs", ["Ceiling"] = TlpLevel.Clear,
+            ["CheckId"] = "c", ["SubjectId"] = "s", ["BodyId"] = "b", ["Subject"] = "About {{action.number}}", ["Body"] = "Hi\n{{#article.cves}}\nCVEs",
+            ["Ceiling"] = TlpLevel.Clear,
         }))
         {
             bad.Component.Problem.Should().Be("{{#article.cves}} is never closed: end the section with {{/article.cves}}.");
-            (await bad.Html()).Should().Contain("class=\"small tide-oi-check is-problem\" role=\"status\"");
+            (await bad.Html()).Should().Contain("class=\"small tide-oi-check is-problem\" role=\"status\"")
+                .And.Contain("data-oi-select=\"b\" data-oi-from=\"3\" data-oi-text=\"{{#article.cves}}\">Show where</button>", "it selects the trouble in its box");
         }
 
         await using var r = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
         {
-            ["CheckId"] = "c", ["Subject"] = "About {{action.number}}", ["Ceiling"] = TlpLevel.Clear,
-            ["Body"] = "Hello {{product.contact|there}},\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{else}}\nNo CVEs yet.\n{{/article.cves}}",
+            ["CheckId"] = "c", ["SubjectId"] = "s", ["BodyId"] = "b", ["Subject"] = "About {{action.number}}", ["Ceiling"] = TlpLevel.Clear,
+            ["Body"] = "Hello {{product.contact|there}},\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{else}}\nNo CVEs yet.\n{{/article.cves}}\n{{product.versions}}",
         });
         r.Component.Problem.Should().BeNull();
-        (await r.Html()).Should().Contain("TIDE can fill this: 4 placeholders.").And.Contain("Preview this draft on an action");
+        (await r.Html()).Should().Contain("TIDE can fill this: 5 placeholders.").And.Contain("Preview this draft on an action").And.NotContain("Show where");
         await r.Click(d => d.TogglePreview());
         var action = (await Read(number)).Action;
         await r.Click(d => d.ChooseAction(action.Id));
-        r.Component.Preview!.Draft.Subject.Should().Be($"About A-{number}");
-        r.Component.Preview.Draft.Body.Should().EndWith("Hello there,\n\nNo CVEs yet.\n");
-        (await r.Html()).Should().Contain($"Subject: About A-{number}");
+        r.Component.Draft!.Subject.Should().Be($"About A-{number}");
+        r.Component.Draft.Body.Should().EndWith("Hello there,\n\nNo CVEs yet.\n[[product.versions: nothing to fill]]\n");
+        (await r.Html()).Should().Contain($"Subject: About A-{number}")
+            .And.Contain("<mark class=\"tide-oi-gap\">[[product.versions: nothing to fill]]</mark>").And.Contain("To fill before sending: {{product.versions}}.");
     }
 
     [Fact]

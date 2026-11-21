@@ -290,6 +290,19 @@ public class OutreachFillTests
     public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
 
+    // Every refusal says where the trouble is, so the editor can select it.
+    [Theory]
+    [InlineData("Hi {{article.titel}} there", "{{article.titel}}")]
+    [InlineData("Hi {{article.cves?|x}}", "{{article.cves?|x}}")]
+    [InlineData("a {{#article.cves}} b", "{{#article.cves}}")]
+    [InlineData("{{#article.cves}}a{{/indicators}}", "{{/indicators}}")]
+    [InlineData("{{#article.cves}}{{article.cves}}{{/article.cves}} {{today: +2}}", "{{today: +2}}")]
+    public void Check_SaysWhereTheTroubleIs(string text, string at)
+    {
+        var refused = FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<OutreachTemplateException>().Which;
+        text.Substring(refused.Index, refused.Length).Should().Be(at);
+    }
+
     // The one reading of the syntax the check, the fill and the Library rail share.
     [Fact]
     public void Tokens_ReadEachPieceBetweenBraces_AsTheCheckAndTheFillDo()

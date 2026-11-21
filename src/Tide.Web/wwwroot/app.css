@@ -1495,6 +1495,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-oi-check { min-height: 1.3rem; margin-top: .25rem; }
 .tide-oi-check.is-ok { color: var(--tide-ok); }
 .tide-oi-check.is-problem { color: var(--tide-warn); }
+/* In the preview, a gap left to fill before sending, and the line that names them. */
+.tide-oi-gap { padding: 0 .15rem; border-radius: var(--tide-radius-sm); background: var(--tide-warn-soft); color: inherit; }
+.tide-oi-to-fix { color: var(--tide-warn); }
 @media (max-width: 575.98px) { .tide-oi-choice, .tide-oi-suggest [role="option"] { grid-template-columns: 1fr; gap: 0; } }
 .tide-load { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
 .tide-load-nums { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; text-align: center; margin: .4rem 0 .8rem; }
