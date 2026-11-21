@@ -254,7 +254,7 @@ public class OutreachServiceTests : IDisposable
         var other = new StackProduct { Name = "Other Gateway", Versions = "9.1" };
         preview.For(other).Fill("{{product.name}} {{product.versions}}", "x").Subject.Should().Be("Other Gateway 9.1", "another product, with nothing more read");
         (await _db.OutreachTemplates().ListAsync()).Should().BeEmpty("a preview saves no template");
-        (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty();
+        (await Detail(action)).Action.Outreach.Should().BeEmpty();
 
         FluentActions.Invoking(() => preview.Fill("x", "{{article.titel}}"))
             .Should().Throw<ArgumentException>().WithMessage("{{article.titel}} isn't a placeholder TIDE fills*");
