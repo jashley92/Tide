@@ -290,6 +290,21 @@ public class OutreachFillTests
     public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
 
+    // Spaces after {{ with nothing to close them are read once, not tried every way they could split: a template of them
+    // can't hold the server up.
+    [Theory]
+    [InlineData("{{")]
+    [InlineData("{{#")]
+    [InlineData("{{article.title|")]
+    public void ALongRunOfSpacesAfterBraces_IsReadQuickly(string start)
+    {
+        var text = start + new string(' ', 30_000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        OutreachFill.Check(text);
+        OutreachFill.Tokens(text).Should().BeEmpty();
+        watch.ElapsedMilliseconds.Should().BeLessThan(200);
+    }
+
     // The one reading of the syntax the check, the fill and the Library rail share.
     [Fact]
     public void Tokens_ReadEachPieceBetweenBraces_AsTheCheckAndTheFillDo()
