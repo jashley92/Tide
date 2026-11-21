@@ -175,7 +175,7 @@ public static partial class OutreachFill
     {
         public string Written => Kind == 'e' ? "{{" + ElseName + "}}" : "{{" + Kind + Name + (Modifier is null ? "" : ":" + Modifier) + "}}";
 
-        public bool Closes(SectionTag open) => string.Equals(Name, open.Name, StringComparison.OrdinalIgnoreCase)
+        public bool Closes(SectionTag open) => Name == open.Name
                                                && string.Equals(Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -198,14 +198,12 @@ public static partial class OutreachFill
         return tags;
     }
 
-    // Refuses sections that don't pair up, or are about a placeholder TIDE doesn't fill; gives the text without their tags.
-    private static string CheckSections(string text)
+    // Refuses sections that don't pair up, or are about a placeholder TIDE doesn't fill.
+    private static void CheckSections(List<SectionTag> tags)
     {
         SectionTag? open = null;
         var sawElse = false;
-        var rest = new StringBuilder();
-        var pos = 0;
-        foreach (var t in Tags(text))
+        foreach (var t in tags)
         {
             switch (t.Kind)
             {
@@ -228,11 +226,8 @@ public static partial class OutreachFill
                     open = null;
                     break;
             }
-            rest.Append(text, pos, t.Start - pos).Append('\n');
-            pos = t.End;
         }
         if (open is not null) throw new ArgumentException($"{open.Written} is never closed: end the section with {{{{/{open.Name}}}}}.");
-        return rest.Append(text, pos, text.Length - pos).ToString();
     }
 
     /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
@@ -273,7 +268,9 @@ public static partial class OutreachFill
     /// </summary>
     public static void Check(string text)
     {
-        var rest = CheckSections(text ?? "");
+        text ??= "";
+        CheckSections(Tags(text));
+        var rest = SectionPattern().Replace(text, "\n");
         foreach (Match m in Pattern().Matches(rest))
         {
             var name = m.Groups[1].Value;
@@ -386,15 +383,19 @@ public static partial class OutreachFill
         var unfilled = new List<string>();
         var used = new HashSet<string>(StringComparer.Ordinal);
 
-        // A placeholder's label as markers write it, and its value, TLP and whether the ceiling held it back.
+        // A placeholder's label as markers write it, and its value, TLP and whether the ceiling held it back; worked out
+        // once, though a section's tag and the placeholder inside it both ask.
+        var looked = new Dictionary<(string, string?), (string, string?, TlpLevel, bool)>();
         (string Label, string? Value, TlpLevel Tlp, bool Above) Look(string name, string? modifier)
         {
             used.Add(name);
+            var key = (name, modifier?.ToLowerInvariant());
+            if (looked.TryGetValue(key, out var seen)) return seen;
             var scope = modifier is not null && name == IndicatorsName ? HuntQueryBuilder.KindNamed(modifier) : null;
             var ahead = modifier is not null && name == TodayName ? DaysAheadOf(modifier) : null;
             var label = scope is { } k ? IndicatorsNameOf(k) : ahead is { } n ? $"{TodayName}:{n:+0;-0}" : name;
             var (value, tlp, above) = ValueOf(name, scope, ahead, facts);
-            return (label, value, tlp, above);
+            return looked[key] = (label, value, tlp, above);
         }
 
         // Each section kept as its first branch when its placeholder has a value, else as what follows {{else}} (or
@@ -402,10 +403,10 @@ public static partial class OutreachFill
         // don't pair up are refused when a template is saved; an older one that slipped through is left as it is.
         string Sections(string text)
         {
-            try { CheckSections(text); }
-            catch (ArgumentException) { return text; }
             var tags = Tags(text);
             if (tags.Count == 0) return text;
+            try { CheckSections(tags); }
+            catch (ArgumentException) { return text; }
             var sb = new StringBuilder();
             var pos = 0;
             var (inside, has, inElse) = (false, false, false);
