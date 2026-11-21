@@ -109,4 +109,23 @@ public class OutreachEditorTransformTests
             .Should().Be("Hi\n{{#indicators}}\n{{indicators}}\n{{else}}\n{{/indicators}}\n there", "its tags on lines of their own");
         Applied("Re: ", said.GetProperty("sectionInline")).Text.Should().Be("Re: {{#article.cves}}{{article.cves}}{{/article.cves}}");
     }
+
+    // The editor writes the syntax itself: what it writes has to pass the check a template meets when it's saved.
+    [Fact]
+    public async Task WhatTheEditorWrites_PassesTheCheckOnSave()
+    {
+        var said = await Run();
+        var written = new[]
+        {
+            Applied("See {{cve and", said.GetProperty("complete")).Text,
+            Applied("{{#ind", said.GetProperty("completeSection")).Text + "{{/indicators}}",
+            Applied("Hello , thanks", said.GetProperty("insert")).Text,
+            Applied("Hi\nCVEs:\n{{article.cves}}\nBye", said.GetProperty("sectionAroundLines")).Text,
+            Applied("Hi\n", said.GetProperty("sectionNothingSelected")).Text,
+            Applied("Hi there", said.GetProperty("sectionMidLine")).Text,
+            Applied("Re: ", said.GetProperty("sectionInline")).Text,
+        };
+        foreach (var text in written)
+            FluentActions.Invoking(() => Tide.Application.Actions.OutreachFill.Check(text)).Should().NotThrow(text);
+    }
 }

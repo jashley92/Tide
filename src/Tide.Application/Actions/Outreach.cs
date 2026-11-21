@@ -147,7 +147,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.HuntActionAsync(db, actionId, tracked: false, ct);
         await ActionService.RequireWork(db, user, a, ct);
-        var draft = new OutreachTemplate { Name = "This draft", Subject = subject ?? "", Body = body ?? "", Ceiling = ceiling };
+        var draft = new OutreachTemplate { Name = "This draft", Subject = subject, Body = body, Ceiling = ceiling };
         return await WriteAsync(db, a, draft, null, null, ct);
     }
 

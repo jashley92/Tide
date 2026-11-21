@@ -1,13 +1,14 @@
 // Writing an outreach template (OutreachTemplatesPage, OutreachInsertMenu.razor). CSP-safe: an external file, wired by
 // event delegation, so Blazor needs no interop call. In a form marked [data-oi] (its placeholders in data-oi-names, as
-// JSON [{ n: name, d: what it becomes }]), the subject and body ([data-oi-target]) take placeholders two ways:
+// JSON [{ n: name, d: what it becomes, s: whether a section can be about it }]), the subject and body ([data-oi-target]) take placeholders two ways:
 //   - The Insert menu's buttons: [data-oi-insert] puts its text where the cursor was in the box last used (the body
 //     when none was); [data-oi-section] wraps what was selected in that placeholder's section, or starts one round it.
 //   - Typing "{{" (or "{{#", "{{/") opens a list of the names that match what follows, under the box ([data-oi-list-for]).
 //     Up and Down move through it, Enter or Tab writes the name and closes the braces, Escape closes the list.
 // Edits go through execCommand('insertText') where the browser has it, so Ctrl+Z undoes them, and fire an input event
-// (and a change event) so Blazor's binding hears them. The text work is small pure functions on { text, start, end }
-// (window.tideOutreachEditor.transforms), testable apart.
+// and a change event so Blazor's binding hears them. Typing fires a change too, a moment after the last key, so the page
+// hears the draft (and checks it) when typing pauses rather than on every key or only on leaving the box. The text work
+// is small pure functions on { text, start, end }, testable apart.
 (function (root) {
     'use strict';
 
@@ -16,14 +17,14 @@
     // What's typed after the last "{{" before the cursor on its line, when it could still become a placeholder's name.
     var OPEN = /\{\{([#/]?)([A-Za-z0-9.:+\-]{0,40})$/;
 
-    function suggest(state, inline) {
+    function suggest(state) {
         if (state.start !== state.end) return null;
         var before = state.text.slice(Math.max(0, state.start - 48), state.start);
         var lineStart = before.lastIndexOf('\n');
         if (lineStart >= 0) before = before.slice(lineStart + 1);
         var m = OPEN.exec(before);
         if (!m) return null;
-        return { from: state.start - m[0].length, sign: m[1], query: m[2], inline: !!inline };
+        return { from: state.start - m[0].length, sign: m[1], query: m[2] };
     }
 
     // The names that start with what's typed, then those with a part that does ("cves" finds article.cves), at most 8.
@@ -148,6 +149,7 @@
     function statusFor(el) { var form = scope(el); return form ? form.querySelector('[data-oi-status]') : null; }
 
     function close(el) {
+        if (!el.__oiFound) return;
         var list = listFor(el);
         if (list && !list.hidden) {
             list.hidden = true;
@@ -168,15 +170,15 @@
         opts.forEach(function (o, k) { o.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
         el.__oiActive = i;
         el.setAttribute('aria-activedescendant', opts[i].id);
-        opts[i].scrollIntoView({ block: 'nearest' });
+        if (root.tideCombo) root.tideCombo.reveal(opts[i].id);
     }
 
     function open(el) {
         var form = scope(el), list = listFor(el);
         if (!form || !list) return;
-        var found = suggest(stateOf(el), inline(el));
-        // A section's tag ("{{#", "{{/") takes neither {{else}} nor {{tlp}}.
-        var names = found && found.sign ? namesOf(form).filter(function (p) { return p.n !== 'else' && p.n !== 'tlp'; }) : namesOf(form);
+        var found = suggest(stateOf(el));
+        // A section's tag ("{{#", "{{/") takes only a name a section can be about.
+        var names = found && found.sign ? namesOf(form).filter(function (p) { return p.s; }) : namesOf(form);
         var shown = found ? matches(names, found.query) : [];
         if (!found || !shown.length) { close(el); return; }
         el.__oiFound = found;
@@ -191,7 +193,7 @@
             name.className = 'tide-data';
             name.textContent = '{{' + found.sign + p.n + '}}';
             var what = doc.createElement('span');
-            what.className = 'tide-oi-suggest-what';
+            what.className = 'tide-oi-what';
             what.textContent = p.d;
             li.appendChild(name);
             li.appendChild(what);
@@ -211,7 +213,15 @@
         apply(el, complete(stateOf(el), found, name));
     }
 
-    doc.addEventListener('input', function (e) { if (isTarget(e.target)) open(e.target); });
+    // What's typed is offered as it's typed, and heard by the page when typing pauses.
+    var PAUSE_MS = 500;
+    doc.addEventListener('input', function (e) {
+        var el = e.target;
+        if (!isTarget(el)) return;
+        open(el);
+        clearTimeout(el.__oiPause);
+        el.__oiPause = setTimeout(function () { el.dispatchEvent(new Event('change', { bubbles: true })); }, PAUSE_MS);
+    });
 
     doc.addEventListener('keydown', function (e) {
         var el = e.target;
@@ -243,5 +253,4 @@
 
     doc.addEventListener('focusout', function (e) { if (isTarget(e.target)) close(e.target); });
 
-    root.tideOutreachEditor = { transforms: transforms };
 })(typeof window !== 'undefined' ? window : this);

@@ -169,14 +169,14 @@ else
                     <label class="tide-field-label" for="ot-f-subject">Subject</label>
                     <input id="ot-f-subject" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxSubject" placeholder="{{product.name}}: are we affected by {{article.cves}}?"
                            data-oi-target aria-autocomplete="list" aria-controls="ot-f-subject-list" aria-describedby="ot-f-check ot-f-type-help"
-                           @bind="f.Subject" @bind:event="oninput" />
+                           @bind="f.Subject" />
                     <ul id="ot-f-subject-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="ot-f-subject" hidden></ul>
                 </div>
                 <div class="col-12 tide-oi-field">
                     <label class="tide-field-label" for="ot-f-body">Body</label>
                     <textarea id="ot-f-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachTemplate.MaxBody"
                               data-oi-target data-oi-default aria-autocomplete="list" aria-controls="ot-f-body-list" aria-describedby="ot-f-check ot-f-body-help"
-                              @bind="f.Body" @bind:event="oninput"></textarea>
+                              @bind="f.Body"></textarea>
                     <ul id="ot-f-body-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="ot-f-body" hidden></ul>
                     <OutreachTemplateDraft CheckId="ot-f-check" Subject="@f.Subject" Body="@f.Body" Ceiling="f.Ceiling" />
                     <span class="visually-hidden" role="status" data-oi-status></span>
@@ -209,10 +209,11 @@ else
         FocusList();
     }
 
-    // What typing {{ offers (js/outreach-editor.js): every placeholder, and a section's {{else}}.
+    // What typing {{ offers (js/outreach-editor.js): every placeholder, whether a section can be about it, and a
+    // section's {{else}}.
     private static readonly string SuggestNames = System.Text.Json.JsonSerializer.Serialize(
-        OutreachFill.All.Select(p => new { n = p.Name, d = p.Description })
-            .Append(new { n = OutreachFill.ElseName, d = "Inside a section: what follows is written when there's nothing to fill." }));
+        OutreachFill.All.Select(p => new { n = p.Name, d = p.Description, s = p.MayBeEmpty })
+            .Append(new { n = OutreachFill.ElseName, d = "Inside a section: what follows is written when there's nothing to fill.", s = false }));
 
     // A new template starts from a common question, so the placeholders are there to keep or cut.
     internal const string StarterSubject = "{{product.name}}: are we affected? ({{article.title}})";

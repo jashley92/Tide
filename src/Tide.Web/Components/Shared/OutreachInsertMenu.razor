@@ -42,7 +42,7 @@
                     <div class="tide-field-label mb-1">Insert <span class="tide-data">@c.Written</span></div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <button type="button" class="btn btn-primary btn-sm" data-oi-insert="@("{{" + name + "}}")" @onclick="Close">As it is</button>
-                        @if (!IsTlp(name))
+                        @if (c.MayBeEmpty)
                         {
                             <button type="button" class="btn btn-outline-secondary btn-sm" data-oi-insert="@("{{" + name + "?}}")" @onclick="Close"
                                     title="Dropped when there's nothing to fill, with its line when nothing else is on it">Optional</button>
@@ -50,7 +50,7 @@
                                     title="Round what's selected: kept only when there's something to fill, with an else part for when there isn't">As a section</button>
                         }
                     </div>
-                    @if (!IsTlp(name))
+                    @if (c.MayBeEmpty)
                     {
                         <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
                             <label class="small" for="@(PanelId + "-instead")">Or, when there's nothing to fill, write</label>
@@ -80,8 +80,6 @@
     // The text for when it's empty, as a placeholder can carry it: on one line, no braces.
     private string Instead => new string([.. (_instead ?? "").Where(ch => ch is not ('{' or '}' or '\r' or '\n'))]).Trim();
 
-    private static bool IsTlp(string name) => string.Equals(name, OutreachFill.TlpName, StringComparison.OrdinalIgnoreCase);
-
     /// <summary>The placeholders whose name or description has every word typed.</summary>
     internal IEnumerable<OutreachPlaceholder> Shown
     {
@@ -92,9 +90,6 @@
                                                            || p.Description.Contains(w, StringComparison.OrdinalIgnoreCase)));
         }
     }
-
-    internal bool IsOpen => _open;
-    internal OutreachPlaceholder? Chosen => _chosen;
 
     internal void Toggle()
     {
@@ -110,7 +105,7 @@
     }
 
     // After an insert the cursor is in the box written to (js/outreach-editor.js): focus stays there.
-    internal void Close() => _open = false;
+    private void Close() => _open = false;
 
     private void Keys(KeyboardEventArgs e)
     {
@@ -121,7 +116,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_focusFind && _open) { _focusFind = false; await _findBox.FocusAsync(); }
-        if (_focusToggle) { _focusToggle = false; await _toggle.FocusAsync(); }
+        if (_focusFind && _open) { _focusFind = false; await _findBox.TryFocusAsync(orGone: true); }
+        if (_focusToggle) { _focusToggle = false; await _toggle.TryFocusAsync(orGone: true); }
     }
 }

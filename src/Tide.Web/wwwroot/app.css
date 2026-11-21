@@ -1478,10 +1478,12 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-oi-panel { margin-top: .4rem; padding: .6rem; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); background: var(--tide-surface); }
 .tide-oi-choices { max-height: 16rem; overflow-y: auto; }
 .tide-oi-list { list-style: none; margin: 0; padding: 0; }
-.tide-oi-choice { display: grid; grid-template-columns: 15rem 1fr; gap: .1rem .8rem; width: 100%; text-align: left;
-    padding: .2rem .4rem; border: 0; border-radius: var(--tide-radius-sm); background: none; color: inherit; font-size: .85rem; }
+/* A placeholder in the Insert menu or the list under the box: its name, then what it becomes. */
+.tide-oi-choice, .tide-oi-suggest [role="option"] { display: grid; grid-template-columns: 15rem 1fr; gap: .1rem .8rem; padding: .2rem .4rem;
+    border-radius: var(--tide-radius-sm); font-size: .85rem; }
+.tide-oi-choice { width: 100%; text-align: left; border: 0; background: none; color: inherit; }
 .tide-oi-choice:hover { background: var(--tide-surface-2); }
-.tide-oi-choice.is-chosen { background: var(--tide-accent-soft); }
+.tide-oi-choice.is-chosen, .tide-oi-suggest [role="option"][aria-selected="true"] { background: var(--tide-accent-soft); }
 .tide-oi-what { color: var(--tide-text-muted); }
 .tide-oi-how { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--tide-border); }
 .tide-oi-instead { width: 12rem; }
@@ -1489,10 +1491,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-oi-suggest { position: absolute; z-index: 20; left: calc(var(--bs-gutter-x, 0) * .5); right: calc(var(--bs-gutter-x, 0) * .5); max-height: 14rem; overflow-y: auto;
     margin: .15rem 0 0; padding: .2rem; list-style: none; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md);
     background: var(--tide-surface); box-shadow: 0 4px 12px var(--tide-shadow); }
-.tide-oi-suggest [role="option"] { display: grid; grid-template-columns: 15rem 1fr; gap: .8rem; padding: .2rem .4rem;
-    border-radius: var(--tide-radius-sm); font-size: .85rem; cursor: pointer; }
-.tide-oi-suggest [role="option"][aria-selected="true"] { background: var(--tide-accent-soft); }
-.tide-oi-suggest-what { color: var(--tide-text-muted); }
+.tide-oi-suggest [role="option"] { cursor: pointer; }
 .tide-oi-check { min-height: 1.3rem; margin-top: .25rem; }
 .tide-oi-check.is-ok { color: var(--tide-ok); }
 .tide-oi-check.is-problem { color: var(--tide-warn); }

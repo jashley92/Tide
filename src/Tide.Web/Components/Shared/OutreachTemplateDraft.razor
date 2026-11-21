@@ -1,10 +1,9 @@
 @using Tide.Web.Components.LibraryRail
-@implements IDisposable
 @inject LibraryUseService UseSvc
 @inject OutreachService OutreachSvc
 @inject ICurrentUser CurrentUser
-@* Under an outreach template being written (OutreachTemplatesPage): whether TIDE can fill it, checked a moment after
-   typing stops by the check that runs on save (OutreachFill.Check), and, for whoever can try entries on actions, the
+@* Under an outreach template being written (OutreachTemplatesPage): whether TIDE can fill it, checked when typing
+   pauses (js/outreach-editor.js tells the page then) by the check that runs on save (OutreachFill.Check), and, for whoever can try entries on actions, the
    draft filled for one of their open Outreach actions (OutreachService.PreviewAsync, read only: nothing is saved). The
    check's line is a status, so a screen reader hears it when it changes, not on every key. *@
 
@@ -14,22 +13,22 @@
         {
             <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @problem
         }
-        else if (_checked)
+        else
         {
-            <span class="bi bi-check2" aria-hidden="true"></span> @OkText
+            <span class="bi bi-check2" aria-hidden="true"></span> @(_fills == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(_fills, "placeholder")}.")
         }
     </div>
 
     @if (LibraryUseService.CanTry(CurrentUser))
     {
         <div class="tide-oi-preview">
-            <button type="button" class="btn btn-link btn-sm px-0" aria-expanded="@(_previewing ? "true" : "false")" aria-controls="@(CheckId + "-preview")"
+            <button type="button" class="tide-disclosure small" aria-expanded="@(_previewing ? "true" : "false")" aria-controls="@(CheckId + "-preview")"
                     @onclick="TogglePreview">
-                <span class="bi @(_previewing ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> Preview this draft on an action
+                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> Preview this draft on an action
             </button>
             @if (_previewing)
             {
-                <div id="@(CheckId + "-preview")">
+                <div id="@(CheckId + "-preview")" class="mt-1">
                     @if (_offered is null)
                     {
                         <LoadingBlock />
@@ -75,53 +74,34 @@
     [Parameter] public string? Body { get; set; }
     [Parameter] public TlpLevel Ceiling { get; set; }
 
-    /// <summary>How long after the last key the draft is checked and the preview filled again.</summary>
-    internal static TimeSpan Pause { get; set; } = TimeSpan.FromMilliseconds(500);
-
     private string? _problem;
-    private bool _checked;
+    private int _fills;
     private bool _previewing;
     private IReadOnlyList<WorkableAction>? _offered;
     private Guid? _actionId;
     private OutreachWritten? _preview;
     private string? _previewError;
     private (string? Subject, string? Body, TlpLevel Ceiling)? _seen;
-    private CancellationTokenSource? _wait;
     private int _asked;
 
     internal string? Problem => _problem;
     internal OutreachWritten? Preview => _preview;
 
-    private string OkText
-    {
-        get
-        {
-            var n = LibraryFills.OfTemplate(Subject ?? "", Body ?? "").Count;
-            return n == 0 ? "No placeholders yet." : $"TIDE can fill this: {Words.Plural(n, "placeholder")}.";
-        }
-    }
-
+    // The page hears the subject and body when typing pauses, so they're checked (and the preview filled) then.
     protected override async Task OnParametersSetAsync()
     {
         var now = (Subject, Body, Ceiling);
         if (_seen == now) return;
         var first = _seen is null;
         _seen = now;
-        if (first) { Check(); return; }
-        // Typing: wait for a pause, so neither the check nor the preview runs on every key.
-        _wait?.Cancel();
-        _wait?.Dispose();
-        var wait = _wait = new CancellationTokenSource();
-        try { await Task.Delay(Pause, wait.Token); }
-        catch (TaskCanceledException) { return; }
         Check();
-        if (_previewing) await Fill();
+        if (!first && _previewing) await Fill();
     }
 
-    // The check that runs on save, on the subject and the body.
+    // The check that runs on save, on the subject and the body, and how many placeholders it found.
     internal void Check()
     {
-        _checked = true;
+        _fills = LibraryFills.OfTemplate(Subject ?? "", Body ?? "").Count;
         try
         {
             OutreachFill.Check(Subject ?? "");
@@ -169,11 +149,5 @@
             }
         }
         StateHasChanged();
-    }
-
-    public void Dispose()
-    {
-        _wait?.Cancel();
-        _wait?.Dispose();
     }
 }

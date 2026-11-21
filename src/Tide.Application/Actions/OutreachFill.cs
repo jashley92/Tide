@@ -18,6 +18,12 @@ public sealed record OutreachPlaceholder(string Name, string Group, string Descr
 {
     /// <summary>As a template writes it ("{{article.title}}").</summary>
     public string Written => "{{" + Name + "}}";
+
+    /// <summary>
+    /// Whether it can have nothing to fill, so be optional, carry text for then, or have a section: all but
+    /// <c>{{tlp}}</c>, as the email always carries its TLP.
+    /// </summary>
+    public bool MayBeEmpty => !string.Equals(Name, OutreachFill.TlpName, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
