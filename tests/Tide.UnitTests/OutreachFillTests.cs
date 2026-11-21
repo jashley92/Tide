@@ -75,8 +75,9 @@ public class OutreachFillTests
     public void Check_AcceptsTheNamesTideFills_InAnyCase(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
 
     [Theory]
-    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Use one of: {{article.title}}*")]
-    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills*")]
+    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Did you mean {{article.title}}?")]
+    [InlineData("{{sender.nme}}", "{{sender.nme}} isn't a placeholder TIDE fills. Did you mean {{sender.name}}?")]
+    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills. Insert placeholder lists the ones it does.")]
     [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or one of: {{indicators:ipv4}}*")]
     [InlineData("{{article.title:domain}}", "{{article.title}} takes nothing after a colon: only {{indicators:…}} and {{today:+2}} do.")]
     [InlineData("{{today:2}}", "{{today:2}} isn't a number of business days. Write it as {{today:+2}} or {{today:-2}}, up to 60.")]
