@@ -212,7 +212,9 @@ public static partial class OutreachFill
     // Every piece between double braces a template may use: {{else}}; or a name with a section's # or / before it, a
     // modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the text
     // written when it's empty ("{{product.contact|there}}"). The check on save says which mixes a template can't use.
-    [GeneratedRegex(@"\{\{\s*(?:(?<else>else)|(?<sign>[#/])?\s*(?<name>[A-Za-z][A-Za-z0-9.\-]*)(?::(?<mod>[A-Za-z0-9+\-]*))?(?<opt>\?)?(?:\|(?<alt>[^{}\r\n]*))?)\s*\}\}",
+    // Spaces are read one way only (after the # or / only when there is one, and the text after | given nothing back), so
+    // a long run of them can't hold the server up.
+    [GeneratedRegex(@"\{\{\s*(?:(?<else>else)|(?:(?<sign>[#/])\s*)?(?<name>[A-Za-z][A-Za-z0-9.\-]*)(?::(?<mod>[A-Za-z0-9+\-]*))?(?<opt>\?)?(?:\|(?<alt>(?>[^{}\r\n]*)))?)\s*\}\}",
         RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
     private static partial Regex TokenPattern();
 
