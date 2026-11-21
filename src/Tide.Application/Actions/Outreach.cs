@@ -135,9 +135,20 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         // Only what the ceiling lets through is merged, as a hunt merges the article's indicators and the action's own.
         var indicators = ActionService.HuntIndicators(cut.Article is null ? [] : a.Article!.Indicators, cut.OwnIndicators ? a.Indicators : []);
 
-        var cveIds = cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [];
+        // What TIDE knows of the CVEs, and the other reports added to the article: read only when the ceiling lets the
+        // article through and the template has a placeholder that shows them.
+        bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
+                                  || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
+        var cveIds = Uses(OutreachFill.CvesDetailedName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
+        List<string> links = [];
+        if (cut.Article is { } kept && Uses(OutreachFill.OtherLinksName))
+        {
+            var id = kept.Article.Id;
+            links = await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == id)
+                .OrderBy(l => l.AddedAtUtc).Select(l => l.Url).ToListAsync(ct);
+        }
 
         products ??= await ProductsAsync(db, a, ct);
         StackProduct? product = null;
@@ -154,6 +165,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             FromArticle = a.Article is not null,
             Article = cut.Article,
             Cves = cves,
+            ArticleLinks = links,
             Indicators = indicators,
             IndicatorsTlp = cut.IndicatorsTlp,
             IndicatorsHeldBack = cut.IndicatorsHeldBack,

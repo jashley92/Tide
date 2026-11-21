@@ -46,7 +46,9 @@ public class OutreachServiceTests : IDisposable
         {{article.title}}
         {{article.bottom-line}}
         {{article.link}}
+        {{article.other-links?}}
         {{article.cves}}
+        {{article.cve-links}}
 
         Indicators:
         {{indicators}}
@@ -211,6 +213,11 @@ public class OutreachServiceTests : IDisposable
     {
         var (action, product) = await Scene();
         var template = await Template(to: "isac@isac.example");
+        await using (var ctx = _db.Context())
+        {
+            ctx.ArticleLinks.Add(new ArticleLink { ArticleId = action.ArticleId!.Value, Url = "https://news.example/follow-up", Title = "Follow-up", AddedAtUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
 
         var w = await _db.Outreach().WriteAsync(action.Id, template);
 
@@ -219,8 +226,10 @@ public class OutreachServiceTests : IDisposable
         var body = w.Draft.Body;
         body.Should().StartWith("TLP:GREEN: Limited disclosure", "the TLP line, as the subject places {{tlp}} but the body doesn't")
             .And.Contain("Hello Vendor PSIRT,").And.Contain($"We run {w.Product.Name} 22.7R2 (Network ")
-            .And.Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n")
-            .And.Contain("CVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list; EPSS 50%)")
+            .And.Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\nhttps://news.example/follow-up\n",
+                "the other reports added to the article, where the template places them")
+            .And.Contain("CVE-2026-0002\nCVE-2026-1234\n"
+                + "https://nvd.nist.gov/vuln/detail/CVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n")
             .And.Contain("Indicators:\n198.51.100[.]7\nevil[.]example\n", "defanged, as a hunt groups them")
             .And.Contain("Test Analyst, Cyber Threat Intelligence", "not on the action's team: the organization's")
             .And.Contain($"A-{action.Number}: https://tide.example.org/actions/{action.Number}");
