@@ -205,7 +205,7 @@ public class OutreachFillTests
     public void ASection_KeepsItsFirstBranch_WhenThereIsSomethingToFill_AndItsTagLinesLeaveNoGaps()
     {
         var d = OutreachFill.Fill("x", CvesSection, Facts(Article(), TlpLevel.Clear));
-        d.Body.Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list, used in ransomware; EPSS 94.1%)\n\nThanks\n");
+        d.Body.Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
     }
 
     [Fact]
@@ -234,7 +234,7 @@ public class OutreachFillTests
         OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", facts).Body
             .Should().EndWith("\n\nHello,\n\nThanks\n").And.Be(OutreachFill.Fill("x", "Hello,\n\n{{article.cves?}}\n\nThanks", facts).Body);
         OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", Facts(Article(), TlpLevel.Clear)).Body
-            .Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list, used in ransomware; EPSS 94.1%)\n\nThanks\n");
+            .Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
         OutreachFill.Fill("Patch {{#article.cves}}{{article.cves}} {{/article.cves}}today", "x", facts).Subject.Should().Be("Patch today");
     }
 
