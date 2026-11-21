@@ -110,11 +110,11 @@ public static partial class OutreachFill
     /// <summary>The placeholder for the email's TLP marking.</summary>
     public const string TlpName = "tlp";
 
-    /// <summary>The placeholder for a link to each of the article's CVEs.</summary>
-    public const string CveLinksName = "article.cve-links";
+    /// <summary>The placeholder for the article's CVEs, one a line (<c>article.cves-detailed</c> starts the same).</summary>
+    public const string CvesName = "article.cves";
 
-    /// <summary>The placeholder for each of the article's CVEs in detail.</summary>
-    public const string CvesDetailedName = "article.cves-detailed";
+    /// <summary>The placeholder for the other reports added to the article.</summary>
+    public const string OtherLinksName = "article.other-links";
 
     /// <summary>A CVE's page on the NVD, as the app links it.</summary>
     public static string CveLink(string cveId) => "https://nvd.nist.gov/vuln/detail/" + cveId;
@@ -132,10 +132,10 @@ public static partial class OutreachFill
         new("article.why-it-matters", ArticleGroup, "Why it matters to us, when its own TLP is within the ceiling."),
         new("article.key-points", ArticleGroup, "Its key points, one a line, each within the ceiling."),
         new("article.link", ArticleGroup, "Its source's address."),
-        new("article.other-links", ArticleGroup, "The other reports added to it, one a line."),
-        new("article.cves", ArticleGroup, "Its CVEs, one a line, with KEV and EPSS where TIDE knows them."),
-        new(CveLinksName, ArticleGroup, "A link to each of its CVEs on the NVD, one a line."),
-        new(CvesDetailedName, ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
+        new(OtherLinksName, ArticleGroup, "The other reports added to it, one a line."),
+        new(CvesName, ArticleGroup, "Its CVEs, one a line, with KEV and EPSS where TIDE knows them."),
+        new("article.cve-links", ArticleGroup, "A link to each of its CVEs on the NVD, one a line."),
+        new("article.cves-detailed", ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
         new("article.tlp", ArticleGroup, "The article's TLP, as TLP:GREEN."),
         new(IndicatorsName, IndicatorsGroup, "Every indicator on the article and the action, defanged, one a line."),
         new(IndicatorsName + ":domain", IndicatorsGroup, "One kind only (domain, url, ipv4, sha256…), as the saved hunt queries name them."),
@@ -446,7 +446,7 @@ public static partial class OutreachFill
             return value;
         });
         var filledSubject = Gone(Replace(subject).ReplaceLineEndings(" ")).Trim();
-        var filledBody = string.Join("\n", Lines(Replace((body ?? "").Replace("\r\n", "\n"))));
+        var filledBody = Lines(Replace((body ?? "").Replace("\r\n", "\n")));
         var line = $"{Tlp.Label(marking)}: {Tlp.Meaning(marking)}";
         var placed = filledBody.Contains(TlpSlot, StringComparison.Ordinal);
         filledSubject = filledSubject.Replace(TlpSlot, Tlp.Label(marking), StringComparison.Ordinal);
@@ -463,23 +463,25 @@ public static partial class OutreachFill
     // The body's lines with each line an optional placeholder left empty dropped, and the gaps in the rest closed. A
     // blank line that would then follow another blank line goes too: "a\n\n{{x?}}\n\nb" reads "a\n\nb", not "a\n\n\nb".
     // Blank lines the template has side by side of its own are kept.
-    private static List<string> Lines(string text)
+    private static string Lines(string text)
     {
+        if (!text.Contains(GoneSlot, StringComparison.Ordinal)) return text;
         var kept = new List<string>();
         // Whether lines were just dropped, and the line before them was blank (or there was none).
         var (dropped, blankBefore) = (false, false);
         foreach (var l in text.Split('\n'))
         {
-            if (l.Contains(GoneSlot, StringComparison.Ordinal) && string.IsNullOrWhiteSpace(l.Replace(GoneSlot, "", StringComparison.Ordinal)))
+            var g = Gone(l);
+            if (g != l && string.IsNullOrWhiteSpace(g))
             {
                 if (!dropped) (dropped, blankBefore) = (true, kept.Count == 0 || string.IsNullOrWhiteSpace(kept[^1]));
                 continue;
             }
             var skip = dropped && blankBefore && string.IsNullOrWhiteSpace(l);
             dropped = false;
-            if (!skip) kept.Add(Gone(l));
+            if (!skip) kept.Add(g);
         }
-        return kept;
+        return string.Join("\n", kept);
     }
 
     // Where an optional placeholder with nothing to fill was, until its line is dropped or the gap closed.
@@ -526,12 +528,11 @@ public static partial class OutreachFill
             "article.title" => (a.Title, a.Tlp, false),
             "article.bottom-line" => (a.Bluf, a.Tlp, false),
             "article.link" => (a.SourceUrl, a.Tlp, false),
-            "article.other-links" => (OtherLinks(a, f.ArticleLinks), a.Tlp, false),
+            OtherLinksName => (OtherLinks(a, f.ArticleLinks), a.Tlp, false),
             "article.tlp" => (Tlp.Label(a.Tlp), a.Tlp, false),
-            "article.cves" => (Cves(a, f.Cves), a.Tlp, false),
-            CvesDetailedName => (CvesDetailed(a, f.Cves), a.Tlp, false),
-            CveLinksName => (a.Cves.Count == 0 ? null
-                : string.Join("\n", a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase).Select(CveLink)), a.Tlp, false),
+            CvesName => (Cves(a, f.Cves), a.Tlp, false),
+            "article.cves-detailed" => (CvesDetailed(a, f.Cves), a.Tlp, false),
+            "article.cve-links" => (CveIds(a) is { Count: > 0 } ids ? string.Join("\n", ids.Select(CveLink)) : null, a.Tlp, false),
             "article.why-it-matters" => cut.ShowWhy
                 ? (a.WhyItMatters, a.Effective(a.WhyItMattersTlp), false)
                 : (null, TlpLevel.Clear, !string.IsNullOrWhiteSpace(a.WhyItMatters)),
@@ -555,20 +556,31 @@ public static partial class OutreachFill
     // One a line: "CVE-2026-1234 (on CISA's KEV list; EPSS 94.1%)", or the id alone when TIDE knows nothing more.
     private static string? Cves(Article a, IReadOnlyDictionary<string, CveRecord> records)
     {
-        if (a.Cves.Count == 0) return null;
+        var ids = CveIds(a);
+        if (ids.Count == 0) return null;
         var sb = new StringBuilder();
-        foreach (var id in a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var id in ids)
         {
-            var notes = new List<string>();
-            if (records.TryGetValue(id, out var r))
-            {
-                if (r.IsKev) notes.Add("on CISA's KEV list" + (r.KevRansomware ? ", used in ransomware" : ""));
-                if (r.EpssScore is { } epss) notes.Add($"EPSS {(epss * 100).ToString("0.#", CultureInfo.InvariantCulture)}%");
-            }
+            records.TryGetValue(id, out var r);
+            var notes = new[] { KevNote(r, dates: false), EpssNote(r) }.OfType<string>().ToList();
             sb.Append(id).Append(notes.Count > 0 ? $" ({string.Join("; ", notes)})" : "").Append('\n');
         }
         return sb.ToString().TrimEnd();
     }
+
+    // The article's CVE ids, in the order every CVE placeholder lists them.
+    private static List<string> CveIds(Article a) => [.. a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase)];
+
+    // "on CISA's KEV list[ since Nov 1, 2026, due Nov 22, 2026], used in ransomware", for a CVE on it.
+    private static string? KevNote(CveRecord? r, bool dates) => r is not { IsKev: true } ? null
+        : "on CISA's KEV list"
+          + (dates && r.KevAddedDate is { } added ? " since " + Words.MonthDayYear(added) : "")
+          + (dates && r.KevDueDate is { } due ? ", due " + Words.MonthDayYear(due) : "")
+          + (r.KevRansomware ? ", used in ransomware" : "");
+
+    // "EPSS 94.1%", when TIDE knows it.
+    private static string? EpssNote(CveRecord? r) =>
+        r?.EpssScore is { } epss ? $"EPSS {(epss * 100).ToString("0.#", CultureInfo.InvariantCulture)}%" : null;
 
     // A paragraph a CVE, a blank line between:
     //   CVE-2026-1234: CVSS 9.8 critical; on CISA's KEV list since Nov 1, 2026, due Nov 22, 2026, used in ransomware; EPSS 94.1%
@@ -578,22 +590,17 @@ public static partial class OutreachFill
     // A line TIDE has nothing for is left out; a CVE it knows nothing about is its id and link.
     private static string? CvesDetailed(Article a, IReadOnlyDictionary<string, CveRecord> records)
     {
-        if (a.Cves.Count == 0) return null;
-        var inv = CultureInfo.InvariantCulture;
+        var ids = CveIds(a);
+        if (ids.Count == 0) return null;
         var paragraphs = new List<string>();
-        foreach (var id in a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var id in ids)
         {
             var lines = new List<string>();
-            var notes = new List<string>();
             records.TryGetValue(id, out var r);
-            if (r?.CvssScore is { } cvss)
-                notes.Add($"CVSS {cvss.ToString("0.0", inv)}" + (string.IsNullOrWhiteSpace(r.CvssSeverity) ? "" : " " + r.CvssSeverity.Trim().ToLowerInvariant()));
-            if (r is { IsKev: true })
-                notes.Add("on CISA's KEV list"
-                    + (r.KevAddedDate is { } added ? " since " + added.ToString("MMM d, yyyy", inv) : "")
-                    + (r.KevDueDate is { } due ? ", due " + due.ToString("MMM d, yyyy", inv) : "")
-                    + (r.KevRansomware ? ", used in ransomware" : ""));
-            if (r?.EpssScore is { } epss) notes.Add($"EPSS {(epss * 100).ToString("0.#", inv)}%");
+            var cvss = r?.CvssScore is { } score
+                ? $"CVSS {score.ToString("0.0", CultureInfo.InvariantCulture)}" + (string.IsNullOrWhiteSpace(r.CvssSeverity) ? "" : " " + r.CvssSeverity.Trim().ToLowerInvariant())
+                : null;
+            var notes = new[] { cvss, KevNote(r, dates: true), EpssNote(r) }.OfType<string>().ToList();
             lines.Add(id + (notes.Count > 0 ? ": " + string.Join("; ", notes) : ""));
             var made = string.Join(" ", new[] { r?.Vendor, r?.Product }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
             if (made.Length > 0) lines.Add(made);
