@@ -621,6 +621,15 @@ fill, a stray `{{else}}`, a section on `{{tlp}}`, and a placeholder with both `?
 CVEs and (to an ISAC) indicators in sections and the article's links with `?`, so an article without them doesn't hold
 the email back.
 
+**Writing a template.** Above the subject, *Insert placeholder* lists every placeholder, found by typing, and puts the
+one chosen where the cursor was in the subject or body: as it is, optional (`?`), with text for when it's empty (`|`), or
+as a section round what's selected (on lines of its own in the body, inline in the subject). Typing `{{`, `{{#` or `{{/`
+in either box opens a list of the names that match; Up and Down choose, Enter or Tab writes the name and closes the
+braces, Escape closes it (`wwwroot/js/outreach-editor.js`, wired by event delegation like the Markdown toolbar). Under
+the body, `OutreachFill.Check` runs a moment after typing stops and says what's wrong, or how many placeholders TIDE
+will fill; *Preview this draft on an action* fills the unsaved draft for one of the writer's open Outreach actions
+(`OutreachService.PreviewAsync`, which saves nothing and refuses whom writing the email refuses).
+
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 
 1. The article is cut to the template's ceiling (`OutreachFill.Cut`, through `BriefEditions.BuildArticle`): an article

@@ -18,6 +18,25 @@ public sealed record OutreachPlaceholder(string Name, string Group, string Descr
 {
     /// <summary>As a template writes it ("{{article.title}}").</summary>
     public string Written => "{{" + Name + "}}";
+
+    /// <summary>
+    /// Whether it can have nothing to fill, so be optional, carry text for then, or have a section: all but
+    /// <c>{{tlp}}</c>, as the email always carries its TLP.
+    /// </summary>
+    public bool MayBeEmpty => !string.Equals(Name, OutreachFill.TlpName, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// A template TIDE can't fill, as the check on save refuses it (<see cref="OutreachFill.Check"/>), and where in the text
+/// the trouble is, so the editor can show it.
+/// </summary>
+public sealed class OutreachTemplateException(string message, int index, int length) : ArgumentException(message)
+{
+    /// <summary>Where the trouble starts in the text checked.</summary>
+    public int Index { get; } = index;
+
+    /// <summary>How long it is.</summary>
+    public int Length { get; } = length;
 }
 
 /// <summary>What a piece of a template between double braces is.</summary>
@@ -220,10 +239,6 @@ public static partial class OutreachFill
     private static string Plain(OutreachToken t) => t.Kind == OutreachTokenKind.Else ? "{{" + ElseName + "}}"
         : "{{" + (t.Kind == OutreachTokenKind.Open ? "#" : "/") + t.Name + (t.Modifier is null ? "" : ":" + t.Modifier) + "}}";
 
-    // Whether a section's close is about the placeholder its open is.
-    private static bool Closes(OutreachToken close, OutreachToken open) =>
-        close.Name == open.Name && string.Equals(close.Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
-
     // The section tags among the tokens, in order.
     private static List<OutreachToken> Tags(IEnumerable<OutreachToken> tokens) => [.. tokens.Where(t => t.Kind != OutreachTokenKind.Placeholder)];
 
@@ -235,31 +250,34 @@ public static partial class OutreachFill
         foreach (var t in tags)
         {
             if (t.Optional || t.Fallback is not null)
-                throw new ArgumentException($"{t.Written} is a section's tag: it takes no ? or |. Write it as {Plain(t)}.");
+                throw Refused(t, $"{t.Written} is a section's tag: it takes no ? or |. Write it as {Plain(t)}.");
             switch (t.Kind)
             {
                 case OutreachTokenKind.Open:
                     if (open is not null)
-                        throw new ArgumentException($"{Plain(t)} is inside {Plain(open)}: close it with {{{{/{open.Name}}}}} first. A section can't hold another.");
-                    if (string.Equals(t.Name, TlpName, StringComparison.OrdinalIgnoreCase))
-                        throw new ArgumentException($"{Plain(t)} can't start a section: the email always carries its TLP.");
-                    CheckPlaceholder(t.Name, t.Modifier);
+                        throw Refused(t, $"{Plain(t)} is inside {Plain(open)}: close it with {Plain(open with { Kind = OutreachTokenKind.Close })} first. A section can't hold another.");
+                    if (t.Name == TlpName) throw Refused(t, $"{Plain(t)} can't start a section: the email always carries its TLP.");
+                    CheckPlaceholder(t);
                     (open, sawElse) = (t, false);
                     break;
                 case OutreachTokenKind.Else:
-                    if (open is null) throw new ArgumentException($"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
-                    if (sawElse) throw new ArgumentException($"{Plain(open)} has two {{{{{ElseName}}}}}s: a section takes one at most.");
+                    if (open is null) throw Refused(t, $"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
+                    if (sawElse) throw Refused(t, $"{Plain(open)} has two {{{{{ElseName}}}}}s: a section takes one at most.");
                     sawElse = true;
                     break;
                 default:
-                    if (open is null) throw new ArgumentException($"{Plain(t)} closes a section that isn't open: start it with {{{{#{t.Name}}}}}.");
-                    if (!Closes(t, open)) throw new ArgumentException($"{Plain(t)} doesn't close {Plain(open)}: write {{{{/{open.Name}{(open.Modifier is null ? "" : ":" + open.Modifier)}}}}}.");
+                    if (open is null) throw Refused(t, $"{Plain(t)} closes a section that isn't open: start it with {Plain(t with { Kind = OutreachTokenKind.Open })}.");
+                    var close = Plain(open with { Kind = OutreachTokenKind.Close });
+                    if (!string.Equals(Plain(t), close, StringComparison.OrdinalIgnoreCase)) throw Refused(t, $"{Plain(t)} doesn't close {Plain(open)}: write {close}.");
                     open = null;
                     break;
             }
         }
-        if (open is not null) throw new ArgumentException($"{Plain(open)} is never closed: end the section with {{{{/{open.Name}}}}}.");
+        if (open is not null) throw Refused(open, $"{Plain(open)} is never closed: end the section with {Plain(open with { Kind = OutreachTokenKind.Close })}.");
     }
+
+    // A refusal of one piece of the template, saying where it is.
+    private static OutreachTemplateException Refused(OutreachToken t, string message) => new(message, t.Index, t.Written.Length);
 
     /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
     public const string TodayName = "today";
@@ -303,41 +321,48 @@ public static partial class OutreachFill
         var tokens = Tokens(text);
         CheckSections(Tags(tokens));
         foreach (var t in tokens.Where(t => t.Kind == OutreachTokenKind.Placeholder))
-        {
-            var fallback = t.Fallback is not null;
-            if (t.Name == ElseName)
-                throw new ArgumentException($"{t.Written} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
-            CheckPlaceholder(t.Name, t.Modifier);
-            if ((t.Optional || fallback) && t.Name == TlpName)
-                throw new ArgumentException($"{t.Written} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
-            if (t.Optional && fallback)
-                throw new ArgumentException($"{t.Written} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
-            if (fallback && string.IsNullOrWhiteSpace(t.Fallback))
-                throw new ArgumentException($"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
-        }
+            CheckToken(t);
         // Braces round a name that doesn't parse ("{{today: +2}}", "{{article_title}}") would go out in every email as
-        // typed: Fill leaves them, and they aren't a marker that holds the send back.
-        var rest = TokenPattern().Replace(text, "\n");
+        // typed: Fill leaves them, and they aren't a marker that holds the send back. What does parse is blanked out, at
+        // its length, so where a typo is stays where it is.
+        var rest = TokenPattern().Replace(text, m => new string('\n', m.Length));
         if (LooksLikePlaceholder().Match(rest) is { Success: true } typo)
-            throw new ArgumentException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon or before a closing ?, and a name of letters, dots and hyphens, as in {{{{article.title}}}}, {{{{{TodayName}:+2}}}} or {{{{article.other-links?}}}}.");
+            throw new OutreachTemplateException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon or before a closing ?, and a name of letters, dots and hyphens, as in {{{{article.title}}}}, {{{{{TodayName}:+2}}}} or {{{{article.other-links?}}}}.",
+                typo.Index, typo.Length);
+    }
+
+    // Refuses a placeholder TIDE doesn't fill, or one written in a way it can't be.
+    private static void CheckToken(OutreachToken t)
+    {
+        var fallback = t.Fallback is not null;
+        if (t.Name == ElseName)
+            throw Refused(t, $"{t.Written} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
+        CheckPlaceholder(t);
+        if ((t.Optional || fallback) && t.Name == TlpName)
+            throw Refused(t, $"{t.Written} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
+        if (t.Optional && fallback)
+            throw Refused(t, $"{t.Written} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
+        if (fallback && string.IsNullOrWhiteSpace(t.Fallback))
+            throw Refused(t, $"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
     }
 
     // Refuses a name TIDE doesn't fill, or a modifier it doesn't take, saying what it can use.
-    private static void CheckPlaceholder(string name, string? modifier)
+    private static void CheckPlaceholder(OutreachToken t)
     {
+        var (name, modifier) = (t.Name, t.Modifier);
         if (!Names.Contains(name))
-            throw new ArgumentException($"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
+            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
         if (modifier is null) return;
         if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
         {
             if (DaysAheadOf(modifier) is null)
-                throw new ArgumentException($"{{{{{TodayName}:{modifier}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
+                throw Refused(t, $"{{{{{TodayName}:{modifier}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
             return;
         }
         if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException($"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
+            throw Refused(t, $"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
         if (HuntQueryBuilder.KindNamed(modifier) is null)
-            throw new ArgumentException($"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
+            throw Refused(t, $"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
     }
 
     // Double braces round something with a letter in it, on one line: what a placeholder with a typo looks like.
@@ -350,6 +375,22 @@ public static partial class OutreachFill
 
     /// <summary>Whether <paramref name="text"/> still holds a marker (<see cref="Marker"/>) the analyst hasn't dealt with.</summary>
     public static bool HasMarker(string? text) => MarkerPattern().IsMatch(text ?? "");
+
+    /// <summary><paramref name="text"/> cut where its markers (<see cref="Marker"/>) are, each piece with whether it is one.</summary>
+    public static IReadOnlyList<Search.TextRun> Pieces(string? text)
+    {
+        text ??= "";
+        var runs = new List<Search.TextRun>();
+        var pos = 0;
+        foreach (Match m in MarkerPattern().Matches(text))
+        {
+            if (m.Index > pos) runs.Add(new(text[pos..m.Index], false));
+            runs.Add(new(m.Value, true));
+            pos = m.Index + m.Length;
+        }
+        if (pos < text.Length) runs.Add(new(text[pos..], false));
+        return runs;
+    }
 
     /// <summary>
     /// <paramref name="article"/> (its bullets, indicators and CVEs loaded) as the ceiling lets it through, by the team
