@@ -212,9 +212,15 @@ public static partial class OutreachFill
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    // The name TIDE fills that a mistyped one is nearest to: two letters off at most, a typo rather than another word.
-    private static string? Nearest(string name) =>
-        Names.Select(n => (n, d: Distance(name, n))).Where(x => x.d <= 2).OrderBy(x => x.d).Select(x => x.n).FirstOrDefault();
+    // The one of names a mistyped name (lower case) is nearest to: two letters off at most, a typo rather than another word.
+    private static string? Nearest(string name, IEnumerable<string> names)
+    {
+        var (best, bestDistance) = ((string?)null, 3);
+        foreach (var n in names)
+            if (Math.Abs(n.Length - name.Length) < bestDistance && Distance(name, n) is var d && d < bestDistance)
+                (best, bestDistance) = (n, d);
+        return best;
+    }
 
     // How many letters must be added, dropped or changed to turn one name into the other.
     private static int Distance(string a, string b)
@@ -227,7 +233,7 @@ public static partial class OutreachFill
             for (var j = 1; j <= b.Length; j++)
             {
                 var above = row[j];
-                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), diagonal + (char.ToLowerInvariant(a[i - 1]) == char.ToLowerInvariant(b[j - 1]) ? 0 : 1));
+                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), diagonal + (a[i - 1] == b[j - 1] ? 0 : 1));
                 diagonal = above;
             }
         }
@@ -368,12 +374,13 @@ public static partial class OutreachFill
             throw Refused(t, $"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
     }
 
-    // Refuses a name TIDE doesn't fill, offering the one it was likely meant to be, or a modifier it doesn't take.
+    // Refuses a name TIDE doesn't fill, or a modifier it doesn't take, offering the one it was likely meant to be. Only
+    // the template editor shows these, beside its Insert placeholder menu; another place showing them would reword that.
     private static void CheckPlaceholder(OutreachToken t)
     {
         var (name, modifier) = (t.Name, t.Modifier);
         if (!Names.Contains(name))
-            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. " + (Nearest(name) is { } near
+            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. " + (Nearest(name, Names) is { } near
                 ? $"Did you mean {{{{{near}}}}}?"
                 : "Insert placeholder lists the ones it does."));
         if (modifier is null) return;
@@ -386,7 +393,10 @@ public static partial class OutreachFill
         if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
             throw Refused(t, $"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
         if (HuntQueryBuilder.KindNamed(modifier) is null)
-            throw Refused(t, $"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
+            throw Refused(t, $"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. "
+                + (Nearest($"{IndicatorsName}:{modifier.ToLowerInvariant()}", Enum.GetValues<HuntValueKind>().Select(IndicatorsNameOf)) is { } near
+                    ? $"Did you mean {{{{{near}}}}}?"
+                    : $"Use {{{{{IndicatorsName}}}}}, or a kind from Insert placeholder."));
     }
 
     // Double braces round something with a letter in it, on one line: what a placeholder with a typo looks like.
