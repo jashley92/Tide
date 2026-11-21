@@ -15,13 +15,15 @@ public sealed record LibraryFact(string Label, string Value);
 /// what an action fills each with: what the rail's "Fills in" lists.</summary>
 public static partial class LibraryFills
 {
-    // A name and a modifier after a colon; for an outreach template, a section's # before it, or a closing ? (optional)
-    // or |text (written when it's empty) after it. {{else}} reads as a name no describer knows, so isn't listed.
-    [GeneratedRegex(@"\{\{(#)?([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?(\?)?(\|[^{}\r\n]*)?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex Pattern();
+    // A saved query's placeholder: a name and a modifier after a colon. An outreach template's are read as the fill reads
+    // them (OutreachFill.Tokens).
+    [GeneratedRegex(@"\{\{([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex QueryPattern();
 
     /// <summary>A saved query's: <c>{{days}}</c>, <c>{{values}}</c> and a kind's values (<c>{{values:sha256}}</c>).</summary>
-    public static IReadOnlyList<LibraryFill> OfQuery(string text) => Found(text, (name, modifier) => name switch
+    public static IReadOnlyList<LibraryFill> OfQuery(string text) => Found(
+        QueryPattern().Matches(text).Select(m => (m.Value, m.Groups[1].Value.ToLowerInvariant(), m.Groups[2].Success ? m.Groups[2].Value : null, "")),
+        (name, modifier) => name switch
     {
         "days" => "the action's window, in days",
         "values" when modifier is null => "its indicators",
@@ -30,7 +32,10 @@ public static partial class LibraryFills
     });
 
     /// <summary>An outreach template's, in its subject and body, as the template page describes each.</summary>
-    public static IReadOnlyList<LibraryFill> OfTemplate(string subject, string body) => Found(subject + "\n" + body, (name, modifier) =>
+    public static IReadOnlyList<LibraryFill> OfTemplate(string subject, string body) => Found(
+        OutreachFill.Tokens(subject + "\n" + body).Where(t => t.Kind is OutreachTokenKind.Placeholder or OutreachTokenKind.Open)
+            .Select(t => (t.Written, t.Name, t.Modifier, Note(t))),
+        (name, modifier) =>
         modifier is null ? OutreachFill.All.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Description
         : name.Equals(OutreachFill.IndicatorsName, StringComparison.OrdinalIgnoreCase) && HuntValues(modifier) is { } kind
             ? $"The {Application.Actions.HuntValues.Label(kind).ToLowerInvariant()} on the article and the action."
@@ -42,16 +47,15 @@ public static partial class LibraryFills
 
     // Each placeholder once, those the describer knows; a name it doesn't know is left out (a template's typo is refused
     // when it's saved, so one is only an old entry's).
-    private static List<LibraryFill> Found(string text, Func<string, string?, string?> means) =>
-        [.. Pattern().Matches(text).DistinctBy(m => m.Value, StringComparer.OrdinalIgnoreCase)
-            .Select(m => means(m.Groups[2].Value.ToLowerInvariant(), m.Groups[3].Success ? m.Groups[3].Value : null) is { } said
-                ? new LibraryFill(m.Value, said + Note(m)) : null)
+    private static List<LibraryFill> Found(IEnumerable<(string Written, string Name, string? Modifier, string Note)> found, Func<string, string?, string?> means) =>
+        [.. found.DistinctBy(f => f.Written, StringComparer.OrdinalIgnoreCase)
+            .Select(f => means(f.Name, f.Modifier) is { } said ? new LibraryFill(f.Written, said + f.Note) : null)
             .OfType<LibraryFill>()];
 
     // What a section, a closing ? or |text adds to the placeholder's description.
-    private static string Note(Match m) =>
-        m.Groups[1].Success ? " Its section shows only when there's something to fill."
-        : m.Groups[4].Success ? " Left out when there's nothing to fill."
-        : m.Groups[5].Success ? $" \"{m.Groups[5].Value[1..].Trim()}\" when there's nothing to fill."
+    private static string Note(OutreachToken t) =>
+        t.Kind == OutreachTokenKind.Open ? " Its section shows only when there's something to fill."
+        : t.Optional ? " Left out when there's nothing to fill."
+        : t.Fallback is { } instead ? $" \"{instead.Trim()}\" when there's nothing to fill."
         : "";
 }
