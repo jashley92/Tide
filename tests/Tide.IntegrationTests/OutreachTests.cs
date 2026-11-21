@@ -123,6 +123,43 @@ public class OutreachServiceTests : IDisposable
 
     // --- the template library --------------------------------------------------------------------------------------
 
+    // The vendor starter's body as it shipped up to v1.15, before optional placeholders and sections.
+    private const string ShippedVendorBody = "Hello,\n\nWe run {{product.name}}, version {{product.versions}}, and are reviewing this report:\n\n{{article.title}}\n{{article.link}}\n\n"
+        + "CVEs:\n{{article.cves}}\n\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
+        + "- if not, when you expect one.\n\nOur reference is {{action.number}}.\n\nThanks,\n{{sender.name}}\n{{sender.team}}";
+
+    [Fact]
+    public async Task AStarterTideSaved_UnchangedSince_IsOfferedTheNewerVersion_KeepingItsOtherSettings_AndAChangedOneIsnt()
+    {
+        var current = StarterOutreachTemplates.All[0];
+        var old = StarterOutreachTemplates.ToEntity(current);
+        (old.Body, old.To, old.Ceiling) = (ShippedVendorBody, "psirt@vendor.example", TlpLevel.Green);
+        var edited = StarterOutreachTemplates.ToEntity(current);
+        (edited.Name, edited.Body) = ("Vendor, ours", ShippedVendorBody + "\nP.S.");
+        await using (var db = _db.Context())
+        {
+            db.OutreachTemplates.AddRange(old, edited);
+            await db.SaveChangesAsync();
+        }
+
+        StarterOutreachTemplates.NewerFor(old).Should().Be(current);
+        StarterOutreachTemplates.NewerFor(edited).Should().BeNull("its body was changed");
+        StarterOutreachTemplates.NewerFor(StarterOutreachTemplates.ToEntity(current)).Should().BeNull("it's the newer version already");
+        var someone = StarterOutreachTemplates.ToEntity(current);
+        (someone.Body, someone.CreatedByName) = (ShippedVendorBody, "Test Analyst");
+        StarterOutreachTemplates.NewerFor(someone).Should().BeNull("TIDE didn't save it");
+
+        await _db.OutreachTemplates().UseNewerStarterAsync(old.Id, old.EditVersion);
+        var now = (await _db.OutreachTemplates().GetAsync(old.Id))!;
+        (now.Body, now.Name, now.To, now.Ceiling, now.ModifiedByName).Should().Be((current.Body, current.Name, "psirt@vendor.example", TlpLevel.Green, "Test Analyst"));
+        StarterOutreachTemplates.NewerFor(now).Should().BeNull();
+
+        await FluentActions.Invoking(() => _db.OutreachTemplates().UseNewerStarterAsync(edited.Id, edited.EditVersion))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("Vendor, ours has been changed since TIDE added it, so it's kept as it is.");
+        As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
+        await FluentActions.Invoking(() => _db.OutreachTemplates().UseNewerStarterAsync(edited.Id, edited.EditVersion)).Should().ThrowAsync<ForbiddenException>();
+    }
+
     [Fact]
     public async Task Templates_AreKeptByWhoeverWorksActions_OneNameEach_AndAViewerOnlyReadsThem()
     {
