@@ -143,8 +143,11 @@ public static partial class OutreachFill
     /// <summary>The placeholder for the email's TLP marking.</summary>
     public const string TlpName = "tlp";
 
-    /// <summary>The placeholder for the article's CVEs, one a line (<c>article.cves-detailed</c> starts the same).</summary>
+    /// <summary>The placeholder for the article's CVE numbers, one a line (<see cref="CvesDetailedName"/> starts the same).</summary>
     public const string CvesName = "article.cves";
+
+    /// <summary>The placeholder for what TIDE knows of each of the article's CVEs, a paragraph a CVE.</summary>
+    public const string CvesDetailedName = "article.cves-detailed";
 
     /// <summary>The placeholder for the other reports added to the article.</summary>
     public const string OtherLinksName = "article.other-links";
@@ -166,9 +169,9 @@ public static partial class OutreachFill
         new("article.key-points", ArticleGroup, "Its key points, one a line, each within the ceiling."),
         new("article.link", ArticleGroup, "Its source's address."),
         new(OtherLinksName, ArticleGroup, "The other reports added to it, one a line."),
-        new(CvesName, ArticleGroup, "Its CVEs, one a line, with KEV and EPSS where TIDE knows them."),
+        new(CvesName, ArticleGroup, "Its CVE numbers, one a line."),
         new("article.cve-links", ArticleGroup, "A link to each of its CVEs on the NVD, one a line."),
-        new("article.cves-detailed", ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
+        new(CvesDetailedName, ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
         new("article.tlp", ArticleGroup, "The article's TLP, as TLP:GREEN."),
         new(IndicatorsName, IndicatorsGroup, "Every indicator on the article and the action, defanged, one a line."),
         new(IndicatorsName + ":domain", IndicatorsGroup, "One kind only (domain, url, ipv4, sha256…), as the saved hunt queries name them."),
@@ -563,8 +566,8 @@ public static partial class OutreachFill
             "article.link" => (a.SourceUrl, a.Tlp, false),
             OtherLinksName => (OtherLinks(a, f.ArticleLinks), a.Tlp, false),
             "article.tlp" => (Tlp.Label(a.Tlp), a.Tlp, false),
-            CvesName => (Cves(a, f.Cves), a.Tlp, false),
-            "article.cves-detailed" => (CvesDetailed(a, f.Cves), a.Tlp, false),
+            CvesName => (CveIds(a) is { Count: > 0 } ids ? string.Join("\n", ids) : null, a.Tlp, false),
+            CvesDetailedName => (CvesDetailed(a, f.Cves), a.Tlp, false),
             "article.cve-links" => (CveIds(a) is { Count: > 0 } ids ? string.Join("\n", ids.Select(CveLink)) : null, a.Tlp, false),
             "article.why-it-matters" => cut.ShowWhy
                 ? (a.WhyItMatters, a.Effective(a.WhyItMattersTlp), false)
@@ -586,29 +589,14 @@ public static partial class OutreachFill
         return shown.Count == 0 ? null : string.Join("\n", shown);
     }
 
-    // One a line: "CVE-2026-1234 (on CISA's KEV list; EPSS 94.1%)", or the id alone when TIDE knows nothing more.
-    private static string? Cves(Article a, IReadOnlyDictionary<string, CveRecord> records)
-    {
-        var ids = CveIds(a);
-        if (ids.Count == 0) return null;
-        var sb = new StringBuilder();
-        foreach (var id in ids)
-        {
-            records.TryGetValue(id, out var r);
-            var notes = new[] { KevNote(r, dates: false), EpssNote(r) }.OfType<string>().ToList();
-            sb.Append(id).Append(notes.Count > 0 ? $" ({string.Join("; ", notes)})" : "").Append('\n');
-        }
-        return sb.ToString().TrimEnd();
-    }
-
     // The article's CVE ids, in the order every CVE placeholder lists them.
     private static List<string> CveIds(Article a) => [.. a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase)];
 
-    // "on CISA's KEV list[ since Nov 1, 2026, due Nov 22, 2026], used in ransomware", for a CVE on it.
-    private static string? KevNote(CveRecord? r, bool dates) => r is not { IsKev: true } ? null
+    // "on CISA's KEV list[ since Nov 1, 2026][, due Nov 22, 2026][, used in ransomware]", for a CVE on it.
+    private static string? KevNote(CveRecord? r) => r is not { IsKev: true } ? null
         : "on CISA's KEV list"
-          + (dates && r.KevAddedDate is { } added ? " since " + Words.MonthDayYear(added) : "")
-          + (dates && r.KevDueDate is { } due ? ", due " + Words.MonthDayYear(due) : "")
+          + (r.KevAddedDate is { } added ? " since " + Words.MonthDayYear(added) : "")
+          + (r.KevDueDate is { } due ? ", due " + Words.MonthDayYear(due) : "")
           + (r.KevRansomware ? ", used in ransomware" : "");
 
     // "EPSS 94.1%", when TIDE knows it.
@@ -633,7 +621,7 @@ public static partial class OutreachFill
             var cvss = r?.CvssScore is { } score
                 ? $"CVSS {score.ToString("0.0", CultureInfo.InvariantCulture)}" + (string.IsNullOrWhiteSpace(r.CvssSeverity) ? "" : " " + r.CvssSeverity.Trim().ToLowerInvariant())
                 : null;
-            var notes = new[] { cvss, KevNote(r, dates: true), EpssNote(r) }.OfType<string>().ToList();
+            var notes = new[] { cvss, KevNote(r), EpssNote(r) }.OfType<string>().ToList();
             lines.Add(id + (notes.Count > 0 ? ": " + string.Join("; ", notes) : ""));
             var made = string.Join(" ", new[] { r?.Vendor, r?.Product }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
             if (made.Length > 0) lines.Add(made);

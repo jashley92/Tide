@@ -1123,7 +1123,7 @@ They're added once. The team edits, retires or deletes them like any other, and 
 
 The team's outreach emails, kept beside Saved queries and in the same way, 20 to a page: a name, a subject and a body
 with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.link}}` (its source),
-`{{article.other-links}}` (the other reports added to it), `{{article.cves}}` (with KEV and EPSS), `{{article.cve-links}}` (each CVE's NVD
+`{{article.other-links}}` (the other reports added to it), `{{article.cves}}` (their numbers), `{{article.cve-links}}` (each CVE's NVD
 page), `{{article.cves-detailed}}` (a paragraph a CVE), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
 `{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. The
 list says each one's TLP ceiling and how many emails were written from it. Its filter bar is the search box with

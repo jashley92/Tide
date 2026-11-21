@@ -148,7 +148,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         // article through and the template has a placeholder that shows them.
         bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
                                   || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
-        var cveIds = Uses(OutreachFill.CvesName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
+        var cveIds = Uses(OutreachFill.CvesDetailedName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
         List<string> links = [];
