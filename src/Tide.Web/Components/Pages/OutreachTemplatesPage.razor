@@ -98,7 +98,7 @@ else
                     @if (_canWrite && StarterOutreachTemplates.NewerFor(t) is not null)
                     {
                         <div class="tide-oi-newer small mb-2">
-                            <span class="bi bi-stars" aria-hidden="true"></span> TIDE has a newer version of this starter. @StarterOutreachTemplates.NewerWhy
+                            <span class="bi bi-stars" aria-hidden="true"></span> TIDE has a newer version of this starter. It leaves out a heading, link or line when there's nothing to fill.
                             <button type="button" class="btn btn-link btn-sm p-0 align-baseline" disabled="@(_busy || _form is not null)" @onclick="() => UseNewer(t)">Use it</button>
                         </div>
                     }
