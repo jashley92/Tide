@@ -26,20 +26,19 @@ public sealed record OutreachWritten(OutreachTemplate Template, OutreachDraft Dr
 /// What a template being written is filled from on one action, read once (<see cref="OutreachService.PreviewAsync"/>):
 /// the draft is filled again from it as the text changes, with nothing more read.
 /// </summary>
-public sealed class OutreachPreview(OutreachFacts facts, IReadOnlyList<StackProduct> products, StackProduct? product)
+/// <param name="Facts">What it's filled from, held to its ceiling.</param>
+/// <param name="Products">The products the action names, any of which it can be filled for.</param>
+public sealed record OutreachPreview(OutreachFacts Facts, IReadOnlyList<StackProduct> Products)
 {
-    /// <summary>The products the action names, any of which the preview can be filled for.</summary>
-    public IReadOnlyList<StackProduct> Products { get; } = products;
-
-    /// <summary>The product it's filled for.</summary>
-    public StackProduct? Product { get; } = product;
+    /// <summary>The same, filled for <paramref name="product"/> (one of <see cref="Products"/>), with nothing more read.</summary>
+    public OutreachPreview For(StackProduct product) => this with { Facts = Facts with { Product = product } };
 
     /// <summary>The subject and body filled. Text <see cref="OutreachFill.Check"/> refuses is refused.</summary>
     public OutreachDraft Fill(string subject, string body)
     {
         OutreachFill.Check(subject);
         OutreachFill.Check(body);
-        return OutreachFill.Fill(subject, body, facts);
+        return OutreachFill.Fill(subject, body, Facts);
     }
 }
 
@@ -162,15 +161,15 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     /// <see cref="WriteAsync(Guid, Guid, Guid?, IReadOnlyList{StackProduct}?, CancellationToken)"/> fills a saved one, for
     /// whoever works the action, held to <paramref name="ceiling"/> and for <paramref name="productId"/> (else the first
     /// product the action names). Read once, whichever placeholders the text uses, so the draft is filled again as it
-    /// changes without reading more. Saves nothing.
+    /// changes, or for another of the action's products (<see cref="OutreachPreview.For"/>), without reading more. Saves nothing.
     /// </summary>
     public async Task<OutreachPreview> PreviewAsync(Guid actionId, TlpLevel ceiling, Guid? productId = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.HuntActionAsync(db, actionId, tracked: false, ct);
         await ActionService.RequireWork(db, user, a, ct);
-        var (facts, product, products) = await FactsAsync(db, a, ceiling, _ => true, productId, null, ct);
-        return new OutreachPreview(facts, products, product);
+        var (facts, _, products) = await FactsAsync(db, a, ceiling, _ => true, productId, null, ct);
+        return new OutreachPreview(facts, products);
     }
 
     private async Task<OutreachWritten> WriteAsync(IAppDbContext db, ActionItem a, OutreachTemplate template, Guid? productId, IReadOnlyList<StackProduct>? products,

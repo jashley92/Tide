@@ -57,7 +57,7 @@
                             </select>
                             @if (_preview is { Products.Count: > 1 } withProducts)
                             {
-                                <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The product to fill it for" value="@withProducts.Product?.Id"
+                                <select class="form-select form-select-sm tide-oi-preview-action" aria-label="The product to fill it for" value="@withProducts.Facts.Product?.Id"
                                         @onchange="e => ChooseProduct(Guid.TryParse(e.Value as string, out var id) ? id : null)">
                                     @foreach (var p in withProducts.Products)
                                     {
@@ -107,9 +107,8 @@
     private int _fills;
     private bool _previewing;
     private IReadOnlyList<WorkableAction>? _offered;
-    private Guid? _actionId, _productId;
+    private Guid? _actionId;
     private OutreachPreview? _preview;
-    private TlpLevel _previewCeiling;
     private OutreachDraft? _draft;
     private string? _previewError;
     private (string? Subject, string? Body, TlpLevel Ceiling)? _seen;
@@ -127,7 +126,7 @@
         _seen = now;
         Check();
         if (!_previewing) return;
-        if (_preview is not null && _previewCeiling == Ceiling) Refill();
+        if (_preview?.Facts.Ceiling == Ceiling) Refill();
         else await Load();
     }
 
@@ -157,19 +156,28 @@
             _offered = [.. workable.Where(a => LibraryUseService.Suits(LibraryKind.OutreachTemplate, a.Kind))];
             _actionId ??= (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
         }
-        await Load();
+        // What was read is kept while the preview is folded away, and used again for the same ceiling.
+        if (_preview?.Facts.Ceiling == Ceiling)
+        {
+            Refill();
+            StateHasChanged();
+        }
+        else await Load();
     }
 
     internal async Task ChooseAction(Guid? id)
     {
-        (_actionId, _productId) = (id, null);
+        _actionId = id;
         await Load();
     }
 
-    internal async Task ChooseProduct(Guid? id)
+    // Another of the action's products: filled from what was read, with nothing more read.
+    internal void ChooseProduct(Guid? id)
     {
-        _productId = id;
-        await Load();
+        if (_preview?.Products.FirstOrDefault(p => p.Id == id) is not { } product) return;
+        _preview = _preview.For(product);
+        Refill();
+        StateHasChanged();
     }
 
     // What the chosen action and product fill it with, read once, then the draft filled from it.
@@ -181,9 +189,9 @@
         {
             try
             {
-                var preview = await OutreachSvc.PreviewAsync(id, Ceiling, _productId);
+                var preview = await OutreachSvc.PreviewAsync(id, Ceiling);
                 if (asked != _asked) return;
-                (_preview, _previewCeiling) = (preview, Ceiling);
+                _preview = preview;
                 Refill();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -197,25 +205,16 @@
     // The draft filled again from what was read; a draft TIDE can't fill says why, as the check does.
     private void Refill()
     {
-        if (_preview is null) return;
-        (_draft, _previewError) = _problem is { } problem ? (null, "Fix the draft to preview it: " + problem)
-            : (_preview.Fill(Subject ?? "", Body ?? ""), (string?)null);
-        StateHasChanged();
+        _draft = _problem is null ? _preview!.Fill(Subject ?? "", Body ?? "") : null;
+        _previewError = _problem is null ? null : "Fix the draft to preview it: " + _problem;
     }
 
     // The text with each marker (a gap left to fill before sending) marked out.
     private static RenderFragment Marked(string text) => __builder =>
     {
-        foreach (var (piece, isMarker) in OutreachFill.Pieces(text))
+        foreach (var run in OutreachFill.Pieces(text))
         {
-            if (isMarker)
-            {
-                <mark class="tide-oi-gap">@piece</mark>
-            }
-            else
-            {
-                @piece
-            }
+            if (run.Hit) { <mark class="tide-oi-gap">@run.Text</mark> } else { @run.Text }
         }
     };
 }
