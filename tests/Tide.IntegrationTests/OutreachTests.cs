@@ -284,7 +284,9 @@ public class OutreachServiceTests : IDisposable
         d.Marking.Should().Be(TlpLevel.Green);
         preview.Fill("{{article.cve-links}}", "x").Subject.Should().Contain("nvd.nist.gov", "read once, whichever placeholders the text uses");
         preview.Products.Should().NotBeEmpty();
-        preview.Product.Should().Be(preview.Products[0]);
+        preview.Facts.Product.Should().Be(preview.Products[0]);
+        var other = new StackProduct { Name = "Other Gateway", Versions = "9.1" };
+        preview.For(other).Fill("{{product.name}} {{product.versions}}", "x").Subject.Should().Be("Other Gateway 9.1", "another product, with nothing more read");
         (await _db.OutreachTemplates().ListAsync()).Should().BeEmpty("a preview saves no template");
         (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty();
 
