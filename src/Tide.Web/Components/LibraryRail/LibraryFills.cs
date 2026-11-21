@@ -43,10 +43,15 @@ public static partial class LibraryFills
     // Each placeholder once, those the describer knows; a name it doesn't know is left out (a template's typo is refused
     // when it's saved, so one is only an old entry's).
     private static List<LibraryFill> Found(string text, Func<string, string?, string?> means) =>
-        [.. Pattern().Matches(text).Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(written => Pattern().Match(written) is var m && means(m.Groups[2].Value.ToLowerInvariant(), m.Groups[3].Success ? m.Groups[3].Value : null) is { } said
-                ? new LibraryFill(written, said + (m.Groups[1].Success ? " Its section shows only when there's something to fill."
-                    : m.Groups[4].Success ? " Left out when there's nothing to fill."
-                    : m.Groups[5].Success ? $" \"{m.Groups[5].Value[1..].Trim()}\" when there's nothing to fill." : "")) : null)
+        [.. Pattern().Matches(text).DistinctBy(m => m.Value, StringComparer.OrdinalIgnoreCase)
+            .Select(m => means(m.Groups[2].Value.ToLowerInvariant(), m.Groups[3].Success ? m.Groups[3].Value : null) is { } said
+                ? new LibraryFill(m.Value, said + Note(m)) : null)
             .OfType<LibraryFill>()];
+
+    // What a section, a closing ? or |text adds to the placeholder's description.
+    private static string Note(Match m) =>
+        m.Groups[1].Success ? " Its section shows only when there's something to fill."
+        : m.Groups[4].Success ? " Left out when there's nothing to fill."
+        : m.Groups[5].Success ? $" \"{m.Groups[5].Value[1..].Trim()}\" when there's nothing to fill."
+        : "";
 }

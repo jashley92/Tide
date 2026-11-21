@@ -315,9 +315,9 @@ public class OutreachFillTests
         d.LeftOut.Should().ContainSingle().Which.Should().StartWith("The article is TLP:AMBER, above this template's TLP:GREEN");
     }
 
-    [Theory]
-    [InlineData("{{article.other-links?}} {{indicators:domain?}} {{today:+2?}} {{Article.CVES?}}")]
-    public void Check_AcceptsAClosingQuestionMark(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
+    [Fact]
+    public void Check_AcceptsAClosingQuestionMark() =>
+        FluentActions.Invoking(() => OutreachFill.Check("{{article.other-links?}} {{indicators:domain?}} {{today:+2?}} {{Article.CVES?}}")).Should().NotThrow();
 
     [Theory]
     [InlineData("{{tlp?}}", "{{tlp?}} can't be optional*")]
