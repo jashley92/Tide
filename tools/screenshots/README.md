@@ -142,11 +142,34 @@ check:
 A setup that can't be done (a page that won't load, a meeting that won't start) fails that page at once, with why, and
 its other widths aren't tried: they would only wait out the same timeouts.
 
-`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages, in order, on
-its own fresh demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after
-them, so they stay together at the end of the last slice: put a new page that changes the demo there, and any other
-before the marker. To run the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR`
-with `NO_BUILD=1` (or publish once and give each `APP_DIR`, as CI does).
+`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages on its own fresh
+demo; CI runs the four side by side. The pages from the first `changesTheDemo(...)` mark on change the demo for those
+after them. Each mark starts a chain (Today's queue and saves, the presenter's strips, the live meeting and so on) that
+runs whole, in order, after its slice's other pages. As every slice starts on a fresh demo, a page may lean on what an
+earlier page of its own chain did, but never on another chain's. Put a page that reads the demo before the first mark;
+a page that changes it in the chain whose pages it touches, or, if it leans on none, under a mark of its own. A chain
+must hold whichever chains share its slice, so run one you add to or change alone too:
+`CHAIN="the live meeting" node tools/screenshots/layout.mjs` runs just that chain's pages on a fresh demo. A page's
+setup starts from what it needs rather than from where the page before left things (the meeting on its wrap-up, say),
+as the pages before it can change when the slices are cut afresh. To run
+the slices side by side yourself, build once, then give each its own `PORT` and `DEMO_DIR` with `NO_BUILD=1` (or
+publish once and give each `APP_DIR`, as CI does).
+
+The slices take about as long as each other by what each page took in CI (`shards.mjs`): each page before the first
+mark, and each chain as one, is placed longest first on the slice with least so far, and each slice keeps the pages'
+own order, so its chains come after its other pages. What a page
+takes is in `layout-weights.json`, in seconds for all its widths; a page not in it yet (a new one, or one renamed) is
+counted by its widths at the median per width (`perWidth`, `perPresentWidth` for a Present page), so adding a page
+never breaks the split, it's only placed less exactly. Every sharded run checks that the slices hold every page exactly
+once, each in the list's order, each chain whole in one slice and after that slice's pages that read the demo, and
+fails if not. `PLAN=1 node tools/screenshots/layout.mjs` prints each slice's pages, expected seconds and chains, and
+names the pages not yet timed, without starting anything (`SHARD=1/5` with it plans five).
+
+Refresh the weights when the slices drift apart in CI (a shard several minutes longer than the others) or after adding
+many pages: pick two or three recent green runs of CI on main, run
+`node tools/screenshots/layout-weights.mjs <run id> <run id> ...` (it reads each layout shard's log through `gh`, so be
+signed in), check `PLAN=1`, and commit `layout-weights.json`. A page's weight is its mean over every shard log it's in,
+from the time between its lines' timestamps; pages those runs didn't time keep theirs.
 
 After a load, a click or a key, wait with `idle(page)` (tide.mjs), not a fixed pause: it waits until Blazor's circuit
 is up, the server has no event in hand (the Development-only `/demo/activity`, on with `Demo:Seed`), and nothing in the
@@ -173,6 +196,31 @@ renamed class or a seed without the case can't pass it unseen. `hidden(selector)
 `[minWidth, rule]` applies a rule only at that width or wider (the slide's rows wrap below 1001px, as designed). A
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
 than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.
+
+## Accessibility scan (report only)
+
+`layout.mjs` also runs [axe-core](https://github.com/dequelabs/axe-core) (`axe.mjs`, the version locked in
+`package-lock.json`) on each page it checks, once, at the page's widest width, after that width's layout rules: the page
+as its setup and rules left it (a dialog open, a rail docked). It checks the WCAG 2.0 and 2.1 A and AA rules
+(`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`) in the top document.
+
+It only reports. What it finds never fails the run, and a scan that can't run says so and moves on. Each page prints a
+line such as `today at 1920x900: axe, 2 rules broken on 5 elements (report only)`, and the run writes
+`tools/screenshots/.axe/axe-<slice>.json` and `.md` (`axe-2-of-4`, or `axe-all` without `SHARD`; git-ignored):
+
+- The `.md` is a summary: each rule broken, its impact (`critical`, `serious`, `moderate`, `minor`), how many elements
+  break it on how many pages, and the first pages. The rule's name links to Deque's page on what it means and how to
+  fix it.
+- The `.json` has every page scanned, at what size, and for each rule broken there every element's selector
+  (`targets`): open the page in the demo at that size and find the element to see what axe saw. `rules` totals them, as
+  the summary does.
+
+In CI each slice at the default letter spacing scans (`AXE=1`; the `.12em` jobs set `AXE=0`, as the wider letters
+would find the same), adds its summary to the job's summary page, and uploads `.axe/` as the `axe-<n>-of-4` artifact,
+kept 14 days. `AXE=0` turns the scan off locally.
+
+The plan is to make it a gate once the findings are fixed: first fail on new `critical` and `serious` findings, then on
+any, with an allow-list for what's known and tracked.
 
 ## Before and after pictures
 

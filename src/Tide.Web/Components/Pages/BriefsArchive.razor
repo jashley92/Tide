@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @inject BriefService BriefSvc
 @inject OrgClock Clock
+@inject ToastService Toasts
 @inject Microsoft.Extensions.Options.IOptionsMonitor<Tide.Application.Settings.DistributionOptions> DistributionOptions
 
 <PageTitle>Brief archive · TIDE</PageTitle>
@@ -13,25 +14,33 @@
     <a class="btn btn-primary" href="@Ui.BriefUrl(Clock.CurrentBriefDate)"><span class="bi bi-journal-text" aria-hidden="true"></span> Today's brief</a>
 </div>
 
-<div class="tide-card">
-    <DataTable TItem="BriefSummary" Items="_rows" Columns="Columns" Key="r => r.Id" One="brief" Many="briefs" Caption="Briefs" PageInAddress="true"
-               FilterLabel="Filter briefs" FilterPlaceholder="A day, a month, who presented" Filter="@Q" DefaultSort="Newest" PageSize="60">
-        <Empty><EmptyState Icon="bi-archive" Title="No briefs yet" /></Empty>
-        <RowTemplate Context="r">
-            <td><a href="@Ui.BriefUrl(r.BriefDate)">@Ui.Day(r.BriefDate)</a></td>
-            <td>@r.PresentedBy</td>
-            <td class="tide-table-num">@r.Articles</td>
-            <td class="tide-table-num">@r.Threats</td>
-            <td>
-                <StatusBadge Status="@Label(r)" />
-                @if (NotSent(r))
-                {
-                    <div class="tide-not-sent-note">@r.NotSentByName, @Ui.When(Clock, r.NotSentAtUtc!.Value): @r.NotSentReason</div>
-                }
-            </td>
-        </RowTemplate>
-    </DataTable>
-</div>
+@if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the brief archive" /></div>
+}
+else
+{
+    <div class="tide-card">
+        <DataTable TItem="BriefSummary" Items="_rows" Columns="Columns" Key="r => r.Id" One="brief" Many="briefs" Caption="Briefs" PageInAddress="true"
+                   FilterLabel="Filter briefs" FilterPlaceholder="A day, a month, who presented" Filter="@Q" DefaultSort="Newest" PageSize="60">
+            <Empty><EmptyState Icon="bi-archive" Title="No briefs yet" /></Empty>
+            <RowTemplate Context="r">
+                <td><a href="@Ui.BriefUrl(r.BriefDate)">@Ui.Day(r.BriefDate)</a></td>
+                <td>@r.PresentedBy</td>
+                <td class="tide-table-num">@r.Articles</td>
+                <td class="tide-table-num">@r.Threats</td>
+                <td>
+                    <StatusBadge Status="@Label(r)" />
+                    @if (NotSent(r))
+                    {
+                        <div class="tide-not-sent-note">@r.NotSentByName, @Ui.When(Clock, r.NotSentAtUtc!.Value): @r.NotSentReason</div>
+                    }
+                </td>
+            </RowTemplate>
+        </DataTable>
+    </div>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
@@ -59,6 +68,15 @@
     private static bool NotSent(BriefSummary r) => r.Status == BriefStatus.Sent && r.NotSentAtUtc is not null && !r.Emailed;
 
     private IReadOnlyList<BriefSummary>? _rows;
+    private bool _failed;
 
-    protected override async Task OnInitializedAsync() => _rows = await BriefSvc.ListAsync(take: null);
+    protected override async Task OnInitializedAsync()
+    {
+        try { _rows = await BriefSvc.ListAsync(take: null); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
 }

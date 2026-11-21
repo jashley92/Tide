@@ -84,33 +84,42 @@ The restore drill. It takes the newest set of this install (or `-BackupSet`) and
 - checks the restored database has TIDE's migration history;
 - checks every screenshot the database lists is in the set at its recorded size, and that `-Sample` (200) of them, or
   all with `-HashAll`, match their SHA-256;
-- checks the set holds the key ring and the site's settings file.
+- checks the set holds the key ring and the site's settings file. With `DataProtection:KeyPath` not set there's no key
+  ring to back up, so that check is skipped and marked `[SKIP]` with why, not failed.
 
 It writes `restore-check-<time>.json` into the set, drops the scratch database (unless `-KeepRestored`), and exits with
 code 2 on a failed check. `-Register` schedules it every fourth Sunday. It refuses a scratch name that's the live
-database.
+database's on any instance, since `.`, `localhost` and the server's full name all reach the live one. It marks each
+scratch database it restores (a `TideRestoreDrill` extended property) and replaces an existing database of the scratch
+name only when it carries that mark, so on a shared instance it never drops another install's database. A scratch
+database kept from a drill before the mark is refused once: drop it yourself after checking.
 
 ### Upgrade-Tide.ps1
 
 Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#upgrading-with-upgrade-tideps1)):
 
-- before deploying, a `COPY_ONLY` database backup (`-SkipDbBackup` when your product's is current), the site's
-  `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`), under
-  `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
+- before deploying, a `COPY_ONLY` database backup checked with `RESTORE VERIFYONLY` (`-SkipDbBackup` when your
+  product's is current), the site's `appsettings.Production.json`, and a snapshot of the site folder (`site-rollback`),
+  under `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`);
 - after deploying, it polls `/health` for up to 11 minutes;
-- if TIDE doesn't answer `Healthy`, it puts the previous files back and starts the pool, unless the new build had
-  already migrated the database, in which case it leaves the pool stopped and says to restore the pre-upgrade backup.
+- if deploying fails (the copy, removing old files, the pool's settings, starting the pool) or TIDE doesn't answer
+  `Healthy`, it puts the previous files back and starts the pool, unless the database records a migration the previous
+  build doesn't know (the new build's, or an earlier failed upgrade's), in which case it leaves the pool stopped and
+  says which backup to restore. Migrations a DBA applied before a DbaApplies upgrade don't count: the previous build
+  ran on them. When it can't read the database's migration history, or the previous build's, it leaves the pool
+  stopped too and says what to check, unless the failure came before the new build could start.
 
 ```mermaid
 flowchart TD
-    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database,<br/>settings file, site snapshot"]
+    A["Preflight checks<br/>-WhatIf stops here"] --> B["Back up: COPY_ONLY database (verified),<br/>settings file, site snapshot"]
     B --> C["Stop pool, copy release,<br/>keep settings, logs, App_Data"]
     C --> D["Start pool<br/>AppMigrates: migrations run"]
+    C -->|A step fails| G
     D --> E{"/health Healthy<br/>within 11 minutes?"}
     E -->|Yes| F["Write VERSION.txt,<br/>refresh kept scripts"]
-    E -->|No| G{"Did the new build<br/>migrate the database?"}
-    G -->|No| H["Restore site-rollback,<br/>start pool"]
-    G -->|Yes| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
+    E -->|No| G{"Restore site-rollback.<br/>Does the database have migrations<br/>the previous build doesn't know?"}
+    G -->|No| H["Start pool"]
+    G -->|"Yes, or can't tell"| I["Leave pool stopped:<br/>restore the pre-upgrade backup"]
 ```
 
 ## Restoring
@@ -203,6 +212,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7105 | Metrics drop folder |
 | 7106 | Update check |
 | 7107 | Webhooks |
+| 7108 | Hashing stored addresses |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -213,6 +223,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Metrics drop folder | `MetricImportHostedService` | Every `Metrics:Import:PollMinutes`; every minute while off | `Metrics:Import:DropFolderEnabled` |
 | Update check | `UpdateCheckHostedService` | 2 minutes after start, then every `Updates:CheckIntervalHours`; re-reads the switch every 5 minutes | `Updates:CheckEnabled` |
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
+| Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
 
 ### Timers and periodic work in the request path
 
@@ -260,7 +271,8 @@ is logged as `Tide.Health` ("Background jobs is Unhealthy: jobs …").
 ### Diagnostics
 
 **Administration › System › Diagnostics** is the deeper check, for administrators: the build and uptime; the
-database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file);
+database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file; the app makes the folder at start-up, and
+logs a `Tide.Files` warning if it can't);
 the key ring is on disk; email is on, signs in properly, and isn't backed off; which sources are failing; each
 background job's last run, result and next run, whether it's failing, overdue or hung, and its runs and failures over
 30 days; which process holds the job lease (or that this one is standing by); whether the role mappings loaded; whether WebSockets are in use (this
@@ -274,7 +286,7 @@ page's connection and everyone's since start); and whether a newer release is ou
 | `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
-| "Background job … failed", event ids 7101 to 7107 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
+| "Background job … failed", event ids 7101 to 7108 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
@@ -288,7 +300,7 @@ How to read the log, and how to raise its level, is in [INSTALL.md](../INSTALL.m
 | Upgrade backup and rollback | `deploy/Upgrade-Tide.ps1`, `deploy/lib/TideUpgrade.ps1` |
 | Key ring | `src/Tide.Web/Program.cs` (data protection) |
 | File store | `src/Tide.Infrastructure/Storage/DiskFileStore.cs` |
-| Hosted services | `src/Tide.Web/Services/IntakeHostedService.cs`, `ReminderHostedService.cs`, `MetricImportHostedService.cs`, `UpdateCheckHostedService.cs`; `src/Tide.Web/Api/WebhookServices.cs` (`WebhookHostedService`) |
+| Hosted services | `src/Tide.Web/Services/IntakeHostedService.cs`, `ReminderHostedService.cs`, `MetricImportHostedService.cs`, `UpdateCheckHostedService.cs`, `UrlHashFillHostedService.cs`; `src/Tide.Web/Api/WebhookServices.cs` (`WebhookHostedService`) |
 | Job reporting | `src/Tide.Application/Operations/JobMonitor.cs`, `JobHealth.cs`, `JobRunLog.cs` |
 | Job lease | `src/Tide.Application/Operations/BackgroundJobLease.cs`, `src/Tide.Web/Services/JobUpkeepHostedService.cs` |
 | Pool settings | `deploy/lib/TideIis.ps1` (`Set-TideSingleWorkerProcess`) |

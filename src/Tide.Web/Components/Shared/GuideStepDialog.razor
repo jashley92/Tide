@@ -142,5 +142,6 @@
         if (_placed is null) return;   // never shown in a browser
         await JS.StopAsync("tideTips.hide");
         await JS.StopAsync("tideTips.end");
+        await JS.StopAsync("tideDialog.forget");   // the guide ending moves focus itself
     }
 }

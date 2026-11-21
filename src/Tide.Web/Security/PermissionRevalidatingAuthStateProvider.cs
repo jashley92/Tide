@@ -22,15 +22,23 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
 
     private readonly SessionPermissionRefresher _refresher;
     private readonly ILogger<PermissionRevalidatingAuthStateProvider> _log;
+    private readonly TimeProvider _time;
     private readonly CancellationTokenSource _stop = new();
     private bool _looping;
     private bool _publishing;
 
     public PermissionRevalidatingAuthStateProvider(SessionPermissionRefresher refresher,
         ILogger<PermissionRevalidatingAuthStateProvider> log)
+        : this(refresher, log, TimeProvider.System) { }
+
+    /// <param name="time">Tests only: the clock the re-check's ticks come from. Internal, so the container never picks
+    /// it (it would hand over a registered app clock).</param>
+    internal PermissionRevalidatingAuthStateProvider(SessionPermissionRefresher refresher,
+        ILogger<PermissionRevalidatingAuthStateProvider> log, TimeProvider time)
     {
         _refresher = refresher;
         _log = log;
+        _time = time;
         AuthenticationStateChanged += OnChanged;
     }
 
@@ -83,7 +91,7 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
 
     private async Task LoopAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(Interval);
+        using var timer = new PeriodicTimer(Interval, _time);
         try
         {
             while (await timer.WaitForNextTickAsync(ct))

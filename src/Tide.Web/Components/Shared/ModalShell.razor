@@ -1,0 +1,143 @@
+@* The frame every modal dialog shares (ConfirmDialog, LeaveDialog, ScreenshotDialog, the shortcuts list, What's new):
+   the scrim (a click on it closes, unless CloseOnScrim is off), the dialog itself (role, aria-modal, labelled by its
+   title, tabindex="-1" so a click on its text keeps focus in it and Escape still reaches it), the title, Escape, and
+   tideDialog.open / close (dialog.js) as it shows and hides: focus moves in, Tab stays inside, and focus goes back to
+   what had it. The dialog draws its own body and buttons. *@
+@inject IJSRuntime JS
+
+@if (Open)
+{
+    <div class="tide-modal-scrim" @onclick="ScrimClick">
+        <div class="@DialogClass" tabindex="-1" role="@Role" aria-modal="true" aria-labelledby="@TitleId" aria-describedby="@DescribedBy"
+             @onclick:stopPropagation="true" @onkeydown="OnKey" @ref="_dialog">
+            @if (HeadClass is not null)
+            {
+                <div class="@HeadClass">
+                    @TitleElement
+                    @HeadContent
+                </div>
+            }
+            else
+            {
+                @TitleElement
+            }
+            @ChildContent
+            @if (Actions is not null)
+            {
+                <div class="@(ActionsClass is null ? "tide-modal-actions" : "tide-modal-actions " + ActionsClass)">@Actions</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Whether the dialog is drawn. Focus moves in as it becomes true, and back as it becomes false.</summary>
+    [Parameter] public bool Open { get; set; }
+
+    /// <summary><c>dialog</c>, or <c>alertdialog</c> for a question that interrupts (are you sure?).</summary>
+    [Parameter] public string Role { get; set; } = "dialog";
+
+    /// <summary>The title as text; <see cref="TitleContent"/> in its place for one with an icon.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <inheritdoc cref="Title"/>
+    [Parameter] public RenderFragment? TitleContent { get; set; }
+
+    /// <summary>
+    /// What the dialog's own ids start with (<c>confirm-1a2b3c4d</c>): the title is <c>{Id}-title</c>, and the dialog
+    /// names its other parts the same way (<c>{Id}-body</c>). A fresh one when not given.
+    /// </summary>
+    [Parameter] public string Id { get; set; } = Ui.NewId("modal");
+
+    /// <summary>The id of what describes the dialog (its message), if anything does.</summary>
+    [Parameter] public string? DescribedBy { get; set; }
+
+    /// <summary>Classes beside <c>tide-modal</c> (<c>tide-shortcuts</c>).</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Room for a row of fields (<c>tide-modal-wide</c>).</summary>
+    [Parameter] public bool Wide { get; set; }
+
+    /// <summary>
+    /// A head row: the title and <see cref="HeadContent"/> (a close button, a file's name) in a <c>div</c> of this class.
+    /// Without it, the title stands alone.
+    /// </summary>
+    [Parameter] public string? HeadClass { get; set; }
+
+    /// <inheritdoc cref="HeadClass"/>
+    [Parameter] public RenderFragment? HeadContent { get; set; }
+
+    /// <summary>The body, under the title.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The buttons, in a <c>tide-modal-actions</c> row at the foot (none: no row).</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>Classes beside <c>tide-modal-actions</c> (<c>tide-modal-actions-wrap</c>).</summary>
+    [Parameter] public string? ActionsClass { get; set; }
+
+    /// <summary>Escape, a click on the scrim (see <see cref="CloseOnScrim"/>), or the dialog's own close: it decides.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Whether a click outside the dialog closes it.</summary>
+    [Parameter] public bool CloseOnScrim { get; set; } = true;
+
+    /// <summary>Keys other than Escape, pressed in the dialog (the screenshot dialog's arrows).</summary>
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
+
+    /// <summary>
+    /// Where focus goes as it opens. Read then, not when the dialog is drawn, as the element is in the body or the
+    /// buttons this dialog draws. With <see cref="Focus"/> other than Target, it's the fallback.
+    /// </summary>
+    [Parameter] public Func<ElementReference>? FocusTarget { get; set; }
+
+    /// <summary>How the first focus is chosen.</summary>
+    [Parameter] public FirstFocus Focus { get; set; } = FirstFocus.Target;
+
+    /// <summary>Runs after focus has gone back to the opener as it closes, for a dialog that sends it somewhere else.</summary>
+    [Parameter] public Func<Task>? AfterClose { get; set; }
+
+    /// <summary>How the first focus is chosen: <see cref="FocusTarget"/> itself; the first field in the dialog (a form),
+    /// else the target; or the first control in it (a panel whose body acts), else the target.</summary>
+    public enum FirstFocus { Target, Field, Control }
+
+    /// <summary>The title's id, which labels the dialog.</summary>
+    public string TitleId => Id + "-title";
+
+    private ElementReference _dialog;
+    private bool _shown;
+
+    private string DialogClass =>
+        "tide-modal" + (Wide ? " tide-modal-wide" : "") + (string.IsNullOrEmpty(Class) ? "" : " " + Class);
+
+    private RenderFragment TitleElement => @<h2 class="tide-modal-title" id="@TitleId">@if (TitleContent is not null) { @TitleContent } else { @Title }</h2>;
+
+    internal Task ScrimClick() => CloseOnScrim ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    internal Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? OnClose.InvokeAsync() : OnKeyDown.InvokeAsync(e);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open == _shown) return;
+        _shown = Open;
+        try
+        {
+            if (Open)
+            {
+                var target = FocusTarget?.Invoke();
+                switch (Focus)
+                {
+                    case FirstFocus.Field: await JS.InvokeVoidAsync("tideDialog.openFirst", _dialog, target); break;
+                    case FirstFocus.Control: await JS.InvokeVoidAsync("tideDialog.openFirstControl", _dialog, target); break;
+                    default: await JS.InvokeVoidAsync("tideDialog.open", target); break;
+                }
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("tideDialog.close");
+                if (AfterClose is not null) await AfterClose();
+            }
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone: nothing to focus */ }
+    }
+}

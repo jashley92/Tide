@@ -4,6 +4,7 @@ using Tide.Application.Actions;
 using Tide.Application.Indicators;
 using Tide.Application.Intake;
 using Tide.Application.Metrics;
+using Tide.Domain.Common;
 using Tide.Domain.Enums;
 
 namespace Tide.UnitTests.Audit;

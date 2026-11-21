@@ -25,6 +25,7 @@
 @inject PresenceCircuit Circuit
 @inject Tide.Application.Stack.StackService StackSvc
 @inject PrerenderHandoff Handoff
+@inject ILogger<Present> Log
 @implements IAsyncDisposable
 
 <PageTitle>Presenting @Ui.ShortDay(_date) · TIDE</PageTitle>
@@ -277,7 +278,7 @@ else
                         </ol>
                         @if (edition.WithheldArticles > 0)
                         {
-                            <div class="tide-present-help mt-2">@edition.WithheldArticles restricted item@(edition.WithheldArticles == 1 ? " is" : "s are") left out of this edition.</div>
+                            <div class="tide-present-help mt-2">@Ui.Plural(edition.WithheldArticles, "restricted item is", "restricted items are") left out of this edition.</div>
                         }
                     </div>
                 }
@@ -593,7 +594,7 @@ else
                                 }
                                 @if (ea.WithheldParts > 0)
                                 {
-                                    <div class="tide-present-help mt-2">@ea.WithheldParts restricted part@(ea.WithheldParts == 1 ? " is" : "s are") left out of this edition.</div>
+                                    <div class="tide-present-help mt-2">@Ui.Plural(ea.WithheldParts, "restricted part is", "restricted parts are") left out of this edition.</div>
                                 }
                                 @* Indicators and actions are the team's: the company-wide edition never carries them (ADR 0005). *@
                                 @if (TeamEdition)
@@ -640,7 +641,7 @@ else
                         <h2>That's the brief</h2>
                         @{ var threats = edition.Articles.Count(a => a.Article.Classification == Classification.Threat); }
                         <div class="tide-cover-meta">
-                            @threats threat@(threats == 1 ? "" : "s"),
+                            @Ui.Plural(threats, "threat"),
                             @edition.Articles.Count(a => a.Article.Classification == Classification.Informational) informational
                         </div>
                         @* What's left, as three short lists the room reads alike (the presenter's rail acts on them): the
@@ -1053,7 +1054,7 @@ else
                             }
                             @if (_view is null && BeforeItsDay)
                             {
-                                <div class="tide-present-help mt-2">@StartsOn</div>
+                                <div id="present-end-when" class="tide-present-help mt-2">@StartsOn</div>
                             }
                             else if (CanEnd)
                             {
@@ -2059,6 +2060,9 @@ else
         try
         {
             if (!already) carriedTo = await BriefSvc.MarkPresentedAsync(_brief!.Id, held, carry: carry);
+            // Ended from the brief page already: who took it over since still goes on the brief, as best it can; the
+            // meeting ends whatever becomes of that.
+            else await RecordPresenters();
         }
         catch (KeyNotFoundException)
         {
@@ -2067,7 +2071,7 @@ else
         }
         await EndLive(seat);
         Toasts.Show(already ? "The meeting has ended."
-            : carriedTo is { } next ? $"Marked as presented. {carry.Count} article{(carry.Count == 1 ? "" : "s")} carried to {Ui.Day(next)}."
+            : carriedTo is { } next ? $"Marked as presented. {Ui.Plural(carry.Count, "article")} carried to {Ui.Day(next)}."
             : "Marked as presented.");
         Nav.NavigateTo(Ui.BriefUrl(_date));
     });
@@ -2240,6 +2244,7 @@ else
             Meetings.Show(_seat, card);
             _popup.Open(card, presenting: true, inMeeting: true);
         }
+        await RecordPresenters();
         await Seated();
     });
 
@@ -2590,6 +2595,21 @@ else
         CloseHandedOn();
         Toasts.Show("You're presenting.");
         await ShareScroll();
+        await RecordPresenters();
+    }
+
+    // Who has presented the meeting so far goes on the brief as it starts and changes hands (BriefService
+    // .RecordPresentersAsync), so it outlasts a meeting dropped once everyone left, or lost to a restart. Best effort: the
+    // seat has changed hands already, and the meeting's end writes it again, so a save that fails here (the database
+    // gone a moment, a colleague's save thrice) is logged and left, never taking the start, take-over or hand-off with it.
+    private async Task RecordPresenters()
+    {
+        if (_brief is null) return;
+        try { await BriefSvc.RecordPresentersAsync(_brief.Id); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "Couldn't keep who presented the brief {BriefId} on it; the meeting's end writes it again.", _brief.Id);
+        }
     }
 
     // The meeting changed hands, which closed what was open over the slide for the room: this page's goes too (this
@@ -3010,7 +3030,7 @@ else
 
     /// <summary>What comes after the articles, before the wrap-up, for the title slide: "2 actions that need review"; null
     /// when the wrap-up follows them.</summary>
-    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review") : null;
+    private string? AfterArticles => OpenSlides > 0 ? Ui.Plural(_open.Overdue, "action that needs review", "actions that need review") : null;
 
 
     private Task HandsListDismissed() => InvokeAsync(() =>
@@ -3039,12 +3059,12 @@ else
 
     internal void ChooseHandOff(ChangeEventArgs e) => _handTo = e.Value is string to && to.Length > 0 ? to : null;
 
-    internal void ConfirmHandOff()
+    internal async Task ConfirmHandOff()
     {
-        if (_handTo is { } to) HandOff(to);
+        if (_handTo is { } to) await HandOff(to);
     }
 
-    internal void HandOff(string to)
+    internal async Task HandOff(string to)
     {
         _handTo = null;
         if (!InCharge || _seat is null || to.Length == 0) return;
@@ -3063,6 +3083,7 @@ else
         (_following, _summons) = (true, _view?.Summons ?? _summons);
         if (_view is not null) _slide = SlideFor(_view);
         Toasts.Show($"{name} is presenting.");
+        await RecordPresenters();
     }
 
     private async Task CopyLink()
@@ -3153,7 +3174,7 @@ else
                 @* Taken only by a member of its team, as it's only given to one; an external team has none. *@
                 @if (r.AssigneeId != _me && OnTeam(r))
                 {
-                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take it: @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }
             </span>
         }</text>;

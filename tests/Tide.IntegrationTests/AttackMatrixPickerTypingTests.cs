@@ -50,4 +50,12 @@ public class AttackMatrixPickerTypingTests
         await r.Click("Clear");
         r.ValuesSent.Should().Equal("", "");
     }
+
+    [Fact]
+    public void ATechniquesName_StartsWithWhatItsCellShows_AndCountsItsSubTechniquesInWords()
+    {
+        AttackMatrixPicker.CellName("T1566", "Phishing", 3, Tide.Domain.Enums.MitreTactic.InitialAccess).Should().Be("T1566 Phishing 3 sub-techniques, Initial Access");
+        AttackMatrixPicker.CellName("T1133", "External Remote Services", 1, Tide.Domain.Enums.MitreTactic.InitialAccess).Should().Be("T1133 External Remote Services 1 sub-technique, Initial Access");
+        AttackMatrixPicker.CellName("T1189", "Drive-by Compromise", 0, Tide.Domain.Enums.MitreTactic.InitialAccess).Should().Be("T1189 Drive-by Compromise, Initial Access");
+    }
 }

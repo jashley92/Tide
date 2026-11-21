@@ -57,6 +57,15 @@ public class Webhook : AuditableEntity
     /// <summary>The last day whose newly overdue actions were sent.</summary>
     public DateOnly? OverdueSentFor { get; set; }
 
+    /// <summary>How far into the moment just after <see cref="SentUpToUtc"/> a run that stopped inside it got: that
+    /// moment's ticks and the last event posted ("{ticks}|A0000000012" for an action, "|B{send}" for a brief). Null when
+    /// no run stopped inside one.</summary>
+    public string? MomentCursor { get; set; }
+
+    /// <summary>How far into the due date just after <see cref="OverdueSentFor"/> a run that stopped inside it got: the
+    /// date and the number of the last action posted ("2026-11-18|42"). Null when no run stopped inside one.</summary>
+    public string? OverdueCursor { get; set; }
+
     public DateTimeOffset? LastAtUtc { get; set; }
     public int? LastStatus { get; set; }
     public string? LastError { get; set; }

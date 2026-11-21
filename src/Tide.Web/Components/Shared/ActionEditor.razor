@@ -121,7 +121,7 @@
             <label class="tide-field-label" for="a-playbook">Playbook</label>
             <select id="a-playbook" class="form-select form-select-sm" @bind="Form.PlaybookId">
                 <option value="">None: no checklist to start with</option>
-                @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@p.Steps.Count step@(p.Steps.Count == 1 ? "" : "s"))</option> }
+                @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@Ui.Plural(p.Steps.Count, "step"))</option> }
             </select>
             @if (_playbooks.FirstOrDefault(p => p.Id == Form.PlaybookId) is { } chosen)
             {

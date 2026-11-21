@@ -58,14 +58,6 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         return teams.InOrder(t => t.SortOrder, t => t.Name).ToList();
     }
 
-    /// <summary>The ids of the teams <paramref name="userId"/> is on.</summary>
-    public async Task<IReadOnlySet<Guid>> TeamsOfAsync(string userId, CancellationToken ct = default)
-    {
-        RequireRead();
-        await using var db = await dbs.CreateAsync(ct);
-        return (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet();
-    }
-
     /// <summary>Adds an internal team. A mailbox outside the organization is refused
     /// (<see cref="Distribution.OutsideAddressesException"/>) unless <paramref name="confirmOutside"/>.</summary>
     public async Task<Guid> AddAsync(string name, string? description, string? email, bool confirmOutside = false, CancellationToken ct = default)
@@ -229,23 +221,6 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         team.Description = AdminLists.Description(description);
         team.Email = mailbox;
         await SaveMovedAsync(db, team, ct, nameWas);
-    }
-
-    /// <summary>
-    /// Sets who the escalation ladder copies about a team's slipping actions: a name and an email, both optional (blank
-    /// clears them). An internal team's is an administrator's to set; an external team's, whoever keeps the external
-    /// teams'. Audited like any change to a team.
-    /// </summary>
-    public async Task SetEscalationContactAsync(Guid id, string? name, string? email, bool confirmOutside = false, CancellationToken ct = default)
-    {
-        await using var db = await dbs.CreateAsync(ct);
-        var team = await TeamAsync(db, id, ct);
-        if (team.IsExternal) RequireExternal();
-        else RequireAdmin();
-        var contact = EscalationContact(name, email);
-        CheckOutside(confirmOutside, (team.EscalationEmail, contact.Email, EscalationGets));
-        (team.EscalationName, team.EscalationEmail) = contact;
-        await SaveMovedAsync(db, team, ct);
     }
 
     // An escalation contact as it's kept: the name tidied, the address checked.

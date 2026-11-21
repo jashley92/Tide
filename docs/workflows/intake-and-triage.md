@@ -204,7 +204,7 @@ can't be reached to record the failure leaves it unrecorded; the source is tried
 | Feed filter | `FeedFilter.For(source).Keeps` | Feeds only. With an "only" list, an item passes with an only-tag or an only-word in its title. A skip-tag or skip-word leaves it out. Tags match ignoring case; title words match as whole words. The tags the last read carried are kept in `SeenCategories` to choose from. |
 | Sponsored filter | `SponsoredFilter.For(options).Match` | While `Intake:SkipSponsored` is on (the default). See below. |
 | Retention cut | `IntakeService.StoreAsync` | An item published before the retention cutoff isn't taken in, so a feed that still lists a pruned item (the KEV catalog lists a year or more) doesn't bring it back as new. An item dated after the fetch is dated when it was fetched, so a wrong year can't hold it at the top of New. |
-| Canonical address | `UrlCanonicalizer.Canonicalize`, `Hash` | Tracking parameters (`utm_*`, `fbclid`, `gclid` and others) removed, the remaining query sorted, a trailing slash dropped. The SHA-256 of that is `FeedItem.UrlHash`, unique. The same story from two feeds, or polled twice, is one item. |
+| Canonical address | `UrlCanonicalizer.Canonicalize`, `Hash` | Tracking parameters (`utm_*`, `fbclid`, `gclid` and others) removed, the remaining query sorted, a trailing slash dropped. The SHA-256 of that is `FeedItem.UrlHash`, unique (and `Article.SourceUrlHash` and `ArticleLink.UrlHash`, for past coverage). The same story from two feeds, or polled twice, is one item. |
 | Repeat check | `TitleMatch.Key`, `Similarity` | The title reduced to its significant words (`TitleKey`), compared with items fetched in the last 7 days (`IntakeService.SimilarWindow`). A Jaccard similarity of 0.75 or more sets `SimilarToId` to the first match. Set once, at intake. |
 | CVEs | `FeedParser.CvesIn` | CVE ids in the title and summary, comma-separated in `FeedItem.Cves` (at most 40 when the list is long). |
 
@@ -307,7 +307,7 @@ the address is rewritten to say so. Tab counts stay totals, and Older pages too.
 |---|---|---|
 | Source | Name, TLP, reliability, licence note | The item's `Source`. |
 | Similar | "Looks like" a recent item | `SimilarToId`. |
-| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days. At most 5. `Coverage.Attachable` says whether a report can still be added. |
+| Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days, looked up by the stored hash of the canonical address (`SourceUrlHash`, `UrlHash`); after an upgrade, until the job filling older rows' hashes has finished (`Data:UrlHashesToFill`), by reading every recent address. At most 5. `Coverage.Attachable` says whether a report can still be added. |
 | Same CVE | Other New items sharing a CVE: one story from several outlets | New tab only, read over every New item, not just the page shown. |
 | Group | "Looks like one event" | `TriageGroups.Find`, New and Shortlisted, over the page shown. See below. |
 | We run | A product on Our stack the item names | `StackService.Matcher`. Items naming one sort first in New and never age. |
@@ -358,8 +358,8 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 | Key | Does |
 |---|---|
 | J / ↓, K / ↑ | Next, previous row. J on a page's last row goes on to the next page's first; K on a page's first row goes back to the previous page's last. |
-| S | Shortlist |
-| X | Dismiss |
+| S | Shortlist (a new item: Undo on the toast, or Alt+Z) |
+| X | Dismiss (a new item: Undo on the toast, or Alt+Z) |
 | D | Mark duplicate (of the item it looks like) |
 | P | Promote (opens the promote form) |
 | R | Restore to New |
@@ -420,6 +420,7 @@ Notes on the diagram:
 | Dismiss | `DismissAsync`, `DismissManyAsync` ("dismiss the rest", only items still New) | The reason (any short text; offered: Not relevant, Already covered, Out of scope, Low quality, Paywalled) in `DismissReason` |
 | Duplicate | `MarkDuplicateAsync(id, ofId)` | `DuplicateOfId`: the item named, or by default its `SimilarToId`. An item can't repeat itself. |
 | Restore | `RestoreAsync` | Back to New, the stamps cleared |
+| Undo a shortlist or dismissal | `UndoDecisionAsync(id, decided, at)` (the toast's Undo after S or X on a new item) | Back to New, the stamps cleared, only while the item still carries this person's decision stamped `at` (the `TriageDecision` that `ShortlistAsync` and `DismissAsync` return), so a colleague's decision since stands, the same one made again included. Offered only when the decision replaced New, which the service checks as it writes (`TriageDecision.FromNew`): a stale row may still show New after a colleague's decision, and putting that item in New would be wrong. |
 | Dismiss the same story | `DismissSameCveAsync(id, shown)` | Dismisses as "Already covered" the rows shown as sharing a CVE, only those still New |
 
 Every decision is one `ExecuteUpdate` statement whose `WHERE` clause re-checks the state as it writes. A dismissal that
@@ -531,7 +532,9 @@ no group.**
 - Groups are connected runs of such pairs, joined tightest pair first, held to 8 items (`TriageGroups.MaxSize`).
 - A group is offered only with two or more items from two or more feeds.
 
-Triage shows a group as one line that opens to its reports' own rows. There's no "dismiss all" for a group.
+Triage shows a group as one line that opens to its reports' own rows. *Shortlist the N* and *Dismiss the N* (S and X
+on the group's line) act on every report still New, once confirmed. The single item's dismiss reason isn't on a
+group's line, so dismissing a group asks for the reason in its confirmation, the same dialog as *Dismiss all*.
 
 ![A same-event group selected and opened in Triage](../screenshots/doc-triage-same-event.png)
 
@@ -545,7 +548,7 @@ Triage shows a group as one line that opens to its reports' own rows. There's no
 split it, with **Undo** (`UndoSplitAsync`, deletes the batch; anyone who triages can). Both are audited and heard on
 the triage topic. A report's split rows go with it when it's pruned (cascade).
 
-**Promote as one article** (`IntakeService.PromoteAsOneAsync`, 2 to 8 reports):
+**Promote as one article** (`IntakeService.PromoteOrJoinAsync`, 2 to 8 reports):
 
 ```mermaid
 sequenceDiagram
@@ -554,7 +557,7 @@ sequenceDiagram
     participant I as IntakeService
     participant Db as Database
     participant Ar as ArticleService
-    A->>I: PromoteAsOneAsync(ids, form)
+    A->>I: PromoteOrJoinAsync(ids, form)
     I->>Db: BEGIN transaction inside the execution strategy
     I->>Db: UPDATE FeedItems SET Promoted WHERE id IN ids AND claimable
     alt claimed fewer than all
@@ -651,7 +654,7 @@ shortlisted since it was read stays. Its `FeedItemText` and `TriageSplit` rows g
 | States and kinds | `src/Tide.Domain/Enums/AppEnums.cs` (`FeedItemStatus`, `SourceKind`, `SourceReliability`, `ArticleFetch`) |
 | The pipeline, inbox, decisions, promotion, attach, splits, API proposals, pruning | `src/Tide.Application/Intake/IntakeService.cs` |
 | Settings | `src/Tide.Application/Intake/IOutboundHttp.cs` (`IntakeOptions`); `src/Tide.Application/Intake/CveService.cs` (`CveOptions`) |
-| Parsing, canonical URLs, title matching | `src/Tide.Application/Intake/FeedParsing.cs` (`FeedParser`, `UrlCanonicalizer`, `TitleMatch`) |
+| Parsing, canonical URLs, title matching | `src/Tide.Application/Intake/FeedParsing.cs` (`FeedParser`, `TitleMatch`), `src/Tide.Domain/Common/UrlCanonicalizer.cs` |
 | Feed filter | `src/Tide.Application/Intake/FeedFilter.cs` |
 | Sponsored filter and its log | `src/Tide.Application/Intake/SponsoredFilter.cs` (`SponsoredFilter`, `SponsoredLog`) |
 | Grouping | `src/Tide.Application/Intake/TriageGroups.cs` |

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Tide.Application.Actions;
@@ -178,6 +179,62 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
             (await client.GetAsync(url + "?zip=false")).Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
         }
         finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
+    }
+
+    [Fact]
+    public async Task TheApi_ZipsARiskyFileForAPerson_AsTheAppsOwnDownloadDoes_ButATokenGetsItAsItIs()
+    {
+        var (number, fileId) = await ActionWithFile("api-dropper.exe", Samples.FakeProgram);
+        var (calmNumber, calmId) = await ActionWithFile("api-person-calm.txt", Samples.Text("calm"));
+        var token = await As(async sp => (await sp.GetRequiredService<ApiTokenService>().IssueAsync("risky as is", [ApiScopes.ActionsRead], TlpLevel.Amber, 1)).Token);
+        var tokenClient = app.CreateClient();
+        tokenClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var person = app.CreateClient();
+        var url = $"/api/v1/actions/{number}/files/{fileId}";
+        await SetZip(Application.Files.ZipDownloads.RiskyOnly);
+
+        var zipped = await person.GetAsync(url);
+        zipped.StatusCode.Should().Be(HttpStatusCode.OK);
+        zipped.Content.Headers.ContentType!.MediaType.Should().Be("application/zip", "a person who follows a link gets the zip, as the app's own download would send");
+        (await person.GetAsync(url + "?zip=false")).Content.Headers.ContentType!.MediaType.Should().Be("application/zip", "?zip can't turn zip first off");
+        (await person.GetAsync($"/api/v1/actions/{calmNumber}/files/{calmId}")).Content.Headers.ContentType!.MediaType
+            .Should().Be("application/octet-stream", "a file that can't run isn't zipped first");
+
+        var plain = await tokenClient.GetAsync(url);
+        plain.Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "a token chooses, as before");
+        (await plain.Content.ReadAsByteArrayAsync()).Should().Equal(Samples.FakeProgram);
+
+        try
+        {
+            await SetZip(Application.Files.ZipDownloads.Never);
+            (await person.GetAsync(url)).Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "under Never every file is sent as it is");
+        }
+        finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
+    }
+
+    [Fact]
+    public async Task AnActionFile_StoredBeforeItsKindWasRisky_IsListedAndDownloadedZipFirst_ByItsName()
+    {
+        var (number, fileId) = await ActionWithFile("older-jump.rdp", Samples.Text("full address:s:host.example.org"));
+        // As it was stored before .rdp was on the risky list: no risk recorded.
+        await As(async sp =>
+        {
+            await using var db = await sp.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
+            var row = await db.ActionFiles.SingleAsync(f => f.FileId == fileId);
+            row.RiskReason = null;
+            await db.SaveChangesAsync();
+            return true;
+        });
+        await SetZip(Application.Files.ZipDownloads.RiskyOnly);
+
+        var listed = await As(async sp => (await sp.GetRequiredService<ActionService>().GetAsync(number))!.Files.Live.Single());
+        listed.RiskReason.Should().NotBeNull("the Files list judges it by its name");
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        var res = await client.GetAsync($"/files/{fileId}/download");
+        res.StatusCode.Should().Be(HttpStatusCode.Redirect, "its download goes to the zip, as the list says");
+        res.Headers.Location!.OriginalString.Should().EndWith($"/files/{fileId}/zip");
+        (await client.GetAsync($"/api/v1/actions/{number}/files/{fileId}")).Content.Headers.ContentType!.MediaType
+            .Should().Be("application/zip", "a person's API download is zipped too");
     }
 }
 
