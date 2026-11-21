@@ -175,9 +175,8 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     private async Task<OutreachWritten> WriteAsync(IAppDbContext db, ActionItem a, OutreachTemplate template, Guid? productId, IReadOnlyList<StackProduct>? products,
         CancellationToken ct)
     {
-        bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
-                                  || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
-        var (facts, product, all) = await FactsAsync(db, a, template.Ceiling, Uses, productId, products, ct);
+        var used = OutreachFill.Tokens(template.Subject).Concat(OutreachFill.Tokens(template.Body)).Select(t => t.Name).ToHashSet();
+        var (facts, product, all) = await FactsAsync(db, a, template.Ceiling, used.Contains, productId, products, ct);
         var draft = OutreachFill.Fill(template.Subject, template.Body, facts);
 
         var to = new List<OutreachRecipient>();

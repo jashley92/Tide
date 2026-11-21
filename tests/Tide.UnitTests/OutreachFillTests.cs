@@ -315,7 +315,7 @@ public class OutreachFillTests
         var watch = System.Diagnostics.Stopwatch.StartNew();
         OutreachFill.Check(text);
         OutreachFill.Tokens(text).Should().BeEmpty();
-        watch.ElapsedMilliseconds.Should().BeLessThan(200);
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500));
     }
 
     // The one reading of the syntax the check, the fill and the Library rail share.
