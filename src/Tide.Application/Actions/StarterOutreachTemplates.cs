@@ -25,20 +25,20 @@ public static class StarterOutreachTemplates
         new("Vendor: are we affected?", "Ask a vendor's support or PSIRT whether the versions we run are affected by a CVE, and when a fix is due.",
             "Are we affected? {{product.name}} and {{article.title}}",
             "Hello,\n\nWe run {{product.name}}, version {{product.versions}}, and are reviewing this report:\n\n{{article.title}}\n{{article.link?}}\n{{article.other-links?}}\n\n"
-            + "CVEs:\n{{article.cves?}}\n\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
             + "- if not, when you expect one.\n\nOur reference is {{action.number}}.\n\n" + SignOff,
             TlpLevel.Clear),
         new("Internal: action required", "Ask an asset or system owner to check, patch and look for the indicators by a date.",
             "{{action.number}} - action required by {{today:+2}}",
             "Hello,\n\nWe've had a report that affects {{product.name}} (we run {{product.versions}}):\n\n{{article.title}}\n{{article.bottom-line}}\n\n"
-            + "CVEs:\n{{article.cves?}}\n\nPlease, by {{today:+2}}:\n- check whether your systems run an affected version;\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nPlease, by {{today:+2}}:\n- check whether your systems run an affected version;\n"
             + "- apply the vendor's fix or workaround;\n- look for the indicators below in your logs, and tell us at once if you find any.\n\n"
             + "Indicators:\n{{indicators}}\n\nReply to this email when it's done, or if you can't make the date.\n\n" + SignOff,
             TlpLevel.Amber),
         new("ISAC / partner: share and ask", "Share what we've seen with an ISAC or trusted partner, and ask whether they've seen it too.",
             "[{{tlp}}] Have you seen this? {{article.title}}",
             "Hello,\n\nSharing what we've seen, in case it's useful to you:\n\n{{article.title}}\n{{article.bottom-line}}\n\n"
-            + "CVEs:\n{{article.cves?}}\n\nIndicators:\n{{indicators?}}\n\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\n{{#indicators}}\nIndicators:\n{{indicators}}\n\n{{/indicators}}\n"
             + "Have you seen the same activity, or anything like it? Anything you can share back would help.\n\n" + SignOff,
             TlpLevel.Green),
         new("Follow-up / chase", "A short nudge on an email that hasn't had a reply.",

@@ -2,11 +2,21 @@
 <div class="form-text" id="@Id">
     Placeholders are filled from the action when the email is written, held to the template's TLP ceiling: a part above
     it is left out and named. A placeholder TIDE doesn't know is refused when you save. One with nothing to fill is
-    marked for you to deal with before sending; end it with <span class="tide-data">?</span>, as in
-    <span class="tide-data">{{article.other-links?}}</span>, to drop it instead, with its line when nothing else is on it.
+    marked for you to deal with before sending, unless you say otherwise (Placeholders, below, shows how).
 </div>
 <details class="tide-outreach-help small mt-1">
     <summary>Placeholders</summary>
+    <div class="tide-field-label mt-2 mb-1">When there's nothing to fill</div>
+    <dl class="tide-outreach-placeholders">
+        <dt class="tide-data">{{article.other-links?}}</dt>
+        <dd>Ending in ?, it's dropped, with its line when nothing else is on it.</dd>
+        <dt class="tide-data">{{product.contact|there}}</dt>
+        <dd>After a |, the text written instead, as in "Hello {{product.contact|there}},".</dd>
+        <dt class="tide-data">{{#article.cves}} … {{else}} … {{/article.cves}}</dt>
+        <dd>A section: what's before {{else}} when there's something to fill, what's after it when there isn't. Without
+            {{else}}, the whole section goes, so a heading goes with it. A tag alone on its line takes the line with it.
+            A section can't hold another.</dd>
+    </dl>
     @foreach (var group in OutreachFill.All.GroupBy(p => p.Group))
     {
         <div class="tide-field-label mt-2 mb-1">@group.Key</div>

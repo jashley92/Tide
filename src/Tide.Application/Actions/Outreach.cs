@@ -137,8 +137,8 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
 
         // What TIDE knows of the CVEs, and the other reports added to the article: read only when the ceiling lets the
         // article through and the template has a placeholder that shows them.
-        bool Uses(string name) => template.Subject.Contains(name, StringComparison.OrdinalIgnoreCase)
-                                  || template.Body.Contains(name, StringComparison.OrdinalIgnoreCase);
+        var used = OutreachFill.Tokens(template.Subject).Concat(OutreachFill.Tokens(template.Body)).Select(t => t.Name).ToHashSet();
+        bool Uses(string name) => used.Contains(name);
         var cveIds = Uses(OutreachFill.CvesDetailedName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);

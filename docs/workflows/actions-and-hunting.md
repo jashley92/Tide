@@ -609,8 +609,17 @@ marked by the setting `Data:StarterOutreachTemplates`, as the starter saved quer
 Any placeholder but `tlp` can be made optional with a closing `?` (`{{article.other-links?}}`, `{{indicators:domain?}}`).
 With nothing to fill, or held back by the ceiling, an optional one is dropped rather than left as a `[[…]]` marker: its
 line goes when nothing else is on it, else the gap closes. It isn't listed as unfilled, but what the ceiling held back
-is still said. The starter templates write the article's links, CVEs and (to an ISAC) indicators this way, so an
-article without them doesn't hold the email back.
+is still said. After a `|`, a placeholder carries the text written instead (`Hello {{product.contact|there}},`), which
+has no marking.
+
+A section, `{{#name}} … {{else}} … {{/name}}`, keeps what's before `{{else}}` when its placeholder has something to fill
+and what's after it when it hasn't (held back by the ceiling counts as nothing). Without `{{else}}` the whole section
+goes, so a heading goes with its list. A tag alone on its line takes the line with it. Keeping the first branch says
+something about the part, so it carries the part's marking even when the placeholder isn't inside. Sections can't be
+nested; `OutreachFill.Check` refuses one that's unclosed, closed by another name, or about a placeholder TIDE doesn't
+fill, a stray `{{else}}`, a section on `{{tlp}}`, and a placeholder with both `?` and `|`. The starter templates write the
+CVEs and (to an ISAC) indicators in sections and the article's links with `?`, so an article without them doesn't hold
+the email back.
 
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 
