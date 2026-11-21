@@ -11,7 +11,7 @@
     @if (_open)
     {
         <div id="@PanelId" class="tide-oi-panel" role="group" aria-label="Insert a placeholder" @onkeydown="Keys">
-            <input type="search" class="form-control form-control-sm tide-oi-find" placeholder="Find a placeholder" aria-label="Find a placeholder"
+            <input type="search" class="form-control form-control-sm tide-oi-find" maxlength="100" autocomplete="off" placeholder="Find a placeholder" aria-label="Find a placeholder"
                    @bind="_find" @bind:event="oninput" @ref="_findBox" />
             <div class="tide-oi-choices">
                 @foreach (var group in Shown.GroupBy(p => p.Group))
