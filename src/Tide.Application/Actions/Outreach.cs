@@ -203,7 +203,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         // Only what the ceiling lets through is merged, as a hunt merges the article's indicators and the action's own.
         var indicators = ActionService.HuntIndicators(cut.Article is null ? [] : a.Article!.Indicators, cut.OwnIndicators ? a.Indicators : []);
 
-        var cveIds = uses(OutreachFill.CvesName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
+        var cveIds = uses(OutreachFill.CvesDetailedName) ? cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [] : [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
         List<string> links = [];
