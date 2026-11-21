@@ -580,7 +580,8 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
             await r.Click(p => { p.New(); return Task.CompletedTask; });
             var form = await r.Html();
             form.Should().Contain("New template</h2>").And.Contain("<label class=\"tide-field-label\" for=\"ot-f-ceiling\">Highest TLP it carries</label>")
-                .And.Contain("<summary>Placeholders</summary>").And.Contain("{{indicators:domain}}").And.Contain("{{product.versions}}");
+                .And.Contain("Filled from the action when the email is written.").And.Contain("nothing to fill</summary>")
+                .And.Contain("{{product.contact|there}}");
             r.Component.Form!.Body.Should().Contain("{{product.name}} {{product.versions}}");
             (r.Component.Form.Name, r.Component.Form.Ceiling) = ("Ask the ISAC " + tag, TlpLevel.Clear);
             await r.Click(p => p.Save());
