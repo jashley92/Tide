@@ -255,6 +255,13 @@
                     </div>
                 }
             </fieldset>
+            @if (_esc.Unreadable is { } why)
+            {
+                <div class="alert alert-warning small" role="alert" id="esc-unreadable">
+                    <div class="fw-semibold">The saved steps can't be read, so the ladder climbs nothing.</div>
+                    <div>@why Saving here keeps them as they are. Add steps or use the defaults to replace them, or <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="_esc.ClearUnreadable">clear them</button>.</div>
+                </div>
+            }
             <table class="tide-table mb-2" aria-label="Escalation steps, in order">
                 <thead><tr><th scope="col">When</th><th scope="col">What it does</th><th scope="col"><span class="visually-hidden">Order</span></th></tr></thead>
                 <tbody>
@@ -291,7 +298,7 @@
                             </td>
                         </tr>
                     }
-                    @if (_esc.Steps.Count == 0)
+                    @if (_esc.Steps.Count == 0 && _esc.Unreadable is null)
                     {
                         <tr><td colspan="3" class="small tide-muted">No steps: the ladder does nothing.</td></tr>
                     }
@@ -376,7 +383,8 @@
         _busy = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ZipDownloads] = Zip.ToString() });
+            await Settings.SaveAsync(ZipValues(), loaded: _loaded);
+            Loaded(ZipValues());
             Toasts.Show("Saved.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -428,6 +436,9 @@
         _rem = ReminderForm.From(Reminders);
         _esc = EscalationForm.From(Reminders.Options.Escalation);
         Zip = FileSvc.ZipMode;
+        Loaded(ReminderValues());
+        Loaded(EscalationValues());
+        Loaded(ZipValues());
         _counts = await NotifyPrefs.CountsAsync();
         _people = await Users.ListAsync();
         var targets = await Sla.GetAsync();
@@ -479,7 +490,7 @@
     /// <summary>"3 people opted out" or "5 people get a personal digest".</summary>
     internal static string CountText(string pref, int n)
     {
-        var people = n == 1 ? "1 person" : $"{n} people";
+        var people = Ui.Plural(n, "person", "people");
         return pref == UserPreferences.NotifyDigest
             ? n == 0 ? "No one gets a personal digest" : $"{people} get{(n == 1 ? "s" : "")} a personal digest"
             : n == 0 ? "No one opted out" : $"{people} opted out";
@@ -548,6 +559,52 @@
 
     private static string Switch(bool on) => on ? "true" : "false";
 
+    // The settings as the page showed them when it loaded (each form's again once it's saved): a save sends only what
+    // was changed here, so another administrator's change to the rest stands, and one to a setting changed here too is
+    // refused rather than put back.
+    private readonly Dictionary<string, string?> _loaded = [];
+
+    private void Loaded(Dictionary<string, string?> values)
+    {
+        foreach (var (key, value) in values) _loaded[key] = value;
+    }
+
+    private Dictionary<string, string?> ReminderValues() => new()
+    {
+        [OperationalSettings.ReminderTime] = Hm(_rem.ReminderTime),
+        [OperationalSettings.DueSoon] = Switch(_rem.On[ReminderKind.DueSoon]),
+        [OperationalSettings.Overdue] = Switch(_rem.On[ReminderKind.Overdue]),
+        [OperationalSettings.Presenting] = Switch(_rem.On[ReminderKind.Presenting]),
+        [OperationalSettings.Digest] = Switch(_rem.On[ReminderKind.Digest]),
+        [OperationalSettings.DigestDay] = _rem.DigestDay.ToString(),
+        [OperationalSettings.DigestTime] = Hm(_rem.DigestTime),
+        [OperationalSettings.BriefNotReady] = Switch(_rem.On[ReminderKind.BriefNotReady]),
+        [OperationalSettings.BriefNotReadyTime] = Hm(_rem.BriefNotReadyTime),
+        [OperationalSettings.BriefNotReadyRecipients] = _rem.Recipients,
+        [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
+        [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
+        [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.ActiveWithinDays] = _rem.ActiveDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
+        [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
+        [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [OperationalSettings.ExternalRemindersNewEvery] = (_rem.NewExternalEvery ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    private Dictionary<string, string?> EscalationValues()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            [OperationalSettings.Escalation] = Switch(_esc.On),
+            [OperationalSettings.EscalationScope] = _esc.Scope.ToString(),
+        };
+        // Saved steps that don't read stay as they are until replaced here: the form shows none, not an empty ladder to save.
+        if (_esc.StepsText() is { } steps) values[OperationalSettings.EscalationSteps] = steps;
+        return values;
+    }
+
+    private Dictionary<string, string?> ZipValues() => new() { [OperationalSettings.ZipDownloads] = Zip.ToString() };
+
     // An address outside the organization added to who's told there's no brief is asked about first.
     internal async Task SaveReminders(bool confirmOutside = false)
     {
@@ -556,28 +613,9 @@
         var ask = (string?)null;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?>
-            {
-                [OperationalSettings.ReminderTime] = Hm(_rem.ReminderTime),
-                [OperationalSettings.DueSoon] = Switch(_rem.On[ReminderKind.DueSoon]),
-                [OperationalSettings.Overdue] = Switch(_rem.On[ReminderKind.Overdue]),
-                [OperationalSettings.Presenting] = Switch(_rem.On[ReminderKind.Presenting]),
-                [OperationalSettings.Digest] = Switch(_rem.On[ReminderKind.Digest]),
-                [OperationalSettings.DigestDay] = _rem.DigestDay.ToString(),
-                [OperationalSettings.DigestTime] = Hm(_rem.DigestTime),
-                [OperationalSettings.BriefNotReady] = Switch(_rem.On[ReminderKind.BriefNotReady]),
-                [OperationalSettings.BriefNotReadyTime] = Hm(_rem.BriefNotReadyTime),
-                [OperationalSettings.BriefNotReadyRecipients] = _rem.Recipients,
-                [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
-                [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
-                [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [OperationalSettings.ActiveWithinDays] = _rem.ActiveDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
-                [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
-                [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [OperationalSettings.ExternalRemindersNewEvery] = (_rem.NewExternalEvery ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            }, confirmOutside);
+            await Settings.SaveAsync(ReminderValues(), confirmOutside, _loaded);
             _rem = ReminderForm.From(Reminders);
+            Loaded(ReminderValues());
             Toasts.Show("Saved. Applies within five minutes.");
         }
         catch (OutsideAddressesException ex) { ask = ex.Message; }
@@ -593,13 +631,9 @@
         _busy = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?>
-            {
-                [OperationalSettings.Escalation] = Switch(_esc.On),
-                [OperationalSettings.EscalationScope] = _esc.Scope.ToString(),
-                [OperationalSettings.EscalationSteps] = _esc.StepsText(),
-            });
+            await Settings.SaveAsync(EscalationValues(), loaded: _loaded);
             _esc = EscalationForm.From(Reminders.Options.Escalation);
+            Loaded(EscalationValues());
             Toasts.Show("Escalation saved. Applies at the next reminder time.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -714,7 +748,7 @@
         try
         {
             var sent = await Reminders.RunNowAsync(kind);
-            Toasts.Show($"{KindText(kind)}: {sent} email{(sent == 1 ? "" : "s")} sent.");
+            Toasts.Show($"{KindText(kind)}: {Ui.Plural(sent, "email")} sent.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -737,7 +771,7 @@
         {
             var handed = await TeamSvc.RemoveMemberAsync(teamId, userId);
             await Load();
-            Toasts.Show(handed == 0 ? $"{name} is off {team}." : $"{name} is off {team}; {handed} open action{(handed == 1 ? "" : "s")} went back to the team.");
+            Toasts.Show(handed == 0 ? $"{name} is off {team}." : $"{name} is off {team}; {Ui.Plural(handed, "open action")} went back to the team.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }

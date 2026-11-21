@@ -62,8 +62,10 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         TimeSpan.FromHours(24), TimeSpan.FromMinutes(10), 7106);
     public static readonly JobDefinition Webhooks = new("webhooks", "Webhooks", "every minute, when a webhook is set up under API access",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(15), 7107);
+    public static readonly JobDefinition UrlHashes = new("url-hashes", "Hashing stored addresses", "once after an upgrade, until every older article and link has its address hash",
+        TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7108);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks];
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));
@@ -112,6 +114,40 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
             else Fail(job, started, Describe(ex), ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// One poll of a job a hosted service runs every <paramref name="interval"/>: nothing at all unless this process holds
+    /// the <paramref name="lease"/> (another runs it, and Diagnostics shows this one standing by, with no schedule of its
+    /// own); else a run of <paramref name="work"/> while the job is on, then its schedule. <paramref name="isOn"/> says
+    /// whether it's on (null: always); should that fail, the job stays as it was, and one that's on shows the failure as a
+    /// run would. A failure is recorded and logged by the monitor and at Debug as <paramref name="retrying"/> on
+    /// <paramref name="log"/>, never thrown (except for shutting down).
+    /// </summary>
+    public async Task PassAsync(JobDefinition job, IJobLease lease, TimeSpan interval, Func<Task<bool>>? isOn, Func<Task<string?>> work,
+        ILogger log, string retrying, CancellationToken ct)
+    {
+        if (!await lease.HoldAsync(ct)) return;
+        var on = isOn is null || Get(job).Enabled;
+        try
+        {
+            if (isOn is not null)
+            {
+                try { on = await isOn(); }
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                {
+                    if (on) Failed(job, ex);
+                    throw;
+                }
+            }
+            if (on) await RunAsync(job, work);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            log.LogDebug(ex, "{Retrying}", retrying);
+        }
+        Scheduled(job, on, on ? time.GetUtcNow() + interval : null);
     }
 
     /// <summary>Records a run made outside <see cref="RunAsync"/> that went well (a job that only sometimes has work).</summary>

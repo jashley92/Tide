@@ -257,6 +257,8 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tide-brand-name { font-weight: var(--tide-weight-semibold); letter-spacing: .08em; }
 .tide-brand-sub { display: block; font-size: .7rem; color: var(--tide-side-text); letter-spacing: 0; font-weight: var(--tide-weight-regular); }
 html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-nav-label { display: none; }
+/* The brand's name while its words are hidden (collapsed to icons, not on a phone): unseen, for the link's name. */
+.tide-brand-said { display: none; }
 /* The nav takes the sidebar's spare height and scrolls inside it, so on a very short screen the last links stay
    reachable, with a thin scrollbar in the sidebar's colours (no arrow buttons). */
 .sidebar > nav { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -297,6 +299,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 @media (min-width: 641px) {
     html[data-nav="collapsed"] .tide-side-head { flex-direction: column; justify-content: center; gap: var(--tide-space-1); padding-bottom: var(--tide-space-2); }
     html[data-nav="collapsed"] .tide-brand { padding: var(--tide-space-4) 0 0; }
+    html[data-nav="collapsed"] .tide-brand-said { display: inline; }
     html[data-nav="collapsed"] .tide-side-collapse { margin: 0; width: 1.5rem; height: 1.25rem; }
     html[data-nav="collapsed"] .tide-side-collapse .bi { transform: rotate(180deg); }
     html[data-nav="collapsed"] .tide-nav-group-label { height: 0; padding: 0; margin: var(--tide-space-2) .4rem; font-size: 0; border-top: 1px solid var(--tide-side-line); }
@@ -332,6 +335,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-crumbs li + li::before { content: "\203A"; color: var(--tide-text-muted); padding: 0 .5rem; }
 .tide-crumbs a { color: var(--tide-text-muted); text-decoration: none; }
 .tide-crumbs a:hover, .tide-crumbs a:focus-visible { color: var(--tide-accent-text); text-decoration: underline; }
+/* A one-line trail written as text (Our stack's and Adversaries' detail pages): its link sits in the sentence, so it's
+   underlined as other links in text are, not told apart by colour alone. */
+.tide-crumbs > a { text-decoration: underline; text-underline-offset: .2em; }
 .tide-crumbs [aria-current="page"] { color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
 @media (max-width: 640.98px) {
     .tide-crumbs li:not(:only-child):not(:nth-last-child(2)) { display: none; }
@@ -352,6 +358,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 /* A wide table scrolls sideways; a sub-pixel rounding at its foot mustn't add a vertical scrollbar beside a short one. */
 .table-responsive { overflow-y: hidden; }
+/* TableScroll's box and the action rail's hunt query take focus, so the keyboard can scroll them: the ring sits just outside, clear of the table's lines. */
+.tide-table-scroll:focus-visible, #rail-hunt-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); padding: .5rem .6rem; border-bottom: 1px solid var(--tide-border); text-align: left; white-space: nowrap; }
 .tide-table td { padding: .6rem; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
 /* What each role can do (Role mappings): the activities read as text, not as column headings. */
@@ -471,10 +479,10 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
    someone who can't edit (data-readonly, further down). */
 .tide-editor-main { min-width: 0; }   /* lets the index's row scroll sideways on a phone instead of widening the page */
 .tide-tabbar.tide-ws-switch { display: none; }   /* over .tide-tabbar, further down */
-/* At 900px or narrower it's one or the other, as the Edit | Preview switch says (data-pane), never one beside the other.
+/* Narrower than 900px it's one or the other, as the Edit | Preview switch says (data-pane), never one beside the other.
    Preview puts the rail in the page's flow, in place of the fields, without its head (the switch is the way back), unless
    ] has it open over the page; the save bar stays at the foot of the window, beside the sidebar where there is one. */
-@media (max-width: 900px) {
+@media (max-width: 899.98px) {
     .tide-tabbar.tide-ws-switch { display: flex; margin-bottom: var(--tide-space-3); }
     html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail { display: flex; position: static; width: auto; border-left: 0; box-shadow: none; z-index: auto; }
     html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-head { display: none; }
@@ -589,21 +597,25 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-atkm-subcell { margin-left: 1.1rem; }
 .tide-atkm-exp { border: 0; background: transparent; color: var(--tide-text-muted); padding: 0; width: 1rem; flex: 0 0 auto; font-size: .7rem; }
 .tide-atkm-exp-spacer { width: 1rem; flex: 0 0 auto; }
-.tide-atkm-cell:focus-visible, .tide-atkm-exp:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
+.tide-atkm-exp:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
+/* A technique's button is the row after its arrow (so the arrow isn't a button inside a button); it fills the row and
+   draws its focus ring around the whole row, as the row itself once did. */
+.tide-atkm-pick { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: .3rem; outline: 0; }
+.tide-atkm-cell:has(> .tide-atkm-pick:focus-visible) { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-atkm-tid { flex: 0 0 auto; font-family: var(--tide-font-data); font-size: .74rem; color: var(--tide-text-muted); }
 .tide-atkm-tname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-atkm-subn { flex: 0 0 auto; font-size: .7rem; color: var(--tide-text-muted); background: var(--tide-surface-2); border-radius: var(--tide-radius-pill); padding: 0 .35rem; }
 .tide-atkm-tick { flex: 0 0 auto; color: var(--tide-accent-text); font-weight: var(--tide-weight-bold); }
 .tide-atkm-retired { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .5rem 1rem 0; border-top: 1px solid var(--tide-border); }
 .tide-atkm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .6rem 1rem; border-top: 1px solid var(--tide-border); }
-@media (max-width: 640px) { .tide-atkm-panel { inset: 0; border-radius: 0; } .tide-atkm-search { flex-basis: 100%; } }
+@media (max-width: 640.98px) { .tide-atkm-panel { inset: 0; border-radius: 0; } .tide-atkm-search { flex-basis: 100%; } }
 html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or scrolled-to controls clear of the bar */
 .tide-sticky-save { position: sticky; bottom: 0; background: var(--tide-bg); padding: .7rem 0; border-top: 1px solid var(--tide-border); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; z-index: 5; }
 .tide-dirty { color: var(--tide-warn); font-size: .86rem; }
 .tide-saved { color: var(--tide-text-muted); font-size: .86rem; }
 .tide-on-brief { color: var(--tide-text-muted); font-size: .86rem; white-space: nowrap; }
 /* On a phone the bar wraps: the save state takes a line of its own above the buttons, and buttons keep their words whole. */
-@media (max-width: 640px) {
+@media (max-width: 640.98px) {
     html:has(.tide-sticky-save) { scroll-padding-bottom: 9rem; }
     .tide-sticky-save .btn { white-space: nowrap; }
     .tide-sticky-save .tide-dirty, .tide-sticky-save .tide-saved { flex-basis: 100%; }
@@ -617,7 +629,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-section-pills button:hover { border-color: var(--tide-border-strong); background: var(--tide-surface-2); }
 .tide-section-pills button:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .tide-needed { color: var(--tide-warn); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); }
-@media (max-width: 640px) {
+@media (max-width: 640.98px) {
     .tide-section-pills ul { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 }
 .tide-section h2[tabindex="-1"]:focus, .tide-section h3[tabindex="-1"]:focus { outline: none; }
@@ -653,7 +665,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-ed-numbers-table .tide-ed-numbers-value { text-align: right; padding-right: var(--tide-space-2); font-weight: var(--tide-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tide-ed-numbers-change { white-space: nowrap; font-size: var(--tide-text-xs); }
 .tide-ed-numbers-table .tide-ed-numbers-spark { text-align: right; width: 1%; padding-left: var(--tide-space-2); }
-@media (max-width: 480px) { .tide-ed-numbers-table .tide-ed-numbers-spark { display: none; } }
+@media (max-width: 480.98px) { .tide-ed-numbers-table .tide-ed-numbers-spark { display: none; } }
 .tide-edition article { padding: .8rem 0 1rem; border-bottom: 1px solid var(--tide-border); }
 .tide-edition article:last-child { border-bottom: 0; }
 .tide-edition h3 { font-size: 1.08rem; font-weight: var(--tide-weight-semibold); margin: .3rem 0; }
@@ -786,7 +798,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-slide-threat .tide-slide-bluf { border-left-color: var(--tide-slide-threat-line); }
 .tide-slide-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.2em; }
 .tide-slide-cols.no-shots { grid-template-columns: 1fr; }
-@media (max-width: 1000px) { .tide-slide-cols { grid-template-columns: 1fr; } .tide-slide-body { padding: 1.5em; } }
+@media (max-width: 1000.98px) { .tide-slide-cols { grid-template-columns: 1fr; } .tide-slide-body { padding: 1.5em; } }
 .tide-slide ul.tide-slide-bullets { font-size: 1.1em; line-height: 1.5; padding-left: 1.2em; }
 .tide-slide ul.tide-slide-bullets li { margin-bottom: .45em; }
 .tide-slide-section { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); margin: 1.1em 0 .4em; }
@@ -829,7 +841,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-present-action-head h2 { font-size: 1.4em; font-weight: var(--tide-weight-bold); margin: 0; }
 .tide-present-action-body { overflow-y: auto; overscroll-behavior: contain; padding: 1em 1.2em 1.4em; }
 .tide-present-action-cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 2em; margin-top: .6em; }
-@media (max-width: 1000px) { .tide-present-action-cols { grid-template-columns: 1fr; } .tide-present-action { left: .6em; right: .6em; } }
+@media (max-width: 1000.98px) { .tide-present-action-cols { grid-template-columns: 1fr; } .tide-present-action { left: .6em; right: .6em; } }
 .tide-present-action .tide-facts { margin: .8em 0 0; background: var(--tide-slide-line); border-color: var(--tide-slide-line-strong); }
 /* On the slide's dark surface in either theme, as the card is: not the page's light one under the slide's light text. */
 .tide-present-action .tide-fact { background: var(--tide-slide-surface); }
@@ -856,7 +868,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-follow.is-dropped .tide-follow-dot { background: var(--tide-slide-threat); }
 @media (prefers-reduced-motion: reduce) { .tide-follow.is-reconnecting .tide-follow-dot { animation: none; } }
 @media (forced-colors: active) { .tide-follow-dot { background: CanvasText; } }
-@media (max-width: 900px) {
+@media (max-width: 899.98px) {
     .tide-follow { max-width: 16em; }
     .tide-follow .tide-follow-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 }
@@ -950,7 +962,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-metric-ref { display: inline-flex; align-items: baseline; gap: var(--tide-space-2); background: var(--tide-chip-bg); border-radius: var(--tide-radius-sm); padding: .1rem var(--tide-space-2); }
 .tide-metric-ref-date { font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--tide-text-muted); }
 .tide-metric-ref-value { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text); font-variant-numeric: tabular-nums; }
-@media (max-width: 700px) { .tide-metric-row { grid-template-columns: minmax(0, 1fr) 6rem; } .tide-metric-row .tide-metric-note, .tide-metric-row .tide-metric-prev { grid-column: 1 / -1; } }
+@media (max-width: 700.98px) { .tide-metric-row { grid-template-columns: minmax(0, 1fr) 6rem; } .tide-metric-row .tide-metric-note, .tide-metric-row .tide-metric-prev { grid-column: 1 / -1; } }
 .tide-missing { background: var(--tide-warn-soft); color: var(--tide-warn); border-radius: var(--tide-radius-lg); padding: .45rem .7rem; font-size: .86rem; }
 .tide-past-day { display: flex; gap: .6rem; align-items: flex-start; background: var(--tide-info-soft); color: var(--tide-info); border-radius: var(--tide-radius-lg); padding: .6rem .8rem; font-size: .9rem; }
 .tide-edition-iocs { list-style: none; padding-left: 0; margin-bottom: .25rem; font-size: .86rem; }
@@ -1104,7 +1116,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-mchart-edge-label-before { transform: translateX(-100%); padding: 0 .35em 0 0; }
 .tide-mchart-edge-label-critical { color: var(--tide-slide-text); font-weight: var(--tide-weight-bold); }
 .tide-mchart-bullet-none { font-style: italic; }
-@media (max-width: 1000px) { .tide-mchart-share, .tide-mchart-stacked { grid-template-columns: 1fr; } .tide-mchart-cols-3, .tide-mchart-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000.98px) { .tide-mchart-share, .tide-mchart-stacked { grid-template-columns: 1fr; } .tide-mchart-cols-3, .tide-mchart-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tide-ed-open { margin: .6rem 0 1rem; }
 .tide-ed-open-h { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); margin: 0 0 .3rem; }
 .tide-ed-open li { padding: .2rem 0; font-size: .875rem; }
@@ -1262,7 +1274,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-filterbar-clear { padding: 0; font-size: var(--tide-text-sm); }
 /* On a phone the search box takes its own row, and the pills scroll sideways in one. The menu opens against + Filter
    as every popout does (popout.js). */
-@media (max-width: 640px) {
+@media (max-width: 640.98px) {
     .tide-filterbar > .form-control, .tide-filterbar > .form-select { flex: 1 1 100%; max-width: none; }
     .tide-filterbar-pills { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; scrollbar-width: thin; }
 }
@@ -1394,7 +1406,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-fact { background: var(--tide-surface); padding: var(--tide-space-2) var(--tide-space-3); min-width: 0; }
 .tide-fact dt { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); }
 .tide-fact dd { margin: 0; font-weight: var(--tide-weight-medium); overflow-wrap: anywhere; }
-@media (max-width: 1100px) { .tide-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1099.98px) { .tide-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640.98px) { .tide-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* The action page (layout D). The header: title, a line of badges (the status badge a button that opens the status row
    under the line, tide-status-choices, ordered last so it wraps onto its own line), who has it, and on the right the
@@ -1533,7 +1545,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-reco li { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: .6em; row-gap: .4em; align-items: center; padding: .25em 0; border-bottom: 1px solid var(--tide-slide-line-strong); }
 /* A line raised already shows the action it became (number, status, holder) beside its words. */
 .tide-reco .tide-reco-done { color: var(--tide-slide-muted); }
-@media (max-width: 1000px) {
+@media (max-width: 1000.98px) {
     .tide-reco li { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -1754,7 +1766,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-trend-tiles small { display: block; font-size: .75rem; }
 .tide-trend-tiles small span { font-size: inherit; text-transform: none; letter-spacing: 0; }
 .tide-trend-period { min-width: 7.5rem; text-align: center; }
-@media (max-width: 1200px) { .tide-trends { grid-template-columns: 1fr; } .tide-trend-drill { position: static; max-height: none; } }
+@media (max-width: 1199.98px) { .tide-trends { grid-template-columns: 1fr; } .tide-trend-drill { position: static; max-height: none; } }
 .tide-trend-bars { display: block; }
 .tide-trend-bars rect { fill: var(--tide-border-strong); }
 .tide-trend-bars rect.now { fill: var(--tide-accent); }
@@ -1990,6 +2002,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     --bs-btn-hover-color: var(--tide-on-threat); --bs-btn-hover-bg: var(--tide-threat); --bs-btn-hover-border-color: var(--tide-threat);
     --bs-btn-active-color: var(--tide-on-threat); --bs-btn-active-bg: var(--tide-threat); --bs-btn-active-border-color: var(--tide-threat); }
 .btn-danger:hover { filter: brightness(.92); }
+/* Bootstrap's own red is under 4.5:1 on the grey surfaces, and on every dark one: the threat token meets it in both themes. */
+.text-danger { color: var(--tide-threat) !important; }
 
 /* Widths, from the tokens: a field or card that shouldn't stretch, and fixed table columns. */
 .tide-maxw-xs { max-width: var(--tide-width-xs); }
@@ -2097,7 +2111,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-feeds-nudge .tide-feeds-failing { color: var(--tide-warn); }
 
 .tide-today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: var(--tide-space-4); align-items: start; }
-@media (max-width: 1100px) { .tide-today-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1099.98px) { .tide-today-grid { grid-template-columns: minmax(0, 1fr); } }
 
 .tide-order { list-style: none; margin: 0; padding: 0; }
 .tide-order-row { display: grid; grid-template-columns: auto 2rem minmax(0, 1fr) auto; gap: var(--tide-space-2) var(--tide-space-3); align-items: center;
@@ -2111,7 +2125,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-order-main { min-width: 0; }
 .tide-order-ctrl { display: flex; gap: var(--tide-space-1); }
 .tide-order-foot { display: flex; gap: var(--tide-space-2); align-items: center; flex-wrap: wrap; border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-3); margin-top: var(--tide-space-1); }
-@media (max-width: 700px) {
+@media (max-width: 700.98px) {
     .tide-order-row, .tide-order-row:not([draggable]) { grid-template-columns: 2rem minmax(0, 1fr); }
     .tide-drag-handle { display: none; }
     .tide-order-ctrl { grid-column: 2; }
@@ -2130,7 +2144,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 
 /* The edition check: Included, Partly included or Left out for each part of the brief, per edition. */
 .tide-ed-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tide-space-3); }
-@media (max-width: 420px) { .tide-ed-cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 420.98px) { .tide-ed-cols { grid-template-columns: minmax(0, 1fr); } }
 .tide-ed-col h3 { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); display: grid; gap: var(--tide-space-1); margin: 0 0 var(--tide-space-2); }
 .tide-ed-col h3 a { color: var(--tide-text); }
 .tide-ed-sub { font-weight: var(--tide-weight-regular); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
@@ -2150,13 +2164,13 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-ed-warn .bi { margin-right: var(--tide-space-1); }
 .tide-ed-note { margin: var(--tide-space-3) 0 0; padding-top: var(--tide-space-2); border-top: 1px solid var(--tide-border); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 
-/* Preview both editions: side by side for proofreading the whole brief; at 900px or narrower, one at a time, picked
+/* Preview both editions: side by side for proofreading the whole brief; narrower than 900px, one at a time, picked
    with the Team | Company-wide switch (hidden while both fit). */
 .tide-both { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-4); align-items: start; }
 .tide-both-head { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: center; margin: 0 0 var(--tide-space-1); }
 .tide-both-for { font-size: var(--tide-text-sm); color: var(--tide-text-muted); margin: 0 0 var(--tide-space-3); }
 .tide-both-switch { display: none; margin-bottom: var(--tide-space-3); }
-@media (max-width: 900px) {
+@media (max-width: 899.98px) {
     .tide-both { grid-template-columns: minmax(0, 1fr); }
     .tide-both-switch { display: inline-flex; }
     .tide-both-ed:not(.is-shown) { display: none; }
@@ -2340,7 +2354,7 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-reading-text .tide-read-ioc { background: var(--tide-warn-soft); font-family: var(--tide-font-data); font-size: .85em; }
 .tide-reading-text .tide-read-werun { background: var(--tide-ok-soft); font-weight: 600; }
 .tide-reading-found { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .5rem; color: var(--tide-text-muted); }
-@media (max-width: 1000px) {
+@media (max-width: 1000.98px) {
   .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
   .tide-reading { position: static; max-height: none; order: -1; }
   /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
@@ -2360,10 +2374,13 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 .tide-passage { border-left: 3px solid var(--tide-accent); background: var(--tide-chip-bg); padding: .35rem .55rem; margin-top: .3rem; font-size: .85rem; border-radius: 0 6px 6px 0; }
 @media (forced-colors: active) { .tide-cite { border-color: CanvasText; } }
 
-/* An adversary profile's techniques (EP-73): darker where more of our articles show it. */
-.tide-adv-heat { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 3px; }
-.tide-adv-heat span { font-size: .78rem; padding: .25rem .35rem; border-radius: 3px; background: var(--tide-chip-bg); color: var(--tide-text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An adversary profile's techniques (EP-73): darker where more of our articles show it, and each with its count (×2) at
+   its end, so the shade isn't the only way to tell. The name gives way (ellipsis) before the count does. */
+.tide-adv-heat { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 3px; list-style: none; margin: 0; padding: 0; }
+.tide-adv-heat > li { display: flex; align-items: baseline; gap: .35rem; min-width: 0; font-size: .78rem; padding: .25rem .35rem; border-radius: 3px;
+  background: var(--tide-chip-bg); color: var(--tide-text-muted); }
+.tide-adv-heat-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-adv-heat-n { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tide-adv-heat .h1 { background: var(--tide-info-soft); color: var(--tide-text); }
 .tide-adv-heat .h2 { background: var(--tide-accent); color: #fff; }
 /* EP-80: reviews. */
@@ -2373,9 +2390,9 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 .tide-review-comments li.resolved { border-left-color: var(--tide-border); opacity: .7; }
 .tide-review-quote { font-style: italic; color: var(--tide-text-muted); }
 .tide-review-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--tide-space-3); align-items: start; }
-@media (max-width: 900px) { .tide-review-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 899.98px) { .tide-review-layout { grid-template-columns: minmax(0, 1fr); } }
 .tide-adv-heat .tide-adv-gap { box-shadow: inset 0 0 0 2px var(--tide-threat); }
-@media (forced-colors: active) { .tide-adv-heat span { border: 1px solid CanvasText; } }
+@media (forced-colors: active) { .tide-adv-heat > li { border: 1px solid CanvasText; } }
 
 /* Many metric groups. The day's numbers form (MetricEntry): a progress bar that stays in view under the page's own
    sticky header (.top-row), a bordered panel per group with its count, and finished groups folded to a line. */
@@ -2767,7 +2784,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* In full: the query no taller than its lines, the email's body not cut short. */
 .tide-library-entry .tide-query { min-height: 0; }
 .tide-library-entry .tide-email-text { max-height: none; }
-@media (max-width: 1000px) {
+@media (max-width: 1000.98px) {
     .tide-library { grid-template-columns: minmax(0, 1fr); }
     .tide-library-list { max-height: 45vh; overflow-y: auto; }
     .tide-library-detail { position: static; max-height: none; overflow-y: visible; }
@@ -2793,10 +2810,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-brief-chip:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
 .tide-brief-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-brief-chip.is-live { border-color: var(--tide-accent); background: var(--tide-accent-soft); color: var(--tide-text); }
-.tide-brief-chip-short { display: none; }
+.tide-brief-chip-short, .tide-brief-chip-said { display: none; }
 @media (max-width: 1199.98px) {
     .tide-brief-chip-full { display: none; }
-    .tide-brief-chip-short { display: inline; }
+    .tide-brief-chip-short, .tide-brief-chip-said { display: inline; }
 }
 @media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
 @media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
@@ -2848,7 +2865,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-triage-layout.reading-auto > .tide-reading { display: none; }
 }
 /* Beside the list, the pane sticks below the top bar (which sticks too), not under it. */
-@media (min-width: 1000.02px) {
+@media (min-width: 1001px) {
     .tide-reading { top: calc(var(--tide-height-top) + var(--tide-space-3)); max-height: calc(100vh - var(--tide-height-top) - 2 * var(--tide-space-3)); }
 }
 /* The main button names the article in full (its name and title), cut short on screen so Promote still fits beside it. */
@@ -2948,7 +2965,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-library-entry-head { display: flex; flex-wrap: nowrap; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
 .tide-library-entry-title { flex: 1 1 0; min-width: 0; display: grid; gap: var(--tide-space-1); }
 .tide-library-entry-tools { display: flex; flex: 0 1 auto; max-width: 65%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--tide-space-2); }
-@media (min-width: 1000.02px) {
+@media (min-width: 1001px) {
     .tide-library-detail .tide-library-entry { min-height: calc(100vh - var(--tide-space-8)); }
 }
 /* The lookup's card: the article, the actions raised from it, and what it was seen with. */
@@ -2959,11 +2976,14 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-drawer .tide-drawer-head > .tide-drawer-tabs { margin: 0; border-bottom: 0; }
 .tide-hunt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) 0; }
 .tide-w-days { width: 5rem; }
-/* Our stack: the team chosen from its own list; on a narrow window each row's cells stacked, each named, so the list
-   never scrolls sideways inside its card. */
+/* Our stack: the team chosen from its own list; where the list is narrow each row's cells stacked, each named, so it
+   never scrolls sideways inside its card. The headings are hidden from view but stay for screen readers. Narrow by the
+   list's own width, not the window's: beside the docked context rail a 1500px window leaves it less room than a 1100px
+   one with the rail shut. Its seven columns need 800px with wide fonts (shorter, "Vulnerability" broke mid-word). */
 .tide-stack-team { width: auto; }
-@media (max-width: 900px) {
-    .tide-stack-table thead { display: none; }
+.tide-stack-list { container: stack / inline-size; }
+@container stack (max-width: 799.98px) {
+    .tide-stack-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .tide-stack-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-1) var(--tide-space-3);
         padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
     .tide-stack-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }
@@ -2987,7 +3007,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* A narrow window (700px and less), where the head above takes much of the height: each row of lanes keeps room to read
    a card (12.5rem, about 9rem of cards under its head), and the board grows past the first screen, the page scrolling,
    rather than squeezing them. */
-@media (max-width: 700px) {
+@media (max-width: 700.98px) {
     .tide-board > .tide-kanban { grid-auto-rows: minmax(12.5rem, 1fr); min-height: auto; }
     .content > .tide-board { min-height: auto; }
 }
@@ -3075,7 +3095,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    title in Attach gives way, the dismiss reason narrows, and the pane's text gives way so the bar stays in the pane.
    Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row, one row
    while there's room (below). ---- */
-@media (min-width: 1000.02px) {
+@media (min-width: 1001px) {
     .tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
 }
 .tide-triage-decide { display: grid; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
@@ -3087,7 +3107,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
 /* From the bar, the attach list opens upwards, over the pane's text. */
 .tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
-@media (min-width: 1000.02px) {
+@media (min-width: 1001px) {
     .tide-reading { display: flex; flex-direction: column; overflow: visible; }
     .tide-reading > * { flex: none; }
     .tide-reading > .tide-reading-text { flex: 0 1 auto; min-height: 6rem; }
@@ -3106,7 +3126,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
        is its verb and the start of the title. It takes the room the others leave, up to its full width. */
     .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(2em, 1fr);
         flex: 4 1 0; min-width: auto; max-width: max-content; }
-    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { display: none; }
+    /* Out of sight but still said: the words stay in the button's name, which starts with what's shown. */
+    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     /* Last of all, before the row wraps (fonts wider than this machine's), the key hint on a button before the end gives
        way: its label then its key, the key's column able to close to nothing. Each such button is as wide as its label
        when the row is laid out, then takes the room back for its key before Attach or the end take any (as the buttons
@@ -3209,7 +3231,7 @@ html[data-file-drag] .tide-page-drop { display: flex; }
    open action, and where it was used; flat sections as Today 3.1's); the entry's name as its card's heading and the
    footnote at its foot; a long grouped list folded after the selected entry's group ---- */
 .tide-library-entry-name { margin: 0; font-size: 1.0625rem; font-weight: var(--tide-weight-bold); overflow-wrap: anywhere; }
-@media (min-width: 1000.02px) {
+@media (min-width: 1001px) {
     .tide-library-detail .tide-library-entry { display: flex; flex-direction: column; }
 }
 /* At the entry's foot, below its text (a query or an email's body keeps its own margin under it). */
@@ -3280,7 +3302,7 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-lookup-articles td:first-child { overflow-wrap: anywhere; }
 /* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell there. */
 #lookup-actions td:first-child { overflow-wrap: anywhere; }
-@media (max-width: 900px) { #lookup-actions td .tide-badge { white-space: normal; } }
+@media (max-width: 899.98px) { #lookup-actions td .tide-badge { white-space: normal; } }
 .tide-lookup-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
 .tide-lookup-rail-head > h2 { margin: 0; }
 .tide-lookup-rail-head > .tide-tabbar-sub { margin: 0; }
@@ -3292,15 +3314,17 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 
 /* ---- Our stack 3.7: a selected row, and the selected product in the context rail (its flat sections are Today 3.1's) ----
    The selected row is marked as the Actions list's is (rows.js moves it). Beside the docked rail the page has about
-   873px. The table is laid out by its columns' shares of its width, not by its words, so it is the card's width
-   whatever the fonts: the headings and cells wrap, a word longer than its column breaks, and a CVE's chip wraps
+   873px, so at 1500px its rows stack; wider, it's a table. The table is laid out by its columns' shares of its width,
+   not by its words, so it is the card's width whatever the fonts: the headings and cells wrap, and a CVE's chip wraps
    between its parts (the id, the scores, KEV). So it never scrolls sideways. */
 .tide-stack-item.selected > td, .tide-adv-item.selected > td { background: var(--tide-accent-soft); }
 .tide-stack-item.selected > td:first-child, .tide-adv-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
 .tide-stack-item:focus-visible, .tide-adv-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-stack-table th { white-space: normal; }
 .tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
-@media (min-width: 900.02px) {
+/* Seven columns need 800px of list: narrower, the headings broke mid-word ("VERSIO NS") and a CVE's chip spilled
+   out of its cell, so below that each row stacks (the stack container's max-width: 799.98px rules). */
+@container stack (min-width: 800px) {
     .tide-stack-table { table-layout: fixed; width: 100%; }
     .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; }
     .tide-stack-table th:nth-child(1) { width: 19%; }
@@ -3315,7 +3339,7 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-stack-table .tide-stack-now { min-width: 0; }
 .tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
 /* Stacked, every row keeps its text clear of the left edge, where the selected row's accent is drawn. */
-@media (max-width: 900px) {
+@container stack (max-width: 799.98px) {
     .tide-stack-table tr { padding-left: var(--tide-space-3); padding-right: var(--tide-space-2); }
     .tide-stack-item.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
     .tide-stack-item.selected > td { background: none; }

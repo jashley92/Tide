@@ -959,7 +959,6 @@ public sealed class ServiceWorld : IDisposable
             ("Queries.Templates", () => db.Queries().TemplatesAsync()),
             ("SavedQueries.List", () => db.SavedQueries().ListAsync()),
             ("OutreachTemplates.List", () => db.OutreachTemplates().ListAsync()),
-            ("Outreach.ForAction", () => db.Outreach().ForActionAsync(Action)),
         ];
     }
 }
@@ -1699,7 +1698,6 @@ public class TeamAndTagReadChallengeTests : IAsyncLifetime
             _w.As("dev:reader", roles);
             await FluentActions.Invoking(() => _w.Db.Teams().ListAsync()).Should().ThrowAsync<ForbiddenException>();
             await FluentActions.Invoking(() => _w.Db.Teams().ListAsync(includeRetired: true)).Should().ThrowAsync<ForbiddenException>();
-            await FluentActions.Invoking(() => _w.Db.Teams().TeamsOfAsync(ServiceWorld.Owner)).Should().ThrowAsync<ForbiddenException>();
             await FluentActions.Invoking(() => _w.Db.Scorecard().ListAsync()).Should().ThrowAsync<ForbiddenException>();
             await FluentActions.Invoking(() => _w.Db.Scorecard().ListAsync(includeRetired: true)).Should().ThrowAsync<ForbiddenException>();
         }
@@ -1712,7 +1710,7 @@ public class TeamAndTagReadChallengeTests : IAsyncLifetime
         {
             _w.As("dev:someone", roles);
             (await _w.Db.Teams().ListAsync()).Should().NotBeEmpty(string.Join(",", roles));
-            (await _w.Db.Teams().TeamsOfAsync(ServiceWorld.Owner)).Should().NotBeEmpty(string.Join(",", roles));
+            (await _w.Db.Teams().ListAsync()).Should().Contain(t => t.Members.Any(m => m.UserId == ServiceWorld.Owner), string.Join(",", roles));
             (await _w.Db.Scorecard().ListAsync()).Should().NotBeNull(string.Join(",", roles));
         }
     }

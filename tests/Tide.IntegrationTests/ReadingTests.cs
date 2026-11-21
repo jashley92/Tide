@@ -182,7 +182,7 @@ public class CitedDraftServiceTests : IDisposable
         await ctx.SaveChangesAsync();
         _db.Http.Set(Second, Page("More than 20 victims."));
         await _db.Reading().ReadAsync(b.Id);
-        var article = await _db.Intake().PromoteAsOneAsync([a.Id, b.Id], new PromoteForm { Title = "Ivanti flaws chained", Classification = Classification.Informational, Tlp = TlpLevel.Clear });
+        var article = (await _db.Intake().PromoteOrJoinAsync([a.Id, b.Id], new PromoteForm { Title = "Ivanti flaws chained", Classification = Classification.Informational, Tlp = TlpLevel.Clear })).ArticleId;
         return (article, a.Id, b.Id);
     }
 

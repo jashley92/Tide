@@ -34,14 +34,11 @@ public sealed record NotEmailedReason(NotEmailedCause Cause, string Text);
 public static class ExternalCadence
 {
     /// <summary>
-    /// Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (or isn't external): the
-    /// scan is off for everyone (<paramref name="scanOn"/>), the team's own reminders are off, or it has no contact email.
-    /// Said wherever work is given to one, so a request isn't left with someone who never hears of it.
+    /// Why <paramref name="team"/> won't be emailed its reminders, as a reason (so the fix can be offered) and its words;
+    /// null when it will be, or isn't external: the scan is off for everyone (<paramref name="scanOn"/>), the team's own
+    /// reminders are off, or it has no contact email. Said wherever work is given to one, so a request isn't left with
+    /// someone who never hears of it.
     /// </summary>
-    public static string? NotEmailedWhy(Team team, bool scanOn) => NotEmailed(team, scanOn)?.Text;
-
-    /// <summary>Why <paramref name="team"/> won't be emailed, as a reason (so the fix can be offered) and its words; null
-    /// when it will be, or isn't external.</summary>
     public static NotEmailedReason? NotEmailed(Team team, bool scanOn) =>
         !team.IsExternal ? null
         : !scanOn ? new(NotEmailedCause.OffForEveryone, $"External team reminders are off for everyone, so {team.Name} won't be emailed about this.")
@@ -194,7 +191,8 @@ public sealed partial class ReminderService
     // reminded all the same.
     private async Task<(EmailSendResult? Result, IReadOnlyList<ActionItem> Went, IReadOnlyList<ActionItem> Skipped)> SendExternalReminderAsync(
         IAppDbContext db, Team team, IEnumerable<ActionItem> actions, string contactHash, IReadOnlySet<string> remindedToday,
-        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct)
+        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct,
+        Func<IReadOnlyList<ActionItem>, IReadOnlyList<string>>? also = null)
     {
         var all = actions.ToList();
         var skipped = all.Where(a => remindedToday.Contains(ContactKey(a.Id, today, contactHash))).ToList();
@@ -202,7 +200,11 @@ public sealed partial class ReminderService
         if (go.Count == 0) return (null, go, skipped);
         var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
             go, today, replies, ceiling), ct);
-        if (result.MayHaveGone) await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
+        if (result.MayHaveGone)
+        {
+            if (also is not null) AddMarks(db, EscalationEmailMark, also(go));
+            await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
+        }
         return (result, go, skipped);
     }
 

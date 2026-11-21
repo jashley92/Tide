@@ -1,7 +1,8 @@
 @* A TLP picker. Floor (the article's own marking) leaves out the levels below it, since a part never counts lower; a
    value stored below the floor shows as the floor, which is what it counts as. The options are keyed so the
-   browser keeps the chosen one selected when the floor moves and options come and go. *@
-<select id="@Id" class="form-select form-select-sm @Class" aria-label="@Label" title="@Label" aria-describedby="@DescribedBy" value="@Shown" @onchange="Changed" disabled="@Disabled">
+   browser keeps the chosen one selected when the floor moves and options come and go. With an Id, a visible label's
+   for= names it, so it carries no aria-label of its own (which would replace that label's text as its name). *@
+<select id="@Id" class="form-select form-select-sm @Class" aria-label="@(Id is null ? Label : null)" title="@Label" aria-describedby="@DescribedBy" value="@Shown" @onchange="Changed" disabled="@Disabled">
     @foreach (var level in Ui.TlpLevels.Where(l => Floor is not { } f || l >= f))
     {
         <option @key="level" value="@level">@Tlp.Label(level)</option>
@@ -16,7 +17,8 @@
     [Parameter] public string? Class { get; set; }
     [Parameter] public bool Disabled { get; set; }
 
-    /// <summary>The select's id, for a visible label's for= to name; none when null.</summary>
+    /// <summary>The select's id, for a visible label's for= to name; none when null. Set only with such a label: the
+    /// label then names it, and Label is only its tooltip.</summary>
     [Parameter] public string? Id { get; set; }
 
     /// <summary>The id of the help text under it, if any.</summary>

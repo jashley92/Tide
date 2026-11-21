@@ -67,7 +67,7 @@ never refers to SQL Server or SQLite directly.
 
 | Path | Holds | Start reading |
 |---|---|---|
-| `Common/` | `Entity` (a Guid `Id` generated in C#), `AuditableEntity` (created and modified stamps), and `EnumNames`, which parses an enum by declared name only and never as a number or comma list. | `Entity.cs` |
+| `Common/` | `Entity` (a Guid `Id` generated in C#), `AuditableEntity` (created and modified stamps), `EnumNames`, which parses an enum by declared name only and never as a number or comma list, and `UrlCanonicalizer` (one address per story, and its hash), which entities use to keep an address's hash with it. | `Entity.cs` |
 | `Entities/` | One file per area, with one class per table: `Intake.cs` (sources, feed items, stories, CVEs), `Article.cs`, `Brief.cs`, `Distribution.cs` (sends, corrections), `Actions.cs` (teams, actions and everything on them, hunts, saved queries, outreach), `Metrics.cs`, `Rotation.cs`, `Scorecard.cs`, `Stack.cs`, `Adversary.cs`, `Review.cs`, `Detection.cs`, `Assist.cs` (AI drafts), `Api.cs` (tokens, webhooks), `Users.cs` (users, preferences, role mappings, audit log, settings, stored files). | `Article.cs`: `Article.HighestTlp`, `Article.Effective` and the "why it matters" TLP defaults. |
 | `Enums/` | `AppEnums.cs` (roles, permissions and every workflow enum), `TlpLevel.cs` (`TlpLevel` and the `Tlp` helpers: `Label`, `Key`, `Parse`, `Checked`), `MitreEnums.cs` (`MitreTactic`). | `TlpLevel.cs` |
 | `Observables/` | `IocObservable` (refang, defang, detect a type, canonical form) and `IpText`. | `IocObservable.Normalize` |
@@ -100,7 +100,7 @@ through `ICurrentUser.Has(Permission.…)`, whether or not the page already hide
 | `Files/` | Screenshots and evidence: upload checks, sniffing, storage, inline access rules, deletes. Also file risk and zip-by-default rules, and display sizes. | `ScreenshotService`, `ImageSniffer`, `FileRisk` |
 | `History/` | The History disclosure on articles and briefs (`HistoryService`, `HistoryFormatter`), and the administrator's audit log page and CSV (`AuditLogService`, `AuditRecords`). | `HistoryService`, `AuditLogService` |
 | `Indicators/` | Finding indicators and CVEs in pasted text, and indicator labels and defanged display. | `IocExtractor`, `IndicatorLabels` |
-| `Intake/` | Sources, polling, the triage inbox, grouping and splits, promote and attach, and retention (`IntakeService`). Also feed parsing and URL canonicalization (`FeedParser`, `UrlCanonicalizer`, `TitleMatch` in `FeedParsing.cs`), feed filters, sponsored-content detection, the reading pane (`ReadingService`), CVE enrichment (`CveService`), stories (`StoryService`), triage ordering (`TriageLearning`, `TriageGroups`), the starter source list, and `IOutboundHttp` with `IntakeOptions`. | `IntakeService`, `FeedParser`, `CveService` |
+| `Intake/` | Sources, polling, the triage inbox, grouping and splits, promote and attach, and retention (`IntakeService`). Also feed parsing and title matching (`FeedParser`, `TitleMatch` in `FeedParsing.cs`; `UrlCanonicalizer` is in the domain's `Common/`), feed filters, sponsored-content detection, the reading pane (`ReadingService`), CVE enrichment (`CveService`), stories (`StoryService`), triage ordering (`TriageLearning`, `TriageGroups`), the starter source list, and `IOutboundHttp` with `IntakeOptions`. | `IntakeService`, `FeedParser`, `CveService` |
 | `Metrics/` | Metric definitions and values (`MetricsService`), CSV import (`MetricImportService`, `MetricCsv`), the rules for change and thresholds (`MetricMath`), charts and present-mode slides, and entry progress. | `MetricsService`, `MetricMath` |
 | `Mitre/` | The embedded ATT&CK Enterprise catalog (`attack-techniques.json`, `attack-retired.json`, embedded resources) and the matrix views. | `AttackCatalog`, `AttackMatrix` |
 | `Operations/` | Running the server: the settings catalog and secret masking (`SettingsCatalog`, `SecretMask`), the configuration bundle export and import (`ConfigBundleService`), install answers (`tide.config.psd1`), background job status (`JobMonitor`), the release feed and update check, and the upgrade command shown on the Updates page. | `SettingsCatalog`, `ConfigBundleService`, `JobMonitor` |
@@ -128,6 +128,8 @@ also lives here, so unit tests can reach it without a database.
 | `Persistence/AuditInterceptor.cs` | Stamps and the audit log, written in the same save. `NotAudited`, `SkippedProperties` and `MaskFor` are the knobs. | `Record`, `Changes` |
 | `Persistence/ChangeInterceptor.cs` | Publishes change-feed topics after a save commits (`TopicsOf` maps entities to topics). | `TopicsOf` |
 | `Persistence/DatabaseInitializer.cs` | Startup: migrate (or refuse if `Database:ApplyMigrations` is false and migrations are pending), load holidays, seed role mappings and the scorecard, run the one-time indicator canonicalization, and add Development sample data. | `InitializeAsync`, `SeedSamplesAsync` |
+| `Persistence/SqliteText.cs` | On SQLite only: a `lower()` that folds every letter and a `unicode_ci` collation on every connection, and `ToLower()` translated to use them, so text sorts as on SQL Server; and `EF.Functions.Like` translated to add `SqliteLike`'s matcher for a pattern with a letter beyond ASCII, so search ignores case as on SQL Server. | `Configure`, `Register` |
+| `Persistence/SqliteLike.cs` | On SQLite only: `needs_unicode(p)` and `ulike(p, x[, e])`, LIKE ignoring case for every letter (as `NameOrder` compares), accents counted. | `Register` |
 | `Persistence/AppDbContextFactory.cs` | The design-time factory for `dotnet ef`. It reads `TIDE_MIGRATIONS_PROVIDER`, and its XML comment has the migration commands. | |
 | `Persistence/Migrations/` | The **SQLite** migrations and snapshot. | |
 | `Storage/DiskFileStore.cs` | File bytes on disk under `Files:RootPath`. | `WriteAsync`, `PathFor` |
@@ -225,7 +227,8 @@ Windows PowerShell 5.1 scripts, ASCII only. [`deploy/README.md`](../../deploy/RE
 | `appsettings.Production.template.json` | What the installer fills in. |
 | `lib/*.ps1` | Shared helpers for IIS, AD group names, SQL, settings, upgrade, backup, dates, JSON, paths and WebSockets. |
 
-There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
+The DBA schema script, `sql/tide-schema-sqlserver.sql`, isn't in the repository: the release workflow generates it
+into the bundle (`tools/ci/sqlserver-schema-script.sh`, through `Persistence/IdempotentScriptSqlGenerator.cs`).
 
 ## `tools` and CI
 
@@ -233,11 +236,13 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 |---|---|
 | `tools/ci/check-migrations-immutable.sh` | Fails CI when a migration that shipped in a release tag was changed or removed. |
 | `tools/ci/check-sonar-quality-gate.sh` | Reads the SonarQube Cloud quality gate. |
+| `tools/ci/sqlserver-schema-script.sh` | Writes the DBA schema script (every SQL Server migration, idempotent) the release bundle carries. |
+| `tools/ci/check-sqlserver-schema-script.sh` | Applies that script to an empty SQL Server database, twice, and checks it against the migrations. |
 | `tools/ci/extract-release-notes.sh` | Release notes for the release workflow. |
 | `tools/signing/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
 | `tools/upgrade-test/upgrade-path.sh` | Installs older releases into SQL Server, starts this tree against the same database, and checks it comes up healthy with data intact. |
-| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, SQL Server tests, the upgrade path). |
-| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
+| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, the DBA schema script, SQL Server tests, the upgrade path). |
+| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts with the DBA schema script, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
 
 ## If you need to change X, start in Y
 

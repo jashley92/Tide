@@ -133,7 +133,7 @@ public sealed partial class SmallFixesTests(TideApp app) : IClassFixture<TideApp
         return Spaces().Replace(WebUtility.HtmlDecode(Tags().Replace(th, "")), " ").Trim();
     }
 
-    [GeneratedRegex("<th colspan=\"\\d+\" scope=\"rowgroup\">(?<inner>[\\s\\S]*?)</th>")]
+    [GeneratedRegex("<th colspan=\"\\d+\" scope=\"rowgroup\"[^>]*>(?<inner>[\\s\\S]*?)</th>")]
     private static partial Regex GroupHeading();
 
     [GeneratedRegex("<[^>]+>")]

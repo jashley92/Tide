@@ -47,7 +47,10 @@ every TLP, as the article pages do; Readers have the published archive's own fil
 | Actions | title, description, outcome note, ticket, assignee, comments; `A-12` or `12` by number | open first, then newest |
 | Stories | name, summary | by status, then newest |
 
-Each kind is paged 50 at a time (`SearchPages`), up to 1,000 deep. Each hit has a snippet with the matches marked
+Each kind is paged 50 at a time (`SearchPages`), up to 1,000 deep. Each kind's heading counts its hits ("51–100 of
+132"). Articles are counted only as far as the pages go: matching them scans every article, so the search reads the
+newest 1,001 matches once and counts those, and past 1,000 the heading reads "1–50 of 1,000+" with *The pages go to the
+first 1,000; add a word to find the rest.* (`HitList.AtLeast`). Actions and stories are counted in full. Each hit has a snippet with the matches marked
 (`SearchText.Snippet`, `Mark`); an indicator in a snippet is shown defanged, so a snippet never carries a live link.
 
 **Lookup.** When the whole query is one indicator (`IocObservable.DetectType`) or one CVE, the page also shows a
@@ -65,7 +68,9 @@ triage", linked to Triage). "Not seen before" is said only to someone who triage
 value, no action was raised and nothing new in Triage names it; anyone else reads "Not on any article yet", since
 Triage may have it. "Briefed" counts only a brief that was presented or sent
 (`Lookups.BriefsAsync`); an article on a brief that hasn't been reads "on today's brief, not presented yet" or "on
-the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". A CVE's line states no hunt
+the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". "Today's brief" is the one
+the editor's *Add to today's brief* adds to (`OrgClock.CurrentBriefDate`: Monday's on a weekend), and a day in another
+year carries its year ("briefed Tue Sep 16, 2025"). A CVE's line states no hunt
 result, because a hunt searches for indicators; the sweeps and hunts on its articles are named under it
 (`CveLookup.Sweeps`). The answer stays in the page: the first line, the articles (a table of the article, which
 value matched, when it was briefed and when it was written), *Actions raised* and *Seen with*. What you'd do with it is
@@ -205,7 +210,7 @@ Markdown kept internal, watched, retired, merged into).
 
 - a timeline of the articles tagged with it **or naming it** (in the title, the earlier actors note or the start of the
   bottom line, as whole words), with their actions and indicators, and how many briefs it was in this quarter;
-- the ATT&CK techniques across those articles, darker where more articles show them, downloadable as an ATT&CK Navigator
+- the ATT&CK techniques across those articles, each with how many show it (×2) and darker where more do, downloadable as an ATT&CK Navigator
   layer scored by count (`GET /adversaries/{id}/navigator.json`, `NavigatorLayerAsync`). With detection rules imported,
   each technique is also coloured by whether a current, enabled rule is tagged with it;
 - the articles that name it but aren't tagged, for an analyst to check and tag (`LinkAsync`). Nothing is linked

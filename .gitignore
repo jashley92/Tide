@@ -32,3 +32,5 @@ appsettings.Production.json
 .claude/
 # Before and after pictures of the UI (tools/screenshots/baseline.mjs).
 artifacts/ux-baseline/
+# The DBA schema script: the release workflow generates it into the bundle (deploy/README.md).
+deploy/sql/tide-schema-sqlserver.sql

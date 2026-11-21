@@ -477,6 +477,25 @@ public class FileRiskTests
     [InlineData("report", "application/x-msdownload; charset=binary", "it was sent as application/x-msdownload, which can run on the computer that opens it")]
     public void ByNameOrDeclaredType(string name, string? type, string reason) => FileRisk.Reason(name, type).Should().Be(reason);
 
+    [Theory]
+    [InlineData("tool.appref-ms")]
+    [InlineData("launch.jnlp")]
+    [InlineData("package.cab")]
+    [InlineData("update.msu")]
+    [InlineData("fix.diagcab")]
+    [InlineData("sandbox.wsb")]
+    [InlineData("types.ps1xml")]
+    [InlineData("console.psc1")]
+    [InlineData("macro.vb")]
+    [InlineData("job.ws")]
+    [InlineData("portal.website")]
+    [InlineData("app.xbap")]
+    [InlineData("jump.rdp")]
+    [InlineData("results.search-ms")]
+    [InlineData("addin.xla")]
+    public void LessCommonTypesThatRun_AreRiskyToo(string name) =>
+        FileRisk.Reason(name, null).Should().Be($"a {Path.GetExtension(name)} file can run on the computer that opens it");
+
     [Fact]
     public void ByTheFirstBytes_WhateverTheName()
     {

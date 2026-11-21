@@ -91,7 +91,7 @@
                             else if (i.Problems is { Length: > 0 })
                             {
                                 <details class="small">
-                                    <summary>Why @i.Skipped row@(i.Skipped == 1 ? " was" : "s were") skipped</summary>
+                                    <summary>Why @Ui.Plural(i.Skipped, "row was", "rows were") skipped</summary>
                                     <ul class="mb-0 ps-3">
                                         @foreach (var line in i.Problems.Split('\n'))
                                         {
@@ -129,7 +129,18 @@
     {
         _dropOn = Options.CurrentValue.DropFolderEnabled;
         _dropMinutes = Options.CurrentValue.PollMinutes;
+        _loaded = DropFolderValues();
     }
+
+    // The drop folder settings as the page showed them: a save sends only what was changed here, and one someone else
+    // has changed since is refused rather than put back.
+    private Dictionary<string, string?> _loaded = [];
+
+    private Dictionary<string, string?> DropFolderValues() => new()
+    {
+        [Tide.Application.Settings.OperationalSettings.DropFolderEnabled] = _dropOn ? "true" : "false",
+        [Tide.Application.Settings.OperationalSettings.DropFolderPollMinutes] = _dropMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     internal async Task SaveDropFolder()
     {
@@ -137,11 +148,7 @@
         _busy = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?>
-            {
-                [Tide.Application.Settings.OperationalSettings.DropFolderEnabled] = _dropOn ? "true" : "false",
-                [Tide.Application.Settings.OperationalSettings.DropFolderPollMinutes] = _dropMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            });
+            await Settings.SaveAsync(DropFolderValues(), loaded: _loaded);
             ReadSettings();
             Toasts.Show(_dropOn ? "The drop folder is on. It's read within a minute." : "The drop folder is off.");
         }

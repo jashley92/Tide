@@ -15,6 +15,7 @@ function Get-TideServerSettingPaths {
     return @(
         'Email:SmtpUsername', 'Email:SmtpUseDefaultCredentials', 'Email:SmtpTimeoutSeconds',
         'Intake:Proxy', 'Intake:AllowPrivateNetworks', 'Intake:TimeoutSeconds', 'Intake:MaxResponseKB',
+        'Webhooks:AllowPrivateNetworks',
         'Cve:NvdUrl', 'Cve:EpssUrl', 'Cve:KevUrl', 'Cve:MaxNvdPerRun', 'Cve:NvdTimeoutSeconds',
         'Updates:Repository')
 }

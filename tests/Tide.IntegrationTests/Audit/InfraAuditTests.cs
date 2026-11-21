@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tide.Application.Abstractions;
+using Tide.Application.Api;
 using Tide.Application.Intake;
 using Tide.Infrastructure.Notifications;
 using Tide.Web.Services;
@@ -136,6 +137,139 @@ public sealed class AddressPolicyEmbeddedIPv4Tests
     [Fact]
     public void Refusal_AnEmbeddedPrivateIPv4_IsAllowedWhenPrivateNetworksAre() =>
         AddressPolicy.Refusal(IPAddress.Parse("64:ff9b::a00:1"), allowPrivateNetworks: true).Should().BeNull();
+}
+
+/// <summary>
+/// A webhook is never posted to the server itself or to link-local addresses (cloud metadata among them); private
+/// receivers follow Webhooks:AllowPrivateNetworks, on by default. A receiver listens on loopback, so a post the guard
+/// let through would arrive.
+/// </summary>
+public sealed class WebhookAddressGuardTests : IAsyncDisposable
+{
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly CancellationTokenSource _stop = new();
+    private readonly Task _serving;
+    private int _received;
+
+    public WebhookAddressGuardTests()
+    {
+        _listener.Start();
+        _serving = ServeAsync();
+    }
+
+    private int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+    private async Task ServeAsync()
+    {
+        try
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                await using var stream = client.GetStream();
+                var reader = new StreamReader(stream, Encoding.ASCII);
+                while (!string.IsNullOrEmpty(await reader.ReadLineAsync(_stop.Token))) { }
+                Interlocked.Increment(ref _received);
+                await stream.WriteAsync("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), _stop.Token);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException or IOException) { }
+    }
+
+    // The poster as the app builds it, with these settings; or with another address rule (to reach the loopback receiver).
+    private static Tide.Web.Api.HttpWebhookPoster Poster(WebhookOptions? options = null, Func<IPAddress, string?>? refusal = null)
+    {
+        var monitor = new StaticOptionsMonitor<WebhookOptions>(options ?? new WebhookOptions());
+        var handler = Tide.Web.Api.HttpWebhookPoster.Handler(refusal ?? Tide.Web.Api.HttpWebhookPoster.Refusal(monitor));
+        return new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler), monitor);
+    }
+
+    private static Task<(int? Status, string? Error)> Post(Tide.Web.Api.HttpWebhookPoster poster, string url) =>
+        poster.PostAsync(url, "{}", new Dictionary<string, string> { ["X-Tide-Event"] = "ping" });
+
+    [Theory]
+    [InlineData("127.0.0.1")]
+    [InlineData("localhost")]
+    [InlineData("[::1]")]
+    public async Task Post_ToLoopback_IsRefused_AndNeverArrives(string host)
+    {
+        var (status, error) = await Post(Poster(), $"http://{host}:{Port}/hook");
+
+        status.Should().BeNull();
+        error.Should().StartWith("Refused:").And.Contain("loopback").And.NotContain(Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Volatile.Read(ref _received).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("http://169.254.169.254/latest/meta-data/")]
+    [InlineData("https://[fe80::1]/hook")]
+    public async Task Post_ToLinkLocal_CloudMetadataAmongThem_IsRefused(string url)
+    {
+        var (status, error) = await Post(Poster(), url);
+
+        status.Should().BeNull();
+        error.Should().StartWith("Refused:").And.Contain("link-local");
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0")]
+    [InlineData("224.0.0.1")]
+    public void Refusal_UnspecifiedAndMulticast_AreRefusedWhateverTheSetting(string address)
+    {
+        Tide.Web.Api.HttpWebhookPoster.Refusal(new StaticOptionsMonitor<WebhookOptions>(new WebhookOptions { AllowPrivateNetworks = true }))
+            (IPAddress.Parse(address)).Should().Contain("reserved");
+    }
+
+    [Theory]
+    [InlineData("10.1.2.3")]
+    [InlineData("172.16.0.5")]
+    [InlineData("192.168.1.10")]
+    [InlineData("fd00::1")]
+    public void Refusal_APrivateAddress_IsAllowedByDefault(string address)
+    {
+        new WebhookOptions().AllowPrivateNetworks.Should().BeTrue("internal receivers keep working after an upgrade");
+        Tide.Web.Api.HttpWebhookPoster.Refusal(new StaticOptionsMonitor<WebhookOptions>(new WebhookOptions()))(IPAddress.Parse(address)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Post_ToAPrivateAddress_IsRefused_WhenTheSettingIsOff()
+    {
+        var (status, error) = await Post(Poster(new WebhookOptions { AllowPrivateNetworks = false }), "http://10.1.2.3/hook");
+
+        status.Should().BeNull();
+        error.Should().StartWith("Refused:").And.Contain("private").And.Contain("Webhooks:AllowPrivateNetworks");
+    }
+
+    [Theory]
+    [InlineData("8.8.8.8", true)]
+    [InlineData("8.8.8.8", false)]
+    [InlineData("2606:4700::1111", false)]
+    public void Refusal_APublicAddress_IsAllowedWhateverTheSetting(string address, bool allowPrivate) =>
+        Tide.Web.Api.HttpWebhookPoster.Refusal(new StaticOptionsMonitor<WebhookOptions>(new WebhookOptions { AllowPrivateNetworks = allowPrivate }))
+            (IPAddress.Parse(address)).Should().BeNull();
+
+    [Fact]
+    public async Task Post_AnAddressTheRuleAllows_IsConnectedAndPostedAsBefore()
+    {
+        var (status, error) = await Post(Poster(refusal: _ => null), $"http://127.0.0.1:{Port}/hook");
+
+        status.Should().Be(202);
+        error.Should().BeNull();
+        Volatile.Read(ref _received).Should().Be(1);
+    }
+
+    private sealed class OneClient(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _stop.CancelAsync();
+        _listener.Stop();
+        await _serving;
+        _stop.Dispose();
+    }
 }
 
 /// <summary>Presence keeps only the places someone is at.</summary>

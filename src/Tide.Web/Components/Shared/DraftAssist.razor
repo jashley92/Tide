@@ -564,9 +564,9 @@
     private static string? Dropped(Suggestions s)
     {
         var parts = new List<string>();
-        if (s.DroppedTechniques > 0) parts.Add($"{s.DroppedTechniques} technique{(s.DroppedTechniques == 1 ? "" : "s")} not in the ATT&CK catalog");
-        if (s.DroppedTags > 0) parts.Add(s.DroppedTags == 1 ? "1 tag that isn't configured" : $"{s.DroppedTags} tags that aren't configured");
-        if (s.DroppedIndicators > 0) parts.Add($"{s.DroppedIndicators} indicator{(s.DroppedIndicators == 1 ? "" : "s")} that couldn't be read");
+        if (s.DroppedTechniques > 0) parts.Add($"{Ui.Plural(s.DroppedTechniques, "technique")} not in the ATT&CK catalog");
+        if (s.DroppedTags > 0) parts.Add(Ui.Plural(s.DroppedTags, "tag that isn't configured", "tags that aren't configured"));
+        if (s.DroppedIndicators > 0) parts.Add($"{Ui.Plural(s.DroppedIndicators, "indicator")} that couldn't be read");
         return parts.Count == 0 ? null : "Left out by the checks: " + string.Join("; ", parts) + ".";
     }
 }

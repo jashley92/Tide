@@ -142,9 +142,9 @@ jobs:
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
 
   # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there), in four slices side by
-  # side, each on its own fresh demo, at the default letter spacing and again with wider letters (LETTER_SPACING=.12em,
-  # for pages that widen them); the layout job below passes when all eight do. TIDE is built once, by layout-build, and
-  # each slice starts that build.
+  # side (balanced by what each page took in CI: shards.mjs), each on its own fresh demo, at the default letter spacing
+  # and again with wider letters (LETTER_SPACING=.12em, for pages that widen them); the layout job below passes when all
+  # eight do. TIDE is built once, by layout-build, and each slice starts that build.
   layout-build:
     runs-on: ubuntu-latest
     permissions:
@@ -180,8 +180,7 @@ jobs:
   layout-shard:
     name: layout (${{ matrix.shard }}/4${{ matrix.spacing != '.07em' && format(', {0}', matrix.spacing) || '' }})
     needs: layout-build
-    # Pinned: Playwright 1.56.1 can't install its browser on ubuntu-latest's 26.04 image.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 25
@@ -217,8 +216,10 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           # If the runner can't reach Ubuntu's package mirrors, fall back to the browser alone: the runner image
-          # already carries the system libraries Chromium needs.
-          ./node_modules/.bin/playwright install --with-deps --only-shell chromium \
+          # already carries the system libraries Chromium needs. apt can also stall on a mirror rather than fail, which
+          # would hold the job until its timeout, so the first try gets five minutes (then a kill 30s later if it
+          # ignores the stop) and a stall falls back like a failure.
+          timeout -k 30 300 ./node_modules/.bin/playwright install --with-deps --only-shell chromium \
             || ./node_modules/.bin/playwright install --only-shell chromium
 
       - name: Layout holds
@@ -227,6 +228,24 @@ jobs:
           APP_DIR: layout-app
           SHARD: ${{ matrix.shard }}/4
           LETTER_SPACING: ${{ matrix.spacing }}
+          # The accessibility scan (report only) at the default spacing: the wider letters would find the same.
+          AXE: ${{ matrix.spacing == '.07em' && '1' || '0' }}
+
+      # What axe found, never failing the job (tools/screenshots/README.md, "Accessibility scan").
+      - name: Accessibility scan summary (report only)
+        if: always() && matrix.spacing == '.07em'
+        run: |
+          cat tools/screenshots/.axe/axe-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No axe report: the scan didn't run."
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && matrix.spacing == '.07em'
+        with:
+          name: axe-${{ matrix.shard }}-of-4
+          path: tools/screenshots/.axe/
+          # The folder's name starts with a dot, which the action leaves out unless told.
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: TIDE's log (on failure)
         if: failure()
@@ -282,6 +301,16 @@ jobs:
             dotnet ef database update --project src/Tide.Migrations.SqlServer --startup-project src/Tide.Web \
               --context AppDbContext --connection "$CONN"
           done
+
+      # The DBA schema script the release bundle carries (deploy/sql/tide-schema-sqlserver.sql), generated as the release
+      # generates it and applied with sqlcmd to an empty database, twice: it must leave every migration applied, none
+      # pending, and the same columns, indexes and keys as the migrations applied above (TideCi).
+      - name: The DBA schema script builds the same schema as the migrations
+        env:
+          TIDE_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+          SQL_CONTAINER: ${{ job.services.mssql.id }}
+          SQLCMD: docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ${{ env.SA_PASSWORD }}
+        run: bash tools/ci/check-sqlserver-schema-script.sh TideCi
 
       # Tests that need production's database engine, skipped in the SQLite run above: [SqlServerFact] tests (e.g. every
       # page rendered on SQL Server, whose queries yield where SQLite's finish at once) and the SqlServer rows of

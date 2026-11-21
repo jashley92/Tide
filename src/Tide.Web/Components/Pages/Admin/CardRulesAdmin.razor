@@ -117,7 +117,7 @@ else
 {
     <div class="tide-card">
         <table class="tide-table">
-            <thead><tr><th>Label</th><th>Matches</th><th>Filter</th><th></th></tr></thead>
+            <thead><tr><th>Label</th><th>Matches</th><th>Filter</th><th class="position-relative"><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var (r, i) in _rules.Select((r, i) => (r, i)))
                 {

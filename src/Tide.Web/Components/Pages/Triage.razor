@@ -98,7 +98,7 @@ else
     @* EP-81: a story dismissed this week that names a KEV-listed CVE or a watched adversary, and reached no brief. *@
     var shown = _missed.Take(MissedShown).ToList();
     <div class="alert alert-warning tide-missed" role="status">
-        <div><strong>Missed this week?</strong> @_missed.Count dismissed item@(_missed.Count == 1 ? "" : "s") name@(_missed.Count == 1 ? "s" : "") something we track, and no brief covered @(_missed.Count == 1 ? "it" : "them").</div>
+        <div><strong>Missed this week?</strong> @Ui.Plural(_missed.Count, "dismissed item names", "dismissed items name") something we track, and no brief covered @(_missed.Count == 1 ? "it" : "them").</div>
         <ul class="tide-missed-list">
             @foreach (var m in shown)
             {
@@ -260,7 +260,7 @@ else
                                 @if (row.SameCve.Count > 0)
                                 {
                                     <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
-                                            @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @row.SameCve.Count other new item@(row.SameCve.Count == 1 ? "" : "s")</button>
+                                            @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @Ui.Plural(row.SameCve.Count, "other new item")</button>
                                 }
                                 @* Not inside an open group when it names a report of the same group: the group says so already. *@
                                 @if (row.Similar is { } sim && row.Group?.Ids.Contains(sim.Id) != true) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
@@ -286,7 +286,7 @@ else
     {
         @* Untouched items fold away rather than pile up: kept, searchable, and a click away. *@
         <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => ShowOlder(true)">
-            <span class="bi bi-archive" aria-hidden="true"></span> Older: @_olderCount new item@(_olderCount == 1 ? "" : "s") untouched for @AgeText</button>
+            <span class="bi bi-archive" aria-hidden="true"></span> Older: @Ui.Plural(_olderCount, "new item") untouched for @AgeText</button>
     }
     @* A page at a time, every page a link (the address is the page's); J on the last row and K on the first go on to the
        next and back to the previous one. *@
@@ -302,8 +302,9 @@ else
 <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_said</div>
 
 <ConfirmDialog @ref="_confirm" />
-@* "Dismiss all": the reason goes with every one of them, so it's chosen in the confirmation. *@
-<ConfirmDialog @ref="_dismissAll">
+@* "Dismiss all" and a group's "Dismiss the N": the reason goes with every one of them, so it's chosen in the
+   confirmation (a group's line has no reason of its own to show). *@
+<ConfirmDialog @ref="_dismissMany">
     <label class="tide-field-label" for="dismiss-all-reason">Dismiss them as</label>
     <select id="dismiss-all-reason" class="form-select form-select-sm mb-2" @bind="_reason">
         @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
@@ -311,7 +312,7 @@ else
 </ConfirmDialog>
 
 @code {
-    private ConfirmDialog _confirm = default!, _dismissAll = default!;
+    private ConfirmDialog _confirm = default!, _dismissMany = default!;
 
     // The reading pane (EP-76): the selected item's article, fetched from its page on V (or "Read it here") and kept for
     // colleagues and the editor. While it's open it follows the selection, showing a report's text when it's kept and
@@ -325,13 +326,20 @@ else
     private bool _reading => _readingPref != UserPreferences.ReadingClosed;
 
     private string ReadingCss => !_reading ? "" : _readingPref == UserPreferences.ReadingAuto ? " reading reading-auto" : " reading";
-    private Guid? _fetching;   // the item being fetched, one at a time
+    // The items being fetched. A fetch belongs to its item: the analyst can move on and read another while a slow site
+    // answers, and the first one's text is still kept for its item (ReadingService keeps it) but is shown only if its
+    // item is the one in the pane by then. It isn't cancelled: the site has been asked already, and the analyst asked for
+    // that text, so it's kept for when they come back to it.
+    private readonly HashSet<Guid> _fetching = [];
+    // Why each item's latest fetch failed, for this visit only (failures aren't kept like texts): coming back to an item
+    // whose read failed after the analyst moved on shows why, as it would have at the time, without asking the site again.
+    private readonly Dictionary<Guid, ReadingText> _readFailed = [];
     private ReadingText? _read;
     private InboxRow? _readRow;
     private IReadOnlyDictionary<string, CveRecord> _readCves = new Dictionary<string, CveRecord>();
 
     // Whether the item the pane shows is the one being fetched.
-    private bool ReadingBusy => _fetching is { } f && f == _readRow?.Item.Id;
+    private bool ReadingBusy => _readRow is { } r && _fetching.Contains(r.Item.Id);
 
     private InboxRow? ReadableRow => Current is { } line ? line.Row ?? line.Members.FirstOrDefault() : null;
 
@@ -353,7 +361,12 @@ else
         _readRow = row;
         _read = null;
         if (row is null) return;
-        try { await Show(await Reading.KeptAsync(row.Item.Id)); }
+        try
+        {
+            var kept = await Reading.KeptAsync(row.Item.Id) ?? _readFailed.GetValueOrDefault(row.Item.Id);
+            // Its own fetch can land meanwhile (the analyst came back to an item still being read): that text stays.
+            if (kept is not null || _read is null) await Show(row.Item.Id, kept);
+        }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
@@ -377,7 +390,7 @@ else
     /// <summary>V or "Read it here": opens the pane on the selected item and fetches its text when it isn't kept.</summary>
     internal async Task Read(bool again = false)
     {
-        if (ReadableRow is not { } row || _fetching is not null) return;
+        if (ReadableRow is not { } row || _fetching.Contains(row.Item.Id)) return;
         // Open from here on (kept for the next visit while the text is read, not before it).
         var kept = KeepReading(UserPreferences.ReadingOpen);
         try
@@ -387,11 +400,15 @@ else
             if (!again && _readRow?.Item.Id == row.Item.Id && _read is not null) return;
             _readRow = row;
             _read = null;
-            _fetching = row.Item.Id;
+            _fetching.Add(row.Item.Id);
             StateHasChanged();
-            try { await Show(await Reading.ReadAsync(row.Item.Id, again)); }
-            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
-            finally { _fetching = null; }
+            ReadingText read;
+            try { read = await Reading.ReadAsync(row.Item.Id, again); }
+            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { read = ReadingText.Failed(row.Item.Id, UserFacingError.For(ex)); }
+            finally { _fetching.Remove(row.Item.Id); }
+            if (read.HasText) _readFailed.Remove(row.Item.Id);
+            else _readFailed[row.Item.Id] = read;
+            await Show(row.Item.Id, read);
         }
         finally { await kept; }
     }
@@ -400,7 +417,7 @@ else
     /// it hasn't been read, and otherwise closes, so V opens and closes the pane in turn.</summary>
     internal Task ToggleReading()
     {
-        if (_fetching is not null) return Task.CompletedTask;
+        if (ReadingBusy) return Task.CompletedTask;
         return _read is null && ReadableRow is not null ? Read() : CloseReading();
     }
 
@@ -416,10 +433,11 @@ else
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
-    // A slow fetch can finish after the selection moved on: its text is dropped unless its item is still the one shown.
-    private async Task Show(ReadingText? text)
+    // A slow fetch or lookup can finish after the selection moved on: what it found is dropped unless its item is still
+    // the one shown (it's kept for its item all the same).
+    private async Task Show(Guid itemId, ReadingText? text)
     {
-        if (text is not null && text.ItemId != _readRow?.Item.Id) return;
+        if (itemId != _readRow?.Item.Id) return;
         _read = text;
         _readCves = text is { Cves.Count: > 0 } ? await Cves.GetAsync(text.Cves) : new Dictionary<string, CveRecord>();
     }
@@ -448,7 +466,7 @@ else
                         }
                         else
                         {
-                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
                         }
                         @if (!string.IsNullOrWhiteSpace(row.Item.Url))
                         {
@@ -535,19 +553,20 @@ else
                         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @n to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
                 }
                 @* The other buttons' words after the first (tide-triage-long) give way in the bar, so the main button keeps
-                   its own; each says them in full to a screen reader and on hover. *@
+                   its own; they go out of sight, not out of the name, so each button is named by its words in full (its
+                   name starts with what's shown, for speech input) and says them on hover. The key is aria-keyshortcuts'. *@
                 <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" aria-keyshortcuts="P"
-                        aria-label="@($"Promote as one article ({n} sources)")" title="@($"Promote as one article ({n} sources)")" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
-                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one<span class="tide-triage-long"> article (@n sources)</span> <span class="tide-kbd">P</span></button>
+                        title="@($"Promote as one article ({n} sources)")" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
+                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one<span class="tide-triage-long"> article (@n sources)</span> <span class="tide-kbd" aria-hidden="true">P</span></button>
                 </span>
                 @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
                 @if (_status == FeedItemStatus.New)
                 {
-                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="S" aria-label="@($"Shortlist the {n}")" title="@($"Shortlist the {n}")"
-                            @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">S</span></button>
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="S" title="@($"Shortlist the {n}")"
+                            @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist<span class="tide-triage-long"> the @n</span> <span class="tide-kbd" aria-hidden="true">S</span></button>
                     <span class="tide-triage-end">
-                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="X" aria-label="@($"Dismiss the {n}")" title="@($"Dismiss the {n}")"
-                                @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">X</span></button>
+                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="X" title="@($"Dismiss the {n}")"
+                                @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss<span class="tide-triage-long"> the @n</span> <span class="tide-kbd" aria-hidden="true">X</span></button>
                     </span>
                 }
             </div>
@@ -608,7 +627,7 @@ else
             @if (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)
             {
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => DismissSameCve(row)">
-                    Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
+                    Dismiss the @Ui.Plural(row.SameCve.Count, "other") with its CVE as covered</button>
             }
         </div>
     };
@@ -695,8 +714,8 @@ else
     internal static string Found(ReadingText text)
     {
         var parts = new List<string>();
-        if (text.Cves.Count > 0) parts.Add($"{text.Cves.Count} CVE{(text.Cves.Count == 1 ? "" : "s")}");
-        if (text.Indicators.Count > 0) parts.Add($"{text.Indicators.Count} indicator{(text.Indicators.Count == 1 ? "" : "s")}");
+        if (text.Cves.Count > 0) parts.Add(Ui.Plural(text.Cves.Count, "CVE"));
+        if (text.Indicators.Count > 0) parts.Add(Ui.Plural(text.Indicators.Count, "indicator"));
         if (text.WeRun.Count > 0) parts.Add("Our stack: " + string.Join(", ", text.WeRun));
         return parts.Count == 0 ? "No CVEs, indicators or products we run found in it." : "Found here: " + string.Join(" · ", parts);
     }
@@ -863,7 +882,7 @@ else
 
     private Guid? _sourceId;
     private string? _search;
-    private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all"
+    private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all" and a group's "dismiss the N"
     private string _itemReason = IntakeService.DismissReasons[0];   // for one item (X)
     private bool _sinceLast;
     private InboxSort _sort;
@@ -924,7 +943,7 @@ else
     // The New tab's fold of items that aged out (IntakeOptions.AgeDays), and whether it's what's shown.
     private bool _older;
     private int _olderCount;
-    private string AgeText => IntakeOpts.CurrentValue.AgeDays is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
+    private string AgeText => IntakeOpts.CurrentValue.AgeDays is var d && d == 7 ? "a week" : Ui.Plural(d, "day");
 
     // EP-81: the order, kept in this browser.
     private async Task SetSort(InboxSort sort)
@@ -1003,18 +1022,19 @@ else
         if (_busy || line.Members.Count == 0 || _status != FeedItemStatus.New) return;
         var n = line.Members.Count;
         var dismiss = what == TriageStep.Dismiss;
-        if (!await _confirm.Ask(dismiss ? $"Dismiss the {n} reports?" : $"Shortlist the {n} reports?",
-                $"Every report in \u201C{Short(line.Members[0].Item.Title)}\u201D goes{(dismiss ? ", for everyone: the inbox is shared" : " to Shortlisted")}. To keep one, open the group and act on it alone.",
-                dismiss ? $"Dismiss {n}" : $"Shortlist {n}")) return;
+        var message = $"Every report in \u201C{Short(line.Members[0].Item.Title)}\u201D goes{(dismiss ? ", for everyone: the inbox is shared" : " to Shortlisted")}. To keep one, open the group and act on it alone.";
+        // Dismissing asks for the reason, as "Dismiss all" does: the single item's reason isn't on a group's line.
+        if (!await (dismiss ? _dismissMany.Ask($"Dismiss the {n} reports?", message, $"Dismiss {n}")
+                : _confirm.Ask($"Shortlist the {n} reports?", message, $"Shortlist {n}"))) return;
         _busy = true;
         try
         {
             var ids = line.Members.Select(m => m.Item.Id).ToList();
             // The count done, not the group's size: a colleague may have acted on some of them first.
-            var done = dismiss ? await Intake.DismissManyAsync(ids, _itemReason) : await Intake.ShortlistManyAsync(ids);
+            var done = dismiss ? await Intake.DismissManyAsync(ids, _reason) : await Intake.ShortlistManyAsync(ids);
             Announce();
             Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
-                : $"{(dismiss ? "Dismissed" : "Shortlisted")} {done} report{(done == 1 ? "" : "s")}.");
+                : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, "report")}.");
             await Load();
             _focus = "tideTriage.focusRow";
         }
@@ -1613,7 +1633,7 @@ else
         _said = string.Join(" ", said);
     }
 
-    private static string Items(int n) => n == 1 ? "1 item" : $"{n} items";
+    private static string Items(int n) => Ui.Plural(n, "item");
 
     // The ghosts of rows that left, by the line they stand before (the list's length: at the end).
     private Dictionary<int, List<LiveGhost<Guid>>> GhostsByLine()
@@ -1718,20 +1738,55 @@ else
             return;
         }
         _busy = true;
+        var item = row.Item;
         try
         {
+            TriageDecision? decision = null;
             switch (what)
             {
-                case TriageStep.Shortlist: await Intake.ShortlistAsync(row.Item.Id); break;
-                case TriageStep.Dismiss: await Intake.DismissAsync(row.Item.Id, _itemReason); break;
-                case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(row.Item.Id); break;
-                case TriageStep.Restore: await Intake.RestoreAsync(row.Item.Id); break;
+                case TriageStep.Shortlist: decision = await Intake.ShortlistAsync(item.Id); break;
+                case TriageStep.Dismiss: decision = await Intake.DismissAsync(item.Id, _itemReason); break;
+                case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(item.Id); break;
+                case TriageStep.Restore: await Intake.RestoreAsync(item.Id); break;
             }
             Announce();
             await Load();
             // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
             // now belongs to the next item) or the page.
             _focus = "tideTriage.focusRow";
+            // S or X on a new item is one keypress and the row leaves the list: the toast's Undo (or Alt+Z) puts it back.
+            // Only when it was new as it was decided (the service says; this row may be stale), where putting it back is
+            // the exact inverse; otherwise it would land in New rather than where it was.
+            if (decision is { FromNew: true } d)
+            {
+                var decided = what == TriageStep.Shortlist ? FeedItemStatus.Shortlisted : FeedItemStatus.Dismissed;
+                Toasts.Show($"{(decided == FeedItemStatus.Shortlisted ? "Shortlisted" : "Dismissed")}: {Short(item.Title)}", async () =>
+                {
+                    // From the toast: this page re-renders itself, as the click wasn't on it.
+                    await UndoDecision(item, decided, d.At);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Undo of a single shortlist or dismissal, from its toast: back in New, unless a colleague has decided it since. The
+    // row is selected again where it's shown, and an open reading pane follows it; nothing is fetched (Follow shows
+    // only text already kept).
+    internal async Task UndoDecision(FeedItem item, FeedItemStatus decided, DateTimeOffset at)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            Toasts.Show(await Intake.UndoDecisionAsync(item.Id, decided, at)
+                ? $"Put back in New: {Short(item.Title)}" : "Nothing to undo: a colleague already changed it.");
+            Announce();
+            await Load();
+            // Load has already followed the selection it made; the pane follows this one.
+            if (SelectItem(item.Id)) await Follow();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -1881,7 +1936,7 @@ else
         {
             var n = await Intake.DismissSameCveAsync(row.Item.Id, row.SameCve);
             Announce();
-            Toasts.Show($"Dismissed {n} item{(n == 1 ? "" : "s")} as already covered.");
+            Toasts.Show($"Dismissed {Ui.Plural(n, "item")} as already covered.");
             await Load();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -1894,7 +1949,7 @@ else
     {
         var shown = _rows.Select(r => r.Item.Id).ToList();
         var n = shown.Count;
-        if (!await _dismissAll.Ask($"Dismiss all {n} shown?", "The inbox is shared.", $"Dismiss {n}")) return;
+        if (!await _dismissMany.Ask($"Dismiss all {n} shown?", "The inbox is shared.", $"Dismiss {n}")) return;
         await DismissAll(shown);
     }
 
@@ -1905,7 +1960,7 @@ else
         {
             var n = await Intake.DismissManyAsync(ids, _reason);
             Announce();
-            Toasts.Show($"Dismissed {n} item{(n == 1 ? "" : "s")}.");
+            Toasts.Show($"Dismissed {Ui.Plural(n, "item")}.");
             await Load();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

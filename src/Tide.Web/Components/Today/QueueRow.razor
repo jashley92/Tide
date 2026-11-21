@@ -19,7 +19,7 @@
     @if (Offers)
     {
         <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)" @ref="_take"
-                aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on: {Row.Title}")">Take it</button>
+                aria-label="@($"Take it: {Ui.ActionLabel(Row.Number)}, {Row.Title}")">Take it</button>
     }
 </div>
 

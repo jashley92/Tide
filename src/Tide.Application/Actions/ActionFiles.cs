@@ -342,8 +342,11 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         var stored = ids.Count == 0
             ? []
             : await db.Files.AsNoTracking().Where(s => ids.Contains(s.Id)).Select(s => new { s.Id, s.Sha256, s.ContentType }).ToDictionaryAsync(s => s.Id, ct);
-        var rows = own.Select(x => new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.f.Sha256), x.ContentType, x.f.AddedByName,
-                x.f.AddedAtUtc, x.f.Description, x.f.ShowsInline, x.f.RiskReason, x.f.TypeNote)
+        // An action's own file is judged by its name too, as a comment's is below and as its download is (OpenAsync), so a
+        // kind of file added to the risky list since it was uploaded is listed, and downloads, zip first.
+        var rows = own.Select(x => (x.f, x.ContentType, Risk: x.f.RiskReason ?? FileRisk.Reason(x.f.FileName, null)))
+            .Select(x => new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.f.Sha256), x.ContentType, x.f.AddedByName,
+                x.f.AddedAtUtc, x.f.Description, ActionFile.ShowsInlineFor(x.f.IsImage, x.f.TypeNote, x.Risk), x.Risk, x.f.TypeNote)
             {
                 DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById, CanRemove = CanRemove(user, x.f.AddedById),
                 RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
@@ -393,7 +396,7 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
             .Select(f => new { f.FileName, f.SizeBytes, f.AddedAtUtc, f.RiskReason }).FirstOrDefaultAsync(ct);
         FileDownload? Open(string name, long size, DateTimeOffset at, string? risk) =>
             store.OpenRead(fileId) is { } s ? new FileDownload(s, name, size, at, risk) : null;
-        if (own is not null) return Open(own.FileName, own.SizeBytes, own.AddedAtUtc, own.RiskReason);
+        if (own is not null) return Open(own.FileName, own.SizeBytes, own.AddedAtUtc, own.RiskReason ?? FileRisk.Reason(own.FileName, null));
         var onComment = await (from f in db.ActionCommentFiles.AsNoTracking()
                                join c in db.ActionComments.AsNoTracking() on f.CommentId equals c.Id
                                where f.FileId == fileId && (f.RemovedAtUtc == null || admin) && (actionId == null || c.ActionId == actionId)
