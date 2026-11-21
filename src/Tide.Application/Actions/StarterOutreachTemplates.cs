@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -54,6 +56,29 @@ public static class StarterOutreachTemplates
             + "A short reply is fine, including \"no\".\n\n" + SignOff,
             TlpLevel.Amber),
     ];
+
+    /// <summary>What a newer starter does better, as the page offers it.</summary>
+    public const string NewerWhy = "It leaves out a heading, link or line when there's nothing to fill.";
+
+    // The bodies starters shipped with up to v1.15, before they had optional placeholders and sections, by SHA-256 of the
+    // body, with the starter each became. A template TIDE saved with one of these, its subject unchanged, hasn't been
+    // edited since, so the newer body can take its place without losing anyone's work.
+    private static readonly Dictionary<string, string> Earlier = new(StringComparer.Ordinal)
+    {
+        ["b8117b5a38a4c516b0cdebbe0067fd399786a397c3a76c5427a354d8a08dbcad"] = "Vendor: are we affected?",
+        ["d1e9e14871569b1aa6a53e1b071c099b99ae78f07764f313e8926bee89e17c69"] = "Internal: action required",
+        ["ad5a572fa2905c9f878481d698102514646331b5ab851a97c4ba04ca0f4e331b"] = "ISAC / partner: share and ask",
+    };
+
+    /// <summary>
+    /// The newer starter <paramref name="t"/> is an older copy of, when TIDE saved it and it hasn't been changed since
+    /// (its subject and body are as an earlier starter's were); otherwise null.
+    /// </summary>
+    public static StarterOutreachTemplate? NewerFor(OutreachTemplate t) =>
+        t.CreatedByName == SavedBy
+        && Earlier.TryGetValue(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(t.Body))), out var name)
+        && All.FirstOrDefault(s => s.Name == name) is { } newer && newer.Subject == t.Subject
+            ? newer : null;
 
     /// <summary>A starter as a row, saved by TIDE.</summary>
     public static OutreachTemplate ToEntity(StarterOutreachTemplate s) => new()
