@@ -217,69 +217,49 @@ public static partial class OutreachFill
     /// <summary>The word that starts a section's other branch: <c>{{else}}</c>.</summary>
     public const string ElseName = "else";
 
-    // A section tag: where it starts and ends (its whole line, when nothing else is on it), and what it is.
-    private sealed record SectionTag(int Start, int End, OutreachToken Token)
-    {
-        public OutreachTokenKind Kind => Token.Kind;
-        public string Name => Token.Name;
-        public string? Modifier => Token.Modifier;
-        public string Written => Kind == OutreachTokenKind.Else ? "{{" + ElseName + "}}"
-            : "{{" + (Kind == OutreachTokenKind.Open ? "#" : "/") + Name + (Modifier is null ? "" : ":" + Modifier) + "}}";
+    // A section tag as written plainly ("{{#article.cves}}"), for what's said about it.
+    private static string Plain(OutreachToken t) => t.Kind == OutreachTokenKind.Else ? "{{" + ElseName + "}}"
+        : "{{" + (t.Kind == OutreachTokenKind.Open ? "#" : "/") + t.Name + (t.Modifier is null ? "" : ":" + t.Modifier) + "}}";
 
-        public bool Closes(SectionTag open) => Name == open.Name
-                                               && string.Equals(Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
-    }
+    // Whether a section's close is about the placeholder its open is.
+    private static bool Closes(OutreachToken close, OutreachToken open) =>
+        close.Name == open.Name && string.Equals(close.Modifier ?? "", open.Modifier ?? "", StringComparison.OrdinalIgnoreCase);
 
-    // The section tags among the tokens, in order. A tag alone on its line takes the line with it, so a section leaves
-    // no blank lines behind.
-    private static List<SectionTag> Tags(string text, IEnumerable<OutreachToken> tokens)
-    {
-        var tags = new List<SectionTag>();
-        foreach (var t in tokens.Where(t => t.Kind != OutreachTokenKind.Placeholder))
-        {
-            int start = t.Index, end = t.End;
-            var lineStart = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
-            var lineEnd = text.IndexOf('\n', end);
-            if (lineEnd < 0) lineEnd = text.Length;
-            if (string.IsNullOrWhiteSpace(text[lineStart..start]) && string.IsNullOrWhiteSpace(text[end..lineEnd]))
-                (start, end) = (lineStart, lineEnd < text.Length ? lineEnd + 1 : lineEnd);
-            tags.Add(new SectionTag(start, end, t));
-        }
-        return tags;
-    }
+    // The section tags among the tokens, in order.
+    private static List<OutreachToken> Tags(IEnumerable<OutreachToken> tokens) => [.. tokens.Where(t => t.Kind != OutreachTokenKind.Placeholder)];
 
     // Refuses sections that don't pair up, or are about a placeholder TIDE doesn't fill.
-    private static void CheckSections(List<SectionTag> tags)
+    private static void CheckSections(List<OutreachToken> tags)
     {
-        SectionTag? open = null;
+        OutreachToken? open = null;
         var sawElse = false;
         foreach (var t in tags)
         {
-            if (t.Token.Optional || t.Token.Fallback is not null)
-                throw new ArgumentException($"{t.Token.Written} is a section's tag: it takes no ? or |. Write it as {t.Written}.");
+            if (t.Optional || t.Fallback is not null)
+                throw new ArgumentException($"{t.Written} is a section's tag: it takes no ? or |. Write it as {Plain(t)}.");
             switch (t.Kind)
             {
                 case OutreachTokenKind.Open:
                     if (open is not null)
-                        throw new ArgumentException($"{t.Written} is inside {open.Written}: close it with {{{{/{open.Name}}}}} first. A section can't hold another.");
+                        throw new ArgumentException($"{Plain(t)} is inside {Plain(open)}: close it with {{{{/{open.Name}}}}} first. A section can't hold another.");
                     if (string.Equals(t.Name, TlpName, StringComparison.OrdinalIgnoreCase))
-                        throw new ArgumentException($"{t.Written} can't start a section: the email always carries its TLP.");
+                        throw new ArgumentException($"{Plain(t)} can't start a section: the email always carries its TLP.");
                     CheckPlaceholder(t.Name, t.Modifier);
                     (open, sawElse) = (t, false);
                     break;
                 case OutreachTokenKind.Else:
                     if (open is null) throw new ArgumentException($"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
-                    if (sawElse) throw new ArgumentException($"{open.Written} has two {{{{{ElseName}}}}}s: a section takes one at most.");
+                    if (sawElse) throw new ArgumentException($"{Plain(open)} has two {{{{{ElseName}}}}}s: a section takes one at most.");
                     sawElse = true;
                     break;
                 default:
-                    if (open is null) throw new ArgumentException($"{t.Written} closes a section that isn't open: start it with {{{{#{t.Name}}}}}.");
-                    if (!t.Closes(open)) throw new ArgumentException($"{t.Written} doesn't close {open.Written}: write {{{{/{open.Name}{(open.Modifier is null ? "" : ":" + open.Modifier)}}}}}.");
+                    if (open is null) throw new ArgumentException($"{Plain(t)} closes a section that isn't open: start it with {{{{#{t.Name}}}}}.");
+                    if (!Closes(t, open)) throw new ArgumentException($"{Plain(t)} doesn't close {Plain(open)}: write {{{{/{open.Name}{(open.Modifier is null ? "" : ":" + open.Modifier)}}}}}.");
                     open = null;
                     break;
             }
         }
-        if (open is not null) throw new ArgumentException($"{open.Written} is never closed: end the section with {{{{/{open.Name}}}}}.");
+        if (open is not null) throw new ArgumentException($"{Plain(open)} is never closed: end the section with {{{{/{open.Name}}}}}.");
     }
 
     /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
@@ -322,7 +302,7 @@ public static partial class OutreachFill
     {
         text ??= "";
         var tokens = Tokens(text);
-        CheckSections(Tags(text, tokens));
+        CheckSections(Tags(tokens));
         foreach (var t in tokens.Where(t => t.Kind == OutreachTokenKind.Placeholder))
         {
             var fallback = t.Fallback is not null;
@@ -454,7 +434,7 @@ public static partial class OutreachFill
         // don't pair up are refused when a template is saved; an older one that slipped through is left as it is.
         string Sections(string text)
         {
-            var tags = Tags(text, Tokens(text));
+            var tags = Tags(Tokens(text));
             if (tags.Count == 0) return text;
             try { CheckSections(tags); }
             catch (ArgumentException) { return text; }
@@ -463,7 +443,10 @@ public static partial class OutreachFill
             var (inside, has, inElse) = (false, false, false);
             foreach (var t in tags)
             {
-                if (!inside || has != inElse) sb.Append(text, pos, t.Start - pos);
+                if (!inside || has != inElse) sb.Append(text, pos, t.Index - pos);
+                // The tag goes as an empty optional placeholder does: the same pass drops its line when it's alone on it,
+                // with a blank line that would then follow another, and closes the gap when it isn't.
+                sb.Append(GoneSlot);
                 pos = t.End;
                 switch (t.Kind)
                 {
@@ -514,8 +497,8 @@ public static partial class OutreachFill
     // Where {{tlp}} was, until the marking is known: a value filled in that happens to say "{{tlp}}" stays as it is.
     private const string TlpSlot = "\u0000tlp\u0000";
 
-    // The body's lines with each line an optional placeholder left empty dropped, and the gaps in the rest closed. A
-    // blank line that would then follow another blank line goes too: "a\n\n{{x?}}\n\nb" reads "a\n\nb", not "a\n\n\nb".
+    // The body's lines with each line only an empty optional placeholder or a section's tags were on dropped, and the
+    // gaps in the rest closed. A blank line that would then follow another blank line goes too: "a\n\n{{x?}}\n\nb" reads "a\n\nb", not "a\n\n\nb".
     // Blank lines the template has side by side of its own are kept.
     private static string Lines(string text)
     {
@@ -538,7 +521,7 @@ public static partial class OutreachFill
         return string.Join("\n", kept);
     }
 
-    // Where an optional placeholder with nothing to fill was, until its line is dropped or the gap closed.
+    // Where an optional placeholder with nothing to fill, or a section's tag, was, until its line is dropped or the gap closed.
     private const string GoneSlot = "\u0000gone\u0000";
 
     // The text with optional placeholders' gaps closed: "A, {{x?}} and B" reads "A, and B", not "A,  and B".
