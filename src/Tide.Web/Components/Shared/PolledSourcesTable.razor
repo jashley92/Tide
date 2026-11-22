@@ -54,12 +54,13 @@ else
                         else if (!s.Pullable(Now) && s.PullableAtUtc is { } pullable)
                         {
                             var why = PullTimes.TooSoon(s.LastPolledAtUtc!.Value, pullable, Now);
-                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="@why" aria-label="@($"Pull {s.Name} now. {why}")">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="@why" aria-label="@($"Again in {PullTimes.Wait(pullable - Now)}: pull {s.Name}. {why}")">
                                 <span class="bi bi-hourglass-split" aria-hidden="true"></span> Again in @PullTimes.Wait(pullable - Now)</button>
                         }
                         else
                         {
-                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(Pulling is not null)" aria-label="@($"Pull {s.Name} now")"
+                            @* Named by its words, then the source ("Pull now: Morning wire"), so the name starts with what's shown. *@
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(Pulling is not null)" aria-label="@($"Pull now: {s.Name}")"
                                     @onclick="() => OnPull.InvokeAsync(s.Id)"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Pull now</button>
                         }
                     </td>

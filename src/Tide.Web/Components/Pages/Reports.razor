@@ -76,7 +76,7 @@ else
         }
         else
         {
-            <div class="table-responsive">
+            <TableScroll LabelledBy="rep-metrics">
                 <table class="tide-table tide-report-table" aria-labelledby="rep-metrics">
                     <thead><tr><th scope="col">Metric</th><th scope="col" class="tide-table-num">Latest</th><th scope="col" class="tide-table-num">Average</th>
                         <th scope="col" class="tide-table-num">Range</th><th scope="col" class="tide-table-num">Days missing</th><th scope="col" class="tide-table-num">Days past a threshold</th></tr></thead>
@@ -94,7 +94,7 @@ else
                         }
                     </tbody>
                 </table>
-            </div>
+            </TableScroll>
         }
         @Assessment("metrics")
     </section>
@@ -168,7 +168,7 @@ else
 
     private RenderFragment Figures(IReadOnlyList<ReportFigure> figures, string headingId) => __builder =>
     {
-        <div class="table-responsive">
+        <TableScroll LabelledBy="@headingId">
             <table class="tide-table tide-report-table" aria-labelledby="@headingId">
                 <thead><tr><th scope="col">Measure</th><th scope="col" class="tide-table-num">@_period.Label</th><th scope="col" class="tide-table-num">@_period.Previous.Label</th><th scope="col" class="tide-table-num">Change</th></tr></thead>
                 <tbody>
@@ -183,7 +183,7 @@ else
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
     };
 
     private RenderFragment Tops(string? title, IReadOnlyList<ReportTop> tops, string view) => __builder =>

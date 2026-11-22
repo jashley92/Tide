@@ -3,7 +3,7 @@ using AwesomeAssertions;
 
 namespace Tide.UnitTests;
 
-/// <summary>The stylesheets use only the design tokens app.css defines: a misspelt or missing one drops its rule silently
+/// <summary>The stylesheets use only the design tokens they define (css/00-tokens.css): a misspelt or missing one drops its rule silently
 /// (U9-2: the adversary heat grid's red outline for a technique with no detection rule never showed).</summary>
 public partial class StyleTokenTests
 {
@@ -23,7 +23,7 @@ public partial class StyleTokenTests
     {
         // A comment or an action's details quoting a long URL or a SHA-256 ran out of its card and scrolled the page
         // sideways on a narrow window: .tide-md (the Md component's wrapper) set no wrapping.
-        var css = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "app.css"));
+        var css = Stylesheets.ReadAll();
         MarkdownRule().Match(css).Groups[1].Value.Should().MatchRegex(@"overflow-wrap:\s*anywhere");
     }
 

@@ -42,7 +42,7 @@ else
 {
     <section class="tide-card" aria-labelledby="tp-title">
         <h2 id="tp-title">@TeamCommitments.Range(p.Card)</h2>
-        <div class="table-responsive">
+        <TableScroll LabelledBy="tp-title">
             <table class="tide-table tide-report-table">
                 <caption class="visually-hidden">The team's actions due in the window, and each person's who held them on their due date</caption>
                 <thead>
@@ -69,7 +69,7 @@ else
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
         <p class="small tide-muted mt-2 mb-0">
             @if (p.Everyone)
             {

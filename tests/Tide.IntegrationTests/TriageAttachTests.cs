@@ -296,8 +296,8 @@ public partial class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
     [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")]
     private static partial Regex SecondaryPromote();
 
-    [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*aria-label=\"Promote as one article \\(3 sources\\)\"[^>]*>(<span[^>]*></span>)? "
-                + "Promote as one<span class=\"tide-triage-long\"> article \\(3 sources\\)</span> <span class=\"tide-kbd\">P</span>")]
+    [GeneratedRegex("class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*title=\"Promote as one article \\(3 sources\\)\"[^>]*>(<span[^>]*></span>)? "
+                + "Promote as one<span class=\"tide-triage-long\"> article \\(3 sources\\)</span> <span class=\"tide-kbd\" aria-hidden=\"true\">P</span>")]
     private static partial Regex SecondaryPromoteAsOne();
 
     [GeneratedRegex("<li class=\"tide-triage-row[^\"]*selected")]

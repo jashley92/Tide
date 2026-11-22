@@ -37,20 +37,25 @@
 
             <div class="tide-profile-sep"></div>
 
+            @* Each setting is a group of the menu's own radios (menuitemradio): a menu holds only menu items and groups
+               of them, so a radio group inside it would break its structure for a screen reader. *@
+            @* System, the default, follows the operating system's light or dark, live (theme.js). *@
             <div class="tide-profile-seg-row" role="group" aria-label="Theme">
-                <span class="bi @(_dark ? "bi-moon-stars" : "bi-sun")" aria-hidden="true"></span>
+                <span class="bi @ThemeIcon" aria-hidden="true"></span>
                 <span class="tide-profile-seg-label">Theme</span>
-                <span class="tide-seg" role="radiogroup" aria-label="Theme">
-                    <button type="button" class="tide-seg-opt @(!_dark ? "on" : "")" role="radio" aria-checked="@(!_dark ? "true" : "false")" @onclick="() => SetTheme(false)">Light</button>
-                    <button type="button" class="tide-seg-opt @(_dark ? "on" : "")" role="radio" aria-checked="@(_dark ? "true" : "false")" @onclick="() => SetTheme(true)">Dark</button>
+                <span class="tide-seg">
+                    @foreach (var (value, label) in Themes)
+                    {
+                        <button type="button" class="tide-seg-opt @(_theme == value ? "on" : "")" role="menuitemradio" aria-checked="@(_theme == value ? "true" : "false")" @onclick="() => SetTheme(value)">@label</button>
+                    }
                 </span>
             </div>
             <div class="tide-profile-seg-row" role="group" aria-label="Letter shortcuts">
                 <span class="bi bi-keyboard" aria-hidden="true"></span>
                 <span class="tide-profile-seg-label">Letter shortcuts</span>
-                <span class="tide-seg" role="radiogroup" aria-label="Letter shortcuts">
-                    <button type="button" class="tide-seg-opt @(_shortcuts ? "on" : "")" role="radio" aria-checked="@(_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(true)">On</button>
-                    <button type="button" class="tide-seg-opt @(!_shortcuts ? "on" : "")" role="radio" aria-checked="@(!_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(false)">Off</button>
+                <span class="tide-seg">
+                    <button type="button" class="tide-seg-opt @(_shortcuts ? "on" : "")" role="menuitemradio" aria-checked="@(_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(true)">On</button>
+                    <button type="button" class="tide-seg-opt @(!_shortcuts ? "on" : "")" role="menuitemradio" aria-checked="@(!_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(false)">Off</button>
                 </span>
             </div>
             <div class="tide-profile-seg-hint">Single-key shortcuts in triage, present mode and the editor. Arrows always work. Saved in this browser.</div>
@@ -98,7 +103,8 @@
 </div>
 
 @code {
-    private bool _open, _about, _dark, _shortcuts = true;
+    private bool _open, _about, _shortcuts = true;
+    private string _theme = "system";
     private ElementReference _holder, _button;
     private Popout? _popout;
 
@@ -128,7 +134,7 @@
         // Show the settings as they are in this browser.
         try
         {
-            _dark = await JS.InvokeAsync<string>("tideTheme.current") == "dark";
+            _theme = await JS.InvokeAsync<string>("tideTheme.chosen");
             _shortcuts = await JS.InvokeAsync<bool>("tideShortcuts.on");
         }
         catch (JSException) { /* the defaults stand */ }
@@ -153,13 +159,17 @@
 
     public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 
-    private async Task SetTheme(bool dark)
+    private static readonly (string Value, string Label)[] Themes = [("light", "Light"), ("dark", "Dark"), ("system", "System")];
+
+    private string ThemeIcon => _theme switch { "light" => "bi-sun", "dark" => "bi-moon-stars", _ => "bi-circle-half" };
+
+    private async Task SetTheme(string theme)
     {
-        if (_dark == dark) return;
+        if (_theme == theme) return;
         try
         {
-            await JS.InvokeVoidAsync("tideTheme.apply", dark ? "dark" : "light");
-            _dark = dark;
+            await JS.InvokeVoidAsync("tideTheme.apply", theme);
+            _theme = theme;
         }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
