@@ -39,8 +39,7 @@
                 <input @ref="_input" type="text" class="tide-palette-input" data-palette-input role="combobox"
                        aria-expanded="@(shown.Count > 0 ? "true" : "false")" aria-controls="@(_id)-list" aria-autocomplete="list"
                        aria-activedescendant="@(shown.Count > 0 ? OptionId(_active) : null)"
-                       aria-label="@(Verbs ? "Go to a page, find an article, action or story, or type > for commands" : "Go to a page, or find an article, action or story")"
-                       placeholder="@(Verbs ? "Go to a page, find an article, action (A-12) or story; > for commands" : "Go to a page, or find an article, action (A-12) or story")"
+                       aria-label="@BoxName" placeholder="@BoxHint"
                        autocomplete="off" spellcheck="false" maxlength="200"
                        @bind="_query" @bind:event="oninput" @bind:after="OnQueryChanged" />
             </div>
@@ -87,6 +86,10 @@
 
     /// <summary>Whether it lists commands (verbs) as well as places; present mode's has none, only the keys to move.</summary>
     [Parameter] public bool Verbs { get; set; } = true;
+
+    // The box's name and hint: with the commands, how to list only them.
+    private string BoxName => Verbs ? "Go to a page, find an article, action or story, or type > for commands" : "Go to a page, or find an article, action or story";
+    private string BoxHint => Verbs ? "Go to a page, find an article, action (A-12) or story; > for commands" : "Go to a page, or find an article, action (A-12) or story";
 
     private readonly string _id = Ui.NewId("palette");
     // A verb chosen: run once the palette has closed and given focus back, so a dialog the verb opens takes it from there.
