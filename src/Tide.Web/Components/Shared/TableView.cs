@@ -17,9 +17,6 @@ public sealed record TableColumn<TItem>(string Key, string Title)
     /// <summary>The first click sorts largest or newest first, as a date or a count is usually wanted.</summary>
     public bool DescendingFirst { get; init; }
 
-    /// <summary>The heading is heard, not seen (a column of checkboxes, whose own labels say what each is).</summary>
-    public bool TitleHidden { get; init; }
-
     public bool Sortable => SortBy is not null;
 }
 

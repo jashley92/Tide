@@ -4315,7 +4315,7 @@ const pages = [
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
-      visible('.tide-col-progress'), onTitleLine('.tide-action-row > td:not(.tide-col-pick)', '.tide-action-num', '[title^="Escalated"]'),
+      visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
       notClippedBelow('[role=group][aria-label="Views"]'), visible('.tide-chip-count'), fits('.tide-dt-scroll'), kevPill('.tide-action-row .tide-kev')] },
   // "Open here by default" (or "Opens here") and Save view sit on the view tabs' line, inside their row, as the design
   // has them: on the list and the board, at each width, and with wider letters.
@@ -4326,7 +4326,7 @@ const pages = [
   }))),
   // With wider letters (CI's fonts), the Progress column still leaves the title its line: the Escalated badge stays on it.
   { name: 'actions-list-wide-letters', route: '/actions?view=open&layout=list', setup: wider, widths: [[1920, 1080], [1440, 900]],
-    rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-action-row > td:not(.tide-col-pick)', '.tide-action-num', '[title^="Escalated"]'), fits('.tide-dt-scroll')] },
+    rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'), fits('.tide-dt-scroll')] },
   // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
   // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
   { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],

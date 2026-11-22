@@ -185,13 +185,13 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
         var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
-        HeaderCell().Matches(head).Select(m => m.Groups[1].Value).Should().Equal(["Select", "Action", "Kind", "Team and owner", "Progress", "Due", "Status"],
-            "an analyst's list has a checkbox first, to choose several, its heading heard rather than seen");
+        HeaderCell().Matches(head).Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team and owner", "Progress", "Due", "Status"],
+            "the checkbox for choosing several sits beside the title, not in a column of its own");
 
         var checklist = Row(html, $"{token} checklist");
-        var progress = Cell().Matches(checklist)[4].Groups[1].Value;
+        var progress = Cell().Matches(checklist)[3].Groups[1].Value;
         progress.Should().Contain("Checklist 1 of 2").And.Contain("No update for 3 days");
-        var sweeping = Cell().Matches(Row(html, $"{token} sweep"))[4].Groups[1].Value;
+        var sweeping = Cell().Matches(Row(html, $"{token} sweep"))[3].Groups[1].Value;
         sweeping.Should().Contain("Hunt not run", "a sweep says how its hunt went, as the board's card does").And.NotContain("Checklist");
     }
 

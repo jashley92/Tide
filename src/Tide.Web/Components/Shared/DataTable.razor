@@ -68,10 +68,6 @@
                                 {
                                     <button type="button" class="tide-sort" @onclick="() => SortBy(c)">@c.Title<span class="bi @SortIcon(c)" aria-hidden="true"></span></button>
                                 }
-                                else if (c.TitleHidden)
-                                {
-                                    <span class="visually-hidden">@c.Title</span>
-                                }
                                 else
                                 {
                                     @c.Title

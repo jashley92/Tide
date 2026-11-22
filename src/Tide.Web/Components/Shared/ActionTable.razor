@@ -9,51 +9,25 @@
    row, to choose several and act on them together (the Actions list's selection bar); while any are chosen, the bar
    takes the place of each row's Take it and Status menu. *@
 
-<DataTable TItem="ActionRow" Items="Rows" Columns="@(Picked is null ? Columns : PickColumns)" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
+<DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
            FilterLabel="Filter actions" FilterPlaceholder="Title, A-number, team, person or article" Filter="@Filter" DefaultSort="DefaultSort"
            RowClass="RuleClass" GroupBy="Grouping" GroupOrder="GroupNames" Toolbar="Toolbar" Empty="Empty" PageInAddress="PageInAddress"
            ServerSide="ServerSide" Total="Total" OnQuery="OnQuery" GroupTotals="GroupTotals" PageSize="PageSize" Filtered="Filtered" FilterBox="!ServerSide"
            Selected="@(SelectedId is null ? null : r => r.Id == SelectedId)" OnSelect="OnSelect" GroupNote="GroupNote" Stacks="true">
     <RowTemplate Context="r">
-        @if (Picked is not null)
-        {
-            <td role="cell" class="tide-col-pick">
-                <input type="checkbox" class="form-check-input" checked="@Picked(r)" @onchange="() => OnPick.InvokeAsync(r)"
-                       aria-label="@($"Select {Ui.ActionLabel(r.Number)}, {r.Title}")" />
-            </td>
-        }
         <td role="cell">
-            @if (r.ParentNumber is { } parent)
+            @if (Picked is not null)
             {
-                <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
-            }
-            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title">
-                @* The Escalated badge and the paperclip stay on the number's line; the title wraps before them. *@
-                <AfterNumber>
-                    <EscalatedBadge At="r.EscalatedSince" />
-                    <FileCount Count="r.Files" />
-                </AfterNumber>
-            </ActionRef>
-            <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
-            @* Its kind and priority, shown here in place of the Kind column where that folds away (beside the docked rail). *@
-            <div class="small tide-action-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></div>
-            @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
-            {
-                <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
-            }
-            @if (r.ArticleTitle is not null)
-            {
-                <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> @r.ArticleTitle
-                    @if (r.ArticleKev)
-                    {
-                        <span class="tide-kev" title="Its article names a CVE on CISA's known exploited list">KEV</span>
-                    }
-                    <SourceTlpBadge Level="r.ArticleTlp" />
+                @* The checkbox sits beside the title, in its cell, rather than in a column of its own: the table is no wider. *@
+                <div class="tide-row-pick">
+                    <input type="checkbox" class="form-check-input" checked="@Picked(r)" @onchange="() => OnPick.InvokeAsync(r)"
+                           aria-label="@($"Select {Ui.ActionLabel(r.Number)}, {r.Title}")" />
+                    <div>@TitleCell(r)</div>
                 </div>
             }
-            @if (r.Children > 0)
+            else
             {
-                <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
+                @TitleCell(r)
             }
         </td>
         <td role="cell" class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
@@ -102,6 +76,43 @@
 </DataTable>
 
 @code {
+    // The title cell's content: the parent it's part of, the title and number, its kind, rule labels, article and parts.
+    private RenderFragment TitleCell(ActionRow r) => __builder =>
+    {
+            @if (r.ParentNumber is { } parent)
+            {
+                <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
+            }
+            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title">
+                @* The Escalated badge and the paperclip stay on the number's line; the title wraps before them. *@
+                <AfterNumber>
+                    <EscalatedBadge At="r.EscalatedSince" />
+                    <FileCount Count="r.Files" />
+                </AfterNumber>
+            </ActionRef>
+            <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
+            @* Its kind and priority, shown here in place of the Kind column where that folds away (beside the docked rail). *@
+            <div class="small tide-action-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></div>
+            @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
+            {
+                <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
+            }
+            @if (r.ArticleTitle is not null)
+            {
+                <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> @r.ArticleTitle
+                    @if (r.ArticleKev)
+                    {
+                        <span class="tide-kev" title="Its article names a CVE on CISA's known exploited list">KEV</span>
+                    }
+                    <SourceTlpBadge Level="r.ArticleTlp" />
+                </div>
+            }
+            @if (r.Children > 0)
+            {
+                <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
+            }
+    };
+
     [Parameter, EditorRequired] public IReadOnlyList<ActionRow>? Rows { get; set; }
     [Parameter, EditorRequired] public DateOnly Today { get; set; }
 
@@ -209,8 +220,6 @@
         new("status", "Status") { SortBy = r => r.Status },
     ];
 
-    // The same, after a column of checkboxes, whose heading is heard: each checkbox names its own row.
-    private static readonly IReadOnlyList<TableColumn<ActionRow>> PickColumns = [new("pick", "Select") { TitleHidden = true, Class = "tide-col-pick" }, .. Columns];
 
     private static readonly IReadOnlyList<string> UrgencyOrder = Enum.GetValues<ActionUrgency>().Select(ActionSla.UrgencyName).ToList();
 
