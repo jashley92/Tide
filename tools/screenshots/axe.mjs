@@ -60,6 +60,8 @@ async function run(page) {
     return r.violations.map(v => ({
       id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, tags: v.tags,
       targets: v.nodes.map(n => n.target.map(t => Array.isArray(t) ? t.join(' >>> ') : t).join(' ')),
+      // What axe says is wrong with each, in the same order: which check failed, and on what.
+      why: v.nodes.map(n => n.failureSummary),
     }));
   }, TAGS);
 }

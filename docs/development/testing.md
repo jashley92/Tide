@@ -351,8 +351,8 @@ starting anything (`tools/screenshots/README.md`, which says how to refresh the 
 The four slices at the default letter spacing also run axe-core's accessibility scan on each page once, at its widest
 width. It's a gate for WCAG 2.2 A and AA: an element that breaks one of those rules fails the slice, named like a layout
 rule (`today at 1920px: axe: color-contrast (serious: ...) on .tide-sub`), unless `tools/screenshots/axe-baseline.json`
-allows it. The baseline holds only a few WCAG 2.2 target-size findings with their fix to come, and
-`tools/ci/check-axe-baseline.sh` fails a change that adds an entry without a `reason`. Best-practice rules (landmarks, heading order) are reported only. Each slice adds a summary (the rules broken,
+allows it. The baseline is empty, and `tools/ci/check-axe-baseline.sh` fails a change that adds an entry without a
+`reason`. Best-practice rules (landmarks, heading order) are reported only. Each slice adds a summary (the rules broken,
 by how many elements on how many pages) to its job's summary page and uploads the full report, every element's selector,
 as the `axe-<n>-of-4` artifact. To check one page locally: `ONLY=triage node tools/screenshots/layout.mjs`. `AXE=0`
 turns the scan, and its gate, off (`tools/screenshots/README.md`, "Accessibility scan").

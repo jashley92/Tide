@@ -1,7 +1,1 @@
-[
-  { "rule": "target-size", "page": "save-view-enter", "target": ".tide-savedview-menu", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-board-closed-link-opens", "target": ".tide-chip-remove", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-board-closed-link-opens", "target": "Remove filter", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "editor-bullet-grows", "target": "#src", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-take-focus-last", "target": ".tide-sort", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" }
-]
+[]

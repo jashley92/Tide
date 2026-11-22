@@ -147,7 +147,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 /* Under a row's title, with an ATT&CK filter: the article's techniques it matched. */
 .tide-row-techniques { margin-top: var(--tide-space-1); }
 .tide-row-techniques .tide-chip { font-size: var(--tide-text-xs); margin-bottom: 0; border-radius: var(--tide-radius-sm); }
-.tide-chip-remove { display: inline-flex; padding: 0 var(--tide-space-1); margin-right: calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
+/* The ✕ is a 24px target (WCAG 2.2 target size), reaching into the chip's padding so the chip doesn't grow. */
+.tide-chip-remove { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding: 0;
+    margin: -.3rem -.45rem -.3rem calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 /* A table that scrolls inside its card. Positioned, so a visually hidden header label in it (absolutely placed) is
@@ -159,7 +161,11 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
         radial-gradient(farthest-side at 100% 50%, var(--tide-shadow), transparent) right center / .75rem 100% no-repeat scroll; }
 .tide-dt-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-table th.tide-table-num { text-align: right; }
-.tide-sort { display: inline-flex; align-items: center; gap: var(--tide-space-1); padding: 0; border: 0; background: none;
+/* A link on a line of its own, among others stacked close (a list of small links): a 24px tall target (WCAG 2.2
+   target size), where small type's line would be 19px. */
+.tide-hit-line { display: inline-block; line-height: 1.5rem; }
+/* At least 24px tall, a whole target (WCAG 2.2 target size), even in a heading row of small type. */
+.tide-sort { display: inline-flex; align-items: center; gap: var(--tide-space-1); min-height: 1.5rem; padding: 0; border: 0; background: none;
     color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; }
 .tide-sort:hover { color: var(--tide-text); }
 .tide-sort:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-xs); }
