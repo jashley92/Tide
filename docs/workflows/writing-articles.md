@@ -403,12 +403,12 @@ date once `ScreenshotsChangedAtUtc` is after its decision.
 
 | Step | Who | Code | Rule |
 |---|---|---|---|
-| Ask | The author, or any analyst | `ReviewService.AskAsync` | Reviewers are everyone who can write articles but the author and you, this week's presenter first (`ReviewersAsync`). An earlier open request is withdrawn. Someone else's open request can only be replaced by the author. |
+| Ask | The writer, or any analyst | `ReviewService.AskAsync` | Reviewers are everyone who can write articles but the writer and you, this week's presenter first (`ReviewersAsync`). An author who handed the article on may review it. An earlier open request is withdrawn. Someone else's open request can only be replaced by the writer. |
 | See it | The reviewer | Today (`AskedOfMeAsync`), `/articles/{id}/review` | The article as each edition will carry it. |
-| Comment | The reviewer and the author | `CommentAsync` | On a part: title, bottom line, a bullet, why it matters, recommended actions, or general, optionally quoting the words selected. |
-| Resolve | The reviewer and the author | `ResolveAsync` | The author sees comments in the editor and resolves them. |
+| Comment | The reviewer and the writer | `CommentAsync` | On a part: title, bottom line, a bullet, why it matters, recommended actions, or general, optionally quoting the words selected. |
+| Resolve | The reviewer and the writer | `ResolveAsync` | The writer sees comments in the editor and resolves them. |
 | Decide | The reviewer only | `DecideAsync` | With the checklist: TLP right for every part, every claim sourced, nothing internal in the company-wide edition, the bottom line stands alone. **Approving is refused when the article changed since the reviewer opened it.** |
-| Withdraw | The author, or whoever asked | `WithdrawAsync` | Only an open request. |
+| Withdraw | The writer, or whoever asked | `WithdrawAsync` | Only an open request. |
 
 **The rule** (`ReviewRule`): Off (default), AMBER and above, Threats, or AMBER or threats. "AMBER and above" looks at the
 article's highest marking (`ReviewService.Marking`). While it's on, `ReviewService.RequireApprovedAsync` holds every
@@ -432,8 +432,9 @@ person until the article is handed on.
   toast if Today is open. They're emailed too (`article-handoff`, marked with the article's TLP; an article above the
   team edition's ceiling isn't named, nor is the note), unless they turned *Articles handed to you* off in My notifications.
 - "Mine" means the writer: the brief picker's *Only mine* and Today's drafts list the articles you're writing now.
-- Editing rights don't change: any analyst can still edit any article. Reviews still go by the author: the author can't
-  review it, and the author or whoever asked takes a request back.
+- Editing rights don't change: any analyst can still edit any article. **Reviews go by the writer**: whoever is
+  writing it can't review it and takes the author's part in its review; an author who handed it on may review it.
+- Taking a draft over (handing it to yourself) needs no waiting period. A presented article isn't handed on.
 
 ## History
 
@@ -455,7 +456,7 @@ the foreign keys refuse the delete and the same message is shown. Its screenshot
 | Open an article, read it, see related work and reviews | `ReadTeamEdition` | `ArticleEdit.razor` policy; `ArticleService.RequireRead`; `RelatedService` |
 | Create, save, mark ready, delete, add screenshots, indicators, tags, reports, stories | `WriteArticles` | `ArticleService.RequireWrite`; `ScreenshotService`; `StackService`; `AdversaryService`; `StoryService` |
 | Draft with AI, fetch the article, copy a prompt | `WriteArticles` | `AssistService.RequireWrite` |
-| Ask for, comment on, decide a review; open the review page | `WriteArticles`, and for comments and decisions being the reviewer or author | `ReviewService`; `ReviewPage.razor` policy |
+| Ask for, comment on, decide a review; open the review page | `WriteArticles`, and for comments and decisions being the reviewer or the writer | `ReviewService`; `ReviewPage.razor` policy |
 | Set the review rule | `Administer` | `ReviewService.SaveRuleAsync` |
 | See History | `WriteArticles` | `HistoryService` |
 | Hand an article on (Draft or Ready), to someone who can write articles | `WriteArticles` | `ArticleHandoffService` |

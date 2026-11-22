@@ -75,6 +75,29 @@ public class TodayDraftsInProgressTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task ADraftAlreadyOnTodaysBrief_IsListedToo_MarkedAsOnIt_AndAReadyOneOnItIsnt()
+    {
+        var onIt = await Draft("DIP on the brief", Me);
+        var readyOnIt = await Draft("DIP ready on the brief", Me, status: ArticleStatus.Ready);
+        await using (var scope = SignedIn(app, Me))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<Tide.Application.Briefs.BriefService>();
+            var brief = await briefs.GetOrStartAsync(Today);
+            await briefs.AddArticleAsync(brief.Id, onIt);
+            await briefs.AddArticleAsync(brief.Id, readyOnIt);
+        }
+
+        await using var r = await RenderAsync<BriefPage>(app, "/", TodayPage);
+        var html = WebUtility.HtmlDecode(await r.Html());
+        r.Component.DraftsInProgress.Should().ContainSingle(c => c.Id == onIt).Which.OnBrief.Should().BeTrue();
+        r.Component.DraftsInProgress.Should().NotContain(c => c.Id == readyOnIt, "a ready article isn't a draft in progress");
+        var card = html[html.IndexOf("id=\"drafts-h\"", StringComparison.Ordinal)..];
+        card = card[..card.IndexOf("</section>", StringComparison.Ordinal)];
+        var row = card[card.IndexOf("DIP on the brief", StringComparison.Ordinal)..];
+        row[..row.IndexOf("</li>", StringComparison.Ordinal)].Should().Contain("On today's brief");
+    }
+
+    [Fact]
     public async Task ADraftHandedToYou_LeadsYourList_SaysSo_AndCarriesItsNote()
     {
         var handed = await Draft("DIP handed from Sam", Sam);

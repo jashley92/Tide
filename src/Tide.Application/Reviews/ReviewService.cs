@@ -23,7 +23,7 @@ public enum ReviewRule
 /// <summary>One of the reviewer's checklist items, by key, with how it reads.</summary>
 public sealed record ReviewCheck(string Key, string Text);
 
-/// <summary>A colleague who can review: an analyst other than the author.</summary>
+/// <summary>A colleague who can review: an analyst other than the article's writer.</summary>
 public sealed record Reviewer(string Id, string Name, bool Presenting);
 
 /// <summary>An article's review as the editor and the review page show it: the current one (if any) and whether the article changed since.</summary>
@@ -40,8 +40,8 @@ public sealed record ReviewAsked(Guid ReviewId, Guid ArticleId, string Title, st
 public sealed record ReviewGap(Guid ArticleId, string Title, string Why, bool Required);
 
 /// <summary>
-/// A second pair of eyes before send (EP-80). An author asks a colleague; the reviewer reads the article as each edition
-/// will show it, comments on its parts, works through a short checklist, and approves or asks for changes; the author
+/// A second pair of eyes before send (EP-80). The writer asks a colleague; the reviewer reads the article as each edition
+/// will show it, comments on its parts, works through a short checklist, and approves or asks for changes; the writer
 /// resolves each comment. A change to what the article says after approval puts the review out of date
 /// (<see cref="ContentVersion"/>). Review is optional unless an administrator requires it (<see cref="ReviewRule"/>);
 /// then the send waits for it.
@@ -157,21 +157,21 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
     // --- asking -------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Who can review <paramref name="articleId"/>: everyone who can write articles (Analysts and Admins) but its author
-    /// and you, this week's presenter first.
+    /// Who can review <paramref name="articleId"/>: everyone who can write articles (Analysts and Admins) but its writer
+    /// (who is finishing it: the author, unless it was handed on, ADR 0031) and you, this week's presenter first. An
+    /// author who handed the article on may review it.
     /// </summary>
     public async Task<IReadOnlyList<Reviewer>> ReviewersAsync(Guid articleId, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
-        var author = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.AuthorId).FirstOrDefaultAsync(ct)
-                     ?? throw new KeyNotFoundException("That article no longer exists.");
+        var writer = await WriterOf(db, articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
         var presenter = await rotation.PresenterAsync(clock.CurrentBriefDate, ct);
         var users = new Dictionary<string, AppUser>();
         foreach (var role in Writers)
             foreach (var u in await db.Users.AsNoTracking().Where(u => u.RolesCsv.Contains(role)).ToListAsync(ct))
                 users.TryAdd(u.Sid, u);
-        return users.Values.Where(u => u.Sid != author && u.Sid != user.UserId && u.DisplayName.Length > 0 && CanWrite(u.RolesCsv))
+        return users.Values.Where(u => u.Sid != writer && u.Sid != user.UserId && u.DisplayName.Length > 0 && CanWrite(u.RolesCsv))
             .Select(u => new Reviewer(u.Sid, u.DisplayName, presenter?.Id == u.Sid))
             .OrderByDescending(r => r.Presenting).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
@@ -184,19 +184,19 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
 
     /// <summary>
     /// Asks <paramref name="reviewerId"/> to review the article; an earlier request still open is withdrawn. Refused while
-    /// someone else's request is open, unless you're the author: only they, or whoever asked, take a request back
+    /// someone else's request is open, unless you're its writer: only they, or whoever asked, take a request back
     /// (<see cref="WithdrawAsync"/>).
     /// </summary>
     public async Task<Guid> AskAsync(Guid articleId, string reviewerId, string? note, CancellationToken ct = default)
     {
         RequireWrite();
         var reviewer = (await ReviewersAsync(articleId, ct)).FirstOrDefault(r => r.Id == reviewerId)
-                       ?? throw new ArgumentException("Choose someone other than the author to review it.");
+                       ?? throw new ArgumentException("Choose someone other than whoever is writing it to review it.");
         await using var db = await dbs.CreateAsync(ct);
-        var author = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.AuthorId).FirstOrDefaultAsync(ct);
+        var writer = await WriterOf(db, articleId, ct);
         var asked = await db.ArticleReviews.Where(r => r.ArticleId == articleId && r.Status == ReviewStatus.Asked).ToListAsync(ct);
-        if (user.UserId != author && asked.FirstOrDefault(r => r.RequestedById != user.UserId) is { } theirs)
-            throw new ForbiddenException($"{theirs.RequestedByName} asked {theirs.ReviewerName} to review this. Only they, or the author, can take that request back.");
+        if (user.UserId != writer && asked.FirstOrDefault(r => r.RequestedById != user.UserId) is { } theirs)
+            throw new ForbiddenException($"{theirs.RequestedByName} asked {theirs.ReviewerName} to review this. Only they, or whoever is writing it, can take that request back.");
         foreach (var open in asked) open.Status = ReviewStatus.Withdrawn;
         var review = new ArticleReview
         {
@@ -208,15 +208,15 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
         return review.Id;
     }
 
-    /// <summary>Takes back an open request (the author, or whoever asked).</summary>
+    /// <summary>Takes back an open request (its writer, or whoever asked).</summary>
     public async Task WithdrawAsync(Guid reviewId, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var review = await db.ArticleReviews.FirstOrDefaultAsync(r => r.Id == reviewId, ct) ?? throw new KeyNotFoundException("That review no longer exists.");
-        var author = await db.Articles.AsNoTracking().Where(a => a.Id == review.ArticleId).Select(a => a.AuthorId).FirstOrDefaultAsync(ct);
-        if (user.UserId != review.RequestedById && user.UserId != author)
-            throw new ForbiddenException("Only the article's author, or whoever asked, can take the request back.");
+        var writer = await WriterOf(db, review.ArticleId, ct);
+        if (user.UserId != review.RequestedById && user.UserId != writer)
+            throw new ForbiddenException("Only whoever is writing the article, or whoever asked, can take the request back.");
         if (review.Status != ReviewStatus.Asked) throw new InvalidOperationException("That review has already been decided.");
         review.Status = ReviewStatus.Withdrawn;
         await db.SaveChangesAsync(ct);
@@ -303,7 +303,7 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
 
     // --- reviewing ----------------------------------------------------------------------------------------------
 
-    /// <summary>A comment on a part of the article, by the reviewer or the author, while the review is open or changes are asked.</summary>
+    /// <summary>A comment on a part of the article, by the reviewer or the writer, while the review is open or changes are asked.</summary>
     public async Task<Guid> CommentAsync(Guid reviewId, string field, string? quote, string text, CancellationToken ct = default)
     {
         RequireWrite();
@@ -362,15 +362,20 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
 
     // --- helpers ------------------------------------------------------------------------------------------------
 
-    // The review, which the current user may act on as its reviewer or as the author or requester of its article.
+    // The review, which the current user may act on as its reviewer, as its article's writer, or as whoever asked.
     private async Task<ArticleReview> Mine(IAppDbContext db, Guid reviewId, CancellationToken ct)
     {
         var review = await db.ArticleReviews.FirstOrDefaultAsync(r => r.Id == reviewId, ct) ?? throw new KeyNotFoundException("That review no longer exists.");
-        var author = await db.Articles.AsNoTracking().Where(a => a.Id == review.ArticleId).Select(a => a.AuthorId).FirstOrDefaultAsync(ct);
-        if (user.UserId != review.ReviewerId && user.UserId != review.RequestedById && user.UserId != author)
-            throw new ForbiddenException("Only the reviewer and the article's author take part in its review.");
+        var writer = await WriterOf(db, review.ArticleId, ct);
+        if (user.UserId != review.ReviewerId && user.UserId != review.RequestedById && user.UserId != writer)
+            throw new ForbiddenException("Only the reviewer and whoever is writing the article take part in its review.");
         return review;
     }
+
+    // Who is on the article's side of a review: its writer, the author unless it was handed on (ADR 0031). Null when
+    // the article no longer exists.
+    private static Task<string?> WriterOf(IAppDbContext db, Guid articleId, CancellationToken ct) =>
+        db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.WriterId ?? a.AuthorId).FirstOrDefaultAsync(ct);
 
     private static string? Clean(string? s, int max)
     {

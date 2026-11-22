@@ -30,6 +30,15 @@ public sealed record BriefCandidate(Guid Id, string Title, Classification Classi
     /// <summary>Whether it's still to be briefed: Draft or Ready, as an article carried over from an earlier brief's "not
     /// discussed" stays. "Add article (N ready, M drafts)" counts these; a presented one is shown only on request.</summary>
     public bool Available => Status is ArticleStatus.Draft or ArticleStatus.Ready;
+
+    /// <summary>Already in the running order of the brief it's offered for: Today's <i>Drafts in progress</i> lists these
+    /// too, marked, so the presenter sees every unfinished draft in one place.</summary>
+    public bool OnBrief { get; init; }
+
+    /// <summary>An article on the brief, as a candidate: what the drafts card lists for one in the running order.</summary>
+    public static BriefCandidate OnTheBrief(Article a) =>
+        new(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName, a.CreatedAtUtc, null, a.AuthorId,
+            a.CurrentWriterId, a.CurrentWriterName, a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote) { OnBrief = true };
 }
 
 /// <summary>An article on a brief, in its place in the running order: what the article page's stepper walks.</summary>

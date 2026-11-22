@@ -18,12 +18,17 @@ only Ready articles), and "Only mine" means "started by me", not "mine to finish
   records who, to whom, when and why, in the history and the audit log. It needs no acceptance (unlike rotation swaps,
   ADR [0010](0010-rotation-changes-approved-by-the-colleague.md)), because it changes no one's commitments outside
   TIDE. It leaves the edit version alone, so an editor open on the article isn't made stale.
-- **"Mine" means the writer** in the brief picker's *Only mine* and on Today's *Drafts in progress*.
+- **"Mine" means the writer** in the brief picker's *Only mine* and on Today's *Drafts in progress*, which lists drafts
+  already in today's running order too, marked *On today's brief*.
 - **The new writer is told** on Today (the card, and a toast while it's open), and by email unless they turned it off in
   My notifications, as the rotation's requests are. The email is marked with the article's TLP and doesn't name an
   article above the team edition's ceiling.
-- **Reviews still go by the author** for now: the author can't review their own article, and the author or whoever
-  asked takes a request back.
+- **Reviews go by the writer** (maintainer, 2026-11-21): whoever is writing the article can't review it, and takes the
+  author's part in its review (commenting, resolving, taking a request back). An author who handed the article on may
+  review it.
+- **Taking a draft over needs no waiting period** (maintainer, 2026-11-21): drafts are the team's, and the history
+  records who took it.
+- **Only a Draft or Ready article is handed on**: once presented, it isn't (maintainer, 2026-11-21).
 
 ## Consequences
 

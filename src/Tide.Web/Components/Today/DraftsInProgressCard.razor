@@ -2,7 +2,7 @@
 
 @* For whoever writes the brief: the drafts still being written (the page picks them, from the same candidates as Add
    article: the last two weeks' drafts not on today's brief), so a colleague's half-written article is seen before the
-   meeting. Yours first (a draft handed to you says so, with the note it came with), then the team's, each by when it
+   meeting. Drafts already in today's running order are listed too, marked "On today's brief". Yours first (a draft handed to you says so, with the note it came with), then the team's, each by when it
    was last edited, with who is writing it now (ADR 0031). *@
 
 <section class="tide-card" aria-labelledby="drafts-h">
@@ -20,6 +20,10 @@
                 <div class="tide-run-meta">
                     <ClassBadge Classification="c.Classification" Priority="c.Priority" />
                     <TlpBadge Level="c.Tlp" />
+                    @if (c.OnBrief)
+                    {
+                        <Badge Tone="BadgeTone.Neutral">On today's brief</Badge>
+                    }
                     @if (mine && HandedToMe(c))
                     {
                         <Badge Tone="BadgeTone.Info">Handed to you</Badge>

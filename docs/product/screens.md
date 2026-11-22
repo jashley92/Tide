@@ -116,7 +116,7 @@ The brief takes the page:
   write the brief sees **Recently presented** there instead: only articles that have been presented, so never a
   draft's title; every marking, as the brief beside it names them;
 - **Drafts in progress**, under it, for whoever writes the brief: the drafts of the last 14 days not on today's brief,
-  yours first, then the team's, each most recently edited first, with who is writing it now and when it was last
+  and the drafts in today's running order, marked *On today's brief*; yours first, then the team's, each most recently edited first, with who is writing it now and when it was last
   edited, and its marking. A draft handed to you says *Handed to you*, with the note it came with, and a toast says so
   while Today is open. Up to 6, then *All N drafts* on the Articles list. Someone who doesn't write the brief never
   sees it;

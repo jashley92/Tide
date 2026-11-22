@@ -1237,11 +1237,13 @@ else
 
     /// <summary>
     /// For whoever writes the brief, on Today: the drafts still being written, from the same candidates (the last
-    /// <see cref="BriefService.CandidateDays"/> days' drafts not on today's brief, so the read stays bounded), the
+    /// <see cref="BriefService.CandidateDays"/> days' drafts not on today's brief, so the read stays bounded), and the
+    /// drafts already in today's running order, marked as on it (read with the brief, so no query of their own). The
     /// signed-in person's first (DraftsInProgressCard.Order).
     /// </summary>
-    internal IReadOnlyList<BriefCandidate> DraftsInProgress =>
-        DraftsInProgressCard.Order(_candidates.Where(c => c.Status == ArticleStatus.Draft), _me);
+    internal IReadOnlyList<BriefCandidate> DraftsInProgress => !_canWrite ? [] :
+        DraftsInProgressCard.Order(_candidates.Where(c => c.Status == ArticleStatus.Draft)
+            .Concat((_brief?.Items ?? []).Select(i => i.Article).OfType<Article>().Where(a => a.Status == ArticleStatus.Draft).Select(BriefCandidate.OnTheBrief)), _me);
 
     // A draft newly handed to the signed-in person, heard while Today is open: they're told (the card says so too).
     private void TellHandedToMe(IReadOnlyList<BriefCandidate> before, IReadOnlyList<Change> changes)
