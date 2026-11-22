@@ -83,11 +83,14 @@ public class MeetingNotesTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("Meeting recap</h2>").And.Contain("Actions raised (0)").And.Contain("Meeting notes (2 open, 1 done)")
             .And.Contain("Carried to a later brief (0)").And.Contain("Attended (2)").And.Contain("Sam from the SOC")
             .And.Contain("tide-note-done-badge");
-        System.Text.RegularExpressions.Regex.Matches(html, ">Raise as action</button>").Count.Should().Be(2, "my two notes (done or not), not the colleague's");
-        System.Text.RegularExpressions.Regex.Matches(html, ">Mark done</button>").Count.Should().Be(1, "mine, not the colleague's");
-        System.Text.RegularExpressions.Regex.Matches(html, ">Reopen</button>").Count.Should().Be(1, "my done note opens again");
-        System.Text.RegularExpressions.Regex.Matches(html, "Meeting notes").Count.Should().Be(1, "the meeting card leaves the notes to the recap");
+        Times(html, ">Raise as action</button>").Should().Be(2, "my two notes (done or not), not the colleague's");
+        Times(html, ">Mark done</button>").Should().Be(1, "mine, not the colleague's");
+        Times(html, ">Reopen</button>").Should().Be(1, "my done note opens again");
+        Times(html, "Meeting notes").Should().Be(1, "the meeting card leaves the notes to the recap");
     }
+
+    // How many times the markup holds the text.
+    private static int Times(string html, string text) => html.Split(text).Length - 1;
 
     // An older version let a meeting start before its brief's day and then refused to end it, which left people recorded
     // as attending a meeting that hadn't been held. Until it's held (or running now), nobody has attended it.
