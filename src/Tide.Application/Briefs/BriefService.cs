@@ -154,29 +154,34 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var since = DateTimeOffset.UtcNow.AddDays(-CandidateDays);
+        // The briefs each article was on are read in the same query, per row: a second query taking every candidate's id
+        // as a parameter grew with the Ready backlog, and past 2,100 of them SQL Server refuses it.
         var rows = await db.Articles.AsNoTracking()
             .Where(a => !db.BriefItems.Any(i => i.BriefId == briefId && i.ArticleId == a.Id))
             .Where(a => a.CreatedAtUtc >= since || a.Status == ArticleStatus.Ready
                         || (a.Status == ArticleStatus.Draft && db.BriefItems.Any(i => i.ArticleId == a.Id)))
-            .Select(a => new BriefCandidate(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName,
-                a.CreatedAtUtc, null, a.AuthorId, a.WriterId ?? a.AuthorId, a.WriterName ?? a.AuthorName,
-                a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote))
-            .ToListAsync(ct);
-        var ids = rows.Select(r => r.Id).ToList();
-        var on = await db.BriefItems.AsNoTracking().Where(i => ids.Contains(i.ArticleId))
-            .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new
+            .Select(a => new
             {
-                i.ArticleId, b.BriefDate,
-                NoMeeting = b.Status == BriefStatus.Sent && b.MeetingHeldAtUtc == null && b.PresentedAtUtc == null,
+                Row = new BriefCandidate(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName,
+                    a.CreatedAtUtc, null, a.AuthorId, a.WriterId ?? a.AuthorId, a.WriterName ?? a.AuthorName,
+                    a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote),
+                // Both start from the article's own brief items (indexed by article), not from the briefs.
+                LastBriefed = db.BriefItems.Where(i => i.ArticleId == a.Id)
+                    .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => (DateOnly?)b.BriefDate).Max(),
+                // An article that went out on a brief sent without a meeting was briefed, though one sent before that
+                // finished its articles (DistributionService) is still marked Draft or Ready: it isn't offered as still to be briefed.
+                Went = db.BriefItems.Where(i => i.ArticleId == a.Id)
+                    .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => b)
+                    .Any(b => b.Status == BriefStatus.Sent && b.MeetingHeldAtUtc == null && b.PresentedAtUtc == null),
             })
             .ToListAsync(ct);
-        var briefed = on.GroupBy(x => x.ArticleId).ToDictionary(g => g.Key, g => g.Max(x => x.BriefDate));
-        // An article that went out on a brief sent without a meeting was briefed, though one sent before that finished
-        // its articles (DistributionService) is still marked Draft or Ready: it isn't offered as still to be briefed.
-        var went = on.Where(x => x.NoMeeting).Select(x => x.ArticleId).ToHashSet();
-        rows = rows.Select(r => briefed.TryGetValue(r.Id, out var d) ? r with { LastBriefed = d } : r)
-            .Select(r => went.Contains(r.Id) && r.Available ? r with { Status = ArticleStatus.Presented } : r).ToList();
-        return rows.OrderBy(r => r.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(r => r.CreatedAtUtc).ToList();
+        return rows.Select(x => x.Row with
+            {
+                LastBriefed = x.LastBriefed,
+                Status = x.Went && x.Row.Available ? ArticleStatus.Presented : x.Row.Status,
+            })
+            // The id last, so articles written at the same moment keep one order however the database returns them.
+            .OrderBy(r => r.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(r => r.CreatedAtUtc).ThenBy(r => r.Id).ToList();
     }
 
     /// <summary>Adds an article to the end of the running order, or at position <paramref name="at"/> (from 0) when
@@ -328,6 +333,33 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         if (await db.BriefItems.FirstOrDefaultAsync(i => i.Id == itemId, ct) is not { } item) return;
         item.Discussed = discussed;
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Keeps who has presented the brief's live meeting so far on the brief, as it starts and each time it changes hands:
+    /// a meeting is in memory only, so one dropped once everyone left, or lost to a restart, and then ended from the brief
+    /// page still names who ran it rather than the presenter it was given. The meeting's end writes it again, as the final
+    /// word. Nothing when the meeting isn't live, or the brief has been sent (its record is what went out). The edit
+    /// version is left alone: a colleague editing the brief meanwhile isn't refused for it.
+    /// </summary>
+    public async Task RecordPresentersAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequirePresent();
+        if (_meetings.PresentersOf(briefId) is not { Count: > 0 } presenters) return;
+        var name = ArticleService.Clean(Names(presenters), PresentedByMax);
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            if (await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) is not { } brief || brief.Status == BriefStatus.Sent
+                || brief.PresentedByName == name) return;
+            brief.PresentedByName = name;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 3) { /* a colleague saved the brief at that moment: read again */ }
+        }
     }
 
     /// <summary>

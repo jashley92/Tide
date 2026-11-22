@@ -191,7 +191,8 @@ public sealed partial class ReminderService
     // reminded all the same.
     private async Task<(EmailSendResult? Result, IReadOnlyList<ActionItem> Went, IReadOnlyList<ActionItem> Skipped)> SendExternalReminderAsync(
         IAppDbContext db, Team team, IEnumerable<ActionItem> actions, string contactHash, IReadOnlySet<string> remindedToday,
-        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct)
+        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct,
+        Func<IReadOnlyList<ActionItem>, IReadOnlyList<string>>? also = null)
     {
         var all = actions.ToList();
         var skipped = all.Where(a => remindedToday.Contains(ContactKey(a.Id, today, contactHash))).ToList();
@@ -199,7 +200,11 @@ public sealed partial class ReminderService
         if (go.Count == 0) return (null, go, skipped);
         var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
             go, today, replies, ceiling), ct);
-        if (result.MayHaveGone) await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
+        if (result.MayHaveGone)
+        {
+            if (also is not null) AddMarks(db, EscalationEmailMark, also(go));
+            await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
+        }
         return (result, go, skipped);
     }
 

@@ -7,6 +7,7 @@
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -14,6 +15,7 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { AxeReport, axeOn, scan, widest } from './axe.mjs';
 import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
@@ -2025,6 +2027,20 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
   }));
 }, [row, px]);
 
+/** Our stack's table as stacked rows (`true`: its headings hidden from view but still there, each product a grid of
+ *  named cells) or as a table (`false`: the header row shown, each product a table row). */
+const stackRows = stacked => holds(stacked ? 'Our stack\'s rows stacked' : 'Our stack a table', stacked => {
+  const table = document.querySelector('.tide-stack-table');
+  const head = table?.querySelector('thead'), rows = [...(table?.querySelectorAll('tbody > tr') ?? [])];
+  if (!head || !rows.length) return ['no Our stack table with rows'];
+  const headShown = head.getBoundingClientRect().height > 2;
+  const asRows = rows.filter(r => getComputedStyle(r).display === 'grid').length;
+  if (stacked) return [...(headShown ? ['its header row is shown'] : []),
+    ...(head.querySelectorAll('th').length === 7 ? [] : ['its headings are gone, not hidden']),
+    ...(asRows === rows.length ? [] : [`${rows.length - asRows} of ${rows.length} rows aren't stacked`])];
+  return [...(headShown ? [] : ['its header row is hidden']), ...(asRows === 0 ? [] : [`${asRows} of ${rows.length} rows are stacked`])];
+}, stacked);
+
 /** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
 const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
   const links = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
@@ -2889,6 +2905,47 @@ const arrowIntoAccountMenu = holds('the down arrow goes into the account menu, n
   return wrong;
 });
 
+/** Setup: the account menu open, System chosen for the theme, then the system turned dark (the page was light). */
+async function systemThemeTurnsDark(page) {
+  await page.locator('.tide-profile-btn').click();
+  await page.locator('.tide-profile [role="menu"]').waitFor();
+  await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).click();
+  await idle(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await idle(page);
+}
+
+/** With System chosen, the theme is the system's, changed live; the choice is remembered as "system". Left and Right
+ * move along the theme's options and go round; they don't choose. */
+const themeFollowsSystem = {
+  name: "System follows the system's theme; Left and Right move along the options",
+  check: async page => {
+    const state = () => page.evaluate(() => ({
+      theme: document.documentElement.getAttribute('data-bs-theme'),
+      saved: localStorage.getItem('tide-theme'),
+      checked: document.querySelector('.tide-profile [role="group"][aria-label="Theme"] [aria-checked="true"]')?.textContent.trim(),
+      focused: document.activeElement?.textContent.trim(),
+    }));
+    const wrong = [];
+    let s = await state();
+    if (s.theme !== 'dark') wrong.push(`the system turned dark, but the page is ${s.theme}`);
+    if (s.saved !== 'system') wrong.push(`the choice was saved as ${s.saved}, not system`);
+    if (s.checked !== 'System') wrong.push(`the menu shows ${s.checked} chosen, not System`);
+    await page.emulateMedia({ colorScheme: 'light' });
+    // The change is heard as an event: give it a moment.
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-bs-theme') === 'light', null, { timeout: 2000 }).catch(() => {});
+    if ((s = await state()).theme !== 'light') wrong.push(`the system turned light again, but the page stayed ${s.theme}`);
+    await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).focus();
+    const keys = [['ArrowLeft', 'Dark'], ['ArrowRight', 'System'], ['ArrowRight', 'Light']];
+    for (const [key, to] of keys) {
+      await page.keyboard.press(key);
+      if ((s = await state()).focused !== to) { wrong.push(`${key} moved focus to ${s.focused}, not ${to}`); break; }
+    }
+    if (s.checked !== 'System') wrong.push(`the arrows chose ${s.checked}; only Enter or Space should`);
+    return wrong;
+  },
+};
+
 /** Setup: the first "Looks like one event" group opened, its reports listed under it. */
 async function openGroup(page) {
   await page.locator('.tide-triage-group .tide-group-toggle').first().click();
@@ -3415,7 +3472,7 @@ const boardEnterOpens = {
 const escapeClosesTheMenuFirst = {
   name: 'Escape closes the rail\'s Move menu before the rail',
   check: async page => {
-    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ });
+    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ });
     if (!await button.count()) return ['the rail has no Move to'];
     await button.focus();
     await page.keyboard.press('Enter');
@@ -3459,7 +3516,7 @@ const railMoveAsksFirst = {
   name: "the rail's Move to a closed status asks first, and Escape closes only the dialog",
   check: async page => {
     const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
-    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
+    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
     try { await page.locator('#tide-rail').getByRole('menuitem', { name: 'Cancelled' }).click({ timeout: 5000 }); } catch { return ['Move to offers no Cancelled to choose']; }
     const dialog = page.getByRole('dialog', { name: `Move ${number} to Cancelled` });
     try { await dialog.waitFor({ timeout: 5000 }); } catch { return [`Move to Cancelled didn't ask how ${number} closed`]; }
@@ -3644,7 +3701,7 @@ const autosaved = autosaveAfter(async page => {
 });
 
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
-const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
+const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
@@ -4220,7 +4277,7 @@ const pages = [
   // Below 1500px the rail is closed until asked for, and the form is the same one column, nothing scrolling sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits, editorReadingOrder, editorMeasure,
-      [901, hidden('.tide-ws-switch')]] },
+      [900, hidden('.tide-ws-switch')]] },
   // A bullet starts a line high and grows with its text, whatever was dragged at its corner.
   { name: 'editor-bullet-grows', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920], rules: [bulletGrows] },
   // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
@@ -4417,6 +4474,7 @@ const pages = [
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
   { name: 'triage-account-menu-arrow', route: '/triage', setup: accountMenuArrow, widths: [1440], rules: [arrowIntoAccountMenu] },
+  { name: 'account-theme-system', route: '/triage', setup: systemThemeTurnsDark, widths: [1440, [400, 800]], rules: [oneRow('.tide-profile .tide-seg'), inWindow('.tide-profile .tide-popover'), themeFollowsSystem] },
   // Coverage: its tables scroll inside their cards at every width, the page itself never sideways.
   { name: 'coverage', route: '/coverage', widths: [1440, 780, 700, 660, 641, 400], rules: [noSidewaysScroll] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
@@ -4582,17 +4640,20 @@ const pages = [
   { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
-  // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
-  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
+  // fifth column; and where the list is narrow (under 800px: a 1100px window with the sidebar open) each row's cells
+  // stacked, so the table never scrolls sideways inside its card.
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
-      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
-      fits('.tide-stack-list')] },
+      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
+      fits('.tide-stack-list'), [1440, stackRows(false)]] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
-  // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
-  // sections (facts, the buttons, in triage now, articles, open actions, notes) each fit the column. Below 1500px it's
-  // closed until `]` opens it over the page, where it's a modal dialog. The 780px stacked rows stay.
+  // beside the page, which has about 873px at 1500px: there the rows stack (stack-rail-docked), wider it's a table, and
+  // either way it fits beside the rail with no sideways scroll; the rail's flat sections (facts, the buttons, in triage
+  // now, articles, open actions, notes) each fit the column. Below 1500px it's closed until `]` opens it over the page,
+  // where it's a modal dialog. The 780px stacked rows stay.
   { name: 'stack-rail', route: '/stack', setup: wideFont, widths: [1920, 1600, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), fits('.tide-stack-list'), fits('.tide-stack-table td'),
+      [1600, stackRows(false)],
       visible('.tide-stack-item.selected'), attr('.tide-stack-item.selected', 'aria-current', 'true'), attr('#tide-rail', 'role', null),
       visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'),
       fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
@@ -4600,13 +4661,18 @@ const pages = [
       visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
       linksAlike('#tide-rail .tide-rail-list a'),
       ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // At 1500px the docked rail leaves the list under 800px, too narrow for seven columns (the headings broke mid-word and
+  // a CVE's chip spilled), so its rows stack by the list's width, as on a narrow window, and each fits.
+  { name: 'stack-rail-docked', route: '/stack', setup: wideFont, widths: [1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), stackRows(true), fits('.tide-stack-list'),
+      fits('.tide-stack-table td'), fits('.tide-stack-now .tide-chip'), clearOfEdge('.tide-stack-item.selected', 5)] },
   // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
-  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [stackRows(true), clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
-      [901, fits('.tide-stack-table td')]] },
+      [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
-    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), stackRows(false)] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },
@@ -5026,7 +5092,7 @@ const pages = [
       visible('#present-rail .tide-quick-add'), hidden('.tide-slide .tide-quick-add'), attr('#present-rail-toggle', 'aria-expanded', 'true'),
       railPlaceholdersReadable, railSelectsWhole, fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
       sameLook('#present-rail .tide-action-assign > input', '#present-rail .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
-      buttonsNamed('Take it', 'Take A-')] },
+      buttonsNamed('Take it', 'Take it: A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
     rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
       visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysUnderRail] },
@@ -5079,7 +5145,7 @@ const pages = [
   // fit; and the tools never leave the window (the top bar takes a second row, at most, instead). The footer no longer
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
-    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
+    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 900, 899, 780],
       rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
@@ -5108,7 +5174,7 @@ const pages = [
       inWindow('.tide-wrap-add button'), visible('.tide-attendance button[aria-label="Remove Sam from the SOC"]'),
       pillClear('.tide-attendance li'), contrastAtLeast('.tide-wrap-add input[placeholder]', 4.5, '::placeholder'), hidden('#present-rail')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
-  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
+  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 900, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
   // An action opened beside the slide (Org:ActionBesideSlide, on for this run): from 1200px a column between the slide
   // and the presenter's rail, as wide for a follower as for the presenter, whose slide, fit and scroll the follower's
@@ -5183,6 +5249,9 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
+  // Report only: what axe finds is written and printed, never added to the problems.
+  const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
+  const axe = axeOn ? new AxeReport(label) : null;
   try {
     for (const p of list) {
       if (p.when && !p.when(demo)) {
@@ -5208,6 +5277,15 @@ async function check(list, demo) {
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
+          // Once a page, at its widest width, as its rules left it.
+          if (axe && size === widest(p.widths)) {
+            const start = Date.now();
+            try {
+              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+            } catch (e) {
+              axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
+            }
+          }
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {
@@ -5217,6 +5295,7 @@ async function check(list, demo) {
     }
   } finally {
     await browser.close();
+    axe?.write();
   }
   return problems;
 }

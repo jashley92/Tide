@@ -57,13 +57,13 @@
     else
     {
         <div class="tide-dt-scroll" tabindex="0" role="region" aria-labelledby="@(_id)-cap">
-            <table class="tide-table">
+            <table class="tide-table" role="@Role("table")">
                 <caption id="@(_id)-cap" class="visually-hidden">@Caption@SortedText</caption>
-                <thead>
-                    <tr>
+                <thead role="@Role("rowgroup")">
+                    <tr role="@Role("row")">
                         @foreach (var c in Columns)
                         {
-                            <th scope="col" class="@c.Class" aria-sort="@TableView.AriaSort(_sort, c.Key)">
+                            <th scope="col" role="@Role("columnheader")" class="@c.Class" aria-sort="@TableView.AriaSort(_sort, c.Key)">
                                 @if (c.Sortable)
                                 {
                                     <button type="button" class="tide-sort" @onclick="() => SortBy(c)">@c.Title<span class="bi @SortIcon(c)" aria-hidden="true"></span></button>
@@ -78,7 +78,7 @@
                 </thead>
                 @if (GroupBy is null)
                 {
-                    <tbody>
+                    <tbody role="@Role("rowgroup")">
                         @foreach (var r in _view)
                         {
                             @Row(r)
@@ -89,9 +89,9 @@
                 {
                     @foreach (var g in GroupTotals is { } totals ? TableView.Group(_view, totals, GroupBy, GroupOrder) : TableView.Group(_view, _rows, GroupBy, GroupOrder))
                     {
-                        <tbody>
-                            <tr class="tide-dt-group">
-                                <th colspan="@Columns.Count" scope="rowgroup">
+                        <tbody role="@Role("rowgroup")">
+                            <tr class="tide-dt-group" role="@Role("row")">
+                                <th colspan="@Columns.Count" scope="rowgroup" role="@Role("rowheader")">
                                     @g.Name <span class="tide-count">@g.Total</span>
                                     @if (GroupNote?.Invoke(g.Name) is { } note)
                                     {
@@ -122,7 +122,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<TItem>? Items { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<TableColumn<TItem>> Columns { get; set; } = [];
 
-    /// <summary>A row's cells (its <c>td</c>s).</summary>
+    /// <summary>A row's cells (its <c>td</c>s). With <see cref="Stacks"/>, each says <c>role="cell"</c>.</summary>
     [Parameter, EditorRequired] public RenderFragment<TItem> RowTemplate { get; set; } = default!;
     [Parameter] public Func<TItem, object>? Key { get; set; }
     [Parameter] public Func<TItem, string?>? RowClass { get; set; }
@@ -169,6 +169,11 @@
 
     /// <summary>What to say when there are no rows at all and no filter: "nothing yet", or what the other filters left.</summary>
     [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>Whether a page's stylesheet lays the rows out as blocks on a narrow window rather than as a table. The
+    /// table then names its parts with ARIA roles (and the row template its cells), since Safari stops reading a table as
+    /// one once its rows and cells aren't displayed as table parts.</summary>
+    [Parameter] public bool Stacks { get; set; }
 
     /// <summary>Rows on a page.</summary>
     [Parameter] public int PageSize { get; set; } = 100;
@@ -301,14 +306,17 @@
         _ => "bi-arrow-down-up",
     };
 
+    // A part's role when the rows stack (Stacks), or no attribute at all.
+    private string? Role(string role) => Stacks ? role : null;
+
     private RenderFragment Row(TItem r) => Selected is null
-        ? @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)">@RowTemplate(r)</tr>
+        ? @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)" role="@Role("row")">@RowTemplate(r)</tr>
         : SelectableRow(r, Selected(r));
 
     // A row of a list with a selected row (RowSelection): the selected one is the list's tab stop, and a row that takes
     // focus (or something in it does) becomes the selected one.
     private RenderFragment SelectableRow(TItem r, bool selected) =>
-        @<tr @key="Key is null ? r : Key(r)" class="@($"{RowClass?.Invoke(r)} {RowSelection.Css(selected)}".Trim())" aria-current="@RowSelection.Current(selected)"
+        @<tr @key="Key is null ? r : Key(r)" class="@($"{RowClass?.Invoke(r)} {RowSelection.Css(selected)}".Trim())" role="@Role("row")" aria-current="@RowSelection.Current(selected)"
              tabindex="@RowSelection.TabIndex(selected)" @onfocusin="() => OnSelect.InvokeAsync(r)">@RowTemplate(r)</tr>;
 
     // Bound with @bind:get/@bind:set rather than value= with @oninput: Blazor then keeps its copy of the box's value in

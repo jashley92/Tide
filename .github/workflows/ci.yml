@@ -228,6 +228,24 @@ jobs:
           APP_DIR: layout-app
           SHARD: ${{ matrix.shard }}/4
           LETTER_SPACING: ${{ matrix.spacing }}
+          # The accessibility scan (report only) at the default spacing: the wider letters would find the same.
+          AXE: ${{ matrix.spacing == '.07em' && '1' || '0' }}
+
+      # What axe found, never failing the job (tools/screenshots/README.md, "Accessibility scan").
+      - name: Accessibility scan summary (report only)
+        if: always() && matrix.spacing == '.07em'
+        run: |
+          cat tools/screenshots/.axe/axe-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No axe report: the scan didn't run."
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && matrix.spacing == '.07em'
+        with:
+          name: axe-${{ matrix.shard }}-of-4
+          path: tools/screenshots/.axe/
+          # The folder's name starts with a dot, which the action leaves out unless told.
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: TIDE's log (on failure)
         if: failure()

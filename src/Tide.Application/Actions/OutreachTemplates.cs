@@ -149,6 +149,22 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
         return to;
     }
 
+    /// <summary>
+    /// Gives a starter TIDE saved, unchanged since, the newer starter's body (<see cref="StarterOutreachTemplates.NewerFor"/>):
+    /// its name, description, To and ceiling are kept. A change begun on a copy someone has since changed is refused.
+    /// </summary>
+    public async Task UseNewerStarterAsync(Guid id, Guid editVersion, CancellationToken ct = default)
+    {
+        _library.RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var t = await _library.ForEditAsync(db.OutreachTemplates, id, editVersion, ct);
+        var newer = StarterOutreachTemplates.NewerFor(t)
+                    ?? throw new InvalidOperationException($"{t.Name} has been changed since TIDE added it, so it's kept as it is.");
+        _library.Changed(t);
+        t.Body = newer.Body;
+        await _library.SaveEditAsync(db, ct);
+    }
+
     /// <summary>Retires a template (it's no longer offered on actions, and stays on the list to read) or restores it.</summary>
     public Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default) => _library.SetRetiredAsync(id, retired, ct);
 

@@ -418,7 +418,7 @@ public class SubPathHostingTests(SubPathApp app) : IClassFixture<SubPathApp>
         var page = await client.GetAsync("/tide/briefs");
         page.StatusCode.Should().Be(HttpStatusCode.OK);
         (await page.Content.ReadAsStringAsync()).Should().Contain("<base href=\"/tide/\" />", "relative links, scripts and the circuit resolve under it");
-        (await client.GetAsync("/tide/app.css")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync("/tide" + Stylesheet.First)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/tide/health")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

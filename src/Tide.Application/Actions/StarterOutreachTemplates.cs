@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -24,21 +26,21 @@ public static class StarterOutreachTemplates
     [
         new("Vendor: are we affected?", "Ask a vendor's support or PSIRT whether the versions we run are affected by a CVE, and when a fix is due.",
             "Are we affected? {{product.name}} and {{article.title}}",
-            "Hello,\n\nWe run {{product.name}}, version {{product.versions}}, and are reviewing this report:\n\n{{article.title}}\n{{article.link}}\n\n"
-            + "CVEs:\n{{article.cves}}\n\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
+            "Hello,\n\nWe run {{product.name}}, version {{product.versions}}, and are reviewing this report:\n\n{{article.title}}\n{{article.link?}}\n{{article.other-links?}}\n\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
             + "- if not, when you expect one.\n\nOur reference is {{action.number}}.\n\n" + SignOff,
             TlpLevel.Clear),
         new("Internal: action required", "Ask an asset or system owner to check, patch and look for the indicators by a date.",
             "{{action.number}} - action required by {{today:+2}}",
             "Hello,\n\nWe've had a report that affects {{product.name}} (we run {{product.versions}}):\n\n{{article.title}}\n{{article.bottom-line}}\n\n"
-            + "CVEs:\n{{article.cves}}\n\nPlease, by {{today:+2}}:\n- check whether your systems run an affected version;\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nPlease, by {{today:+2}}:\n- check whether your systems run an affected version;\n"
             + "- apply the vendor's fix or workaround;\n- look for the indicators below in your logs, and tell us at once if you find any.\n\n"
             + "Indicators:\n{{indicators}}\n\nReply to this email when it's done, or if you can't make the date.\n\n" + SignOff,
             TlpLevel.Amber),
         new("ISAC / partner: share and ask", "Share what we've seen with an ISAC or trusted partner, and ask whether they've seen it too.",
             "[{{tlp}}] Have you seen this? {{article.title}}",
             "Hello,\n\nSharing what we've seen, in case it's useful to you:\n\n{{article.title}}\n{{article.bottom-line}}\n\n"
-            + "CVEs:\n{{article.cves}}\n\nIndicators:\n{{indicators}}\n\n"
+            + "{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\n{{#indicators}}\nIndicators:\n{{indicators}}\n\n{{/indicators}}\n"
             + "Have you seen the same activity, or anything like it? Anything you can share back would help.\n\n" + SignOff,
             TlpLevel.Green),
         new("Follow-up / chase", "A short nudge on an email that hasn't had a reply.",
@@ -54,6 +56,26 @@ public static class StarterOutreachTemplates
             + "A short reply is fine, including \"no\".\n\n" + SignOff,
             TlpLevel.Amber),
     ];
+
+    // The bodies starters shipped with up to v1.15, before they had optional placeholders and sections, by SHA-256 of the
+    // body, with the starter each became. A template TIDE saved with one of these, its subject unchanged, hasn't been
+    // edited since, so the newer body can take its place without losing anyone's work.
+    private static readonly Dictionary<string, StarterOutreachTemplate> Earlier = new(StringComparer.Ordinal)
+    {
+        ["b8117b5a38a4c516b0cdebbe0067fd399786a397c3a76c5427a354d8a08dbcad"] = All.Single(s => s.Name == "Vendor: are we affected?"),
+        ["d1e9e14871569b1aa6a53e1b071c099b99ae78f07764f313e8926bee89e17c69"] = All.Single(s => s.Name == "Internal: action required"),
+        ["ad5a572fa2905c9f878481d698102514646331b5ab851a97c4ba04ca0f4e331b"] = All.Single(s => s.Name == "ISAC / partner: share and ask"),
+    };
+
+    /// <summary>
+    /// The newer starter <paramref name="t"/> is an older copy of, when TIDE saved it and it hasn't been changed since
+    /// (its subject and body are as an earlier starter's were); otherwise null.
+    /// </summary>
+    public static StarterOutreachTemplate? NewerFor(OutreachTemplate t) =>
+        t.CreatedByName == SavedBy
+        && Earlier.TryGetValue(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(t.Body))), out var newer)
+        && newer.Subject == t.Subject
+            ? newer : null;
 
     /// <summary>A starter as a row, saved by TIDE.</summary>
     public static OutreachTemplate ToEntity(StarterOutreachTemplate s) => new()

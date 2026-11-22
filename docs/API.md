@@ -416,10 +416,11 @@ Downloads one live file on the action or one of its comments (`ApiService.OpenFi
 **Query parameter:** `zip` (optional, boolean). `true` returns the file inside a zip with the password `infected`, in
 classic ZipCrypto so any zip tool opens it. Use it for a `risky` file: the zip stops it running on arrival and keeps
 antivirus from deleting it. When the server's `Files:ZipDownloads` is `Always`, every file comes zipped, whatever `zip`
-says.
+says. A person signed in with Windows (not a token) gets the zip whenever the app's own download would send it: a
+`risky` file under `RiskyOnly`, whatever `zip` says. A token gets the file as it is unless it asks for the zip.
 
 **Response 200:** the bytes as an attachment, `application/octet-stream` (or `application/zip` with `zip=true`, or
-under `Files:ZipDownloads=Always`),
+under `Files:ZipDownloads=Always`, or for a person when the zip comes first),
 under the name it was added with (`<name>.zip` zipped). Headers: `Cache-Control: private, no-store`,
 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`.
 
@@ -650,6 +651,9 @@ In **Administration › API access › Webhooks** (administrators only):
 3. **Turn off / Turn on.** A webhook turned back on starts from that moment: what happened while it was off isn't sent
    in a burst.
 4. **Remove** deletes it.
+
+If another administrator removed a webhook after the page listed it, any of these says so in a message and the list
+is read again; a token or secret still on show stays.
 
 The table shows each webhook's last post: its HTTP status and time, or the error. If the server's data protection
 keys are lost or replaced, the secret can't be read: every post fails with "The signing secret can't be read", and
@@ -892,8 +896,17 @@ sequenceDiagram
   on `id`.
 - **What isn't posted.** Test sends of a brief; corrections; actions above the team edition's ceiling; anything that
   happened while the webhook was off.
-- **Network.** Posts use their own HTTP client (`HttpWebhookPoster`, the `webhooks` named client) with redirects off.
-  They don't go through the outbound client's address rules or `Intake:Proxy`; the address must be https.
+- **Network.** Posts use their own HTTP client (`HttpWebhookPoster`, the `webhooks` named client) with redirects off,
+  not `Intake:Proxy`; the address must be https.
+- **Addresses.** Posts go through the same address rule as outbound fetches (`AddressPolicy`), checked on the address
+  each connection actually reaches, so a name that changes after it's checked can't redirect one. Loopback
+  (`localhost`, 127.0.0.0/8, `::1`), link-local (169.254.0.0/16, the cloud metadata address 169.254.169.254 among
+  them, and `fe80::/10`), unspecified and multicast addresses are always refused. Private addresses (10/8, 172.16/12,
+  192.168/16, 100.64/10, IPv6 unique-local) are allowed while `Webhooks:AllowPrivateNetworks` is `true`, the default,
+  since a receiver such as a SOAR platform is often internal; set it to `false` to allow only public addresses. A
+  refused post fails like any other: **Test** and the webhook's last result show
+  `Refused: <host> is a loopback address, which webhooks aren't sent to.` (or link-local, private, reserved), and
+  nothing is sent.
 
 Deliveries aren't in the audit log (a row a minute would bury the real ones); adding, changing and removing a webhook
 is.

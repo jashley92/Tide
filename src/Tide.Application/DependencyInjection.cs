@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.Configure<CveOptions>(config.GetSection("Cve"));
         services.Configure<UpdateOptions>(config.GetSection("Updates"));
         services.Configure<AiOptions>(config.GetSection("Ai"));
+        services.Configure<Api.WebhookOptions>(config.GetSection("Webhooks"));
         services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
         services.AddSingleton<JobRunLog>();

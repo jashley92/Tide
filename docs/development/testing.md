@@ -329,7 +329,7 @@ Runs on pull requests and on pushes to `main`, and is called by the release work
 | Build (`-c Release -warnaserror`) | The build fails, or anything in it warns: a compiler or analyzer warning, a NuGet warning (see [Warnings and the analysis level](#warnings-and-the-analysis-level)). |
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
-| No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
+| No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in the stylesheet (`css/*.css`, `palette.css`) for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
 | Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh origin/main` (or your base). |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
@@ -347,6 +347,12 @@ over the slices like any page. Every sharded run first checks that the four slic
 chain whole and in order after the pages that read the demo, and fails if not. Run it locally with
 `node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices, what each should take and the chains each runs, without
 starting anything (`tools/screenshots/README.md`, which says how to refresh the weights).
+
+The four slices at the default letter spacing also run axe-core's accessibility scan (WCAG 2.1 A and AA) on each page
+once, at its widest width. It's report only: it never fails a slice. Each slice adds a summary (the rules broken, by how
+many elements on how many pages) to its job's summary page and uploads the full report, every element's selector, as the
+`axe-<n>-of-4` artifact. `AXE=0` turns it off. Once its findings are fixed it's meant to become a gate
+(`tools/screenshots/README.md`, "Accessibility scan").
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);

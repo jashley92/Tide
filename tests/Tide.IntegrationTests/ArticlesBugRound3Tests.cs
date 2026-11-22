@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Api;
 using Tide.Application.Intake;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 

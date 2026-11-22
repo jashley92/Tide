@@ -79,7 +79,9 @@ only parts of a split, or only external teams'), and its steps in order, each a 
 after the due date and what it does (remind the team, copy its escalation contact, raise priority, flag). Steps are
 added, removed and moved up or down here; *Use the defaults* puts back the four it starts with. *Save escalation*
 checks them all (at most 8 steps, 0 to 60 business days, each doing something, no two the same) and saves the three
-settings together, or none, saying why. A last run whose steps didn't read (a hand-edited server value) says so. Each internal team's escalation contact (a name and email) is set in its
+settings together, or none, saying why. A last run whose steps didn't read (a hand-edited server value) says so, and
+the section warns that they can't be read, saying why: saving the switch or the scope then leaves them as they are, until
+steps are added, the defaults put back, or they're cleared on purpose. Each internal team's escalation contact (a name and email) is set in its
 editor here; an external team's on External teams. See
 [actions-and-hunting.md](actions-and-hunting.md#the-escalation-ladder).
 

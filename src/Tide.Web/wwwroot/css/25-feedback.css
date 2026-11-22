@@ -1,0 +1,38 @@
+/* ---- Toasts, reconnect ---- */
+.tide-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 2000; display: grid; gap: .5rem; max-width: 420px; }
+.tide-toasts > div { display: grid; gap: .5rem; }
+/* A toast: a light card with a coloured edge and glyph, sliding in (still, with reduced motion). */
+.tide-toast { background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-left: 4px solid var(--tide-ok);
+    padding: .65rem .9rem; border-radius: var(--tide-radius-lg); box-shadow: 0 6px 20px var(--tide-shadow); display: flex; gap: .7rem; align-items: start; font-size: .92rem;
+    animation: tide-toast-in .18s ease-out; }
+.tide-toast > .bi { color: var(--tide-ok); margin-top: .1rem; }
+.tide-toast-error { border-left-color: var(--tide-threat); }
+.tide-toast-error > .bi { color: var(--tide-threat); }
+.tide-toast-warn { border-left-color: var(--tide-warn); }
+.tide-toast-warn > .bi { color: var(--tide-warn); }
+@keyframes tide-toast-in { from { transform: translateY(.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tide-toast { animation: none; } }
+.tide-toast button { background: none; border: 0; color: inherit; opacity: .75; margin-left: auto; padding: 0; }
+/* Dismiss: a target of at least 24x24 CSS px (WCAG 2.5.8), its glyph centred; the toast's own padding stays as it was. */
+.tide-toast .tide-toast-dismiss { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+    margin: -.2rem -.35rem -.2rem auto; border-radius: var(--tide-radius-sm); }
+.tide-toast .tide-toast-dismiss:hover { opacity: 1; background: var(--tide-surface-2); }
+.tide-toast .tide-toast-dismiss:focus-visible { opacity: 1; outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.reconnect-modal { display: none; }
+.reconnect-modal.components-reconnect-show, .reconnect-modal.components-reconnect-failed, .reconnect-modal.components-reconnect-rejected { display: grid; position: fixed; inset: 0; background: var(--tide-overlay); z-index: 3000; place-items: center; }
+.reconnect-card { background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-xl); padding: 1.5rem 1.75rem; max-width: 420px; text-align: center; }
+.reconnect-body { display: none; }
+.components-reconnect-show .reconnect-when-show, .components-reconnect-failed .reconnect-when-failed, .components-reconnect-rejected .reconnect-when-rejected { display: block; }
+.reconnect-title { font-size: 1.1rem; font-weight: var(--tide-weight-semibold); }
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: var(--tide-warn-soft); color: var(--tide-text); padding: .6rem 1.25rem; z-index: 1000; }
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; top: .35rem; background: none; border: 0; color: inherit; font-size: 1.25rem; line-height: 1; padding: 0 .25rem; }
+
+/* ---- Lightbox ---- */
+.tide-lightbox { position: fixed; inset: 0; background: var(--tide-overlay-strong); z-index: 4000; display: grid; place-items: center; padding: 2rem; cursor: zoom-out; }
+.tide-lightbox img { max-width: 100%; max-height: 88vh; border-radius: var(--tide-radius-md); box-shadow: 0 10px 40px var(--tide-shadow-strong); }
+.tide-lightbox figcaption { color: var(--tide-slide-text); text-align: center; margin-top: .6rem; }
+.tide-lightbox-close { position: absolute; top: 1rem; right: 1rem; width: 2.4rem; height: 2.4rem; border-radius: var(--tide-radius-round); border: 1px solid var(--tide-slide-line); background: var(--tide-slide-surface); color: var(--tide-slide-text); }
+.tide-lightbox-close:focus-visible, .tide-zoom:focus-visible { outline: 3px solid var(--tide-accent); outline-offset: 2px; }
+/* A screenshot that opens full size: a button around the image, so the keyboard can open it too. */
+.tide-zoom { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+

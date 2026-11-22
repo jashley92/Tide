@@ -151,7 +151,7 @@ public class AccessibilityTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task EveryAvatarColour_GivesWhiteInitials45To1()
     {
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
 
         css.Should().Contain("--tide-on-avatar: #ffffff;");
         for (var n = 1; n <= Ui.AvatarSwatches; n++)
@@ -178,7 +178,7 @@ public class AccessibilityTests(TideApp app) : IClassFixture<TideApp>
     private static string Token(string css, string name)
     {
         var at = css.IndexOf(name + ":", StringComparison.Ordinal);
-        at.Should().BePositive($"app.css defines {name}");
+        at.Should().BePositive($"the stylesheet defines {name}");
         var start = at + name.Length + 1;
         return css[start..css.IndexOf(';', start)].Trim();
     }

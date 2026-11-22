@@ -272,6 +272,83 @@ public class ApiHttpTests(TideApp app) : IClassFixture<TideApp>
     }
 }
 
+/// <summary>The API access page when another administrator has already removed what it lists: it says so and carries
+/// on, keeping a token or secret still on show (neither can be shown again).</summary>
+public class ApiAdminStaleRowTests(TideApp app) : IClassFixture<TideApp>
+{
+    private static IReadOnlyList<Tide.Web.Services.ToastService.Toast> Toasts<T>(ComponentHarness.Rendered<T> r) =>
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts;
+
+    // The page as drawn now: a method called straight, not from a click, doesn't render it again on its own.
+    private static async Task<string> Drawn<T>(ComponentHarness.Rendered<T> r) where T : Microsoft.AspNetCore.Components.ComponentBase
+    {
+        await r.Renderer.Dispatcher.InvokeAsync(() => typeof(Microsoft.AspNetCore.Components.ComponentBase)
+            .GetMethod("StateHasChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(r.Component, null));
+        return await r.Html();
+    }
+
+    private async Task RemovedElsewhere(Guid hook)
+    {
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        await scope.ServiceProvider.GetRequiredService<WebhookService>().RemoveAsync(hook);
+    }
+
+    // The confirm dialog's button, pressed on the renderer's thread: the action carries on in the flow that asked.
+    private static async Task Confirmed<T>(ComponentHarness.Rendered<T> r, Func<T, Task> press, string asked, Func<T, Tide.Web.Components.Shared.ConfirmDialog> dialog)
+    {
+        await r.Press(press);
+        (await r.HtmlOnce(asked)).Should().Contain(asked);
+        await r.Renderer.Dispatcher.InvokeAsync(() => dialog(r.Component).Confirm());
+    }
+
+    [Fact]
+    public async Task AWebhookRemovedBySomeoneElse_IsSaidInAToast_AndThePageAndItsSecretStay()
+    {
+        await using var r = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Admin.ApiAdmin>(app, "/admin/api");
+        const string url = "https://hooks.example.org/stale-row";
+        typeof(Tide.Web.Components.Pages.Admin.ApiAdmin).GetField("_hookUrl", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(r.Component, url);
+        await r.Click(c => c.AddHook());
+        (await Drawn(r)).Should().Contain($"The signing secret for {url}");
+        WebhookRow hook;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            hook = (await scope.ServiceProvider.GetRequiredService<WebhookService>().ListAsync()).Single(h => h.Url == url);
+        await RemovedElsewhere(hook.Id);
+
+        await r.Click(c => c.Test(hook));
+        await r.Click(c => c.Enable(hook, false));
+        await Confirmed(r, c => c.Remove(hook), "Remove the webhook?", c => c._confirm);
+        (await r.Until(_ => Toasts(r).Count(t => t.Message == $"The webhook for {url} was already removed.") == 3))
+            .Should().BeTrue(string.Join("; ", Toasts(r).Select(t => t.Message)));
+
+        Toasts(r).Should().NotContain(t => t.IsError);
+        var html = await Drawn(r);
+        html.Should().Contain($"The signing secret for {url}", "the secret still on show isn't lost")
+            .And.NotContain($"<td class=\"tide-data small\">{url}</td>", "the list is read again");
+    }
+
+    [Fact]
+    public async Task ATokenGoneBeforeItsRevoked_IsSaidInAToast_AndThePageStays()
+    {
+        Guid id;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            id = (await scope.ServiceProvider.GetRequiredService<ApiTokenService>().IssueAsync("Stale row token", [ApiScopes.ActionsRead], TlpLevel.Green, 1)).Id;
+        await using var r = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Admin.ApiAdmin>(app, "/admin/api");
+        ApiTokenRow token;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            token = (await scope.ServiceProvider.GetRequiredService<ApiTokenService>().ListAsync()).Single(t => t.Id == id);
+            // Tokens aren't deleted by the app; a restore or a hand-cleaned database can still take one away.
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            await db.ApiTokens.Where(t => t.Id == id).ExecuteDeleteAsync();
+        }
+
+        await Confirmed(r, c => c.Revoke(token), "Revoke the token for Stale row token?", c => c._confirm);
+        (await r.Until(_ => Toasts(r).Any(t => t.Message == "The token for Stale row token no longer exists."))).Should().BeTrue(string.Join("; ", Toasts(r).Select(t => t.Message)));
+        (await Drawn(r)).Should().NotContain("Stale row token</strong>");
+    }
+}
+
 /// <summary>EP-75's other endpoints and webhook upkeep, over HTTP and through the services.</summary>
 public class ApiMoreTests(TideApp app) : IClassFixture<TideApp>
 {
@@ -342,7 +419,7 @@ public class ApiMoreTests(TideApp app) : IClassFixture<TideApp>
         secrets.Unprotect("Tide.Secrets.NvdApiKey.v1", kept).Should().BeNull("one purpose never opens another's");
 
         var handler = new Answering(HttpStatusCode.Accepted);
-        var poster = new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler));
+        var poster = new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler), new StaticOptionsMonitor<WebhookOptions>(new WebhookOptions()));
         (await poster.PostAsync("https://hooks.example.org/x", "{}", new Dictionary<string, string> { ["X-Tide-Event"] = "ping" })).Should().Be((202, (string?)null));
         handler.Last!.Headers.GetValues("X-Tide-Event").Should().Equal("ping");
         handler.Status = HttpStatusCode.Redirect;

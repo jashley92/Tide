@@ -133,6 +133,7 @@
     {
         _kept = UpgradeCommand.FindKept(Env.ContentRootPath);
         _hours = (int)UpdateCheckHostedService.Interval(Options.CurrentValue).TotalHours;
+        _loadedHours = Hours();
         Updates.Changed += OnChanged;
         try { Updates.Enabled = await UpdateSetting.GetEnabledAsync(); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -160,16 +161,22 @@
         finally { _saving = false; }
     }
 
+    // The interval as the page showed it: saved only when changed here, and refused when someone else changed it since.
+    private Dictionary<string, string?> _loadedHours = [];
+
+    private Dictionary<string, string?> Hours() => new()
+    {
+        [Tide.Application.Settings.OperationalSettings.UpdateIntervalHours] = _hours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
     internal async Task SaveInterval()
     {
         if (_saving) return;
         _saving = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?>
-            {
-                [Tide.Application.Settings.OperationalSettings.UpdateIntervalHours] = _hours.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            });
+            await Settings.SaveAsync(Hours(), loaded: _loadedHours);
+            _loadedHours = Hours();
             Toasts.Show("Saved.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

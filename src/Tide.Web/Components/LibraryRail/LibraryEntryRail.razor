@@ -78,7 +78,9 @@
                     }
                     else
                     {
-                        <pre id="lib-try-text" class="@(Kind == LibraryKind.SavedQuery ? "tide-query" : "tide-email-text") tide-lib-try-text">@_text</pre>
+                        @* It scrolls when it's long, so the keyboard can reach it, and it's named for what it holds. *@
+                        <pre id="lib-try-text" class="@(Kind == LibraryKind.SavedQuery ? "tide-query" : "tide-email-text") tide-lib-try-text" tabindex="0" role="region"
+                             aria-label="@(Kind == LibraryKind.SavedQuery ? "The query, filled in" : "The email, filled in")">@_text</pre>
                     }
                     <div class="tide-lib-try-tools">
                         @if (Kind != LibraryKind.Playbook)

@@ -33,7 +33,7 @@
                             @if (CanOpen) { <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(a.Number)">Open @Ui.ActionLabel(a.Number)</a> }
                             @if (take)
                             {
-                                <button type="button" class="btn btn-outline-secondary btn-sm tide-lookup-take" disabled="@Busy" aria-label="Take @Ui.ActionLabel(a.Number) on"
+                                <button type="button" class="btn btn-outline-secondary btn-sm tide-lookup-take" disabled="@Busy" aria-label="Take it: @Ui.ActionLabel(a.Number)"
                                         @onclick="() => OnTake.InvokeAsync(a)">Take it</button>
                             }
                         </span>

@@ -620,6 +620,35 @@ public class ActionServiceTests : IDisposable
         (await svc.ListAsync(new ActionFilter(ActionView.Open, AssigneeId: ActionFilter.Unassigned))).Should().OnlyContain(r => r.AssigneeId == null).And.NotBeEmpty();
     }
 
+    // Workload's Due soon, Blocked and P1 link to the list filtered due=soon, status=blocked and priority=p1: each lists
+    // the actions its count counted.
+    [Fact]
+    public async Task WorkloadsDueSoonBlockedAndP1_AreTheActionsTheListFiltersShow()
+    {
+        var team = await Team();
+        var svc = _db.Actions();
+        var today = _db.Clock.Today;
+        var next = _db.Clock.Days.Next(today);
+        async Task<Guid> Make(string title, DateOnly? due, Priority priority = Priority.P3) =>
+            (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = title, Kind = ActionKind.PatchRemediate, TeamId = team, DueDate = due, Priority = priority })))!.Action.Id;
+        await Make("due today", today);
+        await Make("due next working day", next, Priority.P1);
+        await Make("due after that", _db.Clock.Days.Next(next));
+        await Make("late", today.AddDays(-3), Priority.P1);
+        await svc.SetStatusAsync(await Make("blocked", null), ActionStatus.Blocked, ActionOutcome.None, null);
+        await svc.SetStatusAsync(await Make("done today", today, Priority.P1), ActionStatus.Done, ActionOutcome.Remediated, null);
+
+        var load = (await svc.WorkloadAsync()).Single(t => t.Team.Id == team);
+        async Task<string[]> Listed(ActionFilter f) => [.. (await svc.ListAsync(f with { View = ActionView.Open, TeamId = team })).Select(r => r.Title).Order()];
+
+        var soon = await Listed(new ActionFilter { Due = ActionDue.Soon });
+        soon.Should().Equal("due next working day", "due today").And.HaveCount(load.DueSoon);
+        var blocked = await Listed(new ActionFilter { Status = ActionStatus.Blocked });
+        blocked.Should().Equal("blocked").And.HaveCount(load.Blocked);
+        var p1 = await Listed(new ActionFilter { Priorities = [Priority.P1] });
+        p1.Should().Equal("due next working day", "late").And.HaveCount(load.P1);
+    }
+
     [Fact]
     public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
     {
@@ -1148,6 +1177,61 @@ public class ReminderTests : IDisposable
         _db.Email.Sent.Should().HaveCount(sent);
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task PruningMarks_DropsAClosedActionsEscalationEmailMarks_WhereTheirStepIsMarked_AndKeepsAnOpenActionsAndARecentlyClosedOnes(string provider)
+    {
+        _db = _db.On(provider);
+        var (closed, open, options) = await RemindedThenOneClosedLongAgo();
+        Guid team;
+        await using (var ctx = _db.Context())
+            team = await ctx.Actions.Where(a => a.Id == open).Select(a => a.TeamId).SingleAsync();
+        var recent = (await _db.Actions().GetAsync(await _db.Actions().CreateAsync(new ActionForm
+        {
+            Title = "Closed last week", TeamId = team, DueDate = _db.Clock.Today.AddDays(-3),
+        })))!.Action.Id;
+        (await _db.Reminders(options).RunAsync(ReminderKind.Escalation)).Should().BeGreaterThan(0);
+        await _db.Actions().SetStatusAsync(recent, ActionStatus.Cancelled, ActionOutcome.None, null);
+        // An email that went in a run that stopped before its step was marked: the ladder still reads it, so it stays.
+        var unclaimed = $"{closed:N}:{_db.Clock.Today.AddDays(-3):yyyy-MM-dd}:-9.1|r:0123456789abcdef";
+        await using (var ctx = _db.Context())
+        {
+            ctx.NotificationMarks.Add(new NotificationMark { Kind = "escalation-email", Key = unclaimed, SentAtUtc = _db.Clock.Now.ToUniversalTime().AddDays(-120) });
+            await ctx.SaveChangesAsync();
+        }
+        var before = await Marks();
+        bool Of(Guid id, (string Kind, string Key) m) => m.Key.Contains(id.ToString("N"), StringComparison.Ordinal);
+        foreach (var id in new[] { closed, open, recent })
+            before.Count(m => m.Kind == "escalation-email" && Of(id, m) && m.Key != unclaimed).Should().Be(2, "the ladder's reminder went to each member");
+
+        (await _db.Reminders(options).PruneMarksAsync()).Should().BeGreaterThan(0);
+
+        var after = await Marks();
+        after.Where(m => Of(closed, m) && m.Kind == "escalation-email").Should().Equal([("escalation-email", unclaimed)],
+            "an email whose step is marked is never read again; one whose step isn't, is");
+        after.Where(m => Of(closed, m) && m.Kind == "escalation").Should().BeEquivalentTo(before.Where(m => Of(closed, m) && m.Kind == "escalation"),
+            "the step's own mark stays, so the ladder never runs it again");
+        after.Where(m => Of(open, m)).Should().BeEquivalentTo(before.Where(m => Of(open, m)), "an open action keeps every mark");
+        after.Where(m => Of(recent, m)).Should().BeEquivalentTo(before.Where(m => Of(recent, m)), "one closed within the retention keeps every mark");
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AfterPruningTheLaddersEmailMarks_ReopeningTheAction_SendsNoEscalationAgain(string provider)
+    {
+        _db = _db.On(provider);
+        var (closed, _, options) = await RemindedThenOneClosedLongAgo();
+        (await _db.Reminders(options).PruneMarksAsync()).Should().BeGreaterThan(0);
+        (await Marks()).Should().NotContain(m => m.Kind == "escalation-email" && m.Key.StartsWith(closed.ToString("N"), StringComparison.Ordinal));
+        var sent = _db.Email.Sent.Count;
+
+        await _db.Actions().SetStatusAsync(closed, ActionStatus.Open, ActionOutcome.None, null);
+        (await _db.Reminders(options).RunAsync(ReminderKind.Escalation)).Should().Be(0, "its step is still marked for that due date");
+        _db.Email.Sent.Should().HaveCount(sent);
+        await using var ctx = _db.Context();
+        (await ctx.ActionEvents.CountAsync(e => e.ActionId == closed && e.ByName == ReminderService.EscalatedBy)).Should().Be(1, "it climbed once, before it closed");
+    }
+
     [Fact]
     public async Task PruningMarks_RunsWithTheReminderJob_AtMostOnceADay()
     {
@@ -1207,6 +1291,52 @@ public class ReminderTests : IDisposable
         after.Where(m => m.Key.Contains(neighbour.ToString("N"), StringComparison.Ordinal)).Should().HaveCount(3, "the open neighbour keeps every mark");
         foreach (var id in closed)
             after.Where(m => m.Key.Contains(id.ToString("N"), StringComparison.Ordinal)).Should().Equal([("overdue", $"{id:N}:2026-01-01")]);
+    }
+
+    [Fact]
+    public async Task Overdue_OverManyActions_ReadsAsOftenAsOverAFew_AndSavesOncePerEmailSent()
+    {
+        var few = await OverdueCost(4);
+        var many = await OverdueCost(40);
+
+        few.Emails.Should().Be(3, "Robin, Sam and the team's mailbox, each once");
+        many.Emails.Should().Be(few.Emails, "one email per recipient, however many actions it lists");
+        many.Saves.Should().Be(many.Emails + 1,
+            "each email's marks are saved as it goes, so a pass stopped partway doesn't send it again; then the actions' own marks once");
+        many.Queries.Should().Be(few.Queries, "the actions, their marks and their recipients are each read once, not once per action");
+    }
+
+    // What an overdue pass over this many actions (a quarter each Robin's and Sam's, the rest the team's) costs: the queries
+    // it reads with, its saves, and its emails. Each on a database of its own, so the two passes compare.
+    private static async Task<(int Queries, int Saves, int Emails)> OverdueCost(int actions)
+    {
+        using var db = new TestDb();
+        db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var team = await db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
+        await using (var ctx = db.Context())
+        {
+            foreach (var (sid, email) in new[] { ("S-ROBIN", "robin@example.org"), ("S-SAM", "sam@example.org") })
+                ctx.Users.Add(new AppUser { Sid = sid, DisplayName = sid, Email = email, RolesCsv = "ActionOwner", LastSeenUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+        await db.Teams().AddMemberAsync(team, "S-ROBIN", "Robin");
+        await db.Teams().AddMemberAsync(team, "S-SAM", "Sam");
+        var today = db.Clock.Today;
+        for (var i = 0; i < actions; i++)
+            await db.Actions().CreateAsync(new ActionForm
+            {
+                Title = $"Patch {i}", TeamId = team, DueDate = today.AddDays(-1 - i % 5),
+                AssigneeId = (i % 4) switch { 0 => "S-ROBIN", 1 => "S-SAM", _ => null },
+                AssigneeName = (i % 4) switch { 0 => "Robin", 1 => "Sam", _ => null },
+            });
+
+        var saves = 0;
+        db.BeforeSave = _ => saves++;
+        db.Commands.Reset();
+        db.Commands.Record = true;
+        await db.Reminders().RunAsync(ReminderKind.Overdue);
+        db.Commands.Record = false;
+        return (db.Commands.Sql.Count(sql => sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)), saves, db.Email.Sent.Count);
     }
 
     [Fact]

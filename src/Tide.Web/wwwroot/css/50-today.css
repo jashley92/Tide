@@ -1,0 +1,638 @@
+/* ---- Today: a day's brief (BriefPage). The step strip, then the running order and numbers beside the edition check,
+   the meeting and (on Today) My actions, the rotation and recent articles. ---- */
+.tide-steps { container: steps / inline-size; list-style: none; margin: 0 0 var(--tide-space-4); padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); background: var(--tide-surface); overflow: hidden; }
+.tide-step { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-3); border-left: 1px solid var(--tide-border); min-width: 0; }
+.tide-step:first-child { border-left: 0; }
+.tide-step-ico { flex: none; width: 1.4rem; height: 1.4rem; border-radius: var(--tide-radius-round); display: grid; place-items: center; font-size: var(--tide-text-xs);
+    font-weight: var(--tide-weight-bold); border: 2px solid var(--tide-border-strong); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
+.tide-step-txt { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.tide-step-label { font-weight: var(--tide-weight-semibold); display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); align-items: center; }
+.tide-step-label a, .tide-step-btn.btn-link { color: var(--tide-text); font-weight: var(--tide-weight-semibold); text-decoration: none; font-size: inherit; line-height: inherit; vertical-align: baseline; }
+.tide-step-label a:hover, .tide-step-btn.btn-link:hover { color: var(--tide-accent-text); text-decoration: underline; }
+/* Each step says where it stands in full, on up to two lines. */
+.tide-step-detail { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.tide-step-now { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--tide-accent-text); }
+.tide-step.is-done .tide-step-ico { background: var(--tide-ok-soft); border-color: var(--tide-ok); color: var(--tide-ok); }
+.tide-step.is-current { background: var(--tide-accent-soft); box-shadow: inset 0 -3px 0 var(--tide-accent); }
+.tide-step.is-current .tide-step-ico { border-color: var(--tide-accent); background: var(--tide-accent); color: var(--tide-surface); }
+.tide-step.is-attention .tide-step-ico { border-color: var(--tide-warn); color: var(--tide-warn); }
+/* Compact by the strip's own width, not the window's: beside an open sidebar it's narrow on a wide screen. */
+@container steps (max-width: 46rem) {
+    .tide-step { flex-direction: column; align-items: center; text-align: center; padding: var(--tide-space-2) var(--tide-space-1); }
+    .tide-step-label { justify-content: center; font-size: var(--tide-text-sm); }
+    .tide-step-now { display: none; }
+}
+
+/* Under the strip, Triage's word on the feeds not pulled since the morning's cutoff, with Pull all: one row where there's
+   room; narrower, the button wraps under the words. */
+.tide-feeds-nudge { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-4);
+    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); background: var(--tide-warn-soft);
+    font-size: var(--tide-text-sm); }
+.tide-feeds-nudge-text { flex: 1 1 20rem; min-width: 0; overflow-wrap: break-word; }
+.tide-feeds-nudge-text a { font-weight: var(--tide-weight-semibold); }
+.tide-feeds-nudge .tide-feeds-failing { color: var(--tide-warn); }
+
+.tide-today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: var(--tide-space-4); align-items: start; }
+@media (max-width: 1099.98px) { .tide-today-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.tide-order { list-style: none; margin: 0; padding: 0; }
+.tide-order-row { display: grid; grid-template-columns: auto 2rem minmax(0, 1fr) auto; gap: var(--tide-space-2) var(--tide-space-3); align-items: center;
+    padding: var(--tide-space-3) var(--tide-space-1); border-bottom: 1px solid var(--tide-border); }
+.tide-order-row:not([draggable]) { grid-template-columns: 2rem minmax(0, 1fr) auto; }
+.tide-order-row:last-child { border-bottom: 0; }
+.tide-order-row.dragging { opacity: .45; }
+.tide-order-row.drop-before { box-shadow: inset 0 2px 0 var(--tide-accent); }
+.tide-order-row.drop-after { box-shadow: inset 0 -2px 0 var(--tide-accent); }
+.tide-drag-handle { cursor: grab; color: var(--tide-text-muted); }
+.tide-order-main { min-width: 0; }
+.tide-order-ctrl { display: flex; gap: var(--tide-space-1); }
+.tide-order-foot { display: flex; gap: var(--tide-space-2); align-items: center; flex-wrap: wrap; border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-3); margin-top: var(--tide-space-1); }
+@media (max-width: 700.98px) {
+    .tide-order-row, .tide-order-row:not([draggable]) { grid-template-columns: 2rem minmax(0, 1fr); }
+    .tide-drag-handle { display: none; }
+    .tide-order-ctrl { grid-column: 2; }
+}
+/* What an article still needs, inline: dashed chips, red when it stops the brief being ready. */
+.tide-needs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); margin-top: var(--tide-space-2); }
+.tide-need { display: inline-flex; align-items: center; gap: var(--tide-space-1); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium);
+    padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-warn-soft); color: var(--tide-warn); border: 1px dashed var(--tide-warn); }
+.tide-need.is-blocking { background: var(--tide-threat-soft); color: var(--tide-threat); border-color: var(--tide-threat); }
+/* A need's one-click fix, beside its chip. */
+.tide-need-fix, .tide-need-keep { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
+/* Its quiet partner, "Keep it", right after it: no frame, only the link colour, so the fix stays the obvious choice. */
+.tide-need-fix:has(+ .tide-need-keep) { margin-right: 0; }
+.tide-need-keep { text-decoration: none; }
+.tide-need-keep:hover { text-decoration: underline; }
+
+/* The edition check: Included, Partly included or Left out for each part of the brief, per edition. */
+.tide-ed-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tide-space-3); }
+@media (max-width: 420.98px) { .tide-ed-cols { grid-template-columns: minmax(0, 1fr); } }
+.tide-ed-col h3 { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); display: grid; gap: var(--tide-space-1); margin: 0 0 var(--tide-space-2); }
+.tide-ed-col h3 a { color: var(--tide-text); }
+.tide-ed-sub { font-weight: var(--tide-weight-regular); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-ed-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--tide-space-2); font-size: var(--tide-text-xs); }
+.tide-ed-list li { display: grid; gap: calc(var(--tide-space-1) / 2); }
+.tide-ed-mark { font-weight: var(--tide-weight-semibold); }
+.tide-ed-mark.is-included { color: var(--tide-ok); }
+.tide-ed-mark.is-part { color: var(--tide-warn); }
+.tide-ed-mark.is-leftout { color: var(--tide-text-muted); }
+.tide-ed-title { color: var(--tide-text); overflow-wrap: anywhere; }
+.tide-ed-list li.is-out .tide-ed-title { color: var(--tide-text-muted); text-decoration: line-through; }
+.tide-ed-why { display: block; color: var(--tide-text-muted); }
+.tide-ed-whole { margin: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-ed-whole.is-all { color: var(--tide-ok); }
+.tide-ed-whole + .tide-ed-list { margin-top: var(--tide-space-2); }
+.tide-ed-warn { display: block; color: var(--tide-warn); }
+.tide-ed-warn .bi { margin-right: var(--tide-space-1); }
+.tide-ed-note { margin: var(--tide-space-3) 0 0; padding-top: var(--tide-space-2); border-top: 1px solid var(--tide-border); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+
+/* Preview both editions: side by side for proofreading the whole brief; narrower than 900px, one at a time, picked
+   with the Team | Company-wide switch (hidden while both fit). */
+.tide-both { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-4); align-items: start; }
+.tide-both-head { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: center; margin: 0 0 var(--tide-space-1); }
+.tide-both-for { font-size: var(--tide-text-sm); color: var(--tide-text-muted); margin: 0 0 var(--tide-space-3); }
+.tide-both-switch { display: none; margin-bottom: var(--tide-space-3); }
+@media (max-width: 899.98px) {
+    .tide-both { grid-template-columns: minmax(0, 1fr); }
+    .tide-both-switch { display: inline-flex; }
+    .tide-both-ed:not(.is-shown) { display: none; }
+}
+
+/* A card whose heading folds it (Today's numbers). */
+.tide-collapse-btn { border: 0; background: none; padding: 0; color: inherit; font: inherit; display: inline-flex; align-items: center; gap: var(--tide-space-1); }
+.tide-collapse-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+.tide-warn-text { color: var(--tide-warn); }
+
+/* The add-articles dialog's list: a tick, the article, and a link to open it. */
+.tide-pick-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.tide-pick-list li { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
+.tide-pick-list li:last-child { border-bottom: 0; }
+.tide-pick-list .form-check-input { flex: none; margin-top: .2rem; }
+.tide-pick-list label, .tide-pick-list .tide-pick-text { min-width: 0; font-size: var(--tide-text-sm); }
+
+.tide-toast .tide-toast-undo { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto;
+    min-height: 24px; padding: 0 .25rem; }
+.tide-toast .tide-toast-undo + button { margin-left: var(--tide-space-2); }
+.tide-toast .tide-toast-undo:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+
+/* Triage's "Attach to…" (AttachPicker): a combobox in the row, over the recent drafts and ready articles. */
+.tide-attach { position: relative; display: inline-flex; }
+.tide-attach-panel { position: absolute; top: calc(100% + var(--tide-space-1)); left: 0; z-index: 20;
+    width: min(var(--tide-width-xl), calc(100vw - 2 * var(--tide-space-4))); padding: var(--tide-space-2);
+    border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-lg); background: var(--tide-surface); box-shadow: 0 8px 24px var(--tide-shadow); }
+.tide-attach-list { list-style: none; margin: var(--tide-space-2) 0; padding: 0; max-height: 16rem; overflow-y: auto; }
+.tide-attach-list:empty { display: none; }
+.tide-attach-opt { display: flex; flex-direction: column; gap: 0; padding: var(--tide-space-1) var(--tide-space-2); border-radius: var(--tide-radius-sm); cursor: pointer; }
+.tide-attach-opt:hover { background: var(--tide-surface-2); }
+.tide-attach-opt.is-active { background: var(--tide-accent-soft); box-shadow: inset 2px 0 0 var(--tide-accent); }
+.tide-attach-title { font-size: var(--tide-text-sm); color: var(--tide-text); }
+.tide-attach-meta { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-attach-empty { font-size: var(--tide-text-sm); color: var(--tide-text-muted); margin: var(--tide-space-2) 0; }
+.tide-triage-follow { font-size: var(--tide-text-xs); color: var(--tide-text-muted); margin-top: var(--tide-space-1); }
+/* EP-81: why an item is likely to be used, and the stories missed this week. */
+.tide-triage-likely { font-size: var(--tide-text-xs); color: var(--tide-text-muted); margin-top: var(--tide-space-1); }
+.tide-likely-count { font-family: var(--tide-font-data); font-weight: 700; color: var(--tide-accent-text); margin-right: var(--tide-space-1); }
+.tide-missed { font-size: var(--tide-text-sm); }
+.tide-missed-list { margin: var(--tide-space-1) 0; padding-left: 1.2rem; }
+.tide-missed-acts { display: inline-flex; gap: var(--tide-space-3); margin-left: var(--tide-space-1); white-space: nowrap; }
+
+/* The editor's "Add a report link". */
+.tide-add-link { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: flex-end; margin-top: var(--tide-space-2); }
+.tide-add-link-url { flex: 2 1 var(--tide-width-sm); min-width: 0; }
+.tide-add-link-source { flex: 1 1 var(--tide-width-xs); min-width: 0; }
+.tide-field-error { flex-basis: 100%; font-size: var(--tide-text-sm); color: var(--tide-threat); }
+
+/* The reader preview's similar articles (RelatedPanel), and the story picker above them (StoryPicker). */
+.tide-related-list { list-style: none; margin: 0; padding: 0; }
+.tide-related-item { padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
+.tide-related-item:first-child { border-top: 0; padding-top: 0; }
+.tide-related-title { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); }
+.tide-related-meta { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-related-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
+.tide-related-actions { list-style: none; margin: var(--tide-space-2) 0 0; padding: 0 0 0 var(--tide-space-3); border-left: 2px solid var(--tide-border); }
+.tide-related-actions > li { display: flex; gap: var(--tide-space-2); align-items: flex-start; justify-content: space-between; font-size: var(--tide-text-sm); padding: var(--tide-space-1) 0; }
+.tide-story-pick { border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-2); margin-top: var(--tide-space-3); }
+/* Similar articles, folded under the story picker (ReaderPreview): its heading is the disclosure. */
+.tide-reader-similar { border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-2); margin-top: var(--tide-space-3); }
+.tide-reader-fold-h { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: 0; }
+.tide-reader-similar > .tide-disclosure-body { margin-top: var(--tide-space-2); }
+.tide-story-hint { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: center; font-size: var(--tide-text-sm); margin-top: var(--tide-space-2); }
+/* The story search's results: a short list of buttons under the box, each a story's name over its count and date. */
+.tide-story-results { list-style: none; margin: var(--tide-space-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tide-story-result { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: var(--tide-radius-md); padding: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text); }
+.tide-story-result:hover:not(:disabled) { background: var(--tide-surface-2); border-color: var(--tide-border); }
+.tide-story-result:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--tide-focus-ring); }
+.tide-story-result-name { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-story-result-meta { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-story-result-new { flex-direction: row; gap: var(--tide-space-1); color: var(--tide-accent); }
+/* SearchCombobox: the story and adversary pickers' box over a listbox. The highlighted option (the arrows move it) is
+   marked as triage's "Attach to" marks its own. A list that opens with focus opens in the flow, pushing what follows
+   down, rather than floating over it: the editor's side pane scrolls, and would cut a floating list off. */
+.tide-combo-opt { cursor: pointer; }
+.tide-combo-opt.is-active { background: var(--tide-accent-soft); border-color: transparent; box-shadow: inset 2px 0 0 var(--tide-accent); }
+.tide-combo-opt[aria-disabled="true"] { cursor: default; opacity: .6; }
+.tide-combo-pop { margin-top: 2px; padding: var(--tide-space-1);
+    border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-lg); background: var(--tide-surface); box-shadow: 0 8px 24px var(--tide-shadow); }
+.tide-combo-pop .tide-story-results { margin: 0; }
+.tide-combo-foot { font-size: var(--tide-text-xs); color: var(--tide-text-muted); padding: var(--tide-space-1) var(--tide-space-2) 0; }
+.tide-combo-tag { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-sm); padding: 0 .3rem; margin-left: var(--tide-space-1); }
+
+/* Administration › Email templates: the list of emails beside the editor and its preview. */
+.tide-etpl { display: grid; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.tide-etpl-list { display: flex; flex-direction: column; gap: 2px; background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .3rem; position: sticky; top: 1rem; }
+.tide-etpl-item { display: flex; justify-content: space-between; align-items: center; gap: .5rem; text-align: left; background: none; border: 0; border-radius: var(--tide-radius-md); padding: .45rem .6rem; color: var(--tide-text); font-size: .88rem; }
+.tide-etpl-item:hover { background: var(--tide-surface-2); }
+.tide-etpl-item.active { background: var(--tide-accent-soft); color: var(--tide-accent-text); font-weight: 600; box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-etpl-item:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: 1px; }
+.tide-etpl-main { min-width: 0; }
+.tide-etpl-body { white-space: pre-wrap; min-height: 9rem; }
+.tide-etpl-tokens { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-top: .6rem; }
+.tide-etpl-tokens > .small { flex-basis: 100%; }
+.tide-etpl-sep { width: 1px; align-self: stretch; background: var(--tide-border); margin: 0 .25rem; }
+/* The email is light whatever the app's theme, as it arrives in a mail client. */
+.tide-etpl-frame { display: block; width: 100%; height: 34rem; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); background: #fff; }
+@media (max-width: 767.98px) {
+    .tide-etpl { grid-template-columns: minmax(0, 1fr); }
+    .tide-etpl-list { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+
+/* The Actions board needs its six columns: the page is as wide as the window there, not capped. */
+
+/* Windows high contrast (forced colours) drops backgrounds: badges, TLP chips and the current page keep an outline,
+   so a P1 still reads as a chip beside a P2 and the sidebar still shows where you are. */
+@media (forced-colors: active) {
+    .tide-badge, .tide-tlp { border: 1px solid CanvasText; }
+    .tide-nav a.active { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* Triage: a heading inside the list ("Matches what we run", "Everything else", the Older fold's note). */
+.tide-triage-section { list-style: none; padding: .45rem .6rem .25rem; font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
+
+/* The article page for someone who can't write: the reader preview, with the article's actions, is the page, in the
+   page's column as the Review card above it is. */
+.tide-editor[data-readonly] .tide-editor-main { display: none; }
+.tide-editor[data-readonly] > .tide-editor-side { display: block; }
+
+/* Trends' tiles open what they count; the outcomes row has a small heading of its own. */
+.tide-trend-tiles > a { color: inherit; text-decoration: none; display: block; background: var(--tide-surface-2); border-radius: var(--tide-radius-lg); padding: .4rem; }
+.tide-trend-tiles > a:hover, .tide-trend-tiles > a:focus-visible { box-shadow: inset 0 0 0 1px var(--tide-accent); }
+.tide-trend-tiles small { display: block; font-size: .72rem; }
+.tide-trend-outcomes-h { font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); margin: .4rem 0 0; }
+
+/* Printing a report or Trends: the page, not the app's frame. */
+@media print {
+    .sidebar, .top-row, .tide-noprint, .btn { display: none !important; }
+    .content { max-width: none; padding: 0; }
+    body { background: #fff; color: #000; }
+    .tide-card { break-inside: avoid; box-shadow: none; }
+}
+
+/* Reports: the title line, sub-headings, the top lists, and a number past a threshold. */
+.tide-report-title { font-size: var(--tide-text-lg); margin: .25rem 0 .75rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.tide-report-sub { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: 0 0 .3rem; }
+.tide-report-tops { margin: 0; padding-left: 1.2rem; font-size: var(--tide-text-sm); }
+.tide-report-bad { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
+.tide-report-table tbody th { text-transform: none; letter-spacing: normal; font-size: var(--tide-text-sm); color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
+
+/* Our stack: a product's facts and its history rows; the triage chip that opens it. */
+.tide-stack-facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; font-size: var(--tide-text-sm); margin: 0 0 .6rem; }
+.tide-stack-facts dt { color: var(--tide-text-muted); font-weight: var(--tide-weight-regular); }
+.tide-stack-facts dd { margin: 0; }
+.tide-stack-row { padding: .3rem 0; border-top: 1px solid var(--tide-border); font-size: var(--tide-text-sm); }
+.tide-stack-row:first-child { border-top: 0; }
+/* ---- Our stack list (option E 2.9): the "Right now" cell, wide enough for a CVE chip on one line ---- */
+.tide-stack-now { min-width: 12rem; }
+.tide-stack-now .tide-chip { margin-bottom: var(--tide-space-1); }
+/* ---- end Our stack list ---- */
+a.tide-werun-chip { text-decoration: none; }
+/* A badge that's a button (Triage's "Same CVE as …", which searches for the CVE). */
+button.tide-chip-button { border: 0; font-family: inherit; cursor: pointer; }
+button.tide-chip-button:hover { text-decoration: underline; }
+a.tide-werun-chip:hover { text-decoration: underline; }
+.tide-stack-tag { padding: .4rem 0; border-top: 1px solid var(--tide-border); }
+.tide-stack-tag:first-of-type { border-top: 0; }
+/* The editor's tag fields (ArticleStackCard, ArticleAdversaryCard): "We run" under why it matters, "Threat actors" under
+   Context. A heading or label with its page link beside it, the tags, then the picker; not cards within the section. */
+.tide-tagfield { margin-top: var(--tide-space-2); }
+.tide-werun { border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-2); margin: var(--tide-space-3) 0; }
+.tide-tagfield-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-1); }
+.tide-tagfield .tide-combo { max-width: 28rem; }
+/* What the retired free-text "Threat actors" box held that no profile goes by: kept in sight until it's cleared. */
+.tide-earlier-note { display: flex; align-items: center; gap: var(--tide-space-2); color: var(--tide-text-muted);
+    border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-md); padding: var(--tide-space-1) var(--tide-space-2); width: fit-content; max-width: 100%; }
+.tide-earlier-note > span { overflow-wrap: anywhere; }
+.tide-earlier-clear { color: var(--tide-text-muted); line-height: 1; }
+.tide-earlier-clear:hover { color: var(--tide-text); }
+
+/* Triage's reading pane (EP-76): beside the list on wide screens, above it on narrow ones. */
+.tide-triage-layout.reading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: var(--tide-space-3); align-items: start; }
+.tide-reading { position: sticky; top: .75rem; max-height: calc(100vh - 1.5rem); overflow: auto; }
+.tide-reading-head { display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between; }
+.tide-reading-title { font-size: 1.05rem; margin: 0 0 .25rem; }
+.tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
+.tide-meeting-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.tide-reading-text mark { padding: 0 .15rem; border-radius: 3px; color: inherit; }
+.tide-reading-text .tide-read-cve { background: var(--tide-threat-soft); font-weight: 600; }
+.tide-reading-text .tide-read-ioc { background: var(--tide-warn-soft); font-family: var(--tide-font-data); font-size: .85em; }
+.tide-reading-text .tide-read-werun { background: var(--tide-ok-soft); font-weight: 600; }
+.tide-reading-found { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .5rem; color: var(--tide-text-muted); }
+@media (max-width: 1000.98px) {
+  .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
+  .tide-reading { position: static; max-height: none; order: -1; }
+  /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
+  .tide-reading-head { flex-wrap: wrap; }
+  /* Brought into view after V (triage.js), it stops below the top bar, which sticks. */
+  .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
+}
+@media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
+
+/* Drafting from several sources (EP-77): the other reports, and the source markers on each suggestion. */
+.tide-draft-source { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .88rem; }
+.tide-cite { display: inline-block; font-family: var(--tide-font-data); font-size: .72rem; font-weight: 700; line-height: 1.3; color: var(--tide-accent);
+  background: var(--tide-chip-bg); border: 1px solid transparent; border-radius: 3px; padding: 0 .3rem; margin-left: .2rem; vertical-align: 1px; }
+button.tide-cite { cursor: pointer; }
+button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
+.tide-cite-none { color: var(--tide-threat); background: var(--tide-threat-soft); font-family: var(--tide-font-ui); font-weight: 600; }
+.tide-passage { border-left: 3px solid var(--tide-accent); background: var(--tide-chip-bg); padding: .35rem .55rem; margin-top: .3rem; font-size: .85rem; border-radius: 0 6px 6px 0; }
+@media (forced-colors: active) { .tide-cite { border-color: CanvasText; } }
+
+/* An adversary profile's techniques (EP-73): darker where more of our articles show it, and each with its count (×2) at
+   its end, so the shade isn't the only way to tell. The name gives way (ellipsis) before the count does. */
+.tide-adv-heat { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 3px; list-style: none; margin: 0; padding: 0; }
+.tide-adv-heat > li { display: flex; align-items: baseline; gap: .35rem; min-width: 0; font-size: .78rem; padding: .25rem .35rem; border-radius: 3px;
+  background: var(--tide-chip-bg); color: var(--tide-text-muted); }
+.tide-adv-heat-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-adv-heat-n { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tide-adv-heat .h1 { background: var(--tide-info-soft); color: var(--tide-text); }
+.tide-adv-heat .h2 { background: var(--tide-accent); color: #fff; }
+/* EP-80: reviews. */
+.tide-review-card { padding-block: var(--tide-space-2); }
+.tide-review-comments { list-style: none; padding: 0; margin: var(--tide-space-2) 0 0; display: grid; gap: var(--tide-space-2); }
+.tide-review-comments li { border-left: 3px solid var(--tide-warn); background: var(--tide-surface-2); padding: .4rem .6rem; border-radius: 0 var(--tide-radius-md) var(--tide-radius-md) 0; font-size: var(--tide-text-sm); }
+.tide-review-comments li.resolved { border-left-color: var(--tide-border); opacity: .7; }
+.tide-review-quote { font-style: italic; color: var(--tide-text-muted); }
+.tide-review-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--tide-space-3); align-items: start; }
+@media (max-width: 899.98px) { .tide-review-layout { grid-template-columns: minmax(0, 1fr); } }
+.tide-adv-heat .tide-adv-gap { box-shadow: inset 0 0 0 2px var(--tide-threat); }
+@media (forced-colors: active) { .tide-adv-heat > li { border: 1px solid CanvasText; } }
+
+/* Many metric groups. The day's numbers form (MetricEntry): a progress bar that stays in view under the page's own
+   sticky header (.top-row), a bordered panel per group with its count, and finished groups folded to a line. */
+.tide-mentry-bar { position: sticky; top: var(--tide-height-top); z-index: 6; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border);
+    margin: 0 calc(-1 * var(--tide-space-2)) var(--tide-space-3); padding: var(--tide-space-2); }
+.tide-mentry-overall { display: flex; align-items: center; gap: var(--tide-space-3); font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-2); }
+.tide-mentry-meter { flex: 1; max-width: 16rem; height: .4rem; appearance: none; border: 0; border-radius: var(--tide-radius-pill); background: var(--tide-chip-bg); overflow: hidden; }
+.tide-mentry-meter::-webkit-progress-bar { background: var(--tide-chip-bg); border-radius: var(--tide-radius-pill); }
+.tide-mentry-meter::-webkit-progress-value { background: var(--tide-accent); border-radius: var(--tide-radius-pill); }
+.tide-mentry-meter::-moz-progress-bar { background: var(--tide-accent); border-radius: var(--tide-radius-pill); }
+.tide-mentry-chips { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); }
+.tide-mentry-chip { display: inline-flex; align-items: center; gap: var(--tide-space-1); font: inherit; font-size: var(--tide-text-xs); line-height: 1.4;
+    padding: .15rem var(--tide-space-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text); }
+button.tide-mentry-chip { cursor: pointer; }
+button.tide-mentry-chip:hover { background: var(--tide-surface-2); }
+button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-mentry-chip-count { font-family: var(--tide-font-data); color: var(--tide-text-muted); }
+.tide-mentry-chip.is-done { background: var(--tide-ok-soft); border-color: transparent; }
+.tide-mentry-chip.is-done .bi { color: var(--tide-ok); }
+.tide-mentry-chip.is-current { border-color: var(--tide-accent); box-shadow: inset 0 0 0 1px var(--tide-accent); background: var(--tide-accent-soft); }
+.tide-mentry-group { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3); }
+.tide-mentry-group.is-current { border-color: var(--tide-accent); }
+.tide-mentry-group.is-folded { background: var(--tide-surface-2); }
+.tide-mentry-group-head { display: flex; align-items: center; gap: var(--tide-space-2); font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold);
+    margin: 0 0 var(--tide-space-1); padding-bottom: var(--tide-space-1); border-bottom: 1px solid var(--tide-border); }
+.tide-mentry-group.is-folded .tide-mentry-group-head { border-bottom: 0; padding-bottom: 0; }
+.tide-mentry-group-count { margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); white-space: nowrap; }
+.tide-mentry-group-count.is-done { color: var(--tide-ok); }
+.tide-mentry-folded { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-4); font-size: var(--tide-text-sm); }
+.tide-mentry-folded-name { color: var(--tide-text-muted); }
+.tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: 12rem; }   /* clear of the header, the bar and the group heading */
+@media (forced-colors: active) { .tide-mentry-chip.is-current, .tide-mentry-group.is-current { outline: 2px solid Highlight; } }
+
+/* The metric history's charts: what to chart (MetricChartPicker), and a grid of a small chart per metric. */
+.tide-mc-pop { width: min(24rem, calc(100vw - 1.5rem)); }
+.tide-mc-list { max-height: min(60vh, 26rem); overflow-y: auto; margin-top: .35rem; }
+.tide-mc-group { font-weight: var(--tide-weight-semibold); }
+.tide-mc-metric { padding-left: 1.6rem; }
+.tide-mc-retired { border-top: 1px solid var(--tide-border); border-radius: 0; margin-top: .25rem; }
+.tide-mc-box { color: var(--tide-accent); }
+.tide-mc-box.bi-square { color: var(--tide-text-muted); }
+.tide-mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--tide-space-3); }
+.tide-mc-cell { min-width: 0; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); padding: .5rem .65rem .4rem; }
+.tide-mc-cell-head { display: flex; align-items: center; gap: .25rem; }
+.tide-mc-cell-head h3 { flex: 1; min-width: 0; margin: 0; font-size: .9rem; font-weight: var(--tide-weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tide-mc-remove { padding: 0 .25rem; line-height: 1; color: var(--tide-text-muted); }
+.tide-mc-remove:hover { color: var(--tide-text); }
+.tide-mc-cell-now { min-height: 1.5rem; margin-bottom: .2rem; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.tide-mc-cell-now strong { font-family: var(--tide-font-data); font-size: 1.05rem; margin-right: .3rem; }
+/* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
+   the headings and the Day column kept in view while the table scrolls inside its own box. */
+.tide-mh-scroll { overflow: auto; max-height: calc(100vh - 10rem); position: relative; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
+.tide-mh-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-mh-scroll .tide-mh-table { display: table; width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.tide-mh-table thead th { position: sticky; background: var(--tide-surface); z-index: 2; }
+.tide-mh-table .tide-mh-groups th { top: 0; height: 2rem; box-sizing: border-box; }
+.tide-mh-table .tide-mh-metrics th { top: 2rem; }
+.tide-mh-table th.tide-mh-group { text-align: left; color: var(--tide-text); border-left: 2px solid var(--tide-border-strong); }
+.tide-mh-table th.tide-mh-group > span { position: sticky; left: 7.5rem; }   /* a wide group's name stays beside the Day column */
+.tide-mh-table .tide-mh-day { position: sticky; left: 0; min-width: 7rem; background: var(--tide-surface); z-index: 1; border-right: 1px solid var(--tide-border-strong); text-align: left; }
+.tide-mh-table thead .tide-mh-day { z-index: 3; top: 0; vertical-align: bottom; }
+.tide-mh-table tbody th.tide-mh-day { font-weight: var(--tide-weight-regular); font-size: inherit; text-transform: none; letter-spacing: normal; color: inherit; }
+.tide-mh-table .tide-mh-gstart { border-left: 2px solid var(--tide-border-strong); }
+.tide-mh-note { font-size: .7rem; color: var(--tide-text-muted); margin-left: var(--tide-space-1); vertical-align: 1px; }
+
+/* A metric's daily note in the edition's numbers (EditionNumbers): a short muted line under the value, two lines at most. */
+.tide-ed-numbers-table .tide-ed-numbers-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
+    white-space: normal; max-width: 16rem; margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); text-align: right; }
+.tide-inbox-view { display: contents; }   /* Triage's inbox, which the Sources tab replaces: no box of its own */
+/* Triage's Sources tab: each polled source, when it was last pulled, and Pull now. */
+/* The Sources tab's head: what it is, and Pull all with what it's doing; under the words where it's narrow. */
+.tide-pull-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--tide-space-2) var(--tide-space-4); padding: var(--tide-space-3) var(--tide-space-3) var(--tide-space-1); }
+.tide-pull-head > p { flex: 1 1 24rem; min-width: 0; }
+.tide-pull-all { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); min-width: 0; }
+.tide-pull-all > .btn { white-space: nowrap; }
+.tide-pull-all-status { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word; min-width: 0; }
+.tide-pull-all-status:empty { display: none; }
+.tide-pull-table td { vertical-align: middle; }
+.tide-pull-table .tide-pull-error { color: var(--tide-warn); max-width: 26rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Too narrow a card for its five columns (beside an open sidebar on a small window): each source is a block of its own,
+   its name with Pull now beside it, then each fact on a line, the error whole. */
+.tide-pull-fit { container: pulls / inline-size; }
+@container pulls (max-width: 44rem) {
+    .tide-pull-table, .tide-pull-table tbody { display: block; }
+    .tide-pull-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .tide-pull-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tide-space-1) var(--tide-space-3); align-items: center;
+        padding: var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+    .tide-pull-table tr:last-child { border-bottom: 0; }
+    .tide-pull-table td { display: block; padding: 0; border: 0; min-width: 0; }
+    .tide-pull-table td:nth-child(1) { grid-column: 1; grid-row: 1; }
+    .tide-pull-table td:nth-child(5) { grid-column: 2; grid-row: 1; }
+    .tide-pull-table td:nth-child(2), .tide-pull-table td:nth-child(3), .tide-pull-table td:nth-child(4) { grid-column: 1 / -1; font-size: var(--tide-text-sm); }
+    .tide-pull-table td:nth-child(2)::before { content: "Last pulled: "; color: var(--tide-text-muted); }
+    .tide-pull-table td:nth-child(3)::before { content: "Next due: "; color: var(--tide-text-muted); }
+    .tide-pull-table .tide-pull-error { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+}
+.tide-pull-table abbr[title] { text-decoration: none; cursor: help; }
+
+/* The formatting toolbar over a Markdown text box (MarkdownToolbar): a strip of small icon buttons joined to the top of
+   the box below it, in the theme's colours. One Tab stop; the arrow keys move between its buttons. */
+.tide-md-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--tide-border);
+    border-bottom: 0; border-radius: var(--tide-radius-md) var(--tide-radius-md) 0 0; background: var(--tide-surface-2); }
+.tide-md-toolbar + textarea { border-top-left-radius: 0; border-top-right-radius: 0; }
+.tide-md-btn { width: 1.75rem; height: 1.75rem; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent;
+    border-radius: var(--tide-radius-sm); background: transparent; color: var(--tide-text-muted); font-size: 1.05rem; line-height: 1; }
+.tide-md-btn:hover { background: var(--tide-surface); border-color: var(--tide-border); color: var(--tide-text); }
+.tide-md-btn:active { background: var(--tide-bg); }
+.tide-md-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; color: var(--tide-text); }
+.tide-md-sep { width: 1px; align-self: stretch; margin: 3px 2px; background: var(--tide-border); }
+@media (forced-colors: active) { .tide-md-btn { border-color: ButtonText; } .tide-md-sep { background: CanvasText; } }
+/* A brief finished as not sent (DistributePanel, BriefPage, the archive): the reason kept as typed, and in the archive a
+   short muted line under the status, two lines at most. */
+.tide-not-sent-why { white-space: pre-line; overflow-wrap: anywhere; }
+.tide-not-sent-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
+    max-width: 22rem; margin-top: var(--tide-space-1); font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+
+/* Present mode's "We run" chips on an article's slide (team edition only), and the product's card they open over the
+   slide: large type for a shared screen. A retired product is muted, as the editor's card shows it. */
+.tide-slide-werun { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; margin: -.2em 0 .9em; }
+.tide-slide-werun-label { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); margin-right: .2em; }
+.tide-slide .tide-slide-werun-chip { margin: 0; font-size: .95em; padding: .22em .75em; background: rgba(111, 211, 154, .16); color: var(--tide-slide-text); border: 1px solid rgba(111, 211, 154, .45); }
+button.tide-slide-werun-chip { font-family: inherit; cursor: pointer; }
+button.tide-slide-werun-chip:hover { border-color: var(--tide-slide-ok); }
+button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide-accent); outline-offset: 2px; }
+.tide-slide-werun-ver { color: var(--tide-slide-muted); font-size: .85em; margin-left: .45em; }
+.tide-slide .tide-slide-werun-retired { background: transparent; border-style: dashed; border-color: var(--tide-slide-line-strong); color: var(--tide-slide-muted); }
+.tide-present-product { font-size: 1.15em; bottom: auto; max-height: calc(100vh - 8em); }
+.tide-present-product .tide-present-action-head h2 { font-size: 1.5em; display: flex; align-items: baseline; gap: .5em; flex-wrap: wrap; }
+.tide-present-product-kicker { color: var(--tide-slide-ok); text-transform: uppercase; letter-spacing: .08em; font-size: .5em; font-weight: var(--tide-weight-semibold); }
+.tide-present-product .tide-facts dd { font-size: 1.05em; }
+.tide-present-product-articles { list-style: none; padding: 0; margin: 0; }
+.tide-present-product-articles li { padding: .35em 0; border-bottom: 1px solid var(--tide-slide-line); line-height: 1.35; }
+.tide-present-iocs-list { list-style: none; padding: 0; margin: 0 0 1em; }
+.tide-present-iocs-list li { padding: .3em 0; border-bottom: 1px solid var(--tide-slide-line); display: flex; flex-wrap: wrap; gap: .25em 1em; align-items: baseline; }
+.tide-present-iocs-list .tide-data { overflow-wrap: anywhere; }
+.tide-slide-source { color: inherit; }
+
+/* An action's Files in the page's side column (ActionFilesPanel): a compact list, each file one row (icon, name cut short
+   with the full name in its title, size, the "Can run" badge and its downloads) over a muted line (where it is, who, when)
+   with the More button, which opens the notes, description, SHA-256 and controls under it. The removed list matches. */
+.tide-files-side .tide-file-pick { padding: .4rem; }
+.tide-files-side .tide-file-pick .small { font-size: .78rem; }
+.tide-files-side .tide-file-pending { font-size: .82rem; gap: .35rem; grid-template-columns: minmax(0, 1fr); }
+.tide-files-side .tide-file-pending li > div { min-width: 0; }
+.tide-files-side .tide-file-pending .small { white-space: nowrap; }
+.tide-files-side .tide-file-list { margin-top: .35rem; }
+.tide-files-side .tide-file { padding: .35rem 0; font-size: .86rem; }
+.tide-file-row { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.tide-files-side .tide-file-icon { font-size: .95rem; width: 1rem; flex: 0 0 auto; text-align: center; }
+.tide-files-side .tide-file-icon.tide-file-risky { color: var(--tide-threat); }
+.tide-files-side .tide-file-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+.tide-file-size { flex: 0 0 auto; font-size: .78rem; color: var(--tide-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tide-file-row .tide-badge { flex: 0 0 auto; }
+.tide-file-dl { margin-left: auto; flex: 0 0 auto; display: inline-flex; gap: .5rem; align-items: center; white-space: nowrap; font-size: .8rem; }
+.tide-file-dl a { display: inline-flex; align-items: center; gap: .2rem; }
+.tide-file-dl .bi-download { font-size: .95rem; }
+.tide-file-restore { margin-left: auto; flex: 0 0 auto; padding: 0 .45rem; font-size: .78rem; }
+.tide-file-sub { display: flex; align-items: center; gap: .3rem; padding-left: 1.35rem; font-size: .78rem; color: var(--tide-text-muted); }
+.tide-file-sub-wrap { flex-wrap: wrap; gap: 0 .5rem; overflow-wrap: anywhere; }
+.tide-file-source { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-file-when { flex: 1 0 auto; white-space: nowrap; }
+.tide-file-more-btn { flex: 0 0 auto; padding: 0; font-size: .78rem; display: inline-flex; align-items: center; gap: .15rem; }
+.tide-file-more { display: grid; gap: .3rem; margin: .3rem 0 .1rem 1.35rem; padding: .4rem .5rem; border-radius: var(--tide-radius-md); background: var(--tide-surface-2); font-size: .82rem; }
+.tide-file-more[hidden] { display: none; }
+.tide-files-side .tide-file-hash { font-size: .76rem; }
+.tide-files-side .tide-file-hash-full { display: inline; margin: 0; }
+.tide-files-side .tide-file-actions { margin-top: 0; }
+.tide-files-side .tide-file-remove { margin-top: 0; padding: .4rem; background: var(--tide-surface); border: 1px solid var(--tide-border); }
+.tide-files-side .tide-files-removed .tide-file-sub code { font-size: .76rem; }
+
+/* An article slide's "Tags and ATT&CK" section (Present, SlideTags): the scorecard tags as chips, ATT&CK as a column per
+   tactic in kill-chain order (its colour a bar on the left), and the CVEs as a summary, the most pressing chip and
+   "+N more"; full-strength text, nothing off the edge. Edit tags sits at the heading's right. */
+.tide-slide-tagshead { display: flex; align-items: center; gap: .8em; }
+.tide-present .tide-slide-tags-edit { margin-left: auto; font-size: 1.15em; letter-spacing: normal; text-transform: none; font-weight: var(--tide-weight-regular); padding: .1em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
+
+.tide-slide-scorecard { list-style: none; padding: 0; margin: 0 0 .6em; display: flex; flex-wrap: wrap; gap: .3rem; }
+.tide-slide .tide-slide-tagchip { margin: 0; border-color: var(--tide-slide-line-strong); }
+.tide-slide-attack { list-style: none; padding: 0; margin: 0 0 .5em; display: grid; grid-template-columns: repeat(auto-fit, minmax(13em, 1fr)); gap: .4em 1em; }
+.tide-slide-tactic { --tac: var(--tide-slide-muted); display: flex; flex-direction: column; gap: .1em; border-left: 3px solid var(--tac); padding-left: .6em; font-size: .92em; line-height: 1.35; min-width: 0; }
+.tide-slide-tactic-name { display: inline-flex; align-items: center; gap: .35em; font-size: .85em; color: var(--tide-slide-muted); }
+.tide-slide-tactic-name .bi { color: var(--tac); }
+.tide-slide-tech { color: var(--tide-slide-text); overflow-wrap: anywhere; }
+.tide-slide-tech-id { font-family: var(--tide-font-data); font-size: .88em; color: var(--tide-slide-muted); margin-right: .2em; }
+.tide-slide-tech-more { color: var(--tide-slide-muted); }
+.tide-slide-cves { margin-top: .2em; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .5em; }
+.tide-slide-cve-sum { font-weight: var(--tide-weight-semibold); color: var(--tide-slide-text); }
+.tide-slide-cve-sum-kev { color: var(--tide-threat); }
+/* The slide is dark in both themes: its "+N more" links take the slide's accent, not the page's link colour. */
+.tide-slide .tide-slide-cve-more { padding: 0; font-size: .9em; color: var(--tide-slide-accent); }
+.tide-slide .tide-slide-cve-more:hover { color: var(--tide-slide-accent-hover); }
+/* An article's indicators on its slide: defanged chips that wrap (a long hash or address breaks anywhere rather than
+   widen the slide), each opening the larger card. */
+.tide-slide-iocs { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .4em; }
+.tide-slide-iocs > li { min-width: 0; max-width: 100%; }
+.tide-slide-ioc { display: inline-block; max-width: 100%; padding: .1em .6em; border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .9em; line-height: 1.4; text-align: start; overflow-wrap: anywhere; }
+button.tide-slide-ioc:hover { border-color: var(--tide-slide-accent); }
+@media (forced-colors: active) { .tide-slide-tactic { border-left-color: CanvasText; } .tide-slide-tagchip, .tide-slide-ioc { border-color: CanvasText; } }
+/* The tag panel over an article's slide (PresentTagEditor): the action panel's frame, in large type, the article
+   editor's tag toggles and technique chips. */
+.tide-present-tagedit .tide-present-action-body { font-size: 1.05em; }
+.tide-present-tagedit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45em; margin-bottom: .4em; }
+.tide-present-tagedit-row .tide-chip { margin: 0; font-size: .95em; padding: .3em .8em; }
+.tide-present-tagedit-row .tide-chip button { background: none; border: 0; color: inherit; padding: 0 0 0 .2em; }
+.tide-present-tagedit .tide-chip-pick { cursor: pointer; border: 1px solid var(--tide-slide-line-strong); background: transparent; color: var(--tide-slide-text); }
+.tide-present-tagedit .tide-chip-pick.selected { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
+.tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
+.tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
+
+/* The scorecard tag picker (ScorecardTagPicker), in the article editor and the tag panel above: the chosen tags as chips
+   that remove them, an "Add a tag" search whose results come under their category's name, and the full list folded
+   under "Browse all tags". In the tag panel it takes the slide's colours, in large type. */
+.tide-tagpick-count { color: var(--tide-text-muted); font-weight: var(--tide-weight-regular); margin-left: var(--tide-space-1); }
+.tide-tagpick-none { color: var(--tide-text-muted); font-size: var(--tide-text-sm); margin: 0 0 var(--tide-space-2); }
+.tide-tagpick-cat { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); margin: var(--tide-space-2) 0 var(--tide-space-1); }
+.tide-tagpick-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-bottom: var(--tide-space-1); }
+.tide-tagpick-row .tide-chip { margin: 0; }
+button.tide-chip-chosen { font-family: inherit; line-height: inherit; cursor: pointer; background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
+button.tide-chip-chosen .bi { opacity: .65; }
+button.tide-chip-chosen:hover .bi, button.tide-chip-chosen:focus-visible .bi { opacity: 1; }
+button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-tagpick-label { display: block; font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
+.tide-tagpick .tide-combo { max-width: 28rem; }
+.tide-tagpick-group { display: block; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); text-transform: uppercase; letter-spacing: .04em; color: var(--tide-text-muted); }
+.tide-tagpick-browse { width: auto; margin-top: var(--tide-space-3); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); }
+.tide-tagpick .tide-disclosure-body.tide-tagpick-all { margin-top: var(--tide-space-1); }
+.tide-present-tagedit .tide-tagpick-count, .tide-present-tagedit .tide-tagpick-none, .tide-present-tagedit .tide-tagpick-cat,
+.tide-present-tagedit .tide-tagpick-group, .tide-present-tagedit .tide-combo-foot, .tide-present-tagedit .tide-disclosure-sum,
+.tide-present-tagedit .tide-combo-list .tide-muted { color: var(--tide-slide-muted); }
+.tide-present-tagedit .tide-tagpick-none, .tide-present-tagedit .tide-tagpick-cat { font-size: .85em; }
+.tide-present-tagedit .tide-tagpick-cat { margin: .6em 0 .3em; }
+.tide-present-tagedit .tide-tagpick-row { gap: .45em; margin-bottom: .4em; }
+.tide-present-tagedit .tide-tagpick-row .tide-chip { font-size: .95em; padding: .3em .8em; }
+.tide-present-tagedit button.tide-chip-chosen { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
+.tide-present-tagedit .tide-tagpick-label, .tide-present-tagedit .tide-tagpick-browse { font-size: .95em; color: var(--tide-slide-text); }
+.tide-present-tagedit .tide-tagpick .tide-combo { max-width: 36em; }
+.tide-present-tagedit .tide-combo .form-control { font-size: 1em; padding: .45em .75em; background: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-combo .form-control::placeholder { color: var(--tide-slide-muted); }
+.tide-present-tagedit .tide-combo-pop { background: var(--tide-slide-surface); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-story-result { color: var(--tide-slide-text); padding: .35em .7em; }
+.tide-present-tagedit .tide-story-result:hover { background: var(--tide-slide-line); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-combo-opt.is-active { background: var(--tide-slide-done); box-shadow: inset 3px 0 0 var(--tide-slide-accent); }
+.tide-present-tagedit .tide-tagpick-group, .tide-present-tagedit .tide-combo-foot, .tide-present-tagedit .tide-disclosure-sum { font-size: .75em; }
+
+/* My notifications: one column of cards, each switch with its line of what it covers. */
+.tide-notify { max-width: var(--tide-width-form); }
+.tide-notify-switch { margin-bottom: .9rem; }
+.tide-notify-switch:last-child { margin-bottom: 0; }
+.tide-notify-off { color: var(--tide-warn); font-weight: var(--tide-weight-semibold); }
+
+/* Teams & SLA: how many people opted out of a kind, and the list behind the count. */
+.tide-optcount { padding: 0; border: 0; background: none; color: var(--tide-accent-text); text-decoration: underline; font-size: inherit; }
+.tide-optlist { margin: .4rem 0 0; font-size: var(--tide-text-sm); }
+.tide-optlist td, .tide-optlist th { padding: .3rem .4rem; }
+.tide-optlist td.tide-data { overflow-wrap: anywhere; }
+
+/* Hand-offs, splits and external teams (EP-86). */
+.tide-handoff { color: var(--tide-text-muted); }
+.tide-pre-line { white-space: pre-line; }
+.tide-split-row { border-bottom: 1px solid var(--tide-border); padding: .35rem 0; }
+.tide-split-add { border-top: 1px solid var(--tide-border); padding-top: .5rem; }
+
+/* Lineage and the remediation timeline (EP-88): layout only. A part's tint comes from its badge tone's colours
+   (--tide-badge-fg, --tide-badge-bg, from Badge.ToneClass), the SLA badge's tones, so both themes follow. Tracking is
+   dashed or striped as well, and every state is written out, so none is told by colour alone. */
+.tide-lin-flow { display: flex; align-items: center; gap: 2.25rem; list-style: none; margin: 0; padding: 0; }
+.tide-lin-step { position: relative; flex: 0 1 15rem; min-width: 0; }
+.tide-lin-step[data-node="parts"] { flex: 1 1 16rem; }
+/* The arrow between steps: a line and a chevron, drawn so nothing is read aloud. */
+.tide-lin-step + .tide-lin-step::before { content: ""; position: absolute; left: -1.85rem; top: 50%; width: 1.4rem; border-top: 2px solid var(--tide-border-strong); }
+.tide-lin-step + .tide-lin-step::after { content: ""; position: absolute; left: -.85rem; top: calc(50% - .3rem); width: .6rem; height: .6rem;
+    border-top: 2px solid var(--tide-border-strong); border-right: 2px solid var(--tide-border-strong); transform: rotate(45deg); }
+.tide-lin-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .45rem; }
+.tide-lin-node { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; padding: .45rem .6rem; border: 1px solid var(--tide-border);
+    border-left: 4px solid var(--tide-badge-fg, var(--tide-border-strong)); border-radius: var(--tide-radius-md); background: var(--tide-surface);
+    color: var(--tide-text); text-decoration: none; font-size: var(--tide-text-sm); height: 100%; }
+.tide-lin-node:hover { background: var(--tide-badge-bg, var(--tide-surface-2)); color: var(--tide-text); }
+.tide-lin-node.is-current { box-shadow: 0 0 0 2px var(--tide-accent); background: var(--tide-badge-bg, var(--tide-accent-soft)); }
+[data-state="Tracking"] > .tide-lin-node { border-left-style: dashed; }
+.tide-lin-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-lin-title { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-lin-meta { color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-lin-here { font-weight: var(--tide-weight-semibold); color: var(--tide-accent-text); }
+.tide-lin-ext { margin-left: .35rem; padding: 0 .4rem; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-pill);
+    font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); }
+.tide-lin-legend { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .5rem; margin: .75rem 0 0; padding: 0; }
+
+.tide-remtl-grid { --remtl-label: 12rem; --remtl-end: 1.5rem; }
+.tide-remtl-scale { position: relative; height: 2.4rem; margin: 0 var(--remtl-end) 0 var(--remtl-label); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-remtl-tick, .tide-remtl-nowlabel { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.tide-remtl-nowlabel { top: 1.15rem; font-weight: var(--tide-weight-semibold); color: var(--tide-accent-text); }
+.tide-remtl-rows { list-style: none; margin: 0; padding: 0; }
+.tide-remtl-row { display: grid; grid-template-columns: var(--remtl-label) 1fr; align-items: center; }
+.tide-remtl-label { grid-row: span 2; padding-right: .75rem; font-size: var(--tide-text-sm); overflow-wrap: anywhere; }
+.tide-remtl-track { grid-column: 2; position: relative; height: 1.6rem; margin-right: var(--remtl-end);
+    background: linear-gradient(var(--tide-border), var(--tide-border)) center / 100% 1px no-repeat; }
+/* Today, on each bar's track only, so the line never runs through the words under it. */
+.tide-remtl-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--at); border-left: 2px dashed var(--tide-accent); pointer-events: none; }
+.tide-remtl-bar, .tide-remtl-over { position: absolute; top: .35rem; height: .9rem; min-width: 2px; }
+.tide-remtl-bar { background: var(--tide-badge-fg); border-radius: var(--tide-radius-xs); }
+[data-state="Tracking"] .tide-remtl-bar { background: repeating-linear-gradient(135deg, var(--tide-badge-fg) 0 4px, var(--tide-badge-bg) 4px 8px); box-shadow: inset 0 0 0 1px var(--tide-badge-fg); }
+.tide-remtl-over { background: repeating-linear-gradient(45deg, var(--tide-threat) 0 3px, var(--tide-threat-soft) 3px 6px); box-shadow: inset 0 0 0 1px var(--tide-threat); }
+.tide-remtl-closed { position: absolute; top: .1rem; height: 1.4rem; border-left: 3px solid var(--tide-text); transform: translateX(-1.5px); }
+.tide-remtl-words { grid-column: 2; margin-bottom: .45rem; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-remtl-range { margin-top: .25rem; }
+@media (forced-colors: active) {
+    .tide-remtl-bar, .tide-remtl-over { forced-color-adjust: none; }
+}
+@media (max-width: 640.98px) {
+    .tide-lin-flow { flex-direction: column; align-items: stretch; gap: 1.75rem; }
+    .tide-lin-step, .tide-lin-step[data-node="parts"] { flex: none; }
+    .tide-lin-step + .tide-lin-step::before { left: 1.25rem; top: -1.5rem; width: 0; height: 1.25rem; border-top: 0; border-left: 2px solid var(--tide-border-strong); }
+    .tide-lin-step + .tide-lin-step::after { left: calc(1.25rem - .25rem); top: -.75rem; transform: rotate(135deg); }
+    .tide-lin-parts { grid-template-columns: 1fr; }
+    .tide-remtl-grid { --remtl-label: .75rem; --remtl-end: .75rem; }
+    .tide-remtl-row { grid-template-columns: var(--remtl-label) 1fr; }
+    .tide-remtl-label { grid-row: auto; grid-column: 1 / -1; }
+}
+

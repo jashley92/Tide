@@ -369,7 +369,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
 
     [Theory]
     [InlineData("/")]
-    [InlineData("/app.css")]
+    [InlineData("{stylesheet}")]
     [InlineData("/health")]
     [InlineData("/no-such-page")]
     [InlineData("/files/00000000-0000-0000-0000-000000000000/inline")]
@@ -379,7 +379,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/access-denied")]
     public async Task EveryResponse_CarriesTheHardeningHeaders(string path)
     {
-        var res = await app.CreateClient(new() { AllowAutoRedirect = false }).GetAsync(path.Replace("{day}", WebSeed.Day(app)));
+        var res = await app.CreateClient(new() { AllowAutoRedirect = false }).GetAsync(path.Replace("{day}", WebSeed.Day(app)).Replace("{stylesheet}", Stylesheet.First));
         Header(res, "X-Content-Type-Options").Should().Be("nosniff", path);
         Header(res, "X-Frame-Options").Should().Be("DENY", path);
         Header(res, "Referrer-Policy").Should().Be("no-referrer", path);
@@ -1936,7 +1936,7 @@ public class RateLimitChallengeTests(RateLimitApp app) : IClassFixture<RateLimit
         statuses.Should().Contain(HttpStatusCode.TooManyRequests);
         // The limit is on the probes only: with the probes' bucket dry, the site itself still answers.
         (await client.GetAsync("/")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync("/app.css")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync(Stylesheet.First)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
 
@@ -2362,7 +2362,7 @@ public class CircuitOriginChallengeTests(TideApp app) : IClassFixture<TideApp>
     {
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         (await client.SendAsync(Request(HttpMethod.Get, "/", "https://evil.example"))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.SendAsync(Request(HttpMethod.Get, "/app.css", "https://evil.example"))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.SendAsync(Request(HttpMethod.Get, Stylesheet.First, "https://evil.example"))).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.SendAsync(Request(HttpMethod.Get, "/health", "https://evil.example"))).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.SendAsync(Request(HttpMethod.Get, "/_blazor-not-the-hub", "https://evil.example"))).StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
     }

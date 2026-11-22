@@ -1,0 +1,237 @@
+/* ---- Opening metrics: entry form, tiles, sparklines, history ---- */
+.tide-spark { display: inline-block; vertical-align: middle; overflow: visible; }
+.tide-spark polyline { fill: none; stroke: var(--tide-accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.tide-trend-better { color: var(--tide-ok); }
+.tide-trend-worse { color: var(--tide-threat); }
+.tide-trend-unchanged, .tide-trend-neutral { color: var(--tide-text-muted); }
+.tide-level-warn { color: var(--tide-warn); }
+.tide-level-critical { color: var(--tide-threat); }
+/* A configuration bundle change that needs a careful look (it gives Admin, or a role to everyone): an edge and the
+   reason in the warning colour, which carries in both themes. */
+.tide-bundle-warn > td:first-child { box-shadow: inset 3px 0 0 var(--tide-warn); }
+.tide-bundle-warn-text { color: var(--tide-warn); font-weight: 600; }
+.tide-metric-row { display: grid; grid-template-columns: minmax(0, 1.3fr) 7.5rem minmax(0, 1fr) minmax(0, 1.2fr); gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--tide-border); }
+.tide-metric-row:last-child { border-bottom: 0; }
+.tide-metric-row .tide-metric-value { font-variant-numeric: tabular-nums; text-align: right; }
+.tide-metric-error { margin-top: var(--tide-space-1); font-size: var(--tide-text-xs); color: var(--tide-threat); }
+/* A colleague changed a metric while it was being typed in here: under its row, across it. */
+.tide-metric-elsewhere { grid-column: 1 / -1; display: flex; gap: var(--tide-space-1); align-items: baseline; font-size: var(--tide-text-xs); color: var(--tide-warn); }
+.tide-metric-prev { font-size: .82rem; color: var(--tide-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The value a box is compared with: the date small and muted, the number in the data face at full contrast. */
+.tide-metric-ref { display: inline-flex; align-items: baseline; gap: var(--tide-space-2); background: var(--tide-chip-bg); border-radius: var(--tide-radius-sm); padding: .1rem var(--tide-space-2); }
+.tide-metric-ref-date { font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--tide-text-muted); }
+.tide-metric-ref-value { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text); font-variant-numeric: tabular-nums; }
+@media (max-width: 700.98px) { .tide-metric-row { grid-template-columns: minmax(0, 1fr) 6rem; } .tide-metric-row .tide-metric-note, .tide-metric-row .tide-metric-prev { grid-column: 1 / -1; } }
+.tide-missing { background: var(--tide-warn-soft); color: var(--tide-warn); border-radius: var(--tide-radius-lg); padding: .45rem .7rem; font-size: .86rem; }
+.tide-past-day { display: flex; gap: .6rem; align-items: flex-start; background: var(--tide-info-soft); color: var(--tide-info); border-radius: var(--tide-radius-lg); padding: .6rem .8rem; font-size: .9rem; }
+.tide-edition-iocs { list-style: none; padding-left: 0; margin-bottom: .25rem; font-size: .86rem; }
+.tide-past-day > .bi { font-size: 1.1rem; line-height: 1.3; }
+/* LineChart: metrics and trends, one look. Series colours come from --tide-chart-1..12, dashed after twelve; the
+   tooltip is js/chart.js. A long key scrolls rather than pushing the chart down the page. */
+.tide-chart-box { margin: 0; }
+.tide-chart-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; font-size: .82rem; color: var(--tide-text-muted); margin-bottom: .5rem; max-height: 7.5rem; overflow-y: auto; }
+.tide-chart-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.tide-chart-legend-item { display: inline-flex; align-items: center; gap: .35rem; padding: 0 .25rem; border: 0; border-radius: var(--tide-radius-xs); background: none; color: inherit; font: inherit; text-align: left; }
+.tide-chart-legend-item .bi { opacity: .6; }
+.tide-chart-legend-item:hover { color: var(--tide-text); }
+.tide-chart-legend-item:hover .bi { opacity: 1; }
+.tide-chart-legend-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-chart-swatch { display: inline-block; width: 1rem; height: .2rem; border-radius: var(--tide-radius-xs); background: currentColor; flex: none; }
+.tide-chart-swatch.tide-chart-d1 { background: repeating-linear-gradient(90deg, currentColor 0 .4rem, transparent 0 .6rem); }
+.tide-chart-swatch.tide-chart-d2 { background: repeating-linear-gradient(90deg, currentColor 0 .15rem, transparent 0 .3rem); }
+.tide-chart-swatch.tide-chart-d3 { background: repeating-linear-gradient(90deg, currentColor 0 .45rem, transparent 0 .6rem, currentColor 0 .75rem, transparent 0 .9rem); }
+.tide-chart-frame { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .3rem .5rem; }
+.tide-chart-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: .75rem; color: var(--tide-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.tide-chart-plot { position: relative; height: 220px; border-radius: var(--tide-radius-sm); cursor: crosshair; touch-action: pan-y; }
+.tide-chart-plot.tide-chart-tall { height: 300px; }   /* room for a tooltip of ten lines and a count of the rest */
+.tide-chart-plot.tide-chart-compact { height: 110px; }
+/* A metric's threshold bands, under its line: the warning and critical colours, faint. */
+.tide-chart-band-warn { fill: var(--tide-warn); opacity: .16; }
+.tide-chart-band-critical { fill: var(--tide-threat); opacity: .2; }
+.tide-chart-plot:focus { outline: none; }
+.tide-chart-plot:focus-visible { box-shadow: 0 0 0 2px var(--tide-focus-ring); }
+.tide-chart-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.tide-chart-plot polyline { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.tide-chart-grid { stroke: var(--tide-border); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.tide-chart-base { stroke: var(--tide-border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tide-chart-stop { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
+.tide-chart-stop.active { border-left: 1px dashed var(--tide-border-strong); }
+.tide-chart-dot { position: absolute; left: 0; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: var(--tide-radius-round); background: currentColor; border: 2px solid var(--tide-surface); opacity: 0; }
+.tide-chart-dotted .tide-chart-dot { opacity: 1; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-width: 1px; }
+.tide-chart-stop.active .tide-chart-dot { opacity: 1; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-width: 2px; }
+.tide-chart-tip { position: absolute; z-index: 2; display: none; flex-direction: column; gap: .1rem; min-width: 7rem; max-width: min(18rem, 100%); padding: .4rem .6rem; border-radius: var(--tide-radius-md);
+    background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border-strong); box-shadow: 0 4px 14px var(--tide-shadow); font-size: .82rem; pointer-events: none; white-space: nowrap; }
+.tide-chart-tip.show { display: flex; }
+.tide-chart-tip span { display: flex; align-items: center; gap: .4rem; font-variant-numeric: tabular-nums; white-space: normal; }
+.tide-chart-tip-more { color: var(--tide-text-muted); }
+.tide-chart-dates { display: flex; justify-content: space-between; font-size: .75rem; color: var(--tide-text-muted); margin-top: -.2rem; }
+.tide-chart-s1 { color: var(--tide-chart-1); }
+.tide-chart-s2 { color: var(--tide-chart-2); }
+.tide-chart-s3 { color: var(--tide-chart-3); }
+.tide-chart-s4 { color: var(--tide-chart-4); }
+.tide-chart-s5 { color: var(--tide-chart-5); }
+.tide-chart-s6 { color: var(--tide-chart-6); }
+.tide-chart-s7 { color: var(--tide-chart-7); }
+.tide-chart-s8 { color: var(--tide-chart-8); }
+.tide-chart-s9 { color: var(--tide-chart-9); }
+.tide-chart-s10 { color: var(--tide-chart-10); }
+.tide-chart-s11 { color: var(--tide-chart-11); }
+.tide-chart-s12 { color: var(--tide-chart-12); }
+.tide-chart-plot polyline.tide-chart-d1 { stroke-dasharray: 8 4; }
+.tide-chart-plot polyline.tide-chart-d2 { stroke-dasharray: 2 3; }
+.tide-chart-plot polyline.tide-chart-d3 { stroke-dasharray: 9 3 2 3; }
+.tide-table-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Present mode's metric slides, one per group on the always-dark slide: the numbers as large tiles across the top, the
+   group's chart (MetricGroupChart) under them. The chart series take the slide's colours in both themes. */
+.tide-present {
+    --tide-chart-1: var(--tide-slide-chart-1); --tide-chart-2: var(--tide-slide-chart-2); --tide-chart-3: var(--tide-slide-chart-3);
+    --tide-chart-4: var(--tide-slide-chart-4); --tide-chart-5: var(--tide-slide-chart-5); --tide-chart-6: var(--tide-slide-chart-6);
+    --tide-chart-7: var(--tide-slide-chart-7); --tide-chart-8: var(--tide-slide-chart-8); --tide-chart-9: var(--tide-slide-chart-9);
+    --tide-chart-10: var(--tide-slide-chart-10); --tide-chart-11: var(--tide-slide-chart-11); --tide-chart-12: var(--tide-slide-chart-12);
+}
+.tide-mtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10em, 1fr)); gap: .9em; margin-bottom: 1.4em; }
+.tide-mtile { background: var(--tide-slide-surface); border-radius: var(--tide-radius-xl); padding: .8em 1em; display: grid; gap: .3em; align-content: start; }
+.tide-mtile .tide-tile-name { display: flex; align-items: center; gap: .45em; font-size: .95em; }
+.tide-mtile-value { font-size: 3em; font-weight: var(--tide-weight-bold); line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--tide-slide-strong); }
+.tide-mtile-value .bi { font-size: .55em; vertical-align: .35em; }
+.tide-mtile-value.tide-level-warn { color: var(--tide-slide-warn); }
+.tide-mtile-value.tide-level-critical { color: var(--tide-slide-threat); }
+.tide-mtile .tide-tile-change { font-size: 1em; }
+/* The day's note on a metric: two lines at most, the whole of it in the title. */
+.tide-mtile-note { color: var(--tide-slide-muted); font-size: .9em; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.tide-mzero { list-style: none; padding: 0; margin: -.4em 0 1em; display: flex; flex-wrap: wrap; gap: .4em 1.6em; color: var(--tide-slide-muted); font-size: 1.05em; }
+.tide-slide-mchart { background: var(--tide-slide-surface); border-radius: var(--tide-radius-xl); padding: 1em 1.2em; }
+.tide-mchart { margin: 0; }
+.tide-mchart-empty { color: var(--tide-slide-muted); font-size: 1.2em; padding: 2.5em 0; text-align: center; }
+.tide-mchart-key { display: flex; flex-wrap: wrap; gap: .4em 1.6em; font-size: 1em; color: var(--tide-slide-text); margin-bottom: .6em; }
+.tide-mchart-key > span { display: inline-flex; align-items: center; gap: .45em; }
+.tide-mchart-key strong { font-variant-numeric: tabular-nums; }
+.tide-mchart-swatch { display: inline-block; width: .9em; height: .9em; border-radius: var(--tide-radius-xs); background: currentColor; flex: none; }
+.tide-mchart svg { display: block; width: 100%; height: auto; max-height: 36vh; overflow: visible; }
+.tide-slide .tide-mchart svg { max-height: calc(42cqh * var(--tide-fit, 1)); }
+.tide-mchart polyline { fill: none; stroke: currentColor; stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; }
+.tide-mchart-dot { fill: currentColor; }
+.tide-mchart-ring { fill: none; stroke: var(--tide-slide-warn); stroke-width: 4; }
+.tide-mchart-ring.tide-level-critical { stroke: var(--tide-slide-threat); }
+.tide-mchart-breach-key { color: var(--tide-slide-muted); }
+.tide-mchart-breach-key .tide-mchart-ring { display: inline-block; width: .9em; height: .9em; border: 3px solid var(--tide-slide-warn); border-radius: var(--tide-radius-round); }
+.tide-mchart-grid { stroke: var(--tide-slide-line-strong); stroke-width: 1.5; stroke-dasharray: 6 8; }
+.tide-mchart-axis { stroke: var(--tide-slide-muted); stroke-width: 2; }
+.tide-mchart-label { fill: var(--tide-slide-muted); font-size: 30px; font-variant-numeric: tabular-nums; }
+.tide-mchart-total { fill: var(--tide-slide-strong); font-size: 76px; font-weight: var(--tide-weight-bold); font-variant-numeric: tabular-nums; }
+.tide-mchart-share { display: grid; grid-template-columns: minmax(12em, 20em) minmax(0, 1fr); gap: 2em; align-items: center; }
+.tide-mchart-share path { fill: currentColor; stroke: var(--tide-slide-surface); stroke-width: 3; }
+.tide-mchart-legend { list-style: none; padding: 0; margin: 0; display: grid; gap: .5em; font-size: 1.1em; }
+.tide-mchart-legend li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 3.5em; gap: .6em; align-items: center; }
+.tide-mchart-legend strong, .tide-mchart-pct { font-variant-numeric: tabular-nums; text-align: right; }
+.tide-mchart-pct { color: var(--tide-slide-muted); }
+.tide-mchart-bars { list-style: none; padding: 0; display: grid; gap: .7em; font-size: 1.1em; }
+.tide-mchart-bars li { display: grid; grid-template-columns: minmax(6em, 14em) minmax(0, 1fr) 5em; gap: .8em; align-items: center; }
+.tide-mchart-bar-track { height: 1.4em; border-radius: var(--tide-radius-sm); background: var(--tide-slide-track); overflow: hidden; }
+.tide-mchart-bar { display: block; height: 100%; background: currentColor; border-radius: var(--tide-radius-sm); }
+.tide-mchart-bars strong { font-variant-numeric: tabular-nums; text-align: right; }
+/* One trend per metric: a grid of small trends, each on its own scale; two, three or four across by the metric count. */
+.tide-mchart-panels { display: grid; gap: 1em 1.6em; }
+.tide-mchart-cols-1 { grid-template-columns: minmax(0, 1fr); }
+.tide-mchart-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tide-mchart-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tide-mchart-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tide-mchart-panel { min-width: 0; }
+.tide-mchart-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6em; font-size: 1.05em; color: var(--tide-slide-text); }
+.tide-mchart-panel-head > span { display: inline-flex; align-items: center; gap: .45em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-mchart-panel-head strong { font-size: 1.3em; color: var(--tide-slide-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tide-mchart-panel-head strong .bi { font-size: .7em; vertical-align: .2em; }
+.tide-mchart .tide-level-warn { color: var(--tide-slide-warn); }
+.tide-mchart .tide-level-critical { color: var(--tide-slide-threat); }
+.tide-mchart-multiples svg { max-height: none; }
+.tide-mchart-multiples polyline { stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.tide-mchart-area { fill: currentColor; fill-opacity: .14; stroke: none; }
+.tide-mchart-latest { fill: currentColor; stroke: var(--tide-slide-surface); stroke-width: 3; }
+.tide-mchart-multiples .tide-mchart-label { font-size: 24px; }
+.tide-mchart-cols-3 .tide-mchart-label { font-size: 30px; }
+.tide-mchart-cols-4 .tide-mchart-label { font-size: 36px; }
+.tide-mchart-cols-3 .tide-mchart-panel-head, .tide-mchart-cols-4 .tide-mchart-panel-head { font-size: .95em; }
+/* Mix over time: a stacked column per day, 2px of the slide between its parts; today's values and shares in the key. */
+.tide-mchart-stacked { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14em, 22em); gap: 2em; align-items: center; }
+.tide-mchart-stacked rect { fill: currentColor; stroke: var(--tide-slide-surface); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* Against threshold: a bullet bar per metric over grey bands, darker toward critical, so colour is left to the value's mark. */
+.tide-mchart-bullets { list-style: none; padding: 0; display: grid; gap: .5em; font-size: 1.1em; }
+.tide-mchart-bullets li { display: grid; grid-template-columns: minmax(6em, 14em) minmax(0, 1fr) 6em; gap: .8em; align-items: start; }
+.tide-mchart-bullets .tide-mchart-bar-name, .tide-mchart-bullets li > strong { line-height: 1.6em; }
+.tide-mchart-bullets .tide-mchart-bar-name { display: inline-flex; align-items: center; gap: .45em; }
+.tide-mchart-bullets li > strong { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.tide-mchart-bullets li > strong .bi { font-size: .8em; }
+.tide-mchart-bullet-track { position: relative; display: block; height: 1.6em; background: var(--tide-slide-line); border-radius: var(--tide-radius-xs); }
+.tide-mchart-band { position: absolute; top: 0; bottom: 0; }
+.tide-mchart-band-normal { background: rgba(255, 255, 255, .06); }
+.tide-mchart-band-warn { background: rgba(255, 255, 255, .2); }
+.tide-mchart-band-critical { background: rgba(255, 255, 255, .38); }
+.tide-mchart-bullet-bar { position: absolute; left: 0; top: .5em; height: .6em; background: currentColor; border-radius: 0 var(--tide-radius-xs) var(--tide-radius-xs) 0; }
+.tide-mchart-edge { position: absolute; top: -.2em; bottom: -.2em; width: 0; border-left: 3px dashed var(--tide-slide-strong); margin-left: -1.5px; }
+.tide-mchart-edge-critical { border-left-style: solid; }
+.tide-mchart-bullet-notes { position: relative; display: block; height: 1.4em; font-size: .8em; color: var(--tide-slide-muted); }
+.tide-mchart-edge-label { position: absolute; top: .15em; padding-left: .35em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tide-mchart-edge-label-before { transform: translateX(-100%); padding: 0 .35em 0 0; }
+.tide-mchart-edge-label-critical { color: var(--tide-slide-text); font-weight: var(--tide-weight-bold); }
+.tide-mchart-bullet-none { font-style: italic; }
+@media (max-width: 1000.98px) { .tide-mchart-share, .tide-mchart-stacked { grid-template-columns: 1fr; } .tide-mchart-cols-3, .tide-mchart-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tide-ed-open { margin: .6rem 0 1rem; }
+.tide-ed-open-h { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); margin: 0 0 .3rem; }
+.tide-ed-open li { padding: .2rem 0; font-size: .875rem; }
+.tide-ed-open .tide-slide-late { margin-left: .3rem; }
+/* The team's opening note: in the team edition's preview, and as its own slide in large type for a projector. Nested
+   bullets keep their markers and indent. */
+.tide-ed-teamnote { padding-bottom: var(--tide-space-3); border-bottom: 1px solid var(--tide-border); margin-bottom: var(--tide-space-2); }
+.tide-slide-note .tide-md { font-size: 1.6em; line-height: 1.45; max-width: 46em; }
+.tide-slide-note .tide-md ul, .tide-slide-note .tide-md ol { padding-left: 1.3em; margin: 0 0 .5em; }
+.tide-slide-note .tide-md li { margin-bottom: .35em; }
+.tide-slide-note .tide-md li > ul, .tide-slide-note .tide-md li > ol { font-size: .85em; margin: .3em 0 .2em; }
+.tide-slide-note .tide-md ul ul { list-style-type: circle; }
+.tide-slide-note .tide-md p { margin: 0 0 .5em; }
+/* The presenter's own on a slide (a carried opening note, a number not entered): never in a follower's page. A framed
+   strip under what the room reads, in the slide's type, its controls wrapping as the room allows. */
+.tide-slide-presenter { display: grid; gap: .5em; }
+.tide-slide-presenter-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; }
+.tide-slide-presenter-flag { color: var(--tide-slide-warn); font-weight: var(--tide-weight-semibold); }
+.tide-slide-presenter-say { color: var(--tide-slide-muted); }
+.tide-slide-presenter-name { min-width: 0; overflow-wrap: anywhere; }
+.tide-slide-presenter-number { width: 8em; }
+.tide-slide-presenter-error { color: var(--tide-slide-warn); }
+/* A number not entered yet: the room sees its dash, and says so under it (the presenter enters it from the strip). */
+.tide-mtile-missing { color: var(--tide-slide-muted); font-size: .85em; }
+/* A box's hint on the slide, dark in either theme: the slide's muted text, not the page's (AA on the slide). */
+:is(.tide-slide, .tide-present-rail) :is(input, textarea)::placeholder { color: var(--tide-slide-muted); opacity: 1; }
+.tide-slide-open { width: 100%; border-collapse: collapse; font-size: .9em; }
+.tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
+.tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
+/* The action's cell opens it: its badge, title and number flow and wrap as text (as a Visitor's do), and a button over
+   the whole cell opens it (a button can't wrap inline). Its title underlines as a link's does on hover and focus. */
+.tide-slide-open td:has(> .tide-slide-row-open) { position: relative; }
+.tide-slide-row-open { position: absolute; inset: 0; background: none; border: 0; padding: 0; cursor: pointer; border-radius: var(--tide-radius-md); }
+.tide-slide-row-open:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-slide-open td:has(> .tide-slide-row-open:is(:hover, :focus-visible)) .tide-slide-row-title { text-decoration: underline; text-underline-offset: .2em; }
+.tide-slide-open .tide-slide-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); white-space: nowrap; }
+/* How long an open action has waited since its last update, under how late it is; and the one thing to do about it. */
+.tide-slide-open .tide-slide-waited { display: block; color: var(--tide-slide-muted); font-size: .85em; }
+.tide-slide-open .tide-slide-next { font-weight: var(--tide-weight-semibold); }
+/* Where the slide has the room, the thing to do reads on one line, and the action and who have it wrap instead. */
+@container (min-width: 1000px) { .tide-slide-open .tide-slide-next { white-space: nowrap; } }
+/* The wrap-up's three lists (not raised, who is doing what, not discussed): side by side where the slide has room for
+   them, one under another where it hasn't. Each item's words wrap within its column. */
+.tide-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15em), 1fr)); gap: .6em 2em; width: min(72em, 92cqw); margin: .6em auto 0; text-align: start; }
+.tide-wrap-list { min-width: 0; }
+.tide-wrap-list > .tide-slide-section { margin-top: 0; }
+.tide-wrap-item { margin-bottom: .5em; overflow-wrap: anywhere; }
+.tide-wrap-item > ul { margin: .2em 0 0; padding-left: 1.2em; font-size: .9em; }
+.tide-wrap-list[data-wrap="owners"] .tide-wrap-item > ul { list-style: none; padding-left: 0; }
+.tide-wrap-list[data-wrap="owners"] li { padding: .15em 0; }
+.tide-wrap-list[data-wrap="owners"] .tide-action-num { color: var(--tide-slide-muted); }
+.tide-tile-name { color: var(--tide-slide-muted); font-size: .85em; }
+.tide-tile-change { font-size: .85em; font-variant-numeric: tabular-nums; }
+.tide-slide .tide-trend-better { color: var(--tide-slide-ok); }
+.tide-slide .tide-trend-worse { color: var(--tide-slide-threat); }
+.tide-slide .tide-trend-unchanged, .tide-slide .tide-trend-neutral { color: var(--tide-slide-muted); }
+.tide-slide .tide-level-warn { color: var(--tide-slide-warn); }
+.tide-slide .tide-level-critical { color: var(--tide-slide-threat); }
+

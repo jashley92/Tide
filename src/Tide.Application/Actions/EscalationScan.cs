@@ -34,11 +34,48 @@ public sealed partial class ReminderService
         {
             if (!Said.Contains(text)) Said.Add(text);
         }
+
+        /// <summary>The marks of its emails that went in an earlier run that stopped before it climbed.</summary>
+        public HashSet<string> Emailed { get; } = [];
+
+        /// <summary>The marks saying this email (a reminder, or the contact's copy, to this address) went for its steps
+        /// that send it.</summary>
+        public List<string> EmailKeys(EscalationDoes does, string to) =>
+            [.. Run.Where(s => s.Does.HasFlag(does)).Select(s => StepKey(Action.Id, Due, s) + "|" + (does == EscalationDoes.Remind ? "r" : "c") + ":" + Hash(to))];
+
+        /// <summary>Whether that email already went for every step of this run that sends it.</summary>
+        public bool HadEmail(EscalationDoes does, string to) => EmailKeys(does, to).All(Emailed.Contains);
+    }
+
+    // One email's mark, per action, due date, step and address: saved as soon as the email has gone, as the reminders mark
+    // theirs, so a run stopped before the climbs are saved (the process killed, say) doesn't send it again.
+    private const string EscalationEmailMark = "escalation-email";
+
+    // Who an email of the ladder is about: those that already had it (an earlier run sent it, then stopped before they
+    // climbed) are noted as reached, as they were, and left out of it; the rest are sent it.
+    private static List<Climb> NotYetEmailed(List<Climb> climbs, EscalationDoes does, string to, string said)
+    {
+        foreach (var c in climbs.Where(c => c.HadEmail(does, to)))
+        {
+            c.Reached = true;
+            c.Say(said);
+        }
+        return [.. climbs.Where(c => !c.HadEmail(does, to))];
+    }
+
+    // An email that went (or may have) is marked at once, before the next is sent. Sending first and marking after, as the
+    // reminders do, means a process killed between the two could send that one email again; marking first would mean it
+    // could be lost instead, never sent. A repeat is the lesser harm, and the window is one save wide.
+    private static async Task MarkEmailAsync(IAppDbContext db, EmailSendResult result, IEnumerable<Climb> climbs, EscalationDoes does, string to)
+    {
+        if (result.MayHaveGone) await MarkAsync(db, EscalationEmailMark, [.. climbs.SelectMany(c => c.EmailKeys(does, to))]);
     }
 
     // Each open action in the ladder's scope that has reached a step runs it (EscalationLadder.Plan), once per due date:
-    // a mark per action, due date and step, so moving the date starts it over. The emails go first, batched; then every
-    // action's own changes (its priority, its flag), its history line and its marks are saved together. An action whose
+    // a mark per action, due date and step, so moving the date starts it over. The emails go first, batched, each marked as
+    // it goes (EscalationEmailMark), so a run killed before the end doesn't send them again: the next run finds the steps
+    // still to do and sends only the emails that didn't go. Then every action's own changes (its priority, its flag), its
+    // history line and its step marks are saved together. An action whose
     // every email failed waits for the next poll, as a reminder does. Steps that don't read (a hand-edited server value)
     // climb nothing, and the run says why.
     private async Task<Scan> EscalateAsync(CancellationToken ct)
@@ -65,7 +102,7 @@ public sealed partial class ReminderService
         try
         {
             sent = await EscalationRemindAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.Remind))], replies, ceiling, today, ct);
-            sent += await CopyContactsAsync([.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, ceiling, today, ct);
+            sent += await CopyContactsAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, ceiling, today, ct);
             finished = true;
         }
         finally
@@ -116,7 +153,15 @@ public sealed partial class ReminderService
         var teamIds = actions.Select(a => a.TeamId).Distinct().ToList();
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members).Where(t => teamIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         foreach (var a in actions) a.Team = teams[a.TeamId];
-        return [.. actions.Select(a => new Climb(a, todo[a.Id].Due, todo[a.Id].Run))];
+        var climbs = actions.Select(a => new Climb(a, todo[a.Id].Due, todo[a.Id].Run)).ToList();
+
+        // The emails an earlier run sent before it stopped, by the action and due date their keys start with (rarely any).
+        var byPrefix = climbs.ToDictionary(c => MarkKey(c.Action.Id, c.Due));
+        foreach (var chunk in byPrefix.Keys.Chunk(KeysPerQuery))
+            foreach (var key in await db.NotificationMarks.AsNoTracking()
+                         .Where(m => m.Kind == EscalationEmailMark && chunk.Contains(m.Key.Substring(0, MarkKeyLength))).Select(m => m.Key).ToListAsync(ct))
+                if (byPrefix.TryGetValue(key[..MarkKeyLength], out var c)) c.Emailed.Add(key);
+        return climbs;
     }
 
     // "{action}:{due}:{step}": once per action, due date and step.
@@ -179,13 +224,16 @@ public sealed partial class ReminderService
         var why = !team.RemindersOn ? $"not reminded: {team.Name}'s reminders are off"
             : string.IsNullOrWhiteSpace(team.ContactEmail) ? $"not reminded: {team.Name} has no contact email" : null;
         foreach (var c in climbs.Where(c => why is not null || c.Action.NoReminders)) c.Say(why ?? "not reminded: its reminders are off");
-        var list = climbs.Where(c => why is null && !c.Action.NoReminders).ToList();
+        if (why is not null) return 0;
+        var said = $"reminded {team.Name} at {team.ContactEmail}";
+        var list = NotYetEmailed([.. climbs.Where(c => !c.Action.NoReminders)], EscalationDoes.Remind, team.ContactEmail!, said);
         if (list.Count == 0) return 0;
         var byAction = list.ToDictionary(c => c.Action.Id);
+        // The email's ladder marks are saved with its contact marks, in the one save after it went.
         var (result, went, skipped) = await SendExternalReminderAsync(db, team, list.Select(c => c.Action), Hash(team.ContactEmail!), remindedToday,
-            replies, ceiling, today, ct);
+            replies, ceiling, today, ct, also: go => [.. go.SelectMany(a => byAction[a.Id].EmailKeys(EscalationDoes.Remind, team.ContactEmail!))]);
         foreach (var a in skipped) byAction[a.Id].Say(SkippedReminder(team.ContactEmail!));
-        return result is null ? 0 : Went(result, went.Select(a => byAction[a.Id]), $"reminded {team.Name} at {team.ContactEmail}");
+        return result is null ? 0 : Went(result, went.Select(a => byAction[a.Id]), said);
     }
 
     private async Task<int> RemindInternalAsync(IAppDbContext db, List<Climb> climbs, DateOnly today, CancellationToken ct)
@@ -210,10 +258,13 @@ public sealed partial class ReminderService
             }
         }
         var sent = 0;
-        foreach (var ((to, isLate), list) in byRecipient)
+        foreach (var ((to, isLate), all) in byRecipient)
         {
+            var list = NotYetEmailed(all, EscalationDoes.Remind, to, "reminded " + to);
+            if (list.Count == 0) continue;
             var result = await SendAsync(DueEmail(to, InOrder(list), isLate, today), ct);
             sent += Went(result, list, "reminded " + to);
+            await MarkEmailAsync(db, result, list, EscalationDoes.Remind, to);
         }
         return sent;
     }
@@ -224,24 +275,27 @@ public sealed partial class ReminderService
     // may read it, so an external team's names no TIDE page; an internal team's links each request to its page. An
     // external team's contact, or any contact outside the organization, gets it held to the team edition's ceiling: a
     // request marked above it is counted, not named (RequestsEmail), and its step is done all the same.
-    private async Task<int> CopyContactsAsync(List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today,
-        CancellationToken ct)
+    private async Task<int> CopyContactsAsync(IAppDbContext db, List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling,
+        DateOnly today, CancellationToken ct)
     {
         var sent = 0;
         var inside = Boundary;
         foreach (var batch in climbs.GroupBy(c => c.Action.TeamId))
         {
-            var list = batch.ToList();
-            var team = list[0].Team;
+            var team = batch.First().Team;
             if (string.IsNullOrWhiteSpace(team.EscalationEmail))
             {
-                foreach (var c in list) c.Say($"no escalation contact to copy for {team.Name}");
+                foreach (var c in batch) c.Say($"no escalation contact to copy for {team.Name}");
                 continue;
             }
+            var said = $"copied {team.EscalationName ?? team.EscalationEmail}, the escalation contact for {team.Name}";
+            var list = NotYetEmailed([.. batch], EscalationDoes.CopyContact, team.EscalationEmail, said);
+            if (list.Count == 0) continue;
             var held = team.IsExternal || !inside.IsInside(team.EscalationEmail);
             var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.Escalation, team, team.EscalationEmail, team.EscalationName ?? "there",
                 InOrder(list), today, replies, held ? ceiling : null, held ? null : app.Value.BaseUrl), ct);
-            sent += Went(result, list, $"copied {team.EscalationName ?? team.EscalationEmail}, the escalation contact for {team.Name}");
+            sent += Went(result, list, said);
+            await MarkEmailAsync(db, result, list, EscalationDoes.CopyContact, team.EscalationEmail);
         }
         return sent;
     }

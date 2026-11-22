@@ -929,6 +929,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("SourceUrlHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -981,6 +985,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("SourceUrlHash");
 
                     b.HasIndex("Status");
 
@@ -1106,9 +1112,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("UrlHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("UrlHash");
 
                     b.ToTable("ArticleLinks");
                 });

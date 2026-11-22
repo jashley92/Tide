@@ -8,6 +8,7 @@ using Tide.Application.Articles;
 using Tide.Application.Operations;
 using Tide.Application.Org;
 using Tide.Application.Security;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -988,20 +989,63 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return held.Max();
     }
 
+    // How recent an article or a link must be for past coverage to match its address.
+    private static readonly TimeSpan AddressWindow = TimeSpan.FromDays(120);
+
+    // The recent articles and links at the items' addresses, found by the hash of each canonical address that's stored with
+    // them (and indexed), so only the ones that match are read: an article's own address first, then links.
+    private static async Task<Func<FeedItem, IEnumerable<Guid>>> AtAddressAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, CancellationToken ct)
+    {
+        var since = DateTimeOffset.UtcNow - AddressWindow;
+        var hashes = items.Select(i => i.UrlHash).Distinct().ToList();
+        var found = (await db.Articles.AsNoTracking().Where(a => hashes.Contains(a.SourceUrlHash!) && a.CreatedAtUtc >= since)
+                .Select(a => new { a.Id, Hash = a.SourceUrlHash! }).ToListAsync(ct))
+            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => hashes.Contains(l.UrlHash!) && l.AddedAtUtc >= since)
+                .Select(l => new { Id = l.ArticleId, Hash = l.UrlHash! }).ToListAsync(ct))
+            .Distinct().ToLookup(a => a.Hash, a => a.Id);
+        return item => found[item.UrlHash];
+    }
+
+    // The same, while older rows are still being given their hash (UrlHashFill): every recent address is read and
+    // canonicalized here, as only that says which match, so the matches are complete meanwhile.
+    private static async Task<Func<FeedItem, IEnumerable<Guid>>> AtAddressByReadingAllAsync(IAppDbContext db, CancellationToken ct)
+    {
+        var since = DateTimeOffset.UtcNow - AddressWindow;
+        var found = (await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.CreatedAtUtc >= since)
+                .Select(a => new { a.Id, a.SourceUrl }).ToListAsync(ct))
+            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => l.AddedAtUtc >= since)
+                .Select(l => new { Id = l.ArticleId, SourceUrl = (string?)l.Url }).ToListAsync(ct))
+            .Select(a => (a.Id, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct()
+            .ToLookup(a => a.Url!, a => a.Id);
+        return item => found[item.Url];
+    }
+
     // Past coverage: articles about the same CVE, or with the same canonical address, and the brief they were on.
     private static async Task<Dictionary<Guid, IReadOnlyList<Coverage>>> CoverageAsync(IAppDbContext db, IReadOnlyList<FeedItem> items, CancellationToken ct)
     {
         var cves = items.SelectMany(i => i.CveList).Distinct().ToList();
         var byCve = cves.Count == 0 ? [] : await db.ArticleCves.AsNoTracking().Where(c => cves.Contains(c.CveId))
-            .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title, a.SourceUrl })
+            .Join(db.Articles, c => c.ArticleId, a => a.Id, (c, a) => new { c.CveId, a.Id, a.Title })
             .ToListAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-120);
-        var recentLinks = (await db.Articles.AsNoTracking().Where(a => a.SourceUrl != null && a.CreatedAtUtc >= since)
-                .Select(a => new { a.Id, a.Title, a.SourceUrl }).ToListAsync(ct))
-            .Concat(await db.ArticleLinks.AsNoTracking().Where(l => l.AddedAtUtc >= since)
-                .Join(db.Articles, l => l.ArticleId, a => a.Id, (l, a) => new { a.Id, a.Title, SourceUrl = (string?)l.Url }).ToListAsync(ct))
-            .Select(a => (a.Id, a.Title, Url: UrlCanonicalizer.Canonicalize(a.SourceUrl))).Where(a => a.Url is not null).Distinct().ToList();
-        var articleIds = byCve.Select(x => x.Id).Concat(recentLinks.Select(x => x.Id)).Distinct().ToList();
+        var atAddress = await UrlHashFill.DoneAsync(db, ct) ? await AtAddressAsync(db, items, ct) : await AtAddressByReadingAllAsync(db, ct);
+        // Each item's matches, at most five, before anything is looked up about them: only those are shown, so only
+        // those are asked about (a few thousand ids at once had made the lookups the slow part of the page).
+        var ofCve = byCve.ToLookup(x => x.CveId, x => x.Id);
+        var matches = new Dictionary<Guid, List<(string Why, Guid Id)>>();
+        foreach (var item in items)
+        {
+            var list = atAddress(item).Select(id => (Why: Search.RelatedService.SameLink, Id: id))
+                .Concat(item.CveList.SelectMany(cve => ofCve[cve].Select(id => (Why: cve, Id: id))))
+                .Distinct().Take(5).ToList();
+            if (list.Count > 0) matches[item.Id] = list;
+        }
+        var articleIds = matches.Values.SelectMany(l => l.Select(m => m.Id)).Distinct().ToList();
+        if (articleIds.Count == 0) return [];
+        var titles = byCve.DistinctBy(x => x.Id).ToDictionary(x => x.Id, x => x.Title);
+        var untitled = articleIds.Where(id => !titles.ContainsKey(id)).ToList();
+        if (untitled.Count > 0)
+            foreach (var a in await db.Articles.AsNoTracking().Where(a => untitled.Contains(a.Id)).Select(a => new { a.Id, a.Title }).ToListAsync(ct))
+                titles[a.Id] = a.Title;
         var briefs = await Search.Lookups.BriefsAsync(db, articleIds, ct);
         var open = (await db.Actions.AsNoTracking()
                 .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))
@@ -1009,35 +1053,44 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
                 .Select(a => new { ArticleId = a.ArticleId!.Value, a.Number }).ToListAsync(ct))
             .GroupBy(a => a.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<int>)g.Select(a => a.Number).Order().ToList());
         var attachable = (await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Where(Unfrozen(db)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-        Coverage Of(string why, Guid id, string title)
+        Coverage Of(string why, Guid id)
         {
             var on = briefs.GetValueOrDefault(id) ?? [];
-            return new(why, id, title, on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
+            return new(why, id, titles[id], on.Where(b => b.Presented).Select(b => (DateOnly?)b.Day).Min())
             {
                 OnBrief = on.Where(b => !b.Presented).Select(b => (DateOnly?)b.Day).Max(),
                 OpenActions = open.GetValueOrDefault(id) ?? [], Attachable = attachable.Contains(id),
             };
         }
-        var result = new Dictionary<Guid, IReadOnlyList<Coverage>>();
-        foreach (var item in items)
-        {
-            var list = new List<Coverage>();
-            foreach (var a in recentLinks.Where(a => a.Url == item.Url))
-                list.Add(Of(Search.RelatedService.SameLink, a.Id, a.Title));
-            foreach (var cve in item.CveList)
-                foreach (var a in byCve.Where(x => x.CveId == cve).DistinctBy(x => x.Id))
-                    list.Add(Of(cve, a.Id, a.Title));
-            if (list.Count > 0) result[item.Id] = list.DistinctBy(c => (c.Why, c.ArticleId)).Take(5).ToList();
-        }
-        return result;
+        // An article deleted between the reads above has no title: it's left out, as it would have been a moment later.
+        return matches.Select(m => (m.Key, List: m.Value.Where(x => titles.ContainsKey(x.Id)).Select(x => Of(x.Why, x.Id)).ToList()))
+            .Where(m => m.List.Count > 0).ToDictionary(m => m.Key, m => (IReadOnlyList<Coverage>)m.List);
     }
 
     // --- triage ---------------------------------------------------------------------------------------------------
 
-    public Task ShortlistAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.Shortlisted, null, null, ct);
+    /// <summary>Shortlists an item; when it was stamped, and whether it was new (<see cref="TriageDecision"/>).</summary>
+    public Task<TriageDecision> ShortlistAsync(Guid id, CancellationToken ct = default) => DecideAsync(id, FeedItemStatus.Shortlisted, null, ct);
 
-    public Task DismissAsync(Guid id, string? reason, CancellationToken ct = default) =>
-        SetAsync(id, FeedItemStatus.Dismissed, ArticleService.CleanOrNull(reason, 200) ?? DismissReasons[0], null, ct);
+    /// <summary>Dismisses an item with a reason; when it was stamped, and whether it was new (<see cref="TriageDecision"/>).</summary>
+    public Task<TriageDecision> DismissAsync(Guid id, string? reason, CancellationToken ct = default) =>
+        DecideAsync(id, FeedItemStatus.Dismissed, ArticleService.CleanOrNull(reason, 200) ?? DismissReasons[0], ct);
+
+    // A single shortlist or dismissal. From New first, in a statement of its own, so the caller learns whether the item
+    // was new as it was decided, not as the page last read it: a stale row can still show New after a colleague's
+    // decision, which this then replaces, and putting that item back in New would be wrong.
+    private async Task<TriageDecision> DecideAsync(Guid id, FeedItemStatus status, string? reason, CancellationToken ct)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var at = time.GetUtcNow();
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == FeedItemStatus.New), status, reason, null, ct, at) > 0)
+            return new(at, FromNew: true);
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, null, ct, at) > 0)
+            return new(at, FromNew: false);
+        if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
+        throw new KeyNotFoundException("That item is gone.");
+    }
 
     /// <summary>Marks an item as repeating another (by default the one it was flagged as similar to).</summary>
     public async Task MarkDuplicateAsync(Guid id, Guid? ofId = null, CancellationToken ct = default)
@@ -1055,6 +1108,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>Puts an item back in the inbox as new (undoes a shortlist, dismissal or duplicate; never a promotion).</summary>
     public Task RestoreAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.New, null, null, ct);
+
+    /// <summary>
+    /// Undoes a new item's shortlist or dismissal (its toast's Undo): back to new, only while it's still this person's
+    /// <paramref name="decided"/> stamped <paramref name="at"/> (<see cref="TriageDecision.At"/>), so a colleague's
+    /// decision since stands, the same one made again included. Whether it went back.
+    /// </summary>
+    public async Task<bool> UndoDecisionAsync(Guid id, FeedItemStatus decided, DateTimeOffset at, CancellationToken ct = default)
+    {
+        if (decided is not (FeedItemStatus.Shortlisted or FeedItemStatus.Dismissed))
+            throw new ArgumentException("Only a shortlist or a dismissal is undone this way.", nameof(decided));
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var by = user.DisplayName;
+        return await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == decided && i.StatusAtUtc == at && i.StatusByName == by),
+            FeedItemStatus.New, null, null, ct) > 0;
+    }
 
     // FeedItem.DismissKept as a query: a dismissal no one has said was right since it was made.
     private static readonly System.Linq.Expressions.Expression<Func<FeedItem, bool>> NotKept =
@@ -1160,13 +1229,15 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     // read first and saved after, a dismissal landing just after a colleague's promotion (or a "dismiss the rest" racing
     // it) marked the promoted item Dismissed, its article still pointing at it. Feed items aren't audited: who decided,
     // and when, is kept on the item, as Stamp keeps it. Returns how many changed.
-    private Task<int> StampAsync(IQueryable<FeedItem> items, FeedItemStatus status, string? reason, Guid? duplicateOf, CancellationToken ct)
+    // stamp: the time to stamp, when the caller needs to know it (DecideAsync); now otherwise.
+    private Task<int> StampAsync(IQueryable<FeedItem> items, FeedItemStatus status, string? reason, Guid? duplicateOf, CancellationToken ct,
+        DateTimeOffset? stamp = null)
     {
         _learned = null;   // a decision changes what's learned
         var dismissReason = status == FeedItemStatus.Dismissed ? reason : null;
         var duplicate = status == FeedItemStatus.Duplicate ? duplicateOf : null;
         var by = status == FeedItemStatus.New ? null : user.DisplayName;
-        var at = status == FeedItemStatus.New ? null : (DateTimeOffset?)time.GetUtcNow();
+        var at = status == FeedItemStatus.New ? null : stamp ?? (DateTimeOffset?)time.GetUtcNow();
         return items.ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, status).SetProperty(i => i.DismissReason, dismissReason)
             .SetProperty(i => i.DuplicateOfId, duplicate).SetProperty(i => i.StatusByName, by).SetProperty(i => i.StatusAtUtc, at), ct);
     }
@@ -1582,3 +1653,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only analysts triage the inbox.");
     }
 }
+
+/// <summary>A single shortlist or dismissal: when it was stamped, which its Undo matches, and whether the item was new
+/// as it was decided (only then is putting it back in New its exact inverse).</summary>
+public sealed record TriageDecision(DateTimeOffset At, bool FromNew);

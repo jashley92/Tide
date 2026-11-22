@@ -87,6 +87,12 @@ A saved row that no longer passes its check (a hand-edited database, a rule tigh
 by `SavedSettings.RefreshAsync`, so the server's value holds. Two administrators saving at once can't undo each other:
 refreshes run one at a time.
 
+Nor can two administrators with the same page open. Each settings form sends what it showed when it loaded along with
+what it saves, and only the settings changed on that page are written (and audited); a save that changes nothing
+writes nothing. If someone else has saved a setting this page changed since it loaded (to a different value than this
+page sends), the save is refused whole, asking the administrator to reload, rather than putting the other change back.
+The check and the write run in one serializable transaction, so two saves at the same moment can't both pass it.
+
 **The other in-app settings** are read from the `Settings` table each time they're used, with the server's value as
 the fallback: the edition ceilings and recipient lists (`DistributionSettings`), the SLA targets (`SlaSettings`), the
 update check's on/off (`UpdateSettings`) and the rotation's manager emails (`RotationService.ManagerEmailsAsync`).
@@ -177,7 +183,7 @@ The `appsettings.json` comment names every role, and the seed accepts each.
 | `Files:RootPath` | `App_Data/files` | A folder; relative paths are under the content root. Production uses `<data root>\files`, outside the web root. The metrics drop folder is `metrics-inbox` under it. | Server | Start-up |
 | `Files:MaxImageMB` | `15` | Megabytes, at least 1. Caps one screenshot. | Server | Start-up |
 | `Files:MaxEvidenceMB` | `25` | Megabytes, at least 1. Caps any other file on an action or its comments. | Server | Start-up |
-| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. When the zip comes first, a bare `/files/{id}/download` link redirects to it; only the "as is" link on the Files list (`?plain=` with a pass for that file and person, good for 10 minutes) sends the file plain, and under `Always` never; the API zips every file under `Always` too. | In app: **Teams & SLA** | At once |
+| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. When the zip comes first, a bare `/files/{id}/download` link redirects to it; only the "as is" link on the Files list (`?plain=` with a pass for that file and person, good for 10 minutes) sends the file plain, and under `Always` never; the API zips every file under `Always` too, and for a person signed in (not a token) zips whatever the zip comes first for. | In app: **Teams & SLA** | At once |
 
 ### Organization
 
@@ -298,6 +304,16 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 `appsettings.json` sets `SponsoredExceptions` without `regime-sponsored`, which the code default
 (`SponsoredFilter.DefaultExceptions`) has. The file's value wins.
 
+### Webhooks
+
+| Key | Default | Allowed values | Where | Effect |
+|---|---|---|---|---|
+| `Webhooks:AllowPrivateNetworks` | `true` | `true` lets webhooks be posted to 10/8, 172.16/12, 192.168/16, 100.64/10 and IPv6 unique-local, where a receiver such as a SOAR platform often is; `false` allows public addresses only. Loopback, link-local (cloud metadata among them), unspecified and multicast addresses are never posted to, whatever the setting. Separate from `Intake:AllowPrivateNetworks`, which is off by default. | Server | Next post |
+
+An install upgraded from a release before this setting keeps posting to internal receivers: it defaults to `true`.
+A webhook pointed at a refused address fails with `Refused: <host> is a loopback address, which webhooks aren't sent
+to.` (or link-local, private, reserved) on **Test** and as its last result.
+
 ### CVE enrichment
 
 | Key | Default | Allowed values | Where | Effect |
@@ -367,6 +383,7 @@ These rows live in the `Settings` table with no server default.
 | `EmailTemplate:{id}:{Subject\|Heading\|Body}` | A reworded notification email part. | **Email templates** | Yes |
 | `Cve:LastRun` | When CVE enrichment last ran (ISO 8601). | Written by `CveService` | No (bookkeeping) |
 | `Data:IndicatorsCanonical` | Marks a one-time pass over stored indicators as done (`DatabaseInitializer.CanonicalizeIndicatorsAsync`). | Written at start-up | No |
+| `Data:UrlHashesToFill` | Says older articles and links may still be without their address hash (`UrlHashFill`, filled by the "Hashing stored addresses" job); while it's there, triage's past coverage reads every recent address. | Written by the migration that added the hashes when there were addresses to fill; deleted by the job when it's done | No |
 | `Data:StarterSavedQueries`, `Data:StarterOutreachTemplates`, `Data:StarterPlaybooks` | Mark each library's starter set as offered, so it's added once, only to an empty library, and starters the team removes don't return (`DatabaseInitializer.SeedStarterLibrariesAsync`). | Written at start-up | No |
 
 `SettingsCatalog.IsInApp` decides which rows are an administrator's (and so travel in a bundle) and which are the

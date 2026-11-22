@@ -190,6 +190,12 @@ seconds. It keeps the same safety properties as an explicit save:
   one editing session as one entry.
 - **When it's off.** An article on a sent brief is never autosaved (corrections stay deliberate), and it's off for
   anyone who can't edit the article. `UnsavedGuard` stays honest: with nothing unsaved, leaving doesn't ask.
+- **Questions and busy steps.** No new autosave starts while Discard's question or the leave question is open
+  (`UnsavedGuard`'s `Asking`); Cancel or Stay starts the pause again. Discard drops what isn't saved yet. A save that
+  had already started when the question opened isn't stopped: it may still complete, and what it saved stays. Moving to
+  another article cancels Discard's question, so it never reloads the next one. When the pause
+  runs out during an upload or another save, it tries again after another pause, so what was typed meanwhile is saved
+  without another keystroke.
 
 **Marking ready while a colleague saved.** `ArticleService.SetStatusAsync` returns the version before and after. If the
 version before is the form's, only the status changed and the form carries on at the new version. If not, a colleague
@@ -229,7 +235,9 @@ what keep Presented to the meeting. A Presented article stays editable: that's h
 
 `ArticleChecks.For(article, companyCeiling)` is pure, and the same list shows in the editor's preview, the brief's
 running order and the edition check. A blocking check stops Mark ready on the article and Mark ready on a brief that
-holds it (`BriefService.MarkReadyAsync`).
+holds it (`BriefService.MarkReadyAsync`). In the editor, checked on what's on screen, it disables *Save and mark ready*
+and says why beside it (`ArticleChecks.NotReady`: *It isn't ready yet: Add the bottom line (BLUF).*), so the button
+never saves and then refuses; the service refuses with the same words.
 
 | Check | Blocking |
 |---|---|

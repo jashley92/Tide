@@ -4,6 +4,7 @@ using Tide.Application.Metrics;
 using Tide.Application.Org;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
 
 namespace Tide.IntegrationTests;
 
@@ -167,6 +168,53 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
         (await r.HtmlOnce("<thead>")).Should().Contain("Chart the groups shown");
         await using var all = await ComponentHarness.RenderAsync<MetricsHistory>(app, "/metrics");
         (await all.HtmlOnce("<thead>")).Should().NotContain("Chart the groups shown");
+    }
+
+    private async Task<DateOnly> Today()
+    {
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        return scope.ServiceProvider.GetRequiredService<OrgClock>().CurrentBriefDate;
+    }
+
+    // The From and To boxes' values.
+    private static (string From, string To) Boxes(string html)
+    {
+        static string Value(string html, string id)
+        {
+            var at = html.IndexOf($"id=\"{id}\"", StringComparison.Ordinal);
+            var start = html.IndexOf("value=\"", at, StringComparison.Ordinal) + 7;
+            return html[start..html.IndexOf('"', start)];
+        }
+        return (Value(html, "from"), Value(html, "to"));
+    }
+
+    [Fact]
+    public async Task TheRangeInTheAddress_IsTheOneShown_SoALinkOpensOnIt()
+    {
+        await Groups();
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        var clock = scope.ServiceProvider.GetRequiredService<OrgClock>();
+        var before = clock.Days.Previous(clock.CurrentBriefDate);
+        var iso = MetricHistoryRange.Query(before);
+
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, $"/metrics?from={iso}&to={iso}");
+        var html = await r.HtmlOnce("<thead>");
+
+        Boxes(html).Should().Be((iso, iso));
+        html.Split("<th scope=\"row\"").Length.Should().Be(2, "only the day asked for");
+        html.Should().Contain($"href=\"{Ui.BriefUrl(before)}\"").And.Contain($"metrics/export.csv?from={iso}&amp;to={iso}");
+    }
+
+    [Fact]
+    public async Task ARangeInTheAddressThatIsntOne_IsIgnored_AndADayPastToday_IsToday()
+    {
+        await Groups();
+        var today = await Today();
+        var (from, to) = MetricHistoryRange.Last(30, today);
+
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, "/metrics?from=yesterday&to=2999-01-01");
+        Boxes(await r.HtmlOnce("<thead>")).Should().Be((MetricHistoryRange.Query(from), MetricHistoryRange.Query(to)));
+        (to.DayNumber - from.DayNumber + 1).Should().Be(30, "30 days, counting both ends");
     }
 
     // Whether the filter's chip for a name is pressed.

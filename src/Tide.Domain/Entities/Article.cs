@@ -23,8 +23,21 @@ public class Article : AuditableEntity
     /// <summary>Where it came from, as the analyst names it ("BleepingComputer", "FS-ISAC").</summary>
     public string? SourceName { get; set; }
 
+    private string? _sourceUrl;
+
     /// <summary>The article's address: a citation, kept live (an indicator is never put here).</summary>
-    public string? SourceUrl { get; set; }
+    public string? SourceUrl
+    {
+        get => _sourceUrl;
+        set { _sourceUrl = value; SourceUrlHash = UrlCanonicalizer.HashOf(value); }
+    }
+
+    /// <summary>
+    /// The <see cref="UrlCanonicalizer.Hash"/> of <see cref="SourceUrl"/>'s canonical form; null when it has none. Stored
+    /// and indexed, so triage's "already covered" finds the articles at an item's address without reading every recent
+    /// one's; it follows <see cref="SourceUrl"/> whenever that's set.
+    /// </summary>
+    public string? SourceUrlHash { get; private set; }
     public DateTimeOffset? PublishedAtUtc { get; set; }
 
     public TlpLevel Tlp { get; set; } = TlpLevel.Clear;
@@ -267,8 +280,20 @@ public class ArticleLink : Entity
     /// <summary>The longest title kept; a longer one is cut, ending in "…".</summary>
     public const int MaxTitle = 500;
 
+    private string _url = string.Empty;
+
     public Guid ArticleId { get; set; }
-    public string Url { get; set; } = string.Empty;
+
+    public string Url
+    {
+        get => _url;
+        set { _url = value; UrlHash = UrlCanonicalizer.HashOf(value); }
+    }
+
+    /// <summary>The <see cref="UrlCanonicalizer.Hash"/> of <see cref="Url"/>'s canonical form; null when it has none. Stored
+    /// and indexed, as <see cref="Article.SourceUrlHash"/> is; it follows <see cref="Url"/> whenever that's set.</summary>
+    public string? UrlHash { get; private set; }
+
     public string Title { get; set; } = string.Empty;
     public string? SourceName { get; set; }
     public DateTimeOffset? PublishedAtUtc { get; set; }

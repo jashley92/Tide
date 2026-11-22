@@ -78,8 +78,8 @@ else
     {
         <section class="tide-card" aria-labelledby="tl-team">
             <h2 id="tl-team">Team summary <span class="small tide-muted fw-normal ms-auto">@Range(report)</span></h2>
-            <div class="table-responsive">
-                <table class="tide-table tide-report-table">
+            <TableScroll LabelledBy="tl-team">
+                <table class="tide-table tide-report-table" aria-labelledby="tl-team">
                     <thead>
                         <tr>
                             <th scope="col">Analyst</th>
@@ -105,13 +105,13 @@ else
                         <tr><th scope="row">Team</th>@TallyCells(team)<td class="tide-table-num"></td></tr>
                     </tfoot>
                 </table>
-            </div>
+            </TableScroll>
         </section>
     }
 
     <section class="tide-card" aria-labelledby="tl-over-time">
         <h2 id="tl-over-time">On-time rate by @Unit</h2>
-        <div class="table-responsive">
+        <TableScroll LabelledBy="tl-over-time">
             <table class="tide-table tide-report-table">
                 <caption class="visually-hidden">@(report.Everyone ? "Each analyst's" : "Your") share of brief days on time, @Unit by @Unit</caption>
                 <thead>
@@ -136,15 +136,15 @@ else
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
         <p class="small tide-muted mt-2 mb-0">The share of days on time, of those on time, late or missed. Excused days and today, before its
             deadlines, aren't counted.</p>
     </section>
 
     <section class="tide-card" aria-labelledby="tl-days">
         <h2 id="tl-days">Day by day <span class="tide-count tide-muted fw-normal">(@Words.Plural(report.Days.Count, "day"))</span></h2>
-        <div class="table-responsive">
-            <table class="tide-table tide-report-table">
+        <TableScroll LabelledBy="tl-days">
+            <table class="tide-table tide-report-table" aria-labelledby="tl-days">
                 <thead>
                     <tr>
                         <th scope="col">Day</th>
@@ -194,7 +194,7 @@ else
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
     </section>
 }
 
