@@ -938,6 +938,10 @@ Month on month or quarter on quarter, Trends counts:
 - the follow-up work: actions raised by kind and team, done on time or late, outcomes, hunts and their hits, and
   what was open or overdue when each period ended.
 
+**What moved**, at the top, names up to five lines that changed most against the period before (and the same quarter a
+year back): "T1190 Exploit Public-Facing Application: 12, up from 4", "Phishing tag: none this month, after 5". Small
+numbers are left out (a line needs 3 on one side). Each opens to what it counted.
+
 Chart any line, as many as you like. Click any number to see the articles or actions behind it, or open them as a
 pre-filtered Articles list, ready for the monthly or quarterly threat trends report. Opened from a tactic or
 technique, each article in the list shows the techniques it was counted for. The table, or a period's articles with
@@ -954,7 +958,8 @@ Reports has three tabs, each keeping its own address: **Monthly report** (`/repo
 is in the sidebar for analysts, administrators and managers.
 
 The report a team lead owes for a week, a month or a quarter (the last full month by default), from the same counts
-as Trends and Metrics, marked AMBER:
+as Trends and Metrics, marked AMBER. Above it, Trends' **What moved** strip names the lines that changed most, each
+opening Trends on what it counted; the strip isn't printed or in the CSV.
 
 1. **Headlines**, against the period before;
 2. **Outcomes**, against the period before;

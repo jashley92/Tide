@@ -90,6 +90,15 @@
 .tide-rota td.tide-rota-today { box-shadow: inset 0 0 0 2px var(--tide-accent); }
 .tide-rota tr.tide-rota-now th { color: var(--tide-accent-text); }
 
+/* What moved (Trends and Reports): a row of link chips under a small caps label, the saved views' pill with an arrow. */
+.tide-highlights { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); margin: 0 0 var(--tide-space-2); }
+.tide-highlights-h { font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); margin: 0; }
+.tide-highlights-list { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); list-style: none; margin: 0; padding: 0; }
+.tide-highlight { margin: 0; text-decoration: none; }
+.tide-highlight:hover { border-color: var(--tide-accent); }
+.tide-highlight:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-highlight strong { font-weight: var(--tide-weight-semibold); }
+
 /* Trends: the period table beside the drill-down. */
 .tide-trends { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 24rem); gap: 1rem; align-items: start; }
 .tide-trends > * { min-width: 0; }   /* lets a wide table scroll inside its card instead of widening the grid */
