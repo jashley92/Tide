@@ -1052,6 +1052,11 @@ public partial class DeployScriptPowerShellTests
         var r = Run("""
             $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-upgrades-' + [guid]::NewGuid().ToString('N'))
             $outside = Join-Path ([IO.Path]::GetTempPath()) ('tide-target-' + [guid]::NewGuid().ToString('N'))
+            # A junction on Windows (no admin needed); elsewhere pwsh makes nothing for -ItemType Junction, so a symbolic link.
+            function New-Link([string] $path, [string] $target) {
+                $kind = if ($PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows) { 'Junction' } else { 'SymbolicLink' }
+                New-Item -ItemType $kind -Path $path -Value $target -ErrorAction Stop | Out-Null
+            }
             function Add-Run([string] $stamp, [string] $site, [string] $server = 'WEB1', [switch] $Succeeded) {
                 $d = Join-Path $root $stamp
                 New-Item -ItemType Directory -Force -Path $d | Out-Null
@@ -1065,7 +1070,7 @@ public partial class DeployScriptPowerShellTests
                 New-Item -ItemType Directory -Force -Path (Join-Path $mine 'site-rollback') | Out-Null
                 New-Item -ItemType Directory -Force -Path $outside | Out-Null
                 Set-Content -LiteralPath (Join-Path $outside 'keep.txt') -Value 'not the snapshot''s'
-                New-Item -ItemType Junction -Path (Join-Path $mine 'site-rollback\link') -Value $outside | Out-Null
+                New-Link (Join-Path (Join-Path $mine 'site-rollback') 'link') $outside
                 [void](Add-Run '20260102-090000' 'C:\inetpub\tide-test' -Succeeded)      # a sibling site's, sharing the folder
                 [void](Add-Run '20260103-090000' 'C:\inetpub\tide' -Server 'WEB2' -Succeeded)   # another server's
                 New-Item -ItemType Directory -Force -Path (Join-Path $root '20260104-090000') | Out-Null   # no record
@@ -1074,7 +1079,7 @@ public partial class DeployScriptPowerShellTests
                 Set-Content -LiteralPath (Join-Path $bad 'snapshot.json') -Value '{ not json'
                 [void](Add-Run '20260106-090000' 'C:\inetpub\tide\' -Succeeded)
                 $failed = Add-Run '20260107-090000' 'c:\inetpub\TIDE'
-                New-Item -ItemType Junction -Path (Join-Path $root '20260108-090000') -Value $mine | Out-Null   # a link to a run
+                New-Link (Join-Path $root '20260108-090000') $mine   # a link to a run
                 [void](Add-Run '20260109-090000' 'C:\inetpub\tide' -Succeeded)          # this run
 
                 $snaps = @(Get-TideUpgradeSnapshots -Root $root -SitePath 'C:\inetpub\tide' -Server 'web1')
@@ -1089,7 +1094,7 @@ public partial class DeployScriptPowerShellTests
                 }
             } finally {
                 Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
-                    ForEach-Object { [IO.Directory]::Delete($_.FullName, $false) }
+                    ForEach-Object { $l = $_.FullName; try { [IO.Directory]::Delete($l, $false) } catch { [IO.File]::Delete($l) } }
                 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
                 Remove-Item -LiteralPath $outside -Recurse -Force -ErrorAction SilentlyContinue
             }
