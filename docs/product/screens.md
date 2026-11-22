@@ -56,8 +56,8 @@ Every route, its component and the permission it needs are in the [route table](
 - **Popouts** (Triage's Attach to…, the account menu, a brief's Export indicators) close on Escape anywhere, a click
   outside, or Tab out of them. Escape gives focus back to the button that opened it.
 - **The account menu** (the initials in the top right) says who you are and your roles, and holds your own settings:
-  light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
-  **Help and what's new**, and About.
+  light, dark or system theme (system, the default, follows the operating system's as it changes), single-letter
+  shortcuts on or off, **My notifications**, your brief days as a calendar file, **Help and what's new**, and About.
 - **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
   their role: analysts, presenters, administrators, or viewers and action owners, for every release since the one the
   server ran before (only the newest on a new install). It shows once, never in present
