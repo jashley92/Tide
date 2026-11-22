@@ -53,7 +53,7 @@ else
         }
         else
         {
-            <div class="table-responsive">
+            <TableScroll LabelledBy="tc-title">
                 <table class="tide-table tide-report-table">
                     <caption class="visually-hidden">Each team's actions due @Range(c), and its open and overdue actions now</caption>
                     <thead>
@@ -89,7 +89,7 @@ else
                         }
                     </tbody>
                 </table>
-            </div>
+            </TableScroll>
         }
         <p class="small tide-muted mt-2 mb-0">
             Counted by due date: an action due in the window is on time when it was done by that day, and late when it was

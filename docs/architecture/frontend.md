@@ -481,7 +481,8 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `BriefStepper` | On an article that's on today's brief: "4 of 5 ‹ Previous Next › Back to Today". |
 | `LiveMeetingJoin` | The live-meeting banner on every page, or a Join button in place of the brief's Present button. |
 | `BriefChip` (in `Layout/`) | The top bar's link to Today: when the brief meets and the step it's on, or that it's live. |
-| `ProfileMenu` | The account menu. |
+| `ProfileMenu` | The account menu. Its theme and letter-shortcut switches are groups of `menuitemradio`s, as a menu may hold only menu items and groups of them. |
+| `TableScroll` | The box a wide table scrolls sideways in (`table-responsive`): it takes focus (`tabindex="0"`), so the keyboard can scroll it, and it's a `region` named by the heading it's under (`LabelledBy`) or in words (`Label`). Every report and admin table that scrolls sits in one. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
 | `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
 | `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |

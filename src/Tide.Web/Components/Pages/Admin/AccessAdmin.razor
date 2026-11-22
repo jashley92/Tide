@@ -142,7 +142,7 @@
 <div class="tide-card">
     <h2 id="role-abilities">What each role can do</h2>
     <p class="tide-muted small">Read from the permissions each role grants, so it can't drift from what TIDE enforces.</p>
-    <div class="table-responsive">
+    <TableScroll LabelledBy="role-abilities">
         <table class="tide-table tide-role-table" aria-labelledby="role-abilities">
             <thead>
                 <tr>
@@ -172,7 +172,7 @@
                 }
             </tbody>
         </table>
-    </div>
+    </TableScroll>
 </div>
 
 <ConfirmDialog @ref="_confirm" />

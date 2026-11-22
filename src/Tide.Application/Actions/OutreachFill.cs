@@ -18,6 +18,58 @@ public sealed record OutreachPlaceholder(string Name, string Group, string Descr
 {
     /// <summary>As a template writes it ("{{article.title}}").</summary>
     public string Written => "{{" + Name + "}}";
+
+    /// <summary>
+    /// Whether it can have nothing to fill, so be optional, carry text for then, or have a section: all but
+    /// <c>{{tlp}}</c>, as the email always carries its TLP.
+    /// </summary>
+    public bool MayBeEmpty => !string.Equals(Name, OutreachFill.TlpName, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// A template TIDE can't fill, as the check on save refuses it (<see cref="OutreachFill.Check"/>), and where in the text
+/// the trouble is, so the editor can show it.
+/// </summary>
+public sealed class OutreachTemplateException(string message, int index, int length) : ArgumentException(message)
+{
+    /// <summary>Where the trouble starts in the text checked.</summary>
+    public int Index { get; } = index;
+
+    /// <summary>How long it is.</summary>
+    public int Length { get; } = length;
+}
+
+/// <summary>What a piece of a template between double braces is.</summary>
+public enum OutreachTokenKind
+{
+    /// <summary>A placeholder: <c>{{name}}</c>, <c>{{name:modifier}}</c>, <c>{{name?}}</c> or <c>{{name|text}}</c>.</summary>
+    Placeholder,
+
+    /// <summary>A section's start: <c>{{#name}}</c>.</summary>
+    Open,
+
+    /// <summary>A section's other branch: <c>{{else}}</c>.</summary>
+    Else,
+
+    /// <summary>A section's end: <c>{{/name}}</c>.</summary>
+    Close,
+}
+
+/// <summary>
+/// A piece of an outreach template between double braces, as <see cref="OutreachFill.Tokens"/> reads it: the one reading
+/// the check on save, the fill and the Library rail's "Fills in" share.
+/// </summary>
+/// <param name="Kind">What it is.</param>
+/// <param name="Written">As the template writes it.</param>
+/// <param name="Index">Where it starts in the text.</param>
+/// <param name="Name">The placeholder it's about, lower case ("article.cves"); <c>else</c> for <see cref="OutreachTokenKind.Else"/>.</param>
+/// <param name="Modifier">What follows a colon ("domain" in <c>{{indicators:domain}}</c>), or null.</param>
+/// <param name="Optional">Whether it ends in <c>?</c>: dropped when there's nothing to fill.</param>
+/// <param name="Fallback">The text after a <c>|</c>, as written (not trimmed), or null when there's no <c>|</c>.</param>
+public sealed record OutreachToken(OutreachTokenKind Kind, string Written, int Index, string Name, string? Modifier, bool Optional, string? Fallback)
+{
+    /// <summary>Where it ends in the text.</summary>
+    public int End => Index + Written.Length;
 }
 
 /// <summary>
@@ -34,8 +86,12 @@ public sealed record OutreachFacts
 
     public EditionArticle? Article { get; init; }
 
-    /// <summary>The enrichment of the article's CVEs, where TIDE has it, by id.</summary>
+    /// <summary>What TIDE knows of the article's CVEs, by id; read only for <see cref="OutreachFill.CvesDetailedName"/>.</summary>
     public IReadOnlyDictionary<string, CveRecord> Cves { get; init; } = new Dictionary<string, CveRecord>();
+
+    /// <summary>The addresses of the other reports added to the article (<see cref="ArticleLink"/>), oldest first, which
+    /// <c>{{article.other-links}}</c> lists. They carry the article's marking.</summary>
+    public IReadOnlyList<string> ArticleLinks { get; init; } = [];
 
     public IReadOnlyList<ArticleIndicator> Indicators { get; init; } = [];
 
@@ -106,6 +162,18 @@ public static partial class OutreachFill
     /// <summary>The placeholder for the email's TLP marking.</summary>
     public const string TlpName = "tlp";
 
+    /// <summary>The placeholder for the article's CVE numbers, one a line.</summary>
+    public const string CvesName = "article.cves";
+
+    /// <summary>The placeholder for what TIDE knows of each of the article's CVEs, a paragraph a CVE.</summary>
+    public const string CvesDetailedName = "article.cves-detailed";
+
+    /// <summary>The placeholder for the other reports added to the article.</summary>
+    public const string OtherLinksName = "article.other-links";
+
+    /// <summary>A CVE's page on the NVD, as the app links it.</summary>
+    public static string CveLink(string cveId) => "https://nvd.nist.gov/vuln/detail/" + cveId;
+
     /// <summary>
     /// The action's own indicators (added on one with no article) carry no marking of their own, so they count as AMBER,
     /// as the API holds other unmarked internal text (a product's notes) to AMBER.
@@ -119,7 +187,10 @@ public static partial class OutreachFill
         new("article.why-it-matters", ArticleGroup, "Why it matters to us, when its own TLP is within the ceiling."),
         new("article.key-points", ArticleGroup, "Its key points, one a line, each within the ceiling."),
         new("article.link", ArticleGroup, "Its source's address."),
-        new("article.cves", ArticleGroup, "Its CVEs, one a line, with KEV and EPSS where TIDE knows them."),
+        new(OtherLinksName, ArticleGroup, "The other reports added to it, one a line."),
+        new(CvesName, ArticleGroup, "Its CVE numbers, one a line."),
+        new("article.cve-links", ArticleGroup, "A link to each of its CVEs on the NVD, one a line."),
+        new(CvesDetailedName, ArticleGroup, "Each of its CVEs in a short paragraph: CVSS, KEV and EPSS, the vendor and product, the NVD's description and a link, as far as TIDE knows them."),
         new("article.tlp", ArticleGroup, "The article's TLP, as TLP:GREEN."),
         new(IndicatorsName, IndicatorsGroup, "Every indicator on the article and the action, defanged, one a line."),
         new(IndicatorsName + ":domain", IndicatorsGroup, "One kind only (domain, url, ipv4, sha256…), as the saved hunt queries name them."),
@@ -141,8 +212,100 @@ public static partial class OutreachFill
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex Pattern();
+    // The one of names a mistyped name (lower case) is nearest to: two letters off at most, a typo rather than another word.
+    private static string? Nearest(string name, IEnumerable<string> names)
+    {
+        var (best, bestDistance) = ((string?)null, 3);
+        foreach (var n in names)
+            if (Math.Abs(n.Length - name.Length) < bestDistance && Distance(name, n) is var d && d < bestDistance)
+                (best, bestDistance) = (n, d);
+        return best;
+    }
+
+    // How many letters must be added, dropped or changed to turn one name into the other.
+    private static int Distance(string a, string b)
+    {
+        var row = Enumerable.Range(0, b.Length + 1).ToArray();
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var diagonal = row[0];
+            row[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var above = row[j];
+                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), diagonal + (a[i - 1] == b[j - 1] ? 0 : 1));
+                diagonal = above;
+            }
+        }
+        return row[b.Length];
+    }
+
+    // Every piece between double braces a template may use: {{else}}; or a name with a section's # or / before it, a
+    // modifier after a colon, then a closing ? that makes it optional ("{{article.other-links?}}") or | and the text
+    // written when it's empty ("{{product.contact|there}}"). The check on save says which mixes a template can't use.
+    // Spaces are read one way only (after the # or / only when there is one, and the text after | given nothing back), so
+    // a long run of them can't hold the server up.
+    [GeneratedRegex(@"\{\{\s*(?:(?<else>else)|(?:(?<sign>[#/])\s*)?(?<name>[A-Za-z][A-Za-z0-9.\-]*)(?::(?<mod>[A-Za-z0-9+\-]*))?(?<opt>\?)?(?:\|(?<alt>(?>[^{}\r\n]*)))?)\s*\}\}",
+        RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex TokenPattern();
+
+    /// <summary>The pieces of <paramref name="text"/> between double braces that a template may use, in order.</summary>
+    public static IReadOnlyList<OutreachToken> Tokens(string? text) => [.. TokenPattern().Matches(text ?? "").Select(TokenOf)];
+
+    private static OutreachToken TokenOf(Match m)
+    {
+        if (m.Groups["else"].Success) return new(OutreachTokenKind.Else, m.Value, m.Index, ElseName, null, false, null);
+        var kind = m.Groups["sign"].Value switch { "#" => OutreachTokenKind.Open, "/" => OutreachTokenKind.Close, _ => OutreachTokenKind.Placeholder };
+        return new(kind, m.Value, m.Index, m.Groups["name"].Value.ToLowerInvariant(), m.Groups["mod"].Success ? m.Groups["mod"].Value : null,
+            m.Groups["opt"].Success, m.Groups["alt"].Success ? m.Groups["alt"].Value : null);
+    }
+
+    /// <summary>The word that starts a section's other branch: <c>{{else}}</c>.</summary>
+    public const string ElseName = "else";
+
+    // A section tag as written plainly ("{{#article.cves}}"), for what's said about it.
+    private static string Plain(OutreachToken t) => t.Kind == OutreachTokenKind.Else ? "{{" + ElseName + "}}"
+        : "{{" + (t.Kind == OutreachTokenKind.Open ? "#" : "/") + t.Name + (t.Modifier is null ? "" : ":" + t.Modifier) + "}}";
+
+    // The section tags among the tokens, in order.
+    private static List<OutreachToken> Tags(IEnumerable<OutreachToken> tokens) => [.. tokens.Where(t => t.Kind != OutreachTokenKind.Placeholder)];
+
+    // Refuses sections that don't pair up, or are about a placeholder TIDE doesn't fill.
+    private static void CheckSections(List<OutreachToken> tags)
+    {
+        OutreachToken? open = null;
+        var sawElse = false;
+        foreach (var t in tags)
+        {
+            if (t.Optional || t.Fallback is not null)
+                throw Refused(t, $"{t.Written} is a section's tag: it takes no ? or |. Write it as {Plain(t)}.");
+            switch (t.Kind)
+            {
+                case OutreachTokenKind.Open:
+                    if (open is not null)
+                        throw Refused(t, $"{Plain(t)} is inside {Plain(open)}: close it with {Plain(open with { Kind = OutreachTokenKind.Close })} first. A section can't hold another.");
+                    if (t.Name == TlpName) throw Refused(t, $"{Plain(t)} can't start a section: the email always carries its TLP.");
+                    CheckPlaceholder(t);
+                    (open, sawElse) = (t, false);
+                    break;
+                case OutreachTokenKind.Else:
+                    if (open is null) throw Refused(t, $"{{{{{ElseName}}}}} only goes inside a section, between {{{{#name}}}} and {{{{/name}}}}.");
+                    if (sawElse) throw Refused(t, $"{Plain(open)} has two {{{{{ElseName}}}}}s: a section takes one at most.");
+                    sawElse = true;
+                    break;
+                default:
+                    if (open is null) throw Refused(t, $"{Plain(t)} closes a section that isn't open: start it with {Plain(t with { Kind = OutreachTokenKind.Open })}.");
+                    var close = Plain(open with { Kind = OutreachTokenKind.Close });
+                    if (!string.Equals(Plain(t), close, StringComparison.OrdinalIgnoreCase)) throw Refused(t, $"{Plain(t)} doesn't close {Plain(open)}: write {close}.");
+                    open = null;
+                    break;
+            }
+        }
+        if (open is not null) throw Refused(open, $"{Plain(open)} is never closed: end the section with {Plain(open with { Kind = OutreachTokenKind.Close })}.");
+    }
+
+    // A refusal of one piece of the template, saying where it is.
+    private static OutreachTemplateException Refused(OutreachToken t, string message) => new(message, t.Index, t.Written.Length);
 
     /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
     public const string TodayName = "today";
@@ -182,27 +345,58 @@ public static partial class OutreachFill
     /// </summary>
     public static void Check(string text)
     {
-        foreach (Match m in Pattern().Matches(text ?? ""))
-        {
-            var name = m.Groups[1].Value;
-            if (!Names.Contains(name))
-                throw new ArgumentException($"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
-            if (!m.Groups[2].Success) continue;
-            if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
-            {
-                if (DaysAheadOf(m.Groups[2].Value) is null)
-                    throw new ArgumentException($"{{{{{TodayName}:{m.Groups[2].Value}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
-                continue;
-            }
-            if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
-            if (HuntQueryBuilder.KindNamed(m.Groups[2].Value) is null)
-                throw new ArgumentException($"{{{{{IndicatorsName}:{m.Groups[2].Value}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
-        }
+        text ??= "";
+        var tokens = Tokens(text);
+        CheckSections(Tags(tokens));
+        foreach (var t in tokens.Where(t => t.Kind == OutreachTokenKind.Placeholder))
+            CheckToken(t);
         // Braces round a name that doesn't parse ("{{today: +2}}", "{{article_title}}") would go out in every email as
-        // typed: Fill leaves them, and they aren't a marker that holds the send back.
-        if (LooksLikePlaceholder().Match(Pattern().Replace(text ?? "", "")) is { Success: true } typo)
-            throw new ArgumentException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon, and a name of letters, dots and hyphens, as in {{{{article.title}}}} or {{{{{TodayName}:+2}}}}.");
+        // typed: Fill leaves them, and they aren't a marker that holds the send back. What does parse is blanked out, at
+        // its length, so where a typo is stays where it is.
+        var rest = TokenPattern().Replace(text, m => new string('\n', m.Length));
+        if (LooksLikePlaceholder().Match(rest) is { Success: true } typo)
+            throw new OutreachTemplateException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon or before a closing ?, and a name of letters, dots and hyphens, as in {{{{article.title}}}}, {{{{{TodayName}:+2}}}} or {{{{article.other-links?}}}}.",
+                typo.Index, typo.Length);
+    }
+
+    // Refuses a placeholder TIDE doesn't fill, or one written in a way it can't be.
+    private static void CheckToken(OutreachToken t)
+    {
+        var fallback = t.Fallback is not null;
+        if (t.Name == ElseName)
+            throw Refused(t, $"{t.Written} isn't written as a section's {{{{{ElseName}}}}}: it takes nothing else between the braces.");
+        CheckPlaceholder(t);
+        if ((t.Optional || fallback) && t.Name == TlpName)
+            throw Refused(t, $"{t.Written} can't be optional: the email always carries its TLP. Write it as {{{{{TlpName}}}}}.");
+        if (t.Optional && fallback)
+            throw Refused(t, $"{t.Written} is both optional and has text for when it's empty: end it with ? to drop it, or with |text to write that instead.");
+        if (fallback && string.IsNullOrWhiteSpace(t.Fallback))
+            throw Refused(t, $"{t.Written} has nothing after the |: write the text to use when it's empty, or end it with ? to drop it.");
+    }
+
+    // Refuses a name TIDE doesn't fill, or a modifier it doesn't take, offering the one it was likely meant to be. Only
+    // the template editor shows these, beside its Insert placeholder menu; another place showing them would reword that.
+    private static void CheckPlaceholder(OutreachToken t)
+    {
+        var (name, modifier) = (t.Name, t.Modifier);
+        if (!Names.Contains(name))
+            throw Refused(t, $"{{{{{name}}}}} isn't a placeholder TIDE fills. " + (Nearest(name, Names) is { } near
+                ? $"Did you mean {{{{{near}}}}}?"
+                : "Insert placeholder lists the ones it does."));
+        if (modifier is null) return;
+        if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (DaysAheadOf(modifier) is null)
+                throw Refused(t, $"{{{{{TodayName}:{modifier}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
+            return;
+        }
+        if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
+            throw Refused(t, $"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
+        if (HuntQueryBuilder.KindNamed(modifier) is null)
+            throw Refused(t, $"{{{{{IndicatorsName}:{modifier}}}}} isn't a kind of indicator TIDE knows. "
+                + (Nearest($"{IndicatorsName}:{modifier.ToLowerInvariant()}", Enum.GetValues<HuntValueKind>().Select(IndicatorsNameOf)) is { } near
+                    ? $"Did you mean {{{{{near}}}}}?"
+                    : $"Use {{{{{IndicatorsName}}}}}, or a kind from Insert placeholder."));
     }
 
     // Double braces round something with a letter in it, on one line: what a placeholder with a typo looks like.
@@ -215,6 +409,22 @@ public static partial class OutreachFill
 
     /// <summary>Whether <paramref name="text"/> still holds a marker (<see cref="Marker"/>) the analyst hasn't dealt with.</summary>
     public static bool HasMarker(string? text) => MarkerPattern().IsMatch(text ?? "");
+
+    /// <summary><paramref name="text"/> cut where its markers (<see cref="Marker"/>) are, each piece with whether it is one.</summary>
+    public static IReadOnlyList<Search.TextRun> Pieces(string? text)
+    {
+        text ??= "";
+        var runs = new List<Search.TextRun>();
+        var pos = 0;
+        foreach (Match m in MarkerPattern().Matches(text))
+        {
+            if (m.Index > pos) runs.Add(new(text[pos..m.Index], false));
+            runs.Add(new(m.Value, true));
+            pos = m.Index + m.Length;
+        }
+        if (pos < text.Length) runs.Add(new(text[pos..], false));
+        return runs;
+    }
 
     /// <summary>
     /// <paramref name="article"/> (its bullets, indicators and CVEs loaded) as the ceiling lets it through, by the team
@@ -265,8 +475,10 @@ public static partial class OutreachFill
         : clean;
 
     /// <summary>
-    /// Fills a template's subject and body from <paramref name="facts"/>. Each placeholder becomes its value; one with
-    /// nothing to fill, or held back by the ceiling, becomes a marker and is listed. The marking is the highest TLP of
+    /// Fills a template's subject and body from <paramref name="facts"/>. A section (<c>{{#name}}…{{else}}…{{/name}}</c>)
+    /// keeps its first branch when its placeholder has a value, else the other (or nothing). Each placeholder becomes its
+    /// value; one with nothing to fill, or held back by the ceiling, is dropped when it ends in <c>?</c>, becomes the
+    /// text after its <c>|</c> when it has one, and otherwise becomes a marker and is listed. The marking is the highest TLP of
     /// what was filled in (CLEAR when nothing marked was), and the body starts with a TLP line unless it places
     /// <c>{{tlp}}</c> itself.
     /// </summary>
@@ -275,17 +487,68 @@ public static partial class OutreachFill
         var marking = TlpLevel.Clear;
         var unfilled = new List<string>();
         var used = new HashSet<string>(StringComparer.Ordinal);
-        string Replace(string text) => Pattern().Replace(text ?? "", m =>
+
+        // A placeholder's label as markers write it, and its value, TLP and whether the ceiling held it back; worked out
+        // once, though a section's tag and the placeholder inside it both ask.
+        var looked = new Dictionary<(string, string?), (string, string?, TlpLevel, bool)>();
+        (string Label, string? Value, TlpLevel Tlp, bool Above) Look(string name, string? modifier)
         {
-            var name = m.Groups[1].Value.ToLowerInvariant();
             used.Add(name);
-            if (name == TlpName) return TlpSlot;   // filled once the marking is known
-            var scope = m.Groups[2].Success && name == IndicatorsName ? HuntQueryBuilder.KindNamed(m.Groups[2].Value) : null;
-            var ahead = m.Groups[2].Success && name == TodayName ? DaysAheadOf(m.Groups[2].Value) : null;
+            var key = (name, modifier?.ToLowerInvariant());
+            if (looked.TryGetValue(key, out var seen)) return seen;
+            var scope = modifier is not null && name == IndicatorsName ? HuntQueryBuilder.KindNamed(modifier) : null;
+            var ahead = modifier is not null && name == TodayName ? DaysAheadOf(modifier) : null;
             var label = scope is { } k ? IndicatorsNameOf(k) : ahead is { } n ? $"{TodayName}:{n:+0;-0}" : name;
             var (value, tlp, above) = ValueOf(name, scope, ahead, facts);
+            return looked[key] = (label, value, tlp, above);
+        }
+
+        // Each section kept as its first branch when its placeholder has a value, else as what follows {{else}} (or
+        // nothing). Choosing says something about the part, so a kept first branch carries its marking. Sections that
+        // don't pair up are refused when a template is saved; an older one that slipped through is left as it is.
+        string Sections(string text)
+        {
+            var tags = Tags(Tokens(text));
+            if (tags.Count == 0) return text;
+            try { CheckSections(tags); }
+            catch (ArgumentException) { return text; }
+            var sb = new StringBuilder();
+            var pos = 0;
+            var (inside, has, inElse) = (false, false, false);
+            foreach (var t in tags)
+            {
+                if (!inside || has != inElse) sb.Append(text, pos, t.Index - pos);
+                // The tag goes as an empty optional placeholder does: the same pass drops its line when it's alone on it,
+                // with a blank line that would then follow another, and closes the gap when it isn't.
+                sb.Append(GoneSlot);
+                pos = t.End;
+                switch (t.Kind)
+                {
+                    case OutreachTokenKind.Open:
+                        var (_, value, tlp, _) = Look(t.Name, t.Modifier);
+                        (inside, has, inElse) = (true, !string.IsNullOrWhiteSpace(value), false);
+                        if (has && tlp > marking) marking = tlp;
+                        break;
+                    case OutreachTokenKind.Else: inElse = true; break;
+                    default: inside = false; break;
+                }
+            }
+            return sb.Append(text, pos, text.Length - pos).ToString();
+        }
+
+        // Section tags still there belong to sections that don't pair up, and are left as they are.
+        string Replace(string text) => TokenPattern().Replace(Sections(text ?? ""), m =>
+        {
+            var t = TokenOf(m);
+            if (t.Kind != OutreachTokenKind.Placeholder) return m.Value;
+            if (t.Name == TlpName) { used.Add(t.Name); return TlpSlot; }   // filled once the marking is known
+            var (label, value, tlp, above) = Look(t.Name, t.Modifier);
             if (string.IsNullOrWhiteSpace(value))
             {
+                // Optional: dropped, with its line when nothing else is on it. What the ceiling held back is still said.
+                if (t.Optional) return GoneSlot;
+                // With text for when it's empty: that text, which carries no marking.
+                if (t.Fallback?.Trim() is { Length: > 0 } instead) return instead;
                 var written = "{{" + label + "}}";
                 if (!unfilled.Contains(written)) unfilled.Add(written);
                 return Marker(label, above ? facts.Ceiling : null);
@@ -293,8 +556,8 @@ public static partial class OutreachFill
             if (tlp > marking) marking = tlp;
             return value;
         });
-        var filledSubject = Replace(subject).ReplaceLineEndings(" ").Trim();
-        var filledBody = Replace((body ?? "").Replace("\r\n", "\n"));
+        var filledSubject = Gone(Replace(subject).ReplaceLineEndings(" ")).Trim();
+        var filledBody = Lines(Replace((body ?? "").Replace("\r\n", "\n")));
         var line = $"{Tlp.Label(marking)}: {Tlp.Meaning(marking)}";
         var placed = filledBody.Contains(TlpSlot, StringComparison.Ordinal);
         filledSubject = filledSubject.Replace(TlpSlot, Tlp.Label(marking), StringComparison.Ordinal);
@@ -307,6 +570,40 @@ public static partial class OutreachFill
 
     // Where {{tlp}} was, until the marking is known: a value filled in that happens to say "{{tlp}}" stays as it is.
     private const string TlpSlot = "\u0000tlp\u0000";
+
+    // The body's lines with each line only an empty optional placeholder or a section's tags were on dropped, and the
+    // gaps in the rest closed. A blank line that would then follow another blank line goes too: "a\n\n{{x?}}\n\nb" reads "a\n\nb", not "a\n\n\nb".
+    // Blank lines the template has side by side of its own are kept.
+    private static string Lines(string text)
+    {
+        if (!text.Contains(GoneSlot, StringComparison.Ordinal)) return text;
+        var kept = new List<string>();
+        // Whether lines were just dropped, and the line before them was blank (or there was none).
+        var (dropped, blankBefore) = (false, false);
+        foreach (var l in text.Split('\n'))
+        {
+            var g = Gone(l);
+            if (g != l && string.IsNullOrWhiteSpace(g))
+            {
+                if (!dropped) (dropped, blankBefore) = (true, kept.Count == 0 || string.IsNullOrWhiteSpace(kept[^1]));
+                continue;
+            }
+            var skip = dropped && blankBefore && string.IsNullOrWhiteSpace(l);
+            dropped = false;
+            if (!skip) kept.Add(g);
+        }
+        return string.Join("\n", kept);
+    }
+
+    // Where an optional placeholder with nothing to fill, or a section's tag, was, until its line is dropped or the gap closed.
+    private const string GoneSlot = "\u0000gone\u0000";
+
+    // The text with optional placeholders' gaps closed: "A, {{x?}} and B" reads "A, and B", not "A,  and B".
+    private static string Gone(string text) => !text.Contains(GoneSlot, StringComparison.Ordinal) ? text
+        : GapPattern().Replace(text, m => m.Value.Contains(' ') && m.Index > 0 && m.Index + m.Length < text.Length ? " " : "");
+
+    [GeneratedRegex("[ \\t]*(?:\u0000gone\u0000[ \\t]*)+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex GapPattern();
 
     // A placeholder's value, the TLP it carries, and whether the ceiling held it back (rather than there being nothing).
     private static (string? Value, TlpLevel Tlp, bool Above) ValueOf(string name, HuntValueKind? scope, int? ahead, OutreachFacts f)
@@ -342,8 +639,11 @@ public static partial class OutreachFill
             "article.title" => (a.Title, a.Tlp, false),
             "article.bottom-line" => (a.Bluf, a.Tlp, false),
             "article.link" => (a.SourceUrl, a.Tlp, false),
+            OtherLinksName => (OtherLinks(a, f.ArticleLinks), a.Tlp, false),
             "article.tlp" => (Tlp.Label(a.Tlp), a.Tlp, false),
-            "article.cves" => (Cves(a, f.Cves), a.Tlp, false),
+            CvesName => (CveIds(a) is { Count: > 0 } ids ? string.Join("\n", ids) : null, a.Tlp, false),
+            CvesDetailedName => (CvesDetailed(a, f.Cves), a.Tlp, false),
+            "article.cve-links" => (CveIds(a) is { Count: > 0 } ids ? string.Join("\n", ids.Select(CveLink)) : null, a.Tlp, false),
             "article.why-it-matters" => cut.ShowWhy
                 ? (a.WhyItMatters, a.Effective(a.WhyItMattersTlp), false)
                 : (null, TlpLevel.Clear, !string.IsNullOrWhiteSpace(a.WhyItMatters)),
@@ -354,22 +654,57 @@ public static partial class OutreachFill
         };
     }
 
-    // One a line: "CVE-2026-1234 (on CISA's KEV list; EPSS 94.1%)", or the id alone when TIDE knows nothing more.
-    private static string? Cves(Article a, IReadOnlyDictionary<string, CveRecord> records)
+    // The other reports' addresses, one a line, each once, leaving out one that is the source's own.
+    private static string? OtherLinks(Article a, IReadOnlyList<string> others)
     {
-        if (a.Cves.Count == 0) return null;
-        var sb = new StringBuilder();
-        foreach (var id in a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase))
+        var source = a.SourceUrl?.Trim();
+        var shown = others.Where(u => !string.IsNullOrWhiteSpace(u)).Select(u => u.Trim())
+            .Where(u => !string.Equals(u, source, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return shown.Count == 0 ? null : string.Join("\n", shown);
+    }
+
+    // The article's CVE ids, in the order every CVE placeholder lists them.
+    private static List<string> CveIds(Article a) => [.. a.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase)];
+
+    // "on CISA's KEV list[ since Nov 1, 2026][, due Nov 22, 2026][, used in ransomware]", for a CVE on it.
+    private static string? KevNote(CveRecord? r) => r is not { IsKev: true } ? null
+        : "on CISA's KEV list"
+          + (r.KevAddedDate is { } added ? " since " + Words.MonthDayYear(added) : "")
+          + (r.KevDueDate is { } due ? ", due " + Words.MonthDayYear(due) : "")
+          + (r.KevRansomware ? ", used in ransomware" : "");
+
+    // "EPSS 94.1%", when TIDE knows it.
+    private static string? EpssNote(CveRecord? r) =>
+        r?.EpssScore is { } epss ? $"EPSS {(epss * 100).ToString("0.#", CultureInfo.InvariantCulture)}%" : null;
+
+    // A paragraph a CVE, a blank line between:
+    //   CVE-2026-1234: CVSS 9.8 critical; on CISA's KEV list since Nov 1, 2026, due Nov 22, 2026, used in ransomware; EPSS 94.1%
+    //   Ivanti Connect Secure
+    //   The NVD's description.
+    //   https://nvd.nist.gov/vuln/detail/CVE-2026-1234
+    // A line TIDE has nothing for is left out; a CVE it knows nothing about is its id and link.
+    private static string? CvesDetailed(Article a, IReadOnlyDictionary<string, CveRecord> records)
+    {
+        var ids = CveIds(a);
+        if (ids.Count == 0) return null;
+        var paragraphs = new List<string>();
+        foreach (var id in ids)
         {
-            var notes = new List<string>();
-            if (records.TryGetValue(id, out var r))
-            {
-                if (r.IsKev) notes.Add("on CISA's KEV list" + (r.KevRansomware ? ", used in ransomware" : ""));
-                if (r.EpssScore is { } epss) notes.Add($"EPSS {(epss * 100).ToString("0.#", CultureInfo.InvariantCulture)}%");
-            }
-            sb.Append(id).Append(notes.Count > 0 ? $" ({string.Join("; ", notes)})" : "").Append('\n');
+            var lines = new List<string>();
+            records.TryGetValue(id, out var r);
+            var cvss = r?.CvssScore is { } score
+                ? $"CVSS {score.ToString("0.0", CultureInfo.InvariantCulture)}" + (string.IsNullOrWhiteSpace(r.CvssSeverity) ? "" : " " + r.CvssSeverity.Trim().ToLowerInvariant())
+                : null;
+            var notes = new[] { cvss, KevNote(r), EpssNote(r) }.OfType<string>().ToList();
+            lines.Add(id + (notes.Count > 0 ? ": " + string.Join("; ", notes) : ""));
+            var made = string.Join(" ", new[] { r?.Vendor, r?.Product }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
+            if (made.Length > 0) lines.Add(made);
+            if (!string.IsNullOrWhiteSpace(r?.Description)) lines.Add(r.Description.ReplaceLineEndings(" ").Trim());
+            lines.Add(CveLink(id));
+            paragraphs.Add(string.Join("\n", lines));
         }
-        return sb.ToString().TrimEnd();
+        return string.Join("\n\n", paragraphs);
     }
 
     // Defanged, one a line, in the order a hunt groups them; one kind only when the placeholder names it.

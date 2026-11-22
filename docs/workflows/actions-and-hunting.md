@@ -601,10 +601,34 @@ marked by the setting `Data:StarterOutreachTemplates`, as the starter saved quer
 
 | Placeholder group | Placeholders (`OutreachFill.All`) |
 |---|---|
-| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link`, `article.cves` (with KEV and EPSS), `article.tlp` |
+| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link` (the source), `article.other-links` (each other report added to the article, one a line), `article.cves` (the CVE numbers, one a line), `article.cve-links` (each CVE's NVD page, one a line), `article.cves-detailed` (a paragraph a CVE: CVSS, KEV dates, EPSS, vendor and product, the NVD's description and link), `article.tlp` |
 | Indicators | `indicators` (every indicator on the article and action, defanged), `indicators:domain` and the like (one `HuntValueKind`) |
 | Product | `product.name`, `product.versions`, `product.team`, `product.contact` |
 | Action and sender | `action.number`, `action.link` (needs `App:BaseUrl`), `action.due`, `sender.name`, `sender.team`, `today`, `today:+N` and `today:-N` (N business days after or before today, 1 to 60, skipping weekends and holidays: "reply by {{today:+2}}", "since {{today:-2}}"), `tlp` |
+
+Any placeholder but `tlp` can be made optional with a closing `?` (`{{article.other-links?}}`, `{{indicators:domain?}}`).
+With nothing to fill, or held back by the ceiling, an optional one is dropped rather than left as a `[[…]]` marker: its
+line goes when nothing else is on it, else the gap closes. It isn't listed as unfilled, but what the ceiling held back
+is still said. After a `|`, a placeholder carries the text written instead (`Hello {{product.contact|there}},`), which
+has no marking.
+
+A section, `{{#name}} … {{else}} … {{/name}}`, keeps what's before `{{else}}` when its placeholder has something to fill
+and what's after it when it hasn't (held back by the ceiling counts as nothing). Without `{{else}}` the whole section
+goes, so a heading goes with its list. A tag alone on its line takes the line with it. Keeping the first branch says
+something about the part, so it carries the part's marking even when the placeholder isn't inside. Sections can't be
+nested; `OutreachFill.Check` refuses one that's unclosed, closed by another name, or about a placeholder TIDE doesn't
+fill, a stray `{{else}}`, a section on `{{tlp}}`, and a placeholder with both `?` and `|`. The starter templates write the
+CVEs and (to an ISAC) indicators in sections and the article's links with `?`, so an article without them doesn't hold
+the email back.
+
+**Writing a template.** Above the subject, *Insert placeholder* lists every placeholder, found by typing, and puts the
+one chosen where the cursor was in the subject or body: as it is, optional (`?`), with text for when it's empty (`|`), or
+as a section round what's selected (on lines of its own in the body, inline in the subject). Typing `{{`, `{{#` or `{{/`
+in either box opens a list of the names that match; Up and Down choose, Enter or Tab writes the name and closes the
+braces, Escape closes it (`wwwroot/js/outreach-editor.js`, wired by event delegation like the Markdown toolbar). Under
+the body, `OutreachFill.Check` runs a moment after typing stops and says what's wrong, or how many placeholders TIDE
+will fill; *Preview this draft on an action* fills the unsaved draft for one of the writer's open Outreach actions
+(`OutreachService.PreviewAsync`, which saves nothing and refuses whom writing the email refuses).
 
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 

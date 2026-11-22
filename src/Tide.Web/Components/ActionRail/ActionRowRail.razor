@@ -24,8 +24,9 @@
         }
         @if (Moves is { Count: > 0 })
         {
+            @* Named by its words, then the action ("Move to: A-12"), so the name starts with what's shown. *@
             <MenuButton Label="Move to" Items="Moves" Disabled="Busy" ButtonClass="btn btn-outline-secondary btn-sm"
-                        AriaLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
+                        AriaLabel="@($"Move to: {Ui.ActionLabel(Row.Number)}")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
         }
         else if (!OnBoard && CanWork && Row.IsOpen)
         {
@@ -73,7 +74,8 @@
         <section class="tide-card tide-rail-hunt" aria-labelledby="rail-hunt-h">
             <h2 id="rail-hunt-h">Hunt query</h2>
             <div class="small tide-muted">@HuntQueryBuilder.DialectName(dialect) · @(previewed ? "a preview: copying it puts it on the action" : "on the action")</div>
-            <pre id="rail-hunt-query" class="tide-query">@text</pre>
+            @* It scrolls when it's long, so the keyboard can reach it, and it's named for what it holds. *@
+            <pre id="rail-hunt-query" class="tide-query" tabindex="0" role="region" aria-labelledby="rail-hunt-h">@text</pre>
             <div class="tide-rail-buttons">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="rail-hunt-query" data-copy-status="rail-hunt-status"
                         disabled="@(previewed && _copying)" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy query</button>

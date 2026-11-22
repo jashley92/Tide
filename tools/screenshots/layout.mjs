@@ -3431,7 +3431,7 @@ const boardEnterOpens = {
 const escapeClosesTheMenuFirst = {
   name: 'Escape closes the rail\'s Move menu before the rail',
   check: async page => {
-    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ });
+    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ });
     if (!await button.count()) return ['the rail has no Move to'];
     await button.focus();
     await page.keyboard.press('Enter');
@@ -3475,7 +3475,7 @@ const railMoveAsksFirst = {
   name: "the rail's Move to a closed status asks first, and Escape closes only the dialog",
   check: async page => {
     const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
-    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
+    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
     try { await page.locator('#tide-rail').getByRole('menuitem', { name: 'Cancelled' }).click({ timeout: 5000 }); } catch { return ['Move to offers no Cancelled to choose']; }
     const dialog = page.getByRole('dialog', { name: `Move ${number} to Cancelled` });
     try { await dialog.waitFor({ timeout: 5000 }); } catch { return [`Move to Cancelled didn't ask how ${number} closed`]; }
