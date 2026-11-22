@@ -729,9 +729,12 @@ palette and the shortcuts overlay with the same tokens only.
 | Avatars | `--tide-avatar-1` … `8`, `--tide-on-avatar` | Presence initials; white text at 4.5:1 or better, the same in both themes. |
 | Overlays | `--tide-overlay`, `--tide-shadow`, `--tide-on-threat` | Dimming behind dialogs, shadows, text on a threat fill. |
 
-**Choosing the theme.** `theme-init.js` runs in `<head>` before first paint: it applies the theme saved in
-`localStorage` (`tide-theme`), or the operating system's `prefers-color-scheme` when none is saved, so there's no
-flash of the wrong theme. The account menu flips it through `tideTheme`.
+**Choosing the theme.** The account menu offers Light, Dark and System, saved per browser in `localStorage`
+(`tide-theme`: `light`, `dark` or `system`). System is the default, when nothing is saved: the operating system's
+`prefers-color-scheme`, followed live (`tideTheme` listens for its change), so a system that turns dark at dusk turns
+TIDE dark with it. `theme-init.js` runs in `<head>` before first paint and sets `data-bs-theme` to the theme in force,
+so there's no flash of the wrong theme. `tideTheme.chosen()` says which was chosen; `current()` which is in force. In the
+menu, Left and Right move along a setting's options and Up and Down through every choice (`filters.js`).
 
 Emails don't use the tokens: they're tables and inline styles, coloured from `EmailComposer.Palette`, which mirrors
 the light tokens, and are always light.
