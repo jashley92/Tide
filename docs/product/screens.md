@@ -962,8 +962,12 @@ as Trends and Metrics, marked AMBER:
 4. **Topics and techniques** briefed most;
 5. **Actions raised by team**.
 
-Each section has room for the lead's assessment, which prints with the report but isn't saved; moving to another period
-starts with empty boxes. *Print* prints the report without the app's frame. A period still under way is marked "(to date)".
+Each section has the team's assessment, saved with its period (**Save assessment**) with a TLP of its own and an
+"Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
+who reads the report reads them. A colleague's save shows live, and one to a box with unsaved changes is said above it
+rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
+included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
+way is marked "(to date)".
 
 ## Team commitments
 

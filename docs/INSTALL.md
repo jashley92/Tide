@@ -125,6 +125,7 @@ brief's live meeting.
 | Edit Our stack and adversaries | Yes | Yes | No | No | No | No | No |
 | **Reports** | | | | | | | |
 | Reports, trends and exports | Yes | Yes | Yes | Yes | Yes | No | No |
+| Write the report's assessments | Yes | Yes | No | No | No | No | No |
 | Team commitments scorecard and its CSV | Yes | Yes | Yes | Yes | Yes | No | No |
 | Team commitments by person (who held each action on its due date) | Yes | own line only | Yes | own line only | own line only | No | No |
 | Brief timeliness: every analyst's days and the team summary, and the CSV | Yes | own days only | Yes | No | No | No | No |

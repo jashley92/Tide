@@ -235,6 +235,10 @@
 .tide-report-tops { margin: 0; padding-left: 1.2rem; font-size: var(--tide-text-sm); }
 .tide-report-bad { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
 .tide-report-table tbody th { text-transform: none; letter-spacing: normal; font-size: var(--tide-text-sm); color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
+/* A section's assessment: its label, marking and "Edited by" on one line, and the saved text as written for whoever reads it. */
+.tide-report-assess { margin-top: .75rem; }
+.tide-report-assess-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-bottom: .3rem; }
+.tide-report-assess-text { white-space: pre-wrap; font-size: var(--tide-text-sm); }
 
 /* Our stack: a product's facts and its history rows; the triage chip that opens it. */
 .tide-stack-facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; font-size: var(--tide-text-sm); margin: 0 0 .6rem; }

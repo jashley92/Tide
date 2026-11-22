@@ -112,6 +112,7 @@ public static class Capabilities
         new(Stack, "Edit Our stack and adversaries", "StackService.RequireWrite; AdversaryService.RequireWrite", [G(Permission.WriteArticles)]),
 
         new(Reports, "Reports, trends and exports", "Policies.ReadTeamEdition; ExportService", [G(Permission.ReadTeamEdition)]),
+        new(Reports, "Write the report's assessments", "ReportService.CanAssess", [G(Permission.EnterMetrics), G(Permission.WriteArticles)]),
         new(Reports, "Team commitments scorecard and its CSV", "Policies.ReadActions; TeamScorecardService.BuildAsync", [G(Permission.ReadActions)]),
         new(Reports, "Team commitments by person (who held each action on its due date)", "TeamScorecardService.PeopleAsync",
             [G(Permission.ReadActions, Permission.ManagePeople), Q("own line only", Permission.ReadActions)]),
