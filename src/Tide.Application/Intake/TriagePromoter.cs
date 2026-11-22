@@ -28,7 +28,7 @@ public sealed record TriagePromotion(PromoteOutcome Outcome, DateOnly? BriefDate
 /// writes, and a colleague's change to the brief at the same moment is refused by its edit version), so a draft is never
 /// half on a brief. Each step is audited as it is from its own page.
 /// </remarks>
-public sealed class TriagePromoter(IntakeService intake, BriefService briefs, ICurrentUser user)
+public sealed class TriagePromoter(IntakeService intake, BriefService briefs, ICurrentUser user, Rotation.IPresenterLookup? presenters = null)
 {
     /// <summary>
     /// Promotes the reports (one, or a group's as one article) with the form's choices, then, when
@@ -71,4 +71,9 @@ public sealed class TriagePromoter(IntakeService intake, BriefService briefs, IC
 
     /// <summary>The day "today's brief" is (the next working day's, on a weekend or holiday).</summary>
     public DateOnly BriefDate => briefs.CurrentDate;
+
+    /// <summary>Whether the signed-in person presents <see cref="BriefDate"/>'s brief, by the rotation (with its cover and
+    /// swaps). It decides which remembered tick the promote form starts with: on for the presenter, off for others.</summary>
+    public async Task<bool> PresentsAsync(CancellationToken ct = default) =>
+        presenters is not null && await presenters.PresenterAsync(BriefDate, ct) is { } p && p.Id == user.UserId;
 }

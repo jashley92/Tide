@@ -1113,7 +1113,8 @@ else
                 </div>
                 <span class="form-text m-0">@fromText</span>
             </div>
-            @* Off until the person ticks it, then as they last left it (UserPreferences.TriagePromoteToBrief). *@
+            @* On for the day's presenter and off for others, until the person changes it; then as they last left it, kept
+               apart for presenting days and other days (UserPreferences.TriagePromoteToBrief and ...Presenting). *@
             <div class="form-check mb-2">
                 <input type="checkbox" class="form-check-input" id="promote-brief" checked="@_pf.AddToBrief" @onchange="SetAddToBrief" />
                 <label class="form-check-label" for="promote-brief">Add to @BriefDayText</label>
@@ -1131,8 +1132,10 @@ else
     private string BriefDayText => Promoter.BriefDate == Clock.Today ? "today's brief" : $"the brief for {Ui.ShortDay(Promoter.BriefDate)}";
 
     // Whether "Add to today's brief" starts ticked: the person's choice, kept as they change it (a failure to keep it
-    // changes nothing on screen).
-    private bool _toBrief;
+    // changes nothing on screen). Whether they present the brief picks which choice: each has its own default.
+    private bool _toBrief, _presenting;
+
+    private string BriefTickPreference => _presenting ? UserPreferences.TriagePromoteToBriefPresenting : UserPreferences.TriagePromoteToBrief;
 
     internal async Task SetAddToBrief(ChangeEventArgs e)
     {
@@ -1140,7 +1143,7 @@ else
         _pf.AddToBrief = on;
         if (on == _toBrief) return;
         _toBrief = on;
-        try { await Prefs.SetAsync(UserPreferences.TriagePromoteToBrief, on ? UserPreferences.On : UserPreferences.Off); }
+        try { await Prefs.SetAsync(BriefTickPreference, on ? UserPreferences.On : UserPreferences.Off); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
@@ -1320,9 +1323,10 @@ else
             _sources = await Intake.SourcesAsync(includeRetired: true);
             _sourceOptions = [.. _sources.Select(s => new FilterOption(s.Id.ToString(), s.Name))];
             _lastBriefAt = await Intake.LastBriefAtAsync();
-            var prefs = await Prefs.GetAsync([UserPreferences.TriageReading, UserPreferences.TriagePromoteToBrief]);
+            _presenting = await Promoter.PresentsAsync();
+            var prefs = await Prefs.GetAsync([UserPreferences.TriageReading, BriefTickPreference]);
             _readingPref = prefs[UserPreferences.TriageReading];
-            _toBrief = prefs[UserPreferences.TriagePromoteToBrief] == UserPreferences.On;
+            _toBrief = prefs[BriefTickPreference] == UserPreferences.On;
         }
         Use(Asked());
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -1400,7 +1404,7 @@ else
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
         (_page, _addressPage, _total, _cveFilter, _named, _older) = (p._page, p._addressPage, p._total, p._cveFilter, p._named, p._older);
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
-        (_readingPref, _readRow, _read, _readCves, _toBrief) = (p._readingPref, p._readRow, p._read, p._readCves, p._toBrief);
+        (_readingPref, _readRow, _read, _readCves, _toBrief, _presenting) = (p._readingPref, p._readRow, p._read, p._readCves, p._toBrief, p._presenting);
         _open.UnionWith(p._open);
         _loaded = true;
     }

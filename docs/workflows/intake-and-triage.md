@@ -452,8 +452,10 @@ permission (`WriteArticles`), the TLP rules, the claim and the audit are the sam
 **Add to today's brief.** With the tick, the draft goes on the end of the running order of the brief for
 `BriefService.CurrentDate` (today, or the next working day on a weekend or holiday), started if there's none, as the
 editor's *Add to today's brief* does (`GetOrStartAsync`, then `AddArticleAsync`). Building a brief needs
-`WriteArticles`, checked before anything is claimed. The tick is off until the analyst ticks it, then kept as they
-left it (`UserPreferences.TriagePromoteToBrief`). It's two steps, not one transaction, on purpose: the promote is what
+`WriteArticles`, checked before anything is claimed. The tick starts **on for the brief's presenter** (the rotation's,
+for that day, with cover and swaps) and off for everyone else. Whatever the analyst then chooses is kept as they left
+it, separately for days they present and days they don't (`UserPreferences.TriagePromoteToBriefPresenting` and
+`TriagePromoteToBrief`), so a presenting week's choice doesn't carry into the next week. It's two steps, not one transaction, on purpose: the promote is what
 was asked for and stands on its own. If the brief can't take the draft (it has been sent, or a colleague changed it at
 that moment), the draft is kept and the toast says why it isn't on the brief. Adding is one save that re-checks the
 brief as it writes, so a draft is never half on a brief. A draft a colleague made first (the promote joined theirs) isn't

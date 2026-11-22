@@ -210,6 +210,53 @@ public class TriagePromoteAndStayTests(StayApp app) : IClassFixture<StayApp>
     }
 
     [Fact]
+    public async Task TheBriefTick_StartsOn_ForTheBriefsPresenter_AndTheirChoiceIsKeptApartFromOtherDays()
+    {
+        await Seed("presenter", 2);
+        var who = Analyst("presenter");
+        DateOnly day;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            day = scope.ServiceProvider.GetRequiredService<BriefService>().CurrentDate;
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            db.RotationOverrides.RemoveRange(db.RotationOverrides.Where(o => o.Date == day));
+            db.RotationOverrides.Add(new RotationOverride { Date = day, AnalystId = who.UserId, AnalystName = who.Name });
+            await db.SaveChangesAsync();
+        }
+        try
+        {
+            await using (var r = await RenderAsync<Triage>(app, "/triage?q=stay-presenter", @as: who))
+            {
+                await r.HtmlOnce(TitleOf("presenter", 1));
+                await r.Click(t => t.OnTriageKey("promote"));
+                (await r.Html()).Should().Contain("id=\"promote-brief\" checked", "the presenter's tick starts on");
+                await r.Click(async t =>
+                {
+                    await t.SetAddToBrief(new ChangeEventArgs { Value = false });
+                    await Rendered(t);
+                });
+                (await r.Html()).Should().NotContain("id=\"promote-brief\" checked");
+            }
+            await using (var scope = SignedIn(app, who))
+            {
+                var prefs = scope.ServiceProvider.GetRequiredService<UserPreferenceService>();
+                (await prefs.GetAsync(UserPreferences.TriagePromoteToBriefPresenting)).Should().Be(UserPreferences.Off, "the presenter's choice is kept");
+                (await prefs.GetAsync(UserPreferences.TriagePromoteToBrief)).Should().Be(UserPreferences.Off, "the other days' choice is untouched");
+            }
+            await using var again = await RenderAsync<Triage>(app, "/triage?q=stay-presenter", @as: who);
+            await again.HtmlOnce(TitleOf("presenter", 1));
+            await again.Click(t => t.OnTriageKey("promote"));
+            (await again.Html()).Should().NotContain("id=\"promote-brief\" checked", "the presenter unticked it, and that's remembered");
+        }
+        finally
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            await db.RotationOverrides.Where(o => o.Date == day && o.AnalystId == who.UserId).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
     public async Task AddToBrief_PutsTheDraftOnTodaysBrief_AtTheEnd_AndTheToastSaysSo()
     {
         var ids = await Seed("brief", 2);
