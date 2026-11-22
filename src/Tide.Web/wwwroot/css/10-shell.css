@@ -149,7 +149,7 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-row-techniques .tide-chip { font-size: var(--tide-text-xs); margin-bottom: 0; border-radius: var(--tide-radius-sm); }
 /* The ✕ is a 24px target (WCAG 2.2 target size), reaching into the chip's padding so the chip doesn't grow. */
 .tide-chip-remove { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding: 0;
-    margin: -.3rem -.45rem -.3rem calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
+    margin: -.3rem -.5rem -.3rem -.45rem; color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 /* A table that scrolls inside its card. Positioned, so a visually hidden header label in it (absolutely placed) is
