@@ -1,13 +1,35 @@
-// Light/dark theme and sidebar collapse. The initial state is applied by theme-init.js in <head> before paint; this
-// flips and remembers it. Bootstrap 5.3 reads data-bs-theme; the sidebar CSS keys off data-nav="collapsed".
+// Theme and sidebar collapse. The initial state is applied by theme-init.js in <head> before paint; this changes and
+// remembers it. Bootstrap 5.3 reads data-bs-theme; the sidebar CSS keys off data-nav="collapsed".
+// The theme chosen (tide-theme) is "light", "dark" or "system", the default: the operating system's, followed live, so
+// a system that turns dark at dusk turns TIDE dark with it. data-bs-theme is always the one in force, light or dark.
 window.tideTheme = (function () {
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function systemDark() { return !!(media && media.matches); }
+    // The one in force: "light" or "dark".
     function current() { return document.documentElement.getAttribute('data-bs-theme') || 'light'; }
+    // The one chosen: "light", "dark" or "system". Kept here as well, for a browser that won't store it.
+    var picked = null;
+    function chosen() {
+        var t = picked;
+        try { t = localStorage.getItem('tide-theme') || t; } catch (e) { /* private mode */ }
+        return t === 'light' || t === 'dark' ? t : 'system';
+    }
+    function show(t) {
+        document.documentElement.setAttribute('data-bs-theme', t === 'system' ? (systemDark() ? 'dark' : 'light') : t);
+    }
     function apply(t) {
-        document.documentElement.setAttribute('data-bs-theme', t);
-        try { localStorage.setItem('tide-theme', t); } catch (e) { /* private mode */ }
+        if (t !== 'light' && t !== 'dark') t = 'system';
+        picked = t;
+        try { localStorage.setItem('tide-theme', t); } catch (e) { /* private mode: in force until the page reloads */ }
+        show(t);
     }
     function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
-    return { toggle: toggle, apply: apply, current: current };
+    if (media) {
+        var follow = function () { if (chosen() === 'system') show('system'); };
+        if (media.addEventListener) media.addEventListener('change', follow);
+        else if (media.addListener) media.addListener(follow);
+    }
+    return { toggle: toggle, apply: apply, current: current, chosen: chosen };
 })();
 
 window.tideNav = (function () {

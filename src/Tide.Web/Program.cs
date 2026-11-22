@@ -114,7 +114,8 @@ builder.Services.AddAuthentication()
 builder.Services.AddSingleton<Tide.Application.Abstractions.ISecretProtector, Tide.Web.Security.DataProtectionSecrets>();
 builder.Services.AddScoped<Tide.Application.Api.IWebhookPoster, HttpWebhookPoster>();
 builder.Services.AddHttpClient(HttpWebhookPoster.Client, c => c.Timeout = TimeSpan.FromSeconds(15))
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+    .ConfigurePrimaryHttpMessageHandler(sp => HttpWebhookPoster.Handler(
+        HttpWebhookPoster.Refusal(sp.GetRequiredService<IOptionsMonitor<Tide.Application.Api.WebhookOptions>>())));
 
 builder.Services.AddAuthorization(options =>
 {
@@ -177,6 +178,8 @@ builder.Services.AddHostedService<IntakeHostedService>();
 builder.Services.AddHostedService<MetricImportHostedService>();
 builder.Services.AddHostedService<UpdateCheckHostedService>();
 builder.Services.AddHostedService<WebhookHostedService>();
+builder.Services.AddHostedService<UrlHashFillHostedService>();
+builder.Services.AddHostedService<MeetingAttendanceHostedService>();
 builder.Services.AddScoped<SystemSettings>();
 builder.Services.AddScoped<SystemDiagnostics>();
 
@@ -229,6 +232,17 @@ using (var scope = app.Services.CreateScope())
         app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Jobs")
             .LogWarning(ex, "Couldn't read the job history at start-up; Diagnostics shows only this process's runs.");
     }
+}
+
+// The file store makes its folder when it's first built. Building it now, rather than at the first upload or the intake
+// job's first pass, means Diagnostics on a new server finds the screenshot folder ready. A folder the app pool can't make
+// doesn't stop the app: Diagnostics reports it, and the next use of the store tries again.
+// On an unreachable UNC share, making the folder can block until the SMB timeout, and that wait is now part of start-up.
+try { app.Services.GetRequiredService<IFileStore>(); }
+catch (Exception ex)
+{
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Files")
+        .LogWarning(ex, "Couldn't make the files folder (Files:RootPath) at start-up; Administration > System > Diagnostics shows why.");
 }
 
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
@@ -391,7 +405,7 @@ app.MapGet("/rotation/my.ics", async (Tide.Application.Rotation.RotationService 
 app.MapGet("/metrics/export.csv", async (string? from, string? to, MetricsService metrics, OrgClock clock, CancellationToken ct) =>
 {
     var end = DateOnly.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t) ? t : clock.CurrentBriefDate;
-    var start = DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : end.AddDays(-30);
+    var start = DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : MetricHistoryRange.Last(MetricHistoryRange.DefaultDays, end).From;
     try
     {
         var history = await metrics.HistoryAsync(start, end, ct);

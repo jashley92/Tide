@@ -7,8 +7,9 @@ namespace Tide.Infrastructure.Notifications;
 /// Which addresses the outbound client may reach. Loopback, link-local (cloud metadata at 169.254.169.254 among them),
 /// unspecified, multicast and broadcast addresses are always refused: no feed lives there, and reaching them is how a
 /// feed's redirect would probe the server itself. Private ranges (RFC 1918, carrier-grade NAT, IPv6 unique-local and
-/// site-local) are refused unless <c>Intake:AllowPrivateNetworks</c> is set, for an organization whose feeds are
-/// internal. IPv4-mapped IPv6 addresses are judged as the IPv4 address they carry.
+/// site-local) are refused unless the caller allows them: <c>Intake:AllowPrivateNetworks</c> for an organization whose
+/// feeds are internal, <c>Webhooks:AllowPrivateNetworks</c> (on by default) for webhook receivers, which often are.
+/// IPv4-mapped IPv6 addresses are judged as the IPv4 address they carry. <see cref="AddressGuard"/> applies it.
 /// </summary>
 public static class AddressPolicy
 {
@@ -62,4 +63,7 @@ public sealed class RefusedAddressException(string host, string why)
     : IOException($"{host} is {why}, which TIDE doesn't fetch from.")
 {
     public string Host { get; } = host;
+
+    /// <summary>What the address is ("a loopback address").</summary>
+    public string Why { get; } = why;
 }

@@ -7,7 +7,7 @@ Windows PowerShell 5.1, ASCII only. `Install-Tide.ps1`, `Upgrade-Tide.ps1` and `
 |---|---|
 | `New-TideConfig.ps1` | Asks for each install value, with defaults and checks, and writes `tide.config.psd1`. Runs anywhere; never asks for a password. |
 | `tide.config.template.psd1` | The answers file both installers read. Generate it with `New-TideConfig.ps1`, or copy this to `tide.config.psd1` (git-ignored) and fill it in. |
-| `Install-Database.ps1` + `sql/01-Create-Database.sql` | Creates the database and the app-pool account's Windows login. The two modes are AppMigrates (`db_owner`, the app applies its schema) and DbaApplies (read/write/EXECUTE; a DBA applies the schema). |
+| `Install-Database.ps1` + `sql/01-Create-Database.sql` | Creates the database and the app-pool account's Windows login. The two modes are AppMigrates (`db_owner`, the app applies its schema) and DbaApplies (read/write/EXECUTE; a DBA applies the schema: [the DBA schema script](#the-dba-schema-script), which `-ApplySchema` runs). |
 | `Install-Tide.ps1` | Publishes the app (or, from a release bundle, copies its app in) and creates the data root, `appsettings.Production.json`, the app pool and the site: its own host name, an SNI binding, Windows auth, anonymous `/health`, and anonymous `/api/v1` with Windows auth left on (for API tokens). Optionally (`ParentSite` and `AppPath`) it creates an application under an existing site instead, such as `/tide`, leaving that site's bindings and authentication alone. Re-runnable to repair an install. |
 | `Verify-Install.ps1` | Checks the pool and site are running, the app and database answer, and the site asks for a Windows sign-in. Under another site, pass the URL with its path and the parent's site name. |
 | `Upgrade-Tide.ps1` | The in-place upgrade ([docs/UPGRADE.md](../docs/UPGRADE.md#upgrading-with-upgrade-tideps1)), from `-Version` (downloaded with its `.sha256` and `.sig`), `-BundleZip`, `-AppSource` or `-Build`. A bundle is checked before it's expanded: its signature against the pinned release keys, and its SHA-256 against `-ExpectedSha256` or the `.sha256` beside it ([below](#checking-a-bundle)). Reads the install from IIS and `appsettings.Production.json`; checks the runtime, SQL Server and the database's migrations against the release's `migrations-sqlserver.txt` (on a DbaApplies install it stops unless the DBA has applied them all: it never migrates); backs up the database, the settings and the site; adds settings a newer release introduced without changing any; swaps the files, keeping `appsettings.Production.json`, `logs` and `App_Data`; warms up on `/health` and rolls back if the new build doesn't start. `-WhatIf` runs the checks only. |
@@ -69,6 +69,25 @@ by its hash: v1.8.0 has no `Test-TideBundle.ps1`, and its upgrade checks the SHA
 checked from then on: by v1.9.0's installed `Upgrade-Tide.ps1` on the upgrades after it, and by v1.9.0's
 `Test-TideBundle.ps1` (once v1.9.0 is a deploy folder you trust) on later bundles.
 
-**Not yet here:** a DBA schema script for DbaApplies installs (`sql/tide-schema-sqlserver.sql`), planned before the
-first release (1.0). `Upgrade-Tide.ps1` doesn't apply one: on a DbaApplies install it checks the DBA has, and stops
-until they have.
+## The DBA schema script
+
+A release bundle's `deploy\sql` holds `tide-schema-sqlserver.sql`: every SQL Server migration of that release, as one
+idempotent script (`dotnet ef migrations script --idempotent`). It creates the schema in an empty database, brings one
+from any earlier release up to date, and changes nothing in one already there. It's inside the signed zip, so
+`Test-TideBundle.ps1` vouches for it with the rest.
+
+A DbaApplies install applies it. `Install-Database.ps1 -SchemaMode DbaApplies -ApplySchema` runs it on a first install,
+and a DBA runs it again from each new bundle before upgrading, with `Invoke-Sqlcmd` or `sqlcmd`. It has `GO` batch
+separators and non-ASCII text, so give `sqlcmd` these switches:
+
+```powershell
+sqlcmd -S SQLHOST\PROD -E -d Tide -b -I -x -X1 -f i:65001 -i .\deploy\sql\tide-schema-sqlserver.sql
+```
+
+`-b` stops at the first error, `-I` sets QUOTED_IDENTIFIER for the filtered indexes, `-x` leaves `$(...)` in the text
+alone, `-X1` refuses sqlcmd's shell (`!!`) and editor commands and stops if one appears (the script has none), and
+`-f i:65001` reads it as UTF-8. `Upgrade-Tide.ps1` doesn't apply it: on a DbaApplies install it checks the
+DBA has, and stops until they have.
+
+The script isn't in the repository; the release workflow generates it. To make one from a source checkout (with the
+.NET SDK, after `dotnet tool restore`): `bash tools/ci/sqlserver-schema-script.sh deploy/sql/tide-schema-sqlserver.sql`.

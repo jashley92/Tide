@@ -45,7 +45,7 @@
     }
     else
     {
-        <div class="table-responsive">
+        <TableScroll LabelledBy="api-callers">
             <table class="table table-sm align-middle">
                 <thead><tr><th scope="col">Caller</th><th scope="col">Scopes</th><th scope="col">Reads up to</th><th scope="col">Expires</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Revoke</span></th></tr></thead>
                 <tbody>
@@ -63,7 +63,7 @@
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
     }
 
     <h3 class="tide-subhead mt-3">Issue a token</h3>
@@ -73,8 +73,8 @@
             <input id="tok-name" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.ApiToken.MaxName" placeholder="XSOAR playbooks" @bind="_name" />
         </div>
         <div class="col-md-3">
-            <span class="tide-field-label" aria-hidden="true">Reads up to</span>
-            <TlpSelect Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
+            <label class="tide-field-label" for="tok-tlp">Reads up to</label>
+            <TlpSelect Id="tok-tlp" Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
         </div>
         <div class="col-md-2">
             <label class="tide-field-label" for="tok-days">Days</label>
@@ -118,7 +118,7 @@
         ceiling isn't posted at all: a webhook gets what the team edition's readers do.</p>
     @if (_hooks is { Count: > 0 })
     {
-        <div class="table-responsive">
+        <TableScroll LabelledBy="api-hooks">
             <table class="table table-sm align-middle">
                 <thead><tr><th scope="col">Address</th><th scope="col">Events</th><th scope="col">Last post</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                 <tbody>
@@ -145,7 +145,7 @@
                     }
                 </tbody>
             </table>
-        </div>
+        </TableScroll>
     }
     <h3 class="tide-subhead mt-3">Add a webhook</h3>
     <div class="row g-2 align-items-end">
@@ -172,7 +172,7 @@
 <ConfirmDialog @ref="_confirm" />
 
 @code {
-    private ConfirmDialog _confirm = default!;
+    internal ConfirmDialog _confirm = default!;
     private IReadOnlyList<ApiTokenRow>? _tokens;
     private IReadOnlyList<WebhookRow>? _hooks;
     private string? _name, _hookUrl;
@@ -218,11 +218,15 @@
         finally { _busy = false; }
     }
 
-    private async Task Revoke(ApiTokenRow t)
+    internal async Task Revoke(ApiTokenRow t)
     {
         if (!await _confirm.Ask($"Revoke the token for {t.Name}?", "Calls with it are refused from now on. It can't be turned back on: issue a new one instead.", "Revoke")) return;
-        await Tokens.RevokeAsync(t.Id);
-        Toasts.Show($"Revoked the token for {t.Name}.");
+        try
+        {
+            await Tokens.RevokeAsync(t.Id);
+            Toasts.Show($"Revoked the token for {t.Name}.");
+        }
+        catch (KeyNotFoundException) { Toasts.Show($"The token for {t.Name} no longer exists."); }
         await Load();
     }
 
@@ -242,7 +246,7 @@
         finally { _busy = false; }
     }
 
-    private async Task Test(WebhookRow h)
+    internal async Task Test(WebhookRow h)
     {
         _busy = true;
         try
@@ -250,23 +254,30 @@
             var (status, error) = await Webhooks.TestAsync(h.Id);
             if (error is null) Toasts.Show($"The test reached {h.Url} ({status}).");
             else Toasts.Error(error);
-            await Load();
         }
+        catch (KeyNotFoundException) { Removed(h); }
         finally { _busy = false; }
-    }
-
-    private async Task Enable(WebhookRow h, bool on)
-    {
-        await Webhooks.SetEnabledAsync(h.Id, on);
         await Load();
     }
 
-    private async Task Remove(WebhookRow h)
+    internal async Task Enable(WebhookRow h, bool on)
+    {
+        try { await Webhooks.SetEnabledAsync(h.Id, on); }
+        catch (KeyNotFoundException) { Removed(h); }
+        await Load();
+    }
+
+    internal async Task Remove(WebhookRow h)
     {
         if (!await _confirm.Ask("Remove the webhook?", $"TIDE stops posting to {h.Url}.", "Remove")) return;
-        await Webhooks.RemoveAsync(h.Id);
+        try { await Webhooks.RemoveAsync(h.Id); }
+        catch (KeyNotFoundException) { Removed(h); }
         await Load();
     }
+
+    // Another administrator removed it after this page listed it. Said in a toast and the list read again, rather than
+    // left to the error boundary, which would also lose a token or secret still on show here (neither can be shown again).
+    private void Removed(WebhookRow h) => Toasts.Show($"The webhook for {h.Url} was already removed.");
 
     private async Task Copy(string text)
     {

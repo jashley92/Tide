@@ -29,9 +29,10 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
         [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(SavedActionView), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText),
          typeof(JobLease), typeof(JobProcess), typeof(JobRun)];
 
-    // Changing on every save, so recording them is noise.
+    // Changing on every save, so recording them is noise; and an address's hash, which is the address recorded beside it.
     private static readonly HashSet<string> SkippedProperties =
-        [nameof(AuditableEntity.ModifiedAtUtc), nameof(AuditableEntity.ModifiedBy), nameof(Article.EditVersion)];
+        [nameof(AuditableEntity.ModifiedAtUtc), nameof(AuditableEntity.ModifiedBy), nameof(Article.EditVersion), nameof(Article.SourceUrlHash),
+         nameof(ArticleLink.UrlHash)];
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {

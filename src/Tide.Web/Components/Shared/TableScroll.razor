@@ -1,0 +1,16 @@
+@* A table wider than a narrow window scrolls sideways in its own box (Bootstrap's table-responsive), the page doesn't.
+   The keyboard can reach the box, so its hidden columns can be scrolled to without a mouse, and it's a region named for
+   its table: by the heading it's under (LabelledBy), or in words (Label). *@
+<div class="table-responsive tide-table-scroll" tabindex="0" role="region" aria-labelledby="@LabelledBy" aria-label="@(LabelledBy is null ? Label : null)">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The id of the heading the table is under, which names the box.</summary>
+    [Parameter] public string? LabelledBy { get; set; }
+
+    /// <summary>The box's name, when there's no heading to point at.</summary>
+    [Parameter] public string? Label { get; set; }
+}

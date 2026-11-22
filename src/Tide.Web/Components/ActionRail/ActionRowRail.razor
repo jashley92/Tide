@@ -17,13 +17,16 @@
     <div class="tide-rail-buttons">
         @if (CanTake)
         {
-            <button type="button" class="btn btn-primary btn-sm tide-rail-take" disabled="@Busy" aria-keyshortcuts="T" aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on")"
-                    @onclick="() => OnTake.InvokeAsync()">Take it <kbd class="tide-kbd" aria-hidden="true">T</kbd></button>
+            @* Named by its words, then the action, unseen ("Take it: A-12"); the key is aria-keyshortcuts'. An aria-label
+               would have to end in the key's "T" to start with what's shown. *@
+            <button type="button" class="btn btn-primary btn-sm tide-rail-take" disabled="@Busy" aria-keyshortcuts="T"
+                    @onclick="() => OnTake.InvokeAsync()">Take it<span class="visually-hidden">@($": {Ui.ActionLabel(Row.Number)}")</span> <kbd class="tide-kbd" aria-hidden="true">T</kbd></button>
         }
         @if (Moves is { Count: > 0 })
         {
+            @* Named by its words, then the action ("Move to: A-12"), so the name starts with what's shown. *@
             <MenuButton Label="Move to" Items="Moves" Disabled="Busy" ButtonClass="btn btn-outline-secondary btn-sm"
-                        AriaLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
+                        AriaLabel="@($"Move to: {Ui.ActionLabel(Row.Number)}")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
         }
         else if (!OnBoard && CanWork && Row.IsOpen)
         {
@@ -71,7 +74,8 @@
         <section class="tide-card tide-rail-hunt" aria-labelledby="rail-hunt-h">
             <h2 id="rail-hunt-h">Hunt query</h2>
             <div class="small tide-muted">@HuntQueryBuilder.DialectName(dialect) · @(previewed ? "a preview: copying it puts it on the action" : "on the action")</div>
-            <pre id="rail-hunt-query" class="tide-query">@text</pre>
+            @* It scrolls when it's long, so the keyboard can reach it, and it's named for what it holds. *@
+            <pre id="rail-hunt-query" class="tide-query" tabindex="0" role="region" aria-labelledby="rail-hunt-h">@text</pre>
             <div class="tide-rail-buttons">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="rail-hunt-query" data-copy-status="rail-hunt-status"
                         disabled="@(previewed && _copying)" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy query</button>
@@ -237,7 +241,7 @@
         if (next is { Kind: NextKind.Unowned } && !onAction)
             return ("unowned", _preview is not null ? "Nobody has it. Take it, then copy the query." : "Nobody has it. Take it.");
         if (next is not null) return (next.Kind.ToString().ToLowerInvariant(), next.Text);
-        if (!Row.IsOpen) return ("closed", $"{ActionService.StatusName(Row.Status)}{(Row.ClosedDate is { } c ? " on " + Ui.ShortDay(c) : "")}.");
+        if (!Row.IsOpen) return ("closed", $"{ActionService.StatusName(Row.Status)}{(Row.ClosedDate is { } c ? " on " + Ui.ShortDay(c, ActionSvc.Today) : "")}.");
         // An external team's: nobody in TIDE holds it, as expected; its ticket names it.
         if (Row.Holder("") is { Outside: true } holder)
             return ("external", holder.Kind == HolderKind.Ticket ? $"With {Row.TeamName} on {holder.Text}." : $"{holder.Text}.");

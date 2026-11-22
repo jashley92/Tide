@@ -23,12 +23,12 @@
     <p class="tide-muted small">Anything marked above an edition's ceiling (article, bullet or screenshot) is left out of it. Company-wide: the SharePoint copy. Team: the security teams' copy and the meeting.</p>
     <div class="row g-3 align-items-end">
         <div class="col-md-4">
-            <label class="tide-field-label">Company-wide (public) edition</label>
-            <TlpSelect @bind-Value="_public" Label="Public edition ceiling" />
+            <label class="tide-field-label" for="ceiling-public">Company-wide (public) edition</label>
+            <TlpSelect @bind-Value="_public" Id="ceiling-public" DescribedBy="@CeilingError" Label="Public edition ceiling" />
         </div>
         <div class="col-md-4">
-            <label class="tide-field-label">Team edition</label>
-            <TlpSelect @bind-Value="_team" Label="Team edition ceiling" />
+            <label class="tide-field-label" for="ceiling-team">Team edition</label>
+            <TlpSelect @bind-Value="_team" Id="ceiling-team" DescribedBy="@CeilingError" Label="Team edition ceiling" />
         </div>
         <div class="col-md-4">
             <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveCeilings">Save ceilings</button>
@@ -36,7 +36,7 @@
     </div>
     @if (_public > _team)
     {
-        <div class="text-danger small mt-2">The company-wide edition can't carry more than the team edition.</div>
+        <div id="ceiling-error" class="text-danger small mt-2" role="alert">The company-wide edition can't carry more than the team edition.</div>
     }
 </div>
 
@@ -142,7 +142,7 @@
 <div class="tide-card">
     <h2 id="role-abilities">What each role can do</h2>
     <p class="tide-muted small">Read from the permissions each role grants, so it can't drift from what TIDE enforces.</p>
-    <div class="table-responsive">
+    <TableScroll LabelledBy="role-abilities">
         <table class="tide-table tide-role-table" aria-labelledby="role-abilities">
             <thead>
                 <tr>
@@ -172,7 +172,7 @@
                 }
             </tbody>
         </table>
-    </div>
+    </TableScroll>
 </div>
 
 <ConfirmDialog @ref="_confirm" />
@@ -185,6 +185,9 @@
     private string? _group;
     private AppRole _role = AppRole.Analyst;
     private TlpLevel _public, _team;
+
+    // The message under the ceilings while they're the wrong way round, which each select names as its description.
+    private string? CeilingError => _public > _team ? "ceiling-error" : null;
     private string? _teamRecipients, _publicRecipients;
     private Tide.Application.Reviews.ReviewRule _reviewRule;
 
@@ -196,17 +199,29 @@
         _reviewRule = await Reviews.RuleAsync();
         _requireSharePoint = DistributionOptions.CurrentValue.RequireSharePoint;
         _domains = string.Join("; ", Boundary.OrganizationDomains);
+        _loaded = Shown();
         await Load();
     }
 
     private bool _requireSharePoint;
+
+    // The settings as the page showed them when it loaded (or last saved them): a save sends only what was changed here,
+    // and one someone else has changed since is refused rather than put back.
+    private Dictionary<string, string?> _loaded = [];
+
+    private Dictionary<string, string?> Shown() => new()
+    {
+        [Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false",
+        [Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains,
+    };
 
     internal Task SaveSharePoint() => Run(async () =>
     {
         await Operational.SaveAsync(new Dictionary<string, string?>
         {
             [Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false",
-        });
+        }, loaded: _loaded);
+        _loaded[Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false";
         Toasts.Show("Saved.");
     });
 
@@ -237,8 +252,9 @@
         await Operational.SaveAsync(new Dictionary<string, string?>
         {
             [Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains,
-        });
+        }, loaded: _loaded);
         _domains = string.Join("; ", Boundary.OrganizationDomains);
+        _loaded[Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains;
         Toasts.Show($"Saved. Inside your organization: {Boundary.Current.Describe}.");
     });
 

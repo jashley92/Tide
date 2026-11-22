@@ -266,6 +266,11 @@ public static class ArticleChecks
         return checks;
     }
 
+    /// <summary>Why an article can't be marked Ready: its first blocking check, as "It isn't ready yet: Add the bottom line
+    /// (BLUF)."; null when nothing blocks it. The editor says it beside its Mark ready button, and the service refuses with it.</summary>
+    public static string? NotReady(IEnumerable<ArticleCheck> checks) =>
+        checks.FirstOrDefault(c => c.Blocking) is { } gap ? "It isn't ready yet: " + gap.Message : null;
+
     /// <summary>
     /// The warning for a threat whose "Why it matters to us" goes to everyone: it has text, and its effective TLP is at or
     /// below <paramref name="companyCeiling"/>, so the company-wide edition carries it. That paragraph often names our own

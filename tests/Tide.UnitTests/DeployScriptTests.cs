@@ -269,6 +269,12 @@ public partial class DeployScriptTests
         var release = Read(".github", "workflows", "release.yml");
         release.Should().Contain("cp -r deploy \"$root/deploy\"", "every deploy script, the upgrade's included, ships in the bundle");
         release.Should().Contain("\"$root/migrations-sqlserver.txt\"");
+        release.Should().Contain("bash tools/ci/sqlserver-schema-script.sh publish/tide-schema-sqlserver.sql --no-build")
+            .And.Contain("cp publish/tide-schema-sqlserver.sql \"$root/deploy/sql/tide-schema-sqlserver.sql\"",
+                "the DBA schema script is where Install-Database.ps1 -ApplySchema looks, inside the signed zip");
+        Read("deploy", "Install-Database.ps1").Should().Contain(@"Join-Path $scriptDir 'sql\tide-schema-sqlserver.sql'");
+        release.IndexOf("deploy/sql/tide-schema-sqlserver.sql", StringComparison.Ordinal)
+            .Should().BeLessThan(release.IndexOf("zip -qr", StringComparison.Ordinal));
         release.Should().Contain("tide-${version}.zip.sha256");
         release.Should().Contain("\"bundle/tide-${version}.zip.sig\" \"${args[@]}\"", "the signature is published with the bundle");
         release.Should().Contain("RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}").And.Contain("The RELEASE_SIGNING_KEY secret isn't set");
@@ -1134,6 +1140,109 @@ public partial class DeployScriptPowerShellTests
     }
 
     [Fact]
+    public void The_restore_drill_never_takes_the_live_databases_name_whatever_the_instance_is_called()
+    {
+        // The drill drops its scratch database first. '.' (or localhost, or the FQDN) is the live instance by another name,
+        // so the old check, the instance names compared as text, let -ScratchDatabase <live name> through to DROP DATABASE.
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                same      = Get-TideScratchRefusal 'Tide' 'Tide'
+                otherCase = Get-TideScratchRefusal 'tide ' 'Tide'
+                otherName = Get-TideScratchRefusal 'Tide_RestoreDrill' 'Tide'
+                blank     = Get-TideScratchRefusal ' ' 'Tide'
+            })
+            """);
+        r.GetProperty("same").GetString().Should().StartWith("The scratch database can't be named").And.Contain("Nothing has been changed");
+        r.GetProperty("otherCase").GetString().Should().StartWith("The scratch database can't be named");
+        r.GetProperty("otherName").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("blank").GetString().Should().Contain("-ScratchDatabase is empty");
+        DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1").Should().NotContain("$SqlInstance -eq $live.Instance",
+            "the instance's name proves nothing");
+    }
+
+    [Fact]
+    public void The_drill_drops_only_a_scratch_database_a_drill_restored_and_marks_each_one_it_restores()
+    {
+        // On a shared instance -ScratchDatabase Tide_Site2 could name another install's live database, which the drill
+        // used to drop as "left by an earlier drill".
+        var r = Run("""
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                marked   = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $true
+                unmarked = Get-TideScratchDropRefusal -Scratch 'Tide_Site2' -SqlInstance 'SQLHOST01' -Marked $false
+                mark     = Get-TideDrillMarkerSql 'Tide]Drill'
+                query    = Get-TideDrillMarkerQuery 'Tide]Drill'
+            })
+            """);
+        r.GetProperty("marked").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("unmarked").GetString().Should().Contain("SQLHOST01 already has a database named Tide_Site2")
+            .And.Contain("TideRestoreDrill").And.Contain("Nothing has been changed");
+        r.GetProperty("mark").GetString().Should().Be("EXEC [Tide]]Drill].sys.sp_addextendedproperty @name = N'TideRestoreDrill', @value = N'1';");
+        r.GetProperty("query").GetString().Should().Be("SELECT COUNT(*) FROM [Tide]]Drill].sys.extended_properties WHERE class = 0 AND name = N'TideRestoreDrill'");
+
+        // The order in the script: the mark is checked before the DROP, and set straight after the restore.
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        int At(string s) { var i = drill.IndexOf(s, StringComparison.Ordinal); i.Should().BeGreaterThan(-1, s); return i; }
+        var check = At("Get-TideDrillMarkerQuery $ScratchDatabase");
+        var refuse = At("if ($dropRefusal) { throw $dropRefusal }");
+        var drop = At("Removing the scratch database left by an earlier drill");
+        var restore = At("\"RESTORE DATABASE $(Get-SqlName $ScratchDatabase)");
+        var mark = At("Get-TideDrillMarkerSql $ScratchDatabase");
+        var dbcc = At("DBCC CHECKDB(");
+        new[] { check, refuse, drop, restore, mark, dbcc }.Should().BeInAscendingOrder();
+    }
+
+    [WindowsFact]
+    public void The_restore_drill_refuses_the_live_databases_name_before_it_connects_anywhere()
+    {
+        // The script itself, under each PowerShell here, with the instance spelled three ways. It throws before opening a
+        // connection, so no SQL Server is needed. The drill reads the connection string with SqlClient, as on the server.
+        foreach (var shell in Shells())
+        {
+            var r = Run("""
+                $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-drill-' + [guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $dir | Out-Null
+                try {
+                    Set-Content -Path (Join-Path $dir 'appsettings.Production.json') -Value '{ "Database": { "Provider": "SqlServer" }, "ConnectionStrings": { "Default": "Server=SQLHOST01;Database=Tide;Integrated Security=true" } }'
+                    $drill = { param($scratch, $instance) try { & (Join-Path $deploy 'Test-TideRestore.ps1') -SitePath $dir -BackupSet $dir -ScratchDatabase $scratch -SqlInstance $instance 6>$null | Out-Null; 'ran' } catch { $_.Exception.Message } }
+                    $out = [ordered]@{ dot = & $drill 'Tide' '.'; fqdn = & $drill 'tide' 'sqlhost01.contoso.com'; same = & $drill 'Tide' 'SQLHOST01' }
+                } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+                ConvertTo-Json -Compress -InputObject $out
+                """, shell);
+            foreach (var refused in new[] { "dot", "fqdn", "same" })
+                r.GetProperty(refused).GetString().Should().StartWith("The scratch database can't be named", "{0} under {1}", refused, shell);
+        }
+    }
+
+    [Fact]
+    public void The_drill_checks_the_key_ring_only_in_a_set_whose_backup_had_one_to_take()
+    {
+        // Without DataProtection:KeyPath, Backup-Tide.ps1 has no key ring to copy, and the drill used to fail every run.
+        var r = Run("""
+            $set = { param($folders) ('{ "format": 1, "folders": ' + $folders + ' }') | ConvertFrom-Json }
+            $site = { param($keyPath) [pscustomobject]@{ Folder = 'D:\inetpub\tide'; Layers = @([pscustomobject]@{ DataProtection = [pscustomobject]@{ KeyPath = $keyPath } }) } }
+            $noKeys = & $site ''
+            $keys = & $site 'E:\TideData\dp-keys'
+            ConvertTo-Json -Compress -InputObject ([ordered]@{
+                withRing   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys" }]') $noKeys
+                notThere   = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }, { "label": "dp-keys", "note": "not there" }]') $noKeys
+                withoutKey = Test-TideSetHasKeyRing (& $set '[{ "label": "files" }]') $keys
+                noFolders  = Test-TideSetHasKeyRing (& $set '[]') $keys
+                oldSetSet  = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $keys
+                oldSetNone = Test-TideSetHasKeyRing ('{ "format": 1 }' | ConvertFrom-Json) $noKeys
+            })
+            """);
+        r.GetProperty("withRing").GetBoolean().Should().BeTrue();
+        r.GetProperty("notThere").GetBoolean().Should().BeTrue("a key path set but not found is a real failure");
+        r.GetProperty("withoutKey").GetBoolean().Should().BeFalse("the set records what its backup had, not what the site has now");
+        r.GetProperty("noFolders").GetBoolean().Should().BeFalse();
+        r.GetProperty("oldSetSet").GetBoolean().Should().BeTrue("a set that lists no folders goes by the site's setting");
+        r.GetProperty("oldSetNone").GetBoolean().Should().BeFalse();
+
+        var drill = DeployScriptTests.ReadText("deploy", "Test-TideRestore.ps1");
+        drill.Should().Contain("if (Test-TideSetHasKeyRing $manifest $site) {").And.Contain("Add-Check 'dp-keys' $true -Skipped");
+    }
+
+    [Fact]
     public void Backup_helpers_find_the_folders_and_files_a_set_holds()
     {
         var r = Run("""
@@ -1405,6 +1514,67 @@ public partial class DeployScriptPowerShellTests
             Case("bare/trust-nosqlcmd").Result.Should().Contain("can't encrypt the connection");
             Case("v22/trust-nosqlcmd").Result.Should().Be("ok");
         }
+    }
+
+    [Fact]
+    public void ApplySchema_runs_the_bundles_schema_script_in_the_database_and_refuses_before_anything_when_it_is_missing()
+    {
+        // A bundle's layout (tide-<version>\deploy\sql) in a temp folder, with stand-ins for Invoke-Sqlcmd (SqlServer 22) and
+        // sqlcmd.exe that record the script each step runs. The schema script is EF's idempotent one: GO batches, and text
+        // that isn't a sqlcmd template, so $(...) must not be read as a variable. Nothing connects anywhere.
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-bundle-' + [guid]::NewGuid().ToString('N'))
+            $bundleDeploy = Join-Path $root 'tide-v9.9.9\deploy'
+            New-Item -ItemType Directory -Path (Join-Path $bundleDeploy 'sql') | Out-Null
+            Copy-Item (Join-Path $deploy 'Install-Database.ps1') $bundleDeploy
+            Copy-Item (Join-Path $deploy 'sql\01-Create-Database.sql') (Join-Path $bundleDeploy 'sql')
+            $schema = Join-Path $bundleDeploy 'sql\tide-schema-sqlserver.sql'
+            $install = Join-Path $bundleDeploy 'Install-Database.ps1'
+            $go = @{ SqlInstance = 'SQLHOST'; AppAccount = 'CONTOSO\svc-tide$'; SchemaMode = 'DbaApplies'; ApplySchema = $true }
+
+            New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value {
+                [CmdletBinding()] param($ServerInstance, $Query, $InputFile, $Variable, $Database, $QueryTimeout, $OutputSqlErrors,
+                    [switch] $AbortOnError, [string] $Encrypt, [switch] $TrustServerCertificate, [switch] $DisableVariables, [switch] $DisableCommands)
+                if ($Query) { return [pscustomobject]@{ RunAs = 'CONTOSO\dba'; IsSysadmin = 1; CanCreateDb = 1; CanCreateLogin = 1; DbExists = 0; LoginExists = 0; ControlsDb = 0 } }
+                $global:sqlLog += "$([IO.Path]::GetFileName($InputFile)) db=$Database novars=$([bool]$DisableVariables) nocmds=$([bool]$DisableCommands)"
+            } | Out-Null
+            $out = [ordered]@{}
+            try {
+                $global:sqlLog = @()
+                $out.missing = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.missingCalls = @($global:sqlLog)
+
+                Set-Content -LiteralPath $schema -Value "SELECT N'`$(not a variable)';`nGO`n"
+                $global:sqlLog = @()
+                $out.module = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.moduleCalls = @($global:sqlLog)
+
+                # An Invoke-Sqlcmd that can't encrypt: every step goes to sqlcmd.exe.
+                New-Item -Path function: -Name Invoke-Sqlcmd -Force -Value { param($ServerInstance) } | Out-Null
+                New-Item -Path function: -Name sqlcmd.exe -Force -Value {
+                    if ($args -contains '-Q') { 'CONTOSO\dba|1|1|1|0|0|0' }
+                    elseif ($args -contains '-i') { $global:sqlLog += ($args | ForEach-Object { if ("$_" -like '*.sql') { [IO.Path]::GetFileName("$_") } else { "$_" } }) -join ' ' }
+                    $global:LASTEXITCODE = 0
+                } | Out-Null
+                $global:sqlLog = @()
+                $out.sqlcmd = try { & $install @go 6>$null | Out-Null; 'ok' } catch { $_.Exception.Message }
+                $out.sqlcmdCalls = @($global:sqlLog)
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+            ConvertTo-Json -Depth 4 -Compress -InputObject $out
+            """);
+        string[] Calls(string name) => r.GetProperty(name).EnumerateArray().Select(x => x.GetString()!).ToArray();
+
+        r.GetProperty("missing").GetString().Should().StartWith("Missing ").And.Contain("tide-schema-sqlserver.sql")
+            .And.Contain("Nothing was changed");
+        Calls("missingCalls").Should().BeEmpty("the database isn't created when its schema can't follow");
+
+        r.GetProperty("module").GetString().Should().Be("ok");
+        Calls("moduleCalls").Should().Equal("01-Create-Database.sql db= novars=False nocmds=False", "tide-schema-sqlserver.sql db=Tide novars=True nocmds=True");
+
+        r.GetProperty("sqlcmd").GetString().Should().Be("ok");
+        Calls("sqlcmdCalls").Should().HaveCount(2);
+        Calls("sqlcmdCalls")[1].Should().Contain("-d Tide").And.Contain("-i tide-schema-sqlserver.sql").And.Contain(" -x ").And.Contain(" -X1 ").And.Contain(" -I ").And.Contain(" -b ")
+            .And.Contain(" -f i:65001 ", "the script has non-ASCII text, read as UTF-8 whatever the console's code page");
     }
 
     [WindowsFact]

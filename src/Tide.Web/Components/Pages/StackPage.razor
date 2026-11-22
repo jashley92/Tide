@@ -94,29 +94,32 @@
             }
             else
             {
-                @* Each row's cells stack on a narrow window (data-label names each), so the list never scrolls sideways. *@
+                @* Each row's cells stack where the list is narrow (data-label names each), so the list never scrolls sideways. The
+                   roles keep it a table to screen readers once they do: Safari drops a table's own when its cells are
+                   laid out as blocks. *@
                 <div class="table-responsive tide-stack-list">
-                    <table class="tide-table tide-stack-table">
+                    <table class="tide-table tide-stack-table" role="table">
                         <caption class="visually-hidden">Our stack: products that need a look first</caption>
-                        <thead><tr><th scope="col">Product</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th><th scope="col">Right now</th>
-                            <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
-                        <tbody>
+                        <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Product</th><th scope="col" role="columnheader">Versions</th><th scope="col" role="columnheader">Team</th>
+                            <th scope="col" role="columnheader">Checked</th><th scope="col" role="columnheader">Right now</th>
+                            <th scope="col" role="columnheader" class="tide-table-num">Articles</th><th scope="col" role="columnheader" class="tide-table-num">Open actions</th></tr></thead>
+                        <tbody role="rowgroup">
                             @for (var at = 0; at < shown.Count; at++)
                             {
                                 var r = shown[at];
                                 var place = at;
                                 var selected = place == selectedAt;
-                                <tr class="@RowClass @RowSelection.Css(selected) @(r.Product.IsRetired ? "tide-muted" : null)" aria-current="@RowSelection.Current(selected)"
+                                <tr class="@RowClass @RowSelection.Css(selected) @(r.Product.IsRetired ? "tide-muted" : null)" role="row" aria-current="@RowSelection.Current(selected)"
                                     tabindex="@RowSelection.TabIndex(selected)" @key="r.Product.Id" @onfocusin="() => SelectAt(place)">
-                                    <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
+                                    <td role="cell" data-label="Product"><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
                                         @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
                                         @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
-                                    <td data-label="Versions">@(r.Product.Versions ?? "—")</td>
-                                    <td data-label="Team">@if (r.TeamName is { } owner) { @owner } else if (r.NoTeam) { <Badge Tone="BadgeTone.Neutral" Class="tide-badge-off">No team</Badge> } else { <text>—</text> }</td>
-                                    <td data-label="Checked">@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
+                                    <td role="cell" data-label="Versions">@(r.Product.Versions ?? "—")</td>
+                                    <td role="cell" data-label="Team">@if (r.TeamName is { } owner) { @owner } else if (r.NoTeam) { <Badge Tone="BadgeTone.Neutral" Class="tide-badge-off">No team</Badge> } else { <text>—</text> }</td>
+                                    <td role="cell" data-label="Checked">@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
                                         @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
                                         else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
-                                    <td class="tide-stack-now" data-label="Right now">
+                                    <td role="cell" class="tide-stack-now" data-label="Right now">
                                         @foreach (var c in r.Now.Cves.Take(CvesShown)) { <CveChip CveId="@c.Id" Record="c.Record" /> }
                                         @if (r.Now.Cves.Count > CvesShown) { <a class="small" href="@($"stack/{r.Product.Id}")">+@(r.Now.Cves.Count - CvesShown) more</a> }
                                         @if (r.Now.TriageItems is > 0 || r.Now.BriefedToday)
@@ -125,8 +128,8 @@
                                         }
                                         @if (!r.Now.Any && !r.Now.BriefedToday) { <span class="small tide-muted">Nothing new</span> }
                                     </td>
-                                    <td class="tide-table-num" data-label="Articles">@r.Articles</td>
-                                    <td class="tide-table-num" data-label="Open actions">@r.OpenActions</td>
+                                    <td role="cell" class="tide-table-num" data-label="Articles">@r.Articles</td>
+                                    <td role="cell" class="tide-table-num" data-label="Open actions">@r.OpenActions</td>
                                 </tr>
                             }
                         </tbody>
@@ -161,7 +164,7 @@ else
     <div class="tide-page-head">
         <div>
             <h1>@p.Name @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h1>
-            <div class="tide-sub">@(_detail.TeamName is { } t ? $"{t} · " : "")@(p.CheckedOn is { } c ? $"checked {Ui.ShortDay(c)}" : "not checked yet")
+            <div class="tide-sub">@(_detail.TeamName is { } t ? $"{t} · " : "")@(p.CheckedOn is { } c ? $"checked {Ui.ShortDay(c, Clock.Today)}" : "not checked yet")
                 @if (p.ModifiedAtUtc is { } m) { <text> &middot; edited @Ui.When(Clock, m)</text> }</div>
         </div>
         @if (_canWrite)
@@ -222,7 +225,7 @@ else
                     @foreach (var a in _detail.Articles)
                     {
                         <li class="tide-stack-row"><a href="@($"articles/{a.Id}")">@a.Title</a>
-                            <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
+                            <span class="small tide-muted">@Ui.ShortDay(a.On, Clock.Today) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
                     }
                 </ul>
             </section>

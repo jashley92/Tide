@@ -270,7 +270,7 @@ Diagnostics, logged once until it recovers. The upgrade itself is `Upgrade-Tide.
 | | |
 |---|---|
 | **Direction** | Outbound. |
-| **Protocol** | HTTPS POST of JSON, at most 15 seconds, no redirects followed (a redirect is reported as the result). A named `HttpClient` (`HttpWebhookPoster`), not the outbound client: no `Intake:Proxy` and no `AddressPolicy` check. |
+| **Protocol** | HTTPS POST of JSON, at most 15 seconds, no redirects followed (a redirect is reported as the result). A named `HttpClient` (`HttpWebhookPoster`), not the outbound client: no `Intake:Proxy`. Each connection is checked against `AddressPolicy`: loopback, link-local (cloud metadata among them), unspecified and multicast are refused; private ranges are allowed unless `Webhooks:AllowPrivateNetworks` is `false`. |
 | **Config** | **Administration › API access**: an `https` address and the events. ADR [0016](../decisions/0016-api-tokens-scopes-and-signed-webhooks.md). |
 | **What leaves** | `action.raised`, `action.overdue` and `brief.sent` events with action details (titles included) and links built from `App:BaseUrl`. An action from an article above the team edition's ceiling is never posted; each action carries its article's marking. |
 
@@ -278,8 +278,10 @@ Each post carries `X-Tide-Event`, `X-Tide-Event-Id`, `X-Tide-Timestamp` and `X-T
 "timestamp.body" with the hook's secret>`. The secret is shown once and stored encrypted with the Data Protection key
 ring, so restoring without `dp-keys` means re-adding each webhook.
 
-**Failure behaviour.** `WebhookHostedService` runs every minute. It posts events at least 30 seconds old, oldest first,
-at most 100 per hook per run, and overdue actions once a day. A hook stops at its first failure and tries again next
+**Failure behaviour.** `WebhookHostedService` runs every minute while a webhook is on (Diagnostics shows the job Off
+otherwise, and Standing by on a server that doesn't hold the job lease). It posts events at least 30 seconds old,
+oldest first, at most 100 per hook per run (a few more only to finish events stamped at the same moment), and overdue
+actions once a day. A hook stops at its first failure and tries again next
 run; the page shows each hook's last status and error. **Ping** sends a test now.
 
 ## The REST API
@@ -339,7 +341,7 @@ The exporting account needs modify access to `metrics-inbox` alone, not the data
 
 | What | Where |
 |---|---|
-| Outbound client, address rule, back-off | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `OutboundCircuit.cs` |
+| Outbound client, address rule, back-off | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `AddressGuard.cs`, `OutboundCircuit.cs` |
 | Email | `src/Tide.Infrastructure/Notifications/EmailSender.cs`, `SmtpClientFactory.cs`, `EmailOptions.cs`; `src/Tide.Application/Distribution/SendOutcome.cs` |
 | AD | `src/Tide.Web/Security/RoleClaimsTransformer.cs`, `SidNames.cs`, `WindowsNames.cs`, `BoundedDirectoryCalls.cs`, `PermissionRevalidatingAuthStateProvider.cs`; `src/Tide.Infrastructure/Security/RoleDirectory.cs`, `UserDirectory.cs` |
 | Feeds and polling | `src/Tide.Application/Intake/IntakeService.cs`, `FeedParsing.cs` (`FeedParser`); `src/Tide.Web/Services/IntakeHostedService.cs` |

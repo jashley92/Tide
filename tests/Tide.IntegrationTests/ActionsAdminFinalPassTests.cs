@@ -15,7 +15,8 @@ namespace Tide.IntegrationTests;
 /// action takes no new query or indicator; a sweep or hunt says "no hits" only with a query run on record, whichever way
 /// it's closed; team names are their own; a create that lost a number to another server's is numbered again, and nothing
 /// else is retried; a title change says what it was and became; a row carries its article's marking; the actions
-/// address takes the names a link uses for a view; and Add article says what it offers.
+/// address takes the names a link uses for a view; Add article says what it offers; and the running order's count agrees
+/// with its noun.
 /// </summary>
 public class ActionsAdminFinalPassTests : IDisposable
 {
@@ -345,5 +346,31 @@ public class ActionsAdminFinalPassTests : IDisposable
         BriefPage.AvailableLabel([Candidate(ArticleStatus.Draft), Candidate(ArticleStatus.Draft)]).Should().Be(" (2 drafts)");
         BriefPage.AvailableLabel([Candidate(ArticleStatus.Ready), Candidate(ArticleStatus.Draft), Candidate(ArticleStatus.Presented)])
             .Should().Be(" (1 ready, 1 draft)");
+    }
+
+    private static BriefItem Item(bool loaded, int sortOrder = 0) =>
+        new() { ArticleId = Guid.NewGuid(), SortOrder = sortOrder, Article = loaded ? new Article { Title = "A", AuthorId = "x", AuthorName = "X" } : null };
+
+    [Fact]
+    public void RunningOrder_CountsTheArticlesItLists_AndSaysTheNounForThatNumber()
+    {
+        // Two items on the brief, one whose article didn't load: the list shows one, so the count says "1 article".
+        BriefPage.ArticleCount(new Brief { Items = [Item(true), Item(false)] }).Should().Be("1 article");
+        // One item, not loaded: nothing listed, "0 articles", not "0 article".
+        BriefPage.ArticleCount(new Brief { Items = [Item(false)] }).Should().Be("0 articles");
+        BriefPage.ArticleCount(new Brief { Items = [Item(true), Item(true), Item(false)] }).Should().Be("2 articles");
+    }
+
+    [Fact]
+    public void RunningOrder_TabAndMovedToast_CountOnlyTheArticlesItLists()
+    {
+        // Three items on the brief, the middle one's article not loaded: the list shows two.
+        var first = Item(true, 0);
+        var last = Item(true, 2);
+        var brief = new Brief { Items = [first, Item(false, 1), last] };
+
+        BriefPage.TabCount(brief).Should().Be(2, "the tab counts what the running order lists, as its heading does");
+        BriefPage.MovedTo(brief, first.Id).Should().Be("Moved to 1 of 2.");
+        BriefPage.MovedTo(brief, last.Id).Should().Be("Moved to 2 of 2.", "the place is out of the listed items, not every item");
     }
 }

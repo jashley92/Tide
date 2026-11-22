@@ -92,14 +92,14 @@
         <div class="tide-card">
             <div class="d-flex align-items-center gap-2 mb-2">
                 <button class="tide-icon-btn" title="Previous month" aria-label="Previous month" @onclick="() => Month(-1)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
-                <h2 class="tide-card-title mb-0">@_month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)</h2>
+                <h2 class="tide-card-title mb-0" id="rota-month">@_month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)</h2>
                 <button class="tide-icon-btn" title="Next month" aria-label="Next month" @onclick="() => Month(1)"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
                 @if (_month != new DateOnly(Rotation.Today.Year, Rotation.Today.Month, 1))
                 {
                     <button class="btn btn-link btn-sm" @onclick="() => Month(0)">Today</button>
                 }
             </div>
-            <table class="tide-rota">
+            <table class="tide-rota" aria-labelledby="rota-month">
                 <thead><tr><th>Week of</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
                 <tbody>
                     @* Every week the month touches, so one that's all holidays still shows them. *@
@@ -109,7 +109,7 @@
                         var week = _days.Where(d => RotationService.WeekStart(d.Date) == weekStart).ToList();
                         var inThisWeek = RotationService.WeekStart(Rotation.Today) == weekStart;
                         <tr class="@(inThisWeek ? "tide-rota-now" : "")">
-                            <th>@Words.MonthDay(weekStart)<div class="small tide-muted fw-normal">@(week.FirstOrDefault()?.RegularName ?? (week.Count == 0 ? "No brief" : "Nobody"))</div></th>
+                            <th scope="row">@Words.MonthDay(weekStart)<div class="small tide-muted fw-normal">@(week.FirstOrDefault()?.RegularName ?? (week.Count == 0 ? "No brief" : "Nobody"))</div></th>
                             @for (var i = 0; i < 5; i++)
                             {
                                 var date = weekStart.AddDays(i);

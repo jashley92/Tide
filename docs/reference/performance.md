@@ -50,7 +50,7 @@ at these volumes; running the same calls against a populated SQL Server database
 | Article list page | 50 (page), at most 1,000 a read | `Articles.razor` `PageSize`; `ArticleService.MaxPage` |
 | Articles `ListAsync` default | 200 | `ArticleService.ListAsync` |
 | Triage inbox | 50 rows a page, every match counted; at most 500 a read. New, *Likely used*, *Names what we run* and the KEV filter read every matching item light and page in memory | `InboxFilter.PageSize`, `IntakeService.InboxPageAsync` |
-| Search | 50 hits a kind a page, among the newest 1,000 matches; 200 sightings of an indicator; 8 terms | `SearchService.MaxHits`, `MaxTake`, `MaxSightings`; `SearchText.MaxTerms` |
+| Search | 50 hits a kind a page, among the newest 1,000 matches (articles counted to 1,000, then "1,000+"); 200 sightings of an indicator; 8 terms | `SearchService.MaxHits`, `MaxTake`, `MaxSightings`; `SearchText.MaxTerms` |
 | Command palette | 5 hits a kind, after 250 ms | `PaletteEntries.HitsPerKind`, `CommandPalette.Debounce` |
 | Brief archive | 60 briefs | `BriefService.ListAsync` |
 | Brief candidates (Add articles) | Articles from the last 14 days | `BriefService.CandidateDays` |
@@ -118,7 +118,7 @@ All of these run in the one TIDE process ([known-issues.md](known-issues.md#scal
 | CVE refresh | Every `Cve:RefreshHours` (24) | At most 40 NVD lookups a run (`Cve:MaxNvdPerRun`, held to 500), 6.5 s apart without an NVD key, 0.7 s with one; a record rechecked at NVD after 7 days; each NVD request may take 60 s (`Cve:NvdTimeoutSeconds`) and is tried up to 3 times, so a run can take many minutes, beside the feed polling | `CveService` |
 | Prune | Daily | Feed items after `Intake:RetentionDays` (90); kept article text after `Intake:ReadingDays` (7) | `IntakeService.PruneAsync`, `ReadingService.PruneAsync` |
 | Reminders and digests | Every 5 minutes | Each kind at its time of day, once (marks) | `ReminderHostedService.PollInterval` |
-| Webhooks | Every minute | At most 100 posts a hook a run; events at least 30 s old | `WebhookHostedService.PollInterval`, `WebhookService.MaxPerRun`, `SettleDelay` |
+| Webhooks | Every minute, while a webhook is on | At most 100 posts a hook a run (more only to finish events stamped at one moment), read oldest first in the database; events at least 30 s old | `WebhookHostedService.PollInterval`, `WebhookService.MaxPerRun`, `SettleDelay` |
 | Metrics drop folder | Every `Metrics:Import:PollMinutes` (5, held to 1 to 60); every minute when off | A file must be unchanged for 30 s; processed files kept 90 days | `MetricImportHostedService`, `MetricDropFolder.Settle`, `KeepFor` |
 | Update check | Every `Updates:CheckIntervalHours` (24, held to 6 to 168), first after 2 minutes | 10 s a check; a manual check at most once a minute | `UpdateCheckHostedService`, `UpdateCheckService` |
 | Session permissions re-derived | Every 2 minutes per open circuit | In-memory lookups | `PermissionRevalidatingAuthStateProvider.Interval` |
@@ -161,12 +161,12 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `BriefItems` | `(BriefId, ArticleId)` unique; `ArticleId`; `CarriedFromBriefId` | A brief's running order; "first briefed" for trends; carry-over. |
 | `Briefs` | `BriefDate` unique | Every day-based lookup. |
 | `BriefSends` | `(BriefId, SentAtUtc)`; `(Edition, IsTest, Status, BriefDate)` | Send history; the published archive. |
-| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId` | The board and lists, overdue and due-soon scans, Workload, "my actions". |
+| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId`; `ClosedAtUtc` (closed only) | The board and lists, overdue and due-soon scans, Workload, "my actions"; the daily prune of reminder marks. |
 | `ActionComments`, `ActionEvents` | `(ActionId, AtUtc)` | An action's timeline. |
 | `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. |
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
 | `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. Indicator values are not indexed: an indicator search scans. |
-| `NotificationMarks` | `SentAtUtc` | Reminder marks by age. |
+| `NotificationMarks` | `SentAtUtc` | Reminder marks by age: the daily prune of past periods' marks. |
 | `ApiTokens` | `Hash` unique | Token sign-in. |
 
 **Needs verification:** whether SQL Server's plans use these as intended at volume (an execution plan of the

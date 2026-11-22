@@ -2,12 +2,15 @@
 // scripts). Applies the remembered theme and sidebar state so there's no flash of the wrong theme.
 (function () {
     var root = document.documentElement;
+    // The theme chosen is light, dark or system (the operating system's, and the default: nothing saved, or "system").
+    // theme.js follows a change to the system's while it's chosen.
+    var dark = false;
+    try { dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { /* no matchMedia */ }
     try {
         var t = localStorage.getItem('tide-theme');
-        if (!t) { t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; }
-        root.setAttribute('data-bs-theme', t);
+        root.setAttribute('data-bs-theme', t === 'light' || t === 'dark' ? t : (dark ? 'dark' : 'light'));
     } catch (e) {
-        root.setAttribute('data-bs-theme', 'light');
+        root.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
     }
     try {
         if (localStorage.getItem('tide-nav') === 'collapsed') root.setAttribute('data-nav', 'collapsed');
