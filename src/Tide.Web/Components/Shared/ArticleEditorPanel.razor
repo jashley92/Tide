@@ -490,7 +490,7 @@ else
                     @* Last in the bar: who changed what, and when, opened below the bar. *@
                     <button type="button" class="btn btn-link btn-sm tide-history-link" aria-expanded="@(_history?.IsOpen == true ? "true" : "false")"
                             aria-controls="@_historyId" @onclick="ToggleHistory">
-                        <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History
+                        <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> <span class="tide-link-words">History</span>
                     </button>
                 </div>
                 <HistoryPanel @ref="_history" Id="_article.Id" Version="_article.EditVersion" Compact="true" ListId="@_historyId" />
@@ -841,6 +841,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_jumpTo is not null) await JumpAsync();
+        if (_revealHistory)
+        {
+            _revealHistory = false;
+            await JS.BestEffortAsync("tideEditor.reveal", _historyId);
+        }
         if (_focusSaved)
         {
             _focusSaved = false;
@@ -1331,10 +1336,15 @@ else
     private readonly string _historyId = Ui.NewId("history");
     private HistoryPanel? _history;
 
-    // The save bar's History button opens the list drawn below the bar.
+    private bool _revealHistory;
+
+    // The save bar's History button opens the list drawn below the bar, and the page scrolls to it once it's drawn (the
+    // bar is at the window's foot, the list below the last section).
     private async Task ToggleHistory()
     {
-        if (_history is not null) await _history.Toggle();
+        if (_history is null) return;
+        await _history.Toggle();
+        _revealHistory = _history.IsOpen;
     }
 
     internal async Task MarkReady()

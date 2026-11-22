@@ -42,7 +42,7 @@
             <button type="button" class="btn btn-link btn-sm tide-review-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId"
                     data-guide="@(asking ? "ask-review" : null)" @onclick="Toggle">
                 <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
-                @ToggleLabel(s, asking, comments)
+                <span class="tide-link-words">@ToggleLabel(s, asking, comments)</span>
             </button>
         }
         @if (CanWrite && s.Review is { Status: ReviewStatus.Asked } waiting && waiting.ReviewerId != Me.UserId)
