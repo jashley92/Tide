@@ -212,7 +212,7 @@ public class BriefStepperTests(TideApp app) : IClassFixture<TideApp>
         // in place of the fields.
         var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-tabbar.tide-ws-switch { display: none; }")
-            .And.Contain("html:not([data-rail-over]) main:has(.tide-editor[data-pane=\"preview\"]) > .tide-rail { display: flex; position: static;")
+            .And.Contain("html:not([data-rail-over]) .tide-main:has(.tide-editor[data-pane=\"preview\"]) > .tide-rail { display: flex; position: static;")
             .And.Contain(".tide-editor[data-pane=\"preview\"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }");
     }
 

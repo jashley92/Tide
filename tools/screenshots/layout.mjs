@@ -2905,6 +2905,47 @@ const arrowIntoAccountMenu = holds('the down arrow goes into the account menu, n
   return wrong;
 });
 
+/** Setup: the account menu open, System chosen for the theme, then the system turned dark (the page was light). */
+async function systemThemeTurnsDark(page) {
+  await page.locator('.tide-profile-btn').click();
+  await page.locator('.tide-profile [role="menu"]').waitFor();
+  await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).click();
+  await idle(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await idle(page);
+}
+
+/** With System chosen, the theme is the system's, changed live; the choice is remembered as "system". Left and Right
+ * move along the theme's options and go round; they don't choose. */
+const themeFollowsSystem = {
+  name: "System follows the system's theme; Left and Right move along the options",
+  check: async page => {
+    const state = () => page.evaluate(() => ({
+      theme: document.documentElement.getAttribute('data-bs-theme'),
+      saved: localStorage.getItem('tide-theme'),
+      checked: document.querySelector('.tide-profile [role="group"][aria-label="Theme"] [aria-checked="true"]')?.textContent.trim(),
+      focused: document.activeElement?.textContent.trim(),
+    }));
+    const wrong = [];
+    let s = await state();
+    if (s.theme !== 'dark') wrong.push(`the system turned dark, but the page is ${s.theme}`);
+    if (s.saved !== 'system') wrong.push(`the choice was saved as ${s.saved}, not system`);
+    if (s.checked !== 'System') wrong.push(`the menu shows ${s.checked} chosen, not System`);
+    await page.emulateMedia({ colorScheme: 'light' });
+    // The change is heard as an event: give it a moment.
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-bs-theme') === 'light', null, { timeout: 2000 }).catch(() => {});
+    if ((s = await state()).theme !== 'light') wrong.push(`the system turned light again, but the page stayed ${s.theme}`);
+    await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).focus();
+    const keys = [['ArrowLeft', 'Dark'], ['ArrowRight', 'System'], ['ArrowRight', 'Light']];
+    for (const [key, to] of keys) {
+      await page.keyboard.press(key);
+      if ((s = await state()).focused !== to) { wrong.push(`${key} moved focus to ${s.focused}, not ${to}`); break; }
+    }
+    if (s.checked !== 'System') wrong.push(`the arrows chose ${s.checked}; only Enter or Space should`);
+    return wrong;
+  },
+};
+
 /** Setup: the first "Looks like one event" group opened, its reports listed under it. */
 async function openGroup(page) {
   await page.locator('.tide-triage-group .tide-group-toggle').first().click();
@@ -4433,6 +4474,7 @@ const pages = [
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
   { name: 'triage-account-menu-arrow', route: '/triage', setup: accountMenuArrow, widths: [1440], rules: [arrowIntoAccountMenu] },
+  { name: 'account-theme-system', route: '/triage', setup: systemThemeTurnsDark, widths: [1440, [400, 800]], rules: [oneRow('.tide-profile .tide-seg'), inWindow('.tide-profile .tide-popover'), themeFollowsSystem] },
   // Coverage: its tables scroll inside their cards at every width, the page itself never sideways.
   { name: 'coverage', route: '/coverage', widths: [1440, 780, 700, 660, 641, 400], rules: [noSidewaysScroll] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
