@@ -35,3 +35,21 @@ trust ("not seen" must mean not seen).
   own LIKE folds A to Z only, so on SQLite `EF.Functions.Like` also runs a .NET matcher, but only for a term with a
   letter beyond ASCII (`SqliteLike`). Such a search scans several times slower there than an ASCII one (about 0.4 s
   against 0.08 s in the scale harness); an ASCII search runs as SQLite's own LIKE did.
+- **Amended 2026-11-21: one searched text per article, and indexed indicator keys.** The decision stands (substring
+  `LIKE`, every term, exact indicators); how it's run changed so its cost stays small as the corpus grows:
+  - An article's searched parts are kept together in `ArticleSearch.Text`, one row per article, the parts apart by a
+    control character no term holds, so a term still can't match across two parts. A search is one `LIKE` per spelling
+    over that one column instead of seven columns and six child tables.
+  - A save that changes a part marks the row in the same transaction (`SearchDirtyInterceptor`); a background job
+    (Search index) rebuilds marked rows within seconds and, after an upgrade or a new builder version, every row.
+  - Until an article's row is current, the search matches that article part by part as before, so an edit is found at
+    once and nothing is missed while rows are built.
+  - Bulk `ExecuteUpdate`/`ExecuteDelete` statements bypass the interceptor, so a test (`SearchIndexBypassTests`) lists each
+    one on an article or a searched part with why it's safe.
+  - Indicator lookups find the indicator itself by a hash of its value (`ValueKey`) and its host's other indicators by the
+    host reversed by label (`HostRev`), both indexed; rows saved before these were kept are matched by value until a
+    background job keys them.
+  - The prose scan for an indicator query (a text search with its live and defanged forms) stays, through the same text.
+  - SQL Server full-text search stays an optional extra, never a prerequisite: it would change the matching to words and
+    needs its own ADR.
+

@@ -149,6 +149,9 @@ public class Article : AuditableEntity
     public List<ArticleIndicator> Indicators { get; set; } = [];
     public List<ArticleCve> Cves { get; set; } = [];
 
+    /// <summary>The text a search matches it by (<see cref="ArticleSearchRow"/>); loaded only by a query that reads it.</summary>
+    public ArticleSearchRow? SearchRow { get; set; }
+
     /// <summary>The TLP a part of this article actually carries: its own, or the article's when that's higher.</summary>
     public TlpLevel Effective(TlpLevel partTlp) => partTlp > Tlp ? partTlp : Tlp;
 
@@ -306,4 +309,35 @@ public class ArticleCve
 {
     public Guid ArticleId { get; set; }
     public string CveId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The text a search matches an article by: every part it searches (title, summary, the why and the actions, actors,
+/// sectors, source, bullets, indicators and their notes, CVEs, techniques, captions) in one column, so a search is one
+/// LIKE per spelling over one table rather than one over seven columns and six child tables. Kept beside the article,
+/// not on it, so the article's row, edit version and history are untouched. A save that changes a part marks the row
+/// <see cref="Dirty"/> in the same transaction; a background job rebuilds it. Until it has, and for an article with no
+/// row or one built by an older <see cref="Builder"/>, a search matches that article the old way, so it's never wrong.
+/// </summary>
+public class ArticleSearchRow
+{
+    /// <summary>What separates the parts in <see cref="Text"/>: a control character no search term holds, so a term can't
+    /// match across two parts.</summary>
+    public const char Separator = '\u001F';
+
+    public Guid ArticleId { get; set; }
+
+    /// <summary>The searched parts, as stored (a LIKE matches them as it matched each part), joined by <see cref="Separator"/>.</summary>
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>The version of the code that built <see cref="Text"/>; a row built by another is rebuilt.</summary>
+    public int Builder { get; set; }
+
+    /// <summary>A save has changed a part since <see cref="Text"/> was built.</summary>
+    public bool Dirty { get; set; }
+
+    /// <summary>New with every change marked: a rebuild is written only if no save marked the row again meanwhile.</summary>
+    public Guid Stamp { get; set; }
+
+    public DateTimeOffset? BuiltAtUtc { get; set; }
 }

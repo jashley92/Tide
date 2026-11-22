@@ -167,6 +167,7 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
 | `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. |
 | `ArticleIndicators`, `ActionIndicators` | `ValueKey`; `HostRev` (articles') | An indicator lookup: the indicator itself by the hash of its value, and its host's other indicators by the host reversed by label, a range (`IndicatorKey`). The prose scan of a text search still reads every value. |
+| `ArticleSearch` | `ArticleId` (key); `Dirty` (filtered, where 1) | A text search reads one row per article (a LEFT JOIN) and one `LIKE` per spelling on its `Text`, instead of seven columns and six child tables; the rebuild job seeks the marked rows. In the scale harness at 1× on SQLite, warm: an indicator query's search went from about 130 to 45 ms, a two-word text search from about 42 to 32 ms; building every row of 10,000 articles took about 4 s. |
 | `NotificationMarks` | `SentAtUtc` | Reminder marks by age: the daily prune of past periods' marks. |
 | `ApiTokens` | `Hash` unique | Token sign-in. |
 

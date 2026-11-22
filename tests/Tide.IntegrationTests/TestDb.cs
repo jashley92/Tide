@@ -291,7 +291,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         // Retrying, as production's SQL Server is (EnableRetryOnFailure): a transaction the code opens itself must then run
         // inside the execution strategy, and one that doesn't fails here as it would there.
         _options = Configure(new DbContextOptionsBuilder<AppDbContext>(), retrying)
-            .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
+            .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new SearchDirtyInterceptor(), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
             .Options;
         if (_connection is not null)
         {
