@@ -52,7 +52,7 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
         return await page.Html();
     }
 
-    private const string Content = "<article id=\"main-content\" tabindex=\"-1\" class=\"content\">";
+    private const string Content = "<main id=\"main-content\" tabindex=\"-1\" class=\"content\">";
 
     /// <summary>The markup from <paramref name="start"/> to the first <paramref name="end"/> after it, both included.</summary>
     private static string Between(string html, string start, string end)
@@ -62,7 +62,7 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
         return html[from..(html.IndexOf(end, from, StringComparison.Ordinal) + end.Length)];
     }
 
-    private static string ContentArea(string html) => Between(html, Content, "</article>");
+    private static string ContentArea(string html) => Between(html, Content, "</main>");
 
     [Fact]
     public async Task APageWithoutRailContent_HasNoRail_AndNoButton()
@@ -102,7 +102,7 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
         Between(html, "<aside", "</aside>").Should().StartWith("<aside id=\"tide-rail\" class=\"tide-rail\" aria-label=\"About this item\" tabindex=\"-1\">")
             .And.Contain("<h2 class=\"tide-rail-title\">About this item</h2>")
             .And.Contain("<p>What we know about it.</p>");
-        html.IndexOf("<aside", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("</article>", StringComparison.Ordinal), "it follows the content");
+        html.IndexOf("<aside", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("</main>", StringComparison.Ordinal), "it follows the content, outside <main>: a landmark of its own");
         html.Split("<aside").Should().HaveCount(2, "one rail");
         ContentArea(html).Should().Be(ContentArea(await Page<MainLayout>(railTitle: null)), "the content area is as it is without a rail");
 
@@ -111,6 +111,27 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
         html.IndexOf("tide-rail-toggle", StringComparison.Ordinal).Should()
             .BeGreaterThan(html.IndexOf("class=\"top-row\"", StringComparison.Ordinal))
             .And.BeLessThan(html.IndexOf(Content, StringComparison.Ordinal), "the button is in the top bar");
+    }
+
+    [Fact]
+    public async Task TheLayout_IsTopLevelLandmarks_TheTopBar_TheContent_TheRail_AndTheToasts()
+    {
+        var html = await Page<MainLayout>("About this item");
+
+        // One <main>, holding the page only: the top bar is the banner before it, the rail a complementary landmark after
+        // it, neither inside it (a landmark nested in main isn't top-level, and the top bar in main isn't a banner).
+        html.Split("<main").Should().HaveCount(2, "one main landmark");
+        var main = Between(html, Content, "</main>");
+        main.Should().Contain("<h1>A page</h1>").And.NotContain("top-row").And.NotContain("<aside");
+        var header = html.IndexOf("<header class=\"top-row\">", StringComparison.Ordinal);
+        header.Should().BeGreaterThanOrEqualTo(0, "the top bar is a <header>");
+        header.Should().BeLessThan(html.IndexOf(Content, StringComparison.Ordinal));
+        html.IndexOf("</header>", header, StringComparison.Ordinal).Should().BeLessThan(html.IndexOf(Content, StringComparison.Ordinal), "the top bar closes before the content");
+        html.IndexOf("<aside id=\"tide-rail\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("</main>", StringComparison.Ordinal));
+
+        // The toasts are a named region, their live parts as they were.
+        Between(html, "<section class=\"tide-toasts\"", "</section>").Should().Contain("aria-label=\"Notifications\"")
+            .And.Contain("role=\"status\" aria-live=\"polite\"").And.Contain("role=\"alert\" aria-live=\"assertive\"");
     }
 
     [Fact]

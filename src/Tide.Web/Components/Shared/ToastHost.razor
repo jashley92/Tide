@@ -9,15 +9,17 @@
     var toasts = Toasts.Toasts;
     _newestUndo = toasts.LastOrDefault(t => t.Undo is not null)?.Id;
 }
-<div class="tide-toasts" @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
-     @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
+@* A region named Notifications, so the toasts are in a landmark (and found in a screen reader's list of them); its two
+   live parts below announce as before. *@
+<section class="tide-toasts" aria-label="Notifications" @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
+         @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
     <div role="status" aria-live="polite">
         @foreach (var t in toasts.Where(t => !t.IsError)) { @Toast(t) }
     </div>
     <div role="alert" aria-live="assertive">
         @foreach (var t in toasts.Where(t => t.IsError)) { @Toast(t) }
     </div>
-</div>
+</section>
 
 @code {
     /// <summary>The keys that press the newest toast's Undo (toasts.js listens for them).</summary>

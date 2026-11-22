@@ -8,9 +8,9 @@
    ] has it open over the page; the save bar stays at the foot of the window, beside the sidebar where there is one. */
 @media (max-width: 899.98px) {
     .tide-tabbar.tide-ws-switch { display: flex; margin-bottom: var(--tide-space-3); }
-    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail { display: flex; position: static; width: auto; border-left: 0; box-shadow: none; z-index: auto; }
-    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-head { display: none; }
-    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-body { padding-bottom: 6rem; }
+    html:not([data-rail-over]) .tide-main:has(.tide-editor[data-pane="preview"]) > .tide-rail { display: flex; position: static; width: auto; border-left: 0; box-shadow: none; z-index: auto; }
+    html:not([data-rail-over]) .tide-main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-head { display: none; }
+    html:not([data-rail-over]) .tide-main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-body { padding-bottom: 6rem; }
     .tide-editor[data-pane="preview"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }
     .tide-editor[data-pane="preview"] .tide-sticky-save { position: fixed; bottom: 0; right: 0; left: var(--tide-width-side); padding-inline: var(--tide-space-4); }
     html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: var(--tide-width-side-collapsed); }
