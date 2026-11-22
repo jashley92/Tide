@@ -24,3 +24,29 @@ pauses of 25ms to 1.5s), which was both slow and, on a slow runner, not always l
 
 - A new page that changes the demo goes after the marker; any other before it.
 - `/demo/activity` exists only in Development with `Demo:Seed`, so it never reaches an installed site.
+
+## Follow-up
+
+- **2026-11-19: slices balanced by measured time.** Cutting the pages in order by a guess at their cost (a width, twice
+  that on a Present page) left the slices far apart: in CI the third took about 9.5 minutes of checks and the first about
+  4. The pages before the marker are now placed longest first, each on the slice with least so far, by what each took in
+  CI (`tools/screenshots/layout-weights.json`, refreshed from green runs' logs with `layout-weights.mjs`; a page not yet
+  timed is counted by its widths). Every sharded run checks that the slices hold every page exactly once. By the weights,
+  the slices went from about 246, 317, 556 and 432 seconds to 373, 373, 373 and 432: the last slice, the pages that change
+  the demo, is now the longest, and a fifth slice wouldn't shorten it. Splitting those pages is what would help next.
+- **2026-11-20: the pages that change the demo split into chains.** Every slice starts on its own fresh demo, so those
+  pages never needed one slice. What they need is to run after the pages that read the demo, in their own order, and
+  together where one leans on what another did. They are now chains, each begun by a `changesTheDemo(...)` mark in place
+  of `CHANGES_THE_DEMO`: What's new, tips and the tour (each page signs in people of its own); the presenter's strips
+  and rail; Today's queue, saves and brief; Triage's decisions; a product marked checked; actions closed, a query
+  written, a default tab; and the live meeting (its pages take up the meeting the one before left live, and may keep
+  its guests' browsers). No page was found to lean on another chain's change. Each chain is placed as one, longest first
+  among the other pages, and runs whole, in order, after its slice's other pages; every sharded run checks that.
+  `metrics-grid`, which changes nothing, moved before the marks. A new page that changes the demo goes in the chain
+  whose pages it touches, or under a mark of its own. By the weights the slices went from 373, 373, 373 and 432 seconds
+  to 388, 388, 388 and 387: the run's 1,550 seconds spread evenly, so shorter slices now need a fifth.
+  The first CI run found one page that had leaned on another chain without saying so: `present-beside-follower` opened
+  its action from wherever the meeting stood, which the wrap-up pages leave on the wrap-up. In the old order, the pages
+  run before them had changed today's brief, which kept it off that slide. It now starts from the title and refuses
+  the wrap-up. `CHAIN="…"` runs one chain alone on a fresh demo, the condition every chain must meet, so a chain that is
+  added or changed can be checked for it.

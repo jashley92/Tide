@@ -4,6 +4,7 @@ using Tide.Application.Actions;
 using Tide.Application.Intake;
 using Tide.Application.Org;
 using Tide.Application.Security;
+using Tide.Domain.Common;
 using Tide.Domain.Enums;
 
 namespace Tide.Application.Search;

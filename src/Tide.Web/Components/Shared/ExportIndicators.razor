@@ -33,12 +33,15 @@ else
     private ElementReference _holder, _button;
     private Popout? _popout;
 
+    // Its ceiling's id, for the label's for=: a page can hold several (one per story).
+    private readonly string CeilingId = "export-ceiling-" + Guid.NewGuid().ToString("N")[..8];
+
     // The least sensitive ceiling, so a wider one is always chosen, never the one a click gets.
     private TlpLevel _ceiling = TlpLevel.Clear;
 
     private RenderFragment Panel => @<text>
-        <label class="tide-field-label">Include articles marked up to</label>
-        <TlpSelect @bind-Value="_ceiling" Label="Highest TLP to include" />
+        <label class="tide-field-label" for="@CeilingId">Include articles marked up to</label>
+        <TlpSelect @bind-Value="_ceiling" Id="@CeilingId" Label="Highest TLP to include" />
         <div class="d-flex gap-2 mt-2">
             <a class="btn btn-primary btn-sm" href="@Url("stix")" download><span class="bi bi-filetype-json" aria-hidden="true"></span> STIX 2.1</a>
             <a class="btn btn-outline-secondary btn-sm" href="@Url("csv")" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>

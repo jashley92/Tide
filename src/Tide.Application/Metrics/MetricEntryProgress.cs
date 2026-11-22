@@ -9,8 +9,9 @@ public sealed record MetricGroupProgress(Guid GroupId, string Name, int Entered,
     /// <summary>"2 of 4".</summary>
     public string Count => $"{Entered} of {Total}";
 
-    /// <summary>What the group's chip says to a screen reader: "Email triage, 2 of 4 entered".</summary>
-    public string AccessibleName => $"{Name}, {Count} entered";
+    /// <summary>What the group's chip says to a screen reader: "Email triage 2/4: 2 of 4 entered". It starts with the
+    /// chip's own words, so speech input can say what it sees, then says the count in words.</summary>
+    public string AccessibleName => $"{Name} {Entered}/{Total}: {Count} entered";
 }
 
 /// <summary>

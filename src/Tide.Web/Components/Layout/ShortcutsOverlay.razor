@@ -17,14 +17,12 @@
     </button>
 }
 
-@if (_open)
-{
-    <div class="tide-modal-scrim" @onclick="Close">
-        <div class="tide-modal tide-shortcuts" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title" @onclick:stopPropagation="true" @onkeydown="OnKey">
-            <div class="tide-shortcuts-head">
-                <h2 class="tide-modal-title" id="@(_id)-title">Keyboard shortcuts</h2>
-                <button type="button" class="btn-close" aria-label="Close" @ref="_closeBtn" @onclick="Close"></button>
-            </div>
+<ModalShell Open="_open" Id="@_id" Class="tide-shortcuts" Title="Keyboard shortcuts" HeadClass="tide-shortcuts-head" OnClose="Close"
+            FocusTarget="() => _closeBtn">
+    <HeadContent>
+        <button type="button" class="btn-close" aria-label="Close" @ref="_closeBtn" @onclick="Close"></button>
+    </HeadContent>
+    <ChildContent>
             <div class="form-check form-switch tide-shortcuts-switch">
                 <input class="form-check-input" type="checkbox" role="switch" id="@(_id)-letters" checked="@_letters" @onchange="SetLetters" />
                 <label class="form-check-label" for="@(_id)-letters">Single-letter shortcuts</label>
@@ -66,9 +64,8 @@
             {
                 <p class="tide-shortcuts-help"><a href="help" @onclick="Close">Help and what's new</a></p>
             }
-        </div>
-    </div>
-}
+    </ChildContent>
+</ModalShell>
 
 @code {
     /// <summary>Whether to draw the button in the top bar; present mode has the "?" key only.</summary>
@@ -76,7 +73,7 @@
 
     private readonly string _id = Ui.NewId("shortcuts");
     private IReadOnlyList<ShortcutGroup> _groups = [];
-    private bool _open, _shown, _letters = true;
+    private bool _open, _letters = true;
     private ElementReference _closeBtn;
     private DotNetObjectReference<ShortcutsOverlay>? _ref;
 
@@ -114,11 +111,6 @@
         Asked.AskGuide(guide.Key);
     }
 
-    private void OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") Close();
-    }
-
     private async Task SetLetters(ChangeEventArgs e)
     {
         var on = e.Value is true;
@@ -133,17 +125,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
         try
         {
-            if (firstRender)
-            {
-                _ref = DotNetObjectReference.Create(this);
-                await JS.InvokeVoidAsync("tidePalette.startOverlay", _ref, _id);
-            }
-            if (_open == _shown) return;
-            _shown = _open;
-            if (_open) await JS.InvokeVoidAsync("tideDialog.open", _closeBtn);
-            else await JS.InvokeVoidAsync("tideDialog.close");
+            _ref = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("tidePalette.startOverlay", _ref, _id);
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
     }

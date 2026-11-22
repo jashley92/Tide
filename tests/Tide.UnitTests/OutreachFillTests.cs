@@ -75,9 +75,12 @@ public class OutreachFillTests
     public void Check_AcceptsTheNamesTideFills_InAnyCase(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
 
     [Theory]
-    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Use one of: {{article.title}}*")]
-    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills*")]
-    [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or one of: {{indicators:ipv4}}*")]
+    [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Did you mean {{article.title}}?")]
+    [InlineData("{{sender.nme}}", "{{sender.nme}} isn't a placeholder TIDE fills. Did you mean {{sender.name}}?")]
+    [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills. Insert placeholder lists the ones it does.")]
+    [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Did you mean {{indicators:sha1}}?")]
+    [InlineData("{{indicators:Domian}}", "{{indicators:Domian}} isn't a kind of indicator TIDE knows. Did you mean {{indicators:domain}}?")]
+    [InlineData("{{indicators:cve}}", "{{indicators:cve}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or a kind from Insert placeholder.")]
     [InlineData("{{article.title:domain}}", "{{article.title}} takes nothing after a colon: only {{indicators:…}} and {{today:+2}} do.")]
     [InlineData("{{today:2}}", "{{today:2}} isn't a number of business days. Write it as {{today:+2}} or {{today:-2}}, up to 60.")]
     [InlineData("{{today:-61}}", "{{today:-61}} isn't a number of business days*")]
@@ -120,18 +123,272 @@ public class OutreachFillTests
     // --- each group ---------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheArticle_FillsItsTitleBottomLineLinkCvesAndTlp_WithKevAndEpssWhereKnown()
+    public void TheArticle_FillsItsTitleBottomLineLinkCvesAndTlp_TheCvesAsNumbersOnly()
     {
         var d = OutreachFill.Fill("{{article.title}}", "{{article.bottom-line}}\n{{article.link}}\n{{article.cves}}\n{{article.tlp}}", Facts(Article(TlpLevel.Green), TlpLevel.Green));
 
         d.Subject.Should().Be("Edge VPN zero-day exploited");
         d.Body.Should().Be("TLP:GREEN: Limited disclosure: may be shared within the community, not publicly.\n\n"
             + "A pre-auth flaw in the VPN gateway is exploited in the wild.\nhttps://vendor.example/advisory\n"
-            + "CVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list, used in ransomware; EPSS 94.1%)\nTLP:GREEN\n");
+            + "CVE-2026-0002\nCVE-2026-1234\nTLP:GREEN\n", "what TIDE knows of each CVE is {{article.cves-detailed}}'s");
         d.Marking.Should().Be(TlpLevel.Green);
         d.Unfilled.Should().BeEmpty();
         d.LeftOut.Should().BeEmpty("the key point and why it matters held back aren't in this template");
     }
+
+    [Fact]
+    public void TheOtherLinks_FollowTheSourceOnlyWhereTheTemplateSays_EachOnce_AndCveLinksPointAtTheNvd()
+    {
+        var facts = Facts(Article(TlpLevel.Green), TlpLevel.Green) with
+        {
+            ArticleLinks = ["https://news.example/follow-up", "https://VENDOR.example/advisory", "https://blog.example/analysis", "https://news.example/follow-up"],
+        };
+        var d = OutreachFill.Fill("x", "{{article.link}}\n\n{{article.other-links}}\n\n{{article.cve-links}}", facts);
+
+        d.Body.Should().EndWith("\n\nhttps://vendor.example/advisory\n\nhttps://news.example/follow-up\nhttps://blog.example/analysis\n\n"
+            + "https://nvd.nist.gov/vuln/detail/CVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n",
+            "the source isn't listed again among the others");
+        OutreachFill.Fill("x", "{{article.link}}", facts).Body.Should().EndWith("\n\nhttps://vendor.example/advisory\n", "the source alone");
+        d.Marking.Should().Be(TlpLevel.Green, "the links carry the article's marking");
+        d.Unfilled.Should().BeEmpty();
+
+        var noCves = Article();
+        noCves.Cves = [];
+        var none = OutreachFill.Fill("x", "{{article.cve-links}}", Facts(noCves, TlpLevel.Clear));
+        none.Unfilled.Should().Equal("{{article.cve-links}}");
+        OutreachFill.Fill("x", "{{article.cve-links}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green)).Body
+            .Should().Contain("[[article.cve-links: above TLP:GREEN, left out]]");
+    }
+
+    [Fact]
+    public void TheCvesDetailed_GiveAParagraphEach_WithWhatTideKnows_AndTheIdAndLinkAlone_ForOneItDoesnt()
+    {
+        var facts = Facts(Article(TlpLevel.Green), TlpLevel.Green) with
+        {
+            Cves = new Dictionary<string, CveRecord>
+            {
+                ["CVE-2026-1234"] = new()
+                {
+                    CveId = "CVE-2026-1234", CvssScore = 9.8m, CvssSeverity = "CRITICAL", IsKev = true, KevAddedDate = new(2026, 11, 1),
+                    KevDueDate = new(2026, 11, 22), KevRansomware = true, EpssScore = 0.941m, Vendor = "Ivanti", Product = "Connect Secure",
+                    Description = "A pre-auth flaw\nin the gateway.",
+                },
+            },
+        };
+        var d = OutreachFill.Fill("x", "{{article.cves-detailed}}", facts);
+
+        d.Body.Should().EndWith("\n\nCVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-0002\n\n"
+            + "CVE-2026-1234: CVSS 9.8 critical; on CISA's KEV list since Nov 1, 2026, due Nov 22, 2026, used in ransomware; EPSS 94.1%\n"
+            + "Ivanti Connect Secure\nA pre-auth flaw in the gateway.\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n");
+        d.Marking.Should().Be(TlpLevel.Green);
+    }
+
+    [Fact]
+    public void TheStarterTemplates_WriteAnEmail_ForAnArticleWithNoCvesOrOtherLinks()
+    {
+        var article = Article();
+        article.Cves = [];
+        article.SourceUrl = null;
+        var facts = Facts(article, TlpLevel.Amber);
+        foreach (var s in StarterOutreachTemplates.All)
+        {
+            OutreachFill.Check(s.Subject);
+            OutreachFill.Check(s.Body);
+            var d = OutreachFill.Fill(s.Subject, s.Body, facts);
+            d.Unfilled.Should().BeEmpty(s.Name);
+            d.Body.Should().NotContain("CVEs:", "the heading goes with the empty list").And.NotContain("{{").And.NotContain("\n\n\n", s.Name);
+        }
+    }
+
+    // --- sections and text for when it's empty ---------------------------------------------------------------------
+
+    private const string CvesSection = "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{else}}\nNo CVEs yet.\n\n{{/article.cves}}\nThanks";
+
+    [Fact]
+    public void ASection_KeepsItsFirstBranch_WhenThereIsSomethingToFill_AndItsTagLinesLeaveNoGaps()
+    {
+        var d = OutreachFill.Fill("x", CvesSection, Facts(Article(), TlpLevel.Clear));
+        d.Body.Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
+    }
+
+    [Fact]
+    public void ASection_KeepsWhatFollowsElse_WhenThereIsNothing_OrDropsWhole_WithoutElse()
+    {
+        var article = Article();
+        article.Cves = [];
+        var facts = Facts(article, TlpLevel.Clear);
+        OutreachFill.Fill("x", CvesSection, facts).Body.Should().EndWith("\n\nHello,\n\nNo CVEs yet.\n\nThanks\n");
+
+        var dropped = OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n\n{{/article.cves}}\nThanks", facts);
+        dropped.Body.Should().EndWith("\n\nHello,\n\nThanks\n");
+        dropped.Unfilled.Should().BeEmpty();
+
+        OutreachFill.Fill("Re: {{#article.cves}}{{article.cves}}{{else}}no CVE{{/article.cves}}", "x", facts).Subject.Should().Be("Re: no CVE", "inline too");
+    }
+
+    // A section's tags go as an empty optional placeholder does: blank lines round a section that goes leave one, as
+    // round a line of {{x?}}, and a section that goes mid-sentence leaves one space.
+    [Fact]
+    public void ASectionThatGoes_LeavesTheBlankLinesAndSpaces_AnOptionalPlaceholderWould()
+    {
+        var article = Article();
+        article.Cves = [];
+        var facts = Facts(article, TlpLevel.Clear);
+        OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", facts).Body
+            .Should().EndWith("\n\nHello,\n\nThanks\n").And.Be(OutreachFill.Fill("x", "Hello,\n\n{{article.cves?}}\n\nThanks", facts).Body);
+        OutreachFill.Fill("x", "Hello,\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{/article.cves}}\n\nThanks", Facts(Article(), TlpLevel.Clear)).Body
+            .Should().EndWith("\n\nHello,\n\nCVEs:\nCVE-2026-0002\nCVE-2026-1234\n\nThanks\n");
+        OutreachFill.Fill("Patch {{#article.cves}}{{article.cves}} {{/article.cves}}today", "x", facts).Subject.Should().Be("Patch today");
+    }
+
+    [Fact]
+    public void ASectionHeldBackByTheCeiling_TakesItsElse_AndWhatWasHeldBackIsStillSaid()
+    {
+        var d = OutreachFill.Fill("x", CvesSection, Facts(Article(TlpLevel.Amber), TlpLevel.Green));
+        d.Body.Should().Contain("No CVEs yet.").And.NotContain("CVE-2026");
+        d.LeftOut.Should().ContainSingle().Which.Should().StartWith("The article is TLP:AMBER");
+        d.Marking.Should().Be(TlpLevel.Clear);
+    }
+
+    [Fact]
+    public void ASectionKeptForAMarkedPart_CarriesItsMarking_EvenWithoutThePlaceholderInside()
+    {
+        var d = OutreachFill.Fill("x", "{{#article.cves}}This report names CVEs.{{/article.cves}}", Facts(Article(TlpLevel.Green), TlpLevel.Green));
+        d.Body.Should().EndWith("This report names CVEs.\n");
+        d.Marking.Should().Be(TlpLevel.Green, "keeping it says the GREEN article has CVEs");
+    }
+
+    [Fact]
+    public void TextAfterABar_IsWritten_WhenThereIsNothingToFill_AndTheValueOtherwise()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);
+        var none = Facts(Article(), TlpLevel.Clear);
+        none.Product!.ContactName = null;
+        OutreachFill.Fill("x", "Hello {{product.contact|there}},", none).Body.Should().EndWith("\n\nHello there,\n");
+        OutreachFill.Fill("x", "Hello {{product.contact|there}},", facts).Body.Should().EndWith("\n\nHello Vendor PSIRT,\n");
+        OutreachFill.Fill("x", "{{indicators:sha256| none seen }}", facts).Body.Should().EndWith("\n\nnone seen\n");
+        OutreachFill.Fill("x", "{{article.title|untitled}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green)).Unfilled.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("{{#article.cves}}\nCVEs: {{article.cves}}\n{{else}}\nNone.\n{{/article.cves}}\n{{#indicators:domain}}{{indicators:domain}}{{/Indicators:Domain}}")]
+    [InlineData("Hello {{product.contact|there}}, {{today:+2|soon}}")]
+    public void Check_AcceptsSectionsAndTextAfterABar(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
+
+    [Theory]
+    [InlineData("{{#article.cves}}{{#indicators}}x{{/indicators}}{{/article.cves}}", "{{#indicators}} is inside {{#article.cves}}*")]
+    [InlineData("{{#article.cves}} x", "{{#article.cves}} is never closed*")]
+    [InlineData("{{#article.cves}} x {{/indicators}}", "{{/indicators}} doesn't close {{#article.cves}}: write {{/article.cves}}.")]
+    [InlineData("x {{/article.cves}}", "{{/article.cves}} closes a section that isn't open*")]
+    [InlineData("x {{else}} y", "{{else}} only goes inside a section*")]
+    [InlineData("{{#article.cves}}a{{else}}b{{else}}c{{/article.cves}}", "{{#article.cves}} has two {{else}}s*")]
+    [InlineData("{{#tlp}}x{{/tlp}}", "{{#tlp}} can't start a section*")]
+    [InlineData("{{#article.cvs}}x{{/article.cvs}}", "{{article.cvs}} isn't a placeholder TIDE fills*")]
+    [InlineData("{{article.cves?|none}}", "{{article.cves?|none}} is both optional and has text for when it's empty*")]
+    [InlineData("{{article.cves|}}", "{{article.cves|}} has nothing after the |*")]
+    [InlineData("{{tlp|none}}", "{{tlp|none}} can't be optional*")]
+    [InlineData("{{else|x}}", "{{else|x}} isn't written as a section's {{else}}*")]
+    [InlineData("{{#article.cves?}}x{{/article.cves}}", "{{#article.cves?}} is a section's tag: it takes no ? or |. Write it as {{#article.cves}}.")]
+    [InlineData("{{#article.cves}}x{{/article.cves|y}}", "{{/article.cves|y}} is a section's tag*")]
+    public void Check_RefusesSectionsThatDontPairUp_AndBadBars(string text, string message) =>
+        FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
+    // Every refusal says where the trouble is, so the editor can select it.
+    [Theory]
+    [InlineData("Hi {{article.titel}} there", "{{article.titel}}")]
+    [InlineData("Hi {{article.cves?|x}}", "{{article.cves?|x}}")]
+    [InlineData("a {{#article.cves}} b", "{{#article.cves}}")]
+    [InlineData("{{#article.cves}}a{{/indicators}}", "{{/indicators}}")]
+    [InlineData("{{#article.cves}}{{article.cves}}{{/article.cves}} {{today: +2}}", "{{today: +2}}")]
+    public void Check_SaysWhereTheTroubleIs(string text, string at)
+    {
+        var refused = FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<OutreachTemplateException>().Which;
+        text.Substring(refused.Index, refused.Length).Should().Be(at);
+    }
+
+    // Spaces after {{ with nothing to close them are read once, not tried every way they could split: a template of them
+    // can't hold the server up.
+    [Theory]
+    [InlineData("{{")]
+    [InlineData("{{#")]
+    [InlineData("{{article.title|")]
+    public void ALongRunOfSpacesAfterBraces_IsReadQuickly(string start)
+    {
+        var text = start + new string(' ', 30_000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        OutreachFill.Check(text);
+        OutreachFill.Tokens(text).Should().BeEmpty();
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500));
+    }
+
+    // The one reading of the syntax the check, the fill and the Library rail share.
+    [Fact]
+    public void Tokens_ReadEachPieceBetweenBraces_AsTheCheckAndTheFillDo()
+    {
+        var text = "Hi {{ Product.Contact|there }},{{#indicators:Domain}}{{indicators:domain?}}{{else}}none{{/indicators:domain}} {{nope }} {not}";
+        OutreachFill.Tokens(text).Select(t => (t.Kind, t.Name, t.Modifier, t.Optional, t.Fallback)).Should().Equal(
+            (OutreachTokenKind.Placeholder, "product.contact", null, false, "there "),
+            (OutreachTokenKind.Open, "indicators", "Domain", false, null),
+            (OutreachTokenKind.Placeholder, "indicators", "domain", true, null),
+            (OutreachTokenKind.Else, "else", null, false, null),
+            (OutreachTokenKind.Close, "indicators", "domain", false, null),
+            (OutreachTokenKind.Placeholder, "nope", null, false, null));
+        var first = OutreachFill.Tokens(text)[0];
+        (first.Written, first.Index, first.End).Should().Be(("{{ Product.Contact|there }}", 3, 30));
+    }
+
+    // --- optional placeholders ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void AnOptionalPlaceholder_WithNothingToFill_IsDropped_WithItsLineWhenAlone_AndIsntUnfilled()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);   // no other links
+        var d = OutreachFill.Fill("About {{article.other-links?}} {{article.title}}",
+            "{{article.link}}\n{{article.other-links?}}\nSee {{indicators:sha256?}} and the rest.\n{{indicators:sha256?}}{{article.other-links?}}\nThanks", facts);
+
+        d.Subject.Should().Be("About Edge VPN zero-day exploited");
+        d.Body.Should().EndWith("\n\nhttps://vendor.example/advisory\nSee and the rest.\nThanks\n", "a line left empty goes; one with other text closes the gap");
+        d.Unfilled.Should().BeEmpty();
+        OutreachFill.HasMarker(d.Body).Should().BeFalse("nothing holds the send back");
+    }
+
+    [Fact]
+    public void DroppingAnOptionalLine_LeavesOneBlankLine_NotTwo_ButKeepsTheTemplatesOwn()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear);   // no other links
+        OutreachFill.Fill("x", "{{article.title}}\n\n{{article.other-links?}}\n\nThanks", facts).Body
+            .Should().EndWith("\n\nEdge VPN zero-day exploited\n\nThanks\n");
+        OutreachFill.Fill("x", "{{article.title}}\n{{article.other-links?}}\n\n\nThanks", facts).Body
+            .Should().EndWith("\n\nEdge VPN zero-day exploited\n\n\nThanks\n", "the template's own two blank lines aren't the drop's doing");
+    }
+
+    [Fact]
+    public void AnOptionalPlaceholder_WithAValue_FillsAsUsual()
+    {
+        var facts = Facts(Article(), TlpLevel.Clear) with { ArticleLinks = ["https://news.example/follow-up"] };
+        OutreachFill.Fill("x", "Further:\n{{article.other-links?}}\n{{today:+1?}}", facts).Body
+            .Should().EndWith("\n\nFurther:\nhttps://news.example/follow-up\nMonday, November 9, 2026\n");
+    }
+
+    [Fact]
+    public void AnOptionalPlaceholder_HeldBackByTheCeiling_IsDropped_ButStillSaidToBeLeftOut()
+    {
+        var d = OutreachFill.Fill("x", "{{article.title?}}\n{{product.name}}", Facts(Article(TlpLevel.Amber), TlpLevel.Green));
+        d.Body.Should().EndWith("\n\nEdge VPN\n").And.NotContain("zero-day");
+        d.Unfilled.Should().BeEmpty();
+        d.LeftOut.Should().ContainSingle().Which.Should().StartWith("The article is TLP:AMBER, above this template's TLP:GREEN");
+    }
+
+    [Fact]
+    public void Check_AcceptsAClosingQuestionMark() =>
+        FluentActions.Invoking(() => OutreachFill.Check("{{article.other-links?}} {{indicators:domain?}} {{today:+2?}} {{Article.CVES?}}")).Should().NotThrow();
+
+    [Theory]
+    [InlineData("{{tlp?}}", "{{tlp?}} can't be optional*")]
+    [InlineData("{{article.title ?}}", "{{article.title ?}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("{{article.titel?}}", "{{article.titel}} isn't a placeholder TIDE fills*")]
+    public void Check_RefusesAnOptionalTlp_OrAQuestionMarkThatDoesntParse(string text, string message) =>
+        FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
 
     [Fact]
     public void TheIndicators_AreDefanged_AllOfThem_OrOneKindByTheHuntsNames()

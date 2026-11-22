@@ -126,7 +126,7 @@
     }
     @if (LeftOut is null && Article.WithheldParts > 0)
     {
-        <div class="tide-withheld">@Article.WithheldParts restricted @(Article.WithheldParts == 1 ? "part was" : "parts were") left out of this edition.</div>
+        <div class="tide-withheld">@Ui.Plural(Article.WithheldParts, "restricted part was", "restricted parts were") left out of this edition.</div>
     }
     @ChildContent
 </article>

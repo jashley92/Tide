@@ -45,10 +45,12 @@ public static class ApiEndpoints
             .Scope(ApiScopes.ActionsRead);
 
         // A file on the action (or one of its comments), as it was added, or in a zip with the password "infected" (?zip=true;
-        // always, whatever ?zip says, under Files:ZipDownloads=Always).
+        // always, whatever ?zip says, under Files:ZipDownloads=Always). A token asked for the file deliberately, so it gets
+        // it as it is unless it asks for the zip. A person may have just followed a link, so they get the zip whenever
+        // /files/{id}/download would have sent it (Files:ZipDownloads, judged on the file's risk), whatever ?zip says.
         api.MapGet("/actions/{number:int}/files/{fileId:guid}", async (int number, Guid fileId, bool? zip, ApiService s, HttpContext http, CancellationToken ct) =>
                 await s.OpenFileAsync(number, fileId, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } file
-                    ? zip == true || s.ZipMode == Tide.Application.Files.ZipDownloads.Always
+                    ? zip == true || ZipFirst(http.User, s.ZipMode, file.RiskReason)
                         ? FileDownloads.Zipped(http, file) : FileDownloads.Plain(http, file.Content, file.FileName)
                     : NotFound($"There's no such file on A-{number}."))
             .Scope(ApiScopes.ActionsRead).Recorded(AuditedWhen.Always);
@@ -95,6 +97,11 @@ public static class ApiEndpoints
             return Results.Problem(statusCode: 403, detail: $"This token doesn't have the {scope} scope.");
         return await next(ctx);
     }).WithMetadata(new ApiScopeAttribute(scope));
+
+    // Whether the zip is the download whatever ?zip says: always under Always; for a person, also as the setting judges the file.
+    private static bool ZipFirst(System.Security.Claims.ClaimsPrincipal user, Tide.Application.Files.ZipDownloads mode, string? riskReason) =>
+        mode == Tide.Application.Files.ZipDownloads.Always
+        || (!ApiTokenAuthenticationHandler.IsToken(user) && Tide.Application.Files.FileRisk.ZipFirst(mode, riskReason));
 
     // The services' refusals as problem details; nothing is cached.
     private static async ValueTask<object?> Errors(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)

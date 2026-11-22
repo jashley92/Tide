@@ -153,7 +153,7 @@
     private Task Generate() => Run(async () =>
     {
         var n = await Rotation.GenerateAsync(_from, _weeks);
-        Toasts.Show($"Filled {n} week{(n == 1 ? "" : "s")}.");
+        Toasts.Show($"Filled {Ui.Plural(n, "week")}.");
     });
 
     // Says which presented days the change kept, and why, or which it corrected. A correction is one deliberate step:

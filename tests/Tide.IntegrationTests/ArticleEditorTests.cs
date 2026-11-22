@@ -27,7 +27,7 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheStickySaveBar_LeavesRoomToScrollTheLastControlClearOfIt()
     {
         var html = await app.CreateClient().GetStringAsync($"/articles/{await NewArticle()}");
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
 
         html.Should().Contain("class=\"tide-sticky-save");
         css.Should().Contain("html:has(.tide-sticky-save) { scroll-padding-bottom:", "focused or scrolled-to controls stop short of the bar");

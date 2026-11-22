@@ -34,6 +34,15 @@ public class ConcurrencyRound3BugTests : IDisposable
             new OutreachSend { To = "psirt@vendor.example", Subject = "Are we affected?", Body = "Hello,\n\nAre we affected?", Tlp = TlpLevel.Green });
     }
 
+    // The action's emails as its page reads them (ActionService.GetAsync).
+    private async Task<List<OutreachMessage>> Emails(Guid actionId)
+    {
+        var svc = _db.Actions();
+        await using var ctx = _db.Context();
+        var number = await ctx.Actions.Where(a => a.Id == actionId).Select(a => a.Number).SingleAsync();
+        return (await svc.GetAsync(number))!.Action.Outreach;
+    }
+
     // Sam records the reply between this one's read (still waiting) and its save, as two people pressing Record at once do.
     private void SamRecordsMeanwhile(Guid messageId) => _db.BeforeSave = ctx =>
     {
@@ -54,7 +63,7 @@ public class ConcurrencyRound3BugTests : IDisposable
         await FluentActions.Invoking(() => _db.Outreach().RecordReplyAsync(m.Id, "My notes: checking.", close: false))
             .Should().ThrowAsync<StaleEditException>().WithMessage("Sam recorded the reply to this email at the same moment*");
 
-        var kept = (await _db.Outreach().ForActionAsync(m.ActionId)).Messages.Single();
+        var kept = (await Emails(m.ActionId)).Single();
         (kept.ReplyRecordedByName, kept.ReplyNotes).Should().Be(("Sam", "Sam's notes: not affected."));
     }
 
@@ -67,7 +76,7 @@ public class ConcurrencyRound3BugTests : IDisposable
         await FluentActions.Invoking(() => _db.Outreach().WithdrawAsync(m.Id))
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("Sam recorded its reply at the same moment, so it stays.");
 
-        (await _db.Outreach().ForActionAsync(m.ActionId)).Messages.Should().ContainSingle().Which.ReplyNotes.Should().Be("Sam's notes: not affected.");
+        (await Emails(m.ActionId)).Should().ContainSingle().Which.ReplyNotes.Should().Be("Sam's notes: not affected.");
     }
 
     // A tag added to the old profile after the merge read its tags, and before it saved, stayed on the retired profile.

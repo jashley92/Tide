@@ -46,7 +46,9 @@ public class OutreachServiceTests : IDisposable
         {{article.title}}
         {{article.bottom-line}}
         {{article.link}}
+        {{article.other-links?}}
         {{article.cves}}
+        {{article.cve-links}}
 
         Indicators:
         {{indicators}}
@@ -113,10 +115,50 @@ public class OutreachServiceTests : IDisposable
         return (await Action(team, article), product);
     }
 
+    // The action as its page reads it, emails and all (newest first): the one read the page makes.
+    private async Task<ActionDetail> Detail(ActionItem a) => (await _db.Actions().GetAsync(a.Number))!;
+
     private Task<OutreachMessage> Sent(ActionItem a, string to = "psirt@vendor.example") =>
         _db.Outreach().MarkSentAsync(a.Id, new OutreachSend { To = to, Subject = "Edge VPN: are we affected?", Body = "Hello,\n\nAre we affected?", Tlp = TlpLevel.Green });
 
     // --- the template library --------------------------------------------------------------------------------------
+
+    // The vendor starter's body as it shipped up to v1.15, before optional placeholders and sections.
+    private const string ShippedVendorBody = "Hello,\n\nWe run {{product.name}}, version {{product.versions}}, and are reviewing this report:\n\n{{article.title}}\n{{article.link}}\n\n"
+        + "CVEs:\n{{article.cves}}\n\nCould you tell us:\n- whether the versions we run are affected;\n- whether a fix or workaround is available;\n"
+        + "- if not, when you expect one.\n\nOur reference is {{action.number}}.\n\nThanks,\n{{sender.name}}\n{{sender.team}}";
+
+    [Fact]
+    public async Task AStarterTideSaved_UnchangedSince_IsOfferedTheNewerVersion_KeepingItsOtherSettings_AndAChangedOneIsnt()
+    {
+        var current = StarterOutreachTemplates.All[0];
+        var old = StarterOutreachTemplates.ToEntity(current);
+        (old.Body, old.To, old.Ceiling) = (ShippedVendorBody, "psirt@vendor.example", TlpLevel.Green);
+        var edited = StarterOutreachTemplates.ToEntity(current);
+        (edited.Name, edited.Body) = ("Vendor, ours", ShippedVendorBody + "\nP.S.");
+        await using (var db = _db.Context())
+        {
+            db.OutreachTemplates.AddRange(old, edited);
+            await db.SaveChangesAsync();
+        }
+
+        StarterOutreachTemplates.NewerFor(old).Should().Be(current);
+        StarterOutreachTemplates.NewerFor(edited).Should().BeNull("its body was changed");
+        StarterOutreachTemplates.NewerFor(StarterOutreachTemplates.ToEntity(current)).Should().BeNull("it's the newer version already");
+        var someone = StarterOutreachTemplates.ToEntity(current);
+        (someone.Body, someone.CreatedByName) = (ShippedVendorBody, "Test Analyst");
+        StarterOutreachTemplates.NewerFor(someone).Should().BeNull("TIDE didn't save it");
+
+        await _db.OutreachTemplates().UseNewerStarterAsync(old.Id, old.EditVersion);
+        var now = (await _db.OutreachTemplates().GetAsync(old.Id))!;
+        (now.Body, now.Name, now.To, now.Ceiling, now.ModifiedByName).Should().Be((current.Body, current.Name, "psirt@vendor.example", TlpLevel.Green, "Test Analyst"));
+        StarterOutreachTemplates.NewerFor(now).Should().BeNull();
+
+        await FluentActions.Invoking(() => _db.OutreachTemplates().UseNewerStarterAsync(edited.Id, edited.EditVersion))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("Vendor, ours has been changed since TIDE added it, so it's kept as it is.");
+        As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
+        await FluentActions.Invoking(() => _db.OutreachTemplates().UseNewerStarterAsync(edited.Id, edited.EditVersion)).Should().ThrowAsync<ForbiddenException>();
+    }
 
     [Fact]
     public async Task Templates_AreKeptByWhoeverWorksActions_OneNameEach_AndAViewerOnlyReadsThem()
@@ -197,7 +239,7 @@ public class OutreachServiceTests : IDisposable
         await _db.OutreachTemplates().DeleteAsync(id);
         await _db.OutreachTemplates().DeleteAsync(id);   // gone already: fine
 
-        var kept = (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().ContainSingle().Subject;
+        var kept = (await Detail(action)).Action.Outreach.Should().ContainSingle().Subject;
         (kept.TemplateId, kept.TemplateName).Should().Be(((Guid?)null, "Owner's question"), "an email keeps the name of the template it came from");
     }
 
@@ -208,6 +250,11 @@ public class OutreachServiceTests : IDisposable
     {
         var (action, product) = await Scene();
         var template = await Template(to: "isac@isac.example");
+        await using (var ctx = _db.Context())
+        {
+            ctx.ArticleLinks.Add(new ArticleLink { ArticleId = action.ArticleId!.Value, Url = "https://news.example/follow-up", Title = "Follow-up", AddedAtUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
 
         var w = await _db.Outreach().WriteAsync(action.Id, template);
 
@@ -216,8 +263,10 @@ public class OutreachServiceTests : IDisposable
         var body = w.Draft.Body;
         body.Should().StartWith("TLP:GREEN: Limited disclosure", "the TLP line, as the subject places {{tlp}} but the body doesn't")
             .And.Contain("Hello Vendor PSIRT,").And.Contain($"We run {w.Product.Name} 22.7R2 (Network ")
-            .And.Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n")
-            .And.Contain("CVE-2026-0002\nCVE-2026-1234 (on CISA's KEV list; EPSS 50%)")
+            .And.Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\nhttps://news.example/follow-up\n",
+                "the other reports added to the article, where the template places them")
+            .And.Contain("CVE-2026-0002\nCVE-2026-1234\n"
+                + "https://nvd.nist.gov/vuln/detail/CVE-2026-0002\nhttps://nvd.nist.gov/vuln/detail/CVE-2026-1234\n")
             .And.Contain("Indicators:\n198.51.100[.]7\nevil[.]example\n", "defanged, as a hunt groups them")
             .And.Contain("Test Analyst, Cyber Threat Intelligence", "not on the action's team: the organization's")
             .And.Contain($"A-{action.Number}: https://tide.example.org/actions/{action.Number}");
@@ -225,7 +274,29 @@ public class OutreachServiceTests : IDisposable
         w.Draft.Unfilled.Should().BeEmpty();
         w.Recipients.Select(r => (r.Address, r.Label)).Should().Equal(("isac@isac.example", "the template's address"), ("psirt@vendor.example", $"{w.Product.Name}'s contact, Vendor PSIRT"));
         w.To.Should().Be("isac@isac.example");
-        (await _db.Outreach().ForActionAsync(action.Id)).Messages.Should().BeEmpty("writing saves nothing");
+        (await Detail(action)).Action.Outreach.Should().BeEmpty("writing saves nothing");
+    }
+
+    [Fact]
+    public async Task ADraft_IsFilledAsASavedTemplateIs_FromWhatsReadOnce_SavesNothing_AndIsRefusedWhenTideCantFillIt()
+    {
+        var (action, _) = await Scene();
+        var preview = await _db.Outreach().PreviewAsync(action.Id, TlpLevel.Green);
+        var d = preview.Fill("{{product.name}}: are we affected? [{{tlp}}]", Body);
+        d.Body.Should().Contain("Edge VPN zero-day exploited\nA pre-auth flaw is exploited in the wild.\nhttps://vendor.example/advisory\n");
+        d.Marking.Should().Be(TlpLevel.Green);
+        preview.Fill("{{article.cve-links}}", "x").Subject.Should().Contain("nvd.nist.gov", "read once, whichever placeholders the text uses");
+        preview.Products.Should().NotBeEmpty();
+        preview.Facts.Product.Should().Be(preview.Products[0]);
+        var other = new StackProduct { Name = "Other Gateway", Versions = "9.1" };
+        preview.For(other).Fill("{{product.name}} {{product.versions}}", "x").Subject.Should().Be("Other Gateway 9.1", "another product, with nothing more read");
+        (await _db.OutreachTemplates().ListAsync()).Should().BeEmpty("a preview saves no template");
+        (await Detail(action)).Action.Outreach.Should().BeEmpty();
+
+        FluentActions.Invoking(() => preview.Fill("x", "{{article.titel}}"))
+            .Should().Throw<ArgumentException>().WithMessage("{{article.titel}} isn't a placeholder TIDE fills*");
+        As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
+        await FluentActions.Invoking(() => _db.Outreach().PreviewAsync(action.Id, TlpLevel.Green)).Should().ThrowAsync<ForbiddenException>();
     }
 
     [Fact]
@@ -293,12 +364,11 @@ public class OutreachServiceTests : IDisposable
             TemplateId = template, To = "psirt@vendor.example; Security@Vendor.example, psirt@vendor.example", Subject = w.Draft.Subject, Body = w.Draft.Body, Tlp = w.Draft.Marking,
         });
 
-        var state = await _db.Outreach().ForActionAsync(action.Id);
-        var m = state.Messages.Should().ContainSingle().Subject;
+        var detail = await Detail(action);
+        var m = detail.Action.Outreach.Should().ContainSingle().Subject;
         (m.To, m.Subject, m.Tlp, m.SentByName, m.TemplateName).Should().Be(("psirt@vendor.example; Security@Vendor.example", w.Draft.Subject, TlpLevel.Green, "Test Analyst", "Are we affected?"));
         m.Body.Should().Be(w.Draft.Body.Trim());
-        state.Waiting.Should().BeTrue();
-        state.Oldest.Should().Be(m);
+        detail.Waiting.Should().BeSameAs(m);
         var history = (await _db.Actions().GetAsync(action.Number))!.Action.Events.Select(e => e.Text);
         history.Should().Contain($"Sent an email to psirt@vendor.example; Security@Vendor.example (TLP:GREEN): \"{w.Draft.Subject}\", from the template \"Are we affected?\".");
     }
@@ -325,7 +395,7 @@ public class OutreachServiceTests : IDisposable
         var ask = await Action(team);
         As("S-1-5-21-VIEWER", "Val Viewer", AppRole.Viewer);
         await FluentActions.Invoking(() => Sent(ask)).Should().ThrowAsync<ForbiddenException>();
-        (await _db.Outreach().ForActionAsync(ask.Id)).Messages.Should().BeEmpty("a Viewer reads it");
+        (await Detail(ask)).Action.Outreach.Should().BeEmpty("a Viewer reads it");
         As(Owner, "Olu Owner", AppRole.ActionOwner);
         (await Sent(ask)).SentByName.Should().Be("Olu Owner");
     }
@@ -344,7 +414,7 @@ public class OutreachServiceTests : IDisposable
         var a = (await _db.Actions().GetAsync(action.Number))!.Action;
         (a.Status, a.Outcome, a.OutcomeNote).Should().Be((ActionStatus.Done, ActionOutcome.NotAffected, "Not affected: fixed in 22.7R1."));
         a.Events.Select(e => e.Text).Should().Contain("Reply from psirt@vendor.example recorded (with reply.eml). Status: Open → Done (Not affected): Not affected: fixed in 22.7R1.");
-        var replied = (await _db.Outreach().ForActionAsync(action.Id)).Messages.Single();
+        var replied = (await Detail(action)).Action.Outreach.Single();
         (replied.IsWaiting, replied.ReplyNotes, replied.ReplyFileId, replied.ReplyRecordedByName).Should().Be((false, "Not affected: fixed in 22.7R1.", (Guid?)file.FileId, "Test Analyst"));
 
         await FluentActions.Invoking(() => _db.Outreach().RecordReplyAsync(m.Id, null, close: false)).Should().ThrowAsync<StaleEditException>().WithMessage("Test Analyst already recorded the reply*");
@@ -361,12 +431,11 @@ public class OutreachServiceTests : IDisposable
             .Should().ThrowAsync<ArgumentException>().WithMessage("That file isn't on this action.");
 
         await _db.Outreach().RecordReplyAsync(vendor.Id, "They're checking.", close: false);
-        var state = await _db.Outreach().ForActionAsync(action.Id);
-        state.Oldest!.Id.Should().Be(isac.Id, "the ISAC's is still waiting");
+        (await Detail(action)).Waiting!.Id.Should().Be(isac.Id, "the ISAC's is still waiting");
         (await _db.Actions().GetAsync(action.Number))!.Action.Status.Should().Be(ActionStatus.Open);
 
         await _db.Outreach().WithdrawAsync(isac.Id);
-        (await _db.Outreach().ForActionAsync(action.Id)).Waiting.Should().BeFalse();
+        (await Detail(action)).Waiting.Should().BeNull();
         (await _db.Actions().GetAsync(action.Number))!.Action.Events.Select(e => e.Text).Should()
             .Contain("Reply from psirt@vendor.example recorded: They're checking.")
             .And.Contain("Took back the email to isac@isac.example (\"Edge VPN: are we affected?\"): not sent after all.");
@@ -403,7 +472,7 @@ public class OutreachServiceTests : IDisposable
 
         await _db.Reminders(options, At(6)).RunDueAsync();   // Friday: four business days
         _db.Email.Sent.Should().BeEmpty();
-        var waiting = (await _db.Outreach(options, At(6)).ForActionAsync(action.Id)).Messages.Single();
+        var waiting = (await Detail(action)).Action.Outreach.Single();
         _db.Outreach(options, At(6)).FollowUpOn(waiting).Should().Be(new DateOnly(2026, 11, 9));
 
         await _db.Reminders(options, At(9)).RunDueAsync();   // the next Monday: five
@@ -555,7 +624,8 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
             await r.Click(p => { p.New(); return Task.CompletedTask; });
             var form = await r.Html();
             form.Should().Contain("New template</h2>").And.Contain("<label class=\"tide-field-label\" for=\"ot-f-ceiling\">Highest TLP it carries</label>")
-                .And.Contain("<summary>Placeholders</summary>").And.Contain("{{indicators:domain}}").And.Contain("{{product.versions}}");
+                .And.Contain("Filled from the action when the email is written.").And.Contain("nothing to fill</summary>")
+                .And.Contain("{{product.contact|there}}");
             r.Component.Form!.Body.Should().Contain("{{product.name}} {{product.versions}}");
             (r.Component.Form.Name, r.Component.Form.Ceiling) = ("Ask the ISAC " + tag, TlpLevel.Clear);
             await r.Click(p => p.Save());
@@ -567,6 +637,76 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
         var read = await viewer.Html();
         read.Should().Contain("Ask the PSIRT " + tag).And.Contain(" Copy</button>")
             .And.NotContain("New template").And.NotContain("aria-label=\"Edit ").And.NotContain("aria-label=\"Retire ").And.NotContain("aria-label=\"Delete ");
+    }
+
+    [Fact]
+    public async Task TheForm_OffersTheInsertMenu_AndTypingBraces_OnTheSubjectAndBody()
+    {
+        await using var r = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates");
+        await r.Click(p => { p.New(); return Task.CompletedTask; });
+        var form = await r.Html();
+        form.Should().Contain("data-oi data-oi-names=\"[{&quot;n&quot;:&quot;article.title&quot;")
+            .And.Contain("&quot;n&quot;:&quot;else&quot;", "a section's {{else}} is offered too")
+            .And.Contain("aria-controls=\"ot-f-insert\"").And.Contain("Insert placeholder")
+            .And.Contain("Or type {{ in the subject or body to pick one as you write.");
+        form.Should().MatchRegex("<input id=\"ot-f-subject\"[^>]*data-oi-target[^>]*aria-autocomplete=\"list\" aria-controls=\"ot-f-subject-list\"");
+        form.Should().MatchRegex("<textarea id=\"ot-f-body\"[^>]*data-oi-target data-oi-default[^>]*aria-describedby=\"ot-f-check ot-f-body-help\"");
+        form.Should().Contain("<ul id=\"ot-f-body-list\" class=\"tide-oi-suggest\" role=\"listbox\" aria-label=\"Placeholders\" data-oi-list-for=\"ot-f-body\" hidden></ul>")
+            .And.Contain("data-oi-status").And.Contain("id=\"ot-f-check\"").And.Contain("TIDE can fill this:");
+    }
+
+    [Fact]
+    public async Task TheInsertMenu_FindsAPlaceholder_AndOffersEachWayToPutItIn()
+    {
+        await using var r = await RenderAsync<OutreachInsertMenu>(app, "/library/templates", new() { ["PanelId"] = "oi-test" });
+        (await r.Html()).Should().Contain("aria-expanded=\"false\"").And.NotContain("data-oi-insert");
+
+        await r.Click(m => { m.Toggle(); return Task.CompletedTask; });
+        r.Component.Shown.Should().HaveCount(OutreachFill.All.Count);
+        var cves = OutreachFill.All.Single(p => p.Name == "article.cves");
+        await r.Click(m => { m.Choose(cves); return Task.CompletedTask; });
+        var html = await r.Html();
+        html.Should().Contain("aria-expanded=\"true\"").And.Contain("role=\"group\" aria-label=\"Insert a placeholder\"")
+            .And.Contain("data-oi-insert=\"{{article.cves}}\"").And.Contain("data-oi-insert=\"{{article.cves?}}\"")
+            .And.Contain("data-oi-section=\"article.cves\"").And.Contain("aria-pressed=\"true\"");
+        html.Should().Contain("disabled data-oi-insert=\"{{article.cves|}}\"", "nothing typed for when it's empty yet");
+
+        var tlp = OutreachFill.All.Single(p => p.Name == OutreachFill.TlpName);
+        await r.Click(m => { m.Choose(tlp); return Task.CompletedTask; });
+        (await r.Html()).Should().Contain("data-oi-insert=\"{{tlp}}\"").And.NotContain("data-oi-insert=\"{{tlp?}}\"").And.NotContain("data-oi-section=\"tlp\"",
+            "the email always carries its TLP");
+    }
+
+    [Fact]
+    public async Task TheDraft_SaysWhetherTideCanFillIt_AndWhere_AndPreviewsItOnAnOpenAction_ItsGapsMarked()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var number = await OutreachAction("Ask the vendor " + tag);
+        await using (var bad = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
+        {
+            ["CheckId"] = "c", ["SubjectId"] = "s", ["BodyId"] = "b", ["Subject"] = "About {{action.number}}", ["Body"] = "Hi\n{{#article.cves}}\nCVEs",
+            ["Ceiling"] = TlpLevel.Clear,
+        }))
+        {
+            bad.Component.Problem.Should().Be("{{#article.cves}} is never closed: end the section with {{/article.cves}}.");
+            (await bad.Html()).Should().Contain("class=\"small tide-oi-check is-problem\" role=\"status\"")
+                .And.Contain("data-oi-select=\"b\" data-oi-from=\"3\" data-oi-text=\"{{#article.cves}}\">Show where</button>", "it selects the trouble in its box");
+        }
+
+        await using var r = await RenderAsync<OutreachTemplateDraft>(app, "/library/templates", new()
+        {
+            ["CheckId"] = "c", ["SubjectId"] = "s", ["BodyId"] = "b", ["Subject"] = "About {{action.number}}", ["Ceiling"] = TlpLevel.Clear,
+            ["Body"] = "Hello {{product.contact|there}},\n\n{{#article.cves}}\nCVEs:\n{{article.cves}}\n{{else}}\nNo CVEs yet.\n{{/article.cves}}\n{{product.versions}}",
+        });
+        r.Component.Problem.Should().BeNull();
+        (await r.Html()).Should().Contain("TIDE can fill this: 5 placeholders.").And.Contain("Preview this draft on an action").And.NotContain("Show where");
+        await r.Click(d => d.TogglePreview());
+        var action = (await Read(number)).Action;
+        await r.Click(d => d.ChooseAction(action.Id));
+        r.Component.Draft!.Subject.Should().Be($"About A-{number}");
+        r.Component.Draft.Body.Should().EndWith("Hello there,\n\nNo CVEs yet.\n[[product.versions: nothing to fill]]\n");
+        (await r.Html()).Should().Contain($"Subject: About A-{number}")
+            .And.Contain("<mark class=\"tide-oi-gap\">[[product.versions: nothing to fill]]</mark>").And.Contain("To fill before sending: {{product.versions}}.");
     }
 
     [Fact]

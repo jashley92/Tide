@@ -177,7 +177,7 @@ public sealed class ScrollFollowTests
         var present = Shortcuts.For("present/2026-09-01").Single(g => g.Title == "Present mode").Keys;
         present.Single(k => k.Keys.Contains("Space")).Should().Match<Shortcut>(k => k.Keys.Contains("Page Down") && k.What.Contains("Scroll"));
         present.Single(k => k.Keys.Contains("Page Up")).Keys.Should().Contain("Shift Space");
-        present.Single(k => k.What == "Next slide").Keys.Should().Equal("→", "Enter");
+        present.Single(k => k.What.StartsWith("Next slide", StringComparison.Ordinal)).Keys.Should().Equal("→", "Enter");
     }
 }
 
@@ -210,7 +210,7 @@ public class PresentScrollTests(MeetingClockApp app) : IClassFixture<MeetingCloc
         html.Should().NotContain("data-scroll-share", "nothing to share outside a meeting");
         html.Should().NotContain("tide-slide-back");
 
-        var css = await app.CreateClient().GetStringAsync("/app.css");
+        var css = await app.StylesheetAsync();
         css.Should().Contain(".tide-scrollfade.is-more-above").And.Contain(".tide-scrollfade.is-more-below")
             .And.Contain(".tide-slide:has(> .tide-slide-body.is-more-below) .tide-slide-more")
             .And.Contain("container-type: size").And.Contain("var(--tide-fit, 1)").And.Contain("scrollbar-width: thin");

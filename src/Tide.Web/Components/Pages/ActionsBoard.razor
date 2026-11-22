@@ -94,7 +94,7 @@
    page. Two pills on one parameter take turns (Overdue or Due this week, Blocked or Tracking); P1–P2 is the priority
    filter holding exactly those two. The board counts its cards here; the list counts its rows under its search. *@
 <FilterBar Pills="PillsCounted" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
-           Count="@(_asBoard ? $"{Count} action{(Count == 1 ? "" : "s")}" : null)">
+           Count="@(_asBoard ? Ui.Plural(Count, "action") : null)">
     <Search>
         <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
                @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
@@ -119,7 +119,7 @@
     @* Mine is empty, but work in the person's teams has nobody: say so, with the way to it. *@
     <p class="tide-actions-unowned" id="mine-unowned">
         <span class="bi bi-person-dash" aria-hidden="true"></span>
-        Nothing open is assigned to you. Your teams have @unowned action@(unowned == 1 ? "" : "s") with no owner.
+        Nothing open is assigned to you. Your teams have @Ui.Plural(unowned, "action") with no owner.
         <a href="@NoOwnerLink" @onclick="ShowThemClicked">Show them</a>
     </p>
 }
@@ -509,6 +509,7 @@ else
         "overdue" => ActionDue.Overdue,
         "week" => ActionDue.ThisWeek,
         "none" => ActionDue.None,
+        "soon" => ActionDue.Soon,
         _ => null,
     };
 
@@ -517,6 +518,7 @@ else
         ActionDue.Overdue => "overdue",
         ActionDue.ThisWeek => "week",
         ActionDue.None => "none",
+        ActionDue.Soon => "soon",
         _ => null,
     };
 
@@ -541,7 +543,7 @@ else
     private static readonly IReadOnlyList<FilterOption> KindOptions = FilterOption.ForEnum<ActionKind>(ActionService.KindName);
     private static readonly IReadOnlyList<FilterOption> PriorityOptions = FilterOption.ForEnum<Priority>();
     private static readonly IReadOnlyList<FilterOption> DueOptions =
-        [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
+        [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.Soon), "Soon"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
     private static readonly IReadOnlyList<FilterOption> OpenStatusOptions = StatusOptionsOf(OpenStatuses), ClosedStatusOptions = StatusOptionsOf(ClosedStatuses);
 
     private static IReadOnlyList<FilterOption> StatusOptionsOf(IEnumerable<ActionStatus> statuses) =>

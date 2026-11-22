@@ -416,10 +416,11 @@ Downloads one live file on the action or one of its comments (`ApiService.OpenFi
 **Query parameter:** `zip` (optional, boolean). `true` returns the file inside a zip with the password `infected`, in
 classic ZipCrypto so any zip tool opens it. Use it for a `risky` file: the zip stops it running on arrival and keeps
 antivirus from deleting it. When the server's `Files:ZipDownloads` is `Always`, every file comes zipped, whatever `zip`
-says.
+says. A person signed in with Windows (not a token) gets the zip whenever the app's own download would send it: a
+`risky` file under `RiskyOnly`, whatever `zip` says. A token gets the file as it is unless it asks for the zip.
 
 **Response 200:** the bytes as an attachment, `application/octet-stream` (or `application/zip` with `zip=true`, or
-under `Files:ZipDownloads=Always`),
+under `Files:ZipDownloads=Always`, or for a person when the zip comes first),
 under the name it was added with (`<name>.zip` zipped). Headers: `Cache-Control: private, no-store`,
 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`.
 
@@ -651,6 +652,9 @@ In **Administration › API access › Webhooks** (administrators only):
    in a burst.
 4. **Remove** deletes it.
 
+If another administrator removed a webhook after the page listed it, any of these says so in a message and the list
+is read again; a token or secret still on show stays.
+
 The table shows each webhook's last post: its HTTP status and time, or the error. If the server's data protection
 keys are lost or replaced, the secret can't be read: every post fails with "The signing secret can't be read", and
 the webhook must be added again.
@@ -872,18 +876,37 @@ sequenceDiagram
   happens; `action.overdue` comes at the first run after midnight in the organization's time zone.
 - **Order.** Oldest first, per webhook. Each webhook has its own watermark, so one failing receiver doesn't hold up
   the others.
-- **Batching.** At most 100 events a run per webhook (more only to finish events stamped at the same moment), and the
-  overdue posts a due date at a time, so a backlog drains over several runs.
+- **Batching.** Per webhook a run posts at most 100 `action.raised` and `brief.sent` events (more only to finish
+  events stamped at the same moment, such as actions raised in one save) and at most 100 `action.overdue` posts, so a
+  backlog drains over several runs.
+- **Time budget.** Every post a run makes, of every kind, starts within **5 minutes** of the run's start
+  (`WebhookService.RunBudget`, timed on the monotonic clock, so a wall-clock correction can't stretch it). A run
+  therefore ends within the budget plus one post (15 seconds at most) plus the remaining webhooks' bookkeeping: each
+  still reads what's due and saves its watermarks and last result, posting nothing once the budget is spent. That's
+  well under the job's 15-minute hang limit; a slow receiver could otherwise hold a run for most of half an hour. Each webhook in turn gets
+  an even share of what's left, so one slow receiver doesn't hold up the others. A webhook whose share is spent stops
+  before its next post, even among events stamped at one moment or due the same day, and the next run goes on from the
+  post after the last that went (the webhook's `MomentCursor` and `OverdueCursor`): nothing is skipped or sent twice.
+  The log says so at Information.
 - **Failure.** A post fails on any status outside 200 to 299, a timeout (15 seconds), a connection error, or a
   redirect (redirects aren't followed; a 3xx is reported). The webhook's run stops at its first failure; the next run,
-  a minute later, tries again from the same event with the **same `id`**. There's no back-off and no limit: it retries
+  a minute later, tries again from the same event with the **same `id`**, and posts nothing that already went before it. There's no back-off and no limit: it retries
   every minute until it succeeds, the webhook is turned off, or it's removed. The last error is on the page.
 - **At least once.** A run that stopped between posting and saving its watermark posts the event again. Deduplicate
   on `id`.
 - **What isn't posted.** Test sends of a brief; corrections; actions above the team edition's ceiling; anything that
   happened while the webhook was off.
-- **Network.** Posts use their own HTTP client (`HttpWebhookPoster`, the `webhooks` named client) with redirects off.
-  They don't go through the outbound client's address rules or `Intake:Proxy`; the address must be https.
+- **Network.** Posts use their own HTTP client (`HttpWebhookPoster`, the `webhooks` named client) with redirects off,
+  not `Intake:Proxy`; the address must be https.
+- **Addresses.** Posts go through the same address rule as outbound fetches (`AddressPolicy`), checked on the address
+  each connection actually reaches, so a name that changes after it's checked can't redirect one. Loopback
+  (`localhost`, 127.0.0.0/8, `::1`), link-local (169.254.0.0/16, the cloud metadata address 169.254.169.254 among
+  them, and `fe80::/10`), unspecified and multicast addresses are always refused. Private addresses (10/8, 172.16/12,
+  192.168/16, 100.64/10, IPv6 unique-local) are allowed while `Webhooks:AllowPrivateNetworks` is `true`, the default,
+  since a receiver such as a SOAR platform is often internal; set it to `false` to allow only public addresses. A
+  refused post fails like any other: **Test** and the webhook's last result show
+  `Refused: <host> is a loopback address, which webhooks aren't sent to.` (or link-local, private, reserved), and
+  nothing is sent.
 
 Deliveries aren't in the audit log (a row a minute would bury the real ones); adding, changing and removing a webhook
 is.

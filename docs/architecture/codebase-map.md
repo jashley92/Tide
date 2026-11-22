@@ -67,7 +67,7 @@ never refers to SQL Server or SQLite directly.
 
 | Path | Holds | Start reading |
 |---|---|---|
-| `Common/` | `Entity` (a Guid `Id` generated in C#), `AuditableEntity` (created and modified stamps), and `EnumNames`, which parses an enum by declared name only and never as a number or comma list. | `Entity.cs` |
+| `Common/` | `Entity` (a Guid `Id` generated in C#), `AuditableEntity` (created and modified stamps), `EnumNames`, which parses an enum by declared name only and never as a number or comma list, and `UrlCanonicalizer` (one address per story, and its hash), which entities use to keep an address's hash with it. | `Entity.cs` |
 | `Entities/` | One file per area, with one class per table: `Intake.cs` (sources, feed items, stories, CVEs), `Article.cs`, `Brief.cs`, `Distribution.cs` (sends, corrections), `Actions.cs` (teams, actions and everything on them, hunts, saved queries, outreach), `Metrics.cs`, `Rotation.cs`, `Scorecard.cs`, `Stack.cs`, `Adversary.cs`, `Review.cs`, `Detection.cs`, `Assist.cs` (AI drafts), `Api.cs` (tokens, webhooks), `Users.cs` (users, preferences, role mappings, audit log, settings, stored files). | `Article.cs`: `Article.HighestTlp`, `Article.Effective` and the "why it matters" TLP defaults. |
 | `Enums/` | `AppEnums.cs` (roles, permissions and every workflow enum), `TlpLevel.cs` (`TlpLevel` and the `Tlp` helpers: `Label`, `Key`, `Parse`, `Checked`), `MitreEnums.cs` (`MitreTactic`). | `TlpLevel.cs` |
 | `Observables/` | `IocObservable` (refang, defang, detect a type, canonical form) and `IpText`. | `IocObservable.Normalize` |
@@ -100,7 +100,7 @@ through `ICurrentUser.Has(Permission.…)`, whether or not the page already hide
 | `Files/` | Screenshots and evidence: upload checks, sniffing, storage, inline access rules, deletes. Also file risk and zip-by-default rules, and display sizes. | `ScreenshotService`, `ImageSniffer`, `FileRisk` |
 | `History/` | The History disclosure on articles and briefs (`HistoryService`, `HistoryFormatter`), and the administrator's audit log page and CSV (`AuditLogService`, `AuditRecords`). | `HistoryService`, `AuditLogService` |
 | `Indicators/` | Finding indicators and CVEs in pasted text, and indicator labels and defanged display. | `IocExtractor`, `IndicatorLabels` |
-| `Intake/` | Sources, polling, the triage inbox, grouping and splits, promote and attach, and retention (`IntakeService`). Also feed parsing and URL canonicalization (`FeedParser`, `UrlCanonicalizer`, `TitleMatch` in `FeedParsing.cs`), feed filters, sponsored-content detection, the reading pane (`ReadingService`), CVE enrichment (`CveService`), stories (`StoryService`), triage ordering (`TriageLearning`, `TriageGroups`), the starter source list, and `IOutboundHttp` with `IntakeOptions`. | `IntakeService`, `FeedParser`, `CveService` |
+| `Intake/` | Sources, polling, the triage inbox, grouping and splits, promote and attach, and retention (`IntakeService`). Also feed parsing and title matching (`FeedParser`, `TitleMatch` in `FeedParsing.cs`; `UrlCanonicalizer` is in the domain's `Common/`), feed filters, sponsored-content detection, the reading pane (`ReadingService`), CVE enrichment (`CveService`), stories (`StoryService`), triage ordering (`TriageLearning`, `TriageGroups`), the starter source list, and `IOutboundHttp` with `IntakeOptions`. | `IntakeService`, `FeedParser`, `CveService` |
 | `Metrics/` | Metric definitions and values (`MetricsService`), CSV import (`MetricImportService`, `MetricCsv`), the rules for change and thresholds (`MetricMath`), charts and present-mode slides, and entry progress. | `MetricsService`, `MetricMath` |
 | `Mitre/` | The embedded ATT&CK Enterprise catalog (`attack-techniques.json`, `attack-retired.json`, embedded resources) and the matrix views. | `AttackCatalog`, `AttackMatrix` |
 | `Operations/` | Running the server: the settings catalog and secret masking (`SettingsCatalog`, `SecretMask`), the configuration bundle export and import (`ConfigBundleService`), install answers (`tide.config.psd1`), background job status (`JobMonitor`), the release feed and update check, and the upgrade command shown on the Updates page. | `SettingsCatalog`, `ConfigBundleService`, `JobMonitor` |
@@ -128,6 +128,8 @@ also lives here, so unit tests can reach it without a database.
 | `Persistence/AuditInterceptor.cs` | Stamps and the audit log, written in the same save. `NotAudited`, `SkippedProperties` and `MaskFor` are the knobs. | `Record`, `Changes` |
 | `Persistence/ChangeInterceptor.cs` | Publishes change-feed topics after a save commits (`TopicsOf` maps entities to topics). | `TopicsOf` |
 | `Persistence/DatabaseInitializer.cs` | Startup: migrate (or refuse if `Database:ApplyMigrations` is false and migrations are pending), load holidays, seed role mappings and the scorecard, run the one-time indicator canonicalization, and add Development sample data. | `InitializeAsync`, `SeedSamplesAsync` |
+| `Persistence/SqliteText.cs` | On SQLite only: a `lower()` that folds every letter and a `unicode_ci` collation on every connection, and `ToLower()` translated to use them, so text sorts as on SQL Server; and `EF.Functions.Like` translated to add `SqliteLike`'s matcher for a pattern with a letter beyond ASCII, so search ignores case as on SQL Server. | `Configure`, `Register` |
+| `Persistence/SqliteLike.cs` | On SQLite only: `needs_unicode(p)` and `ulike(p, x[, e])`, LIKE ignoring case for every letter (as `NameOrder` compares), accents counted. | `Register` |
 | `Persistence/AppDbContextFactory.cs` | The design-time factory for `dotnet ef`. It reads `TIDE_MIGRATIONS_PROVIDER`, and its XML comment has the migration commands. | |
 | `Persistence/Migrations/` | The **SQLite** migrations and snapshot. | |
 | `Storage/DiskFileStore.cs` | File bytes on disk under `Files:RootPath`. | `WriteAsync`, `PathFor` |
@@ -163,7 +165,7 @@ API endpoints and hosted services.
 | `Components/Pages/` | One component per page, routed by `@page`. The table after this one maps routes to files. | `Present.razor`, `Triage.razor`, `BriefPage.razor` |
 | `Components/Pages/Admin/` | Administration pages under `/admin/…`, all requiring `Administer`. | `AdminOverview.razor` |
 | `Components/Shared/` | Reusable components, about 90 of them. The article editor panel, action editor, table and kanban, hunt and outreach panels, edition views and checks, the send confirmation and distribute panel, metric entry and charts, present-mode cards, pickers (story, scorecard tag, ATT&CK matrix, products, adversaries), `DataTable`, `FilterBar`, `ConfirmDialog`, `LeaveDialog`, `TlpSelect`, `HistoryPanel` and `ToastHost`. | `ArticleEditorPanel.razor`, `EditionView.razor`, `DataTable.razor` |
-| `wwwroot/` | `app.css` (the `--tide-*` design tokens for both themes), `palette.css`, Bootstrap, and `js/`: one external script per behaviour (`board.js`, `present.js`, `triage.js`, `editor.js`, `chart.js`…), because the CSP allows only `script-src 'self'`. `samples/detection-rules.csv` is the downloadable CSV template. | `app.css`, `js/present.js` |
+| `wwwroot/` | `css/` (the stylesheet in parts by area, the `--tide-*` design tokens for both themes in `00-tokens.css`), `palette.css`, Bootstrap, and `js/`: one external script per behaviour (`board.js`, `present.js`, `triage.js`, `editor.js`, `chart.js`…), because the CSP allows only `script-src 'self'`. `samples/detection-rules.csv` is the downloadable CSV template. | `app.css`, `js/present.js` |
 | `appsettings.json`, `appsettings.Development.json`, `web.config` | Configuration, where every key has a `"//"` comment line, the dev overrides, and IIS hosting. See [../operations/configuration.md](../operations/configuration.md). | |
 
 ### Pages by route
@@ -225,7 +227,8 @@ Windows PowerShell 5.1 scripts, ASCII only. [`deploy/README.md`](../../deploy/RE
 | `appsettings.Production.template.json` | What the installer fills in. |
 | `lib/*.ps1` | Shared helpers for IIS, AD group names, SQL, settings, upgrade, backup, dates, JSON, paths and WebSockets. |
 
-There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
+The DBA schema script, `sql/tide-schema-sqlserver.sql`, isn't in the repository: the release workflow generates it
+into the bundle (`tools/ci/sqlserver-schema-script.sh`, through `Persistence/IdempotentScriptSqlGenerator.cs`).
 
 ## `tools` and CI
 
@@ -233,11 +236,13 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 |---|---|
 | `tools/ci/check-migrations-immutable.sh` | Fails CI when a migration that shipped in a release tag was changed or removed. |
 | `tools/ci/check-sonar-quality-gate.sh` | Reads the SonarQube Cloud quality gate. |
+| `tools/ci/sqlserver-schema-script.sh` | Writes the DBA schema script (every SQL Server migration, idempotent) the release bundle carries. |
+| `tools/ci/check-sqlserver-schema-script.sh` | Applies that script to an empty SQL Server database, twice, and checks it against the migrations. |
 | `tools/ci/extract-release-notes.sh` | Release notes for the release workflow. |
 | `tools/signing/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
 | `tools/upgrade-test/upgrade-path.sh` | Installs older releases into SQL Server, starts this tree against the same database, and checks it comes up healthy with data intact. |
-| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, SQL Server tests, the upgrade path). |
-| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
+| `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, the DBA schema script, SQL Server tests, the upgrade path). |
+| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts with the DBA schema script, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
 
 ## If you need to change X, start in Y
 
@@ -249,7 +254,7 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | A role or what it may do | `RoleDefinitions` and `Policies` in `src/Tide.Application/Security/Security.cs` | `Capabilities` (the activity table), the service's own `Has(Permission.…)` checks, `NavPages`. [security.md](security.md) |
 | How AD groups become roles | `src/Tide.Web/Security/RoleClaimsTransformer.cs`, `SidNames` | `RoleDirectory`, `RoleMappingService` |
 | What an edition includes at a TLP | `BriefEditions` (`src/Tide.Application/Briefs/BriefEdition.cs`) | `BriefRenderer`, `EmailComposer`, the TLP leak tests in `BriefRendererTests`. [editions-and-tlp.md](editions-and-tlp.md) |
-| The email's look | `EmailComposer` (its `Palette` mirrors the light tokens), `EmailTemplates.cs` | `app.css` tokens, preview at `/briefs/{day}/email/{edition}` |
+| The email's look | `EmailComposer` (its `Palette` mirrors the light tokens), `EmailTemplates.cs` | `css/00-tokens.css` tokens, preview at `/briefs/{day}/email/{edition}` |
 | Sending, not sent, SharePoint, the archive | `DistributionService` | `SendOutcome`, `PublishedContent`. [../workflows/distribution.md](../workflows/distribution.md) |
 | Corrections after a send | `CorrectionService`, `CorrectionRenderer` | [ADR 0015](../decisions/0015-corrections-after-send.md) |
 | Brief steps, ordering, reopen | `BriefService`, `BriefProgress.cs` | `BriefPage.razor`, `BriefStepper.razor` |
@@ -276,7 +281,7 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | AI drafting | `AssistService`, `DraftPrompt`, `DraftChecks` | `AzureOpenAiAssistant`, [ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md) |
 | Startup, seeding, sample data | `DatabaseInitializer` | `Program.cs` |
 | The sidebar, palette or shortcuts | `Components/Layout/NavPages.cs`, `PaletteEntries.cs`, `Shortcuts.cs` | |
-| Colours or theme | `wwwroot/app.css` `--tide-*` tokens | `EmailComposer.Palette` for email. Never hard-code a hex value in a page. |
+| Colours or theme | `wwwroot/css/00-tokens.css` `--tide-*` tokens | `EmailComposer.Palette` for email. Never hard-code a hex value in a page. |
 | A script | `wwwroot/js/<name>.js` | Bump its `?v=` in `App.razor`. |
 | Install or upgrade | `deploy/Install-Tide.ps1`, `deploy/Upgrade-Tide.ps1`, `deploy/lib` | `DeployScriptTests`, `tools/upgrade-test/upgrade-path.sh` |
 

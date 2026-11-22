@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application;
 using Tide.Application.Intake;
+using Tide.Domain.Common;
 
 namespace Tide.UnitTests;
 
@@ -24,6 +25,18 @@ public class UrlCanonicalizerTests
     [InlineData("/relative/path")]
     [InlineData("")]
     public void Canonicalize_RefusesWhatIsntAWebAddress(string input) => UrlCanonicalizer.Canonicalize(input).Should().BeNull();
+
+    [Fact]
+    public void HashOf_IsTheCanonicalAddresssHash_SoTrackingTagsATrailingSlashAndAHostsCaseDontChangeIt()
+    {
+        var hash = UrlCanonicalizer.HashOf("https://news.example/vpn");
+        hash.Should().MatchRegex("^[0-9a-f]{64}$").And.Be(UrlCanonicalizer.Hash("https://news.example/vpn"));
+        foreach (var same in new[] { "https://news.example/vpn?utm_source=mail&utm_campaign=x", "https://news.example/vpn/", "HTTPS://NEWS.Example/vpn", " https://news.example/vpn#top " })
+            UrlCanonicalizer.HashOf(same).Should().Be(hash, same);
+        UrlCanonicalizer.HashOf("https://news.example/VPN").Should().NotBe(hash, "a path's case is part of the address");
+        UrlCanonicalizer.HashOf("ftp://news.example/vpn").Should().BeNull();
+        UrlCanonicalizer.HashOf(null).Should().BeNull();
+    }
 }
 
 public class TitleMatchTests

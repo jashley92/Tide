@@ -95,6 +95,13 @@ else
                     </div>
                     @if (t.Description is { } about) { <p class="small mb-1">@about</p> }
                     <div class="small mb-1">Filled up to @Tlp.Label(t.Ceiling)@(t.To is { } to ? $", always to {to}" : "").</div>
+                    @if (_canWrite && StarterOutreachTemplates.NewerFor(t) is not null)
+                    {
+                        <div class="tide-oi-newer small mb-2">
+                            <span class="bi bi-stars" aria-hidden="true"></span> TIDE has a newer version of this starter. It leaves out a heading, link or line when there's nothing to fill.
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" disabled="@(_busy || _form is not null)" @onclick="() => UseNewer(t)">Use it</button>
+                        </div>
+                    }
                     <div class="tide-field-label mb-0">Subject</div>
                     <div class="tide-data mb-2">@t.Subject</div>
                     <div class="tide-field-label mb-0">Body</div>
@@ -141,7 +148,7 @@ else
     private RenderFragment EditForm => __builder =>
     {
         var f = _form!;
-        <div data-submit-scope>
+        <div data-submit-scope data-oi data-oi-names="@SuggestNames">
             <div class="row g-2">
                 <div class="col-md-6">
                     <label class="tide-field-label" for="ot-f-name">Name</label>
@@ -162,12 +169,24 @@ else
                     <input id="ot-f-about" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxDescription" @bind="f.Description" />
                 </div>
                 <div class="col-12">
-                    <label class="tide-field-label" for="ot-f-subject">Subject</label>
-                    <input id="ot-f-subject" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxSubject" placeholder="{{product.name}}: are we affected by {{article.cves}}?" @bind="f.Subject" />
+                    <OutreachInsertMenu PanelId="ot-f-insert" />
+                    <p class="form-text mt-1 mb-0" id="ot-f-type-help">Or type {{ in the subject or body to pick one as you write.</p>
                 </div>
-                <div class="col-12">
+                <div class="col-12 tide-oi-field">
+                    <label class="tide-field-label" for="ot-f-subject">Subject</label>
+                    <input id="ot-f-subject" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxSubject" placeholder="{{product.name}}: are we affected by {{article.cves}}?"
+                           data-oi-target aria-autocomplete="list" aria-controls="ot-f-subject-list" aria-describedby="ot-f-check ot-f-type-help"
+                           @bind="f.Subject" />
+                    <ul id="ot-f-subject-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="ot-f-subject" hidden></ul>
+                </div>
+                <div class="col-12 tide-oi-field">
                     <label class="tide-field-label" for="ot-f-body">Body</label>
-                    <textarea id="ot-f-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachTemplate.MaxBody" aria-describedby="ot-f-body-help" @bind="f.Body"></textarea>
+                    <textarea id="ot-f-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachTemplate.MaxBody"
+                              data-oi-target data-oi-default aria-autocomplete="list" aria-controls="ot-f-body-list" aria-describedby="ot-f-check ot-f-body-help"
+                              @bind="f.Body"></textarea>
+                    <ul id="ot-f-body-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="ot-f-body" hidden></ul>
+                    <OutreachTemplateDraft CheckId="ot-f-check" SubjectId="ot-f-subject" BodyId="ot-f-body" Subject="@f.Subject" Body="@f.Body" Ceiling="f.Ceiling" />
+                    <span class="visually-hidden" role="status" data-oi-status></span>
                     <OutreachTemplateHelp Id="ot-f-body-help" />
                 </div>
             </div>
@@ -197,18 +216,25 @@ else
         FocusList();
     }
 
+    // What typing {{ offers (js/outreach-editor.js): every placeholder, whether a section can be about it, and a
+    // section's {{else}}.
+    private static readonly string SuggestNames = System.Text.Json.JsonSerializer.Serialize(
+        OutreachFill.All.Select(p => new { n = p.Name, d = p.Description, s = p.MayBeEmpty })
+            .Append(new { n = OutreachFill.ElseName, d = "Inside a section: what follows is written when there's nothing to fill.", s = false }));
+
     // A new template starts from a common question, so the placeholders are there to keep or cut.
     internal const string StarterSubject = "{{product.name}}: are we affected? ({{article.title}})";
 
     internal const string StarterBody = """
-        Hello {{product.contact}},
+        Hello {{product.contact|there}},
 
         We run {{product.name}} {{product.versions}}. We're looking at the report below and would like to know whether our versions are affected, and if so what you recommend.
 
         {{article.title}}
-        {{article.link}}
+        {{article.link?}}
+        {{article.other-links?}}
 
-        {{article.cves}}
+        {{article.cves?}}
 
         Thank you,
         {{sender.name}}
@@ -228,6 +254,13 @@ else
         Toasts.Show(_form!.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
         FocusList();
+    });
+
+    // A starter TIDE saved, unchanged since, takes the newer starter's body.
+    internal Task UseNewer(OutreachTemplate t) => Run(async () =>
+    {
+        await TemplateSvc.UseNewerStarterAsync(t.Id, t.EditVersion);
+        Toasts.Show($"{t.Name} now uses the newer version.");
     });
 
     /// <summary>The template's More menu: Retire or Restore, and Delete, for whoever may.</summary>

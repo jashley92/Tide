@@ -56,8 +56,8 @@ Every route, its component and the permission it needs are in the [route table](
 - **Popouts** (Triage's Attach to…, the account menu, a brief's Export indicators) close on Escape anywhere, a click
   outside, or Tab out of them. Escape gives focus back to the button that opened it.
 - **The account menu** (the initials in the top right) says who you are and your roles, and holds your own settings:
-  light or dark theme, single-letter shortcuts on or off, **My notifications**, your brief days as a calendar file,
-  **Help and what's new**, and About.
+  light, dark or system theme (system, the default, follows the operating system's as it changes), single-letter
+  shortcuts on or off, **My notifications**, your brief days as a calendar file, **Help and what's new**, and About.
 - **What's new.** The first time someone opens TIDE after a release with highlights, a dialog lists what changed for
   their role: analysts, presenters, administrators, or viewers and action owners, for every release since the one the
   server ran before (only the newest on a new install). It shows once, never in present
@@ -352,7 +352,8 @@ sees the reader preview, with the article's actions, as the whole page.
 "Saved at 3:17 PM", or why it didn't. It never saves over a colleague's newer version (it stops and says who), and it
 never saves a change to a TLP marking, or anything that would put a part into the company-wide edition: those wait
 for **Save**, and the bar says so. An article on a sent brief isn't saved by itself. The history shows one editing
-session as one entry.
+session as one entry. Nothing is saved while **Discard**, or the question on leaving, waits for an answer, so Discard
+drops just what wasn't saved yet. What's typed while a screenshot uploads or a save runs is saved after the next pause.
 
 "Why it matters to us" carries the same **Set to AMBER** and **Keep it** as Today when it would reach the
 company-wide edition.
@@ -620,7 +621,8 @@ each way in the last 7 days, a drop target for each.*
 One box at the top of every page.
 
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
-  ATT&CK techniques by name and captions, with the matches marked.
+  ATT&CK techniques by name and captions, with the matches marked. Each kind's heading says how many matched, 50 to a
+  page and up to 1,000 deep; past that the articles read "1,000+" and the page asks for another word.
 - **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not. The lookup opens with
   one line that says whether the team knows it and whether anyone is on it ("On 1 article · briefed Mon Nov 9 ·
   2 actions open · no hunt result yet", "Not on any article yet · no action raised · 1 new in triage" for a CVE in
@@ -872,7 +874,7 @@ Scattered Spider, UNC3944 and Octo Tempest are one. A profile's page has:
 
 - a **timeline** of the articles tagged with it or naming it (in the title, the earlier actors note or the bottom
   line), and their actions and indicators, with how many briefs it was in this quarter;
-- the **ATT&CK techniques** across those articles, darker where more articles show them, downloadable as an ATT&CK
+- the **ATT&CK techniques** across those articles, each with how many show it (×2) and darker where more do, downloadable as an ATT&CK
   Navigator layer scored by count;
 - **our notes** (internal, AMBER), motivation and sectors.
 
@@ -974,8 +976,8 @@ as Trends and Metrics, marked AMBER:
 4. **Topics and techniques** briefed most;
 5. **Actions raised by team**.
 
-Each section has room for the lead's assessment, which prints with the report but isn't saved. *Print* prints the
-report without the app's frame. A period still under way is marked "(to date)".
+Each section has room for the lead's assessment, which prints with the report but isn't saved; moving to another period
+starts with empty boxes. *Print* prints the report without the app's frame. A period still under way is marked "(to date)".
 
 ## Team commitments
 
@@ -1052,7 +1054,8 @@ generic example set can be imported.
   first metrics slide instead of a slide of its own.
 - **The team email.** A block at the top: each value with its change from the previous business day, and a
   four-week sparkline.
-- **History.** The Metric history page has a chart and a CSV export, retired metrics included. A pill per group
+- **History.** The Metric history page has a chart and a CSV export, retired metrics included. Its range (From and
+  To, or 30 days, 90 days, 1 year) is kept in the address, so a link opens on the same days. A pill per group
   narrows its table to those groups' columns (kept in the address); **Clear** shows every group again.
 
 ![Metrics history](../screenshots/metrics-history.png)
@@ -1143,15 +1146,20 @@ They're added once. The team edits, retires or deletes them like any other, and 
 **Route:** `/library/templates` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 The team's outreach emails, kept beside Saved queries and in the same way, 20 to a page: a name, a subject and a body
-with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV
-and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
-`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. The
+with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.link}}` (its source),
+`{{article.other-links}}` (the other reports added to it), `{{article.cves}}` (their numbers), `{{article.cve-links}}` (each CVE's NVD
+page), `{{article.cves-detailed}}` (a paragraph a CVE), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
+`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. The form has an *Insert placeholder* menu,
+a list of matching names when `{{` is typed, a line under the body saying whether TIDE can fill the draft, and a preview
+of the draft filled for one of the writer's open Outreach actions. Whoever works actions keeps them. The
 list says each one's TLP ceiling and how many emails were written from it. Its filter bar is the search box with
 **Show retired** as a switch, as on Saved queries.
 
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
-and *Internal inquiry: are we impacted?*.
+and *Internal inquiry: are we impacted?*. A starter TIDE added to an earlier version and nobody has changed since says
+TIDE has a newer version of it, with **Use it** for whoever works actions: the newer body takes its place, and its name,
+To address and ceiling are kept.
 
 ### Playbooks
 

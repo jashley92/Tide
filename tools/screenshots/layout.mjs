@@ -5,6 +5,9 @@
 //   node tools/screenshots/layout.mjs                build, seed a demo database, start TIDE, check every page
 //   ONLY=slide-article node tools/screenshots/layout.mjs                 just these pages
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
+//   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
+//   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -12,6 +15,8 @@ import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { AxeReport, axeOn, scan, widest } from './axe.mjs';
+import { chainAlone, changesTheDemo, cost, describe, shard } from './shards.mjs';
 import { fill, idle, openPage, pick, readDemo, settle, startTide, toArticleSlide, watch } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
@@ -2022,6 +2027,20 @@ const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, 
   }));
 }, [row, px]);
 
+/** Our stack's table as stacked rows (`true`: its headings hidden from view but still there, each product a grid of
+ *  named cells) or as a table (`false`: the header row shown, each product a table row). */
+const stackRows = stacked => holds(stacked ? 'Our stack\'s rows stacked' : 'Our stack a table', stacked => {
+  const table = document.querySelector('.tide-stack-table');
+  const head = table?.querySelector('thead'), rows = [...(table?.querySelectorAll('tbody > tr') ?? [])];
+  if (!head || !rows.length) return ['no Our stack table with rows'];
+  const headShown = head.getBoundingClientRect().height > 2;
+  const asRows = rows.filter(r => getComputedStyle(r).display === 'grid').length;
+  if (stacked) return [...(headShown ? ['its header row is shown'] : []),
+    ...(head.querySelectorAll('th').length === 7 ? [] : ['its headings are gone, not hidden']),
+    ...(asRows === rows.length ? [] : [`${rows.length - asRows} of ${rows.length} rows aren't stacked`])];
+  return [...(headShown ? [] : ['its header row is hidden']), ...(asRows === 0 ? [] : [`${asRows} of ${rows.length} rows are stacked`])];
+}, stacked);
+
 /** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
 const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
   const links = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
@@ -2468,18 +2487,23 @@ const actionBeside = as => async (page, demo) => {
   meetingGuests = { key: `beside/${as}`, contexts: [] };
   const present = async p => {
     await startOrTakeUp(p);
+    // From the title, unless the page before left an action open for the room: the wrap-up pages leave the meeting on
+    // the wrap-up, the last slide, where toArticleSlide's ArrowRight goes nowhere; and the wrap-up is no slide to check
+    // this on, as a follower's has the Attended box the presenter's hasn't (their fits differ by design).
+    if (!(await p.locator(BESIDE).count())) { await p.keyboard.press('Home'); await idle(p); }
     await toArticleSlide(p);
     // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
-    // links): the first slide with an action on it, from this article's on and then from the title. The pages before
-    // may have changed today's running order; the actions that need review have some, whatever the articles have (each
-    // row opens its action from a button over its cell).
-    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
+    // links): the first slide with an action on it, from this article's on and then from the title, never the
+    // wrap-up's. The pages before may have changed today's running order; the actions that need review have some,
+    // whatever the articles have (each row opens its action from a button over its cell).
+    const opener = p.locator('.tide-slide:not(:has([data-slide-key="wrap"])) :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
       await idle(p);
     }
     if (!(await p.locator(BESIDE).count())) await opener.first().click();
     await p.locator(BESIDE).waitFor();
+    if (await p.locator('[data-slide-key="wrap"]').count()) throw new Error('the action beside the slide is open on the wrap-up, not an article\'s slide');
     await idle(p);
   };
   if (as === 'presenter') {
@@ -2880,6 +2904,47 @@ const arrowIntoAccountMenu = holds('the down arrow goes into the account menu, n
   if (new URLSearchParams(location.search).has('row')) wrong.push(`Triage's selection moved (${location.search})`);
   return wrong;
 });
+
+/** Setup: the account menu open, System chosen for the theme, then the system turned dark (the page was light). */
+async function systemThemeTurnsDark(page) {
+  await page.locator('.tide-profile-btn').click();
+  await page.locator('.tide-profile [role="menu"]').waitFor();
+  await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).click();
+  await idle(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await idle(page);
+}
+
+/** With System chosen, the theme is the system's, changed live; the choice is remembered as "system". Left and Right
+ * move along the theme's options and go round; they don't choose. */
+const themeFollowsSystem = {
+  name: "System follows the system's theme; Left and Right move along the options",
+  check: async page => {
+    const state = () => page.evaluate(() => ({
+      theme: document.documentElement.getAttribute('data-bs-theme'),
+      saved: localStorage.getItem('tide-theme'),
+      checked: document.querySelector('.tide-profile [role="group"][aria-label="Theme"] [aria-checked="true"]')?.textContent.trim(),
+      focused: document.activeElement?.textContent.trim(),
+    }));
+    const wrong = [];
+    let s = await state();
+    if (s.theme !== 'dark') wrong.push(`the system turned dark, but the page is ${s.theme}`);
+    if (s.saved !== 'system') wrong.push(`the choice was saved as ${s.saved}, not system`);
+    if (s.checked !== 'System') wrong.push(`the menu shows ${s.checked} chosen, not System`);
+    await page.emulateMedia({ colorScheme: 'light' });
+    // The change is heard as an event: give it a moment.
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-bs-theme') === 'light', null, { timeout: 2000 }).catch(() => {});
+    if ((s = await state()).theme !== 'light') wrong.push(`the system turned light again, but the page stayed ${s.theme}`);
+    await page.locator('.tide-profile [role="menuitemradio"]', { hasText: 'System' }).focus();
+    const keys = [['ArrowLeft', 'Dark'], ['ArrowRight', 'System'], ['ArrowRight', 'Light']];
+    for (const [key, to] of keys) {
+      await page.keyboard.press(key);
+      if ((s = await state()).focused !== to) { wrong.push(`${key} moved focus to ${s.focused}, not ${to}`); break; }
+    }
+    if (s.checked !== 'System') wrong.push(`the arrows chose ${s.checked}; only Enter or Space should`);
+    return wrong;
+  },
+};
 
 /** Setup: the first "Looks like one event" group opened, its reports listed under it. */
 async function openGroup(page) {
@@ -3407,7 +3472,7 @@ const boardEnterOpens = {
 const escapeClosesTheMenuFirst = {
   name: 'Escape closes the rail\'s Move menu before the rail',
   check: async page => {
-    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ });
+    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ });
     if (!await button.count()) return ['the rail has no Move to'];
     await button.focus();
     await page.keyboard.press('Enter');
@@ -3451,7 +3516,7 @@ const railMoveAsksFirst = {
   name: "the rail's Move to a closed status asks first, and Escape closes only the dialog",
   check: async page => {
     const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
-    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
+    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move to: A-\d+$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
     try { await page.locator('#tide-rail').getByRole('menuitem', { name: 'Cancelled' }).click({ timeout: 5000 }); } catch { return ['Move to offers no Cancelled to choose']; }
     const dialog = page.getByRole('dialog', { name: `Move ${number} to Cancelled` });
     try { await dialog.waitFor({ timeout: 5000 }); } catch { return [`Move to Cancelled didn't ask how ${number} closed`]; }
@@ -3636,7 +3701,7 @@ const autosaved = autosaveAfter(async page => {
 });
 
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
-const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
+const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
@@ -3952,8 +4017,6 @@ const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), v
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
-/** Where, in the pages, those that change the demo begin (see shard). */
-const CHANGES_THE_DEMO = Symbol('changes the demo');
 
 /** The footer's buttons, each row of them on one baseline (a link styled as a button sits a few px off otherwise). */
 const footerOnOneLine = selector => holds(`its buttons share a baseline: ${selector}`, selector => {
@@ -4214,7 +4277,7 @@ const pages = [
   // Below 1500px the rail is closed until asked for, and the form is the same one column, nothing scrolling sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits, editorReadingOrder, editorMeasure,
-      [901, hidden('.tide-ws-switch')]] },
+      [900, hidden('.tide-ws-switch')]] },
   // A bullet starts a line high and grows with its text, whatever was dragged at its corner.
   { name: 'editor-bullet-grows', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920], rules: [bulletGrows] },
   // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
@@ -4411,6 +4474,7 @@ const pages = [
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
   { name: 'triage-account-menu-arrow', route: '/triage', setup: accountMenuArrow, widths: [1440], rules: [arrowIntoAccountMenu] },
+  { name: 'account-theme-system', route: '/triage', setup: systemThemeTurnsDark, widths: [1440, [400, 800]], rules: [oneRow('.tide-profile .tide-seg'), inWindow('.tide-profile .tide-popover'), themeFollowsSystem] },
   // Coverage: its tables scroll inside their cards at every width, the page itself never sideways.
   { name: 'coverage', route: '/coverage', widths: [1440, 780, 700, 660, 641, 400], rules: [noSidewaysScroll] },
   // The reading pane open by itself stays below the top bar as the page scrolls.
@@ -4582,17 +4646,20 @@ const pages = [
   { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
   // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
   // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
-  // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
-  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
+  // fifth column; and where the list is narrow (under 800px: a 1100px window with the sidebar open) each row's cells
+  // stacked, so the table never scrolls sideways inside its card.
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 1100, 780],
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
-      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
-      fits('.tide-stack-list')] },
+      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1100, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
+      fits('.tide-stack-list'), [1440, stackRows(false)]] },
   // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
-  // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
-  // sections (facts, the buttons, in triage now, articles, open actions, notes) each fit the column. Below 1500px it's
-  // closed until `]` opens it over the page, where it's a modal dialog. The 780px stacked rows stay.
+  // beside the page, which has about 873px at 1500px: there the rows stack (stack-rail-docked), wider it's a table, and
+  // either way it fits beside the rail with no sideways scroll; the rail's flat sections (facts, the buttons, in triage
+  // now, articles, open actions, notes) each fit the column. Below 1500px it's closed until `]` opens it over the page,
+  // where it's a modal dialog. The 780px stacked rows stay.
   { name: 'stack-rail', route: '/stack', setup: wideFont, widths: [1920, 1600, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), fits('.tide-stack-list'), fits('.tide-stack-table td'),
+      [1600, stackRows(false)],
       visible('.tide-stack-item.selected'), attr('.tide-stack-item.selected', 'aria-current', 'true'), attr('#tide-rail', 'role', null),
       visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'),
       fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
@@ -4600,13 +4667,18 @@ const pages = [
       visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
       linksAlike('#tide-rail .tide-rail-list a'),
       ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // At 1500px the docked rail leaves the list under 800px, too narrow for seven columns (the headings broke mid-word and
+  // a CVE's chip spilled), so its rows stack by the list's width, as on a narrow window, and each fits.
+  { name: 'stack-rail-docked', route: '/stack', setup: wideFont, widths: [1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), stackRows(true), fits('.tide-stack-list'),
+      fits('.tide-stack-table td'), fits('.tide-stack-now .tide-chip'), clearOfEdge('.tide-stack-item.selected', 5)] },
   // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
-  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [stackRows(true), clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
-      [901, fits('.tide-stack-table td')]] },
+      [1100, fits('.tide-stack-table td')]] },
   { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
-    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), stackRows(false)] },
   { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },
@@ -4717,6 +4789,8 @@ const pages = [
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
+    rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // The article slide is the room's: each recommended line (one row, the action it became beside a raised one: the
   // sample's hotfix line is A-2) and the article's other actions, with none of the presenter's controls (the rail has
   // them, shut at these widths).
@@ -4911,8 +4985,11 @@ const pages = [
     rules: [noSidewaysScroll, railControlsUnscrolled, fits('#present-rail'), fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
       oneRow('#present-rail .tide-quick-add-row'), oneRow('#present-rail .tide-present-rail-bar'), oneRow('#present-rail .tide-present-rail-note'),
       railSelectsWhole, railPlaceholdersReadable, visible('#present-rail .tide-present-rail-chip-edit select')] },
-  // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
-  CHANGES_THE_DEMO,
+  // From here on, pages change the demo for those after them, in chains (shards.mjs): each mark starts one, and a sharded
+  // run keeps each chain whole and in order, after its slice's other pages. A slice starts on a fresh demo, so a page
+  // may lean on what an earlier page of its own chain did, never on another chain's; a page that does goes in that chain.
+  // Each signs in new people (What's new marked seen, tips put away, tours taken), a different person at each width.
+  changesTheDemo("what's new, tips and the tour"),
   // What's new, as someone who already uses TIDE opens it after the upgrade (asked for on the demo with ?onboarding=on;
   // it's marked seen as it opens, so a different person at each width): a dialog in the window, its highlights
   // scrolling between the title and the buttons, focus on Got it, in both themes.
@@ -4991,6 +5068,8 @@ const pages = [
     rules: [visible('.tide-tip'), visible('nav[aria-label="Reports"].tide-tip-target'), inClient('.tide-tip'), inWindow('.tide-tip'), pointsAtTarget('.tide-tip')] },
   // Got it from the keyboard: the tip goes, and focus is on the page's heading, not lost.
   { name: 'tip-got-it', route: '/help', setup: tipGotIt({ 1440: 'Rio' }), widths: [1440], rules: [hidden('.tide-tip'), focusOn('main h1')] },
+  // The presenter's strips and rail, with no meeting: they keep the opening note and enter the missing number.
+  changesTheDemo("the presenter's strips and rail"),
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
   { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
     rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },
@@ -5019,7 +5098,7 @@ const pages = [
       visible('#present-rail .tide-quick-add'), hidden('.tide-slide .tide-quick-add'), attr('#present-rail-toggle', 'aria-expanded', 'true'),
       railPlaceholdersReadable, railSelectsWhole, fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
       sameLook('#present-rail .tide-action-assign > input', '#present-rail .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
-      buttonsNamed('Take it', 'Take A-')] },
+      buttonsNamed('Take it', 'Take it: A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
     rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
       visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysUnderRail] },
@@ -5028,10 +5107,8 @@ const pages = [
     rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
   { name: 'present-rail-shut', route: '/present/{today}', setup: presenterRail(), widths: [1440, 780],
     rules: [hidden('#present-rail'), visible('#present-rail-toggle'), attr('#present-rail-toggle', 'aria-expanded', 'false'), hidden('.tide-slide .tide-quick-add'), slideFits] },
-  { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
-    rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
-  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
-  // article's Add. Last, as it changes today's brief.
+  // Today's: a queue row taken live, the brief saved while someone types, an article added back to it.
+  changesTheDemo("Today's queue, saves and brief"),
   // A colleague takes the row that has focus in the rail's queue: focus moves to the next row's Take it. Last too: it
   // puts people on a team.
   { name: 'today-queue-live', route: '/', setup: colleagueTakesFocusedRow, widths: [1920],
@@ -5041,17 +5118,22 @@ const pages = [
   { name: 'today-typing-intro', route: '/', setup: colleagueSavesWhileTyping('intro'), widths: [1920], rules: [keptWhatsTyped('intro', '#tide-rail section[aria-labelledby="meeting-h"]')] },
   { name: 'today-typing-note', route: '/', setup: colleagueSavesWhileTyping('team-note'), widths: [1920], rules: [keptWhatsTyped('team-note', '#main-content .tide-page-head')] },
   { name: 'today-toast', route: '/', setup: toastBesideRail, widths: [1920, 1600], rules: [allBesides('.tide-toast', '#tide-rail')] },
+  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
+  // article's Add. Last, as it changes today's brief.
   { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
     rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
-  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
-  // Last, as each closes one of the demo's actions.
   // A clicked decision in Triage's bar moves focus on to the next selected row, as its key does. Late, as each sets
   // one of the demo's new items aside.
+  changesTheDemo("Triage's decisions"),
   { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   // Mark checked in the rail: the button goes (it's checked today), and focus goes to the Checked fact it changed, not to
   // the page's body. Late, as it marks the demo's first product checked.
+  changesTheDemo('a product marked checked'),
   { name: 'stack-mark-checked', route: '/stack', setup: markCheckedFromRail, widths: [1920], rules: [focusIn('#tide-rail [data-rail-checked]')] },
+  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
+  // Last, as each closes one of the demo's actions.
+  changesTheDemo('actions closed, a query written, a default tab'),
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
   // Last: it adds a query to the demo's sweep.
@@ -5060,13 +5142,16 @@ const pages = [
   { name: 'actions-board-close-address', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [addressFollowsAfterClose] },
   // Last: it changes the demo analyst's default tab and layout.
   { name: 'actions-default-layout', route: '/actions?view=open&layout=list', setup: analystOnATeam, widths: [[1600, 1000]], rules: [defaultKeepsLayout] },
+  // Today's meeting, live: its people and hands, the wrap-up, an action beside the slide. One chain: its pages take up
+  // the meeting the one before left live (and may keep its guests' browsers, meetingGuests), and the last leave it live.
+  changesTheDemo('the live meeting'),
   // A live meeting of eight, with none, two or five hands up, seen by the presenter and by someone following: who is
   // here and whose hands are up sit in the top bar. By construction, for any number of people and hands: the dots stop
   // at five and a "+N"; how many are here is always whole; the hands show as their count, then as many whole names as
   // fit; and the tools never leave the window (the top bar takes a second row, at most, instead). The footer no longer
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
-    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
+    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 900, 899, 780],
       rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
@@ -5095,7 +5180,7 @@ const pages = [
       inWindow('.tide-wrap-add button'), visible('.tide-attendance button[aria-label="Remove Sam from the SOC"]'),
       pillClear('.tide-attendance li'), contrastAtLeast('.tide-wrap-add input[placeholder]', 4.5, '::placeholder'), hidden('#present-rail')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
-  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
+  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 900, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
   // An action opened beside the slide (Org:ActionBesideSlide, on for this run): from 1200px a column between the slide
   // and the presenter's rail, as wide for a follower as for the presenter, whose slide, fit and scroll the follower's
@@ -5127,37 +5212,22 @@ const pages = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const wanted = pick(shard(pages, process.env.SHARD), 'page');
-
 /**
- * `SHARD=i/n` (1-based) runs one of n slices of the pages, in their order, so n runs side by side (each on its own fresh
- * demo) check them all. The pages before CHANGES_THE_DEMO change nothing a later page reads, so they're cut into slices
- * of about as many widths each; the pages from it on stay together, in order, at the end of the last slice. With no
- * SHARD, every page, in one run.
+ * `SHARD=i/n` (1-based) runs one of n slices of the pages, so n runs side by side (each on its own fresh demo) check them
+ * all, each about as long by what its pages took in CI (shards.mjs, layout-weights.json); every page is in exactly one
+ * slice, and each chain of pages that change the demo whole, in order, after its slice's other pages, checked on every
+ * sharded run. With no SHARD, every page, in one run. `PLAN=1` (with SHARD=i/n, or 4 slices) prints the slices, what
+ * each should take and the chains each runs, and starts nothing.
  */
-function shard(list, spec) {
-  const changesAt = list.indexOf(CHANGES_THE_DEMO);
-  if (changesAt < 0) throw new Error('The pages have lost their CHANGES_THE_DEMO marker.');
-  const all = list.filter(p => p !== CHANGES_THE_DEMO);
-  if (!spec) return all;
-  const [i, n] = spec.split('/').map(Number);
-  if (!(Number.isInteger(i) && Number.isInteger(n) && i >= 1 && i <= n)) throw new Error(`SHARD=${spec} isn't i/n with 1 <= i <= n.`);
-  const head = list.slice(0, changesAt), tail = list.slice(changesAt + 1);
-  // A width of a Present page (a meeting to start, people to seat) takes about twice as long as one elsewhere.
-  const weight = ps => ps.reduce((sum, p) => sum + p.widths.length * (p.route.startsWith('/present') ? 2 : 1), 0);
-  // Each slice about as long, the last with the tail in it: when the tail is a slice's worth or more, the first n-1 share
-  // the head between them.
-  const share = Math.min((weight(head) + weight(tail)) / n, weight(head) / Math.max(1, n - 1));
-  // The first n-1 slices take the head in turn until each has its share; the last has what's left of it, then the tail.
-  const slices = [[]];
-  for (const p of head) {
-    if (slices.length < n && weight(slices.at(-1)) >= share) slices.push([]);
-    slices.at(-1).push(p);
-  }
-  while (slices.length < n) slices.push([]);
-  slices[n - 1].push(...tail);
-  return slices[i - 1];
+if (/^(1|true|yes)$/i.test(process.env.PLAN ?? '')) {
+  const n = Number((process.env.SHARD ?? '1/4').split('/')[1]);
+  console.log(`${n} slices of ${shard(pages).length} pages, by layout-weights.json:`);
+  for (const l of describe(pages, n)) console.log(l);
+  process.exit(0);
 }
+// CHAIN="the live meeting" runs that chain alone, on a fresh demo, as a slice with no other chain would.
+const wanted = pick(process.env.CHAIN ? chainAlone(pages, process.env.CHAIN) : shard(pages, process.env.SHARD), 'page');
+if (process.env.SHARD) console.log(`Slice ${process.env.SHARD}: ${wanted.length} pages, about ${Math.round(wanted.reduce((sum, p) => sum + cost(p), 0))}s by layout-weights.json.`);
 
 let server;
 try {
@@ -5185,6 +5255,9 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
+  // Report only: what axe finds is written and printed, never added to the problems.
+  const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
+  const axe = axeOn ? new AxeReport(label) : null;
   try {
     for (const p of list) {
       if (p.when && !p.when(demo)) {
@@ -5210,6 +5283,15 @@ async function check(list, demo) {
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
+          // Once a page, at its widest width, as its rules left it.
+          if (axe && size === widest(p.widths)) {
+            const start = Date.now();
+            try {
+              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+            } catch (e) {
+              axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
+            }
+          }
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {
@@ -5219,6 +5301,7 @@ async function check(list, demo) {
     }
   } finally {
     await browser.close();
+    axe?.write();
   }
   return problems;
 }

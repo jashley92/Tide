@@ -61,7 +61,7 @@ public static class TriageNews
             parts.AddRange(arrived.GroupBy(i => Who(i, colleagues)).Select(g => $"{g.Key} {Did(tab, Items(g.Count()), g.Count(), attached: false)}"));
             feeds = Math.Max(0, newElsewhere);
         }
-        if (feeds > 0) parts.Add(parts.Count == 0 ? $"{feeds} new {(feeds == 1 ? "item" : "items")} from the feeds" : $"{feeds} new from the feeds");
+        if (feeds > 0) parts.Add(parts.Count == 0 ? Ui.Plural(feeds, "new item") + " from the feeds" : $"{feeds} new from the feeds");
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
@@ -91,7 +91,7 @@ public static class TriageNews
         _ => $"put back {what}",
     };
 
-    private static string Items(int n) => n == 1 ? "1 item" : $"{n} items";
+    private static string Items(int n) => Ui.Plural(n, "item");
 
     private static string Short(string s) => s.Length > 60 ? s[..60] + "…" : s;
 }

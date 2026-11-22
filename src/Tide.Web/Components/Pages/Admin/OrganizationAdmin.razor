@@ -126,7 +126,7 @@
             </tbody>
         </table>
     }
-    @if (_earlier > 0) { <p class="small tide-muted">@_earlier earlier holiday@(_earlier == 1 ? "" : "s") kept, for the rota and deadlines of those days.</p> }
+    @if (_earlier > 0) { <p class="small tide-muted">@Ui.Plural(_earlier, "earlier holiday") kept, for the rota and deadlines of those days.</p> }
     <div class="row g-2 align-items-end">
         <div class="col-sm-4 col-md-3">
             <label class="tide-field-label" for="holiday-date">Date</label>
@@ -249,7 +249,7 @@
     private void Report(HolidayImport result, string from)
     {
         _skipped = result.Skipped;
-        Toasts.Show(result.Added.Count == 0 ? "No holidays added." : $"{result.Added.Count} holiday{(result.Added.Count == 1 ? "" : "s")} added {from}.");
+        Toasts.Show(result.Added.Count == 0 ? "No holidays added." : $"{Ui.Plural(result.Added.Count, "holiday")} added {from}.");
     }
 
     private async Task Change(Func<Task> change)
@@ -277,7 +277,25 @@
         _zones = OperationalSettings.TimeZoneChoices(Zone);
         // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
+        _loaded = Values();
     }
+
+    // What the page showed when it loaded: a save sends only what was changed here, so another administrator's change
+    // to the rest stands, and one to a setting changed here too is refused rather than put back.
+    private Dictionary<string, string?> _loaded = [];
+
+    private Dictionary<string, string?> Values() => new()
+    {
+        [OperationalSettings.TeamName] = _teamName,
+        [OperationalSettings.TimeZone] = Zone,
+        [OperationalSettings.MeetingTime] = TimeBox.Format(_meeting),
+        [OperationalSettings.SentBy] = TimeBox.Format(_sentBy),
+        [OperationalSettings.PostedBy] = TimeBox.Format(_postedBy),
+        [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
+        [OperationalSettings.StaleOpenDays] = StaleOpen,
+        [OperationalSettings.StaleBlockedDays] = StaleBlocked,
+        [OperationalSettings.GuideLinkDays] = GuideLinkDays,
+    };
 
     // What's wrong with a time box: cleared or half typed, it would otherwise save the last whole time it held.
     private static string? TimeProblem(TimeBox? box, string label, string example) =>
@@ -305,18 +323,7 @@
         _busy = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?>
-            {
-                [OperationalSettings.TeamName] = _teamName,
-                [OperationalSettings.TimeZone] = Zone,
-                [OperationalSettings.MeetingTime] = TimeBox.Format(_meeting),
-                [OperationalSettings.SentBy] = TimeBox.Format(_sentBy),
-                [OperationalSettings.PostedBy] = TimeBox.Format(_postedBy),
-                [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
-                [OperationalSettings.StaleOpenDays] = StaleOpen,
-                [OperationalSettings.StaleBlockedDays] = StaleBlocked,
-                [OperationalSettings.GuideLinkDays] = GuideLinkDays,
-            });
+            await Settings.SaveAsync(Values(), loaded: _loaded);
             Load();
             Toasts.Show("Saved.");
         }

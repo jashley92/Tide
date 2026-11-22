@@ -191,6 +191,10 @@ the page a change with `OnChangedElsewhere` when it wants it heard.
   otherwise a slow run delivers it between the test's steps (`PresentMidMeetingTests.Unheard`).
 - A test of a time limit (a probe's timeout, the typing pause) runs the limit on a `ManualClock` and moves it on, rather than timing it with a stopwatch: a loaded CI machine's slow timers then can't fail it. A test that something is done in one pass counts its SQL commands (`TestDb.Commands`) rather than timing it.
 - To wait for a rendered page to hear something, use `Rendered.Until(p => ...)`: it reads the page on the renderer's thread, so it never catches a reload halfway (one field re-read, the next not yet). To wait for another thread (a directory call's own thread, a late answer), use `Poll.Until` (`tests/Shared`) and then assert; never a fixed `Task.Delay`. `HtmlOnce` waits up to 15 seconds.
+- Tests in a class share its `TideApp`, but a filter, or a different order within the class, can leave out or put
+  later the test that set something up, so a test sets up what it needs itself (a reminder turned on, say) rather than relying on a sibling having done it. Nor does
+  it rely on a background job having run since start-up: the screenshot folder, for one, is made when the file store
+  is first used, which the intake job's first pass usually does but a fast test can beat.
 - In `TideApp`, a confirmation toast stays until something dismisses it (its `ToastService` runs on a `ManualClock`), so a test can read it after a step that took more than its four seconds on a loaded machine. `ToastServiceTests` holds the four and ten seconds themselves.
 
 ## SQL Server tests
@@ -325,7 +329,7 @@ Runs on pull requests and on pushes to `main`, and is called by the release work
 | Build (`-c Release -warnaserror`) | The build fails, or anything in it warns: a compiler or analyzer warning, a NuGet warning (see [Warnings and the analysis level](#warnings-and-the-analysis-level)). |
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
-| No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
+| No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in the stylesheet (`css/*.css`, `palette.css`) for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
 | Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh origin/main` (or your base). |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
@@ -333,13 +337,22 @@ Runs on pull requests and on pushes to `main`, and is called by the release work
 
 **`layout-build`, `layout-shard` and `layout`** (Ubuntu, .NET `10.0.x`, Chromium through Playwright): `layout-build`
 publishes TIDE once; eight `layout-shard` jobs (four slices of the pages, each at the default letter spacing and at
-`.12em`) each start that build, seed the demo database as the screenshot capture does, and run
+`.12em`, the slices balanced by what each page took in CI: `tools/screenshots/layout-weights.json`) each start that build, seed the demo database as the screenshot capture does, and run
 `tools/screenshots/layout.mjs`, which checks each page's layout rules at the widths it's used at: rows of
 controls that must stay one line (the meeting's quick add, a recommended line, an action on a slide), columns that must
 line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). A shard fails naming
 the page, the width and the rule, and prints TIDE's log; `layout`, the check the branch rules name, passes when all
-eight do. Run it locally with `node tools/screenshots/layout.mjs`
-(`tools/screenshots/README.md`).
+eight do. The pages that change the demo run in chains, each whole and in order after its slice's other pages, spread
+over the slices like any page. Every sharded run first checks that the four slices hold every page exactly once, each
+chain whole and in order after the pages that read the demo, and fails if not. Run it locally with
+`node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices, what each should take and the chains each runs, without
+starting anything (`tools/screenshots/README.md`, which says how to refresh the weights).
+
+The four slices at the default letter spacing also run axe-core's accessibility scan (WCAG 2.1 A and AA) on each page
+once, at its widest width. It's report only: it never fails a slice. Each slice adds a summary (the rules broken, by how
+many elements on how many pages) to its job's summary page and uploads the full report, every element's selector, as the
+`axe-<n>-of-4` artifact. `AXE=0` turns it off. Once its findings are fixed it's meant to become a gate
+(`tools/screenshots/README.md`, "Accessibility scan").
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);
@@ -375,8 +388,18 @@ a `[GeneratedRegex]` method) is a suggestion by default; `.editorconfig` makes i
 **`sql-server`** (Ubuntu, a SQL Server 2022 service container with a throwaway `sa` password):
 
 1. Applies the SQL Server migrations to a fresh database, twice (the second is a no-op).
-2. Runs `dotnet test tests/Tide.IntegrationTests --filter "DisplayName~SqlServer"` with `TIDE_TEST_SQL` set.
-3. Runs the upgrade test from each of the three newest release tags reachable from HEAD, and the first release.
+2. Generates the DBA schema script as the release does and applies it with `sqlcmd` to an empty database, twice
+   (`tools/ci/check-sqlserver-schema-script.sh`). Every migration must be in its history and EF must see none
+   pending. It must then match the database step 1 migrated, compared from the catalog views:
+   - every column: its type, length, precision, scale, nullability and identity;
+   - every index: its kind (clustered or not), primary key, unique constraint or unique, key columns in order with
+     their direction, included columns, and filter;
+   - every foreign key: its columns in order, the table and columns it references, and its delete action;
+   - every default constraint: its definition, per table and column (not by name, which SQL Server makes up).
+
+   Each side must read back columns, indexes, foreign keys and defaults, so a query that failed on both can't pass.
+3. Runs `dotnet test tests/Tide.IntegrationTests --filter "DisplayName~SqlServer"` with `TIDE_TEST_SQL` set.
+4. Runs the upgrade test from each of the three newest release tags reachable from HEAD, and the first release.
 
 ### `release.yml`
 
@@ -384,8 +407,9 @@ Runs on a pushed `v*` tag. Its `gates` job runs `ci.yml` on the tagged commit (a
 such as a docs-only one). The `release` job then requires the tag to be on `main`, asks SonarQube Cloud whether the
 quality gate passed for that commit on `main` (`tools/ci/check-sonar-quality-gate.sh`, because CI skips Sonar on
 tags), checks the migrations again, extracts the release notes from `docs/UPGRADE.md`
-(`tools/ci/extract-release-notes.sh`), builds and publishes with the tag's version, assembles the bundle (the app, the
-`deploy` folder, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, signs it with the
+(`tools/ci/extract-release-notes.sh`), builds and publishes with the tag's version, generates the DBA schema script
+(`tools/ci/sqlserver-schema-script.sh`), assembles the bundle (the app, the `deploy` folder with that script in
+`deploy/sql`, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, signs it with the
 `RELEASE_SIGNING_KEY` secret (and fails without it, or when the repository doesn't pin its key), checks the signature
 with `deploy/Test-TideBundle.ps1`, and creates the GitHub Release with the zip, the `.sha256` and the `.sig` (a
 pre-release for `-alpha`, `-beta` or `-rc` tags). The key and the signing are in [releasing.md](releasing.md). How releases are cut is in [UPGRADE.md](../UPGRADE.md).
@@ -394,7 +418,8 @@ pre-release for `-alpha`, `-beta` or `-rc` tags). The key and the signing are in
 
 - **CodeQL** runs through GitHub's default setup (repository settings), not a workflow here.
 - **Dependabot** (`.github/dependabot.yml`) proposes updates to the SHA-pinned GitHub Actions and to NuGet packages
-  weekly, after a seven-day cooldown.
+  weekly, after a seven-day cooldown. EF Core packages are pinned to an exact version, and they and the `dotnet-ef`
+  tool arrive in one grouped PR so the tool always matches the packages.
 - **Snyk** isn't configured in this repository: no workflow or policy file names it. **Needs verification:** whether
   a Snyk check is attached to pull requests through a GitHub integration outside the repository; the checks listed on
   a recent pull request would confirm it.
@@ -442,4 +467,4 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | How the email looks in mail clients | Render tests check its structure; open the `.eml` from development in Outlook. |
 | Long polling, reconnection after sleep, several server processes | Not simulated. TIDE runs as one process ([reference/known-issues.md](../reference/known-issues.md)). |
 | Performance on SQL Server at volume | The scale harness runs on SQLite and is opt-in. See [reference/performance.md](../reference/performance.md). |
-| A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off, and no schema script ships ([reference/known-issues.md](../reference/known-issues.md)). |
+| A DBA-applied schema (`Database:ApplyMigrations=false`) | No test starts the app with it off. CI applies the DBA schema script to SQL Server and compares the result with the migrations, but doesn't start the app on it. |

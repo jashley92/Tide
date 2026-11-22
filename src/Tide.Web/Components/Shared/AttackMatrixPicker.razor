@@ -68,11 +68,11 @@
                         var row = shown.Row;
                         var pid = row.Parent.Id;
                         var expanded = _expanded.Contains(pid) || shown.OpenForMatch;
-                        <div class="tide-atkm-cell @CellClass(pid, row.ParentInTactic)"
-                             role="button" tabindex="0" aria-pressed="@(row.ParentInTactic ? (_selected.Contains(pid) ? "true" : "false") : null)"
-                             aria-expanded="@(row.ParentInTactic || row.Subs.Count == 0 ? null : (expanded ? "true" : "false"))"
-                             aria-label="@($"{pid} {row.Parent.Name}, {AttackMatrix.TacticName(col.Tactic)}")"
-                             @onclick="() => ToggleParent(row)" @onkeydown="e => { if (IsActivate(e)) ToggleParent(row); }">
+                        @* The row is a plain box a click anywhere in toggles; the button a screen reader and the keyboard
+                           find is the part after the arrow, so the arrow's own button isn't inside another button. The
+                           button's name starts with what it shows (the id, the name and how many sub-techniques), and the
+                           text has spaces between them (the flex row spaces them on screen), so it reads as it's shown. *@
+                        <div class="tide-atkm-cell @CellClass(pid, row.ParentInTactic)" @onclick="() => ToggleParent(row)">
                             @if (row.Subs.Count > 0)
                             {
                                 <button type="button" class="tide-atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"
@@ -84,10 +84,15 @@
                             {
                                 <span class="tide-atkm-exp-spacer"></span>
                             }
-                            <span class="tide-atkm-tid">@pid</span>
-                            <span class="tide-atkm-tname" title="@row.Parent.Name">@row.Parent.Name</span>
-                            @if (row.Subs.Count > 0) { <span class="tide-atkm-subn" title="@row.Subs.Count sub-techniques">@row.Subs.Count</span> }
-                            @if (_selected.Contains(pid)) { <span class="bi bi-check2 tide-atkm-tick" aria-hidden="true"></span> }
+                            <span class="tide-atkm-pick" role="button" tabindex="0"
+                                  aria-pressed="@(row.ParentInTactic ? (_selected.Contains(pid) ? "true" : "false") : null)"
+                                  aria-expanded="@(row.ParentInTactic || row.Subs.Count == 0 ? null : (expanded ? "true" : "false"))"
+                                  aria-label="@CellName(pid, row.Parent.Name, row.Subs.Count, col.Tactic)"
+                                  @onkeydown="e => { if (IsActivate(e)) ToggleParent(row); }">
+                                <span class="tide-atkm-tid">@pid</span>@(" ")<span class="tide-atkm-tname" title="@row.Parent.Name">@row.Parent.Name</span>
+                                @if (row.Subs.Count > 0) { @(" ")<span class="tide-atkm-subn" title="@row.Subs.Count sub-techniques">@row.Subs.Count</span> }
+                                @if (_selected.Contains(pid)) { <span class="bi bi-check2 tide-atkm-tick" aria-hidden="true"></span> }
+                            </span>
                         </div>
                         @if (expanded)
                         {
@@ -97,8 +102,7 @@
                                      role="button" tabindex="0" aria-pressed="@(_selected.Contains(sub.Id) ? "true" : "false")"
                                      aria-label="@($"{sub.Id} {sub.Name}, {AttackMatrix.TacticName(col.Tactic)}")"
                                      @onclick="() => Toggle(sub.Id)" @onkeydown="e => { if (IsActivate(e)) Toggle(sub.Id); }">
-                                    <span class="tide-atkm-tid">@sub.Id</span>
-                                    <span class="tide-atkm-tname" title="@sub.Name">@sub.Name</span>
+                                    <span class="tide-atkm-tid">@sub.Id</span>@(" ")<span class="tide-atkm-tname" title="@sub.Name">@sub.Name</span>
                                     @if (_selected.Contains(sub.Id)) { <span class="bi bi-check2 tide-atkm-tick" aria-hidden="true"></span> }
                                 </div>
                             }
@@ -227,6 +231,11 @@
         if (!selectable) return "tide-atkm-heading";
         return _selected.Contains(id) ? "tide-atkm-on" : "";
     }
+
+    // A technique's name as a screen reader hears it: the words on screen first ("T1566 Phishing 3"), then what the count
+    // is and the tactic's column, so speech input can say what it sees.
+    internal static string CellName(string id, string name, int subs, MitreTactic tactic) =>
+        subs > 0 ? $"{id} {name} {Words.Plural(subs, "sub-technique")}, {AttackMatrix.TacticName(tactic)}" : $"{id} {name}, {AttackMatrix.TacticName(tactic)}";
 
     private void ToggleParent(AttackMatrixRow row)
     {

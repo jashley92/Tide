@@ -104,8 +104,8 @@ The sidebar's visibility rule is only a hint: each page's own `[Authorize]` poli
 - **Counts.** Triage shows the number of new items (`IntakeService.NewCountAsync`, for `WriteArticles`) and Actions the
   person's overdue actions (`ActionService.MyOverdueCountAsync`, for `WorkActions`, in red). They're read when the
   menu starts and on each navigation, never on a re-render. A failed read keeps the last value and logs once per run
-  of failures, because the menu sits outside the page's error boundary. The count is in each link's accessible name
-  ("Triage, 4 new").
+  of failures, because the menu sits outside the page's error boundary. The count is in each link's accessible name, which
+  starts with the words on screen ("Triage 4 new"; "Triage 99+, 120 new" past 99).
 - **Collapse.** The button at the top collapses the sidebar to icons. `theme.js` (`tideNav.toggle`) sets
   `data-nav="collapsed"` on `<html>` and remembers it in `localStorage`; `theme-init.js` applies it before paint.
 - **A short window.** Under about 1050px tall (not on a phone) the links and group labels tighten with the window's
@@ -178,7 +178,7 @@ anything.
 
 *An overlay, at 1440px: the rail over the page, with the backdrop dimming the rest.*
 
-- **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
+- **Which of the two** is decided in the stylesheet alone (the "Context rail" section, `css/60-rail-and-pages.css`), which sets `--tide-rail-docks` on the
   rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
   script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
   `tideNav` does for the sidebar's button.
@@ -202,9 +202,10 @@ no top bar, so none there.
   turns. The chip then reads again after `LiveChanges`' pause, and checks on each navigation (free unless something
   changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
 - **Width.** In full from 1200px; "10:30 AM · 3/5" below that ("Mon · 3/5" on a day off, the day rather than the time,
-  so it's never longer than a working day's); where the bar is still too tight the chip is cut short, its title and name
-  keeping the whole wording, rather than squeezing the search box or Go to; under 1000px the team's name gives way to it; under
-  740px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
+  so it's never longer than a working day's, followed in its name by the whole wording, unseen, so the name starts with
+  the words on screen); where the bar is still too tight the chip is cut short, its title and name keeping the whole
+  wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
+  900px the chip is gone, so the search box and the Go to button keep their room (`css/60-rail-and-pages.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
@@ -394,7 +395,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/trends` | `Trends` | `ReadTeamEdition` | Threat trends and the board scorecard. State in the address: `p`, `view`, `line`, `at`, `subs`. |
 | `/reports` | `Reports` | `ReadTeamEdition` | The weekly, monthly or quarterly report. `?p=` (`2026-10`, `2026-Q4`, `2026-W44`). Sidebar also needs `WriteArticles`. |
 | `/reports/teams` | `TeamCommitments` | `ReadActions` | The team commitments scorecard: each team against its due dates. `?days=` (30, 90, 180, 365; 90 by default), `?parts=true`, `?external=true`. Not in the sidebar; linked from Reports and Workload. |
-| `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: the metrics picked (`?chart=`), on one chart or a chart each (`?view=grid`), and the table. Takes the whole window, as Trends and the actions board do (`.content:has(...)` in `app.css`). Sidebar also needs `WriteArticles` (listed for those who make the brief). |
+| `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: the metrics picked (`?chart=`), on one chart or a chart each (`?view=grid`), and the table. Takes the whole window, as Trends and the actions board do (`.content:has(...)` in the stylesheet, `css/`). Sidebar also needs `WriteArticles` (listed for those who make the brief). |
 | `/rotation` | `RotationPage` | `ReadTeamEdition` | The brief rotation calendar, swaps and cover. Sidebar also needs `WriteArticles`. |
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
 | `/library`, `/library/{Tab}` | `Library` | `ReadActions` | The team's library, four tabs (`LibraryTabs`), each with its count and its own address: `queries` (`SavedQueriesPage`), `templates` (`OutreachTemplatesPage`), `playbooks` (`PlaybooksPage`) and `board-rules` (`BoardRulesPage`, the card rules read-only, linked from the Actions page). A library tab lists 20 entries a page (`?page=`) and shows the selected one in full (`?row=`, the entry's id), with its facts, Try it and Used on in the context rail. `?q=` searches the whole library, each tab showing its matches. No tab, or one that isn't one, shows the first. |
@@ -452,8 +453,9 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 |---|---|
 | `ConfirmDialog` | "Are you sure?" before anything that can't be taken back. A modal that says what will happen, with Cancel and a button named for the action ("Delete draft"), not the browser's OK box. Optional body content and a way to hold the button until a required field is filled. Focus moves in, Tab stays inside (`dialog.js`), Escape or a click outside cancels, and focus returns to the button that asked. Usage: `if (!await _confirm.Ask("Delete draft?", "…", "Delete draft")) return;` |
 | `ActionRef` | An action in a list or on a card: its title first (the link to it, or on a slide the button that opens it over the slide, the whole row its target), then its number, small and muted, to quote. Where the number is what's quoted (the action's page and card headers, "Part of", "Raised as", toasts, emails and the edition previews, which mirror the email) it leads, with `Ui.ActionLabel` alone. |
-| `UnsavedGuard` | Guards something typed and not saved: a `NavigationLock` whose `OnBeforeInternalNavigation` asks `LeaveDialog`, and whose `ConfirmExternalNavigation` gets the browser's own prompt for closing the tab or leaving the site. `Dirty`, `Message`, `Save` (a `Func<Task<bool>>`: Save and leave goes only if it worked; leave it out for a draft with no one save, and there's no Save and leave) and `Discard`. Put it in the component that holds the state, so `Dirty` follows each render. Several guards on one page ask one at a time, and a Stay for one stands for the rest of that navigation. Used by the article editor, Email templates (a template's wording, drafts kept for others, its copies, the archive address), an action's comment box and comment edits, `RecordUpdateDialog` while open and filled in, `OutreachPanel`'s email once changed from its fill, the brief page's opening note and meeting details, and present mode's meeting note. Usage: `<UnsavedGuard Dirty="NoteDirty" Message="Your note isn't saved." Save="SaveNote" Discard="DropNote" />`. |
+| `UnsavedGuard` | Guards something typed and not saved: a `NavigationLock` whose `OnBeforeInternalNavigation` asks `LeaveDialog`, and whose `ConfirmExternalNavigation` gets the browser's own prompt for closing the tab or leaving the site. `Dirty`, `Message`, `Save` (a `Func<Task<bool>>`: Save and leave goes only if it worked; leave it out for a draft with no one save, and there's no Save and leave) and `Discard`, and `Asking` (true as the question opens, false once it's dealt with) for a form that saves itself to wait meanwhile. Put it in the component that holds the state, so `Dirty` follows each render. Several guards on one page ask one at a time, and a Stay for one stands for the rest of that navigation. Used by the article editor, Email templates (a template's wording, drafts kept for others, its copies, the archive address), an action's comment box and comment edits, `RecordUpdateDialog` while open and filled in, `OutreachPanel`'s email once changed from its fill, the brief page's opening note and meeting details, a story's Edit form, and present mode's meeting note. Usage: `<UnsavedGuard Dirty="NoteDirty" Message="Your note isn't saved." Save="SaveNote" Discard="DropNote" />`. |
 | `LeaveDialog` | The question `UnsavedGuard` asks: Save and leave, Discard and leave, or Stay (`Ask(message, canSave: false)` leaves out Save and leave). Focus starts on Stay. |
+| `ModalShell` | The frame a modal dialog is drawn in: the scrim (a click on it closes, unless `CloseOnScrim="false"`), the `tide-modal` with its role (`dialog` or `alertdialog`), `aria-modal` and a title it's labelled by (`{Id}-title`), Escape (`OnClose`; other keys to `OnKeyDown`), and `dialog.js`'s open and close as it shows and hides, so focus moves in, Tab stays inside and focus goes back. `FocusTarget` is where focus starts, or with `Focus` the dialog's first field or first control. The dialog draws its body (`ChildContent`), a head row (`HeadClass`, `HeadContent`) and buttons (`Actions`). `ConfirmDialog`, `LeaveDialog`, `ScreenshotDialog`, the shortcuts list and What's new are drawn in it; a new modal should be too. |
 | `NotEmailedNote` | Under a choice of team: says when an external team won't be emailed its reminders, and why, with the fix for whoever may make it (turn them on here; or the team's contact email, in a new tab with "(opens in a new tab)" for screen readers, so a half-filled dialog isn't left). Nothing while external team reminders are off for everyone. Used in the action editor, hand-off, split, an external action's card and Coverage's Raise action; not on the meeting's slides. |
 | `SegmentedButtons<T>` | A row of buttons of which one is chosen (`btn-group`, the chosen one `btn-primary` and `aria-pressed`): Reports' and Trends' period kinds, Trends' range, the Team commitments window. `Items`, `Selected`, `Text` and `OnPick`; the page puts the choice in its address. |
 | `Breadcrumbs` | "You are here" and the way back on a detail page ("Actions › A-12"). On a phone only the way back stays ("‹ Actions"). |
@@ -465,7 +467,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `Pager` | Previous, numbered pages (with … gaps) and Next, `aria-current` on the current page. Given `Href`, the pages are links to their own addresses (`?page=`), so a reload, Back, a copied link or a middle-click keeps the page; without it they're buttons that call `OnPage`. Used by `DataTable` (with `Href` when `PageInAddress`), Triage, Saved queries and Outreach templates. `pager.js` brings the list's top back into view. |
 | `RowKeys`, `RowSelection` | A list page's selected row: the keys that move it, and how it's read from the address, moved and drawn. See [a list with a selected row](#a-list-with-a-selected-row). `RowKeys` is used by the Actions list and board, Our stack, Adversaries and the Library's `LibraryBrowser`; Triage starts `rows.js` from `triage.js` with keys of its own. |
 | `LibraryPage<TRow>` | The base of the team libraries (Saved queries, Outreach templates, Playbooks, each a tab of the `Library` page; `@inherits LibraryPage<…>`): the rows read with or without the retired ones, the words typed, 20 entries a page with the page in the address, the selected entry (`Selected`, `Pick`; `?row=` in the address, and a link to an entry opens the page of the list it's on), Clear, Show retired, a colleague's change re-read in place (its `ChangeFeed` topic), one step at a time (then `OnChanged`, so the Library counts the tab again), Retire and Restore with their toasts, "Used on …" and "Saved by …, changed by …", and `EditingAway` (the entry being edited isn't the one shown, so the library draws its form above the list; when a colleague's change moved the shown entry to another page, the page goes there instead). A library supplies how it reads its rows, the filter that leaves some, what it calls them, a row's id, how the list names it (`LibraryEntry`) and the one being edited, and its own form and the selected entry's card. Focus follows the work, set after the render as elsewhere (`FocusForm`, `FocusList`): a form that opens takes it in its first box; Save, Cancel, a confirmed Delete and a Retire that takes the entry off the list put it on the selected row, or on the empty state when the list has none. After each render the address is made to name the entry shown, or none (`tideRows.remember`). |
-| `LibraryBrowser` | A library's list beside the entry chosen from it (one column below 1000px): the page's entries as rows (name, what it's for, kind, use), the selected one `aria-current="true"` and the list's one tab stop, a click or focus choosing a row, the pager under the list, and the selected entry (`ChildContent`) in a column that stays in view. A long grouped list folds after the selected entry's group ("3 more KQL, then Falcon · 3"). `RowKeys` moves between rows, `J` and `K` turning the page at the ends; `FocusSelectedAsync` puts focus back on the selected row. |
+| `LibraryBrowser` | A library's list beside the entry chosen from it (one column at 1000px or narrower): the page's entries as rows (name, what it's for, kind, use), the selected one `aria-current="true"` and the list's one tab stop, a click or focus choosing a row, the pager under the list, and the selected entry (`ChildContent`) in a column that stays in view. A long grouped list folds after the selected entry's group ("3 more KQL, then Falcon · 3"). `RowKeys` moves between rows, `J` and `K` turning the page at the ends; `FocusSelectedAsync` puts focus back on the selected row. |
 | `CardRuleCells` | A card rule's label in its colour (marked when off) and what it matches in words, as two table cells: Board rules and Administration › Card rules. |
 | `SearchCombobox` | The search picker for adversaries, We run, stories and scorecard tags: an ARIA combobox over a listbox with `aria-activedescendant`. Focus stays in the box; arrows, Home, End, Enter and Esc work; an optional last option makes a new entry from the words typed. `combo.js` keeps the highlighted option in view. |
 | `PresenceNote` | Who else has this brief, article, action or triage item open: initials in each person's own hue, "viewing", or "editing" with a pencil (so it isn't told by colour alone). With `Join` off it only watches, for a list row. |
@@ -479,7 +481,8 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `BriefStepper` | On an article that's on today's brief: "4 of 5 ‹ Previous Next › Back to Today". |
 | `LiveMeetingJoin` | The live-meeting banner on every page, or a Join button in place of the brief's Present button. |
 | `BriefChip` (in `Layout/`) | The top bar's link to Today: when the brief meets and the step it's on, or that it's live. |
-| `ProfileMenu` | The account menu. |
+| `ProfileMenu` | The account menu. Its theme and letter-shortcut switches are groups of `menuitemradio`s, as a menu may hold only menu items and groups of them. |
+| `TableScroll` | The box a wide table scrolls sideways in (`table-responsive`): it takes focus (`tabindex="0"`), so the keyboard can scroll it, and it's a `region` named by the heading it's under (`LabelledBy`) or in words (`Label`). Every report and admin table that scrolls sits in one. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
 | `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
 | `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |
@@ -488,7 +491,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `EditionView`, `EditionArticleView`, `ReaderPreview` | A brief or an article as one edition carries it, built from the same cut as the email, so the preview is what readers get. |
 | `FilePicker` | Files waiting to be added to an action: picked, dropped or pasted (`paste-drop.js`). |
 | `AccessDenied` | The no-access card, drawn for `NotAuthorized` and on `/access-denied`. |
-| `ActionLineageFlow` | A split action's lineage (EP-88): article → parent → parts, left to right, each a link, each part tinted by its state (`LineageNode.State`, worked out once by `LineageRules.StateOf` when the lineage is read) in the SLA badge's tones (`LineageTones.Of` → `BadgeTone`; the node takes `Badge.ToneClass` for its colours and shows the state on a `Badge`), with a legend of the same badges. Its `ChildContent` goes under the legend: the parent page's controls for its parts. HTML and CSS, no chart library. The picture is a nested list (`ol.tide-lin-flow` › `ul.tide-lin-parts`) with short visually hidden lead-ins ("Raised from the article:", "Split into 3 parts:"), so a screen reader hears the same steps in order and each state in words; the arrows are CSS borders, not text. On a part's page that part is `aria-current="page"` and says "(this action)". Stacks under 640px. |
+| `ActionLineageFlow` | A split action's lineage (EP-88): article → parent → parts, left to right, each a link, each part tinted by its state (`LineageNode.State`, worked out once by `LineageRules.StateOf` when the lineage is read) in the SLA badge's tones (`LineageTones.Of` → `BadgeTone`; the node takes `Badge.ToneClass` for its colours and shows the state on a `Badge`), with a legend of the same badges. Its `ChildContent` goes under the legend: the parent page's controls for its parts. HTML and CSS, no chart library. The picture is a nested list (`ol.tide-lin-flow` › `ul.tide-lin-parts`) with short visually hidden lead-ins ("Raised from the article:", "Split into 3 parts:"), so a screen reader hears the same steps in order and each state in words; the arrows are CSS borders, not text. On a part's page that part is `aria-current="page"` and says "(this action)". Stacks at 640px or narrower. |
 | `RemediationTimelineCard` | A parent's parts on one date scale (`RemediationTimeline.Build`): a bar per part from creation to due date, the run past due hatched in the danger colour, a mark on the close day, today's dashed line, drawn by each bar's track (`.tide-remtl-track::after`, at `--at` set on the grid) so it never crosses the words (the card's `data-today-at` is its position, in percent) and the scale's dates. Bars are `aria-hidden`; each row writes its dates under its bar ("Started Nov 2 · due Nov 20 · 3 days late"). Bars take the part's tone; Tracking bars are striped. Not drawn when no part has a due date. Positions go into inline `style` (allowed by `style-src`), written with the invariant culture. |
 | `MetricChartPicker` | Which metrics the metric history charts: a button naming them (*Chart: Alert queue*, *Chart: 5 metrics*) that opens every metric under its group as `menuitemcheckbox`es, a box per group (`aria-checked="mixed"` when some of it is charted), a find box (`tide-filter-find`) and *Show retired metrics*. It stays open while boxes are ticked. In the filter bar's popover, so the keyboard is `filters.js`'s; Esc closes it with focus back on the button. Rules in `MetricChartPicks`. |
 | `MenuButton` | A button that opens a short menu of commands (`role="menu"`, each a `menuitem` that runs something, an `EventCallback` so the page that made it draws again after, or is a link) in the `tide-popover` the filter bar uses. From the keyboard as + Filter is (`filters.js`): the down arrow opens it, focus goes to the first item, the arrows and Home/End move, Tab leaves it closed, Esc closes it with focus back on the button. The action page's *More*. |
@@ -702,10 +705,39 @@ anything: nothing there can be saved.
 
 ## Design tokens
 
-Every colour, space, radius and type size comes from a `--tide-*` custom property in `src/Tide.Web/wwwroot/app.css`.
-Bootstrap 5.3.3 (self-hosted under `wwwroot/bootstrap`) supplies the components, and the tokens retint them (for
+Every colour, space, radius and type size comes from a `--tide-*` custom property in
+`src/Tide.Web/wwwroot/css/00-tokens.css`. Bootstrap 5.3.3 (self-hosted under `wwwroot/bootstrap`) supplies the components, and the tokens retint them (for
 example `.btn-primary` maps Bootstrap's `--bs-btn-*` variables to `--tide-action-*`). `palette.css` styles the command
 palette and the shortcuts overlay with the same tokens only.
+
+**Where the styles live.** The app's stylesheet is in parts by area under `src/Tide.Web/wwwroot/css/`. `App.razor`
+links each part with its own `?v=`, after Bootstrap and before `palette.css`, in the order of their names, and that
+order is the cascade's: the parts load exactly as one file would. A part's number leaves room for a new one between
+two others.
+
+| Part | Holds |
+|---|---|
+| `00-tokens.css` | `:root` and the dark theme's tokens, the Bootstrap retint, base elements. Everything depends on it: edit with care |
+| `10-shell.css` | The shell (sidebar, top bar), page parts, badges and chips |
+| `20-editor.css` | The article editor, the brief builder, the edition preview |
+| `25-feedback.css` | Toasts, the reconnect dialog, the lightbox |
+| `30-present.css` | Present mode |
+| `31-metrics.css` | Opening metrics, sparklines, charts |
+| `32-distribution.css` | The Send dialog, the SharePoint copy, the published archive |
+| `40-actions.css` | Actions: pills, the board, the action page |
+| `41-intake.css` | Intake: CVE chips, Triage, sources, stories, the rotation |
+| `50-today.css` | Today (a day's brief) and the pages after it in the file |
+| `60-rail-and-pages.css` | The context rail, Search, the brief chip, the actions list header |
+| `90-option-e.css` | The Option E layers, each appended as its own section. They move into the parts above page by page, and the file goes when it's empty |
+
+**Adding a rule.** Put it in the part for its area, beside the rules for the same component, not at the end of a
+file, and bump that part's `?v=` in `App.razor` (`tools/ci/check-asset-versions.sh` fails a change that doesn't). A
+rule meant to override another must come after it in the cascade: later in the same part, or in a later part. Never
+reorder the parts or move a rule between them in a change that means to change nothing: a rule that moves past
+another of the same specificity can change which one wins. A new area that needs a part of its own gets a number
+between its neighbours, and a `<link>` in the same place in `App.razor`; `StylesheetSplitTests` checks the links
+follow the names. A page-only style that a test reads goes through the stylesheet as served
+(`app.StylesheetAsync()` in the integration tests, `Stylesheets.ReadAll()` in the unit tests), never one file.
 
 **Light and dark.** `:root` defines the light theme; `[data-bs-theme="dark"]` overrides the colour tokens. Bootstrap
 5.3 reads the same attribute. Nothing is light-only: a colour that isn't a token is a bug.
@@ -726,9 +758,12 @@ palette and the shortcuts overlay with the same tokens only.
 | Avatars | `--tide-avatar-1` … `8`, `--tide-on-avatar` | Presence initials; white text at 4.5:1 or better, the same in both themes. |
 | Overlays | `--tide-overlay`, `--tide-shadow`, `--tide-on-threat` | Dimming behind dialogs, shadows, text on a threat fill. |
 
-**Choosing the theme.** `theme-init.js` runs in `<head>` before first paint: it applies the theme saved in
-`localStorage` (`tide-theme`), or the operating system's `prefers-color-scheme` when none is saved, so there's no
-flash of the wrong theme. The account menu flips it through `tideTheme`.
+**Choosing the theme.** The account menu offers Light, Dark and System, saved per browser in `localStorage`
+(`tide-theme`: `light`, `dark` or `system`). System is the default, when nothing is saved: the operating system's
+`prefers-color-scheme`, followed live (`tideTheme` listens for its change), so a system that turns dark at dusk turns
+TIDE dark with it. `theme-init.js` runs in `<head>` before first paint and sets `data-bs-theme` to the theme in force,
+so there's no flash of the wrong theme. `tideTheme.chosen()` says which was chosen; `current()` which is in force. In the
+menu, Left and Right move along a setting's options and Up and Down through every choice (`filters.js`).
 
 Emails don't use the tokens: they're tables and inline styles, coloured from `EmailComposer.Palette`, which mirrors
 the light tokens, and are always light.
@@ -804,7 +839,7 @@ that the letter-shortcut switch turns off.
 | Library | `↓` `↑`, or `J` `K` (letters): the next and previous entry; `J` at the end of a page goes on to the next, `K` at the start back. `Enter`: go into the selected entry. |
 | Actions list | `↓` `↑`, or `J` `K` (letters): next and previous action, across pages. `T` (letter): take the selected action, when it's yours to take. `Enter`: open it. `Tab` to a row's status, `Enter` to open the statuses it can move to. |
 | Our stack | `↓` `↑`, or `J` `K` (letters): next and previous product. `Enter`: open it. |
-| Present mode | `→` or `Enter`: next slide. `←` or `Backspace`: previous. `Space` / `Page Down` and `Shift Space` / `Page Up`: scroll a long slide, then change slide at its end (with an action open beside the slide they page the slide, since the room shares that scroll). `Home` `End`: first and last slide. `D` (letter): mark discussed. `F` (letter): full screen. `Esc`: shut the presenter's rail when it's over the slide, leave full screen, then close a zoomed screenshot. |
+| Present mode | `→` or `Enter`: next slide. `←` or `Backspace`: previous. `Space` / `Page Down` and `Shift Space` / `Page Up`: scroll a long slide, then change slide at its end (with an action open beside the slide they page the slide, since the room shares that scroll). `Home` `End`: first and last slide. With an action or card open over the slide, none of these changes the slide, the presenter's rail or a Learn to present step being open too: `Space` and `Page Down` page the card down and stop at its end, `Shift Space` and `Page Up` page it up and stop at its top, and the arrows, `Enter`, `Backspace`, `Home` and `End` do nothing; `Esc` closes it. One open beside the slide leaves them all to the slide, and moving on closes it. `D` (letter): mark discussed. `F` (letter): full screen. `Esc`: shut the presenter's rail when it's over the slide, leave full screen, then close a zoomed screenshot. |
 | An article | `1` and `2` (letters): preview the Team or Company-wide edition. `J` and `K` (letters): next and previous article on today's brief. `Enter` in the new-indicator box adds it. `Esc` closes the ATT&CK picker. |
 | Actions board | `↓` `↑`, or `J` `K` (letters): next and previous card, lane after lane. `←` `→`: the card beside it, in the next lane with cards. `T` (letter): take the selected card's action. `Enter`: open it. `Tab` to a card's Move button, `Enter` to open its columns, `Enter` on one to move it. `Esc` closes the menu. |
 | A screenshot full size | `←` `→`: previous and next. `Esc`: close. |
@@ -822,7 +857,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | Choice | How |
 |---|---|
 | **Single-letter shortcuts can be turned off** (WCAG 2.1.4) | The switch in the account menu or the `?` overlay sets `data-shortcuts="off"` on `<html>` (saved per browser). Every letter handler checks `tideShortcuts.on()`. Arrows, Enter and `Ctrl` shortcuts keep working. Turned off, the overlay marks those rows "(off)". |
-| **Reduced motion** | Animations and smooth scrolls have a `prefers-reduced-motion: reduce` rule in `app.css` (toasts, skeleton shimmer, presence and live dots, live-row highlights, kanban arrivals, disclosure chevrons, the ATT&CK picker), and the scripts check the same query before scrolling smoothly (`editor.js`, `combo.js`, `board.js`, `present.js`). Under it, live highlights fade without sliding or folding. |
+| **Reduced motion** | Animations and smooth scrolls have a `prefers-reduced-motion: reduce` rule in the stylesheet (`css/`) (toasts, skeleton shimmer, presence and live dots, live-row highlights, kanban arrivals, disclosure chevrons, the ATT&CK picker), and the scripts check the same query before scrolling smoothly (`editor.js`, `combo.js`, `board.js`, `present.js`). Under it, live highlights fade without sliding or folding. |
 | **Focus return** | Every dialog gives focus back to whatever opened it (`dialog.js`): confirmations, the leave dialog, the lightbox and screenshot dialog, the palette, the shortcuts overlay. After a board move focus goes to the card's Move button in its new column; after a running-order move it stays on the moved row's button, and after a warning's one-click fix there (the button goes with the warning) it moves to the row's title; after a comment's edit it returns to that comment's Edit button. |
 | **Focus after navigation** | `FocusOnNavigate` puts focus on the page's `h1`. A skip link goes to `#main-content`. |
 | **Focus inside dialogs** | Tab stays inside a modal; focus outside an open dialog goes into it, not behind it. |
@@ -835,13 +870,13 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 
 ## Phone layout
 
-At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
+At 640px or narrower (`@media (max-width: 640.98px)` in the stylesheet's parts, `css/`):
 
 - The sidebar becomes a bar across the top with the brand and a menu button. The button (`tideNav.setOpen`) opens the
   links under it; it isn't remembered, so it starts closed on every page load, closes when a link is followed, and
   closes on Escape. The desktop collapse-to-icons state doesn't apply.
 - The search box in the top bar is hidden; the Go to button shrinks to an icon in its place, and so does the Context
-  button. The brief chip is gone (from 740px down). The context rail opens over the whole window, with the page under
+  button. The brief chip is gone (from below 900px). The context rail opens over the whole window, with the page under
   it inert.
 - Wide tables scroll inside their card rather than pushing the page sideways, with a shadow at the edge that has more.
 - Breadcrumbs keep only the way back ("‹ Actions").
@@ -853,8 +888,21 @@ At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
 
 Wider breakpoints (700px, 900px, 1000px, 1100px, 1200px) fold multi-column layouts (Our stack's and Adversaries'
 grids, a Library list beside its entry, Trends, slide columns) to one column. The article editor is one column at
-every width; on a phone it keeps an Edit / Preview switch for the reader preview. Printing (`@media print`) drops the sidebar, top bar and buttons,
+every width; below 900px it keeps an Edit / Preview switch for the reader preview. Printing (`@media print`) drops the sidebar, top bar and buttons,
 for Reports and Trends.
+
+**How a breakpoint is written.** Each breakpoint N is a pair: `(min-width: Npx)` for the wide side and
+`(max-width: N-0.02px)` for the narrow side (`900px` and `899.98px`; `641px` and `640.98px`). Under browser zoom the
+window can be a fractional number of pixels wide, and any other spelling leaves widths where both sides apply or
+neither does. The breakpoints are 421, 481, 641, 701, 768, 900, 1001, 1100, 1200, 1400, 1500, 1600, 1760 and 1800;
+`matchMedia` in script uses the same values. `BreakpointTests` fails on any other value or spelling, so a new
+breakpoint is added to its list on purpose.
+
+A part whose room depends on more than the window folds by its own width instead, with a container query: the Today
+steps strip, Triage's Sources table, and Our stack's table, whose rows stack when its list is under 800px (a 1100px
+window with the sidebar open, or 1500px beside the docked context rail). Those widths are the container's, so they
+needn't be on the list, but a query in px is written the same way, and a named container's `min-width: Npx` and
+`max-width: N-0.02px` sides meet at the same N; `BreakpointTests` checks that too.
 
 ## Markdown rendering
 
@@ -926,7 +974,7 @@ flowchart TD
 | Shared components | `src/Tide.Web/Components/Shared/` |
 | What pages put in the context rail | `src/Tide.Web/Components/Today/`, `TriageRail/`, `ActionRail/` (the action page's sections, and `ActionRowRail` for the list and board), `SearchRail/`, `StackRail/`, `LibraryRail/` and `AdversaryRail/` |
 | Live updates, presence, toasts, prerender hand-off | `src/Tide.Web/Services/` (`Together.cs`, `LiveRows.cs`, `Services.cs`, `PrerenderHandoff.cs`, `LiveMeetings.cs`, `TriageNews.cs`, `TypingPause.cs`, `BriefChipSource.cs`) |
-| Tokens and styles | `src/Tide.Web/wwwroot/app.css`, `palette.css` |
+| Tokens and styles | `src/Tide.Web/wwwroot/css/` (in parts by area; tokens in `00-tokens.css`), `palette.css` |
 | Scripts | `src/Tide.Web/wwwroot/js/` |
 | CSP and headers | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `FileDownloads.cs` |
 | Circuit settings, status-code pages | `src/Tide.Web/Program.cs` |

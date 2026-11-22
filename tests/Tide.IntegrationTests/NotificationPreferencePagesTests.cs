@@ -106,7 +106,10 @@ public partial class NotificationPreferencePagesTests(TideApp app) : IClassFixtu
     [Fact]
     public async Task TeamsAndSla_ASharedChoice_OpensOneListUnderTheRowClicked()
     {
-        // The brief rotation reminder and the brief-not-ready nudge are both the "Rotation reminders" choice.
+        // The brief rotation reminder and the brief-not-ready nudge are both the "Rotation reminders" choice. Both are off
+        // on a new server, and no one can opt out of a kind that's off for everyone, so this test turns one on itself
+        // rather than relying on another test here having done it first.
+        await TurnOn(OperationalSettings.Presenting);
         await using (var scope = SignedIn(app, Person()))
             await scope.ServiceProvider.GetRequiredService<NotificationPreferenceService>().SetMineAsync(UserPreferences.NotifyRotationReminders, UserPreferences.Off);
 

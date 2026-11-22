@@ -1,12 +1,18 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
+using Tide.Application.Operations;
 using Tide.Application.Security;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.TestSupport;
+using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
 
@@ -249,7 +255,6 @@ public class IntakeServiceTests : IDisposable
         (await intake.InboxAsync(new InboxFilter())).Select(r => r.Item.Title).Should().BeEquivalentTo("fresh story", "stale kev", "stale epss");
 
         (await intake.InboxAsync(new InboxFilter(Older: true))).Select(r => r.Item.Title).Should().BeEquivalentTo("stale story", "stale low epss");
-        (await intake.OlderCountAsync()).Should().Be(2);
         (await intake.CountsAsync())[FeedItemStatus.New].Should().Be(3, "New counts what's still in New");
         (await intake.TallyAsync()).Should().Match<(IReadOnlyDictionary<FeedItemStatus, int> Counts, int Older)>(t => t.Counts[FeedItemStatus.New] == 3 && t.Older == 2,
             "Triage's tabs and its Older fold, from one count");
@@ -487,7 +492,7 @@ public class IntakeServiceTests : IDisposable
         var (reports, other) = await BinanceReports();
         var intake = _db.Intake();
 
-        var articleId = await intake.PromoteAsOneAsync(reports, new PromoteForm { Classification = Classification.Threat, Priority = Priority.P1 });
+        var articleId = (await intake.PromoteOrJoinAsync(reports, new PromoteForm { Classification = Classification.Threat, Priority = Priority.P1 })).ArticleId;
 
         var article = (await _db.Articles().GetAsync(articleId))!;
         article.Title.Should().Be("Binance links $6.3 billion crypto theft to compromised DevOps laptop", "the newest report makes the article");
@@ -507,7 +512,7 @@ public class IntakeServiceTests : IDisposable
         links.Select(l => l.SourceName).Should().Equal("Amber feed", "News Feed");
         (await _db.Articles().SourceExcerptAsync(articleId)).Should().Be("Excerpt of " + article.Title, "the editor shows the excerpt of the report it was made from");
 
-        (await intake.PromoteAsOneAsync(reports, new PromoteForm())).Should().Be(articleId, "promoting them again goes to the article they made");
+        (await intake.PromoteOrJoinAsync(reports, new PromoteForm())).Should().Match<PromoteOutcome>(o => o.ArticleId == articleId && !o.Made, "promoting them again goes to the article they made");
     }
 
     [Fact]
@@ -526,7 +531,7 @@ public class IntakeServiceTests : IDisposable
 
         async Task<Guid?> Try()
         {
-            try { return await _db.Intake().PromoteAsOneAsync(reports, new PromoteForm()); }
+            try { return (await _db.Intake().PromoteOrJoinAsync(reports, new PromoteForm())).ArticleId; }
             catch (InvalidOperationException) { return null; }
         }
     }
@@ -538,7 +543,7 @@ public class IntakeServiceTests : IDisposable
         var intake = _db.Intake();
         var single = await intake.PromoteAsync(reports[1]);   // another analyst got to one report first
 
-        var group = () => intake.PromoteAsOneAsync(reports, new PromoteForm());
+        var group = () => intake.PromoteOrJoinAsync(reports, new PromoteForm());
         await group.Should().ThrowAsync<InvalidOperationException>().WithMessage("*none of them was promoted*");
 
         await using var ctx = _db.Context();
@@ -559,7 +564,7 @@ public class IntakeServiceTests : IDisposable
             if (context.ChangeTracker.Entries<ArticleLink>().Any(e => e.State == EntityState.Added)) throw new DbUpdateException("database busy");
         };
 
-        var failed = () => _db.Intake().PromoteAsOneAsync(reports, new PromoteForm());
+        var failed = () => _db.Intake().PromoteOrJoinAsync(reports, new PromoteForm());
         await failed.Should().ThrowAsync<DbUpdateException>();
         _db.BeforeSave = null;
 
@@ -570,16 +575,16 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PromoteAsOne_TakesTwoToEightReports_AndRefusesOneGone()
+    public async Task PromoteAsOne_TakesUpToEightReports_AndRefusesOneGone()
     {
         var (reports, _) = await BinanceReports();
         var intake = _db.Intake();
-        var one = () => intake.PromoteAsOneAsync([reports[0], reports[0]], new PromoteForm());
-        await one.Should().ThrowAsync<ArgumentException>().WithMessage("Promote 2 to 8*");
-        var gone = () => intake.PromoteAsOneAsync([reports[0], Guid.NewGuid()], new PromoteForm());
+        var nine = () => intake.PromoteOrJoinAsync([.. Enumerable.Range(0, 9).Select(_ => Guid.NewGuid())], new PromoteForm());
+        await nine.Should().ThrowAsync<ArgumentException>().WithMessage("Promote 1 to 8*");
+        var gone = () => intake.PromoteOrJoinAsync([reports[0], Guid.NewGuid()], new PromoteForm());
         await gone.Should().ThrowAsync<KeyNotFoundException>().WithMessage("One of those items is gone.");
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
-        var reader = () => intake.PromoteAsOneAsync(reports, new PromoteForm());
+        var reader = () => intake.PromoteOrJoinAsync(reports, new PromoteForm());
         await reader.Should().ThrowAsync<ForbiddenException>();
     }
 
@@ -1011,6 +1016,296 @@ public class IntakeServiceTests : IDisposable
             await ctx.SaveChangesAsync();
         }
         (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage.Single().Attachable.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Coverage_MatchesByAddressAndCve_AtMostFive_EachWithItsBriefsActionsAndWhetherItCanTakeAReport(bool hashesFilled)
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Edge VPN bug, more", "https://news.example/vpn", "CVE-2026-1111 and CVE-2026-2222")));
+        await _db.Intake().PollNowAsync(source);
+        var now = DateTimeOffset.UtcNow;
+        var ids = new Dictionary<string, Guid>();
+        await using (var ctx = _db.PlainContext())
+        {
+            Article Add(string title, string? url, ArticleStatus status, params string[] cves)
+            {
+                var a = new Article { Title = title, SourceUrl = url, Status = status, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = now.AddDays(-ids.Count - 1) };
+                a.Cves.AddRange(cves.Select(c => new ArticleCve { CveId = c }));
+                ctx.Articles.Add(a);
+                ids[title] = a.Id;
+                return a;
+            }
+            var sameUrl = Add("Same address, tracked", "https://news.example/vpn?utm_source=mail", ArticleStatus.Presented, "CVE-2026-1111");
+            var linked = Add("Links to it", "https://elsewhere.example/a", ArticleStatus.Ready);
+            var onDraft = Add("Same first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
+            Add("Also the first CVE", null, ArticleStatus.Ready, "CVE-2026-1111");
+            Add("Same second CVE", null, ArticleStatus.Ready, "CVE-2026-2222");   // a sixth match: past the five shown
+            Add("Another CVE", "https://elsewhere.example/b", ArticleStatus.Ready, "CVE-2026-3333");
+            Add("Too old to match by address", "https://news.example/vpn", ArticleStatus.Ready).CreatedAtUtc = now.AddDays(-200);
+            ctx.ArticleLinks.Add(new ArticleLink { ArticleId = linked.Id, Url = "https://news.example/vpn", Title = "x", AddedAtUtc = now, AddedByName = "Analyst" });
+            Brief On(DateOnly day, BriefStatus status, Article a)
+            {
+                var b = new Brief { BriefDate = day, Status = status, AnalystId = "S-1", AnalystName = "Analyst", CreatedAtUtc = now };
+                b.Items.Add(new BriefItem { ArticleId = a.Id });
+                ctx.Briefs.Add(b);
+                return b;
+            }
+            On(new DateOnly(2026, 10, 1), BriefStatus.Presented, sameUrl);
+            On(new DateOnly(2026, 10, 9), BriefStatus.Draft, onDraft);
+            await ctx.SaveChangesAsync();
+        }
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var action = await _db.Actions().CreateAsync(new ActionForm { Title = "Patch", Kind = ActionKind.PatchRemediate, TeamId = team, ArticleId = ids["Links to it"] });
+        if (!hashesFilled) await Unfilled();
+
+        var coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage;
+
+        coverage.Take(2).Select(c => (c.Why, c.ArticleTitle)).Should().Equal(
+            [(Tide.Application.Search.RelatedService.SameLink, "Same address, tracked"), (Tide.Application.Search.RelatedService.SameLink, "Links to it")], "address matches come first");
+        coverage.Select(c => (c.Why, c.ArticleTitle, c.BriefDate, c.OnBrief, c.Attachable, string.Join(",", c.OpenActions))).Should().BeEquivalentTo([
+            (Tide.Application.Search.RelatedService.SameLink, "Same address, tracked", (DateOnly?)new DateOnly(2026, 10, 1), (DateOnly?)null, false, ""),
+            (Tide.Application.Search.RelatedService.SameLink, "Links to it", (DateOnly?)null, (DateOnly?)null, true, action.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("CVE-2026-1111", "Same address, tracked", (DateOnly?)new DateOnly(2026, 10, 1), (DateOnly?)null, false, ""),
+            ("CVE-2026-1111", "Same first CVE", (DateOnly?)null, (DateOnly?)new DateOnly(2026, 10, 9), true, ""),
+            ("CVE-2026-1111", "Also the first CVE", (DateOnly?)null, (DateOnly?)null, true, ""),
+        ]);
+        coverage.Skip(2).Should().OnlyContain(c => c.Why == "CVE-2026-1111", "then the item's CVEs in the order it names them");
+        coverage.Should().HaveCount(5).And.NotContain(c => c.ArticleTitle == "Same second CVE", "only the first five matches are shown")
+            .And.OnlyContain(c => c.ArticleId == ids[c.ArticleTitle]);
+    }
+
+    // The database as an upgrade leaves it until the background job has filled the address hashes: rows without one, and
+    // the setting saying so, so coverage reads every recent address instead.
+    private async Task Unfilled()
+    {
+        await using var ctx = _db.PlainContext();
+        ctx.Settings.Add(new AppSetting { Key = UrlHashFill.PendingKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+        await ctx.SaveChangesAsync();
+        await ctx.Articles.ExecuteUpdateAsync(s => s.SetProperty(a => a.SourceUrlHash, (string?)null));
+        await ctx.ArticleLinks.ExecuteUpdateAsync(s => s.SetProperty(l => l.UrlHash, (string?)null));
+    }
+
+    [Fact]
+    public async Task Coverage_IsTheSame_BeforeTheAddressHashesAreFilled_WhileTheyAre_AndAfter()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Edge VPN bug", "https://news.example/vpn", null), ("Okta theft", "https://vendor.example/okta", null)));
+        await _db.Intake().PollNowAsync(source);
+        await using (var ctx = _db.PlainContext())
+        {
+            for (var n = 0; n < 7; n++)
+                ctx.Articles.Add(new Article
+                {
+                    Title = "Article " + n, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-n),
+                    SourceUrl = n % 2 == 0 ? $"https://news.example/vpn/?utm_source={n}" : $"https://elsewhere.example/{n}",
+                });
+            await ctx.SaveChangesAsync();
+            var linked = await ctx.Articles.Where(a => a.Title == "Article 1").Select(a => a.Id).SingleAsync();
+            ctx.ArticleLinks.Add(new ArticleLink { ArticleId = linked, Url = "HTTPS://Vendor.example/okta", Title = "x", AddedAtUtc = DateTimeOffset.UtcNow, AddedByName = "Analyst" });
+            await ctx.SaveChangesAsync();
+        }
+        async Task<Dictionary<string, string[]>> Coverage() => (await _db.Intake().InboxAsync(new InboxFilter()))
+            .ToDictionary(r => r.Item.Url, r => r.Coverage.Select(c => c.ArticleTitle).Order(StringComparer.Ordinal).ToArray());
+        var filled = await Coverage();
+        filled["https://news.example/vpn"].Should().Equal("Article 0", "Article 2", "Article 4", "Article 6");
+        filled["https://vendor.example/okta"].Should().Equal("Article 1");
+
+        await Unfilled();
+        (await Coverage()).Should().BeEquivalentTo(filled, "until the hashes are filled, every recent address is read");
+        var progress = new UrlHashProgress();
+        await using (var ctx = _db.Context())
+        {
+            await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 3);
+            (await Coverage()).Should().BeEquivalentTo(filled, "while some are filled and some aren't");
+            while (!await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 3)) { }
+        }
+        progress.Filled.Should().Be(8);
+        (await Coverage()).Should().BeEquivalentTo(filled, "once they're filled, by the hash");
+    }
+
+    [Fact]
+    public async Task TheFill_PassesARowWithNoCanonicalAddressOnce_AndStillFillsEveryOther_WhenThatRowIsDeletedMidFill()
+    {
+        // In id order: one whose address has no canonical form, then five that have one.
+        static Guid Id(int n) => new($"00000000-0000-0000-0000-{n:000000000000}");
+        await using (var ctx = _db.PlainContext())
+        {
+            ctx.Articles.Add(new Article { Id = Id(1), Title = "Not a web address", SourceUrl = "ftp://files.example/x", AuthorId = "S-1", AuthorName = "Analyst" });
+            for (var n = 2; n <= 6; n++)
+                ctx.Articles.Add(new Article { Id = Id(n), Title = "Article " + n, SourceUrl = $"https://news.example/{n}", AuthorId = "S-1", AuthorName = "Analyst" });
+            await ctx.SaveChangesAsync();
+        }
+        await Unfilled();
+
+        var progress = new UrlHashProgress();
+        await using (var ctx = _db.Context())
+        {
+            (await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 2)).Should().BeFalse();
+            progress.Filled.Should().Be(1, "the first batch was the row passed by and one other");
+            // A colleague deletes the row passed by: what's read next mustn't move.
+            var passed = Id(1);
+            await ctx.Articles.Where(a => a.Id == passed).ExecuteDeleteAsync();
+            while (!await UrlHashFill.FillAsync(ctx, progress, batches: 1, batch: 2)) { }
+        }
+
+        progress.Filled.Should().Be(5);
+        await using (var ctx = _db.PlainContext())
+            (await ctx.Articles.Where(a => a.SourceUrlHash == null).Select(a => a.Title).ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TwoProcessesFilling_AtOnce_BothFinish_AndTheOneThatFinishesSecondChangesNothing()
+    {
+        await using (var ctx = _db.PlainContext())
+        {
+            for (var n = 0; n < 6; n++)
+                ctx.Articles.Add(new Article { Title = "Article " + n, SourceUrl = $"https://news.example/{n}", AuthorId = "S-1", AuthorName = "Analyst" });
+            await ctx.SaveChangesAsync();
+        }
+        await Unfilled();
+
+        // An overlapping recycle: one process has filled a batch when the other fills the rest and finishes.
+        var (first, second) = (new UrlHashProgress(), new UrlHashProgress());
+        await using (var a = _db.Context())
+        await using (var b = _db.Context())
+        {
+            (await UrlHashFill.FillAsync(a, first, batches: 1, batch: 2)).Should().BeFalse();
+            (await UrlHashFill.FillAsync(b, second, batches: 10, batch: 2)).Should().BeTrue();
+            (await UrlHashFill.FillAsync(a, first, batches: 1, batch: 2)).Should().BeTrue("the other has finished");
+            (first.Filled + second.Filled).Should().Be(6, "no row is written twice");
+
+            // And both finishing at the very same moment: the second's finish finds nothing left to say.
+            await Unfilled();
+            var raced = false;
+            _db.Commands.Before(sql => sql.Contains("DELETE FROM \"Settings\"", StringComparison.Ordinal), () =>
+            {
+                using var other = _db.PlainContext();
+                UrlHashFill.FinishAsync(other).GetAwaiter().GetResult();
+                raced = true;
+            });
+            var finish = () => UrlHashFill.FillAsync(a, new UrlHashProgress(), batches: 2);
+            (await finish.Should().NotThrowAsync()).Which.Should().BeTrue();
+            raced.Should().BeTrue("the other process finished first");
+        }
+        await using (var ctx = _db.PlainContext())
+            (await ctx.Settings.CountAsync(s => s.Key == UrlHashFill.PendingKey)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TheFillJob_RunsWhenItHoldsTheLease_ReportsOnDiagnostics_AndStopsOnceDone()
+    {
+        await using (var ctx = _db.PlainContext())
+        {
+            for (var n = 0; n < 50; n++)
+                ctx.Articles.Add(new Article { Title = "Article " + n, SourceUrl = $"https://news.example/{n}", AuthorId = "S-1", AuthorName = "Analyst" });
+            await ctx.SaveChangesAsync();
+        }
+        await Unfilled();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAppDbContextFactory>(_db);
+        await using var provider = services.BuildServiceProvider();
+        var jobs = new JobMonitor(TimeProvider.System);
+        UrlHashFillHostedService Job(IJobLease lease) => new(provider.GetRequiredService<IServiceScopeFactory>(), jobs, lease, new NotStarted(),
+            TimeProvider.System, NullLogger<UrlHashFillHostedService>.Instance);
+
+        (await Job(new StandbyLease()).PassAsync(CancellationToken.None)).Should().BeNull("another process runs the jobs");
+        jobs.Get(JobMonitor.UrlHashes).LastStartedUtc.Should().BeNull();
+
+        var job = Job(new HeldLease());
+        (await job.PassAsync(CancellationToken.None)).Should().BeTrue("fifty rows are well inside one run's batches");
+        var state = jobs.Get(JobMonitor.UrlHashes);
+        (state.LastSucceeded, state.LastDetail, state.Enabled).Should().Be(((bool?)true, "done: 50 filled", false));
+        (await job.PassAsync(CancellationToken.None)).Should().BeTrue("done stays done");
+        await using (var ctx = _db.PlainContext())
+            (await ctx.Articles.CountAsync(a => a.SourceUrlHash == null)).Should().Be(0);
+    }
+
+    private sealed class NotStarted : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public void StopApplication() { }
+    }
+
+    [Fact]
+    public async Task AddressHashes_AreStoredOnEveryWrite_SoCoverageFollowsAnEditedAddressAndARemovedLink()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Okta session theft", "https://vendor.example/okta", null), ("Okta, more", "https://other.example/okta-report", null),
+            ("Okta, a third", "https://third.example/okta", null)));
+        await _db.Intake().PollNowAsync(source);
+        var items = (await _db.Intake().InboxAsync(new InboxFilter())).ToDictionary(r => r.Item.Url, r => r.Item.Id);
+        async Task<string?> ArticleHash(Guid id)
+        {
+            await using var ctx = _db.PlainContext();
+            return await ctx.Articles.Where(a => a.Id == id).Select(a => a.SourceUrlHash).SingleAsync();
+        }
+        async Task<Dictionary<string, string?>> LinkHashes(Guid id)
+        {
+            await using var ctx = _db.PlainContext();
+            return await ctx.ArticleLinks.Where(l => l.ArticleId == id).ToDictionaryAsync(l => l.Url, l => l.UrlHash);
+        }
+        async Task<IReadOnlyList<string>> CoveredBy(string url) =>
+            (await _db.Intake().InboxAsync(new InboxFilter())).Single(r => r.Item.Url == url).Coverage.Select(c => c.ArticleTitle).ToList();
+
+        // Created, with a tracking tag, a trailing slash and a host in capitals: stored as the canonical address's hash.
+        var written = await _db.Articles().CreateAsync("Written by hand", "Vendor", "https://Vendor.EXAMPLE/okta/?utm_source=mail");
+        (await ArticleHash(written)).Should().Be(UrlCanonicalizer.Hash("https://vendor.example/okta"));
+        (await CoveredBy("https://vendor.example/okta")).Should().Equal("Written by hand");
+
+        // Edited: the hash follows the address, and so does coverage; cleared, there's none.
+        var form = ArticleForm.From((await _db.Articles().GetAsync(written))!);
+        form.SourceUrl = "https://third.example/okta";
+        await _db.Articles().SaveAsync(form);
+        (await ArticleHash(written)).Should().Be(UrlCanonicalizer.Hash("https://third.example/okta"));
+        (await CoveredBy("https://vendor.example/okta")).Should().BeEmpty();
+        (await CoveredBy("https://third.example/okta")).Should().Equal("Written by hand");
+        form = ArticleForm.From((await _db.Articles().GetAsync(written))!);
+        form.SourceUrl = null;
+        await _db.Articles().SaveAsync(form);
+        (await ArticleHash(written)).Should().BeNull();
+
+        // A link added by hand, then removed.
+        var link = await _db.Articles().AddLinkAsync(written, "https://other.example/okta-report/?fbclid=x", null);
+        (await LinkHashes(written)).Should().Equal(new Dictionary<string, string?> { [link.Url] = UrlCanonicalizer.Hash("https://other.example/okta-report") });
+        (await CoveredBy("https://other.example/okta-report")).Should().Equal("Written by hand");
+        await _db.Articles().RemoveLinkAsync(link.Id);
+        (await CoveredBy("https://other.example/okta-report")).Should().BeEmpty();
+
+        // Promoted from triage, and another report attached to it.
+        var promoted = await _db.Intake().PromoteAsync(items["https://vendor.example/okta"]);
+        await _db.Intake().AttachAsync(items["https://other.example/okta-report"], promoted);
+        (await ArticleHash(promoted)).Should().Be(UrlCanonicalizer.Hash("https://vendor.example/okta"));
+        (await LinkHashes(promoted)).Should().Equal(new Dictionary<string, string?>
+            { ["https://other.example/okta-report"] = UrlCanonicalizer.Hash("https://other.example/okta-report") });
+    }
+
+    [Fact]
+    public async Task Coverage_MatchesAnAddressAsCanonicalized_TrackingTagsTrailingSlashAndHostCase_ButNotAPathsCase()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Edge VPN bug", "https://news.example/vpn/story?id=7", null)));
+        await _db.Intake().PollNowAsync(source);
+        await using (var ctx = _db.PlainContext())
+        {
+            foreach (var (title, url) in new[]
+            {
+                ("Tagged", "https://news.example/vpn/story?utm_source=rss&id=7&utm_medium=feed"), ("Slashed", "https://news.example/vpn/story/?id=7"),
+                ("Shouted", "HTTPS://NEWS.EXAMPLE/vpn/story?id=7#top"), ("Another path", "https://news.example/VPN/story?id=7"),
+                ("Another query", "https://news.example/vpn/story?id=8"),
+            })
+                ctx.Articles.Add(new Article { Title = title, SourceUrl = url, AuthorId = "S-1", AuthorName = "Analyst", CreatedAtUtc = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+
+        var coverage = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Coverage;
+
+        coverage.Select(c => c.ArticleTitle).Should().BeEquivalentTo(["Tagged", "Slashed", "Shouted"], "a path's case is part of the address");
+        coverage.Should().OnlyContain(c => c.Why == Tide.Application.Search.RelatedService.SameLink);
     }
 
     [Fact]

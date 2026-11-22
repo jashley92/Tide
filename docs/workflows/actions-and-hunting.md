@@ -81,8 +81,8 @@ policy, and the services check again, so a page that forgets can't write.
 | Remove a file | who added it, an analyst, or an administrator; restore: administrator | `ActionFileService.RemoveAsync`, `RestoreAsync` |
 | Hand an action off (the button, or another team in the editor) | whoever can work it | `HandoffService.HandOffAsync`, `ActionService.SaveAsync` |
 | Split an action to teams | `WriteArticles` | `HandoffService.SplitAsync` |
-| Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync`, `SetEscalationContactAsync` |
-| Set an internal team's escalation contact | `Administer` | `TeamService.SetEscalationContactAsync` |
+| Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync` |
+| Set an internal team's escalation contact | `Administer` | `TeamService.UpdateAsync` (its form) |
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
 | Add, edit, reorder, retire and restore playbooks; delete one you made (an administrator, any) | `WorkActions` | `PlaybookService` |
 | Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
@@ -601,10 +601,34 @@ marked by the setting `Data:StarterOutreachTemplates`, as the starter saved quer
 
 | Placeholder group | Placeholders (`OutreachFill.All`) |
 |---|---|
-| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link`, `article.cves` (with KEV and EPSS), `article.tlp` |
+| Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link` (the source), `article.other-links` (each other report added to the article, one a line), `article.cves` (the CVE numbers, one a line), `article.cve-links` (each CVE's NVD page, one a line), `article.cves-detailed` (a paragraph a CVE: CVSS, KEV dates, EPSS, vendor and product, the NVD's description and link), `article.tlp` |
 | Indicators | `indicators` (every indicator on the article and action, defanged), `indicators:domain` and the like (one `HuntValueKind`) |
 | Product | `product.name`, `product.versions`, `product.team`, `product.contact` |
 | Action and sender | `action.number`, `action.link` (needs `App:BaseUrl`), `action.due`, `sender.name`, `sender.team`, `today`, `today:+N` and `today:-N` (N business days after or before today, 1 to 60, skipping weekends and holidays: "reply by {{today:+2}}", "since {{today:-2}}"), `tlp` |
+
+Any placeholder but `tlp` can be made optional with a closing `?` (`{{article.other-links?}}`, `{{indicators:domain?}}`).
+With nothing to fill, or held back by the ceiling, an optional one is dropped rather than left as a `[[…]]` marker: its
+line goes when nothing else is on it, else the gap closes. It isn't listed as unfilled, but what the ceiling held back
+is still said. After a `|`, a placeholder carries the text written instead (`Hello {{product.contact|there}},`), which
+has no marking.
+
+A section, `{{#name}} … {{else}} … {{/name}}`, keeps what's before `{{else}}` when its placeholder has something to fill
+and what's after it when it hasn't (held back by the ceiling counts as nothing). Without `{{else}}` the whole section
+goes, so a heading goes with its list. A tag alone on its line takes the line with it. Keeping the first branch says
+something about the part, so it carries the part's marking even when the placeholder isn't inside. Sections can't be
+nested; `OutreachFill.Check` refuses one that's unclosed, closed by another name, or about a placeholder TIDE doesn't
+fill, a stray `{{else}}`, a section on `{{tlp}}`, and a placeholder with both `?` and `|`. The starter templates write the
+CVEs and (to an ISAC) indicators in sections and the article's links with `?`, so an article without them doesn't hold
+the email back.
+
+**Writing a template.** Above the subject, *Insert placeholder* lists every placeholder, found by typing, and puts the
+one chosen where the cursor was in the subject or body: as it is, optional (`?`), with text for when it's empty (`|`), or
+as a section round what's selected (on lines of its own in the body, inline in the subject). Typing `{{`, `{{#` or `{{/`
+in either box opens a list of the names that match; Up and Down choose, Enter or Tab writes the name and closes the
+braces, Escape closes it (`wwwroot/js/outreach-editor.js`, wired by event delegation like the Markdown toolbar). Under
+the body, `OutreachFill.Check` runs a moment after typing stops and says what's wrong, or how many placeholders TIDE
+will fill; *Preview this draft on an action* fills the unsaved draft for one of the writer's open Outreach actions
+(`OutreachService.PreviewAsync`, which saves nothing and refuses whom writing the email refuses).
 
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 
@@ -779,7 +803,7 @@ administrator has turned off *New external teams start with their reminders on* 
 the team isn't emailed until someone turns them on. The schedule a new team starts with (2 days before, then every 3)
 is an administrator's to change there too. Teams already added keep theirs. They can be retired like any team.
 
-**Saying when one won't be emailed** (`ExternalCadence.NotEmailedWhy`, `NotEmailedNote`). Wherever work is given to an
+**Saying when one won't be emailed** (`ExternalCadence.NotEmailed`, `NotEmailedNote`). Wherever work is given to an
 external team, TIDE says when that team won't hear about it, and why: the team's own reminders are off, or it has no
 contact email. While external team reminders are off for everyone, the note says nothing: that's an administrator's
 choice, not the team's gap, and *Not emailed* on External teams still says so. It shows under the hand-off dialog's
@@ -881,7 +905,7 @@ others. An administrator can run any scan now from Teams & SLA.
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
 | External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with); `contact-reminded` per action, day and contact |
-| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `contact-reminded` as above |
+| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `escalation-email` per step and address, as each email goes (so a run killed before it climbed doesn't send it again; pruned once the step is marked and the action has been closed 90 days); `contact-reminded` as above |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -889,6 +913,13 @@ recipient, marks the email with the highest TLP of the articles its actions came
 writes a `NotificationMark` as each email goes, so a scan stopped partway resumes with only those not reached. A
 reminder's key includes the due date, so moving the date earns a new reminder. The wording of each is an email
 template (see [administration.md](administration.md#email-templates)).
+
+Once a day the reminder job prunes the marks that can't stop a send again (`ReminderService.PruneMarksAsync`): a past
+period's, 90 days on, and, for an action closed (or closed and deleted) more than 90 days ago, the per-recipient marks
+under a mark that stays: `due-soon` and `overdue` per recipient under the action's own, and `escalation-email` under its
+step's `escalation` mark. An email mark whose step was never marked (a run stopped before it climbed) stays. An open
+action keeps every mark, and a closed one keeps the marks its scans would read again, so reopening it sends nothing
+twice. See [data-model.md](../architecture/data-model.md#notificationmarks-not-audited).
 
 ### Who's reminded
 
@@ -985,7 +1016,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
   from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
   `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
-  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
+  `ActionFilter.Priorities`), due (`due`, with `soon` for due today or the next working day, the SLA's Due soon, and `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
   ones) and, when an administrator shows card rules as filters, the rule (`rule`, each with its count). Recently closed
   adds how far back (`closed=7` or `closed=30`, *Closed in the last 7 days*; `ActionFilter.ClosedDays`, never past its
   90) and only your teams' (`on=myteams`, `ActionFilter.OnMyTeams`). Each is a chip while set, unless a
@@ -1043,7 +1074,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   Shown only when there are any: first on an action owner's Today, above the actions card on an analyst's.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
   last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
-  "4 of 5 active" for a team with a limit. Over longer windows, each team against its due dates is on
+  "4 of 5 active" for a team with a limit. Each count links to the Actions list filtered to it (the team, and `due=soon`,
+  `status=blocked` or `priority=p1`). Over longer windows, each team against its due dates is on
   [Team commitments](metrics-and-trends.md#team-commitments).
 
 ![Workload](../screenshots/workload.png)
