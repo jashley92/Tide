@@ -1,0 +1,45 @@
+/* ---- Distribution: the Send dialog, SharePoint copy, the published archive ---- */
+.tide-recipients { font-family: var(--tide-font-data); font-size: .85rem; word-break: break-all; }
+/* The Send dialog (DistributePanel): the test copy first, then each edition with its reader preview. */
+.tide-send-test { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); }
+.tide-send-edition { margin-bottom: var(--tide-space-3); }
+.tide-send-preview { margin-top: var(--tide-space-2); }
+.tide-send-preview > summary { color: var(--tide-accent-text); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); cursor: pointer; }
+.tide-send-preview > summary:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+.tide-send-preview[open] > summary { margin-bottom: var(--tide-space-2); }
+.tide-send-preview .tide-edition { padding: var(--tide-space-3) var(--tide-space-4); }
+.tide-published { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: 1.25rem 1.5rem; max-width: 60rem; }
+.tide-published h1 { font-size: 1.35rem; font-weight: var(--tide-weight-semibold); }
+.tide-published h2 { font-size: 1.1rem; font-weight: var(--tide-weight-semibold); margin-top: 1.4rem; padding-top: .9rem; border-top: 1px solid var(--tide-border); }
+.tide-published h3 { font-size: .95rem; font-weight: var(--tide-weight-semibold); margin-top: .8rem; }
+.tide-published figure { margin: .6rem 0; }
+.tide-published img { max-width: 100%; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
+.tide-published figcaption { font-size: .85rem; color: var(--tide-text-muted); margin-top: .25rem; }
+/* Corrections (ADR 0015): above the edition on its published day, a slip's notice in the threat colour; in the send
+   log, under the send they correct; in the Send dialog, the rendered correction beside its tick. */
+.tide-published-correction { margin-bottom: var(--tide-space-3); border-left: 4px solid var(--tide-warn); }
+.tide-published-correction.tide-published-slip { border-left-color: var(--tide-threat); }
+.tide-published-correction > h2:first-child { margin-top: 0; padding-top: 0; border-top: 0; display: flex; gap: var(--tide-space-2); align-items: center; }
+.tide-published del { text-decoration: line-through; background: var(--tide-threat-soft); color: var(--tide-text); }
+.tide-published ins { text-decoration: none; background: var(--tide-ok-soft); color: var(--tide-text); }
+.tide-published ul:has(del, ins) { list-style: none; padding-left: 0; }
+.tide-published ul:has(del, ins) > li { margin-bottom: var(--tide-space-1); }
+.tide-log-correction > td:first-child { padding-left: var(--tide-space-4); }
+.tide-correction-preview { padding: var(--tide-space-3) var(--tide-space-4); max-height: 24rem; overflow: auto; }
+.tide-correction-match { max-width: 24rem; }
+.tide-correction fieldset { border: 0; padding: 0; margin: 0 0 var(--tide-space-2); min-width: 0; }
+/* The published list: a day, its marking and when it went, with the headlines it went out with. */
+.tide-published-list { list-style: none; margin: 0; padding: 0; }
+.tide-published-list > li { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); }
+.tide-published-list > li:first-child { border-top: 0; padding-top: 0; }
+.tide-published-day { display: flex; gap: var(--tide-space-2); align-items: center; flex-wrap: wrap; font-weight: var(--tide-weight-semibold); }
+.tide-published-heads { margin: var(--tide-space-1) 0 0; padding-left: var(--tide-space-6); font-size: var(--tide-text-sm); }
+/* Today's team queue: a row an action, its number, title, kind and lateness, and Take it for an unassigned one. */
+.tide-queue-row { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-1) 0; border-bottom: 1px solid var(--tide-border); font-size: var(--tide-text-sm); }
+.tide-queue-row:last-of-type { border-bottom: 0; }
+.tide-queue-title { flex: 1 1 auto; min-width: 0; }
+/* Whose it is wraps, an external team's long ticket reference too. */
+.tide-queue-meta { display: block; color: var(--tide-text-muted); font-size: var(--tide-text-xs); overflow-wrap: anywhere; }
+/* Today's Escalated card: the ladder's flagged actions, marked down the side as the badge is. */
+.tide-escalated { border-left: 3px solid var(--tide-threat); }
+

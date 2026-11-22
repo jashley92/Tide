@@ -8,8 +8,8 @@ found once and in order, and that the parts joined are `app.css` byte for byte. 
 - writes the parts, deleting any an earlier run wrote;
 - replaces the `app.css` `<link>` in `App.razor` (or the parts' `<link>`s from an earlier run) with one per part, in
   order, each with `?v=<version>`;
-- writes `split-manifest.json`: the parts and the SHA-256 of `app.css` (line endings as LF), which
-  `StylesheetSplitTests` checks the parts against;
+- writes `split-manifest.json`: the parts, which `StylesheetSplitTests` checks are the ones on disk, and the SHA-256
+  of `app.css` they were cut from (line endings as LF), for the record;
 - deletes `app.css`.
 
 ```bash
@@ -40,5 +40,6 @@ A change that added a section at the end of `app.css` lands in `90-option-e.css`
 After the split merges, a branch that still edits `app.css` doesn't merge cleanly: re-apply its hunk to the part that
 holds those rules (the same text is there, unchanged), bump that part's `?v=`, and drop `app.css` again.
 
-Once the split is on main this script has done its job. `StylesheetSplitTests`' identity check goes with the first
-change that moves rules between the parts on purpose; the script and the manifest can go with it.
+Once the split is on main this script has done its job. The byte-for-byte check is the script's, at the moment it
+cuts: no test repeats it, since every later edit to a part would fail it. The script and the manifest can go once no
+open branch still edits `app.css`.
