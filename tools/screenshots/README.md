@@ -232,8 +232,9 @@ kept 14 days. `AXE=0` turns the scan off locally.
 ```
 
 `page` is the layout check's page name, or `*` for the shell on every page; `target`, when given, must be part of the
-element's selector as axe reports it (in the `.json`), and without it the entry covers every element on that page. It's
-empty: since the scan became a gate nothing has needed an entry, and the aim is to fix rather than add.
+element's selector as axe reports it (in the `.json`), and without it the entry covers every element on that page. The
+aim is to fix rather than add. Today it holds only the WCAG 2.2 target-size findings the gate found when it added
+`wcag22aa`, each with the follow-up that fixes it.
 
 - **Fixed something in the baseline?** Delete its entry. The slice that scans that page prints a notice naming entries
   that no longer occur.
