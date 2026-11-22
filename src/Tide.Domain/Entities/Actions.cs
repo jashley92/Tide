@@ -1,5 +1,6 @@
 using Tide.Domain.Common;
 using Tide.Domain.Enums;
+using Tide.Domain.Observables;
 
 namespace Tide.Domain.Entities;
 
@@ -567,9 +568,20 @@ public class HuntQuery : Entity
 /// </summary>
 public class ActionIndicator : Entity
 {
+    private string _value = string.Empty;
+
     public Guid ActionId { get; set; }
     public IndicatorType Type { get; set; }
-    public string Value { get; set; } = string.Empty;
+
+    public string Value
+    {
+        get => _value;
+        set { _value = value; ValueKey = IndicatorKey.ValueOf(value); }
+    }
+
+    /// <summary>As <see cref="ArticleIndicator.ValueKey"/>: an exact lookup seeks by it.</summary>
+    public string? ValueKey { get; private set; }
+
     public string? Note { get; set; }
     public DateTimeOffset AddedAtUtc { get; set; }
     public string AddedByName { get; set; } = string.Empty;

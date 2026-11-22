@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Tide.Application.Abstractions;
 using Tide.Domain.Entities;
+using Tide.Domain.Observables;
 
 namespace Tide.Infrastructure.Persistence;
 
@@ -354,6 +355,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Value).HasMaxLength(2000);
             e.Property(x => x.Note).HasMaxLength(300);
             e.HasIndex(x => x.ArticleId);
+            e.Property(x => x.ValueKey).HasMaxLength(64);
+            e.HasIndex(x => x.ValueKey);
+            e.Property(x => x.HostRev).HasMaxLength(IndicatorKey.MaxHostRev);
+            e.HasIndex(x => x.HostRev);
         });
 
         b.Entity<ArticleLink>(e =>
@@ -594,6 +599,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Note).HasMaxLength(300);
             e.Property(x => x.AddedByName).HasMaxLength(256);
             e.HasIndex(x => x.ActionId);
+            e.Property(x => x.ValueKey).HasMaxLength(64);
+            e.HasIndex(x => x.ValueKey);
         });
 
         b.Entity<ActionChecklistItem>(e =>

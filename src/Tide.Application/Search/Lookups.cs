@@ -37,11 +37,43 @@ internal static class Lookups
         return new LookedUp(type, IocObservable.Normalize(type, live), IocObservable.FamilyTypes(type).ToList());
     }
 
-    /// <summary>The article indicators that are <paramref name="looked"/> itself (not another on its host).</summary>
+    /// <summary>
+    /// The article indicators that are <paramref name="looked"/> itself (not another on its host): found by their indexed
+    /// <see cref="ArticleIndicator.ValueKey"/>, and a row not yet keyed (<see cref="IndicatorKeyFill"/>) by its value, as
+    /// before the key was kept.
+    /// </summary>
     public static IQueryable<ArticleIndicator> Carrying(IAppDbContext db, LookedUp looked)
     {
-        var exact = SearchText.Literal(looked.Value);
-        return db.ArticleIndicators.AsNoTracking().Where(i => looked.Family.Contains(i.Type) && EF.Functions.Like(i.Value, exact, SearchText.Escape));
+        var (key, exact) = (IndicatorKey.ValueOf(looked.Value), SearchText.Literal(looked.Value));
+        return db.ArticleIndicators.AsNoTracking().Where(i => looked.Family.Contains(i.Type)
+            && (i.ValueKey == key || (i.ValueKey == null && EF.Functions.Like(i.Value, exact, SearchText.Escape))));
+    }
+
+    /// <summary>The action indicators that are <paramref name="looked"/> itself, found as <see cref="Carrying"/> finds an article's.</summary>
+    public static IQueryable<ActionIndicator> ActionsCarrying(IAppDbContext db, LookedUp looked)
+    {
+        var (key, exact) = (IndicatorKey.ValueOf(looked.Value), SearchText.Literal(looked.Value));
+        return db.ActionIndicators.AsNoTracking().Where(i => looked.Family.Contains(i.Type)
+            && (i.ValueKey == key || (i.ValueKey == null && EF.Functions.Like(i.Value, exact, SearchText.Escape))));
+    }
+
+    /// <summary>
+    /// The article indicators of <paramref name="types"/> whose host may be <paramref name="host"/> or under it: those whose
+    /// indexed <see cref="ArticleIndicator.HostRev"/> is it or starts with it and a dot (a range of the index), and a row
+    /// not yet keyed whose value holds it anywhere. The caller checks each one's host itself.
+    /// </summary>
+    public static IQueryable<ArticleIndicator> OnHost(IAppDbContext db, string host, IndicatorType[] types)
+    {
+        var near = SearchText.Contains(host);
+        var unkeyed = db.ArticleIndicators.AsNoTracking().Where(i => types.Contains(i.Type));
+        if (IndicatorKey.HostRevOf(host) is not { } rev)
+            return unkeyed.Where(i => i.ValueKey == null && EF.Functions.Like(i.Value, near, SearchText.Escape));
+        // Nothing is under an IP address.
+        if (System.Net.IPAddress.TryParse(host, out _))
+            return unkeyed.Where(i => i.HostRev == rev || (i.ValueKey == null && EF.Functions.Like(i.Value, near, SearchText.Escape)));
+        var under = rev + ".";
+        return unkeyed.Where(i => i.HostRev == rev || i.HostRev!.StartsWith(under)
+            || (i.ValueKey == null && EF.Functions.Like(i.Value, near, SearchText.Escape)));
     }
 
     /// <summary>The articles about <paramref name="cveId"/>.</summary>

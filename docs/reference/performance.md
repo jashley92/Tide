@@ -165,7 +165,8 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `ActionComments`, `ActionEvents` | `(ActionId, AtUtc)` | An action's timeline. |
 | `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. |
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
-| `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. Indicator values are not indexed: an indicator search scans. |
+| `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. |
+| `ArticleIndicators`, `ActionIndicators` | `ValueKey`; `HostRev` (articles') | An indicator lookup: the indicator itself by the hash of its value, and its host's other indicators by the host reversed by label, a range (`IndicatorKey`). The prose scan of a text search still reads every value. |
 | `NotificationMarks` | `SentAtUtc` | Reminder marks by age: the daily prune of past periods' marks. |
 | `ApiTokens` | `Hash` unique | Token sign-in. |
 
