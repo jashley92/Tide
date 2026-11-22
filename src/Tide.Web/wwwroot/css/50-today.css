@@ -308,7 +308,6 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 .tide-adv-heat .h1 { background: var(--tide-info-soft); color: var(--tide-text); }
 .tide-adv-heat .h2 { background: var(--tide-accent); color: #fff; }
 /* EP-80: reviews. */
-.tide-review-card { padding-block: var(--tide-space-2); }
 .tide-review-comments { list-style: none; padding: 0; margin: var(--tide-space-2) 0 0; display: grid; gap: var(--tide-space-2); }
 .tide-review-comments li { border-left: 3px solid var(--tide-warn); background: var(--tide-surface-2); padding: .4rem .6rem; border-radius: 0 var(--tide-radius-md) var(--tide-radius-md) 0; font-size: var(--tide-text-sm); }
 .tide-review-comments li.resolved { border-left-color: var(--tide-border); opacity: .7; }

@@ -419,7 +419,8 @@ approval (`GapsAsync`) whether or not the rule is on. See [distribution.md](dist
 
 Analysts can open **History** on an article (`HistoryService`, `WriteArticles` only, since the log holds every field at
 every marking): who changed which field, and when, read from the audit log by the article's key and its tag, technique
-and CVE link rows, 50 rows at a time. Edit versions, stamps and user ids are left out as noise. See
+and CVE link rows, 50 rows at a time. Edit versions, stamps and user ids are left out as noise. In the editor it's the
+**History** button at the end of the save bar, and the list opens below the bar (`HistoryPanel`, `Compact`). See
 [architecture/backend.md](../architecture/backend.md).
 
 ## Deleting an article

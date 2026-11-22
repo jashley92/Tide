@@ -66,6 +66,8 @@ else
                 <ClassBadge Classification="_form.Classification" Priority="_form.Priority" />
                 <TlpBadge Level="_form.Tlp" />
                 <GuideLink />
+                @* The review as one line at the row's end, its panel (asking, the comments) under the row when opened. *@
+                <ReviewCard Article="_article" CanWrite="_canWrite" />
             </div>
             @if (_canWrite)
             {
@@ -87,7 +89,6 @@ else
     </div>
 
     var (checks, why) = Checks();
-    <ReviewCard Article="_article" CanWrite="_canWrite" />
     @if (Aside is not null && _canWrite)
     {
         <TabBar Label="Show" Level="TabLevel.Sub" Class="tide-ws-switch" Active="@_pane" OnSelect="ShowPane"
@@ -434,7 +435,11 @@ else
                 <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
             </section>
 
-            <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
+            @if (!_canWrite)
+            {
+                @* No save bar to put its button in (HistoryPanel draws nothing for anyone who can't write articles). *@
+                <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
+            }
 
             @if (_canWrite)
             {
@@ -482,7 +487,13 @@ else
                     {
                         <button type="button" class="btn btn-link text-danger ms-auto" disabled="@_busy" @onclick="Delete">Delete draft</button>
                     }
+                    @* Last in the bar: who changed what, and when, opened below the bar. *@
+                    <button type="button" class="btn btn-link btn-sm tide-history-link" aria-expanded="@(_history?.IsOpen == true ? "true" : "false")"
+                            aria-controls="@_historyId" @onclick="ToggleHistory">
+                        <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History
+                    </button>
                 </div>
+                <HistoryPanel @ref="_history" Id="_article.Id" Version="_article.EditVersion" Compact="true" ListId="@_historyId" />
             }
         </div>
 
@@ -1317,6 +1328,14 @@ else
     }
 
     private readonly string _notReadyId = Ui.NewId("not-ready");
+    private readonly string _historyId = Ui.NewId("history");
+    private HistoryPanel? _history;
+
+    // The save bar's History button opens the list drawn below the bar.
+    private async Task ToggleHistory()
+    {
+        if (_history is not null) await _history.Toggle();
+    }
 
     internal async Task MarkReady()
     {
