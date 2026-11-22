@@ -165,7 +165,7 @@ API endpoints and hosted services.
 | `Components/Pages/` | One component per page, routed by `@page`. The table after this one maps routes to files. | `Present.razor`, `Triage.razor`, `BriefPage.razor` |
 | `Components/Pages/Admin/` | Administration pages under `/admin/…`, all requiring `Administer`. | `AdminOverview.razor` |
 | `Components/Shared/` | Reusable components, about 90 of them. The article editor panel, action editor, table and kanban, hunt and outreach panels, edition views and checks, the send confirmation and distribute panel, metric entry and charts, present-mode cards, pickers (story, scorecard tag, ATT&CK matrix, products, adversaries), `DataTable`, `FilterBar`, `ConfirmDialog`, `LeaveDialog`, `TlpSelect`, `HistoryPanel` and `ToastHost`. | `ArticleEditorPanel.razor`, `EditionView.razor`, `DataTable.razor` |
-| `wwwroot/` | `app.css` (the `--tide-*` design tokens for both themes), `palette.css`, Bootstrap, and `js/`: one external script per behaviour (`board.js`, `present.js`, `triage.js`, `editor.js`, `chart.js`…), because the CSP allows only `script-src 'self'`. `samples/detection-rules.csv` is the downloadable CSV template. | `app.css`, `js/present.js` |
+| `wwwroot/` | `css/` (the stylesheet in parts by area, the `--tide-*` design tokens for both themes in `00-tokens.css`), `palette.css`, Bootstrap, and `js/`: one external script per behaviour (`board.js`, `present.js`, `triage.js`, `editor.js`, `chart.js`…), because the CSP allows only `script-src 'self'`. `samples/detection-rules.csv` is the downloadable CSV template. | `app.css`, `js/present.js` |
 | `appsettings.json`, `appsettings.Development.json`, `web.config` | Configuration, where every key has a `"//"` comment line, the dev overrides, and IIS hosting. See [../operations/configuration.md](../operations/configuration.md). | |
 
 ### Pages by route
@@ -254,7 +254,7 @@ into the bundle (`tools/ci/sqlserver-schema-script.sh`, through `Persistence/Ide
 | A role or what it may do | `RoleDefinitions` and `Policies` in `src/Tide.Application/Security/Security.cs` | `Capabilities` (the activity table), the service's own `Has(Permission.…)` checks, `NavPages`. [security.md](security.md) |
 | How AD groups become roles | `src/Tide.Web/Security/RoleClaimsTransformer.cs`, `SidNames` | `RoleDirectory`, `RoleMappingService` |
 | What an edition includes at a TLP | `BriefEditions` (`src/Tide.Application/Briefs/BriefEdition.cs`) | `BriefRenderer`, `EmailComposer`, the TLP leak tests in `BriefRendererTests`. [editions-and-tlp.md](editions-and-tlp.md) |
-| The email's look | `EmailComposer` (its `Palette` mirrors the light tokens), `EmailTemplates.cs` | `app.css` tokens, preview at `/briefs/{day}/email/{edition}` |
+| The email's look | `EmailComposer` (its `Palette` mirrors the light tokens), `EmailTemplates.cs` | `css/00-tokens.css` tokens, preview at `/briefs/{day}/email/{edition}` |
 | Sending, not sent, SharePoint, the archive | `DistributionService` | `SendOutcome`, `PublishedContent`. [../workflows/distribution.md](../workflows/distribution.md) |
 | Corrections after a send | `CorrectionService`, `CorrectionRenderer` | [ADR 0015](../decisions/0015-corrections-after-send.md) |
 | Brief steps, ordering, reopen | `BriefService`, `BriefProgress.cs` | `BriefPage.razor`, `BriefStepper.razor` |
@@ -281,7 +281,7 @@ into the bundle (`tools/ci/sqlserver-schema-script.sh`, through `Persistence/Ide
 | AI drafting | `AssistService`, `DraftPrompt`, `DraftChecks` | `AzureOpenAiAssistant`, [ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md) |
 | Startup, seeding, sample data | `DatabaseInitializer` | `Program.cs` |
 | The sidebar, palette or shortcuts | `Components/Layout/NavPages.cs`, `PaletteEntries.cs`, `Shortcuts.cs` | |
-| Colours or theme | `wwwroot/app.css` `--tide-*` tokens | `EmailComposer.Palette` for email. Never hard-code a hex value in a page. |
+| Colours or theme | `wwwroot/css/00-tokens.css` `--tide-*` tokens | `EmailComposer.Palette` for email. Never hard-code a hex value in a page. |
 | A script | `wwwroot/js/<name>.js` | Bump its `?v=` in `App.razor`. |
 | Install or upgrade | `deploy/Install-Tide.ps1`, `deploy/Upgrade-Tide.ps1`, `deploy/lib` | `DeployScriptTests`, `tools/upgrade-test/upgrade-path.sh` |
 

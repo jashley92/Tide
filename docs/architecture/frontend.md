@@ -178,7 +178,7 @@ anything.
 
 *An overlay, at 1440px: the rail over the page, with the backdrop dimming the rest.*
 
-- **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
+- **Which of the two** is decided in the stylesheet alone (the "Context rail" section, `css/60-rail-and-pages.css`), which sets `--tide-rail-docks` on the
   rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
   script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
   `tideNav` does for the sidebar's button.
@@ -205,7 +205,7 @@ no top bar, so none there.
   so it's never longer than a working day's, followed in its name by the whole wording, unseen, so the name starts with
   the words on screen); where the bar is still too tight the chip is cut short, its title and name keeping the whole
   wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
-  900px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
+  900px the chip is gone, so the search box and the Go to button keep their room (`css/60-rail-and-pages.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
@@ -395,7 +395,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/trends` | `Trends` | `ReadTeamEdition` | Threat trends and the board scorecard. State in the address: `p`, `view`, `line`, `at`, `subs`. |
 | `/reports` | `Reports` | `ReadTeamEdition` | The weekly, monthly or quarterly report. `?p=` (`2026-10`, `2026-Q4`, `2026-W44`). Sidebar also needs `WriteArticles`. |
 | `/reports/teams` | `TeamCommitments` | `ReadActions` | The team commitments scorecard: each team against its due dates. `?days=` (30, 90, 180, 365; 90 by default), `?parts=true`, `?external=true`. Not in the sidebar; linked from Reports and Workload. |
-| `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: the metrics picked (`?chart=`), on one chart or a chart each (`?view=grid`), and the table. Takes the whole window, as Trends and the actions board do (`.content:has(...)` in `app.css`). Sidebar also needs `WriteArticles` (listed for those who make the brief). |
+| `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: the metrics picked (`?chart=`), on one chart or a chart each (`?view=grid`), and the table. Takes the whole window, as Trends and the actions board do (`.content:has(...)` in the stylesheet, `css/`). Sidebar also needs `WriteArticles` (listed for those who make the brief). |
 | `/rotation` | `RotationPage` | `ReadTeamEdition` | The brief rotation calendar, swaps and cover. Sidebar also needs `WriteArticles`. |
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
 | `/library`, `/library/{Tab}` | `Library` | `ReadActions` | The team's library, four tabs (`LibraryTabs`), each with its count and its own address: `queries` (`SavedQueriesPage`), `templates` (`OutreachTemplatesPage`), `playbooks` (`PlaybooksPage`) and `board-rules` (`BoardRulesPage`, the card rules read-only, linked from the Actions page). A library tab lists 20 entries a page (`?page=`) and shows the selected one in full (`?row=`, the entry's id), with its facts, Try it and Used on in the context rail. `?q=` searches the whole library, each tab showing its matches. No tab, or one that isn't one, shows the first. |
@@ -705,10 +705,39 @@ anything: nothing there can be saved.
 
 ## Design tokens
 
-Every colour, space, radius and type size comes from a `--tide-*` custom property in `src/Tide.Web/wwwroot/app.css`.
-Bootstrap 5.3.3 (self-hosted under `wwwroot/bootstrap`) supplies the components, and the tokens retint them (for
+Every colour, space, radius and type size comes from a `--tide-*` custom property in
+`src/Tide.Web/wwwroot/css/00-tokens.css`. Bootstrap 5.3.3 (self-hosted under `wwwroot/bootstrap`) supplies the components, and the tokens retint them (for
 example `.btn-primary` maps Bootstrap's `--bs-btn-*` variables to `--tide-action-*`). `palette.css` styles the command
 palette and the shortcuts overlay with the same tokens only.
+
+**Where the styles live.** The app's stylesheet is in parts by area under `src/Tide.Web/wwwroot/css/`. `App.razor`
+links each part with its own `?v=`, after Bootstrap and before `palette.css`, in the order of their names, and that
+order is the cascade's: the parts load exactly as one file would. A part's number leaves room for a new one between
+two others.
+
+| Part | Holds |
+|---|---|
+| `00-tokens.css` | `:root` and the dark theme's tokens, the Bootstrap retint, base elements. Everything depends on it: edit with care |
+| `10-shell.css` | The shell (sidebar, top bar), page parts, badges and chips |
+| `20-editor.css` | The article editor, the brief builder, the edition preview |
+| `25-feedback.css` | Toasts, the reconnect dialog, the lightbox |
+| `30-present.css` | Present mode |
+| `31-metrics.css` | Opening metrics, sparklines, charts |
+| `32-distribution.css` | The Send dialog, the SharePoint copy, the published archive |
+| `40-actions.css` | Actions: pills, the board, the action page |
+| `41-intake.css` | Intake: CVE chips, Triage, sources, stories, the rotation |
+| `50-today.css` | Today (a day's brief) and the pages after it in the file |
+| `60-rail-and-pages.css` | The context rail, Search, the brief chip, the actions list header |
+| `90-option-e.css` | The Option E layers, each appended as its own section. They move into the parts above page by page, and the file goes when it's empty |
+
+**Adding a rule.** Put it in the part for its area, beside the rules for the same component, not at the end of a
+file, and bump that part's `?v=` in `App.razor` (`tools/ci/check-asset-versions.sh` fails a change that doesn't). A
+rule meant to override another must come after it in the cascade: later in the same part, or in a later part. Never
+reorder the parts or move a rule between them in a change that means to change nothing: a rule that moves past
+another of the same specificity can change which one wins. A new area that needs a part of its own gets a number
+between its neighbours, and a `<link>` in the same place in `App.razor`; `StylesheetSplitTests` checks the links
+follow the names. A page-only style that a test reads goes through the stylesheet as served
+(`app.StylesheetAsync()` in the integration tests, `Stylesheets.ReadAll()` in the unit tests), never one file.
 
 **Light and dark.** `:root` defines the light theme; `[data-bs-theme="dark"]` overrides the colour tokens. Bootstrap
 5.3 reads the same attribute. Nothing is light-only: a colour that isn't a token is a bug.
@@ -825,7 +854,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | Choice | How |
 |---|---|
 | **Single-letter shortcuts can be turned off** (WCAG 2.1.4) | The switch in the account menu or the `?` overlay sets `data-shortcuts="off"` on `<html>` (saved per browser). Every letter handler checks `tideShortcuts.on()`. Arrows, Enter and `Ctrl` shortcuts keep working. Turned off, the overlay marks those rows "(off)". |
-| **Reduced motion** | Animations and smooth scrolls have a `prefers-reduced-motion: reduce` rule in `app.css` (toasts, skeleton shimmer, presence and live dots, live-row highlights, kanban arrivals, disclosure chevrons, the ATT&CK picker), and the scripts check the same query before scrolling smoothly (`editor.js`, `combo.js`, `board.js`, `present.js`). Under it, live highlights fade without sliding or folding. |
+| **Reduced motion** | Animations and smooth scrolls have a `prefers-reduced-motion: reduce` rule in the stylesheet (`css/`) (toasts, skeleton shimmer, presence and live dots, live-row highlights, kanban arrivals, disclosure chevrons, the ATT&CK picker), and the scripts check the same query before scrolling smoothly (`editor.js`, `combo.js`, `board.js`, `present.js`). Under it, live highlights fade without sliding or folding. |
 | **Focus return** | Every dialog gives focus back to whatever opened it (`dialog.js`): confirmations, the leave dialog, the lightbox and screenshot dialog, the palette, the shortcuts overlay. After a board move focus goes to the card's Move button in its new column; after a running-order move it stays on the moved row's button, and after a warning's one-click fix there (the button goes with the warning) it moves to the row's title; after a comment's edit it returns to that comment's Edit button. |
 | **Focus after navigation** | `FocusOnNavigate` puts focus on the page's `h1`. A skip link goes to `#main-content`. |
 | **Focus inside dialogs** | Tab stays inside a modal; focus outside an open dialog goes into it, not behind it. |
@@ -838,7 +867,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 
 ## Phone layout
 
-At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
+At 640px or narrower (`@media (max-width: 640.98px)` in the stylesheet's parts, `css/`):
 
 - The sidebar becomes a bar across the top with the brand and a menu button. The button (`tideNav.setOpen`) opens the
   links under it; it isn't remembered, so it starts closed on every page load, closes when a link is followed, and
@@ -942,7 +971,7 @@ flowchart TD
 | Shared components | `src/Tide.Web/Components/Shared/` |
 | What pages put in the context rail | `src/Tide.Web/Components/Today/`, `TriageRail/`, `ActionRail/` (the action page's sections, and `ActionRowRail` for the list and board), `SearchRail/`, `StackRail/`, `LibraryRail/` and `AdversaryRail/` |
 | Live updates, presence, toasts, prerender hand-off | `src/Tide.Web/Services/` (`Together.cs`, `LiveRows.cs`, `Services.cs`, `PrerenderHandoff.cs`, `LiveMeetings.cs`, `TriageNews.cs`, `TypingPause.cs`, `BriefChipSource.cs`) |
-| Tokens and styles | `src/Tide.Web/wwwroot/app.css`, `palette.css` |
+| Tokens and styles | `src/Tide.Web/wwwroot/css/` (in parts by area; tokens in `00-tokens.css`), `palette.css` |
 | Scripts | `src/Tide.Web/wwwroot/js/` |
 | CSP and headers | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `FileDownloads.cs` |
 | Circuit settings, status-code pages | `src/Tide.Web/Program.cs` |
