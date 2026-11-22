@@ -272,7 +272,17 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-reading-head { display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between; }
 .tide-reading-title { font-size: 1.05rem; margin: 0 0 .25rem; }
 .tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
-.tide-meeting-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.tide-meeting-notes { overflow-wrap: anywhere; line-height: 1.55; }
+.tide-meeting-notes > li + li { margin-top: .2rem; }
+.tide-note-text { white-space: pre-wrap; }
+/* A note's own buttons, and what came of it (Done, Raised as A-14), under its text. */
+.tide-note-tools { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.tide-note-done > .tide-note-text { color: var(--tide-text-muted); }
+.tide-note-done-badge { font-size: var(--tide-text-xs); font-weight: 600; color: var(--tide-ok); }
+/* The meeting recap: each list under its own subhead, the actions grouped by who holds them. */
+.tide-recap-list { list-style: none; padding-left: 0; margin: .15rem 0 .5rem; }
+.tide-recap-list > li + li { margin-top: .15rem; }
+.tide-recap-group + .tide-recap-group { margin-top: .4rem; }
 .tide-reading-text mark { padding: 0 .15rem; border-radius: 3px; color: inherit; }
 .tide-reading-text .tide-read-cve { background: var(--tide-threat-soft); font-weight: 600; }
 .tide-reading-text .tide-read-ioc { background: var(--tide-warn-soft); font-family: var(--tide-font-data); font-size: .85em; }

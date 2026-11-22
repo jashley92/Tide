@@ -1485,14 +1485,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         && (m.Contains("Actions.Number", StringComparison.Ordinal) || m.Contains("IX_Actions_Number", StringComparison.Ordinal));
 
     /// <summary>
-    /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
-    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it when they're on the team (an analyst who
+    /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article (or, from a note on the
+    /// meeting as a whole, on none), at the article's priority (see <see cref="QuickPriority"/>), assigned to whoever raises it when they're on the team (an analyst who
     /// isn't leaves it the team's). Internal teams only: an external
     /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA
     /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
-    public async Task<QuickAdded> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
+    public async Task<QuickAdded> QuickAddAsync(Guid? articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
         string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
@@ -1504,7 +1504,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             if (team?.IsExternal == true)
                 throw new ArgumentException("An external team's work is split off an action as a part. Raise it for one of your teams, then split it.");
             member = team?.Member == true;
-            articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
+            articlePriority = articleId is { } aid ? await db.Articles.AsNoTracking().Where(a => a.Id == aid).Select(a => a.Priority).FirstOrDefaultAsync(ct) : null;
         }
         var number = await CreateAsync(new ActionForm
         {

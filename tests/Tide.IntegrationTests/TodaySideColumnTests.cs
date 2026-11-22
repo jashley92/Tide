@@ -198,7 +198,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         throw new InvalidOperationException($"No close for the {tag} at {at}.");
     }
 
-    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|teams-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
+    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|teams-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|recap-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
     private static partial Regex Card();
 
     /// <summary>The markup with what differs from run to run, or with Blazor's own bookkeeping, taken out.</summary>

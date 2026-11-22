@@ -63,6 +63,32 @@ public class MeetingNotesTests(TideApp app) : IClassFixture<TideApp>
         (await app.CreateClient().GetStringAsync(Ui.BriefUrl(bare))).Should().NotContain("Meeting notes</h3>").And.NotContain("Attended</h3>");
     }
 
+    // Once the meeting has ended, the recap card lists what came out of it, and the meeting card no longer repeats who
+    // attended and the notes. The notes' own buttons are their author's: a colleague's note has none.
+    [Fact]
+    public async Task AnEndedMeeting_ShowsItsRecap_WithRaiseAndMarkDoneOnMyNotesOnly()
+    {
+        var day = await BriefWithNotes(45, "A colleague's note");
+        // The dev sign-in the app's client uses: an analyst, whose notes these are.
+        await using (var scope = SignedIn(app, new SignIn("S-1-5-21-DEV-1001", "Dev Analyst", "Analyst")))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            var brief = (await briefs.GetAsync(day))!;
+            var meetings = scope.ServiceProvider.GetRequiredService<MeetingService>();
+            await meetings.AddNoteAsync(brief.Id, null, "Ask the vendor about 9.x");
+            await meetings.MarkNoteDoneAsync(await meetings.AddNoteAsync(brief.Id, null, "Book the tabletop"));
+            await briefs.MarkPresentedAsync(brief.Id);
+        }
+        var html = await app.CreateClient().GetStringAsync(Ui.BriefUrl(day));
+        html.Should().Contain("Meeting recap</h2>").And.Contain("Actions raised (0)").And.Contain("Meeting notes (2 open, 1 done)")
+            .And.Contain("Carried to a later brief (0)").And.Contain("Attended (2)").And.Contain("Sam from the SOC")
+            .And.Contain("tide-note-done-badge");
+        System.Text.RegularExpressions.Regex.Matches(html, ">Raise as action</button>").Count.Should().Be(2, "my two notes (done or not), not the colleague's");
+        System.Text.RegularExpressions.Regex.Matches(html, ">Mark done</button>").Count.Should().Be(1, "mine, not the colleague's");
+        System.Text.RegularExpressions.Regex.Matches(html, ">Reopen</button>").Count.Should().Be(1, "my done note opens again");
+        System.Text.RegularExpressions.Regex.Matches(html, "Meeting notes").Count.Should().Be(1, "the meeting card leaves the notes to the recap");
+    }
+
     // An older version let a meeting start before its brief's day and then refused to end it, which left people recorded
     // as attending a meeting that hadn't been held. Until it's held (or running now), nobody has attended it.
     [Fact]

@@ -33,6 +33,8 @@ public class CapabilitiesTests : IDisposable
         ["Read the company-wide archive (published briefs)"] = (db, _) => db.Distribution().PublishedAsync(),
         ["Read the team edition: briefs, the brief archive, Today"] = (db, _) => db.Briefs().ListAsync(),
         ["Add meeting notes"] = (db, s) => db.Meetings().AddNoteAsync(s.Brief, null, "A note"),
+        ["Raise your own meeting note as an action"] = async (db, s) =>
+            await db.Meetings().RaiseFromNoteAsync(await db.Meetings().AddNoteAsync(s.Brief, null, "Ask the vendor")),
         ["In a live meeting, add someone who was there, and take off whom you added"] = async (db, s) =>
         {
             db.Live = new InMeeting(s.Brief);
