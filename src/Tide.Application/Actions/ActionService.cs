@@ -1915,7 +1915,18 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             return $"{label} couldn't be changed: something went wrong, and it was logged";
         }
         var why = ex.Message.TrimEnd('.');
-        return number > 0 && System.Text.RegularExpressions.Regex.IsMatch(why, $@"\b{label}\b") ? why : $"{label}: {why}";
+        return number > 0 && Names(why, label) ? why : $"{label}: {why}";
+    }
+
+    // Whether the words name the action ("A-31"), not another whose number starts the same ("A-310").
+    private static bool Names(string words, string label)
+    {
+        for (var at = words.IndexOf(label, StringComparison.Ordinal); at >= 0; at = words.IndexOf(label, at + 1, StringComparison.Ordinal))
+        {
+            var end = at + label.Length;
+            if ((at == 0 || !char.IsLetterOrDigit(words[at - 1])) && (end == words.Length || !char.IsDigit(words[end]))) return true;
+        }
+        return false;
     }
 
     /// <summary>
