@@ -67,10 +67,10 @@ else
     @if (_status is FeedItemStatus.New or FeedItemStatus.Shortlisted)
     {
         @* EP-81: newest first stays the default; "Likely used" is a choice this browser remembers. *@
-        <div class="btn-group btn-group-sm" role="group" aria-label="Order">
-            <button type="button" class="btn @(_sort == InboxSort.Newest ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_sort == InboxSort.Newest)"
+        <div class="tide-seg tide-seg-tool" role="group" aria-label="Order">
+            <button type="button" class="tide-seg-opt @(_sort == InboxSort.Newest ? "on" : "")" aria-pressed="@Ui.Aria(_sort == InboxSort.Newest)"
                     @onclick="() => SetSort(InboxSort.Newest)">Newest</button>
-            <button type="button" class="btn @(_sort == InboxSort.Likely ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_sort == InboxSort.Likely)"
+            <button type="button" class="tide-seg-opt @(_sort == InboxSort.Likely ? "on" : "")" aria-pressed="@Ui.Aria(_sort == InboxSort.Likely)"
                     title="By how many items like each one the team promoted. What we run, watched adversaries and KEV stay on top." @onclick="() => SetSort(InboxSort.Likely)">Likely used</button>
         </div>
     }

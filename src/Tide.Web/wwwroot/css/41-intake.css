@@ -164,6 +164,9 @@
 .tide-seg-opt:hover { background: var(--tide-surface-2); }
 .tide-seg-opt.on { background: var(--tide-accent-soft); color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
+.tide-seg-opt:disabled { cursor: default; opacity: .6; }
+/* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
+.tide-seg-tool .tide-seg-opt { font-size: .8125rem; padding: .3rem .7rem; }
 
 /* The tab bar (TabBar): Page level underlined, Sub level segmented. */
 .tide-tabbar { display: flex; align-items: center; gap: .25rem; min-width: 0; flex-wrap: wrap; }

@@ -4425,7 +4425,7 @@ const pages = [
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
-      fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
+      fits('.tide-triage-flags'), [1400, visible('.tide-reading')], visible('.tide-seg-tool'), oneRow('.tide-seg-tool')] },
   // The Sources tab's head: what the tab is, and Pull all beside it where there's room (under it where there isn't),
   // the button whole on one line, nothing past the card.
   { name: 'triage-pull-all', route: '/triage?tab=sources', setup: wideFont, widths: [1920, 1440, 780],
@@ -4760,7 +4760,8 @@ const pages = [
   // address. The chips wrap within the slide, and the slide still fits. Wider letters.
   ...[[0, 'two', 2], [1, 'none', 0], [2, 'dozen', 10]].map(([n, name, chips]) => (
     { name: `slide-iocs-${name}`, route: '/present/{today}', setup: articleSlide(n), widths: [1920, 1440, 1100, 900, 780],
-      rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'),
+      rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'), oneRow('.tide-present-tools .tide-seg'),
+        inWindow('.tide-present-tools .tide-seg'),
         ...(chips === 0 ? [hidden('.tide-slide-iocsec')] : [fits('.tide-slide-iocs'), shownCount('.tide-slide-iocs .tide-slide-ioc', chips)]),
         ...(chips === 10 ? [visible('.tide-slide-iocs .tide-slide-ioc-more'), fits('.tide-slide-cves'), slideLinksReadable] : [])] })),
   // The card a slide's "+N more" opened (the indicators', the CVEs') gives focus back to it as it closes, by Escape or

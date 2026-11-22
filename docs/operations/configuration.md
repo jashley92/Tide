@@ -191,6 +191,7 @@ The `appsettings.json` comment names every role, and the seed accepts each.
 |---|---|---|---|---|
 | `Org:TimeZone` | `America/New_York` | An IANA id this server knows. The page offers the server's zones. | In app: **Organization settings** | At once |
 | `Org:MeetingTime` | `10:30` | 24-hour `HH:mm`. | In app: **Organization settings** | At once |
+| `Org:MeetingMinutes` | `30` | Whole number, 5 to 180. How long the brief's meeting is meant to take: present mode's footer shows the time gone against it ("4 of 30 min"). | In app: **Organization settings** | At once |
 | `Org:TeamName` | `Cyber Threat Intelligence` | 1 to 80 characters. Shown in the header, on slides and in emails. | In app: **Organization settings** | At once |
 | `Org:ActionBesideSlide` | `false` | `true`: an action opened in a meeting shows beside the slide, which narrows for it, rather than over it. Turn it on after a rehearsal in the meeting room. | In app: **Organization settings** | At once |
 | `Org:StaleOpenDays` | `2` | Whole number, 1 to 30. Business days an Open or In progress action may go without an update by a person before the meeting's **Actions that need review** slide lists it. | In app: **Organization settings** | At once |
