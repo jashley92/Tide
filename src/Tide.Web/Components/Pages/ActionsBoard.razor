@@ -23,8 +23,9 @@
     <div class="tide-actions-title">
         <h1 @ref="_heading" tabindex="-1">Actions</h1>
         @* The list's and the board's keys (RowKeys, rows.js), as the ? overlay lists them: on the board the arrows also
-           move across its lanes. T only for someone who may take actions on. *@
-        <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd>@if (_asBoard) { @(" ")<kbd class="tide-kbd">←</kbd> <kbd class="tide-kbd">→</kbd> } move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
+           move across its lanes. T, and on the list Space (choose rows to act on together), only for someone who may
+           take actions on. *@
+        <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd>@if (_asBoard) { @(" ")<kbd class="tide-kbd">←</kbd> <kbd class="tide-kbd">→</kbd> } move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open@if (!_asBoard && CanHold) { <span> · </span><kbd class="tide-kbd">Space</kbd> <span>select</span> }</span>
         <GuideLink />
     </div>
     <div class="d-flex gap-2">
@@ -144,17 +145,27 @@
 else
 {
 <div class="tide-card">
+    @if (_picked.Count > 0)
+    {
+        @* Rows chosen (a checkbox, Space, Shift+J or Shift+K): the bar acts on them together, in place of each row's
+           Take it and Status menu. *@
+        <ActionSelectionBar @ref="_bar" Picked="PickedRows" Teams="_teams" OnDone="AfterMany" OnClear="ClearPicked" />
+    }
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
     <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="AnyFilter"
                  Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Words" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
                  CanTake="_workers.CanTake" OnTake="Take" Busy="@(_taking || _mover?.Busy == true)" CanWork="CanWorkRow" OnMove="MoveFromMenu"
                  SelectedId="@SelectedRow?.Id" OnSelect="SelectRow" GroupsUnowned="_groupsUnowned"
+                 Picked="@(CanHold ? IsPicked : null)" OnPick="Pick" Picking="_picked.Count > 0"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
     </ActionTable>
 </div>
-@* J/K and the arrows move the selected row (on to the next page at the end), T takes it on, Enter opens it. *@
+@* J/K and the arrows move the selected row (on to the next page at the end), T takes it on, Enter opens it. Space
+   chooses it (or leaves it out) to act on with others, Shift+J and Shift+K choose the next or previous too, and Esc
+   clears the choice. *@
 <RowKeys RowClass="@ActionTable.RowClassName" Count="_rows.Count" @bind-Selected="_selected" OnOpen="OpenRow" Keys="@(CanHold ? ListKeys : null)" OnKey="RowKey"
+         ShiftKeys="@(CanHold ? ExtendKeys : null)" Follow="ExtendActions"
          Page="_page" Pages="@TableView.Pages(_total, ActionService.ListPageSize)" OnPage="TurnPage" Address="RowAddress" />
 @* The Status menu's moves: checked, recorded and asked about as the board's are. *@
 <ActionMover @ref="_mover" Id="list-close" OnChanged="ReadAgain" />
@@ -929,8 +940,17 @@ else
     internal int Selected => _selected;
     private ActionRow? SelectedRow => _selected < _rows.Count ? _rows[_selected] : null;
 
-    // T takes the selected row on (rows.js leaves it alone while typing, in the rail, or with letter keys off).
-    private static readonly IReadOnlyDictionary<string, string> ListKeys = new Dictionary<string, string> { ["t"] = "take" };
+    // T takes the selected row on (rows.js leaves it alone while typing, in the rail, or with letter keys off). Space, on
+    // a row itself, chooses it or leaves it out; Esc clears the choice.
+    private static readonly IReadOnlyDictionary<string, string> ListKeys = new Dictionary<string, string> { ["t"] = "take", [" "] = "pick", ["Escape"] = "clear" };
+
+    // Shift+J and Shift+K (and Shift with the arrows) choose the selected row and the next or previous one, and move to
+    // it; focus follows, as after J and K. Only within the page: the choice is the page's.
+    private static readonly IReadOnlyDictionary<string, string> ExtendKeys = new Dictionary<string, string>
+    {
+        ["j"] = "extend-next", ["ArrowDown"] = "extend-next", ["k"] = "extend-prev", ["ArrowUp"] = "extend-prev",
+    };
+    private static readonly IReadOnlyList<string> ExtendActions = ["extend-next", "extend-prev"];
 
     private bool CanWorkRow(ActionRow r) => _workers.CanWork(r.TeamId);
 
@@ -961,10 +981,58 @@ else
         if (at < _rows.Count) Nav.NavigateTo(Ui.ActionUrl(_rows[at].Number));
     }
 
-    /// <summary>A key of the list's own on the selected row: T takes it on, where taking is allowed.</summary>
+    /// <summary>A key of the list's own on the selected row: T takes it on, where taking is allowed (while none are
+    /// chosen: the bar's Take takes those); Space chooses it or leaves it out; Shift+J and Shift+K choose it and the next
+    /// or previous row; Esc clears the choice.</summary>
     internal async Task RowKey(string action)
     {
-        if (action == "take" && SelectedRow is { } row && _workers.CanTake(row)) await Take(row);
+        switch (action)
+        {
+            case "take" when _picked.Count == 0 && SelectedRow is { } row && _workers.CanTake(row):
+                await Take(row);
+                break;
+            case "pick" when CanHold && SelectedRow is { } row:
+                Pick(row);
+                break;
+            case "extend-next" or "extend-prev" when CanHold && SelectedRow is { } row:
+                _picked.Add(row.Id);
+                var at = action == "extend-next" ? Math.Min(_selected + 1, RowSelection.Last(_rows.Count)) : Math.Max(_selected - 1, 0);
+                _selected = at;
+                _picked.Add(_rows[at].Id);
+                break;
+            case "clear":
+                ClearPicked();
+                break;
+        }
+    }
+
+    // --- Several rows chosen, and the selection bar ---------------------------------------------------------------------
+
+    // The rows chosen to act on together, by id: only this page's (Fetch keeps those still on it, so turning the page or
+    // changing the filters clears it, as the bar says).
+    private readonly HashSet<Guid> _picked = [];
+    private ActionSelectionBar? _bar;
+
+    internal ActionSelectionBar? Bar => _bar;
+    internal IReadOnlyCollection<Guid> PickedIds => _picked;
+    private bool IsPicked(ActionRow r) => _picked.Contains(r.Id);
+    private IReadOnlyList<ActionRow> PickedRows => [.. _rows.Where(IsPicked)];
+
+    /// <summary>A row's checkbox, or Space: the row is chosen, or left out again.</summary>
+    internal void Pick(ActionRow r)
+    {
+        if (!_picked.Remove(r.Id)) _picked.Add(r.Id);
+    }
+
+    internal void ClearPicked() => _picked.Clear();
+
+    // After the bar's change: the list is read again, and those refused stay chosen (as they are now), to try again or
+    // look at; those done are let go.
+    private async Task AfterMany(ManyResult result)
+    {
+        _picked.Clear();
+        _picked.UnionWith(result.Refused.Select(r => r.Id));
+        await Read(quiet: true);
     }
 
     // --- The board's selected card, its keys, and the rail ----------------------------------------------------------------
@@ -1274,6 +1342,7 @@ else
             var board = ActionSvc.BoardAsync(filter);
             await Task.WhenAll(active, board, counts);
             (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
+            _picked.Clear();   // the list's choice; the board has none
             // A card the address named (?card=12), once.
             if (_cardAsked is { } number && _board.Cards.FirstOrDefault(c => c.Number == number) is { } named) (_cardId, _revealCard) = (named.Id, true);
             _cardAsked = null;
@@ -1289,6 +1358,8 @@ else
         // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
         var asked = _page;
         (_rows, _total, _page, _groups, _groupsUnowned) = (page.Rows, page.Total, page.Page, page.Groups, page.GroupsUnowned);
+        // Only this page's rows stay chosen: another page, or filters that leave a row out, let it go.
+        _picked.IntersectWith(_rows.Select(r => r.Id));
         // The action the address named (?card=12, as on the board), once, where it's on this page; else ?row='s place.
         if (_cardAsked is { } inAddress && IndexOfNumber(inAddress) is >= 0 and var at) _selected = at;
         _cardAsked = null;

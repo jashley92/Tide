@@ -185,12 +185,13 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
         var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
-        HeaderCell().Matches(head).Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team and owner", "Progress", "Due", "Status"]);
+        HeaderCell().Matches(head).Select(m => m.Groups[1].Value).Should().Equal(["Select", "Action", "Kind", "Team and owner", "Progress", "Due", "Status"],
+            "an analyst's list has a checkbox first, to choose several, its heading heard rather than seen");
 
         var checklist = Row(html, $"{token} checklist");
-        var progress = Cell().Matches(checklist)[3].Groups[1].Value;
+        var progress = Cell().Matches(checklist)[4].Groups[1].Value;
         progress.Should().Contain("Checklist 1 of 2").And.Contain("No update for 3 days");
-        var sweeping = Cell().Matches(Row(html, $"{token} sweep"))[3].Groups[1].Value;
+        var sweeping = Cell().Matches(Row(html, $"{token} sweep"))[4].Groups[1].Value;
         sweeping.Should().Contain("Hunt not run", "a sweep says how its hunt went, as the board's card does").And.NotContain("Checklist");
     }
 
@@ -533,6 +534,99 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         var html = WebUtility.HtmlDecode(await r.HtmlOnce("<thead"));
         var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
         head.Should().Contain(">Team and owner<", "the cell shows both");
+    }
+
+    // A key of the list's, and the page drawn again, as after a key from rows.js.
+    private static async Task Key(Rendered<ActionsBoard> r, string action) => await r.Click(async p =>
+    {
+        await p.RowKey(action);
+        typeof(ComponentBase).GetMethod("StateHasChanged", Private)!.Invoke(p, null);
+    });
+
+    [Fact]
+    public async Task SeveralRows_AreChosenBySpaceAndShiftJ_TheBarActsOnThem_AndTheKeysAreListed()
+    {
+        var owner = Owner();
+        var token = $"almany{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL many", owner);
+        await Raise(team, $"{token} 0");
+        await Raise(team, $"{token} 1");
+        await Raise(team, $"{token} 2");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner);
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
+        var numbers = r.Component.Rows.Select(x => x.Number).ToList();
+        html.Should().Contain($"aria-label=\"Select A-{numbers[0]}, {token}").And.NotContain("tide-selbar", "nothing is chosen yet")
+            .And.Contain("<kbd class=\"tide-kbd\">Space</kbd> <span>select</span>", "the key is said beside the heading");
+
+        // Space chooses the selected row; Shift+J chooses the next too, and moves to it.
+        await Key(r, "pick");
+        await Key(r, "extend-next");
+        r.Component.Selected.Should().Be(1);
+        r.Component.PickedIds.Should().BeEquivalentTo(r.Component.Rows.Take(2).Select(x => x.Id));
+        html = WebUtility.HtmlDecode(await r.HtmlOnce("tide-selbar"));
+        html.Should().Contain("2 selected").And.Contain("on this page").And.Contain("Only this page's actions are chosen")
+            .And.Contain(">Take</button>").And.Contain("Assign to…").And.Contain("Move to").And.Contain("Set due date").And.Contain("Hand off to team…")
+            .And.Contain("Record no hits and close", "those chosen are sweeps");
+        Row(html, $"{token} 2").Should().NotContain("Take it", "the bar takes the place of each row's own buttons").And.NotContain("tide-status-menu");
+
+        // Space again leaves a row out; T waits while some are chosen; Esc clears.
+        await Key(r, "pick");
+        r.Component.PickedIds.Should().HaveCount(1);
+        await Key(r, "take");
+        (await Detail(numbers[1])).Action.AssigneeId.Should().BeNull("T is the bar's Take while some are chosen");
+        await Key(r, "clear");
+        r.Component.PickedIds.Should().BeEmpty();
+
+        // The bar's Take takes those chosen, each as Take it would, and lets them go.
+        await Key(r, "extend-next");
+        await r.HtmlOnce("2 selected");
+        await r.Click(p => p.Bar!.Take());
+        (await Detail(numbers[1])).Action.AssigneeId.Should().Be(owner.UserId);
+        (await Detail(numbers[2])).Action.AssigneeId.Should().Be(owner.UserId);
+        (await Detail(numbers[0])).Action.AssigneeId.Should().BeNull();
+        r.Component.PickedIds.Should().BeEmpty("those done are let go");
+
+        // The ? overlay lists the keys, for whoever may take actions on.
+        static IEnumerable<Tide.Web.Components.Layout.Shortcut> Keys(bool canTake) =>
+            Tide.Web.Components.Layout.Shortcuts.For("actions?view=open&layout=list", canTake: canTake).SelectMany(g => g.Keys);
+        Keys(canTake: true).Should().Contain(k => k.Keys.Contains("Space"))
+            .And.Contain(k => k.Keys.Contains("Shift J") && k.Letter).And.Contain(k => k.Keys.Contains("Shift K") && k.Letter)
+            .And.Contain(k => k.Keys.Contains("Esc") && k.What.Contains("chosen", StringComparison.Ordinal));
+        Keys(canTake: false).Should().NotContain(k => k.Keys.Contains("Space") || k.Keys.Contains("Shift J"));
+        Tide.Web.Components.Layout.Shortcuts.For("actions?view=open&layout=board").SelectMany(g => g.Keys)
+            .Should().NotContain(k => k.Keys.Contains("Shift J"), "the board chooses one card at a time");
+
+        await using var viewer = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: Viewer);
+        (await viewer.HtmlOnce(token)).Should().NotContain("type=\"checkbox\" class=\"form-check-input\" aria-label=\"Select", "a viewer works no action");
+    }
+
+    [Fact]
+    public async Task TheSelection_IsThePagesOwn_AndARefusedOneStaysChosen()
+    {
+        var owner = Owner();
+        var token = $"alpage{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL many page", owner);
+        await Raise(team, $"{token} 0");
+        await Raise(team, $"{token} 1");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner);
+        await r.HtmlOnce(token);
+        var rows = r.Component.Rows.ToList();
+        await Key(r, "pick");
+        await Key(r, "extend-next");
+
+        // A colleague moves one after the list was read: it's refused, named, and stays chosen, read afresh.
+        await As(async sp => { await sp.GetRequiredService<ActionService>().MoveAsync(rows[1].Id, ActionStatus.Open, ActionStatus.Tracking); return true; });
+        await r.Click(p => p.Bar!.Move(ActionStatus.Blocked));
+        r.Component.PickedIds.Should().Equal([rows[1].Id]);
+        WebUtility.HtmlDecode(await r.HtmlOnce("1 refused")).Should().Contain($"1 done, 1 refused: A-{rows[1].Number} changed since you looked");
+        (await Detail(rows[0].Number)).Action.Status.Should().Be(ActionStatus.Blocked);
+
+        // A row that leaves the page shown (closed by a colleague, and the list read again) lets go of it: only the page
+        // shown is chosen, as a page turned or another filter is.
+        await As(async sp => { await sp.GetRequiredService<ActionService>().MoveAsync(rows[1].Id, ActionStatus.Tracking, ActionStatus.Cancelled); return true; });
+        await r.Click(p => (Task)typeof(ActionsBoard).GetMethod("ReadAgain", Private)!.Invoke(p, null)!);
+        r.Component.Rows.Should().NotContain(x => x.Id == rows[1].Id);
+        r.Component.PickedIds.Should().BeEmpty();
     }
 
     [Fact]

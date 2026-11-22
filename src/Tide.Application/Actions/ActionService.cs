@@ -78,6 +78,10 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     public string? TicketRef { get; init; }
     public string? TicketUrl { get; init; }
 
+    /// <summary>The action's edit version as read: a change made from the row along with others (<see cref="ActionService.ManyAsync"/>)
+    /// is refused once it has moved, as someone else changed the action since.</summary>
+    public Guid EditVersion { get; init; }
+
     /// <summary>The marking of the article it was raised from (null with none): the list shows AMBER and above beside the
     /// article's title. Shown only; who sees the action doesn't follow it.</summary>
     public TlpLevel? ArticleTlp { get; init; }
@@ -1118,7 +1122,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         LastActivity(a.Comments.Max(c => (DateTimeOffset?)c.AtUtc),
             a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc), a.CreatedAtUtc))
         { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl,
-          ArticleTlp = a.Article == null ? null : (TlpLevel?)a.Article.Tlp });
+          ArticleTlp = a.Article == null ? null : (TlpLevel?)a.Article.Tlp, EditVersion = a.EditVersion });
 
     // The later of an action's last comment and its last line by a person, or with neither, when it was raised.
     private static DateTimeOffset LastActivity(DateTimeOffset? commented, DateTimeOffset? updated, DateTimeOffset created) =>
@@ -1635,6 +1639,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        await TakeOnAsync(db, a, onlyIfNobodys, ct);
+        await SaveEditAsync(db, ct);
+    }
+
+    // The take itself, on a tracked action the caller may work, before the save (TakeAsync, and each of ManyAsync's).
+    private async Task TakeOnAsync(IAppDbContext db, ActionItem a, bool onlyIfNobodys, CancellationToken ct)
+    {
         var team = await db.Teams.Where(t => t.Id == a.TeamId)
             .Select(t => new { t.IsExternal, t.Name, Member = t.Members.Any(m => m.UserId == user.UserId) }).FirstAsync(ct);
         if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, team.IsExternal, OnTeam: true)))
@@ -1657,7 +1668,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         MoveTo(a, to);
         a.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(Event(user, a.Id, (started ? "Took it on and started it." : "Took it on.") + over));
-        await SaveEditAsync(db, ct);
     }
 
     /// <summary>
@@ -1677,6 +1687,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        if (await ReassignAsync(db, a, keepAssignee, assigneeId, due, " at the meeting", ct)) await SaveEditAsync(db, ct);
+    }
+
+    // The change of holder and due date itself, on a tracked action the caller may work, before the save; false when
+    // nothing changed (and nothing is recorded). `where` ends the history line (" at the meeting").
+    private async Task<bool> ReassignAsync(IAppDbContext db, ActionItem a, bool keepAssignee, string? assigneeId, DateOnly? due, string where,
+        CancellationToken ct)
+    {
         if (keepAssignee) assigneeId = a.AssigneeId;
         // A new assignee must be on the team. The one it has already keeps it, team or not (an analyst who took it on).
         (assigneeId, var name) = await HolderAsync(db, a, a.TeamId, assigneeId, ct);
@@ -1684,11 +1702,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var changes = new List<string>();
         if (a.AssigneeId != assigneeId) changes.Add($"assignee: {a.AssigneeName ?? "nobody"} → {name ?? "nobody"}");
         if (due is { } d && a.DueDate != d) changes.Add($"due: {(a.DueDate is { } b ? Day(b) : "none")} → {Day(d)}");
-        if (changes.Count == 0) return;
+        if (changes.Count == 0) return false;
         (a.AssigneeId, a.AssigneeName, a.DueDate) = (assigneeId, name, due ?? a.DueDate);
         a.EditVersion = Guid.NewGuid();
-        db.ActionEvents.Add(Event(user, a.Id, "Changed " + string.Join("; ", changes) + " at the meeting."));
-        await SaveEditAsync(db, ct);
+        db.ActionEvents.Add(Event(user, a.Id, "Changed " + string.Join("; ", changes) + where + "."));
+        return true;
     }
 
     /// <summary>
@@ -1754,13 +1772,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!Enum.IsDefined(from) || !Enum.IsDefined(to) || !Enum.IsDefined(outcome)) throw new ArgumentException("Choose a status and an outcome.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        if (await MoveOnAsync(db, a, from, to, outcome, note, overLimitReason, null, ct)) await SaveEditAsync(db, ct);
+    }
+
+    // The move itself, on a tracked action the caller may work, before the save (MoveAsync, and each of ManyAsync's);
+    // false when it's in that status already. `lead` goes before the history line's status change.
+    private async Task<bool> MoveOnAsync(IAppDbContext db, ActionItem a, ActionStatus from, ActionStatus to, ActionOutcome outcome, string? note,
+        string? overLimitReason, string? lead, CancellationToken ct)
+    {
         RequireAt(a, from);
-        if (from == to) return;
+        if (from == to) return false;
         await RequireNoHitsOnRecordAsync(db, a, outcome, ct);
         var over = await OverLimit(db, a, to, overLimitReason, ct);
-        var line = ApplyStatus(db, a, to, outcome, note);
+        var line = ApplyStatus(db, a, to, outcome, note, lead);
         line.Text = ClipEvent(line.Text + over + await KeepLineOrLetGoAsync(db, a, from, ct));
-        await SaveEditAsync(db, ct);
+        return true;
     }
 
     /// <summary>
@@ -1777,6 +1803,119 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await RequireNoHitsOnRecordAsync(db, a, outcome, ct);
         ApplyStatus(db, a, at, outcome, note);
         await SaveEditAsync(db, ct);
+    }
+
+    /// <summary>
+    /// Makes one change (<paramref name="op"/>) to each of several actions chosen together on the Actions list, each as the
+    /// change to that one action alone is made: the same permission (whoever works it), the same rules (Take it's, the
+    /// assignee's team, the due date's, a team's active limit, no hits only with a query on record that was run and found
+    /// nothing), and its own history line and audit entry. Each is refused when it changed since the list was read (its
+    /// edit version is no longer the one in <paramref name="editVersions"/>). They're independent pieces of work, so one
+    /// refused doesn't stop the rest: the result says which were done and why each other one wasn't. At most a page of
+    /// the list at once (<see cref="ListPageSize"/>).
+    /// <para>
+    /// A move closes only Cancelled or Not applicable, with the one reason given kept in each one's history; Done says
+    /// what came of each, so it's closed one at a time (a sweep or hunt with no hits on record: <see cref="ManyKind.NoHitsClose"/>).
+    /// A move or hand-off that would take a team over a limit that asks why is refused for that action, to be moved alone.
+    /// </para>
+    /// </summary>
+    public async Task<ManyResult> ManyAsync(IReadOnlyCollection<Guid> ids, ManyOp op, IReadOnlyDictionary<Guid, Guid> editVersions,
+        CancellationToken ct = default)
+    {
+        RequireRead(user);
+        var chosen = ids.Distinct().ToList();
+        if (chosen.Count == 0) throw new ArgumentException("Choose at least one action.");
+        if (chosen.Count > ListPageSize) throw new ArgumentException($"Choose at most {ListPageSize} actions at once: a page of the list.");
+        if (!Enum.IsDefined(op.Kind)) throw new ArgumentException("Choose what to do.");
+        if (op.Kind == ManyKind.Move && (!Enum.IsDefined(op.To) || op.To == ActionStatus.Done))
+            throw new ArgumentException("Choose a status other than Done: closing Done says what came of each, so close those one at a time.");
+        if (op.Kind == ManyKind.SetDue && op.Due is null) throw new ArgumentException("Choose a due date.");
+        Team? receiving = null;
+        if (op.Kind == ManyKind.HandOff)
+        {
+            if (string.IsNullOrWhiteSpace(op.Reason)) throw new ArgumentException("Say why you're handing them off.");
+            await using var db = await dbs.CreateAsync(ct);
+            receiving = await HandoffService.ReceivingTeamAsync(db, op.ToTeamId, ct);
+        }
+
+        // Their numbers, for the result: read once, a deleted one's too, so a refusal still names it.
+        Dictionary<Guid, int> numbers;
+        await using (var db = await dbs.CreateAsync(ct))
+            numbers = await db.Actions.AsNoTracking().IgnoreQueryFilters([ActionItem.DeletedFilter]).Where(a => chosen.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, a => a.Number, ct);
+
+        var done = new List<int>();
+        var refused = new List<ManyRefusal>();
+        foreach (var id in chosen.OrderBy(i => numbers.GetValueOrDefault(i, int.MaxValue)))
+        {
+            var number = numbers.GetValueOrDefault(id);
+            try
+            {
+                await OneOfManyAsync(id, op, editVersions, receiving, ct);
+                done.Add(number);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                refused.Add(new ManyRefusal(id, number, Refusal(ex, number)));
+            }
+        }
+        return new ManyResult(done, refused);
+    }
+
+    // One of ManyAsync's actions, in its own save: checked and changed as it would be alone.
+    private async Task OneOfManyAsync(Guid id, ManyOp op, IReadOnlyDictionary<Guid, Guid> editVersions, Team? receiving, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await WorkableAsync(db, id, ct);
+        if (!editVersions.TryGetValue(id, out var seen) || a.EditVersion != seen) throw new StaleEditException(ChangedSince(a.Number));
+        HandoffService.Handover? handover = null;
+        switch (op.Kind)
+        {
+            case ManyKind.Take:
+                // From a list that showed who had it: one someone else took meanwhile is theirs (the version says so too).
+                await TakeOnAsync(db, a, onlyIfNobodys: true, ct);
+                break;
+            case ManyKind.Assign:
+                if (!await ReassignAsync(db, a, keepAssignee: false, op.AssigneeId, null, "", ct)) return;
+                break;
+            case ManyKind.SetDue:
+                if (!await ReassignAsync(db, a, keepAssignee: true, null, op.Due, "", ct)) return;
+                break;
+            case ManyKind.Move:
+                if (!await MoveOnAsync(db, a, a.Status, op.To, ActionOutcome.None, ManyOp.AsksWhy(op.To) ? op.Reason : null, null, null, ct)) return;
+                break;
+            case ManyKind.HandOff:
+                if (receiving!.Id == a.TeamId) throw new ArgumentException($"A-{a.Number} is {receiving.Name}'s already.");
+                handover = await HandoffService.HandOverAsync(db, user, a, receiving, op.Reason!, null, turnRemindersOn: false, ct);
+                break;
+            case ManyKind.NoHitsClose:
+                if (!ActionGuide.IsHunt(a.Kind)) throw new InvalidOperationException($"A-{a.Number} isn't a sweep or a hunt, so it doesn't close with no hits.");
+                if (!a.IsOpen) throw new InvalidOperationException($"A-{a.Number} is already closed.");
+                await MoveOnAsync(db, a, a.Status, ActionStatus.Done, ActionOutcome.NoHits, null, null, "Its queries on record were run and found nothing.", ct);
+                break;
+        }
+        await SaveEditAsync(db, ct);
+        if (handover is null || notices is null) return;
+        // Told after the save, as a hand-off alone is: a relay that's down leaves the hand-off made.
+        try { await notices.SendAsync(db, a, handover, user.DisplayName, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { log?.LogWarning(ex, "Couldn't tell {Team} of A-{Number}'s hand-off.", handover.To.Name, a.Number); }
+    }
+
+    /// <summary>What a change refused because the action moved since the list was read says.</summary>
+    public static string ChangedSince(int number) => $"A-{number} changed since you looked";
+
+    // Why one of several wasn't changed, naming it: the refusal's own words when they do, else after its number. Anything
+    // unforeseen is logged, and said as such.
+    private string Refusal(Exception ex, int number)
+    {
+        var label = number > 0 ? $"A-{number}" : "An action";
+        if (ex is not (StaleEditException or ForbiddenException or KeyNotFoundException or ArgumentException or InvalidOperationException) || ex is ObjectDisposedException)
+        {
+            log?.LogError(ex, "Changing {Action} along with others failed.", label);
+            return $"{label} couldn't be changed: something went wrong, and it was logged";
+        }
+        var why = ex.Message.TrimEnd('.');
+        return number > 0 && System.Text.RegularExpressions.Regex.IsMatch(why, $@"\b{label}\b") ? why : $"{label}: {why}";
     }
 
     /// <summary>

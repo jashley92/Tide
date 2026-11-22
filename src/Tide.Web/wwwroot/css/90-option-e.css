@@ -232,6 +232,9 @@
         padding: var(--tide-space-2) var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
     .tide-table:has(.tide-action-row) > thead > tr > th, .tide-action-row > td { display: block; padding: 0; border: 0; }
     .tide-action-row > td:first-child { flex: 1 0 100%; }
+    /* With a checkbox first (choosing rows to act on together), the title shares its line with it. */
+    .tide-action-row > td.tide-col-pick { flex: none; }
+    .tide-action-row > td.tide-col-pick + td { flex: 1 0 calc(100% - 1.5rem - var(--tide-space-4)); min-width: 0; }
     .tide-table:has(.tide-action-row) .tide-dt-group, .tide-table:has(.tide-action-row) .tide-dt-group > th { display: block; }
     .tide-action-row.selected > td:first-child { box-shadow: none; }
     .tide-action-row.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
@@ -575,7 +578,7 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
 }
 @media (min-width: 1500px) and (max-width: 1599.98px) {
     html:not([data-rail="closed"]) main:has(> .tide-rail) {
-        & .tide-table:has(.tide-action-row) > thead > tr > th:nth-child(2), & .tide-col-kind { display: none; }
+        & .tide-col-kind { display: none; }
         & .tide-action-kind { display: block; }
     }
 }
