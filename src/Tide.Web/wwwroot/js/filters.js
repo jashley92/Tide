@@ -4,7 +4,8 @@
 // force, or a text filter's box): focusIn. The arrows and Home/End move between the choices (tideRoving, in theme.js).
 // Tab leaves it closed (its backdrop is clicked, which .NET hears), except in a typed filter's form, which Tab moves
 // through until focus is past either end. Esc is .NET's: it closes it and focus goes back to + Filter. The down arrow on
-// + Filter opens it, as on a menu button. The account menu (ProfileMenu) takes the arrows the same way.
+// + Filter opens it, as on a menu button. The account menu (ProfileMenu) takes the arrows the same way, and Left and
+// Right within a setting's options.
 // One listener on the page for every bar, so there's nothing to start or stop.
 window.tideFilters = (function () {
     // A menu's choices, and the account menu's settings (radios).
@@ -68,7 +69,12 @@ window.tideFilters = (function () {
             }
             return;
         }
-        const to = window.tideRoving(Array.prototype.slice.call(pop.querySelectorAll(choices)), document.activeElement, e, 'y');
+        // The account menu's settings put a setting's options side by side (Light, Dark, System): Left and Right move
+        // between those, as in a row of radios; Up and Down move through every choice in the menu.
+        const seg = (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.closest('.tide-seg');
+        const to = seg
+            ? window.tideRoving(Array.prototype.slice.call(seg.querySelectorAll(choices)), document.activeElement, e, 'x')
+            : window.tideRoving(Array.prototype.slice.call(pop.querySelectorAll(choices)), document.activeElement, e, 'y');
         if (!to) return;
         e.preventDefault();
         to.focus();
