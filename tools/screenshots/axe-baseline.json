@@ -1,1 +1,4 @@
-[]
+[
+  { "rule": "target-size", "page": "editor-bullet-grows", "target": "#src", "reason": "Not a small target: at the scroll position this check leaves, the Source field is partly under the sticky section bar, which axe counts as obscured (Linux fonts only)" },
+  { "rule": "target-size", "page": "actions-take-focus-last", "target": ".tide-sort", "reason": "Not a small target (it's 24px now): having scrolled to the last row, the check leaves the table's headings partly under the sticky top bar, which axe counts as obscured" }
+]
