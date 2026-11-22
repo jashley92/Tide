@@ -1,5 +1,6 @@
-// axe-core's accessibility scan, for layout.mjs: report only. Each page is scanned once, at its widest width, after its
-// layout rules; what axe finds is written to .axe/ and printed, and never fails the run (README.md, "Accessibility scan").
+// axe-core's accessibility scan, for layout.mjs. Each page is scanned once, at its widest width, after its layout rules.
+// A WCAG A or AA rule broken, and not in axe-baseline.json, fails the run; best-practice rules are reported only. What
+// axe finds is written to .axe/ and printed (README.md, "Accessibility scan").
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -13,8 +14,15 @@ const require = createRequire(import.meta.url);
 const source = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
 const version = JSON.parse(readFileSync(require.resolve('axe-core/package.json'), 'utf8')).version;
 
-/** WCAG 2.0 and 2.1, levels A and AA. */
-export const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+/** WCAG 2.0, 2.1 and 2.2, levels A and AA: a rule with one of these tags that a page breaks fails the run. */
+export const GATE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+/** Reported, never failing the run (the plan promotes them to the gate once they're clean). */
+export const REPORT_TAGS = ['best-practice'];
+const TAGS = [...GATE_TAGS, ...REPORT_TAGS];
+
+/** What's known and allowed to break, each with why: `{ rule, page, target?, reason }`. `page` may be `*` (the shell,
+ *  on every page); `target`, when given, is part of the element's selector. Empty is the aim: fix rather than add. */
+const baseline = JSON.parse(readFileSync(path.join(here, 'axe-baseline.json'), 'utf8'));
 
 /** `AXE=0` turns the scan off (CI scans at one letter spacing only: the other would find the same). */
 export const axeOn = !/^(0|false|no)$/i.test(process.env.AXE ?? '');
@@ -50,10 +58,18 @@ async function run(page) {
   return page.evaluate(async tags => {
     const r = await window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] });
     return r.violations.map(v => ({
-      id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl,
+      id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, tags: v.tags,
       targets: v.nodes.map(n => n.target.map(t => Array.isArray(t) ? t.join(' >>> ') : t).join(' ')),
     }));
   }, TAGS);
+}
+
+/** Whether breaking this rule fails the run (a WCAG A or AA rule) rather than being reported. */
+export const gates = v => v.tags.some(t => GATE_TAGS.includes(t));
+
+/** The baseline entry that allows this element to break this rule on this page, if any. */
+function allowed(page, rule, target) {
+  return baseline.find(b => b.rule === rule && (b.page === page || b.page === '*') && (!b.target || target.includes(b.target)));
 }
 
 /** Collects each page's scan and writes the slice's report: .axe/axe-<label>.json and .md. */
@@ -62,13 +78,37 @@ export class AxeReport {
     this.label = label;
     this.pages = [];
     this.seconds = 0;
+    this.used = new Set();
   }
 
+  /** Records a page's scan, and returns what fails the run: each element that breaks a WCAG rule, unless the baseline
+   *  allows it. */
   add(name, route, width, height, violations, seconds) {
     this.pages.push({ page: name, route, width, height, violations });
     this.seconds += seconds;
+    const failures = [];
+    for (const v of violations) {
+      v.gate = gates(v);
+      for (const target of v.targets) {
+        const entry = allowed(name, v.id, target);
+        if (entry) this.used.add(entry);
+        else if (v.gate) failures.push(`axe: ${v.id} (${v.impact}: ${v.help}) on ${target}`);
+      }
+    }
     const nodes = violations.reduce((n, v) => n + v.targets.length, 0);
-    console.log(`  ${name} at ${width}x${height}: axe, ${violations.length} rule${violations.length === 1 ? '' : 's'} broken on ${nodes} element${nodes === 1 ? '' : 's'} (report only)`);
+    const reported = violations.filter(v => !v.gate).length;
+    console.log(`  ${name} at ${width}x${height}: axe, ` + (violations.length
+      ? `${violations.length} rule${violations.length === 1 ? '' : 's'} broken on ${nodes} element${nodes === 1 ? '' : 's'}` +
+        (failures.length ? `, ${failures.length} failing` : '') + (reported ? `, ${reported} best practice (report only)` : '')
+      : 'nothing broken'));
+    return failures;
+  }
+
+  /** Baseline entries for a page this slice scanned that no longer occur there: fixed, so they should go. Entries for
+   *  every page (`*`) can only be judged over every slice, so they aren't listed. */
+  unused() {
+    const scanned = new Set(this.pages.filter(p => !p.error).map(p => p.page));
+    return baseline.filter(b => scanned.has(b.page) && !this.used.has(b));
   }
 
   failed(name, width, height, message) {
@@ -80,7 +120,7 @@ export class AxeReport {
   byRule() {
     const rules = new Map();
     for (const p of this.pages) for (const v of p.violations) {
-      const r = rules.get(v.id) ?? { id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, elements: 0, pages: [] };
+      const r = rules.get(v.id) ?? { id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, gate: gates(v), elements: 0, pages: [] };
       r.elements += v.targets.length;
       r.pages.push(p.page);
       rules.set(v.id, r);
@@ -94,29 +134,35 @@ export class AxeReport {
     const file = path.join(dir, `axe-${this.label}`);
     const rules = this.byRule();
     const scanned = this.pages.filter(p => !p.error);
-    writeFileSync(`${file}.json`, JSON.stringify({ slice: this.label, axe: version, tags: TAGS, seconds: Math.round(this.seconds), rules, pages: this.pages }, null, 2));
+    const unused = this.unused();
+    writeFileSync(`${file}.json`, JSON.stringify({ slice: this.label, axe: version, gateTags: GATE_TAGS, reportTags: REPORT_TAGS, seconds: Math.round(this.seconds), rules, unusedBaseline: unused, pages: this.pages }, null, 2));
 
     const elements = rules.reduce((n, r) => n + r.elements, 0);
     const lines = [
-      `### Accessibility scan, slice ${this.label.replace('-of-', '/')} (axe-core ${version}, report only)`,
+      `### Accessibility scan, slice ${this.label.replace('-of-', '/')} (axe-core ${version})`,
       '',
-      `${scanned.length} page${scanned.length === 1 ? '' : 's'} scanned at their widest width against WCAG 2.1 A and AA, in ${Math.round(this.seconds)}s: ` +
+      `${scanned.length} page${scanned.length === 1 ? '' : 's'} scanned at their widest width against WCAG 2.2 A and AA (a gate) and best practice (report only), in ${Math.round(this.seconds)}s: ` +
         (rules.length ? `${rules.length} rule${rules.length === 1 ? '' : 's'} broken on ${elements} element${elements === 1 ? '' : 's'}, on ` +
           `${scanned.filter(p => p.violations.length).length} page${scanned.filter(p => p.violations.length).length === 1 ? '' : 's'}.` : 'nothing broken.'),
       '',
     ];
     if (rules.length) {
-      lines.push('| Rule | Impact | Elements | Pages | First pages |', '| --- | --- | ---: | ---: | --- |');
+      lines.push('| Rule | Kind | Impact | Elements | Pages | First pages |', '| --- | --- | --- | ---: | ---: | --- |');
       for (const r of rules) {
         const pages = [...new Set(r.pages)];
-        lines.push(`| [${r.id}](${r.helpUrl}) | ${r.impact ?? ''} | ${r.elements} | ${pages.length} | ${pages.slice(0, 3).join(', ')}${pages.length > 3 ? ', ...' : ''} |`);
+        lines.push(`| [${r.id}](${r.helpUrl}) | ${r.gate ? 'WCAG (gate)' : 'best practice'} | ${r.impact ?? ''} | ${r.elements} | ${pages.length} | ${pages.slice(0, 3).join(', ')}${pages.length > 3 ? ', ...' : ''} |`);
       }
-      lines.push('');
+      lines.push('', 'A WCAG rule fails the run unless `axe-baseline.json` allows that element on that page.', '');
+    }
+    if (unused.length) {
+      const named = unused.map(b => `${b.rule} on ${b.page}${b.target ? ` (${b.target})` : ''}`);
+      lines.push(`In \`axe-baseline.json\` but no longer found, so they can go: ${named.join('; ')}.`, '');
+      for (const n of named) console.log(`::notice::axe-baseline.json: ${n} no longer occurs; remove the entry`);
     }
     const errors = this.pages.filter(p => p.error);
     if (errors.length) lines.push(`Not scanned (axe couldn't run): ${errors.map(p => p.page).join(', ')}.`, '');
     lines.push(`Each element's selector is in \`axe-${this.label}.json\`, in the run's axe artifact.`, '');
     writeFileSync(`${file}.md`, lines.join('\n'));
-    console.log(`\naxe: ${scanned.length} pages scanned in ${Math.round(this.seconds)}s, ${rules.length} rules broken on ${elements} elements (report only): ${path.relative(process.cwd(), file)}.md`);
+    console.log(`\naxe: ${scanned.length} pages scanned in ${Math.round(this.seconds)}s, ${rules.length} rules broken on ${elements} elements: ${path.relative(process.cwd(), file)}.md`);
   }
 }

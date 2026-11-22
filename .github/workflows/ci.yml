@@ -116,6 +116,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash tools/ci/check-asset-versions.sh "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
 
+      # tools/ci/check-axe-baseline.sh, against the same base: the accessibility gate's allow-list only grows with a reason.
+      - name: The axe baseline only grows with a reason
+        if: ${{ !cancelled() }}
+        run: bash tools/ci/check-axe-baseline.sh "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
+
       - name: No un-migrated model changes (SQL Server + SQLite)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
@@ -228,11 +233,12 @@ jobs:
           APP_DIR: layout-app
           SHARD: ${{ matrix.shard }}/4
           LETTER_SPACING: ${{ matrix.spacing }}
-          # The accessibility scan (report only) at the default spacing: the wider letters would find the same.
+          # The accessibility scan at the default spacing (a WCAG rule broken fails; best practice is reported): the
+          # wider letters would find the same.
           AXE: ${{ matrix.spacing == '.07em' && '1' || '0' }}
 
-      # What axe found, never failing the job (tools/screenshots/README.md, "Accessibility scan").
-      - name: Accessibility scan summary (report only)
+      # What axe found (tools/screenshots/README.md, "Accessibility scan"); a WCAG failure has already failed the step above.
+      - name: Accessibility scan summary
         if: always() && matrix.spacing == '.07em'
         run: |
           cat tools/screenshots/.axe/axe-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No axe report: the scan didn't run."
