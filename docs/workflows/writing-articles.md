@@ -38,6 +38,13 @@ An article starts in one of two ways:
 
 Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`).
 
+To find your own again, the Articles list has a **Mine** pill (`?author=me`): the articles that are yours, whoever
+opens the link. **+ Filter → By** lists everyone who has written an article, with how many, and narrows the list to one
+of them (`?author=<their user id>`); a person nobody has written as lists nothing, not everything. Both go with the
+other filters (Mine and Draft is your drafts in flight). For now an article is yours if you're its author.
+`ArticleService.Whose` holds that rule in one place, so when an article can be handed on to someone to finish, Mine
+can follow the writer instead with a one-line change. By … keeps crediting the author.
+
 ## What an article holds
 
 ![Article editor](../screenshots/article-editor.png)

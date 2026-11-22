@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Tide.Application.Files;
 using Tide.Application.Indicators;
 using Tide.Application.Mitre;
@@ -21,6 +22,9 @@ public sealed record ArticleSummary(
     Guid Id, string Title, string? SourceName, TlpLevel Tlp, Classification Classification, Priority? Priority,
     ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateTimeOffset? ModifiedAtUtc, int Screenshots,
     IReadOnlyList<DateOnly> BriefDates, IReadOnlyList<string> MatchedTechniques);
+
+/// <summary>Someone who has written articles, as the list's By … filter offers them: their id, name and how many.</summary>
+public sealed record ArticleAuthor(string Id, string Name, int Articles);
 
 /// <summary>A page of the article list, and how many articles match in all.</summary>
 public sealed record ArticlePage(IReadOnlyList<ArticleSummary> Rows, int Total);
@@ -112,9 +116,35 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>The most one page of the article list holds.</summary>
     public const int MaxPage = 1000;
 
+    /// <summary>
+    /// Everyone who has written an article, by name, with how many: the list's By … choices. A person whose name has
+    /// changed is listed once, by the name on most of their articles.
+    /// </summary>
+    public async Task<IReadOnlyList<ArticleAuthor>> AuthorsAsync(CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        var names = await db.Articles.AsNoTracking().GroupBy(a => new { a.AuthorId, a.AuthorName })
+            .Select(g => new { g.Key.AuthorId, g.Key.AuthorName, Count = g.Count() }).ToListAsync(ct);
+        return names.GroupBy(n => n.AuthorId)
+            .Select(g => new ArticleAuthor(g.Key, g.OrderByDescending(n => n.Count).ThenBy(n => n.AuthorName, StringComparer.Ordinal).First().AuthorName, g.Sum(n => n.Count)))
+            .OrderBy(a => a.Name, Comparer<string>.Create(NameOrder.Compare)).ToList();
+    }
+
+    /// <summary>
+    /// The articles that are <paramref name="userId"/>'s, for Mine: whose an article is, in one place. For now that's
+    /// its author. Once an article can be handed on to a writer to finish, Mine is the writer's (the writer, else the
+    /// author), and this line is the one to change. By … still credits the author.
+    /// </summary>
+    private static IQueryable<Article> Whose(IQueryable<Article> q, string userId) => q.Where(a => a.AuthorId == userId);
+
     // The filters past the words and status, each as the trends report counts it (TrendsService.ReportAsync).
     private IQueryable<Article> Narrowed(IAppDbContext db, IQueryable<Article> q, ArticleFilter f)
     {
+        // Mine is the signed-in person's, read here rather than from the page; By … is one person's by id, and an id
+        // nobody has lists nothing.
+        if (f.Author == ArticleFilter.Me) q = Whose(q, user.UserId);
+        else if (f.Author is { } author) q = q.Where(a => a.AuthorId == author);
         if (f.From is not null || f.To is not null)
         {
             // Counted on its first brief's day, else (never briefed, not a draft) the local day it was written.
