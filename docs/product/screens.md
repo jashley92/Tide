@@ -633,7 +633,20 @@ One box at the top of every page.
   its CVSS, EPSS and KEV status, the sweeps of the articles' indicators, **Seen with**, the articles about it (each
   once) and what was done, with the same rail.
 
-**Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). `?`
+**Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). It also
+does things: the page you're on offers its commands first, each only for someone allowed to use the button it stands
+for, and each runs that button, asking what the button would ask:
+
+| Where | Commands |
+|---|---|
+| Anywhere | *New article*, *New action*, *Present today's brief*; type "take A-12" or "hand A-12" for *Take A-12* or *Hand A-12 to…*, which open the action and run its own *Take it* or *Hand off* |
+| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft) |
+| Today | *Mark the brief ready*, while that's the brief's next step (with its *Ready anyway?* question when there's something to look at first) |
+| Triage | *Promote the selected item*, which opens the row's promote form, as `P` does |
+| An action | *Take A-12* (asking first when a colleague has it), *Hand A-12 to…* (the hand-off dialog), *Copy A-12's hunt query* |
+
+Typing `>` first lists only the commands. Each says how it went where its button does (a toast, mostly). In present
+mode `Ctrl+K` goes to places only: no commands over the slides. `?`
 lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
 `Ctrl+Enter` (`⌘ Enter` on a Mac) does its form's main action: posts the comment or note, saves the template or
 settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.

@@ -2,12 +2,18 @@
    bar, opens one box for going to a page, starting an article or action, or opening an article, action or story found
    as you type (SearchService). A modal dialog holding a combobox: the box keeps focus and aria-activedescendant names
    the highlighted result; the arrows move it, Enter opens it, Escape closes and puts focus back (palette.js sends the
-   keys here, dialog.js keeps Tab inside). The entries are only those the person may use (PaletteEntries). *@
+   keys here, dialog.js keeps Tab inside). The entries are only those the person may use (PaletteEntries).
+   It also does things: the page on screen offers its verbs (PaletteCommands: "Save and mark ready" on an article, "Mark
+   the brief ready" on Today), listed first, and "take A-12" or "hand A-12" names an action's. Each runs what the page's
+   own button runs, its confirmation included, once the palette has closed and given focus back. ">" lists the verbs
+   only. Present mode has the keys and no verbs (Verbs="false"). *@
 @implements IAsyncDisposable
 @inject ICurrentUser CurrentUser
 @inject OrgClock Clock
 @inject NavigationManager Nav
 @inject SearchService Search
+@inject PaletteCommands PageVerbs
+@inject ToastService Toasts
 @inject IJSRuntime JS
 @using Microsoft.Extensions.Logging
 @inject ILogger<CommandPalette> Log
@@ -33,7 +39,8 @@
                 <input @ref="_input" type="text" class="tide-palette-input" data-palette-input role="combobox"
                        aria-expanded="@(shown.Count > 0 ? "true" : "false")" aria-controls="@(_id)-list" aria-autocomplete="list"
                        aria-activedescendant="@(shown.Count > 0 ? OptionId(_active) : null)"
-                       aria-label="Go to a page, or find an article, action or story" placeholder="Go to a page, or find an article, action (A-12) or story"
+                       aria-label="@(Verbs ? "Go to a page, find an article, action or story, or type > for commands" : "Go to a page, or find an article, action or story")"
+                       placeholder="@(Verbs ? "Go to a page, find an article, action (A-12) or story; > for commands" : "Go to a page, or find an article, action (A-12) or story")"
                        autocomplete="off" spellcheck="false" maxlength="200"
                        @bind="_query" @bind:event="oninput" @bind:after="OnQueryChanged" />
             </div>
@@ -59,7 +66,11 @@
             }
             <div class="tide-palette-foot" aria-hidden="true">
                 <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> to choose</span>
-                <span><kbd>Enter</kbd> to open</span>
+                <span><kbd>Enter</kbd> to open@(Verbs ? " or run" : "")</span>
+                @if (Verbs)
+                {
+                    <span><kbd>&gt;</kbd> commands only</span>
+                }
                 <span><kbd>Esc</kbd> to close</span>
             </div>
             <div class="visually-hidden" role="status">@_said</div>
@@ -74,7 +85,12 @@
     /// <summary>Whether to draw the Go to button (the top bar); present mode has the keys only.</summary>
     [Parameter] public bool ShowButton { get; set; } = true;
 
+    /// <summary>Whether it lists commands (verbs) as well as places; present mode's has none, only the keys to move.</summary>
+    [Parameter] public bool Verbs { get; set; } = true;
+
     private readonly string _id = Ui.NewId("palette");
+    // A verb chosen: run once the palette has closed and given focus back, so a dialog the verb opens takes it from there.
+    private Func<Task>? _pending;
     private IReadOnlyList<PaletteEntry> _commands = [];
     private IReadOnlyList<PaletteEntry>? _found;
     private string _query = "", _said = "";
@@ -86,14 +102,16 @@
 
     private bool CanSearch => CurrentUser.Has(Permission.ReadTeamEdition);
 
-    // The pages and commands that match what's typed, then what the search found (or, until it answers, the search page).
-    private IReadOnlyList<PaletteEntry> Shown
+    // The page's verbs, the pages and commands that match what's typed, then what the search found (or, until it answers,
+    // the search page). After ">", the verbs only, and no search.
+    internal IReadOnlyList<PaletteEntry> Shown
     {
         get
         {
-            var q = _query.Trim();
-            var pages = PaletteEntries.Match(_commands, q);
-            if (!CanSearch || q.Length == 0) return pages;
+            var onlyVerbs = PaletteEntries.OnlyVerbs(_query, out var q);
+            var pageVerbs = Verbs ? PaletteEntries.FromVerbs(PageVerbs.For(CurrentUser)) : [];
+            var pages = PaletteEntries.Filter(pageVerbs, _commands, _query, CurrentUser, Verbs);
+            if (!CanSearch || onlyVerbs || q.Length == 0) return pages;
             return [.. pages, .. _found ?? [PaletteEntries.SearchAll(q)]];
         }
     }
@@ -138,8 +156,8 @@
         _found = null;
         _failed = false;
         if (_typing is not null) await _typing.CancelAsync();
-        var q = _query.Trim();
-        if (!CanSearch || !Searchable(q))
+        var onlyVerbs = PaletteEntries.OnlyVerbs(_query, out var q);
+        if (!CanSearch || onlyVerbs || !Searchable(q))
         {
             _searching = false;
             _said = Said(Shown.Count);
@@ -189,11 +207,30 @@
 
     private void Choose(PaletteEntry entry)
     {
-        // Focus goes to the new page's heading (FocusOnNavigate), not back to what opened the palette.
         _typing?.Cancel();
         _open = false;
+        // A verb runs on this page once the palette has closed, and focus is back where it was: what it opens (a
+        // confirmation, Triage's promote form) takes focus from there, as from the page's own button.
+        if (entry.Run is { } run)
+        {
+            _restoreFocus = true;
+            _pending = run;
+            return;
+        }
+        // Focus goes to the new page's heading (FocusOnNavigate), not back to what opened the palette.
         _restoreFocus = false;
         Nav.NavigateTo(entry.Href);
+    }
+
+    /// <summary>The verb chosen, if one waits: what the page's own button runs, which says how it went (a toast, the
+    /// page's live region). A failure it doesn't catch is said as a toast, since the palette sits outside the page's
+    /// error boundary.</summary>
+    internal async Task RunPending()
+    {
+        if (_pending is not { } run) return;
+        _pending = null;
+        try { await run(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex, CurrentUser)); }
     }
 
     private void Close()
@@ -216,6 +253,8 @@
             _shown = _open;
             if (_open) await JS.InvokeVoidAsync("tidePalette.focus", _input);
             else await JS.InvokeVoidAsync(_restoreFocus ? "tideDialog.close" : "tideDialog.forget");
+            // Not awaited here: a verb may wait on a confirmation for as long as the person takes to answer it.
+            if (_pending is not null) _ = InvokeAsync(RunPending);
         }
         catch (JSDisconnectedException) { /* the circuit has gone */ }
     }

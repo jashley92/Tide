@@ -535,6 +535,9 @@
     // Queries copied from this panel: only one of those (or a hand-written one) can close the action as clean.
     private readonly HashSet<Guid> _copied = [];
 
+    /// <summary>A query copied from outside the panel (the command palette's Copy hunt query): it counts as copied here.</summary>
+    internal void MarkCopied(Guid huntId) => _copied.Add(huntId);
+
     private CloseDraft Draft(HuntQuery h)
     {
         if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowOf(h.GeneratedText) };

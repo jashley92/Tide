@@ -148,6 +148,8 @@ builder.Services.AddSingleton<OnboardingGate>();
 builder.Services.AddScoped<TourRequests>();
 // Where a guide started from Help opens: a real article or action for those pages.
 builder.Services.AddScoped<GuideStarts>();
+// The verbs the page on screen offers the command palette (Ctrl+K), in the same circuit.
+builder.Services.AddScoped<PaletteCommands>();
 // Which circuit shows each person their tour, so a second tab doesn't start a second one.
 builder.Services.AddSingleton<TourClaims>();
 // The Library's one search, over the tabs the person may open.

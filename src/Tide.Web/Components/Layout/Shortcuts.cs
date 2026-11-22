@@ -28,7 +28,8 @@ public static class Shortcuts
     public static readonly ShortcutGroup Palette = new("In the Go to box",
     [
         new(["↓", "↑"], "Next and previous result"),
-        new(["Enter"], "Open the result"),
+        new(["Enter"], "Open the result, or run the command"),
+        new([">"], "Typed first: list only the commands (Save and mark ready, Take A-12)"),
         new(["Esc"], "Close, back where you were"),
     ]);
 

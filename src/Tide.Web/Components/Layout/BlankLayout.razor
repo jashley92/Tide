@@ -1,11 +1,12 @@
 @inherits LayoutComponentBase
 
-@* For present mode: no sidebar or top bar, the page owns the whole screen. Ctrl+K and "?" still work, without buttons. *@
+@* For present mode: no sidebar or top bar, the page owns the whole screen. Ctrl+K and "?" still work, without buttons;
+   the palette goes to places only, with no commands (verbs) to run over the slides. *@
 @* The same boundary as the main layout's: a slide that throws shows a recover-in-place message instead of freezing the
    meeting with the circuit gone. *@
 <PageBoundary What="The slides" Contained="true">@Body</PageBoundary>
 <ToastHost />
-<CommandPalette ShowButton="false" />
+<CommandPalette ShowButton="false" Verbs="false" />
 <ShortcutsOverlay ShowButton="false" />
 
 <div id="blazor-error-ui">
