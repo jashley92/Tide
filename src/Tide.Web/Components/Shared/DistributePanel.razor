@@ -2,7 +2,9 @@
    copy of both editions to oneself first, then each edition's confirmation (SendConfirmation), its reader preview, a
    tick that the marking and recipients were checked, and its own send button, held back until the tick. Below, the
    send log, which is all someone who can't send sees. Sends go one at a time, refused if the edition changed since it
-   was shown. A send that went offers "Send a correction" (ADR 0015), which puts CorrectionForm in the editions' place;
+   was shown. When both editions are due and neither has gone, "Send both" above them puts the two plans side by side,
+   each with its own tick, and sends them in turn as two sends, the second only once the first went. A send that went
+   offers "Send a correction" (ADR 0015), which puts CorrectionForm in the editions' place;
    the log lists each correction under the send it corrects. *@
 @using Tide.Application.Distribution
 @inject DistributionService Distribution
@@ -74,6 +76,43 @@ else if (_canSend)
             <span class="bi bi-envelope" aria-hidden="true"></span> Send a test copy to me</button>
         <span class="small tide-muted" aria-live="polite">@_testNote</span>
     </div>
+    @if (BothDue || _bothNote is not null)
+    {
+        @* Both editions due and neither gone: one confirmation for the two. Each plan has its own tick, the button waits
+           for both, and each edition still goes as its own send, checked again as it goes. The outcome stays once the
+           editions have gone, so it says which went. *@
+        <section class="tide-card tide-send-edition tide-send-both" aria-labelledby="send-both-h">
+            <h3 class="tide-card-title" id="send-both-h">Send both editions</h3>
+            @if (BothDue)
+            {
+                <p class="small tide-muted mb-2">The security team edition goes first, then the company-wide one, each as its own send. If the first doesn't go, the second waits.</p>
+                <div class="tide-send-both-plans">
+                    @foreach (var edition in Editions)
+                    {
+                        var plan = _plans[edition];
+                        var id = $"send-both-{edition.ToString().ToLowerInvariant()}";
+                        <div class="tide-send-both-plan" role="group" aria-labelledby="@(id)-h" @key="edition">
+                            <h4 class="tide-send-both-name" id="@(id)-h">@BriefRenderer.EditionName(edition)</h4>
+                            <div id="@(id)-plan">
+                                <div class="small mb-1">Marked <TlpBadge Level="plan.Marking" /></div>
+                                <div class="small mb-1 tide-send-both-subject">Subject: <strong>@plan.Subject</strong></div>
+                                <div class="small">To @Ui.Plural(plan.Recipients.Count, "recipient")</div>
+                            </div>
+                            <div class="form-check mt-2 mb-0">
+                                <input class="form-check-input" type="checkbox" id="@(id)-checked" checked="@_bothChecked.Contains(edition)" disabled="@_busy"
+                                       aria-describedby="@(id)-plan" @onchange="e => TickBoth(edition, e.Value is true)" />
+                                <label class="form-check-label small" for="@(id)-checked">@BothCheckedLabel(edition)</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <button type="button" class="btn btn-primary btn-sm mt-2" id="send-both"
+                        disabled="@(_busy || !Editions.All(_bothChecked.Contains) || !MaySend || Editions.Any(HeldForReview))"
+                        @onclick="SendBoth"><span class="bi bi-send-check" aria-hidden="true"></span> @SendBothLabel(_plans[Edition.Team], _plans[Edition.Public])</button>
+            }
+            <div class="small mt-1" aria-live="polite">@_bothNote</div>
+        </section>
+    }
     @foreach (var edition in Editions)
     {
         var plan = _plans.GetValueOrDefault(edition);
@@ -431,6 +470,98 @@ else if (_canSend)
 
     internal bool Ticked(Edition e) => _checked.Contains(e);
 
+    // Send both's ticks, one per edition and apart from each edition's own, so checking one plan never checks the other;
+    // like those, they go whenever the plans are read again. Its outcome, said in the card.
+    private readonly HashSet<Edition> _bothChecked = [];
+    private string? _bothNote;
+
+    internal void TickBoth(Edition e, bool on)
+    {
+        if (on) _bothChecked.Add(e);
+        else _bothChecked.Remove(e);
+        StateHasChanged();
+    }
+
+    internal bool TickedForBoth(Edition e) => _bothChecked.Contains(e);
+
+    /// <summary>Whether Send both is offered: both editions can go now (email on, someone on each list, something in
+    /// each) and neither has gone, or may have, or is going. Otherwise each edition is sent on its own.</summary>
+    internal bool BothDue =>
+        !SendPending
+        && Editions.All(e => _plans.GetValueOrDefault(e) is { } p
+            && p.LastSentAtUtc is null && p.EmailEnabled && p.Recipients.Count > 0 && p.Articles > 0);
+
+    /// <summary>Send both's ticks: "Team edition checked", "Company-wide checked".</summary>
+    public static string BothCheckedLabel(Edition e) => e == Edition.Public ? "Company-wide checked" : "Team edition checked";
+
+    /// <summary>Send both's button, named for the two lists: "Send both (12 + 840)".</summary>
+    public static string SendBothLabel(SendPlan team, SendPlan company) => $"Send both ({team.Recipients.Count} + {company.Recipients.Count})";
+
+    // Both editions, each as its own send of the plan shown (DistributionService.SendAsync checks each again as it goes),
+    // the team edition first. One that doesn't go (refused, failed at the relay, or not known to have gone) stops there:
+    // the other isn't attempted, and the card says which went and which didn't. True when both went.
+    internal async Task<bool> SendBoth()
+    {
+        if (_busy || !BothDue || !Editions.All(_bothChecked.Contains)) return false;   // a second click: each goes once
+        var plans = Editions.Select(e => _plans[e]).ToList();
+        _busy = true;
+        _bothNote = null;
+        _bothChecked.Clear();
+        var said = new List<string>();
+        var allWent = true;
+        var logged = false;   // a send was frozen and logged, so the brief may be Sent now
+        try
+        {
+            for (var i = 0; i < plans.Count; i++)
+            {
+                var plan = plans[i];
+                var name = BriefRenderer.EditionName(plan.Edition).ToLowerInvariant();
+                _checked.Remove(plan.Edition);
+                _again.Remove(plan.Edition);
+                string stopped;
+                try
+                {
+                    var send = await Distribution.SendAsync(plan, _withoutMeeting);
+                    logged = true;
+                    if (send.Status == SendStatus.Sent)
+                    {
+                        _notes[plan.Edition] = $"Sent to {Ui.Plural(send.RecipientCount, "recipient")}.";
+                        said.Add($"The {name} went to {Ui.Plural(send.RecipientCount, "recipient")}.");
+                        continue;
+                    }
+                    stopped = send.Status == SendStatus.Unknown
+                        ? $"The {name} may not have gone: {send.Error ?? "the relay's answer was lost"}"
+                        : $"The {name} didn't go: {send.Error ?? "the relay didn't take the message."}";
+                }
+                catch (Exception ex)
+                {
+                    stopped = $"The {name} didn't go: {UserFacingError.For(ex)}";
+                }
+                _notes[plan.Edition] = stopped;
+                said.Add(stopped);
+                foreach (var rest in plans.Skip(i + 1))
+                {
+                    var restName = BriefRenderer.EditionName(rest.Edition).ToLowerInvariant();
+                    said.Add($"The {restName} wasn't sent. Check the send log, then send it on its own below.");
+                    _notes[rest.Edition] = "Not sent: the edition before it didn't go.";
+                }
+                allWent = false;
+                break;
+            }
+            _bothNote = string.Join(" ", said);
+            if (allWent) Toasts.Show(_bothNote);
+            else Toasts.Error(_bothNote);
+            await Load();   // the plans read again: what went says so, and anything refused is shown as it is now
+            if (logged) await Sent.InvokeAsync();
+            return allWent;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
     // An edition that went (or may have) offers no tick and no send until "Send it again" is chosen, so the dialog never
     // has the one just sent ready to go again; the choice holds until it's sent.
     private readonly HashSet<Edition> _again = [];
@@ -476,6 +607,7 @@ else if (_canSend)
                 {
                     _plans[e] = await Distribution.PlanAsync(Date, e);
                     _checked.Remove(e);
+                    _bothChecked.Remove(e);
                     _cuts[e] = await Distribution.EditionToSendAsync(Date, e);
                 }
                 _metrics = await MetricsSvc.GetDayAsync(Date);
@@ -504,6 +636,7 @@ else if (_canSend)
     {
         _plans[e] = await Distribution.PlanAsync(Date, e);
         _checked.Remove(e);
+        _bothChecked.Remove(e);
         _cuts[e] = await Distribution.EditionToSendAsync(Date, e);
     }
 
@@ -542,6 +675,7 @@ else if (_canSend)
     {
         if (_busy) return false;   // a second click while the first sends: the edition goes once
         _busy = true;
+        _bothNote = null;   // Send both's outcome is history once an edition is sent on its own
         _notes.Remove(plan.Edition);
         _checked.Remove(plan.Edition);
         _again.Remove(plan.Edition);

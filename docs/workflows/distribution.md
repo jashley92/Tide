@@ -160,6 +160,29 @@ The steps that matter:
 5. **Record the outcome.** `SendOutcome.RecordAsync` saves it, retrying up to four times with a growing pause, since the
    relay already has the email. Only an outcome of Sent finishes the brief (`FinishAsync`).
 
+### Send both editions
+
+On most days both editions go together, so when both are due and neither has gone, the Send dialog offers **Send
+both** above the editions' own confirmations. "Due" means email is on, each edition has someone on its list and
+something in it, and neither has a real send that went, may have gone (`Unknown`) or is with the relay; a `Failed` send
+didn't go, so it doesn't count. Otherwise the editions go one at a time, as above.
+
+Send both shows the two plans side by side: each edition's marking, subject and recipient count. Each has its own tick
+("Team edition checked", "Company-wide checked"), apart from the edition's own tick below, and the button, named for
+both lists ("Send both (12 + 840)"), stays disabled until both are ticked. It's also disabled for the same reasons an
+edition's own button is: before the brief's day, before the meeting ends (unless "Sent without a meeting"), or while
+either edition holds an article that needs review. Reading the plans again clears both ticks.
+
+It adds no send path. `DistributePanel.SendBoth` calls `DistributionService.SendAsync` twice in sequence, the team
+edition first, with the two plans the dialog showed. Each is its own frozen `BriefSend`, checked again as it goes
+(every step above, review holds included), so ADR [0007](../decisions/0007-frozen-sends-and-cid-email.md) is unchanged.
+The first send moves the brief's `EditVersion`; the second reads its cut afresh, so that alone doesn't refuse it.
+
+If the first doesn't go (refused, `Failed` at the relay, or `Unknown`), the second isn't attempted. The card says which
+went and which didn't ("The security team edition didn't go: … The company-wide edition wasn't sent. Check the send log,
+then send it on its own below."), and so does each edition's own note. Once both have gone, the card says so and isn't
+offered again. A re-send or a correction always goes through the edition's own confirmation.
+
 ## Send outcomes
 
 ```mermaid
@@ -414,6 +437,7 @@ posts it once it's Sent. See [operations/integrations.md](../operations/integrat
 | A recipient added after the confirmation | The recipient lists are compared; refused. |
 | Two analysts send the same edition at once | The freeze's `EditVersion` check and the in-flight rule; the second is refused. |
 | Team and company-wide sent at the same moment | The second freeze conflicts on `EditVersion` and is re-checked once; it goes if nothing it showed changed. |
+| Send both, and the team edition doesn't go | The company-wide edition isn't attempted; the dialog says which went and which didn't. |
 | The browser closes mid-send | The relay call runs without the request's token; the outcome is still recorded. |
 | The database is busy as the outcome is saved | Retried up to four times. |
 | The server stops after freezing | Read as `Unknown` after 15 minutes; settle it from the log. |

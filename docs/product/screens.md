@@ -734,6 +734,10 @@ with screenshots embedded rather than fetched.
 
 - **Before it goes.** You can preview the email exactly as it will go and send a test copy to yourself. The send
   itself needs an explicit confirmation that shows the marking and every recipient.
+- **Both at once.** When both editions are due and neither has gone, **Send both** shows the two plans side by side
+  (each edition's marking, subject and recipient count) with a tick for each, and one button, "Send both (12 + 840)",
+  that waits for both ticks. They still go as two sends, the team edition first; if it doesn't go, the company-wide
+  edition waits, and the dialog says which went. Re-sends and corrections use each edition's own confirmation.
 - **A record of what went.** Each send freezes a copy of what went, HTML and images, and logs who sent it to whom.
 
 ![Team edition email](../screenshots/email-team.png)
