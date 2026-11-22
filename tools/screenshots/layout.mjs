@@ -7,7 +7,7 @@
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
-//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan and its gate (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -5207,7 +5207,8 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
-  // Report only: what axe finds is written and printed, never added to the problems.
+  // A WCAG rule axe finds broken, and the baseline doesn't allow, is a problem like a layout rule's; best practice is
+  // only reported (axe.mjs).
   const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
   const axe = axeOn ? new AxeReport(label) : null;
   try {
@@ -5239,7 +5240,8 @@ async function check(list, demo) {
           if (axe && size === widest(p.widths)) {
             const start = Date.now();
             try {
-              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+              const violations = await scan(page);
+              problems.push(...axe.add(p.name, p.route, width, height, violations, (Date.now() - start) / 1000).map(f => `${p.name} at ${width}px: ${f}`));
             } catch (e) {
               axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
             }
