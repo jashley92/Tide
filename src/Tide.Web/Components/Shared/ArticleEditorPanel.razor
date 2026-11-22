@@ -66,8 +66,6 @@ else
                 <ClassBadge Classification="_form.Classification" Priority="_form.Priority" />
                 <TlpBadge Level="_form.Tlp" />
                 <GuideLink />
-                @* The review as one line at the row's end, its panel (asking, the comments) under the row when opened. *@
-                <ReviewCard Article="_article" CanWrite="_canWrite" />
             </div>
             @if (_canWrite)
             {
@@ -78,8 +76,13 @@ else
             {
                 <h1>@_form.Title</h1>
             }
-            <div class="tide-sub">By @_article.AuthorName &middot; @Ui.When(Clock, _article.CreatedAtUtc)
-                @if (_article.ModifiedAtUtc is { } m) { <text> &middot; saved @Ui.When(Clock, m)</text> }
+            @* The byline, then the review as one line at the row's end (after the title, as the page guide walks them), its
+               panel (asking, the comments) under the row when opened. *@
+            <div class="tide-sub tide-head-byline">
+                <span>By @_article.AuthorName &middot; @Ui.When(Clock, _article.CreatedAtUtc)
+                    @if (_article.ModifiedAtUtc is { } m) { <text> &middot; saved @Ui.When(Clock, m)</text> }
+                </span>
+                <ReviewCard Article="_article" CanWrite="_canWrite" />
             </div>
         </div>
         @if (_article.Indicators.Count > 0 || _article.Cves.Count > 0)

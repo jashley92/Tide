@@ -3703,7 +3703,7 @@ const autosaved = autosaveAfter(async page => {
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
 const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
-/** Setup: wider letters, then the review line's button pressed: its panel (asking, the comments) opens under the head's row. */
+/** Setup: wider letters, then the review line's button pressed: its panel (asking, the comments) opens under the byline. */
 const openReview = async page => {
   await wideFont(page);
   await page.locator('.tide-review-toggle').click();
@@ -4313,13 +4313,13 @@ const pages = [
     widths: [390, 780], rules: [noSidewaysScroll, fits('.tide-page-head-main'), fits('.tide-page-head-main > .d-flex')] })),
   // Someone who can't edit reads the preview as the page, not a narrow strip, with the review as one line in the head.
   { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
-    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), visible('.tide-page-head-main .tide-review-line'),
-      fits('.tide-page-head-main > .d-flex'), fits('.tide-editor-side')] },
-  // The review is one line at the end of the head's row ("Review: <state>" and what to do next); its button opens a
+    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), visible('.tide-head-byline .tide-review-line'),
+      fits('.tide-head-byline'), fits('.tide-editor-side')] },
+  // The review is one line at the end of the byline, under the title ("Review: <state>" and what to do next); its button opens a
   // panel under the row, the row's width, with asking (the reviewer and a note) and the comments.
   { name: 'editor-review-open', route: '/articles/{vpnArticle}', setup: openReview, widths: [1920, 1440, 390],
     rules: [noSidewaysScroll, visible('.tide-page-head-main .tide-review-line'), visible('#review-panel'), attr('.tide-review-toggle', 'aria-expanded', 'true'),
-      fits('.tide-page-head-main > .d-flex'), fits('#review-panel'), fits('.tide-review-ask'), hidden('.tide-review-card')] },
+      fits('.tide-head-byline'), fits('#review-panel'), fits('.tide-review-ask'), hidden('.tide-review-card')] },
   // History is the save bar's last button; the list it opens is below the bar, not in it.
   { name: 'editor-history-open', route: '/articles/{vpnArticle}', setup: openHistory, widths: [1920, 390],
     rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-history-link'), attr('.tide-history-link', 'aria-expanded', 'true'),

@@ -436,7 +436,7 @@ week's presenter is suggested). The reviewer gets it on Today and opens the revi
   the bottom line stands alone;
 - *Approve* or *Ask for changes*.
 
-In the editor the review is one line at the end of the article's head row: *Review: not asked (optional)* (or
+In the editor the review is one line at the end of the byline under the title: *Review: not asked (optional)* (or
 *required*, when an administrator's rule covers the article), *waiting for Sam*, *Sam asked for changes (2 open)*,
 *approved by Sam* or *changed since Sam approved it*, with when, and the one thing to do next. *Ask for a review*,
 *Ask again* or *Comments* opens a small panel under the row with the reviewer, a note and *Send the request*, and the

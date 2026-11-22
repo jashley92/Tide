@@ -485,7 +485,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `TableScroll` | The box a wide table scrolls sideways in (`table-responsive`): it takes focus (`tabindex="0"`), so the keyboard can scroll it, and it's a `region` named by the heading it's under (`LabelledBy`) or in words (`Label`). Every report and admin table that scrolls sits in one. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
 | `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). A card with its own button on a brief; `Compact` in the editor, where the save bar's last button (**History**) opens the list below the bar. |
-| `ReviewCard` | The article's review in the editor's head, as one line (`Review:` where it stands, and what to do next); its button opens a panel under the head's row for asking and the comments. |
+| `ReviewCard` | The article's review in the editor's head, as one line (`Review:` where it stands, and what to do next); its button opens a panel under the byline for asking and the comments. |
 | `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |
 | `Badge`, `TlpBadge`, `StatusBadge` | Badges, the TLP 2.0 label (black ground, as FIRST specifies), and status chips (`Badges.cs`). |
 | `EscalatedBadge` | "Escalated", filled red, given when it was escalated while it still is (`ActionItem.EscalatedSince`, `ActionRow.EscalatedSince`); nothing otherwise. On the list row (`ActionTable`), the board card (`ActionKanban`), the action's page, the meeting's open-actions slide and the edition's list (`Badges.cs`). |
