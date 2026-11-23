@@ -1331,7 +1331,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | People & distribution | Access & distribution | `/admin/access` | Which AD groups get which role, the editions' TLP ceilings, and who each edition goes to. |
 | People & distribution | Email templates | `/admin/email-templates` | The wording of the reminder and rotation emails, with a preview and a test send. |
 | People & distribution | API access | `/admin/api` | Tokens for the SOC's other tools to call TIDE's API, and webhooks TIDE posts to. |
-| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage. |
+| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage; and how fast it has been (Performance: requests, page events and database commands over the last hour and day, the slow ones, memory). |
 | System | Server configuration | `/admin/system/server` | What's set on the server, read-only. Secrets show only whether they're set. |
 | System | Setting sources | `/admin/system/sources` | Where each setting's value comes from: the app, the installer's file, or the environment. |
 | System | Configuration bundle | `/admin/system/bundle` | This server's install answers file, and the app's setup to copy to another server. |

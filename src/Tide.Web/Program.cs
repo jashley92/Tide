@@ -180,6 +180,8 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.Circu
 // Whether the circuit's browser is still connected: a Pull all stops when it vanishes.
 builder.Services.AddScoped<CircuitConnection>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<CircuitConnection>());
+// Diagnostics' Performance panel: open circuits, and how long each event on a page takes (slow ones are logged, 7202).
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, PerformanceCircuitHandler>();
 // Development only, for the screenshot tool (tools/screenshots), when Demo:Seed is set: its fuller demo data (below), and
 // the circuit work in hand for it to wait on (/demo/activity, below).
 var demoMode = builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Demo:Seed");
@@ -197,6 +199,7 @@ builder.Services.AddHostedService<MetricImportHostedService>();
 builder.Services.AddHostedService<UpdateCheckHostedService>();
 builder.Services.AddHostedService<WebhookHostedService>();
 builder.Services.AddHostedService<UrlHashFillHostedService>();
+builder.Services.AddHostedService<PerformanceListener>();
 builder.Services.AddHostedService<ActivityFileHostedService>();
 builder.Services.AddHostedService<IndicatorKeyFillHostedService>();
 builder.Services.AddHostedService<SearchIndexHostedService>();
