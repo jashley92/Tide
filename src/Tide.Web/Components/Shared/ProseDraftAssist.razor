@@ -14,7 +14,7 @@
         {
             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="DraftIt"><span class="bi bi-stars" aria-hidden="true"></span> @Label</button>
         }
-        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@($"Copy a prompt: {Label}")" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(Assist.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
+        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@(Assist.ProviderReady ? $"Copy a prompt: {Label}" : null)" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(Assist.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
     </div>
     @if (_pasting)
     {
