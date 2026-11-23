@@ -24,10 +24,11 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
     // LastSeenAtUtc (a row per rule each time), and each read or prune of a publisher's text would copy it into the log.
     // An administrator's removal of a pushed set is recorded by DetectionService as one entry.
     // A person's own preferences (List or Board) and saved Actions views change nothing anyone else sees. The job lease, the
-    // processes' heartbeats and the job runs are the background jobs' own bookkeeping.
+    // processes' heartbeats and the job runs are the background jobs' own bookkeeping; an article's search text is its
+    // parts again, which are audited themselves.
     private static readonly HashSet<Type> NotAudited =
         [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(SavedActionView), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText),
-         typeof(JobLease), typeof(JobProcess), typeof(JobRun)];
+         typeof(JobLease), typeof(JobProcess), typeof(JobRun), typeof(ArticleSearchRow)];
 
     // Changing on every save, so recording them is noise; and an address's hash, which is the address recorded beside it.
     private static readonly HashSet<string> SkippedProperties =

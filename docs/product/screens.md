@@ -697,8 +697,9 @@ for, and each runs that button, asking what the button would ask:
 | Where | Commands |
 |---|---|
 | Anywhere | *New article*, *New action*, *Present today's brief*; type "take A-12" or "hand A-12" for *Take A-12* or *Hand A-12 to…*, which open the action and run its own *Take it* or *Hand off* |
-| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft) |
+| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft nothing blocks, as its button), *Hand this draft to…* (a Draft or Ready article, whenever the head offers *Hand to…*; it opens the same dialog) |
 | Today | *Mark the brief ready*, while that's the brief's next step (with its *Ready anyway?* question when there's something to look at first) |
+| A day's brief, Today included | *Send both editions*, for someone who may send, while the Send dialog's *Send both* could be pressed once its two ticks are: both editions due, the meeting held, not before the brief's day, neither held for a required review. It opens the Send dialog; nothing goes until both ticks and *Send both* there |
 | Triage | *Promote the selected item*, which opens the row's promote form, as `P` does |
 | An action | *Take A-12* (asking first when a colleague has it), *Hand A-12 to…* (the hand-off dialog), *Copy A-12's hunt query* |
 
