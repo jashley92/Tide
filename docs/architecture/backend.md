@@ -256,7 +256,7 @@ None of them can stop the app.
   in-process locks (`RotationService.Deciding`, `MetricImportService.Gate`, `ReminderService.Running`) rely on one
   process ([ADR 0001](../decisions/0001-blazor-server-on-prem.md)).
 - **Reporting.** Each run is reported to `JobMonitor` (Administration › System › Diagnostics, `/health/jobs`), which
-  logs a failure as a Warning under the job's event id (7101 to 7110) and queues the run for the job history.
+  logs a failure as a Warning under the job's event id (7101 to 7114) and queues the run for the job history.
 - **Upkeep.** `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`), registered first so it
   stops last, renews the lease every 30 seconds whatever the jobs are doing, writes the queued runs to `JobRuns`, and
   prunes runs older than 30 days daily while it holds the lease. At shutdown it writes what's left and lets the lease
