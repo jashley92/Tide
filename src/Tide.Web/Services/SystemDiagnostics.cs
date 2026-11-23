@@ -191,7 +191,7 @@ public sealed class SystemDiagnostics(
         list.Add(string.IsNullOrWhiteSpace(keys)
             ? new StorageInfo("Data Protection keys", null, false, null, null,
                 env.IsDevelopment() ? "Not set: development keeps the default key ring." : "Not set: sign-ins don't survive an app-pool recycle.")
-            : Folder("Data Protection keys", keys, probe: false, $"{KeyCount(keys)} {Protection()}".Trim()));
+            : Folder("Data Protection keys", keys, probe: false, $"{KeyCount(keys)} {Protection().Note}".Trim()));
         return list;
     }
 
@@ -219,23 +219,9 @@ public sealed class SystemDiagnostics(
 
     // How new keys are protected: a certificate (readable on any server that holds it), with when it expires, or machine
     // DPAPI (this server only).
-    private string Protection() =>
-        Tide.Web.Security.KeyRingCertificate.Thumbprints(config) is [var current, ..]
-            ? $"Protected with certificate {current}, readable on any server that has it{CertificateExpiry() switch { ({ } at, var warning) => $"; it expires on {at:yyyy-MM-dd}. {warning}", _ => "." }}".TrimEnd()
-            : OperatingSystem.IsWindows() ? "Protected with machine DPAPI: readable on this server only." : "";
-
-    // The key ring certificate's expiry and a warning when it's near or past; nulls when there's none or it can't be read.
-    private (DateTime? NotAfter, string? Warning) CertificateExpiry()
-    {
-        try
-        {
-            var cert = Tide.Web.Security.KeyRingCertificate.Find([.. Tide.Web.Security.KeyRingCertificate.Thumbprints(config).Take(1)]);
-            if (cert.Count == 0) return (null, null);
-            var (at, warning) = Tide.Web.Security.KeyRingCertificate.ExpiryNote(cert[0], time.GetUtcNow());
-            return (at, warning);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or System.Security.Cryptography.CryptographicException) { return (null, null); }
-    }
+    // How new keys are protected, and a warning when the certificate expires soon (KeyRingCertificate.Describe).
+    private (string Note, string? Warning) Protection() =>
+        Tide.Web.Security.KeyRingCertificate.Describe(config, time.GetUtcNow(), OperatingSystem.IsWindows());
 
     private static string? KeyCount(string path)
     {
@@ -304,7 +290,7 @@ public sealed class SystemDiagnostics(
         var keys = storage[1];
         checks.Add(keys.Path is not null
             ? !keys.Exists ? new("Data Protection keys", CheckLevel.Attention, "The folder doesn't exist.")
-                : CertificateExpiry().Warning is { } expiring ? new("Data Protection keys", CheckLevel.Attention, $"Kept on disk. {expiring}", "admin/system/server")
+                : Protection().Warning is { } expiring ? new("Data Protection keys", CheckLevel.Attention, $"Kept on disk. {expiring}", "admin/system/server")
                 : new("Data Protection keys", CheckLevel.Ok, "Kept on disk.")
             : new("Data Protection keys", env.IsDevelopment() ? CheckLevel.Info : CheckLevel.Attention, keys.Note ?? "", "admin/system/server"));
 

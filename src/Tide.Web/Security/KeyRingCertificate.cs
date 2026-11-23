@@ -56,6 +56,26 @@ public static class KeyRingCertificate
         });
     }
 
+    /// <summary>
+    /// For Diagnostics: how new keys are protected (a certificate, readable on any server that holds it, with when it
+    /// expires; or machine DPAPI on Windows, this server only), and a warning when the certificate expires within 30 days
+    /// or has. A certificate that can't be found is said plainly (start-up would have stopped, so it's gone since).
+    /// </summary>
+    public static (string Note, string? Warning) Describe(IConfiguration config, DateTimeOffset now, bool windows, X509Store? store = null)
+    {
+        if (Thumbprints(config) is not [var current, ..])
+            return (windows ? "Protected with machine DPAPI: readable on this server only." : "", null);
+        try
+        {
+            var (at, warning) = ExpiryNote(Find([current], store)[0], now);
+            return ($"Protected with certificate {current}, readable on any server that has it; it expires on {at:yyyy-MM-dd}.", warning);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Security.Cryptography.CryptographicException)
+        {
+            return ($"Protected with certificate {current}, which can't be read now.", ex.Message);
+        }
+    }
+
     private static string Normalize(string? thumbprint) =>
         new((thumbprint ?? "").Where(char.IsAsciiHexDigit).ToArray());
 }
