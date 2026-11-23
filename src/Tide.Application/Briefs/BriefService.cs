@@ -162,7 +162,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-CandidateDays);
+        var since = clock.Now.ToUniversalTime().AddDays(-CandidateDays);
         // The briefs each article was on are read in the same query, per row: a second query taking every candidate's id
         // as a parameter grew with the Ready backlog, and past 2,100 of them SQL Server refuses it.
         var rows = await db.Articles.AsNoTracking()
