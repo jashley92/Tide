@@ -990,11 +990,35 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        var items = (await db.FeedItems.AsNoTracking()
-            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "")
-            .Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
+        var items = (await NewWithCves(db).Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
         var kev = await KevAsync(db, items, ct);
         return items.Count(i => i.CveList.Any(kev.Contains));
+    }
+
+    // The new items, from sources still in use, that name a CVE: where KEV ones are looked for.
+    private static IQueryable<FeedItem> NewWithCves(IAppDbContext db) =>
+        db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "");
+
+    /// <summary>
+    /// The new items a KEV round-up would promote (<see cref="KevRoundup"/>): those naming a CVE on CISA's KEV list, as
+    /// TIDE's CVE records say it, published since <paramref name="since"/> (the last brief; every new one when null),
+    /// newest first. The newest <see cref="KevRoundup.MaxItems"/> are given, with how many there are in all. Nothing is
+    /// fetched: only the items' CVE lists and TIDE's records are read.
+    /// </summary>
+    public async Task<KevRoundupItems> KevRoundupAsync(DateTimeOffset? since, CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var q = NewWithCves(db);
+        if (since is { } s) q = q.Where(i => (i.PublishedAtUtc ?? i.FetchedAtUtc) >= s);
+        var items = await q.OrderByDescending(i => i.PublishedAtUtc ?? i.FetchedAtUtc).ThenByDescending(i => i.Id)
+            .Select(i => new FeedItem { Id = i.Id, Cves = i.Cves, Source = new Source { DefaultTlp = i.Source!.DefaultTlp } }).ToListAsync(ct);
+        var kev = await KevAsync(db, items, ct);
+        var listed = items.Where(i => i.CveList.Any(kev.Contains)).ToList();
+        var taken = listed.Take(KevRoundup.MaxItems).ToList();
+        return new([.. taken.Select(i => i.Id)], listed.Count,
+            [.. taken.SelectMany(i => i.CveList).Where(kev.Contains).Distinct(StringComparer.OrdinalIgnoreCase)],
+            taken.Count == 0 ? TlpLevel.Clear : taken.Max(i => i.Source!.DefaultTlp));
     }
 
     /// <summary>Items as they are now, by id: where the rows that left Triage's list went, and who sent them. An item
@@ -1316,14 +1340,26 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (form.Priority is { } p && !Enum.IsDefined(p)) throw new ArgumentException("That isn't a priority.");
         var chosenTlp = form.Tlp is { } t ? Tlp.Checked(t) : (TlpLevel?)null;
         var wanted = ids.Distinct().ToList();
-        if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
+        // A KEV round-up may be bigger than a suggested group (KevRoundup.MaxItems); any other promote of several is held
+        // to a group's size, whatever chose them (a group, or several items selected in Triage).
+        var (max, refused) = form.AsKevRoundup ? (KevRoundup.MaxItems, $"A KEV round-up promotes 1 to {KevRoundup.MaxItems} items.")
+            : (TriageGroups.MaxSize, $"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
+        if (wanted.Count < 1 || wanted.Count > max) throw new ArgumentException(refused);
         var single = wanted.Count == 1;
         List<FeedItem> items;
+        HashSet<string> kevCves = [];
         await using (var db = await dbs.CreateAsync(ct))
         {
             items = await db.FeedItems.AsNoTracking().Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
             if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those items is gone.");
             if (OneArticle(items) is { } existing) return new(existing, Made: false, Who(items[0]));
+            if (form.AsKevRoundup)
+            {
+                // Only what TIDE's CVE records list as known exploited goes in a round-up, as the KEV filter shows it.
+                kevCves = await KevAsync(db, items, ct);
+                if (items.FirstOrDefault(i => !i.CveList.Any(kevCves.Contains)) is { } notKev)
+                    throw new ArgumentException($"“{notKev.Title}” names no CVE on CISA's KEV list, so it can't go in a KEV round-up.");
+            }
             // Claim them first, in one statement: of two analysts promoting the same item at once, one makes the article
             // and the other is sent to it, rather than both making one. A group is claimed whole or not at all (the
             // transaction gives back a part claim), so no report is left in someone else's article and this one too. A
@@ -1375,6 +1411,15 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             var cves = article.Cves.Select(c => c.CveId).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var cve in lead.CveList.Where(cves.Add).Take(50))
                 db.ArticleCves.Add(new ArticleCve { ArticleId = articleId.Value, CveId = cve });
+            if (form.AsKevRoundup)
+            {
+                // A bullet per KEV-listed CVE, from TIDE's own records (public facts, so CLEAR), and the one recommendation.
+                var records = await db.CveRecords.AsNoTracking().Where(r => kevCves.Contains(r.CveId)).ToListAsync(ct);
+                var order = 0;
+                foreach (var text in KevRoundup.Bullets(records))
+                    db.ArticleBullets.Add(new ArticleBullet { ArticleId = articleId.Value, SortOrder = order++, Text = text, Tlp = TlpLevel.Clear });
+                article.RecommendedActions = "- " + KevRoundup.Recommended;
+            }
             // The others, newest first, as further reports of it.
             var known = new HashSet<string?>(StringComparer.Ordinal) { UrlCanonicalizer.Canonicalize(lead.Url) };
             foreach (var item in items.OrderByDescending(i => i.Id == lead.Id).ThenByDescending(i => i.PublishedAtUtc ?? i.FetchedAtUtc))

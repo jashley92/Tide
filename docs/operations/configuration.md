@@ -362,6 +362,19 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 | `Updates:CheckIntervalHours` | `24` | 6 to 168. | In app: **System › Updates** | At once |
 | `Updates:Repository` | `jashley92/Tide` | `owner/name`. | Server | Next check |
 
+### Telemetry (OTLP, opt-in)
+
+Off unless `Telemetry:OtlpEndpoint` is set (decided 2026-11-21: opt-in, metrics only by default). Nothing is sent
+anywhere otherwise.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Telemetry:OtlpEndpoint` | not set (off) | Your collector, such as `http://otel01:4317`. When set, request durations by route, Kestrel's connections and the .NET runtime's metrics (memory, GC, thread pool) are exported, as service `TIDE` with the server's name. No TIDE data is in them. |
+| `Telemetry:Protocol` | `grpc` | `http` for OTLP over HTTP/protobuf (port 4318 usually). |
+| `Telemetry:Headers` | not set | Headers for the collector, such as `x-api-key=...`. A secret: an environment variable, not the file. |
+| `Telemetry:Traces` | `false` | `true` adds request traces: a sample of requests (below), never the Blazor connection or health probes, with the query string removed (a search's words are in it). No database statements are traced. |
+| `Telemetry:TraceSampleRatio` | `0.05` | The share of requests traced, 0 to 1. |
+
 ### Logging
 
 | Key | Default | Notes |

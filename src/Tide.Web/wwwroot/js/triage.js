@@ -11,6 +11,10 @@
 // "v" reads the selected item in the reading pane (EP-76), and pressed again closes it; Esc closes it too. Open or closed
 // is remembered for the person. While the pane is shown, the selected item's buttons are in the decision bar at its
 // foot, one Tab from the selected row (hop, below).
+// Several items can be chosen to decide together (P4): Space on a row chooses it or leaves it out, Shift+J and Shift+K
+// (or Shift with the arrows) choose it and the next or previous one, and Esc clears the choice. Space is the page's
+// scroll key everywhere else: it's taken only with focus on a row, as rows.js takes it. While items are chosen, the
+// selection bar stands where the decision bar was, and S, X and P act on all of them (.NET decides).
 window.tideTriage = (function () {
     const rows = window.tideRows;
     let started = 0, room = null, tellRoom = null;
@@ -35,7 +39,7 @@ window.tideTriage = (function () {
 
     // Keys that switch something one way and back (V the pane, Enter a group) or open something (Enter or O the source,
     // in a new tab): held down, the keyboard's repeats are left alone, so one press is one switch or one tab.
-    const once = ['read', 'toggle-reading', 'toggle', 'open'];
+    const once = ['read', 'toggle-reading', 'toggle', 'open', 'select-toggle'];
 
     // What a key means here, given what the shared keys made of it.
     function actionFor(e, action, onRow) {
@@ -46,6 +50,8 @@ window.tideTriage = (function () {
     function meaning(e, action, onRow) {
         // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
         // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
+        // Esc clears the items chosen first (the selection bar is drawn while there are any), then closes the pane.
+        if (e.key === 'Escape' && document.querySelector('.tide-triage-selbar')) return 'select-clear';
         if (e.key === 'Escape' || action === 'read') {
             const shown = !!shownPane();
             if (e.key === 'Escape' && shown) return 'close-reading';
@@ -141,8 +147,9 @@ window.tideTriage = (function () {
             document.addEventListener('keydown', hop);
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
-                keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
-                follow: ['toggle', 'expand', 'collapse', 'read', 'toggle-reading', 'close-reading', 'cancel'],
+                keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read', ' ': 'select-toggle' },
+                shift: { j: 'select-next', ArrowDown: 'select-next', k: 'select-prev', ArrowUp: 'select-prev' },
+                follow: ['toggle', 'expand', 'collapse', 'read', 'toggle-reading', 'close-reading', 'cancel', 'select-next', 'select-prev', 'select-clear'],
                 held: held, key: actionFor, open: open, after: showPane
             });
         },

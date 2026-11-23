@@ -229,16 +229,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 .Where(AnyForm<Adversary>((x, p) => EF.Functions.Like(x.Name, p, SearchText.Escape) || EF.Functions.Like(x.Aliases!, p, SearchText.Escape), term))
                 .Select(x => x.Id).ToListAsync(ct);
             Expression<Func<Article, bool>>? profiled = profiles.Count == 0 ? null : a => adversaryTags.Any(t => t.ArticleId == a.Id && profiles.Contains(t.AdversaryId));
-            q = q.Where(AnyForm<Article>((a, p) =>
-                EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
-                || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
-                || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
-                || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
-                || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
-                || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
-                || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
-                || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
-                || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape)), term, tagged, profiled));
+            q = q.Where(ArticleMatch(term, tagged, profiled));
         }
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
         // page neither repeats nor skips what an earlier one ranked differently. Only ids and titles: cheap at this size.
@@ -441,6 +432,38 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         (await db.ActionComments.AsNoTracking().Where(c => actionIds.Contains(c.ActionId)).OrderBy(c => c.AtUtc)
             .Select(c => new { c.ActionId, c.Text }).ToListAsync(ct))
         .GroupBy(c => c.ActionId).ToDictionary(g => g.Key, g => g.Select(c => c.Text).ToList());
+
+    // Every part of an article a search reads, matched one by one: what its search text (ArticleSearchRow) holds.
+    private static readonly Expression<Func<Article, string, bool>> PartsMatch = (a, p) =>
+        EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
+        || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
+        || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
+        || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
+        || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
+        || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
+        || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
+        || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
+        || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape));
+
+    /// <summary>
+    /// Whether an article matches <paramref name="term"/> in any part, in any of its forms, or <paramref name="extras"/>:
+    /// by its search text where that's current (a LEFT JOIN to one row), and part by part where it isn't, so an edit is
+    /// found at once and a search is never wrong while the text is being built. The parts are apart in the text by a
+    /// character no term holds, so a term can't match across two.
+    /// </summary>
+    private static Expression<Func<Article, bool>> ArticleMatch(string term, params Expression<Func<Article, bool>>?[] extras)
+    {
+        if (term.Contains(ArticleSearchRow.Separator)) return AnyForm(PartsMatch, term, extras);
+        var parts = AnyForm(PartsMatch, term);
+        var text = AnyForm<Article>((a, p) => EF.Functions.Like(a.SearchRow!.Text, p, SearchText.Escape), term);
+        var a = parts.Parameters[0];
+        Expression In(Expression<Func<Article, bool>> e) => new Swap(e.Parameters[0], a).Visit(e.Body);
+        // Where the text is current one LIKE on it stands for every part's; elsewhere the parts are matched one by one.
+        var current = In(ArticleSearchIndex.Current);
+        Expression body = Expression.OrElse(Expression.AndAlso(current, In(text)), Expression.AndAlso(Expression.Not(current), parts.Body));
+        foreach (var extra in extras.OfType<Expression<Func<Article, bool>>>()) body = Expression.OrElse(body, In(extra));
+        return Expression.Lambda<Func<Article, bool>>(body, a);
+    }
 
     /// <summary>
     /// <paramref name="match"/> (an entity and a LIKE pattern) for any of <paramref name="term"/>'s forms, or
