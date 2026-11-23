@@ -223,6 +223,64 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.16.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds nine migrations, in this order: `ArticleWriter`,
+`ReportAssessments`, `MeetingNoteFollowUps`, `IndicatorKeys`, `AiDraftKinds`, `ArticleSearch`,
+`SystemStatsAndBackupRuns`, `SavedViewPages` and `StoredFileBytesPurged`. None of the earlier ones change. On a
+DbaApplies install, the DBA applies them first.
+
+**After upgrading**
+- **Two fills run in the background.** *Keying stored indicators* (event 7109) and *Search index* (event 7110) work
+  through existing rows after start-up. Search and indicator lookups give the same answers while they run; they're
+  only slower until the fills finish. Diagnostics shows both under Background jobs.
+- **Re-run `deploy\sql\02-Grant-Backup.sql`**, so `Backup-Tide.ps1` can record each run in the new `dbo.BackupRuns`
+  table. Until you do, backups still work and only warn that they couldn't record the run.
+- **The upgrade asks before stopping a busy site.** If people are using TIDE, `Upgrade-Tide.ps1` asks
+  *People are using TIDE. Back up and deploy anyway? (y/N)*. Each build ships `migrations-sqlserver.txt` for rollback.
+- **Upgrades prune their own backups.** After a successful upgrade the newest three upgrades' backups are kept
+  (`-KeepUpgradeBackups`, `0` keeps everything); see [Upgrading with Upgrade-Tide.ps1](#upgrading-with-upgrade-tideps1).
+
+**New, and off until you turn it on**
+- **Audit log archive.** With `Audit:RetentionDays` set (365 or more), each whole month older than that is written to a
+  gzipped file with a SHA-256 manifest under the file store, read back, and only then deleted from the database.
+- **Purging removed files' bytes.** With `Files:PurgeRemovedAfterDays` set (30 or more), a daily job (event 7114) deletes
+  the bytes of files removed that long ago. The row and its hash stay, and backups still hold the bytes; the file
+  shows *Bytes purged* instead of *Restore*.
+- **A stale-backup warning.** With `Backup:StaleAfterHours` set, `/health/jobs` reports Degraded when the newest backup
+  is older than that (event 7205).
+- **Metrics to your own monitoring.** `Telemetry:OtlpEndpoint` sends request, Kestrel and runtime metrics over OTLP
+  (`Telemetry:Protocol`, `Telemetry:Headers`, a secret). Traces only with `Telemetry:Traces`, sampled
+  (`Telemetry:TraceSampleRatio`, 0.05) and without query strings. Nothing is sent unless the endpoint is set.
+- **A key ring another server can read.** `DataProtection:CertificateThumbprint` protects new keys with that
+  certificate (`DataProtection:PreviousThumbprints` keeps old ones readable), for a warm standby
+  ([operations](operations/backup-and-recovery.md)). Diagnostics says how keys are protected and warns 30 days before
+  the certificate expires. Keys made before the switch stay machine-bound until they expire.
+
+**New**
+- **Diagnostics › Performance**: requests, page events and database commands, with medians, 95th percentiles and the
+  slowest. Slow SQL (over 500 ms, event 7201) and slow page events (over 1 s, event 7202) are logged. Nothing leaves
+  the server.
+- **Diagnostics › Data & retention**: the largest tables, files by folder, growth over 30 and 90 days, free disk, the
+  last backups and the retention settings. `/health/jobs` reports Degraded under 10% free disk (event 7203).
+- **A weekly stored-file check** (event 7112) compares files on disk with their rows and samples their hashes. It
+  reports; it never deletes.
+- **`Tide.Web.dll --verify-database`** says whether a build can run on a database (migrations both ways, a page of each
+  core table). The restore drill runs it as its *app* check.
+- **Each 15-minute log backup also copies new files**, so files and the database are both recoverable to within 15
+  minutes.
+- **How long the meeting takes** (Administration › Organization, 5 to 180 minutes, 30 by default). Present mode's clock
+  shows time against it.
+- **AI drafting of report assessments** respects the page's marking. The report's numbers are AMBER, so at the default
+  `Ai:MaxTlp` (GREEN) drafting is off and says why. Raise it to AMBER to allow it. With no provider set, *Copy a prompt*
+  and paste the answer back.
+
+**Changes**
+- **Indicator lookups and text search read far less.** Each indicator stores an indexed key, and each article's searched
+  text lives in one `ArticleSearch` row, rebuilt within about 10 seconds of a save. Answers and their order are
+  unchanged.
+- **Job event ids run 7101 to 7114**; performance and health warnings use 7201 to 7205.
+
 ### v1.15.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `SourceUserAgent` (two columns on
