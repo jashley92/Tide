@@ -5,10 +5,10 @@ namespace Tide.Web.Services;
 /// <summary>
 /// The statistics job: once a day it takes the snapshot of how big TIDE is (<see cref="SystemStats.TakeAsync"/>), which
 /// Diagnostics' Data &amp; retention panel shows, and every <see cref="Poll"/> it reads when the newest full backup finished
-/// (for <c>/health/jobs</c>) and warns, once an hour while it lasts, of a disk under 10% free (event id 7203) or a stale
+/// (for <c>/health/jobs</c>, through <see cref="StorageAlerts"/>) and warns, once an hour while it lasts, of a disk under 10% free (event id 7203) or a stale
 /// backup when <c>Backup:StaleAfterHours</c> is set (7205). Only the process holding the job lease takes the snapshot.
 /// </summary>
-public sealed class SystemStatsHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, BackupWatch backups,
+public sealed class SystemStatsHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, StorageAlerts alerts,
     TimeProvider time, ILogger<SystemStatsHostedService> log) : BackgroundService
 {
     /// <summary>How often it looks.</summary>
@@ -38,13 +38,14 @@ public sealed class SystemStatsHostedService(IServiceScopeFactory scopes, JobMon
         var now = time.GetUtcNow();
         try
         {
-            backups.Set(await stats.LastFullBackupAsync(ct));
-            if (stats.DiskProblem() is { } disk && now - _diskWarned >= WarnEvery)
+            var (disk, stale) = (stats.DiskProblem(), stats.BackupProblem(await stats.LastFullBackupAsync(ct)));
+            alerts.Set([disk, stale]);
+            if (disk is not null && now - _diskWarned >= WarnEvery)
             {
                 _diskWarned = now;
                 log.LogWarning(new EventId(SystemStats.DiskLowEventId, "DiskLow"), "{Problem} Free some space or move the data root.", disk);
             }
-            if (stats.BackupProblem(backups.LastFull) is { } stale && now - _backupWarned >= WarnEvery)
+            if (stale is not null && now - _backupWarned >= WarnEvery)
             {
                 _backupWarned = now;
                 log.LogWarning(new EventId(SystemStats.BackupStaleEventId, "BackupStale"), "{Problem} Check the backup task.", stale);

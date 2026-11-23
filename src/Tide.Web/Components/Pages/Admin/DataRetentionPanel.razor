@@ -25,7 +25,7 @@
             files @Bytes(latest.FilesBytes)@Growth(latest.FilesBytes, r.Month?.FilesBytes, r.Quarter?.FilesBytes).
             @if (latest.DiskFreeBytes is { } free && latest.DiskTotalBytes is > 0)
             {
-                <text>The data root's disk has @Bytes(free) free of @Bytes(latest.DiskTotalBytes) (@((free * 100.0 / latest.DiskTotalBytes.Value).ToString("0.#"))%); under 10% is Degraded on /health/jobs.</text>
+                <text>The data root's disk has @Bytes(free) free of @Bytes(latest.DiskTotalBytes) (@((free * 100.0 / latest.DiskTotalBytes.Value).ToString("0.#"))%); under @SystemStats.DiskFloor.ToString("P0") is Degraded on /health/jobs.</text>
             }
         </p>
         <div class="tide-admin-index mb-0">
@@ -40,7 +40,7 @@
                                 <th scope="row" class="tide-data small fw-normal">@t.Name</th>
                                 <td class="text-end">@t.Rows.ToString("N0")</td>
                                 <td class="text-end text-nowrap">@Bytes(t.Bytes)</td>
-                                <td class="text-end text-nowrap">@RowGrowth(t, _monthTables)</td>
+                                <td class="text-end text-nowrap">@RowGrowth(t, r.MonthRows)</td>
                             </tr>
                         }
                     </tbody>
@@ -81,7 +81,6 @@
 @code {
     private const int Take = 12;
     private DataReport? _report;
-    private Dictionary<string, long> _monthTables = [];
 
     private IReadOnlyList<(string What, string Kept)> Retention =>
     [
@@ -98,9 +97,6 @@
         try
         {
             _report = await Stats.ReportAsync(Retention);
-            if (_report.Month is { } month)
-                _monthTables = (System.Text.Json.JsonSerializer.Deserialize<List<TableSize>>(month.Tables, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) ?? [])
-                    .ToDictionary(t => t.Name, t => t.Rows);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
@@ -115,6 +111,6 @@
             _ => "",
         };
 
-    private static string RowGrowth(TableSize t, Dictionary<string, long> month) =>
+    private static string RowGrowth(TableSize t, IReadOnlyDictionary<string, long> month) =>
         month.TryGetValue(t.Name, out var then) ? (t.Rows - then).ToString("+#,0;-#,0;0") : "—";
 }

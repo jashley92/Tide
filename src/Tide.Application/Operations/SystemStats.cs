@@ -34,14 +34,18 @@ public sealed class BackupOptions
 /// <summary>What the Data &amp; retention panel shows: the latest snapshot, the growth since one 30 and 90 days before, the
 /// newest backups the backup script recorded, and the retention in force.</summary>
 public sealed record DataReport(SystemStat? Latest, IReadOnlyList<TableSize> Tables, IReadOnlyList<FolderSize> Folders,
-    SystemStat? Month, SystemStat? Quarter, BackupRun? LastFull, BackupRun? LastLog, IReadOnlyList<(string What, string Kept)> Retention);
+    SystemStat? Month, SystemStat? Quarter, BackupRun? LastFull, BackupRun? LastLog, IReadOnlyList<(string What, string Kept)> Retention)
+{
+    /// <summary>Each table's rows in the snapshot about 30 days before, for the growth column; empty without one.</summary>
+    public IReadOnlyDictionary<string, long> MonthRows { get; init; } = new Dictionary<string, long>();
+}
 
 /// <summary>
 /// The daily snapshot of how big TIDE is (<see cref="SystemStat"/>) and what Diagnostics reads from it, plus the disk and
 /// backup checks <c>/health/jobs</c> and the statistics job make. The disk below <see cref="DiskFloor"/> free is Degraded
 /// (decided 2026-11-21); a stale backup only when <see cref="BackupOptions.StaleAfterHours"/> is set.
 /// </summary>
-public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOptionsMonitor<FileStoreOptions> files,
+public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IFileStore store, IOptionsMonitor<FileStoreOptions> files,
     IOptionsMonitor<BackupOptions> backups, OrgClock clock, TimeProvider time)
 {
     /// <summary>The share of the data root's disk that must stay free; below it, <c>/health/jobs</c> says Degraded.</summary>
@@ -52,8 +56,8 @@ public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOpt
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>The data root, as the app resolves it.</summary>
-    public string Root => Path.GetFullPath(files.CurrentValue.RootPath);
+    /// <summary>The data root: where the file store keeps its files (a relative Files:RootPath is under the site).</summary>
+    public string Root => store.Root ?? Path.GetFullPath(files.CurrentValue.RootPath);
 
     /// <summary>Takes today's snapshot, unless there is one. Returns whether it took one.</summary>
     public async Task<bool> TakeAsync(CancellationToken ct = default)
@@ -88,7 +92,11 @@ public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOpt
         return new DataReport(latest,
             latest is null ? [] : JsonSerializer.Deserialize<List<TableSize>>(latest.Tables, Json) ?? [],
             latest is null ? [] : JsonSerializer.Deserialize<List<FolderSize>>(latest.Folders, Json) ?? [],
-            month, quarter, lastFull, lastLog, retention);
+            month, quarter, lastFull, lastLog, retention)
+        {
+            MonthRows = month is null ? new Dictionary<string, long>()
+                : (JsonSerializer.Deserialize<List<TableSize>>(month.Tables, Json) ?? []).ToDictionary(t => t.Name, t => t.Rows),
+        };
     }
 
     /// <summary>When the newest successful full backup the backup script recorded finished; null for none.</summary>
@@ -155,23 +163,14 @@ public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOpt
 }
 
 /// <summary>
-/// When the newest successful full backup finished, as the statistics job last read it (every few minutes), so
-/// <c>/health/jobs</c> can judge a stale backup without asking the database. Null until read, or when none is recorded.
+/// What the statistics job last found wrong with the data root's disk or the backups (a sentence each), for
+/// <c>/health/jobs</c> to report from memory. Empty until the job has looked, and when nothing is wrong.
 /// </summary>
-public sealed class BackupWatch
+public sealed class StorageAlerts
 {
-    private DateTimeOffset? _lastFull;
-    private int _read;
+    private volatile IReadOnlyList<string> _problems = [];
 
-    public DateTimeOffset? LastFull => _lastFull;
+    public IReadOnlyList<string> Problems => _problems;
 
-    /// <summary>Whether it has been read at least once in this process.</summary>
-    public bool Read => Volatile.Read(ref _read) == 1;
-
-    public void Set(DateTimeOffset? lastFull)
-    {
-        _lastFull = lastFull;
-        Volatile.Write(ref _read, 1);
-    }
+    public void Set(IEnumerable<string?> problems) => _problems = [.. problems.OfType<string>()];
 }
-

@@ -23,7 +23,7 @@ public class SystemStatsTests : IDisposable
     }
 
     private SystemStats Stats(TestDb db, int? staleAfterHours = null, TimeProvider? time = null) =>
-        new(db, new DataUsage(db), new StaticOptionsMonitor<FileStoreOptions>(new FileStoreOptions { RootPath = _root }),
+        new(db, new DataUsage(db), db.Store, new StaticOptionsMonitor<FileStoreOptions>(new FileStoreOptions { RootPath = _root }),
             new StaticOptionsMonitor<BackupOptions>(new BackupOptions { StaleAfterHours = staleAfterHours }), db.Clock, time ?? TimeProvider.System);
 
     [Theory]
@@ -122,15 +122,15 @@ public class SystemStatsTests : IDisposable
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddScoped(services, _ => Stats(db, staleAfterHours: 26));
         await using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
-        var (jobs, watch, log) = (new JobMonitor(TimeProvider.System), new BackupWatch(), new ListLogger<Tide.Web.Services.SystemStatsHostedService>());
+        var (jobs, alerts, log) = (new JobMonitor(TimeProvider.System), new StorageAlerts(), new ListLogger<Tide.Web.Services.SystemStatsHostedService>());
         var job = new Tide.Web.Services.SystemStatsHostedService(
             Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(provider),
-            jobs, new HeldLease(), watch, TimeProvider.System, log);
+            jobs, new HeldLease(), alerts, TimeProvider.System, log);
 
-        watch.Read.Should().BeFalse();
+        alerts.Problems.Should().BeEmpty("nothing until the job has looked");
         await job.PassAsync(CancellationToken.None);
 
-        watch.LastFull.Should().BeCloseTo(DateTimeOffset.UtcNow.AddHours(-50), TimeSpan.FromMinutes(1));
+        alerts.Problems.Should().ContainSingle().Which.Should().Contain("50 hours ago");
         log.Warnings.Should().ContainSingle().Which.Should().Contain("50 hours ago");
         jobs.Get(JobMonitor.Statistics).LastDetail.Should().Be("today's snapshot taken");
         await using (var ctx = db.Context()) (await ctx.SystemStats.CountAsync()).Should().Be(1);
@@ -138,12 +138,13 @@ public class SystemStatsTests : IDisposable
         await job.PassAsync(CancellationToken.None);
         log.Warnings.Should().ContainSingle("a lasting problem is logged once an hour");
 
-        var health = await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, Stats(db, 26), watch)
+        var health = await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, alerts)
             .CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
         health.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
         health.Description.Should().Contain("Backup:StaleAfterHours");
-        (await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, Stats(db), watch)
+        alerts.Set([]);
+        (await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, alerts)
             .CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext())).Status
-            .Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy, "off unless a limit is set");
+            .Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy, "nothing found wrong");
     }
 }

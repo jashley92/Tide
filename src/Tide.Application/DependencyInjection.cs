@@ -48,7 +48,7 @@ public static class DependencyInjection
         services.AddSingleton<JobMonitor>();
         services.Configure<BackupOptions>(config.GetSection("Backup"));
         services.AddScoped<SystemStats>();
-        services.AddSingleton<BackupWatch>();
+        services.AddSingleton<StorageAlerts>();
         services.AddSingleton<JobRunLog>();
         // One process runs the background jobs (the lease in the database); the others stand by.
         services.AddSingleton<BackgroundJobLease>();

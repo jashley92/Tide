@@ -211,4 +211,7 @@ public interface IFileStore
     Stream? OpenRead(Guid id);
 
     void Delete(Guid id);
+
+    /// <summary>The folder the files are kept in, resolved as the store resolves Files:RootPath; null for a store with none.</summary>
+    string? Root => null;
 }
