@@ -16,19 +16,21 @@ public class ArticleFilterTests
     {
         var f = new ArticleFilter
         {
-            Search = "lure", Status = ArticleStatus.Ready, From = new(2026, 10, 1), To = new(2026, 10, 31), Assessment = ArticleAssessment.P1P2,
+            Search = "lure", Author = "S-1-5-21-DANA", Status = ArticleStatus.Ready, From = new(2026, 10, 1), To = new(2026, 10, 31), Assessment = ArticleAssessment.P1P2,
             Tag = "ransomware", Category = "fraud", Tactic = MitreTactic.InitialAccess, Technique = "T1566", WithSubtechniques = true,
         };
         var query = f.ToQuery();
         query.Where(q => q.Value is not null).ToDictionary().Should().BeEquivalentTo(new Dictionary<string, object?>
         {
-            ["q"] = "lure", ["status"] = "ready", ["from"] = "2026-10-01", ["to"] = "2026-10-31", ["assess"] = "p1-p2", ["tag"] = "ransomware",
+            ["q"] = "lure", ["author"] = "S-1-5-21-DANA", ["status"] = "ready", ["from"] = "2026-10-01", ["to"] = "2026-10-31", ["assess"] = "p1-p2", ["tag"] = "ransomware",
             ["category"] = "fraud", ["tactic"] = "TA0001", ["technique"] = "T1566", ["withsubs"] = "true",
         });
         Read(query).Should().Be(f);
         Read(new ArticleFilter().ToQuery()).Should().Be(new ArticleFilter());
         new ArticleFilter().ToQuery().Values.Should().OnlyContain(v => v == null, "an empty filter leaves the address bare");
         foreach (var a in Enum.GetValues<ArticleAssessment>()) Read(new ArticleFilter { Assessment = a }.ToQuery()).Assessment.Should().Be(a);
+        Read(new ArticleFilter { Author = ArticleFilter.Me }.ToQuery()).Should().Be(new ArticleFilter { Author = ArticleFilter.Me });
+        new ArticleFilter { Author = ArticleFilter.Me }.ToQuery()["author"].Should().Be("me");
         Read(new ArticleFilter { Technique = ArticleFilter.None, Tag = ArticleFilter.None }.ToQuery())
             .Should().Be(new ArticleFilter { Technique = ArticleFilter.None, Tag = ArticleFilter.None });
     }
@@ -51,6 +53,18 @@ public class ArticleFilterTests
         Read(("withsubs", "true")).WithSubtechniques.Should().BeFalse("sub-techniques of no technique");
         Read(("tactic", "TA9999")).Tactic.Should().BeNull();
         Read(("status", "draft")).Status.Should().Be(ArticleStatus.Draft);
+    }
+
+    [Fact]
+    public void Author_IsMineOrAnId_AndNarrowsTheList()
+    {
+        Read(("author", "ME")).Author.Should().Be(ArticleFilter.Me, "Mine in any case");
+        Read(("author", " S-1-5-21-Dana ")).Author.Should().Be("S-1-5-21-Dana", "an id as written, trimmed: ids compare exactly");
+        Read(("author", "  ")).Author.Should().BeNull();
+        Read(("author", new string('x', ArticleFilter.MaxAuthor + 1))).Author.Should().BeNull("longer than any id");
+        Read(("author", "someone-unknown")).Should().Be(new ArticleFilter { Author = "someone-unknown" }, "an unknown id stays: it lists nothing, not everything");
+        new ArticleFilter { Author = ArticleFilter.Me }.Narrowed.Should().BeTrue();
+        new ArticleFilter { Author = "x", Search = "lure" }.Cleared().Should().Be(new ArticleFilter { Search = "lure" });
     }
 
     [Theory]
@@ -83,6 +97,15 @@ public class ArticleFilterTests
 
         var none = new ArticleFilter { Tag = ArticleFilter.None, Technique = ArticleFilter.None, Category = "gone" }.Chips(_ => null, _ => null);
         none.Select(c => c.Label).Should().Equal("Category: gone", "No scorecard tag", "No technique");
+
+        // Whose comes first: Mine, or By and the person's name (their id when the page can't name them).
+        var mine = new ArticleFilter { Author = ArticleFilter.Me, Status = ArticleStatus.Draft }.Chips(_ => null, _ => null, _ => "never asked");
+        mine.Select(c => c.Label).Should().Equal("Mine", "Status: Draft");
+        mine[0].Key.Should().Be("author");
+        mine[0].Without.Should().Be(new ArticleFilter { Status = ArticleStatus.Draft });
+        new ArticleFilter { Author = "S-1-5-21-DANA" }.Chips(_ => null, _ => null, id => id == "S-1-5-21-DANA" ? "Dana Analyst" : null)
+            .Single().Label.Should().Be("By: Dana Analyst");
+        new ArticleFilter { Author = "S-1-5-21-GONE" }.Chips(_ => null, _ => null).Single().Label.Should().Be("By: S-1-5-21-GONE");
     }
 
     [Theory]

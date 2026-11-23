@@ -326,7 +326,8 @@ The triage keys are listed under [keyboard shortcuts](../architecture/frontend.m
 **Route:** `/articles` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
 Every article, as a list that filters as you type, sorts by any heading, and pages rather than cutting off. The
-filter bar has **Draft** and **Ready** as pills; **+ Filter** holds the rest: status, ATT&CK tactic, technique (with
+filter bar has **Mine**, **Draft** and **Ready** as pills (Mine goes with either); **+ Filter** holds the rest: by
+(you, or anyone who has written an article, with how many), status, ATT&CK tactic, technique (with
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
