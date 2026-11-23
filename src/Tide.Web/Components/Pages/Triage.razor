@@ -201,12 +201,12 @@ else
             <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id) @(picked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : "") + (picked ? PickedNote : ""))"
                 tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
-                    @PickBox(line, i, picked, $"Choose “{item.Title}”")
                     <div class="flex-grow-1 tide-triage-body">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
                            does); a promoted item's goes to its article; a dismissed or duplicate one's just selects the row.
                            The source opens from its own icon (or O), in a new tab. *@
                         <div class="tide-triage-head">
+                            @PickBox(line, i, picked, $"Choose “{item.Title}”")
                             @if (Promotable(item.Status))
                             {
                                 <button type="button" class="tide-triage-title tide-triage-title-btn" title="Promote to an article" disabled="@_busy"
