@@ -218,7 +218,7 @@ else
                     <textarea id="sq-f-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false"
                               data-oi-target data-oi-default aria-autocomplete="list" aria-controls="sq-f-text-list" aria-describedby="sq-f-text-help"
                               @bind="f.Text"></textarea>
-                    <ul id="sq-f-text-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="sq-f-text" hidden></ul>
+                    <PlaceholderList For="sq-f-text" />
                     <span class="visually-hidden" role="status" data-oi-status></span>
                     <LengthNote Value="@f.Text" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
                     <SavedQueryHelp Id="sq-f-text-help" />

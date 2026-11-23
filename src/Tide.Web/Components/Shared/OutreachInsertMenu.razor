@@ -1,7 +1,7 @@
 @* The Insert menu over an outreach template's subject and body (OutreachTemplatesPage): every placeholder, grouped as
    the help lists them and found by typing, and how to put the one chosen in: as it is, optional (?), with text for when
    it's empty (|), or as a section round what's selected. The buttons carry what they write (data-oi-insert,
-   data-oi-section); js/outreach-editor.js writes it where the cursor was in the box last used, then this closes. *@
+   data-oi-section); js/placeholder-editor.js writes it where the cursor was in the box last used, then this closes. *@
 
 <div class="tide-oi-menu">
     <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId"
@@ -104,7 +104,7 @@
         StateHasChanged();
     }
 
-    // After an insert the cursor is in the box written to (js/outreach-editor.js): focus stays there.
+    // After an insert the cursor is in the box written to (js/placeholder-editor.js): focus stays there.
     private void Close() => _open = false;
 
     private void Keys(KeyboardEventArgs e)

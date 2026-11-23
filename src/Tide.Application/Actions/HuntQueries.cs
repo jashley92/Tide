@@ -86,10 +86,13 @@ public static class HuntValues
 /// <summary>The dialects that ship. Their defaults are a starting point: field and dataset names vary by environment.</summary>
 public static class QueryDialects
 {
-    public const string Placeholder = "{{values}}";
+    /// <summary>The names of a query's placeholders, as written between the braces.</summary>
+    public const string ValuesName = "values", DaysName = "days";
+
+    public const string Placeholder = "{{" + ValuesName + "}}";
 
     /// <summary>Optional in a template: how many days back to look (at least 30, more for an older story).</summary>
-    public const string DaysPlaceholder = "{{days}}";
+    public const string DaysPlaceholder = "{{" + DaysName + "}}";
 
     public static readonly IReadOnlyList<IQueryDialect> All = [new Xql(), new Kql(), new Fql()];
 
@@ -383,7 +386,10 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
     public static bool UsesValues(string text) => ValuesPattern().IsMatch(text);
 
     /// <summary>The placeholder for <paramref name="kind"/>'s values in a saved query ("{{values:sha256}}").</summary>
-    public static string ValuesPlaceholder(HuntValueKind kind) => "{{values:" + kind.ToString().ToLowerInvariant() + "}}";
+    public static string ValuesPlaceholder(HuntValueKind kind) => "{{" + ValuesName(kind) + "}}";
+
+    /// <summary>The name of <paramref name="kind"/>'s values placeholder, between the braces ("values:sha256").</summary>
+    public static string ValuesName(HuntValueKind kind) => QueryDialects.ValuesName + ":" + kind.ToString().ToLowerInvariant();
 
     /// <summary>
     /// The values placeholders in a saved query, in order: null for <c>{{values}}</c>, else the kind named. Throws for a
@@ -511,9 +517,8 @@ public sealed record QueryPlaceholder(string Name, string Description)
     /// </summary>
     public static readonly IReadOnlyList<QueryPlaceholder> All =
     [
-        new("days", "How many days back to look: the action's window."),
-        new("values", "The action's indicators, written as the language writes a list."),
-        .. Enum.GetValues<HuntValueKind>().Select(k => new QueryPlaceholder(
-            HuntQueryBuilder.ValuesPlaceholder(k)[2..^2], $"{HuntValues.Label(k)} only.")),
+        new(QueryDialects.DaysName, "How many days back to look: the action's window."),
+        new(QueryDialects.ValuesName, "The action's indicators, written as the language writes a list."),
+        .. Enum.GetValues<HuntValueKind>().Select(k => new QueryPlaceholder(HuntQueryBuilder.ValuesName(k), $"{HuntValues.Label(k)} only.")),
     ];
 }

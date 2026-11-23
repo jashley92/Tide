@@ -1,5 +1,5 @@
 @* The Insert menu over a saved query's text (Saved queries, Save for the team): its placeholders, the days back and the
-   indicators, all of them or one kind. A button carries what it writes (data-oi-insert); js/outreach-editor.js writes it
+   indicators, all of them or one kind. A button carries what it writes (data-oi-insert); js/placeholder-editor.js writes it
    where the cursor was in the box, brings it into view and flashes it, then this closes. *@
 
 <div class="tide-oi-menu">
@@ -29,9 +29,8 @@
     /// <summary>The panel's id, unique on the page.</summary>
     [Parameter, EditorRequired] public string PanelId { get; set; } = "";
 
-    /// <summary>What typing "{{" offers in a saved query's box (js/outreach-editor.js): every placeholder, none a section.</summary>
-    public static readonly string SuggestNames = System.Text.Json.JsonSerializer.Serialize(
-        QueryPlaceholder.All.Select(p => new { n = p.Name, d = p.Description, s = false }));
+    /// <summary>What typing "{{" offers in a saved query's box: every placeholder, none a section.</summary>
+    public static readonly string SuggestNames = PlaceholderNames.Json(QueryPlaceholder.All.Select(p => (p.Name, p.Description, false)));
 
     private bool _open;
     private ElementReference _toggle;
@@ -39,7 +38,7 @@
 
     private void Toggle() => _open = !_open;
 
-    // After an insert the cursor is in the box written to (js/outreach-editor.js): focus stays there.
+    // After an insert the cursor is in the box written to (js/placeholder-editor.js): focus stays there.
     private void Close() => _open = false;
 
     private void Keys(KeyboardEventArgs e)

@@ -152,7 +152,6 @@
 
     function fieldOf(el) { return el.closest('.tide-oi-field') || el.parentElement; }
     function viewportHeight() { return root.innerHeight || doc.documentElement.clientHeight; }
-    function box(node, r) { Object.assign(node.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' }); }
 
     function textRects(el, from, to) {
         // Where the box and its field are, read before the copy goes in (one layout, not two).
@@ -196,7 +195,7 @@
             var m = doc.createElement('span');
             m.className = 'tide-oi-flash';
             m.setAttribute('aria-hidden', 'true');
-            box(m, r);
+            Object.assign(m.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
             m.addEventListener('animationend', function () { m.remove(); });
             field.appendChild(m);
             return m;

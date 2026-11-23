@@ -5,7 +5,7 @@ using AwesomeAssertions;
 namespace Tide.UnitTests;
 
 /// <summary>
-/// Writing an outreach template (wwwroot/js/outreach-editor.js), run in Node: what typing "{{" offers and writes, what
+/// Writing an outreach template (wwwroot/js/placeholder-editor.js), run in Node: what typing "{{" offers and writes, what
 /// the Insert menu puts in, and the section it wraps round a selection, in the body and in the one-line subject.
 /// </summary>
 public class OutreachEditorTransformTests
@@ -47,7 +47,7 @@ public class OutreachEditorTransformTests
         await File.WriteAllTextAsync(script, Cases);
         try
         {
-            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "outreach-editor.js")])
+            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "placeholder-editor.js")])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };

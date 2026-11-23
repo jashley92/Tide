@@ -1,0 +1,8 @@
+@* The list typing "{{" opens in a placeholder box (js/placeholder-editor.js fills it): its id is the box's, with -list,
+   which the box names in aria-controls. *@
+<ul id="@(For + "-list")" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="@For" hidden></ul>
+
+@code {
+    /// <summary>The id of the box it's for.</summary>
+    [Parameter, EditorRequired] public string For { get; set; } = "";
+}
