@@ -272,11 +272,17 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-earlier-clear { color: var(--tide-text-muted); line-height: 1; }
 .tide-earlier-clear:hover { color: var(--tide-text); }
 
-/* Triage's reading pane (EP-76): beside the list on wide screens, above it on narrow ones. */
-.tide-triage-layout.reading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: var(--tide-space-3); align-items: start; }
+/* Triage's reading pane (EP-76): beside the list on wide screens, the list a column of about 440px; above it on narrow
+   ones. It opens by itself on a wide window (reading-auto: the person hasn't chosen; below 1400px it's not shown and the
+   list has the width). */
+.tide-triage-layout.reading { display: grid; grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); gap: var(--tide-space-3); align-items: start; }
 .tide-reading { position: sticky; top: .75rem; max-height: calc(100vh - 1.5rem); overflow: auto; }
 .tide-reading-head { display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between; }
 .tide-reading-title { font-size: 1.05rem; margin: 0 0 .25rem; }
+/* Read it here, Read again and Open the site in the pane's head, on one row beside its title, which wraps. */
+.tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tide-reading-tools { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--tide-space-2); flex: none; }
+.tide-reading-tools > .btn { white-space: nowrap; }
 .tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
 .tide-meeting-notes { overflow-wrap: anywhere; line-height: 1.55; }
 .tide-meeting-notes > li + li { margin-top: .2rem; }
@@ -304,6 +310,96 @@ a.tide-werun-chip:hover { text-decoration: underline; }
   .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
 }
 @media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
+@media (max-width: 1399.98px) {
+    .tide-triage-layout.reading-auto { display: block; }
+    .tide-triage-layout.reading-auto > .tide-reading { display: none; }
+}
+/* Beside the list, the pane sticks below the top bar (which sticks too), not under it, and the pane's text gives way so
+   the decision bar at its foot stays in the pane. */
+@media (min-width: 1001px) {
+    .tide-reading { top: calc(var(--tide-height-top) + var(--tide-space-3)); max-height: calc(100vh - var(--tide-height-top) - 2 * var(--tide-space-3));
+        display: flex; flex-direction: column; overflow: visible; }
+    .tide-reading > * { flex: none; }
+    .tide-reading > .tide-reading-text { flex: 0 1 auto; min-height: 6rem; }
+}
+/* The decision bar (41-intake.css has the decision itself). On a wide window its buttons are one row, by construction:
+   the article's title in Attach gives way, the dismiss reason narrows, and the pane's text gives way. */
+.tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+/* From the bar, the attach list opens upwards, over the pane's text. */
+.tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
+@media (min-width: 1400px) {
+    .tide-reading .tide-triage-acts .btn:not(.tide-triage-attach) { flex: none; white-space: nowrap; }
+    /* The main button keeps its verb and takes the room the others leave: only the article's title in it gives way,
+       with an ellipsis, and never below a few letters. The other buttons give way first: their words after the first
+       go (each says them in full to a screen reader and on hover), then the dismiss reason narrows. The main pair lay
+       their buttons straight into the row; Dismiss and its reason are its end, taking what room is left. Only when all
+       that has given way and still doesn't fit (a covered report's seven controls on a narrow pane) does the end go to
+       a second row, together. */
+    .tide-reading .tide-triage-acts > .tide-triage-main { display: contents; }
+    .tide-reading .tide-triage-end { flex: 1 1 0; min-width: min-content; justify-content: flex-end; }
+    /* Attach is a grid of its icon, its verb and the title, the title's column at least 2em: the button's least width
+       is its verb and the start of the title. It takes the room the others leave, up to its full width. */
+    .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(2em, 1fr);
+        flex: 4 1 0; min-width: auto; max-width: max-content; }
+    /* Out of sight but still said: the words stay in the button's name, which starts with what's shown. */
+    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    /* Last of all, before the row wraps (fonts wider than this machine's), the key hint on a button before the end gives
+       way: its label then its key, the key's column able to close to nothing. Each such button is as wide as its label
+       when the row is laid out, then takes the room back for its key before Attach or the end take any (as the buttons
+       kept it when they didn't give way at all): with room to spare, it's as it was. */
+    .tide-reading :is(.tide-triage-acts, .tide-triage-main) > .btn:not(.btn-primary, .tide-triage-attach):has(> .tide-kbd) {
+        display: inline-grid; grid-auto-flow: column; grid-template-columns: auto minmax(0, max-content); column-gap: .3em; align-items: center;
+        flex: 100 1 0; max-width: max-content; overflow: clip; overflow-clip-margin: content-box; }
+    .tide-reading :is(.tide-triage-acts, .tide-triage-main) > .btn:not(.btn-primary, .tide-triage-attach):has(> .bi):has(> .tide-kbd) {
+        grid-template-columns: auto auto minmax(0, max-content); }
+    /* The reason's least width 5rem, so the end goes to a second row only when even that won't fit. */
+    .tide-reading .tide-triage-end > select { flex: 1 1 0; width: 5rem; min-width: 5rem; max-width: max-content; }
+    /* With the pane beside it, the page is a column the window's height under the top bar, as the board's is: the list
+       scrolls inside its card, and the pane beside it takes as much of the height as it needs, a long text scrolling
+       inside it and the bar at its foot on the first screen. A short window scrolls the page instead. */
+    .content:has(> .tide-inbox-view > .tide-triage-layout.reading) { display: flex; flex-direction: column; height: calc(100vh - var(--tide-height-top));
+        min-height: 36rem; padding-bottom: var(--tide-space-4); overflow: clip; }
+    .content:has(> .tide-inbox-view > .tide-triage-layout.reading) > *, .tide-inbox-view:has(> .tide-triage-layout.reading) > * { flex-shrink: 0; }
+    .tide-inbox-view:has(> .tide-triage-layout.reading) > .tide-triage-layout.reading { flex: 1 1 0; min-height: 20rem; grid-template-rows: minmax(0, 1fr);
+        align-items: stretch; }
+    .tide-triage-layout.reading > .tide-card { margin-bottom: 0; }
+    /* The list scrolls inside its card, which is also what anything positioned in a row (a presence note's hidden words)
+       is placed against: nothing in the list reaches past it to make the window scroll. */
+    .tide-triage-layout.reading > .tide-card:first-child { position: relative; overflow-y: auto; overscroll-behavior: contain; }
+    /* The pane is as tall as what it holds, so the bar follows a short text straight on; a text longer than the room
+       scrolls inside the pane, the bar at its foot. It's never shorter than an item not read here yet takes (its
+       title, excerpt and "Not read yet"), so moving on with J the bar's buttons stay put under the mouse. */
+    .tide-triage-layout.reading > .tide-reading { position: static; align-self: start; max-height: 100%; min-height: min(100%, 26rem); }
+    .tide-triage-layout.reading > .tide-reading > .tide-reading-text { max-height: none; }
+    .tide-triage-layout.reading > .tide-reading > .tide-triage-decide { margin-top: auto; }
+}
+/* Docked beside the rail under 1800px, the page has about 873 to 1170px: the list takes up to 42% of it and the bar's
+   buttons wrap to a second row, as the design has them, rather than the pane closing. From 1800px the pane has the room
+   for them in one row again. */
+@media (min-width: 1500px) and (max-width: 1799.98px) {
+    /* Dismiss keeps its reason beside it, at its full width, and the two go to the next row together, at its end. */
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; width: auto; max-width: none; }
+    /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
+       the first screen. */
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
+    /* The pane's title takes its whole width, breaking only between words, and Read it here (or again), Open the site
+       and Close go on a row of their own under it, Close at its end. */
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head { flex-wrap: wrap; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
+}
+/* Triage's context rail: what TIDE knows about the selected item (its flat sections are the rail's own). Its CVEs'
+   facts three across, the covering article (.tide-rail-article) with its open actions, the same event's other reports
+   with Attach all and Not the same, the story, and what it names of Our stack. */
+.tide-triage-rail-cve + .tide-triage-rail-cve { margin-top: var(--tide-space-3); }
+.tide-triage-rail-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: var(--tide-space-2) 0; }
+.tide-triage-rail-critical { color: var(--tide-threat); }
+.tide-triage-rail-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; margin-bottom: var(--tide-space-2); }
+.tide-triage-rail-cves > p:last-child { margin-top: var(--tide-space-2); }
+.tide-rail-list .btn.tide-rail-list-title { font-size: inherit; line-height: inherit; text-align: start; white-space: normal; }
+.tide-triage-rail-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
+.tide-triage-rail-acts > input { flex: 1 1 10rem; min-width: 0; width: auto; }
 
 /* Drafting from several sources (EP-77): the other reports, and the source markers on each suggestion. */
 .tide-draft-source { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .88rem; }
