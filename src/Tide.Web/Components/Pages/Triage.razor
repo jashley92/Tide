@@ -82,6 +82,12 @@ else
     {
         <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskDismissAll">Dismiss all @_rows.Count shown…</button>
     }
+    @* P4: on the KEV filter, the KEV items since the last brief promoted as one round-up (its form opens first). *@
+    @if (_roundup is { Ids.Count: >= 2 } roundup)
+    {
+        <button type="button" class="btn btn-outline-secondary btn-sm tide-triage-roundup" disabled="@_busy" @onclick="OpenRoundup">
+            <span class="bi bi-collection" aria-hidden="true"></span> @RoundupLabel(roundup, _lastBriefAt is not null)…</button>
+    }
     @* A colleague's change heard while a promote form or the attach picker is open waits, so the row being worked on
        doesn't move; it shows when the form closes, or now from here. *@
     @if (_waiting.Count > 0 && Deferring)
@@ -158,10 +164,12 @@ else
                    shortlist all its reports after a confirmation; nothing is merged or set aside without a click. *@
                 var groupNew = line.Members.Any(m => _marks.IsUnseen(m.Item.Id));
                 var attachAll = AttachTo(line);
-                <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line)" aria-current="@RowSelection.Current(selected)"
-                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
+                var groupPicked = IsPicked(line);
+                <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line) @(groupPicked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)"
+                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : "") + (groupPicked ? PickedNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
                     @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                     <div class="tide-triage-head">
+                        @PickBox(line, i, groupPicked, $"Choose the {line.Members.Count} reports")
                         <button type="button" class="tide-group-toggle" aria-expanded="@Ui.Aria(open)"
                                 aria-label="@(open ? "Hide" : "Show") the @line.Members.Count reports" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">
                             <span class="bi @(open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
@@ -191,7 +199,8 @@ else
             @* The rows are one tab stop, the selected one (rows.js moves focus with the selection); focusing a row,
                by Tab or a click, selects it. A report in an open group is indented under it, its excerpt always shown. *@
             var unseen = _marks.IsUnseen(item.Id);
-            <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id)" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : ""))"
+            var picked = IsPicked(line);
+            <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id) @(picked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : "") + (picked ? PickedNote : ""))"
                 tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
                     <div class="flex-grow-1 tide-triage-body">
@@ -199,6 +208,7 @@ else
                            does); a promoted item's goes to its article; a dismissed or duplicate one's just selects the row.
                            The source opens from its own icon (or O), in a new tab. *@
                         <div class="tide-triage-head">
+                            @PickBox(line, i, picked, $"Choose “{item.Title}”")
                             @if (Promotable(item.Status))
                             {
                                 <button type="button" class="tide-triage-title tide-triage-title-btn" title="Promote to an article" disabled="@_busy"
@@ -531,7 +541,7 @@ else
     // The selected line's decision: why its main button is the main one, then the buttons, the main one first (or its
     // promote form). In the bar, the buttons are one row and the article's title in Attach gives way; in a row they
     // are one row while there's room, and wrap where there isn't.
-    private RenderFragment Decision(Line line, int i) =>
+    private RenderFragment Decision(Line line, int i) => Picking ? SelectionBar() :
         @<section class="tide-triage-decide" aria-label="Decide on this item">@DecisionBody(line, i)</section>;
 
     private RenderFragment DecisionBody(Line line, int i) => __builder =>
@@ -542,7 +552,7 @@ else
             var group = line.Group!;
             var n = line.Members.Count;
             <p class="tide-triage-why">@Suggestion(attachTo, line.Members.SelectMany(m => m.Coverage).FirstOrDefault(), n, Clock.Today)</p>
-            if (_promoting == group.Newest && _promotingGroup is not null)
+            if (_promoting == group.Newest && _promotingGroup is not null && Many is null)
             {
                 @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {n} as one and write", "Promote as one and keep triaging")
                 return;
@@ -588,7 +598,7 @@ else
             return;
         }
         <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1, Clock.Today)</p>
-        if (_promoting == item.Id && _promotingGroup is null)
+        if (_promoting == item.Id && _promotingGroup is null && Many is null)
         {
             @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write", "Promote and keep triaging")
             return;
@@ -1046,20 +1056,7 @@ else
         // Dismissing asks for the reason, as "Dismiss all" does: the single item's reason isn't on a group's line.
         if (!await (dismiss ? _dismissMany.Ask($"Dismiss the {n} reports?", message, $"Dismiss {n}")
                 : _confirm.Ask($"Shortlist the {n} reports?", message, $"Shortlist {n}"))) return;
-        _busy = true;
-        try
-        {
-            var ids = line.Members.Select(m => m.Item.Id).ToList();
-            // The count done, not the group's size: a colleague may have acted on some of them first.
-            var done = dismiss ? await Intake.DismissManyAsync(ids, _reason) : await Intake.ShortlistManyAsync(ids);
-            Announce();
-            Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
-                : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, "report")}.");
-            await Load();
-            _focus = "tideTriage.focusRow";
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        await DecideMany([.. line.Members.Select(m => m.Item.Id)], dismiss, "report");
     }
     private IReadOnlyDictionary<string, CveRecord> _cves = new Dictionary<string, CveRecord>();
     private int _selected;
@@ -1424,7 +1421,7 @@ else
     {
         _sourceOptions = p._sourceOptions;
         (_sources, _lastBriefAt, _status, _sourcesTab, _sourceId, _search, _sinceLast) = (p._sources, p._lastBriefAt, p._status, p._sourcesTab, p._sourceId, p._search, p._sinceLast);
-        (_rows, _lines, _missed, _counts, _cves, _polled) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled);
+        (_rows, _lines, _missed, _counts, _cves, _polled, _roundup) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled, p._roundup);
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
         (_page, _addressPage, _total, _cveFilter, _named, _older) = (p._page, p._addressPage, p._total, p._cveFilter, p._named, p._older);
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
@@ -1504,7 +1501,7 @@ else
     {
         if (i >= _lines.Count || _busy || _lines[i].Row is not { } row || !Promotable(row.Item.Status)) return;
         Select(i);
-        if (_promoting == row.Item.Id && _promotingGroup is null) _focus = "tideTriage.focusPromote";
+        if (_promoting == row.Item.Id && _promotingGroup is null && Many is null) _focus = "tideTriage.focusPromote";
         else OpenPromote(row);
     }
 
@@ -1606,6 +1603,7 @@ else
             var (counts, older) = await Intake.TallyAsync();
             var cves = await Cves.GetAsync(rows.SelectMany(r => r.Item.CveList));
             var polled = await Intake.PolledSourcesAsync();
+            var roundup = !sourcesTab && status == FeedItemStatus.New && _cveFilter == InboxCves.Kev ? await Intake.KevRoundupAsync(_lastBriefAt) : null;
             // A later read started meanwhile (more typing in the search box, another tab or filter, a colleague's change):
             // it shows the list as it's asked for now. These rows, read for what was asked before, would replace it if
             // they came back last.
@@ -1614,7 +1612,10 @@ else
             // What was shown, compared from here: a read that was dropped changed nothing on screen.
             var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
             var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
-            (_rows, _missed, _counts, _cves, _polled) = (rows, missed, counts, cves, polled);
+            (_rows, _missed, _counts, _cves, _polled, _roundup) = (rows, missed, counts, cves, polled, roundup);
+            // Only this page's items stay chosen, and only while they can still be decided: another page, tab or filter,
+            // or a colleague's decision, lets them go (the selection bar says so).
+            _picked.IntersectWith(_rows.Where(r => Promotable(r.Item.Status)).Select(r => r.Item.Id));
             // A page past the end (an old link, or the list shrank under it) is the last one, and the address says so.
             var askedPage = _page;
             (_total, _page) = (page.Total, page.Page);
@@ -1724,6 +1725,7 @@ else
     // every report it held (it may have gained one, which the form then takes too).
     private bool StillPromoting(Guid id)
     {
+        if (Many is { } many) return _pf.AsKevRoundup || many.All(_picked.Contains);
         if (_promotingGroup is { } was)
         {
             if (Current is not { Row: null, Group: { } now } || !was.Ids.All(now.Ids.Contains)) return false;
@@ -1746,6 +1748,12 @@ else
         {
             // The form has the keys (triage.js sends only Esc while it's open).
             if (action == "cancel") CancelPromote();
+            StateHasChanged();
+            return;
+        }
+        // Items chosen: S, X and P act on them together, and the keys that choose them are the selection's.
+        if (await PickKey(action))
+        {
             StateHasChanged();
             return;
         }
@@ -1775,6 +1783,208 @@ else
             case "restore": await Act(TriageStep.Restore); break;
         }
         StateHasChanged();
+    }
+
+    // --- Several items chosen, the selection bar, and the KEV round-up (P4) ---------------------------------------------
+
+    // The items chosen to decide together (Space, Shift+J or Shift+K, or a row's checkbox), by id: only this page's, and
+    // only those still to decide (Load keeps those still on it), as the bar says. A group's line chooses all its reports.
+    private readonly HashSet<Guid> _picked = [];
+
+    /// <summary>The items chosen, for the tests.</summary>
+    internal IReadOnlyCollection<Guid> PickedIds => _picked;
+
+    // The items a promote of several is for (the chosen ones, or the KEV round-up's), while its form is open: the form is
+    // open while _promoting is (set to the first of them), so whatever closes a form closes this one too.
+    private IReadOnlyList<Guid>? _promotingMany;
+    private TlpLevel _manyTlp;                 // the most restrictive of its sources' TLPs, which it starts at
+    private KevRoundupItems? _roundup;         // the round-up's items, on the KEV filter in New
+    private IReadOnlyList<Guid>? Many => _promoting is not null ? _promotingMany : null;
+
+    // The selection bar takes the decision's place while items are chosen, or a promote of several is open.
+    private bool Picking => _picked.Count > 0 || Many is not null;
+
+    private const string PickedNote = " (chosen)";
+
+    // The items a line chooses: its own, or every report of a group's line; only those still to decide.
+    private static IEnumerable<Guid> PickIds(Line line) =>
+        (line.Row is { } row ? [row] : line.Members).Where(r => Promotable(r.Item.Status)).Select(r => r.Item.Id);
+
+    private bool IsPicked(Line line) => PickIds(line) is var ids && ids.Any() && ids.All(_picked.Contains);
+
+    /// <summary>Space, or a row's checkbox: the line's items are chosen, or left out again.</summary>
+    internal void PickLine(int i)
+    {
+        if (i >= _lines.Count || _busy || _promoting is not null) return;
+        var ids = PickIds(_lines[i]).ToList();
+        if (ids.Count == 0) return;
+        if (IsPicked(_lines[i])) _picked.ExceptWith(ids);
+        else _picked.UnionWith(ids);
+        _said = PickedSaid;
+    }
+
+    /// <summary>Shift+J or Shift+K: the selected line is chosen, and so is the next (or previous) one, which is selected.
+    /// Never past the page: the choice is this page's.</summary>
+    internal async Task ExtendPick(bool next)
+    {
+        if (_busy || _lines.Count == 0 || _promoting is not null) return;
+        _picked.UnionWith(PickIds(_lines[_selected]));
+        var to = next ? Math.Min(_selected + 1, RowSelection.Last(_lines.Count)) : Math.Max(_selected - 1, 0);
+        Select(to);
+        _picked.UnionWith(PickIds(_lines[to]));
+        _said = PickedSaid;
+        await Follow();
+    }
+
+    /// <summary>Esc, or the bar's Clear: nothing chosen.</summary>
+    internal void ClearPicked()
+    {
+        _picked.Clear();
+        _said = PickedSaid;
+        _focus = "tideTriage.focusRow";
+    }
+
+    private string PickedSaid => _picked.Count == 0 ? "Nothing chosen." : $"{Ui.Plural(_picked.Count, "item")} chosen on this page.";
+
+    // The selection's keys, and S, X and P while items are chosen (D and R act on one item only, so they wait). True when
+    // the key was the selection's.
+    private async Task<bool> PickKey(string action)
+    {
+        switch (action)
+        {
+            case "select-toggle": PickLine(_selected); return true;
+            case "select-next" or "select-prev": await ExtendPick(action == "select-next"); return true;
+            case "select-clear": ClearPicked(); return true;
+        }
+        if (_picked.Count == 0) return false;
+        switch (action)
+        {
+            case "shortlist": await ActOnPicked(TriageStep.Shortlist); break;
+            case "dismiss": await ActOnPicked(TriageStep.Dismiss); break;
+            case "promote": OpenPickedPromote(); break;
+            case "duplicate" or "restore": break;
+            default: return false;
+        }
+        return true;
+    }
+
+    // The chosen items, in the list's order.
+    private List<InboxRow> PickedRows => [.. _rows.Where(r => _picked.Contains(r.Item.Id))];
+
+    // Shortlisting and dismissing several are New's, as a group's are: the service changes only items still new.
+    private bool PickedNew => _status == FeedItemStatus.New;
+
+    // A box on each line still to decide, for the mouse; the keyboard has Space, so it's out of the tab order (a row stays
+    // one tab stop). Its click chooses without selecting the row.
+    private RenderFragment PickBox(Line line, int i, bool picked, string label) => __builder =>
+    {
+        if (!PickIds(line).Any()) return;
+        <input type="checkbox" class="form-check-input tide-triage-pick" tabindex="-1" checked="@picked" aria-label="@label" disabled="@(_busy || _promoting is not null)"
+               @onclick:stopPropagation="true" @onchange="() => PickLine(i)" />
+    };
+
+    private RenderFragment SelectionBar() => __builder =>
+    {
+        var rows = PickedRows;
+        var n = rows.Count;
+        <section class="tide-triage-decide tide-triage-selbar" aria-label="Decide on the chosen items" @onclick:stopPropagation="true">
+            @if (Many is { } many)
+            {
+                @if (_pf.AsKevRoundup)
+                {
+                    <p class="tide-triage-why">A KEV round-up of @Ui.Plural(many.Count, "item"): the draft gets a bullet for each KEV-listed CVE from TIDE's CVE records, and “@KevRoundup.Recommended” as its recommended action.</p>
+                }
+                @PromoteFields(_manyTlp, $"From the sources: {Tlp.Label(_manyTlp)}, the most restrictive", $"Promote {many.Count} as one and write", "Promote as one and keep triaging")
+            }
+            else
+            {
+            <p class="tide-triage-why"><strong>@n selected</strong> on this page. Only this page's items are chosen: turning the page or changing the tab or filters clears the choice.</p>
+            <div class="tide-triage-acts">
+                <span class="tide-triage-main">
+                    <button type="button" class="btn btn-primary btn-sm tide-triage-promote" disabled="@(_busy || n is < 2 or > TriageGroups.MaxSize)" aria-keyshortcuts="P"
+                            title="@(n is < 2 or > TriageGroups.MaxSize ? $"Promote 2 to {TriageGroups.MaxSize} items as one article" : $"Promote the {n} as one article")"
+                            @onclick="OpenPickedPromote"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one <span class="tide-kbd" aria-hidden="true">P</span></button>
+                </span>
+                @if (PickedNew)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="S" @onclick="() => ActOnPicked(TriageStep.Shortlist)">Shortlist <span class="tide-kbd" aria-hidden="true">S</span></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="X" @onclick="() => ActOnPicked(TriageStep.Dismiss)">Dismiss… <span class="tide-kbd" aria-hidden="true">X</span></button>
+                }
+                <AttachPicker Disabled="@(_busy || n > TriageGroups.MaxSize)" OnPick="t => Attach([.. rows.Select(r => r.Item.Id)], t.Id, t.Title)" OpenChanged="open => _attaching = open" />
+                <span class="tide-triage-end">
+                    <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="ClearPicked">Clear <span class="tide-kbd" aria-hidden="true">Esc</span></button>
+                </span>
+            </div>
+            }
+        </section>
+    };
+
+    // P, or the bar's Promote as one: the chosen items' form, prefilled as a group's is (from the newest, a threat when
+    // any names a CVE, at the most restrictive TLP). 2 to 8, as a group: the service holds it to that too.
+    internal void OpenPickedPromote()
+    {
+        var rows = PickedRows;
+        if (_busy || rows.Count is < 2 or > TriageGroups.MaxSize) return;
+        OpenManyPromote(rows.Select(r => r.Item.Id).ToList(), rows.OrderByDescending(r => r.Item.PublishedAtUtc ?? r.Item.FetchedAtUtc).First().Item.Title,
+            rows.SelectMany(r => r.Item.CveList), rows.Max(r => r.Source.DefaultTlp), _cves, roundup: false);
+    }
+
+    /// <summary>The KEV filter's round-up button: its form, a threat named for the round-up, its priority suggested from
+    /// the CVE records TIDE keeps (read here: its items may be past this page), at the most restrictive TLP.</summary>
+    internal async Task OpenRoundup()
+    {
+        if (_busy || _roundup is not { Ids.Count: >= 2 } roundup) return;
+        var records = await Cves.GetAsync(roundup.Cves);
+        OpenManyPromote(roundup.Ids, $"KEV round-up: {Ui.Plural(roundup.Cves.Count, "known exploited vulnerability", "known exploited vulnerabilities")}",
+            roundup.Cves, roundup.Tlp, records, roundup: true);
+    }
+
+    private void OpenManyPromote(IReadOnlyList<Guid> ids, string title, IEnumerable<string> cveIds, TlpLevel tlp, IReadOnlyDictionary<string, CveRecord> records, bool roundup)
+    {
+        Prefill(title, cveIds, tlp, records, roundup);
+        (_promoting, _promotingGroup, _promotingMany, _manyTlp) = (ids[0], null, ids, tlp);
+    }
+
+    /// <summary>"Promote the 6 KEV items since the last brief as one" (the button adds the ellipsis: its form opens first), or "the 20 newest of the 27" past the round-up's
+    /// size; "new KEV items" before any brief.</summary>
+    internal static string RoundupLabel(KevRoundupItems roundup, bool sinceBrief)
+    {
+        var which = roundup.Total > roundup.Ids.Count ? $"the {roundup.Ids.Count} newest of the {roundup.Total}" : $"the {roundup.Ids.Count}";
+        return $"Promote {which} {(sinceBrief ? "KEV items since the last brief" : "new KEV items")} as one";
+    }
+
+    // S or X on the chosen items. Shortlisting is one keypress (they were chosen one by one); dismissing asks the reason
+    // in the confirmation, as for a group or "Dismiss all", as they go for everyone.
+    internal async Task ActOnPicked(TriageStep what)
+    {
+        if (_busy || !PickedNew || _picked.Count == 0) return;
+        var ids = _picked.ToList();
+        var dismiss = what == TriageStep.Dismiss;
+        if (dismiss && !await _dismissMany.Ask($"Dismiss the {Items(ids.Count)} chosen?", "The inbox is shared, so they go for everyone.", $"Dismiss {ids.Count}")) return;
+        if (await DecideMany(ids, dismiss, "item")) _picked.Clear();
+    }
+
+    // Several new items shortlisted or dismissed at once (a group's, or those chosen): the count done, not asked for, as a
+    // colleague may have decided some first. True when it went through.
+    private async Task<bool> DecideMany(IReadOnlyList<Guid> ids, bool dismiss, string noun)
+    {
+        _busy = true;
+        try
+        {
+            var done = dismiss ? await Intake.DismissManyAsync(ids, _reason) : await Intake.ShortlistManyAsync(ids);
+            Announce();
+            Toasts.Show(done == 0 ? $"Nothing changed: a colleague got to those {noun}s first."
+                : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, noun)}.");
+            await Load();
+            _focus = "tideTriage.focusRow";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
     }
 
     // Ctrl+K's verb in Triage: P's, opening the selected row's promote form (or a group's Promote as one); nothing is
@@ -1866,21 +2076,27 @@ else
     // source's TLP. A threat's priority is what its CVE data suggests (KEV, EPSS, CVSS), with the reason shown, or P3.
     private void OpenPromote(InboxRow row)
     {
-        var item = row.Item;
-        var threat = item.CveList.Any();
-        _suggested = threat
-            ? CveService.SuggestedPriority(item.CveList.Select(c => _cves.GetValueOrDefault(c)).OfType<CveRecord>(), item.Title, Clock.Today)
-            : null;
+        Prefill(row.Item.Title, row.Item.CveList, row.Source.DefaultTlp, _cves);
+        _promoting = row.Item.Id;
+        (_promotingGroup, _promotingMany) = (null, null);
+    }
+
+    // The form as every promote opens it: the title, a threat when a CVE is named (informational otherwise), the priority
+    // its CVE records suggest (or P3), the TLP given, the brief tick as last left; its title takes focus.
+    private void Prefill(string title, IEnumerable<string> cveIds, TlpLevel tlp, IReadOnlyDictionary<string, CveRecord> records, bool roundup = false)
+    {
+        var cves = cveIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var threat = cves.Count > 0;
+        _suggested = threat ? CveService.SuggestedPriority(cves.Select(c => records.GetValueOrDefault(c)).OfType<CveRecord>(), title, Clock.Today) : null;
         _pf = new PromoteForm
         {
-            Title = Words.Ellipsis(item.Title, ArticleService.MaxTitle),
+            Title = Words.Ellipsis(title, ArticleService.MaxTitle),
             Classification = threat ? Classification.Threat : Classification.Informational,
             Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
-            Tlp = row.Source.DefaultTlp,
+            Tlp = tlp,
             AddToBrief = _toBrief,
+            AsKevRoundup = roundup,
         };
-        _promoting = item.Id;
-        _promotingGroup = null;
         _focus = "tideTriage.focusPromote";
     }
 
@@ -1889,23 +2105,9 @@ else
     internal void OpenGroupPromote(Line line)
     {
         if (line is not { Row: null, Group: { } group } || _busy) return;
-        var lead = line.Members[0].Item;
-        var cves = line.Members.SelectMany(m => m.Item.CveList).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var threat = cves.Count > 0;
-        _suggested = threat
-            ? CveService.SuggestedPriority(cves.Select(c => _cves.GetValueOrDefault(c)).OfType<CveRecord>(), lead.Title, Clock.Today)
-            : null;
-        _pf = new PromoteForm
-        {
-            Title = Words.Ellipsis(lead.Title, ArticleService.MaxTitle),
-            Classification = threat ? Classification.Threat : Classification.Informational,
-            Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
-            Tlp = GroupTlp(line),
-            AddToBrief = _toBrief,
-        };
+        Prefill(line.Members[0].Item.Title, line.Members.SelectMany(m => m.Item.CveList), GroupTlp(line), _cves);
         _promoting = group.Newest;
-        _promotingGroup = group;
-        _focus = "tideTriage.focusPromote";
+        (_promotingGroup, _promotingMany) = (group, null);
     }
 
     private void SetPromotePriority(ChangeEventArgs e) =>
@@ -1928,24 +2130,25 @@ else
     internal async Task SubmitPromote(bool stay = false)
     {
         if (_promoting is not { } id || _busy) return;
-        var group = _promotingGroup;
+        IReadOnlyCollection<Guid> ids = Many ?? _promotingGroup?.Ids ?? [id];
+        var n = ids.Count;
         var title = string.IsNullOrWhiteSpace(_pf.Title) ? Current?.Row?.Item.Title ?? Current?.Members.FirstOrDefault()?.Item.Title ?? "" : _pf.Title.Trim();
         _busy = true;
         try
         {
-            var done = await Promoter.PromoteAsync(group?.Ids ?? [id], _pf);
+            var done = await Promoter.PromoteAsync(ids, _pf);
             var outcome = done.Outcome;
             Announce();
             if (stay)
             {
-                (_promoting, _promotingGroup) = (null, null);
+                (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
                 await Load();
                 _focus = "tideTriage.focusRow";
-                ToldStayed(done, group, title);
+                ToldStayed(done, n, title);
                 return;
             }
-            var said = outcome.Made ? (group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.")
-                : $"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in this article.";
+            var said = outcome.Made ? (n == 1 ? "Promoted to a draft article." : $"Promoted {n} reports as one draft article.")
+                : $"Not promoted: {outcome.By} already put {(n == 1 ? "it" : "them")} in this article.";
             if (done.NotOnBrief is { } why) Toasts.Warn($"{said} It isn't on the brief: {why}");
             else Toasts.Show(said + OnBriefSaid(done));
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
@@ -1962,16 +2165,16 @@ else
 
     // The toast after Promote and keep triaging: what was made (or that a colleague made it first), whether it's on the
     // brief, Write it, and Undo while there's a draft of this person's to take back.
-    private void ToldStayed(TriagePromotion done, TriageGroup? group, string title)
+    private void ToldStayed(TriagePromotion done, int reports, string title)
     {
         var outcome = done.Outcome;
         var link = new ToastService.ToastLink($"/articles/{outcome.ArticleId}", outcome.Made ? "Write it" : "Open it");
         if (!outcome.Made)
         {
-            Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in an article.", link);
+            Toasts.Show($"Not promoted: {outcome.By} already put {(reports == 1 ? "it" : "them")} in an article.", link);
             return;
         }
-        var said = (group is null ? $"Promoted “{Short(title)}” to a draft." : $"Promoted {group.Ids.Count} reports as one draft, “{Short(title)}”.")
+        var said = (reports == 1 ? $"Promoted “{Short(title)}” to a draft." : $"Promoted {reports} reports as one draft, “{Short(title)}”.")
             + (done.NotOnBrief is { } why ? $" It isn't on the brief: {why}" : OnBriefSaid(done));
         Func<Task>? undo = done.Undo is { } u ? async () =>
         {

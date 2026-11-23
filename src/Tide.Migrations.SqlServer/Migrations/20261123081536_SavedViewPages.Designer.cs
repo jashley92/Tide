@@ -12,7 +12,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261123055620_SavedViewPages")]
+    [Migration("20261123081536_SavedViewPages")]
     partial class SavedViewPages
     {
         /// <inheritdoc />
@@ -374,9 +374,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ActionId");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ActionIndicators");
                 });
@@ -1063,6 +1069,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("HostRev")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Note")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
@@ -1075,9 +1085,17 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("HostRev");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ArticleIndicators");
                 });

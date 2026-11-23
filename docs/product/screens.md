@@ -289,6 +289,12 @@ the page stops it after the source it's on.
 ![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
 
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
+- **Several at once.** Space on a row, Shift+J or Shift+K, or a row's checkbox chooses items; the selection bar takes
+  the decision bar's place: how many, Promote as one (2 to 8, any feeds), Shortlist, Dismiss…, Attach to… and Clear.
+  Only the page shown is chosen, and the bar says so.
+- **KEV round-up.** On the KEV filter, *Promote the N KEV items since the last brief as one…* opens a promote form for
+  up to 20 of them; the draft gets a bullet per KEV-listed CVE from TIDE's CVE records and "Patch the KEV additions we
+  run" as its recommended action.
 
 ### What triage already knows
 
@@ -334,8 +340,9 @@ The triage keys are listed under [keyboard shortcuts](../architecture/frontend.m
 **Route:** `/articles` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
 Every article, as a list that filters as you type, sorts by any heading, and pages rather than cutting off. The
-filter bar has **Mine**, **Draft** and **Ready** as pills (Mine goes with either); **+ Filter** holds the rest: by
-(you, or anyone who has written an article, with how many), status, ATT&CK tactic, technique (with
+filter bar has **Mine** (the articles you're writing now, handed to you included), **Draft** and **Ready** as pills
+(Mine goes with either); **+ Filter** holds the rest: by (Mine, or anyone who has started an article, by author, with
+how many), status, ATT&CK tactic, technique (with
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or

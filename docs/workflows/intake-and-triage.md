@@ -372,7 +372,33 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 | O | Open the item's link in a new tab |
 | V | Read it in the reading pane, or close the pane (a held key doesn't repeat it) |
 | Enter, → , ← | Open or expand a group, collapse it |
-| Esc | Cancel the promote form, or close the reading pane |
+| Space (on a row) | Choose the item (or a group's line: all its reports), or leave it out, to decide several at once |
+| Shift+J / Shift+↓, Shift+K / Shift+↑ | Choose the selected item and the next (or previous) one too; never past the page |
+| S, X, P (with items chosen) | Shortlist them, dismiss them (the reason asked once), or promote them as one |
+| Esc | Cancel the promote form, clear the items chosen, or close the reading pane |
+
+### Several at once, and the KEV round-up
+
+Space on a row (only with focus on the row, so Space still scrolls the page anywhere else), Shift+J or Shift+K, or a
+row's checkbox chooses items to decide together. While any are chosen, the **selection bar** stands where the decision
+bar was (under the reading pane, or in the selected row): "3 selected on this page", then **Promote as one** (P),
+**Shortlist** (S) and **Dismiss…** (X, its reason chosen in the confirmation) in New, **Attach to…**, and **Clear**
+(Esc). The choice is the page's: turning the page, or changing the tab or filters, clears it, and the bar says so. An
+item a colleague decides meanwhile drops out of it. D and R wait while items are chosen; they act on one item.
+
+- *Promote as one* takes 2 to 8 items (a suggested group's size, `TriageGroups.MaxSize`) whatever their feeds, through
+  the same promote form and `PromoteOrJoinAsync` as a group: claimed all or none, the newest making the article, at
+  the most restrictive TLP, with both ways out and Undo.
+- *Shortlist* and *Dismiss* change only items still new (`ShortlistManyAsync`, `DismissManyAsync`), so they're New's.
+
+**The KEV round-up.** The day's KEV additions often come from one feed, so they never group (`TriageGroups.Find` needs
+two feeds). On the **KEV** filter in New, a button offers *Promote the N KEV items since the last brief as one…*
+(`IntakeService.KevRoundupAsync`: new items naming a CVE that TIDE's records list as known exploited, published since
+the last brief, newest first). Its form opens prefilled as a threat with the suggested priority; the draft gets a
+bullet per KEV-listed CVE from TIDE's own `CveRecord` data (vendor and product, CVSS, EPSS, the KEV due date,
+ransomware use; `KevRoundup.Bullets`, no AI) and the recommended action *Patch the KEV additions we run*. A round-up
+takes up to 20 items (`KevRoundup.MaxItems`); past that the button names the 20 newest of how many. The service checks
+the size and that every item names a KEV-listed CVE (`PromoteForm.AsKevRoundup`). Nothing is fetched.
 
 ### Two analysts at once
 
