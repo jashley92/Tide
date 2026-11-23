@@ -208,4 +208,7 @@ public interface IFileStore
     Stream? OpenRead(Guid id);
 
     void Delete(Guid id);
+
+    /// <summary>Every file the store holds: its id and when it was last written. For the weekly check of stored files.</summary>
+    IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List();
 }

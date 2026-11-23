@@ -47,6 +47,19 @@ public sealed class DiskFileStore : IFileStore
         catch (UnauthorizedAccessException) { }
     }
 
+    public IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List()
+    {
+        // Only the store's own files: <two characters>\<32 hex digits>.bin. Anything else in the root (activity.json, a
+        // half-written .partial, a folder someone made) isn't a stored file.
+        foreach (var dir in Directory.EnumerateDirectories(_root))
+        {
+            if (Path.GetFileName(dir).Length != 2) continue;
+            foreach (var file in Directory.EnumerateFiles(dir, "*.bin"))
+                if (Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out var id))
+                    yield return (id, new DateTimeOffset(File.GetLastWriteTimeUtc(file), TimeSpan.Zero));
+        }
+    }
+
     // The id is a Guid, so the path can't leave the root.
     private string PathFor(Guid id)
     {
