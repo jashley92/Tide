@@ -150,7 +150,8 @@ What it does, in order:
 6. **Prunes older upgrade backups**, on a proven success only. Each upgrade's folder holds a `snapshot.json` naming the server
    and site folder it belongs to, and whether that upgrade succeeded. The upgrade keeps the newest
    `-KeepUpgradeBackups` (3 by default, this run's among them) successful upgrades' `<database>-preupgrade-<time>.bak`
-   files and `<time>` folders, deletes the older ones, and lists each it deleted. A failed run doesn't count toward
+   files and `<time>` folders, deletes the older ones, and lists each it deleted. To keep every one, pass
+   `-KeepAllUpgradeBackups` (in v1.16.0, which doesn't have it, `-KeepUpgradeBackups 0`). A failed run doesn't count toward
    the number, and a failed run's backups newer than the last successful upgrade are always kept: after failed
    retries, the first one's backup may be the only one from before its migrations. Only this install's backups are
    touched:

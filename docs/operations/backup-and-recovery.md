@@ -109,7 +109,7 @@ Every upgrade backs up and can roll back by itself ([UPGRADE.md](../UPGRADE.md#u
   ran on them. When it can't read the database's migration history, or the previous build's, it leaves the pool
   stopped too and says what to check, unless the failure came before the new build could start;
 - once the new build has answered, it keeps the newest three successful upgrades' backups (`-KeepUpgradeBackups`,
-  this run's among them), plus any failed run's since the last success, and deletes the older
+  this run's among them; `-KeepAllUpgradeBackups` keeps every one), plus any failed run's since the last success, and deletes the older
   `<database>-preupgrade-<time>.bak` files and `tide-upgrade-backups\<time>` folders, listing each. It touches only
   this install's: folders whose `snapshot.json` names this server and site (sibling sites share the folder), and
   `.bak` files those records name and this SQL Server's backup history records for this database. Backups from

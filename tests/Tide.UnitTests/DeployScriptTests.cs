@@ -279,6 +279,25 @@ public partial class DeployScriptTests
     }
 
     [Fact]
+    public void KeepAllUpgradeBackups_is_KeepUpgradeBackups_0_and_is_passed_on_as_that_before_the_handover()
+    {
+        var text = Read("deploy", "Upgrade-Tide.ps1");
+        var script = text[text.IndexOf("\n#>", StringComparison.Ordinal)..];
+        int At(string s)
+        {
+            var i = script.IndexOf(s, StringComparison.Ordinal);
+            i.Should().BeGreaterThan(-1, "the script has '{0}'", s);
+            return i;
+        }
+        var translate = At("$PSBoundParameters['KeepUpgradeBackups'] = 0");
+        translate.Should().BeLessThan(At("foreach ($k in $PSBoundParameters.Keys)"),
+            "an older bundle's script doesn't accept the switch, and the handover passes only what it accepts, so " +
+            "dropping it there would prune: it goes on as -KeepUpgradeBackups 0, which v1.16.0 reads as keep everything");
+        translate.Should().BeLessThan(At("$plan = Get-TidePrunePlan"));
+        script.Should().Contain("can't be given with -KeepUpgradeBackups", "a switch and a number that disagree are refused");
+    }
+
+    [Fact]
     public void The_release_bundle_carries_the_deploy_folder_and_the_manifest_the_preflight_reads()
     {
         var release = Read(".github", "workflows", "release.yml");
@@ -452,7 +471,7 @@ public partial class DeployScriptPowerShellTests
         var names = upgrade.GetProperty("Params").EnumerateArray().Select(p => p.GetProperty("Name").GetString()).ToList();
         names.Should().Contain(["BundleZip", "Version", "Repository", "Proxy", "AppSource", "Build", "SiteName", "AppPath", "SitePath",
             "AppPoolName", "SqlInstance", "DbName", "HealthUrl", "BackupRoot", "DataRoot", "SkipDbBackup", "Force", "ReleaseHashChecked",
-            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath", "KeepUpgradeBackups"]);
+            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath", "KeepUpgradeBackups", "KeepAllUpgradeBackups"]);
         string? Default(JsonElement s, string n) => s.GetProperty("Params").EnumerateArray().Single(p => p.GetProperty("Name").GetString() == n).GetProperty("Default").GetString();
         Default(upgrade, "KeepUpgradeBackups").Should().Be("3", "docs/UPGRADE.md says an upgrade keeps three");
         Default(upgrade, "Repository").Should().Be("'jashley92/Tide'");
