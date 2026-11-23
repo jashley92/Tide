@@ -2175,6 +2175,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ArticleId")
                         .HasColumnType("TEXT");
 
@@ -2194,6 +2197,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("DoneAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("EditedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -2203,6 +2209,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
 
                     b.HasIndex("BriefId", "AtUtc");
 
@@ -4110,6 +4118,11 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingNote", b =>
                 {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Tide.Domain.Entities.Brief", null)
                         .WithMany()
                         .HasForeignKey("BriefId")

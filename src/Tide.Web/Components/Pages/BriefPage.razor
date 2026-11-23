@@ -290,6 +290,7 @@ else
     private ILookup<Guid, EditionAction>? _actions;
     private Brief? _brief;
     private MeetingRecord _meeting = MeetingRecord.None;
+    private IReadOnlyList<(Guid ArticleId, DateOnly To)> _carried = [];   // what the ended meeting carried on, for its recap
     private IReadOnlyList<BriefCandidate> _candidates = [];
     private string _me = "";   // the signed-in person: their drafts lead Drafts in progress
     private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
@@ -707,7 +708,7 @@ else
         (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
         (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
         (_readiness, _analystId, _intro, _introTlp, _teamNote) = (p._readiness, p._analystId, p._intro, p._introTlp, p._teamNote);
-        (_candidates, _shortlist, _actions, _meeting, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed, p._newOnKev);
+        (_candidates, _shortlist, _actions, _meeting, _carried, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._carried, p._newInFeed, p._newOnKev);
         (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
         _loading = false;
     }
@@ -736,6 +737,7 @@ else
             }
             _actions = await BriefSvc.EditionActionsAsync(_brief);
             _meeting = await MeetingSvc.GetAsync(_brief.Id);
+            _carried = BriefService.MeetingHeld(_brief) ? await BriefSvc.CarriedAsync(_brief.Id) : [];
             _newInFeed = _canWrite ? await Intake.NewCountAsync() : null;
             // Another day's brief keeps the feed's count, as it had; what is on KEV is today's work.
             _newOnKev = AsToday && _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
@@ -1140,11 +1142,32 @@ else
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
+        var recap = Recap;   // built once: it builds the team edition
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
                      @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" ShowAttendance="AttendanceShown" Busy="_busy" OnSave="SaveDetails"
-                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs" />
+                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs"
+                     Recapped="@(recap is not null)" OnNotesChanged="NotesChanged" />
+        @if (recap is not null)
+        {
+            <MeetingRecapCard Brief="_brief!" Recap="recap" Meeting="_meeting" OnChanged="NotesChanged" />
+        }
     };
+
+    /// <summary>
+    /// Once the meeting has ended, what came out of it (the meeting recap card under the meeting): built from the team
+    /// edition, as the wrap-up slide is, so it names nothing above that edition's ceiling. Null until it has ended.
+    /// </summary>
+    internal MeetingRecap? Recap => _brief is { } b && BriefService.MeetingHeld(b)
+        ? WrapUp.Recap(BriefEditions.Build(b, Edition.Team, _teamMax, _actions), _meeting, _carried) : null;
+
+    // A note raised as an action or marked done: the notes, and the actions the recap lists, read again.
+    private async Task NotesChanged()
+    {
+        if (_brief is null) return;
+        _actions = await BriefSvc.EditionActionsAsync(_brief);
+        _meeting = await MeetingSvc.GetAsync(_brief.Id);
+    }
 
     // Today for someone who works actions but can't write articles: their escalated actions and their teams' queue first,
     // then what's on today's brief (its state and headlines, read-only: the steps, the running order's controls and the

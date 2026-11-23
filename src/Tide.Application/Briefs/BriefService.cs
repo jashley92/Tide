@@ -591,6 +591,16 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         return await BriefEditions.ActionsAsync(db, brief, ct);
     }
 
+    /// <summary>The articles the brief's meeting carried to a later brief, each with that brief's day, for its recap.</summary>
+    public async Task<IReadOnlyList<(Guid ArticleId, DateOnly To)>> CarriedAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        return (await db.BriefItems.AsNoTracking().Where(i => i.CarriedFromBriefId == briefId)
+                .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate }).ToListAsync(ct))
+            .Select(x => (x.ArticleId, x.BriefDate)).ToList();
+    }
+
     private static async Task<Brief> Editable(IAppDbContext db, Guid briefId, CancellationToken ct)
     {
         var brief = await db.Briefs.Include(b => b.Items).FirstOrDefaultAsync(b => b.Id == briefId, ct)

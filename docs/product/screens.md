@@ -134,7 +134,11 @@ Beside the brief, in the context rail:
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
 - **reviews asked of you**;
-- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place;
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place; then,
+  once the meeting has ended, the **meeting recap**: the actions raised (by team and holder, as the wrap-up slide has
+  them), the notes (open or done), the articles carried to a later brief, and who attended. On your own notes,
+  *Raise as action* (the note as the title, on its article; then "Raised as A-14", which opens it) and *Mark done*
+  (*Reopen* once done). Before the meeting ends, the notes and their buttons are on the meeting card;
 - **coming up** for you on the rotation, and the brief's **history**.
 
 An action owner's Today leads with the queue. A colleague's save never replaces what you're typing in the meeting form
@@ -718,7 +722,8 @@ hands in order. People raise and lower their own hand there, and take notes (eac
 screen as they began it). Attendance is recorded as people join. Anyone in the meeting on the team edition can add
 people who were there, from the box under *Attended* on the wrap-up (the presenter, from their rail), and take off
 whoever they added; the presenter can take off anyone, joined or added. With no meeting live, before or after it, whoever can
-present corrects the list from the rail. The brief's page keeps who attended and the notes, by article.
+present corrects the list from the rail. The brief's page keeps who attended and the notes, by article, and once the
+meeting has ended shows its recap, where each person raises their own notes as actions or marks them done.
 
 
 **The presenter's rail** holds what only the presenter does, and is never on a follower's screen. From 1500px wide

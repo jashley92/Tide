@@ -2180,6 +2180,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2199,6 +2202,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("DoneAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("EditedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2208,6 +2214,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
 
                     b.HasIndex("BriefId", "AtUtc");
 
@@ -4115,6 +4123,11 @@ namespace Tide.Migrations.SqlServer.Migrations
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingNote", b =>
                 {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Tide.Domain.Entities.Brief", null)
                         .WithMany()
                         .HasForeignKey("BriefId")

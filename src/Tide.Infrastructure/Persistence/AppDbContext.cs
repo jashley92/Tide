@@ -414,6 +414,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Person(e, x => x.AuthorId, x => x.AuthorName);
             e.Property(x => x.Text).HasMaxLength(8000);   // a note written now is at most 2,000; one carried over from the old single notes, up to 8,000
             e.HasIndex(x => new { x.BriefId, x.AtUtc });
+            // The action a note raised. Actions are never deleted (cancelled instead), so nothing is set null.
+            e.HasOne<ActionItem>().WithMany().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<BriefSend>(e =>

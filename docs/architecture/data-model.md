@@ -230,6 +230,7 @@ erDiagram
     Briefs ||--o{ MeetingAttendees : "cascade"
     Briefs ||--o{ MeetingNotes : "cascade"
     Articles |o..o{ MeetingNotes : "ArticleId on screen"
+    Actions |o--o{ MeetingNotes : "ActionId raised, restrict"
 
     Briefs {
         uuid Id PK
@@ -258,6 +259,8 @@ erDiagram
         uuid BriefId FK
         uuid ArticleId
         string AuthorId
+        uuid ActionId FK
+        datetime DoneAtUtc
     }
 ```
 
@@ -917,6 +920,8 @@ One person's note at a meeting, made against the article on screen as its author
 | `ArticleId` | uniqueidentifier | yes | The article on screen. **No FK**. Null for a note on the whole meeting. |
 | `AtUtc`, `EditedAtUtc` | datetimeoffset | no / yes | |
 | `Text` | nvarchar(max) | no | A new note is at most 2,000 characters. One carried over from the legacy `Briefs.MeetingNotes` can be up to 8,000. |
+| `ActionId` | uniqueidentifier | yes | The action its author raised from it ("Raised as A-14", `MeetingService.RaiseFromNoteAsync`). FK → `Actions`, **restrict** (actions are cancelled, never deleted). Indexed. One per note. |
+| `DoneAtUtc` | datetimeoffset | yes | When its author marked it done (`MarkNoteDoneAsync`); null while it's open. |
 
 ## Distribution and sends
 
