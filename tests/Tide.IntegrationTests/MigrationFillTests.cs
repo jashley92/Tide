@@ -452,6 +452,31 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ArticleWriter_IsFilledWithTheAuthor_SinceTheArticleWasStarted(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var (draft, presented) = (new Article { Title = "Half-written", AuthorId = "dev:pat", AuthorName = "Pat", CreatedAtUtc = Decided },
+            new Article { Title = "Presented last week", AuthorId = "dev:sam", AuthorName = "Sam", Status = ArticleStatus.Presented, CreatedAtUtc = Decided.AddDays(-7) });
+        await using (var ctx = database.Context())
+        {
+            ctx.Articles.AddRange(draft, presented);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ArticleWriter");
+
+        await using (var ctx = database.Context())
+        {
+            var stored = await ctx.Articles.ToDictionaryAsync(a => a.Id);
+            (stored[draft.Id].WriterId, stored[draft.Id].WriterName, stored[draft.Id].WriterSinceUtc, stored[draft.Id].HandoffNote)
+                .Should().Be(("dev:pat", "Pat", (DateTimeOffset?)stored[draft.Id].CreatedAtUtc, (string?)null), "the author has been writing it since it was started");
+            (stored[presented.Id].WriterId, stored[presented.Id].WriterName).Should().Be(("dev:sam", "Sam"));
+            stored.Values.Should().OnlyContain(a => a.CurrentWriterId == a.AuthorId && a.AuthorId != "");
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {

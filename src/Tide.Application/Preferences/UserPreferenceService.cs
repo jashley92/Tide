@@ -33,6 +33,15 @@ public static class UserPreferences
 
     public const string ReadingAuto = "auto", ReadingOpen = "open", ReadingClosed = "closed";
 
+    /// <summary>Triage's promote form: whether "Add to today's brief" starts ticked on a day the person doesn't present
+    /// that brief. Off until they tick it, then as they last left it.</summary>
+    public const string TriagePromoteToBrief = "triage.promoteToBrief";
+
+    /// <summary>The same tick on a day the person presents that brief (the rotation's presenter): on until they untick
+    /// it, then as they last left it. Kept apart from <see cref="TriagePromoteToBrief"/>, so a presenting week's choice
+    /// doesn't carry into the weeks after it, or the other way round.</summary>
+    public const string TriagePromoteToBriefPresenting = "triage.promoteToBrief.presenting";
+
     /// <summary>The release whose "What's new" the person last saw ("1.13.0"); none ("") until they've seen one.</summary>
     public const string WhatsNewSeen = "whatsnew.seen";
 
@@ -65,6 +74,9 @@ public static class UserPreferences
     /// <summary>Swap or cover requests to the person, and approved, recorded or declined notices.</summary>
     public const string NotifyRotationRequests = "notify.rotationRequests";
 
+    /// <summary>An article a colleague handed the person to finish.</summary>
+    public const string NotifyArticleHandoffs = "notify.articleHandoffs";
+
     /// <summary>The personal digest: off (the default), daily or weekly.</summary>
     public const string NotifyDigest = "notify.digest";
 
@@ -94,6 +106,8 @@ public static class UserPreferences
                 new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
                 new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
                 new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
+                new(TriagePromoteToBrief, [Off, On], Permission.WriteArticles),
+                new(TriagePromoteToBriefPresenting, [On, Off], Permission.WriteArticles),
                 // Everyone who reads release highlights reads the team edition (RoleGroups.For).
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
                 new(TourState, ["", TourDue, TourDone], Permission.ReadTeamEdition),

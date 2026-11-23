@@ -8,6 +8,11 @@
 .tide-send-preview > summary:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-send-preview[open] > summary { margin-bottom: var(--tide-space-2); }
 .tide-send-preview .tide-edition { padding: var(--tide-space-3) var(--tide-space-4); }
+/* Send both: the two plans side by side, each with its own tick; one above the other on a narrow screen. */
+.tide-send-both-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--tide-space-3); }
+.tide-send-both-plan { min-width: 0; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); padding: var(--tide-space-2) var(--tide-space-3); }
+.tide-send-both-name { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-1); }
+.tide-send-both-subject { overflow-wrap: anywhere; }
 .tide-published { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: 1.25rem 1.5rem; max-width: 60rem; }
 .tide-published h1 { font-size: 1.35rem; font-weight: var(--tide-weight-semibold); }
 .tide-published h2 { font-size: 1.1rem; font-weight: var(--tide-weight-semibold); margin-top: 1.4rem; padding-top: .9rem; border-top: 1px solid var(--tide-border); }

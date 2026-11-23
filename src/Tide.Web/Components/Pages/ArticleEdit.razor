@@ -6,8 +6,9 @@
    writes into the editor's why it matters), Actions and Details.
    ?edition=company opens the preview on the company-wide edition; ?side=actions or ?side=details opens that tab (in a
    narrow window, on the preview pane). On today's brief, BriefStepper walks to the article
-   before or after it, in the edition the preview shows. *@
-<ArticleEditorPanel Id="Id" @ref="_panel" StartPane="@(Side is "actions" or "details" ? ArticleEditorPanel.PreviewPane : null)">
+   before or after it, in the edition the preview shows, as Ctrl+Shift+Enter does once it has marked this one ready. *@
+<ArticleEditorPanel Id="Id" @ref="_panel" StartPane="@(Side is "actions" or "details" ? ArticleEditorPanel.PreviewPane : null)"
+                    StepHref="a => BriefStepper.Href(a, _edition, _side)">
     <Stepper>
         <BriefStepper ArticleId="Id" EditionKey="@_edition" SideKey="@_side" />
     </Stepper>

@@ -296,7 +296,9 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["Ask"] = "cover their brief days",
             ["Change"] = change,
             ["ChangeShort"] = "Robin covers Sam " + day.ToString("ddd MMM d", CultureInfo.InvariantCulture),
-            ["Note"] = "<p style=\"margin:0 0 12px;\">“I'm out at a conference that day.”</p>",
+            ["Note"] = t == EmailTemplateCatalog.ArticleHandoff
+                ? "<p style=\"margin:0 0 12px;\">“Finish the IOCs; the vendor's advisory is linked.”</p>"
+                : "<p style=\"margin:0 0 12px;\">“I'm out at a conference that day.”</p>",
             ["DecisionNote"] = t == EmailTemplateCatalog.RotationDeclined ? " “I'm on leave that week.”" : ": “Happy to.”",
             ["RecordedBy"] = "Robin",
             ["Name"] = "Robin",
@@ -316,6 +318,10 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["RequestList"] = ReminderService.RequestList(SampleExternal(today), today, clock.Days),
             ["Days"] = "5 business days",
             ["WaitingList"] = ReminderService.WaitingList([(44, "psirt@vendor.example", today.AddDays(-7))]),
+            ["Writer"] = "Sam",
+            ["Before"] = "Robin",
+            ["Article"] = "Fortinet FortiOS SSL-VPN heap overflow exploited",
+            ["ArticleLink"] = " (" + Link("open it", "articles") + ")",
         };
         return values;
     }

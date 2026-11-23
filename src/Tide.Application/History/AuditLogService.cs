@@ -172,6 +172,7 @@ public static class AuditKinds
         [nameof(MetricDefinition)] = "Metric",
         [nameof(MetricValue)] = "Metric value",
         [nameof(MetricImport)] = "Metric import",
+        [nameof(ReportAssessment)] = "Report assessment",
         [nameof(RotationMember)] = "Rotation member",
         [nameof(RotationWeek)] = "Rotation week",
         [nameof(RotationChange)] = "Rotation change",

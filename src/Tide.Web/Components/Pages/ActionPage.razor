@@ -17,6 +17,7 @@
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject PrerenderHandoff Handoff
+@inject PaletteCommands PaletteVerbs
 @implements IDisposable
 
 <PageTitle>@(Number is { } n ? Ui.ActionLabel(n) : "New action") · TIDE</PageTitle>
@@ -815,8 +816,48 @@ else
     private volatile string _topic = "";
     private string? _changedBy;
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
+    }
+
+    // Ctrl+K's verbs on an action: Take it and Hand off when the page offers them (Run, so Take asks first when a
+    // colleague has it, and Hand off opens its dialog), and copying its hunt query.
+    private IDisposable? _verbs;
+
+    internal IEnumerable<PaletteCommand> Verbs()
+    {
+        if (_detail is not { Action: var a } || _busy) yield break;
+        var label = Ui.ActionLabel(a.Number);
+        if (_offered.Contains(ActionFlow.TakeIt))
+            yield return new($"Take {label}", "assign me mine", null, label, () => Run(ActionFlow.TakeIt), "bi-person-check");
+        if (_offered.Contains(ActionFlow.HandOff))
+            yield return new($"Hand {label} to…", "hand off team", null, label, () => Run(ActionFlow.HandOff), "bi-box-arrow-right");
+        if (HuntToCopy(a) is not null)
+            yield return new($"Copy {label}'s hunt query", "clipboard siem kql", Permission.ReadActions, label, CopyHuntQuery, "bi-clipboard");
+    }
+
+    // The query the hunt's Copy would be pressed on next: the first not yet run, else the first.
+    private static HuntQuery? HuntToCopy(ActionItem a) =>
+        a.Hunts.FirstOrDefault(h => h.Result == HuntResult.NotRun && h.Text.Length > 0) ?? a.Hunts.FirstOrDefault(h => h.Text.Length > 0);
+
+    /// <summary>The palette's Copy A-12's hunt query: the query to the clipboard, as its Copy button does (and counted as
+    /// copied there, so it can be recorded), said in a toast.</summary>
+    internal async Task CopyHuntQuery()
+    {
+        if (_detail is not { Action: var a } || HuntToCopy(a) is not { } hunt) return;
+        bool copied;
+        try { copied = await JS.InvokeAsync<bool>("tideCopy", hunt.Text); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { copied = false; }
+        if (!copied)
+        {
+            Toasts.Error("The query couldn't be copied. Use its Copy button in Hunt.");
+            return;
+        }
+        _drawer?.Hunt?.MarkCopied(hunt.Id);
+        Toasts.Show($"Copied {Ui.ActionLabel(a.Number)}'s hunt query.");
+    }
 
     private bool Editing => _editing is not null || _editingComment is not null || _prompting;
 
@@ -851,7 +892,11 @@ else
         Toasts.Show("Reloaded. Your unsaved changes were dropped.");
     }
 
-    public void Dispose() => _live?.Dispose();
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _verbs?.Dispose();
+    }
 
     private async Task Reload()
     {

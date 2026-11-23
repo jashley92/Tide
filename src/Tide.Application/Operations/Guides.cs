@@ -144,7 +144,7 @@ public static partial class Guides
             On("articles/{id}", "save", Permission.WriteArticles, "[data-guide=\"save\"]", "Saving",
                 "Save keeps what you've written. It also saves itself after a short pause."),
             On("articles/{id}", "review", Permission.WriteArticles, "[data-guide=\"ask-review\"] || #review-who", "Asking for a review",
-                "Choose a colleague and what to look at; Ask for review sends them the request."),
+                "Ask for a review opens where you choose a colleague and what to look at; Send the request asks them."),
             On("articles/{id}", "ready", Permission.WriteArticles, "[data-guide=\"mark-ready\"]", "Marking it ready",
                 "Save and mark ready saves it and says it can go on a brief."),
             On("articles/{id}", "brief", Permission.WriteArticles, "[data-guide=\"add-to-brief\"]", "Adding it to the brief",

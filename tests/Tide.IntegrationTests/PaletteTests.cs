@@ -239,7 +239,8 @@ public partial class PaletteEntryTests
     public void TheTriageShortcuts_AreTheKeysTriageJsHandles_AndTheLettersAreMarked()
     {
         var triage = Shortcuts.For("triage")[0].Keys;
-        triage.SelectMany(k => k.Keys).Should().BeEquivalentTo(["↓", "↑", "J", "K", "S", "X", "D", "P", "Esc", "O", "V", "R", "Enter", "→", "←"], "Esc closes the promote form");
+        triage.SelectMany(k => k.Keys).Should().BeEquivalentTo(["↓", "↑", "J", "K", "S", "X", "D", "P", "Enter", "Shift Enter", "Esc", "O", "V", "R", "Enter", "→", "←"],
+            "Enter and Shift+Enter are the promote form's two ways out, and Esc closes it");
         triage.Where(k => k.Keys.All(key => key.Length == 1 && char.IsLetter(key[0]))).Should().OnlyContain(k => k.Letter);
         triage.Single(k => k.Keys.Contains("↓")).Letter.Should().BeFalse("arrows aren't affected by the switch");
         Shortcuts.Everywhere.Keys.Single(k => k.Keys.Contains("?")).Letter.Should().BeTrue();

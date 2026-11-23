@@ -58,6 +58,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<MetricDefinition> MetricDefinitions { get; }
     DbSet<MetricValue> MetricValues { get; }
     DbSet<MetricImport> MetricImports { get; }
+    DbSet<ReportAssessment> ReportAssessments { get; }
     DbSet<Team> Teams { get; }
     DbSet<TeamMember> TeamMembers { get; }
     DbSet<ActionItem> Actions { get; }

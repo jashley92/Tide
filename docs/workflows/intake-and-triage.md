@@ -362,6 +362,8 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 | X | Dismiss (a new item: Undo on the toast, or Alt+Z) |
 | D | Mark duplicate (of the item it looks like) |
 | P | Promote (opens the promote form) |
+| Enter (in the promote form) | Promote and write: make the draft and open it |
+| Shift+Enter (in the promote form) | Promote and keep triaging: make the draft, stay, and select the next item (Undo on the toast, or Alt+Z) |
 | R | Restore to New |
 | O | Open the item's link in a new tab |
 | V | Read it in the reading pane, or close the pane (a held key doesn't repeat it) |
@@ -398,7 +400,8 @@ stateDiagram-v2
     Shortlisted --> Promoted: Promote, Promote as one, Attach
     Dismissed --> Promoted: Promote, Attach
     Duplicate --> Promoted: Promote, Attach
-    Promoted --> New: its draft article is deleted
+    Promoted --> New: its draft article is deleted, or Undo
+    Promoted --> Shortlisted: Undo, when it was shortlisted
     New --> [*]: pruned after RetentionDays
     Dismissed --> [*]: pruned after RetentionDays
     Duplicate --> [*]: pruned after RetentionDays
@@ -408,8 +411,9 @@ Notes on the diagram:
 
 - Any decision except promotion can be made from any state but Promoted (`IntakeService.SetAsync` excludes Promoted).
   A decision on a promoted item is refused: "That item is already an article."
-- **Promoted is final** except in one case: deleting the draft article it made (`ArticleService.DeleteAsync`) puts
-  each item back in New with no article.
+- **Promoted is final** except in two cases: deleting the draft article it made (`ArticleService.DeleteAsync`) puts
+  each item back in New with no article; and the toast's Undo after *Promote and keep triaging*
+  (`IntakeService.UndoPromoteAsync`) puts each item back exactly as it was before the promote (see below).
 - **Shortlisted and Promoted items are never pruned.**
 - A promotion that failed after the claim gives every item back as it was (see below). A claim that never finished
   (the server stopped part way) can be taken over after 5 minutes (`IntakeService.ClaimTimeout`).
@@ -431,9 +435,53 @@ item itself.
 ## Promoting an item
 
 Clicking a title, or pressing P, opens the inline promote form (`PromoteForm`): title, classification, priority (the
-suggested one preselected, with its reason) and TLP. **Promote and write** promotes and opens the draft. Before it
-navigates, `rows.js` (`remember`) rewrites the current history entry with the tab, filters and row, so Back returns to
-the same place.
+suggested one preselected, with its reason), TLP, and a tick, **Add to today's brief**. The form has two ways out:
+
+- **Promote and write** (Enter, the form's submit and its main button) promotes and opens the draft. Before it
+  navigates, `rows.js` (`remember`) rewrites the current history entry with the tab, filters and row, so Back returns
+  to the same place.
+- **Promote and keep triaging** (Shift+Enter, which `triage.js` turns into a press of the button) promotes and stays on
+  the inbox. The row leaves the tab and the next line is selected, as after S or X, with focus on it. An open reading
+  pane follows the new selection with text already kept; nothing is fetched. A toast says what was made, with
+  **Write it** (a link to the draft) and **Undo** (Alt+Z too). Triaging a whole inbox first and writing afterwards
+  costs no page changes; the drafts are on the Promoted tab, on Articles, and on the brief if ticked.
+
+Both go through `TriagePromoter.PromoteAsync`, which calls `IntakeService.PromoteOrJoinAsync` unchanged, so the
+permission (`WriteArticles`), the TLP rules, the claim and the audit are the same as before.
+
+**Add to today's brief.** With the tick, the draft goes on the end of the running order of the brief for
+`BriefService.CurrentDate` (today, or the next working day on a weekend or holiday), started if there's none, as the
+editor's *Add to today's brief* does (`GetOrStartAsync`, then `AddArticleAsync`). Building a brief needs
+`WriteArticles`, checked before anything is claimed. The tick starts **on for the brief's presenter** (the rotation's,
+for that day, with cover and swaps) and off for everyone else. Whatever the analyst then chooses is kept as they left
+it, separately for days they present and days they don't (`UserPreferences.TriagePromoteToBriefPresenting` and
+`TriagePromoteToBrief`), so a presenting week's choice doesn't carry into the next week. It's two steps, not one transaction, on purpose: the promote is what
+was asked for and stands on its own. If the brief can't take the draft (it has been sent, or a colleague changed it at
+that moment), the draft is kept and the toast says why it isn't on the brief. Adding is one save that re-checks the
+brief as it writes, so a draft is never half on a brief. A draft a colleague made first (the promote joined theirs) isn't
+put on the brief: it's theirs to place.
+
+**Undo** (`IntakeService.UndoPromoteAsync`, with the `PromoteUndo` the promote returned) deletes the draft, takes it off
+the brief the tick put it on (the running order closes up), and puts each report back exactly as it was before the
+claim: its status (New or Shortlisted), who decided it and when, and any dismiss reason or duplicate link. If the
+promote started that brief, and nothing else has changed it or been put on it since, the brief goes too; a brief that
+was there already, or one someone has changed since, stays, just without this article.
+
+Undo is refused ("Nothing to undo: the draft has been worked on since") once the draft is someone's work, so a tag or
+an AI draft made after *Write it* opened it in another tab is never deleted by Alt+Z. The promote keeps a snapshot of
+the draft as it left it: its edit version, when it was last changed, and how many rows of every table that points at
+an article refer to it. That list of tables is read from the data model's foreign keys (`Intake/Referrers.cs`), not
+kept by hand, so tags, adversaries, products, links, AI drafts, reviews, actions, screenshots and any table added later
+all count. Undo goes ahead only while all of that is unchanged, its reports are still the ones this promote claimed,
+and it's on no brief but the one this step put it on, which hasn't been sent. A test lists today's tables
+(`TriagePromoteUndoTests`), so a new one gets a look. Everything happens in one save, so it's all or nothing, and the
+article's deletion and the brief's change are audited as they are from their own pages. An Undo pressed while another
+step on the page is still saving waits for it (up to 10 seconds), and otherwise says it wasn't done, rather than
+dropping it. *Promote and write* offers no Undo: the editor's *Delete draft* is the way back there, which puts the items
+in New.
+
+The toast's *Write it* link, like any toast link (`ToastService.ToastLink`), may only be a path in TIDE ("/articles/…");
+anything else is refused as it's made.
 
 What the draft gets (`IntakeService.PromoteManyAsync`, then `ArticleService.CreateAsync`):
 
@@ -456,7 +504,7 @@ sequenceDiagram
     participant I as IntakeService
     participant Db as Database
     participant Ar as ArticleService
-    A->>T: Promote and write
+    A->>T: Promote and write, or Promote and keep triaging
     T->>I: PromoteAsync(id, form)
     I->>I: check the form as a save would
     I->>Db: read the items
@@ -479,8 +527,13 @@ sequenceDiagram
             end
         end
     end
-    T->>T: remember the triage address
-    T->>A: open /articles/id
+    alt Promote and write
+        T->>T: remember the triage address
+        T->>A: open /articles/id
+    else Promote and keep triaging
+        T->>T: re-read the inbox, select the next line
+        T->>A: toast: Write it, Undo
+    end
 ```
 
 Two analysts promoting the same item at once make one article: the second is told who is promoting it, or, once

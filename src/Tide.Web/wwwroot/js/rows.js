@@ -12,7 +12,9 @@
 // list has started since. The options:
 //   row     the class every row of the list carries (a class name, not a selector)
 //   method  the [JSInvokable] method the actions go to ("OnRowKey" unless given)
-//   keys    more keys, as { key: action }, a letter in lower case
+//   keys    more keys, as { key: action }, a letter in lower case; Space (' ') only with focus on a row itself, so
+//           a button or link in a row keeps it
+//   shift   keys held with Shift, as { key: action }, in place of their own (the list's Shift+J and Shift+K)
 //   follow  the page's own actions after which focus goes to the selected row, as it does after "next" and "prev";
 //           after any other action focus moves there only if it was lost (the row it was in has gone)
 //   onRow   the page's own actions taken only with focus in a row of the list (the board's left and right arrows),
@@ -99,7 +101,8 @@ window.tideRows = (function () {
         if (shortcuts.typing(e.target) || shortcuts.inMenu(e.target)) return;
         if (!shortcuts.on() && shortcuts.isLetter(e)) return;
         const onRow = !!(e.target.classList && e.target.classList.contains(opt.row));
-        let action = opt.keys[keyOf(e)];
+        if (e.key === ' ' && !onRow) return;
+        let action = (e.shiftKey && opt.shift[keyOf(e)]) || opt.keys[keyOf(e)];
         if (e.key === 'Enter' && onRow) action = 'open';
         if (opt.key) action = opt.key(e, action, onRow);
         if (!action) return;
@@ -114,7 +117,7 @@ window.tideRows = (function () {
             options = options || {};
             opt = {
                 row: options.row, method: options.method || 'OnRowKey',
-                keys: Object.assign({}, moves, options.keys), follow: ['next', 'prev'].concat(options.follow || []), onRow: options.onRow || [],
+                keys: Object.assign({}, moves, options.keys), shift: options.shift || {}, follow: ['next', 'prev'].concat(options.follow || []), onRow: options.onRow || [],
                 held: options.held, key: options.key, open: options.open, after: options.after
             };
             ref = dotnetRef;

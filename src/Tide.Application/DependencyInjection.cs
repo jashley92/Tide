@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddSingleton<PublishedContentCache>();
 
         services.AddScoped<ArticleService>();
+        services.AddScoped<ArticleHandoffService>();
         services.AddScoped<AssistService>();
         services.AddScoped<HolidayService>();
         services.AddScoped<Preferences.UserPreferenceService>();
@@ -127,6 +128,7 @@ public static class DependencyInjection
         services.AddScoped<CardRuleService>();
         services.AddScoped<ReminderService>();
         services.AddScoped<IntakeService>();
+        services.AddScoped<TriagePromoter>();
         services.AddScoped<ReadingService>();
         services.AddScoped<CveService>();
         services.AddScoped<StoryService>();

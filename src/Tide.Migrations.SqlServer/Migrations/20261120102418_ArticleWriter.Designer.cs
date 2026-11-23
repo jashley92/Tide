@@ -12,8 +12,8 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261122034920_IndicatorKeys")]
-    partial class IndicatorKeys
+    [Migration("20261120102418_ArticleWriter")]
+    partial class ArticleWriter
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -374,15 +374,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
-                    b.Property<string>("ValueKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ActionId");
-
-                    b.HasIndex("ValueKey");
 
                     b.ToTable("ActionIndicators");
                 });
@@ -903,6 +897,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("HandoffNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -975,6 +973,17 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("int");
+
+                    b.Property<string>("WriterId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WriterName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("WriterSinceUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
@@ -1054,10 +1063,6 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("HostRev")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
                     b.Property<string>("Note")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
@@ -1070,17 +1075,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
-                    b.Property<string>("ValueKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
-
-                    b.HasIndex("HostRev");
-
-                    b.HasIndex("ValueKey");
 
                     b.ToTable("ArticleIndicators");
                 });
