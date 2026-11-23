@@ -39,9 +39,10 @@ public static class AuditArchive
 
     public const string ManifestName = "manifest.jsonl";
 
-    /// <summary>The archive folder: <see cref="AuditOptions.ArchivePath"/>, or <c>audit-archive</c> under the file store.</summary>
-    public static string Folder(AuditOptions options, string fileStoreRoot) =>
-        string.IsNullOrWhiteSpace(options.ArchivePath) ? Path.Combine(fileStoreRoot, "audit-archive") : Path.GetFullPath(options.ArchivePath);
+    /// <summary>The archive folder: <see cref="AuditOptions.ArchivePath"/> (a relative one under the site, as every path
+    /// setting is), or <c>audit-archive</c> under the file store's root.</summary>
+    public static string Folder(AuditOptions options, string fileStoreRoot, string contentRoot) =>
+        string.IsNullOrWhiteSpace(options.ArchivePath) ? Path.Combine(fileStoreRoot, "audit-archive") : Path.GetFullPath(options.ArchivePath, contentRoot);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -90,10 +91,10 @@ public static class AuditArchive
         }
         File.Move(path + ".partial", path);
 
-        // Read back what was written before anything is removed: the rows, in order, and the file's hash.
-        var (rows, sha) = await CheckAsync(path, ct);
-        if (rows != ids.Count) throw new InvalidOperationException($"The audit archive {name} reads back {rows} rows, not {ids.Count}; nothing was removed.");
-        var archived = new ArchivedMonth(name, rows, sha, from, to, now);
+        // Read back what was written before anything is removed: every row's id, in the order written, and the file's hash.
+        var (read, sha) = await ReadBackAsync(path, ct);
+        if (!read.SequenceEqual(ids)) throw new InvalidOperationException($"The audit archive {name} doesn't read back as the {ids.Count} rows written; nothing was removed.");
+        var archived = new ArchivedMonth(name, ids.Count, sha, from, to, now);
         await File.AppendAllTextAsync(Path.Combine(folder, ManifestName), JsonSerializer.Serialize(archived, Json) + "\n", ct);
 
         // Only the rows written to the file, a batch at a time: a row of that month saved since (a clock set back) stays.
@@ -105,14 +106,25 @@ public static class AuditArchive
     /// <summary>The rows an archive holds and its SHA-256, as <see cref="ManifestName"/> records them.</summary>
     public static async Task<(int Rows, string Sha256)> CheckAsync(string path, CancellationToken ct = default)
     {
-        string sha;
-        await using (var raw = File.OpenRead(path)) sha = Convert.ToHexStringLower(await SHA256.HashDataAsync(raw, ct));
-        var rows = 0;
-        await using var file = File.OpenRead(path);
-        await using var gz = new GZipStream(file, CompressionMode.Decompress);
-        using var reader = new StreamReader(gz, Encoding.UTF8);
-        while (await reader.ReadLineAsync(ct) is { } line)
-            if (line.Length > 0) rows++;
-        return (rows, sha);
+        var (ids, sha) = await ReadBackAsync(path, ct);
+        return (ids.Count, sha);
+    }
+
+    // One pass over the file: its SHA-256 as the bytes go by, and each row's id from the decompressed lines.
+    private static async Task<(List<Guid> Ids, string Sha256)> ReadBackAsync(string path, CancellationToken ct)
+    {
+        using var hash = SHA256.Create();
+        var ids = new List<Guid>();
+        await using (var file = File.OpenRead(path))
+        await using (var hashed = new CryptoStream(file, hash, CryptoStreamMode.Read))
+        await using (var gz = new GZipStream(hashed, CompressionMode.Decompress))
+        using (var reader = new StreamReader(gz, Encoding.UTF8))
+        {
+            while (await reader.ReadLineAsync(ct) is { } line)
+                if (line.Length > 0) ids.Add(JsonDocument.Parse(line).RootElement.GetProperty("id").GetGuid());
+            // The gzip footer may be left unread; read to the end so the hash covers every byte.
+            await hashed.CopyToAsync(Stream.Null, ct);
+        }
+        return (ids, Convert.ToHexStringLower(hash.Hash!));
     }
 }

@@ -24,10 +24,13 @@ public sealed class AuditArchiveHostedService(IServiceScopeFactory scopes, IOpti
         {
             var now = time.GetUtcNow();
             var last = jobs.Get(JobMonitor.AuditArchive).LastStartedUtc;
+            var on = AuditArchive.Days(audit.CurrentValue) is not null;
             if (now - started >= FirstAfter && (last is null || now - last >= JobMonitor.AuditArchive.Interval))
-                await jobs.PassAsync(JobMonitor.AuditArchive, lease, JobMonitor.AuditArchive.Interval,
-                    () => Task.FromResult(AuditArchive.Days(audit.CurrentValue) is not null), () => RunAsync(stoppingToken), log,
-                    "Archiving the audit log failed; nothing was removed that wasn't archived, and it's tried again shortly.", stoppingToken);
+                await jobs.PassAsync(JobMonitor.AuditArchive, lease, JobMonitor.AuditArchive.Interval, () => Task.FromResult(on), () => RunAsync(stoppingToken), log,
+                    "Archiving the audit log failed; nothing was removed that wasn't archived, and it's tried again at its next daily run.", stoppingToken);
+            else if (await lease.HoldAsync(stoppingToken))
+                // Diagnostics shows whether it's on and when it next runs, between runs too.
+                jobs.Scheduled(JobMonitor.AuditArchive, on, on ? (last is { } l ? l + JobMonitor.AuditArchive.Interval : started + FirstAfter) : null);
             try { await Task.Delay(Poll, time, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
@@ -38,7 +41,7 @@ public sealed class AuditArchiveHostedService(IServiceScopeFactory scopes, IOpti
         await using var scope = scopes.CreateAsyncScope();
         await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
         var options = audit.CurrentValue;
-        var folder = AuditArchive.Folder(options, Path.GetFullPath(files.CurrentValue.RootPath, env.ContentRootPath));
+        var folder = AuditArchive.Folder(options, Path.GetFullPath(files.CurrentValue.RootPath, env.ContentRootPath), env.ContentRootPath);
         var months = await AuditArchive.RunAsync(db, options, folder, time.GetUtcNow(), ct);
         foreach (var m in months) log.LogInformation("Archived {Rows} audit log rows from {Month:yyyy-MM} to {File} and removed them from the database.", m.Rows, m.FromUtc, m.File);
         return months.Count == 0 ? "nothing older than the retention" : $"{months.Sum(m => m.Rows):N0} rows archived ({string.Join(", ", months.Select(m => m.FromUtc.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)))})";
