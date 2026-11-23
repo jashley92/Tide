@@ -23,7 +23,15 @@ public class ActivityFileTests : IDisposable
 
     private ActivityFileHostedService Service(TimeProvider time) =>
         new(new TransportCounts(), new LiveMeetings(time), new StaticOptionsMonitor<FileStoreOptions>(new FileStoreOptions { RootPath = _root }),
-            time, NullLogger<ActivityFileHostedService>.Instance);
+            new Env(), time, NullLogger<ActivityFileHostedService>.Instance);
+
+    private sealed class Env : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Testing";
+        public string ApplicationName { get; set; } = "Tide";
+        public string ContentRootPath { get; set; } = Path.GetTempPath();
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    }
 
     [Fact]
     public void It_writes_counts_and_a_time_and_skips_a_missing_root()
@@ -38,7 +46,7 @@ public class ActivityFileTests : IDisposable
         var a = doc.RootElement;
         a.GetProperty("atUtc").GetDateTimeOffset().Should().Be(clock.Now);
         (a.GetProperty("openPages").GetInt64(), a.GetProperty("liveMeetings").GetInt32()).Should().Be((0L, 0));
-        a.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["atUtc", "machine", "openPages", "liveMeetings", "meetingDays"], "counts only");
+        a.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["atUtc", "openPages", "liveMeetings", "meetingDays"], "counts only");
         Directory.EnumerateFiles(_root).Should().ContainSingle("the temporary file is moved over it");
     }
 }

@@ -589,16 +589,14 @@ function Remove-TideTree([string] $Path) {
 
 # A sentence saying what an upgrade would end, from the activity.json the app writes into its data root every 30 s: the
 # open pages (their unsaved work is lost) and the meetings running in present mode. $null when the file isn't there, can't
-# be read, is older than -FreshSeconds (the app isn't running, or is another server's), or shows nobody.
+# be read, is older than -FreshSeconds (the app isn't running), or shows nobody.
 function Get-TideActivityWarning([string] $File, [datetime] $NowUtc, [int] $FreshSeconds = 120) {
     if (-not $File -or -not (Test-Path -LiteralPath $File -PathType Leaf)) { return $null }
     try { $a = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
     if ($null -eq $a -or $null -eq $a.atUtc) { return $null }
-    # Windows PowerShell 5.1 leaves the time a string; PowerShell 7 reads it as a DateTime.
-    $at = if ($a.atUtc -is [datetime]) { $a.atUtc.ToUniversalTime() } else {
-        try { [datetimeoffset]::Parse([string]$a.atUtc, [Globalization.CultureInfo]::InvariantCulture).UtcDateTime } catch { return $null }
-    }
-    if ([math]::Abs(($NowUtc.ToUniversalTime() - $at).TotalSeconds) -gt $FreshSeconds) { return $null }
+    # A string on Windows PowerShell 5.1, a DateTime on PowerShell 7: the cast reads either (invariant culture, its offset).
+    try { $at = ([datetime]$a.atUtc).ToUniversalTime() } catch { return $null }
+    if ([math]::Abs(($NowUtc - $at).TotalSeconds) -gt $FreshSeconds) { return $null }
     $pages = [int]$a.openPages; $meetings = [int]$a.liveMeetings
     if ($pages -le 0 -and $meetings -le 0) { return $null }
     $parts = @()

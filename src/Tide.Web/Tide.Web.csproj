@@ -31,6 +31,9 @@
       <_TideMigration Include="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/2*_*.cs"
                       Exclude="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/*.Designer.cs" />
     </ItemGroup>
-    <WriteLinesToFile File="$(PublishDir)migrations-sqlserver.txt" Lines="@(_TideMigration->'%(Filename)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <_TideMigrationId Include="@(_TideMigration->'%(Filename)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)migrations-sqlserver.txt" Lines="@(_TideMigrationId->DistinctWithCase())" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 </Project>
