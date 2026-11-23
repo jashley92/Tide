@@ -5,9 +5,10 @@
 # only where integrated auth isn't possible. Nothing is stored.
 # ASCII only: Windows PowerShell 5.1 misreads non-ASCII in BOM-less files.
 
-function New-TideSqlConnection {
-    # An open connection. The connection is always encrypted; -ValidateServerCertificate also checks the instance's
-    # certificate, as the site's connection string does when it says TrustServerCertificate=False.
+function New-TideConnectionString {
+    # A connection string. Always encrypted; -ValidateServerCertificate also checks the instance's certificate, as the
+    # site's connection string does when it says TrustServerCertificate=False. Built, not written out, so a name with a
+    # ';' or '=' in it is quoted.
     param(
         [Parameter(Mandatory)] [string] $SqlInstance,
         [Parameter(Mandatory)] [string] $DbName,
@@ -27,7 +28,19 @@ function New-TideSqlConnection {
     } else {
         $b['Integrated Security'] = $true
     }
-    $conn = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
+    return $b.ConnectionString
+}
+
+function New-TideSqlConnection {
+    # An open connection (New-TideConnectionString's).
+    param(
+        [Parameter(Mandatory)] [string] $SqlInstance,
+        [Parameter(Mandatory)] [string] $DbName,
+        [System.Management.Automation.PSCredential] $SqlCredential,
+        [switch] $ValidateServerCertificate,
+        [string] $ApplicationName = 'TIDE deploy'
+    )
+    $conn = New-Object System.Data.SqlClient.SqlConnection (New-TideConnectionString @PSBoundParameters)
     $conn.Open()
     return $conn
 }
