@@ -274,10 +274,11 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
 .tide-meeting-notes { overflow-wrap: anywhere; line-height: 1.55; }
 .tide-meeting-notes > li + li { margin-top: .2rem; }
-.tide-note-text { white-space: pre-wrap; }
-/* A note's own buttons, and what came of it (Done, Raised as A-14), under its text. */
-.tide-note-tools { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
-.tide-note-done > .tide-note-text { color: var(--tide-text-muted); }
+.tide-meeting-note-text { white-space: pre-wrap; }
+/* A note's own buttons, and what came of it (Done, Raised as A-14), under its text. Named apart from present mode's
+   .tide-note-text / .tide-note-tools, whose indent would push the text away from its bullet. */
+.tide-meeting-note-tools { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.tide-note-done > .tide-meeting-note-text { color: var(--tide-text-muted); }
 .tide-note-done-badge { font-size: var(--tide-text-xs); font-weight: 600; color: var(--tide-ok); }
 /* The meeting recap: each list under its own subhead, the actions grouped by who holds them. */
 .tide-recap-list { list-style: none; padding-left: 0; margin: .15rem 0 .5rem; }

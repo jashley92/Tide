@@ -1135,12 +1135,13 @@ else
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
+        var recap = Recap;   // built once: it builds the team edition
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
                      @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" ShowAttendance="AttendanceShown" Busy="_busy" OnSave="SaveDetails"
                      OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs"
-                     Recapped="@(Recap is not null)" OnNotesChanged="NotesChanged" />
-        @if (Recap is { } recap)
+                     Recapped="@(recap is not null)" OnNotesChanged="NotesChanged" />
+        @if (recap is not null)
         {
             <MeetingRecapCard Brief="_brief!" Recap="recap" Meeting="_meeting" OnChanged="NotesChanged" />
         }

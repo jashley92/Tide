@@ -17,10 +17,10 @@
                 var done = n.DoneAtUtc is not null;
                 <li class="@(done ? "tide-note-done" : null)" data-note="@n.Id">
                     @* The text keeps its line breaks (pre-wrap): the author, the time and the note on one line here. *@
-                    <div class="tide-note-text"><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</div>
+                    <div class="tide-meeting-note-text"><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</div>
                     @if (done || raised is not null || Mine(n))
                     {
-                        <div class="tide-note-tools">
+                        <div class="tide-meeting-note-tools">
                             @if (done) { <span class="tide-note-done-badge">Done</span> }
                             @if (raised is { } number) { <a href="@Ui.ActionUrl(number)">Raised as @Ui.ActionLabel(number)</a> }
                             @if (Mine(n))

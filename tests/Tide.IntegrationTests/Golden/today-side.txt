@@ -18,8 +18,8 @@
 <dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
@@ -38,8 +38,8 @@
 <dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></div></dl><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
 === draft / Analyst Robin / today (44 commands)
@@ -68,8 +68,8 @@
 <dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><ul class="list-unstyled small mb-0">
 <li>You present {shortday} to {shortday}</li>
@@ -94,8 +94,8 @@ same as draft / Analyst Side Analyst / day
 <dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
@@ -109,8 +109,8 @@ same as draft / Analyst Side Analyst / day
 <dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></div></dl>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section>
 === draft / Viewer Side Viewer / today (21 commands)
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
@@ -119,8 +119,8 @@ same as draft / Analyst Side Analyst / day
 <dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
@@ -164,8 +164,8 @@ same as draft / ActionOwner Side Owner / day
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
@@ -199,8 +199,8 @@ same as draft / Analyst Side Analyst / day
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><ul class="list-unstyled small mb-0">
 <li>You present {shortday} to {shortday}</li>
@@ -226,8 +226,8 @@ same as draft / Analyst Side Analyst / day
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
@@ -243,8 +243,8 @@ same as draft / ActionOwner Side Owner / day
 <dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3> <div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
@@ -276,8 +276,8 @@ same as draft / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
@@ -302,8 +302,8 @@ same as draft / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
@@ -339,8 +339,8 @@ same as draft / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
@@ -372,8 +372,8 @@ same as presented / Analyst Side Analyst / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
@@ -393,8 +393,8 @@ same as presented / Analyst Side Analyst / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section>
 === presented / Viewer Side Viewer / today (22 commands)
@@ -410,8 +410,8 @@ same as presented / Analyst Side Analyst / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
@@ -445,8 +445,8 @@ same as presented / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
@@ -471,8 +471,8 @@ same as presented / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
@@ -508,8 +508,8 @@ same as presented / ActionOwner Side Owner / day
 <li><a href="{action}">{action}</a> Sweep VPN and firewall logs for the advisory&#x27;s indicators <span class="tide-muted text-nowrap">· Open</span></li></ul></div><div class="tide-recap-group small" data-recap-holder><strong>Vulnerability Management &#xB7; nobody yet</strong> <ul class="tide-recap-list">
 <li><a href="{action}">{action}</a> Apply the vendor hotfix to both remote-access gateways <span class="tide-muted text-nowrap">· In progress</span></li></ul></div>
 <h3 class="tide-subhead">Meeting notes (2 open, 0 done)</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
-<li data-note="{id}"><div class="tide-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</div></li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
+<li data-note="{id}"><div class="tide-meeting-note-text"><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</div></li></ul></div>
 <h3 class="tide-subhead">Carried to a later brief (0)</h3><p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
 <h3 class="tide-subhead">Attended (1)</h3><div class="small">In the room</div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">

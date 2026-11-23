@@ -41,7 +41,7 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => a.BriefId == briefId)
             .Join(db.Briefs, a => a.BriefId, b => b.Id, (a, b) => new { Row = a, b.BriefDate }).ToListAsync(ct);
         var notes = visitor ? [] : await db.MeetingNotes.AsNoTracking().Where(n => n.BriefId == briefId).ToListAsync(ct);
-        var raisedIds = notes.Where(n => n.ActionId is not null).Select(n => n.ActionId!.Value).ToList();
+        var raisedIds = notes.Select(n => n.ActionId).OfType<Guid>().ToList();
         var raised = raisedIds.Count == 0 ? new Dictionary<Guid, int>()
             : await db.Actions.AsNoTracking().Where(a => raisedIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Number, ct);
         return new MeetingRecord(
