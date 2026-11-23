@@ -453,7 +453,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         row[..row.IndexOf('>')].Should().Contain("tide-action-row").And.Contain("selected").And.Contain("aria-current=\"true\"").And.Contain("tabindex=\"0\"");
         var other = html[html.LastIndexOf("<tr", html.IndexOf($"{token} 0</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
         other[..other.IndexOf('>')].Should().Contain("tabindex=\"-1\"").And.NotContain("aria-current");
-        html.Should().MatchRegex("<kbd class=\"tide-kbd\">J</kbd>\\s*<kbd class=\"tide-kbd\">K</kbd> move ·\\s*<kbd class=\"tide-kbd\">T</kbd>\\s*<span>take it ·</span>\\s*<kbd class=\"tide-kbd\">Enter</kbd> open",
+        html.Should().MatchRegex("<kbd class=\"tide-kbd\">J</kbd>\\s*<kbd class=\"tide-kbd\">K</kbd> move ·\\s*<kbd class=\"tide-kbd\">T</kbd>\\s*<span>take it ·</span>\\s*<kbd class=\"tide-kbd\">Enter</kbd> <span>open</span>",
             "the keys are said beside the heading");
 
         var numbers = r.Component.Rows.Select(x => x.Number).ToList();
@@ -500,7 +500,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using (var viewer = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: Viewer))
         {
             var html = WebUtility.HtmlDecode(await viewer.HtmlOnce("tide-actions-keys"));
-            html.Should().Contain("move").And.Contain(">Enter</kbd> open").And.NotContain("take it", "a viewer takes nothing on");
+            html.Should().Contain("move").And.Contain(">Enter</kbd> <span>open</span>").And.NotContain("take it", "a viewer takes nothing on");
         }
         await using (var owner = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: Owner()))
             WebUtility.HtmlDecode(await owner.HtmlOnce("tide-actions-keys")).Should().Contain(">T</kbd>").And.Contain("take it");
@@ -557,6 +557,8 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         var numbers = r.Component.Rows.Select(x => x.Number).ToList();
         html.Should().Contain($"aria-label=\"Select A-{numbers[0]}, {token}").And.NotContain("tide-selbar", "nothing is chosen yet")
             .And.Contain("<kbd class=\"tide-kbd\">Space</kbd> <span>select</span>", "the key is said beside the heading");
+        var hint = html[html.IndexOf("tide-actions-keys", StringComparison.Ordinal)..];
+        hint[..hint.IndexOf("<span>select</span>", StringComparison.Ordinal)].Should().NotContain("@if").And.NotContain("{", "the hint is drawn, not its Razor shown as text");
 
         // Space chooses the selected row; Shift+J chooses the next too, and moves to it.
         await Key(r, "pick");

@@ -90,7 +90,6 @@
 
     private ConfirmDialog _dialog = default!;
     private ManyKind? _asking;
-    private ActionStatus _to;
     private string? _assignee, _reason;
     private Guid? _team;
     private DateOnly? _due;
@@ -132,9 +131,9 @@
             await Run(ManyOp.MoveTo(to));
             return;
         }
-        (_to, _reason) = (to, null);
+        _reason = null;
         var status = ActionService.StatusName(to);
-        if (await Ask(ManyKind.Move, $"Move {Ui.Plural(Picked.Count, "action")} to {status}", $"Say once why: each one's history keeps it.", $"Move to {status}"))
+        if (await Ask(ManyKind.Move, $"Move {Ui.Plural(Picked.Count, "action")} to {status}", "Say once why: each one's history keeps it.", $"Move to {status}"))
             await Run(ManyOp.MoveTo(to, _reason));
     }
 

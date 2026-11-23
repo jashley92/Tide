@@ -220,7 +220,6 @@
         new("status", "Status") { SortBy = r => r.Status },
     ];
 
-
     private static readonly IReadOnlyList<string> UrgencyOrder = Enum.GetValues<ActionUrgency>().Select(ActionSla.UrgencyName).ToList();
 
     private Func<ActionRow, string>? Grouping => GroupByKind ? KindOf : GroupByUrgency ? UrgencyOf : null;
