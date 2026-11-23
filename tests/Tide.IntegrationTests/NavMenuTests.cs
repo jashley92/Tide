@@ -30,7 +30,8 @@ internal sealed partial record RenderedNav(IReadOnlyList<(string Label, IReadOnl
 
     public IReadOnlyList<string> Links => Groups.SelectMany(g => g.Links).ToList();
 
-    [GeneratedRegex("<nav aria-label=\"Main\".*?</nav>", RegexOptions.Singleline)]
+    // The links, inside the sidebar's <nav aria-label="Main"> (MainLayout), up to the </div> after their outer list.
+    [GeneratedRegex("<div class=\"tide-side-links\" id=\"tide-nav-links\">.*?</ul>\\s*</div>", RegexOptions.Singleline)]
     private static partial Regex MainNav();
 
     [GeneratedRegex("<div class=\"tide-side-head\">.*?</div>", RegexOptions.Singleline)]
