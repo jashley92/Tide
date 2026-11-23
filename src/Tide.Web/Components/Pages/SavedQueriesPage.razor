@@ -194,7 +194,7 @@ else
     private RenderFragment EditForm => __builder =>
     {
         var f = _form!;
-        <div data-submit-scope>
+        <div data-submit-scope data-oi data-oi-names="@QueryInsertMenu.SuggestNames">
             <div class="row g-2">
                 <div class="col-md-7">
                     <label class="tide-field-label" for="sq-f-name">Name</label>
@@ -211,8 +211,15 @@ else
                     <input id="sq-f-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="f.Description" />
                 </div>
                 <div class="col-12">
+                    <QueryInsertMenu PanelId="sq-f-insert" />
+                </div>
+                <div class="col-12 tide-oi-field">
                     <label class="tide-field-label" for="sq-f-text">Query</label>
-                    <textarea id="sq-f-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false" aria-describedby="sq-f-text-help" @bind="f.Text"></textarea>
+                    <textarea id="sq-f-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false"
+                              data-oi-target data-oi-default aria-autocomplete="list" aria-controls="sq-f-text-list" aria-describedby="sq-f-text-help"
+                              @bind="f.Text"></textarea>
+                    <PlaceholderList For="sq-f-text" />
+                    <span class="visually-hidden" role="status" data-oi-status></span>
                     <LengthNote Value="@f.Text" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
                     <SavedQueryHelp Id="sq-f-text-help" />
                 </div>

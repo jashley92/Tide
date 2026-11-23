@@ -281,10 +281,18 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-oi-how { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--tide-border); }
 .tide-oi-instead { width: 12rem; }
 .tide-oi-field { position: relative; }
-.tide-oi-suggest { position: absolute; z-index: 20; left: calc(var(--bs-gutter-x, 0) * .5); right: calc(var(--bs-gutter-x, 0) * .5); max-height: 14rem; overflow-y: auto;
-    margin: .15rem 0 0; padding: .2rem; list-style: none; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md);
+/* The list typing {{ opens: placed at the caret by js/placeholder-editor.js (these are where it starts). */
+.tide-oi-suggest { position: absolute; z-index: 20; left: calc(var(--bs-gutter-x, 0) * .5); width: min(36rem, calc(100% - var(--bs-gutter-x, 0))); max-height: 14rem; overflow-y: auto;
+    margin: 0; padding: .2rem; list-style: none; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md);
     background: var(--tide-surface); box-shadow: 0 4px 12px var(--tide-shadow); }
 .tide-oi-suggest [role="option"] { cursor: pointer; }
+/* What the Insert menu just put in: a see-through mark over it that fades (js/placeholder-editor.js); with reduced
+   motion it goes at once instead. */
+.tide-oi-flash { position: absolute; z-index: 5; pointer-events: none; border-radius: var(--tide-radius-sm);
+    background: color-mix(in srgb, var(--tide-accent) 22%, transparent); box-shadow: 0 0 0 2px var(--tide-focus-ring);
+    animation: tide-oi-flash 2s ease-out forwards; }
+@keyframes tide-oi-flash { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tide-oi-flash { animation-timing-function: steps(1, end); } }
 .tide-oi-check { min-height: 1.3rem; margin-top: .25rem; }
 .tide-oi-check.is-ok { color: var(--tide-ok); }
 .tide-oi-check.is-problem { color: var(--tide-warn); }

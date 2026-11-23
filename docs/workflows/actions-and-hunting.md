@@ -625,7 +625,7 @@ the email back.
 one chosen where the cursor was in the subject or body: as it is, optional (`?`), with text for when it's empty (`|`), or
 as a section round what's selected (on lines of its own in the body, inline in the subject). Typing `{{`, `{{#` or `{{/`
 in either box opens a list of the names that match; Up and Down choose, Enter or Tab writes the name and closes the
-braces, Escape closes it (`wwwroot/js/outreach-editor.js`, wired by event delegation like the Markdown toolbar). Under
+braces, Escape closes it (`wwwroot/js/placeholder-editor.js`, wired by event delegation like the Markdown toolbar). Under
 the body, `OutreachFill.Check` runs a moment after typing stops and says what's wrong, or how many placeholders TIDE
 will fill; *Preview this draft on an action* fills the unsaved draft for one of the writer's open Outreach actions
 (`OutreachService.PreviewAsync`, which saves nothing and refuses whom writing the email refuses).

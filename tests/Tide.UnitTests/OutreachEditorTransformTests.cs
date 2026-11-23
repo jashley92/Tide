@@ -5,7 +5,7 @@ using AwesomeAssertions;
 namespace Tide.UnitTests;
 
 /// <summary>
-/// Writing an outreach template (wwwroot/js/outreach-editor.js), run in Node: what typing "{{" offers and writes, what
+/// Writing an outreach template (wwwroot/js/placeholder-editor.js), run in Node: what typing "{{" offers and writes, what
 /// the Insert menu puts in, and the section it wraps round a selection, in the body and in the one-line subject.
 /// </summary>
 public class OutreachEditorTransformTests
@@ -33,6 +33,10 @@ public class OutreachEditorTransformTests
             sectionNothingSelected: t.section({ text: 'Hi\n', start: 3, end: 3 }, 'article.cves', false),
             sectionMidLine: t.section({ text: 'Hi there', start: 2, end: 2 }, 'indicators', false),
             sectionInline: t.section({ text: 'Re: ', start: 4, end: 4 }, 'article.cves', true),
+            placeBelow: t.place({ left: 120, top: 40, height: 20 }, { width: 600 }, { width: 300, height: 200 }, { below: 800, above: 100 }),
+            placeNearTheRight: t.place({ left: 500, top: 40, height: 20 }, { width: 600 }, { width: 300, height: 200 }, { below: 800, above: 100 }),
+            placeAbove: t.place({ left: 10, top: 400, height: 20 }, { width: 600 }, { width: 300, height: 200 }, { below: 50, above: 500 }),
+            placeNoRoomEither: t.place({ left: 10, top: 40, height: 20 }, { width: 600 }, { width: 300, height: 200 }, { below: 50, above: 60 }),
         };
         console.log(JSON.stringify(out));
         """;
@@ -43,7 +47,7 @@ public class OutreachEditorTransformTests
         await File.WriteAllTextAsync(script, Cases);
         try
         {
-            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "outreach-editor.js")])
+            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "placeholder-editor.js")])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };
@@ -108,6 +112,18 @@ public class OutreachEditorTransformTests
         Applied("Hi there", said.GetProperty("sectionMidLine")).Text
             .Should().Be("Hi\n{{#indicators}}\n{{indicators}}\n{{else}}\n{{/indicators}}\n there", "its tags on lines of their own");
         Applied("Re: ", said.GetProperty("sectionInline")).Text.Should().Be("Re: {{#article.cves}}{{article.cves}}{{/article.cves}}");
+    }
+
+    [Fact]
+    public async Task TheList_OpensAtTheCaret_UnderItOrOverItShortOfRoom_AndStaysInTheField()
+    {
+        var said = await Run();
+        (int Left, int Top) At(string name) => (said.GetProperty(name).GetProperty("left").GetInt32(), said.GetProperty(name).GetProperty("top").GetInt32());
+
+        At("placeBelow").Should().Be((120, 64), "just under the caret's line");
+        At("placeNearTheRight").Should().Be((300, 64), "moved left so it stays in the field");
+        At("placeAbove").Should().Be((10, 196), "over the line when there's no room under it and there is over it");
+        At("placeNoRoomEither").Should().Be((10, 64), "under it when there's room neither way");
     }
 
     // The editor writes the syntax itself: what it writes has to pass the check a template meets when it's saved.

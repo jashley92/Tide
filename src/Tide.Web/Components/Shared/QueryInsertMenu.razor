@@ -1,0 +1,55 @@
+@* The Insert menu over a saved query's text (Saved queries, Save for the team): its placeholders, the days back and the
+   indicators, all of them or one kind. A button carries what it writes (data-oi-insert); js/placeholder-editor.js writes it
+   where the cursor was in the box, brings it into view and flashes it, then this closes. *@
+
+<div class="tide-oi-menu">
+    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId"
+            @onclick="Toggle" @ref="_toggle">
+        <span class="bi bi-braces" aria-hidden="true"></span> Insert placeholder
+    </button>
+    @if (_open)
+    {
+        <div id="@PanelId" class="tide-oi-panel" data-oi-panel role="group" aria-label="Insert a placeholder" @onkeydown="Keys">
+            <ul class="tide-oi-list tide-oi-choices" role="list">
+                @foreach (var p in QueryPlaceholder.All)
+                {
+                    <li>
+                        <button type="button" class="tide-oi-choice" data-oi-insert="@p.Written" @onclick="Close">
+                            <span class="tide-data">@p.Written</span>
+                            <span class="tide-oi-what">@p.Description</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The panel's id, unique on the page.</summary>
+    [Parameter, EditorRequired] public string PanelId { get; set; } = "";
+
+    /// <summary>What typing "{{" offers in a saved query's box: every placeholder, none a section.</summary>
+    public static readonly string SuggestNames = PlaceholderNames.Json(QueryPlaceholder.All.Select(p => (p.Name, p.Description, false)));
+
+    private bool _open;
+    private ElementReference _toggle;
+    private bool _focusToggle;
+
+    private void Toggle() => _open = !_open;
+
+    // After an insert the cursor is in the box written to (js/placeholder-editor.js): focus stays there.
+    private void Close() => _open = false;
+
+    private void Keys(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        _open = false;
+        _focusToggle = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusToggle) { _focusToggle = false; await _toggle.TryFocusAsync(orGone: true); }
+    }
+}
