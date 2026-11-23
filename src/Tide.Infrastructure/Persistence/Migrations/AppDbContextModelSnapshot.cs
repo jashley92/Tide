@@ -667,7 +667,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<int>("Accepted")
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid>("ArticleId")
+                    b.Property<Guid?>("ArticleId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("BasedOn")
@@ -689,6 +689,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("InputTlp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Model")
@@ -716,6 +719,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Rejected")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Suggestions")
                         .IsRequired()
@@ -3911,8 +3918,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasOne("Tide.Domain.Entities.Article", null)
                         .WithMany()
                         .HasForeignKey("ArticleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>

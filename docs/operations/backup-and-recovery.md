@@ -140,6 +140,9 @@ flowchart TD
 2. Restore the set's `.bak` over the database `WITH NORECOVERY`, then the log backups taken after it in order, the
    last `WITH RECOVERY` (to a point in time with `STOPAT` if you're undoing a mistake).
 3. Copy the set's `files\files` to the data root's `files`, and `files\dp-keys` to `dp-keys`, replacing what's there.
+   Each log backup (`-Log`) also copies the files added since into the newest set, so the newest set holds every file up
+   to the last log backup: the database and the files both restore to within 15 minutes (the recovery point decided on
+   2026-11-21). A file newer than the point you restore to is harmless: no row names it.
 4. If the settings file was lost, copy `files\site\appsettings.Production.json` into the site folder, and set the
    environment variables from your vault.
 5. Start the app pool, and check `/health` answers `Healthy` and **Administration › System › Diagnostics** is clean.
