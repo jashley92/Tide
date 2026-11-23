@@ -23,4 +23,9 @@ public sealed class PromoteForm
     /// <summary>Put the new draft at the end of today's brief as well (<see cref="TriagePromoter"/>), starting the brief
     /// if there's none yet. Ignored by <see cref="IntakeService"/>'s own promotes.</summary>
     public bool AddToBrief { get; set; }
+
+    /// <summary>A KEV round-up (<see cref="KevRoundup"/>): up to <see cref="KevRoundup.MaxItems"/> items, each naming a
+    /// CVE on CISA's KEV list, promoted as one, the draft with a bullet per KEV-listed CVE and the round-up's recommended
+    /// action.</summary>
+    public bool AsKevRoundup { get; set; }
 }
