@@ -815,7 +815,7 @@ else
     }
 
     /// <summary>The tab and filters shown, as a saved view keeps them: never the row (<c>at=</c>, <c>row=</c>) or the page.</summary>
-    internal string? ShownQuery => SavedViewService.TryNormalize(SavedViewPage.Triage, PageHref(1)["triage?".Length..]);
+    internal string? ShownQuery => SavedViewService.TryNormalize(SavedViewPage.Triage, PageHref(1)[SavedViewPage.Triage.Key.Length..]);
 
     /// <summary>
     /// Opens a saved view in place, at its first page. Not by its link: the page writes its own address as it goes

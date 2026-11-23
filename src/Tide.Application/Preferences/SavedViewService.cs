@@ -11,34 +11,31 @@ namespace Tide.Application.Preferences;
 public sealed record SavedViewEntry(Guid Id, string Name, string Query);
 
 /// <summary>
-/// A list page that keeps saved views: the key its views are stored under (<see cref="SavedActionView.Page"/>), its
-/// address, who may open it, the parameters a view of it may hold (in the order a stored query lists them, each with its
-/// longest value), and the ones its address carries that a view drops rather than refuses (the list's page, the row
-/// selected).
+/// A list page that keeps saved views: the key its views are stored under (<see cref="SavedActionView.Page"/>), which is
+/// also its address, who may open it, the parameters a view of it may hold (in the order a stored query lists them, each
+/// with its longest value), and the ones its address carries that a view drops rather than refuses (the list's page, the
+/// row selected).
 /// </summary>
-public sealed record SavedViewPage(string Key, string Route, string Title, Permission Permission,
+public sealed record SavedViewPage(string Key, string Title, Permission Permission,
     IReadOnlyList<(string Name, int Max)> Parameters, IReadOnlyList<string> Dropped)
 {
-    public static readonly SavedViewPage Actions = new(SavedActionView.ActionsPage, "actions", "Actions", Permission.ReadActions,
+    public static readonly SavedViewPage Actions = new(SavedActionView.ActionsPage, "Actions", Permission.ReadActions,
     [
         ("view", 16), ("layout", 16), ("group", 16), ("rule", 36), ("team", 36), ("assignee", 256), ("q", 200), ("kind", 32),
         ("priority", 32), ("due", 16), ("status", 32), ("parent", 10), ("teams", 16), ("raised", 16), ("closed", 2), ("on", 16),
     ], ["page"]);
 
     /// <summary>Triage's tab and filters. Never the row (<c>at=</c>, <c>row=</c>), the page, or a promote form it opens.</summary>
-    public static readonly SavedViewPage Triage = new("triage", "triage", "Triage", Permission.WriteArticles,
+    public static readonly SavedViewPage Triage = new("triage", "Triage", Permission.WriteArticles,
         [("tab", 16), ("source", 36), ("q", 200), ("since", 5), ("cve", 8), ("named", 5), ("older", 5)],
         ["page", "at", "row", "promote"]);
 
-    /// <summary>The article list's filters (ArticleFilter.ToQuery). Never the page, or the New article form.</summary>
-    public static readonly SavedViewPage Articles = new("articles", "articles", "Articles", Permission.ReadTeamEdition,
-    [
-        ("q", 200), ("author", Tide.Application.Articles.ArticleFilter.MaxAuthor), ("status", 16), ("assess", 16), ("tag", 64), ("category", 64),
-        ("tactic", 6), ("technique", 9), ("withsubs", 5), ("from", 10), ("to", 10),
-    ], ["page", "new"]);
+    /// <summary>The article list's filters. Never the page, or the New article form.</summary>
+    public static readonly SavedViewPage Articles = new("articles", "Articles", Permission.ReadTeamEdition,
+        Tide.Application.Articles.ArticleFilter.Parameters, ["page", "new"]);
 
     /// <summary>A search's words: a saved search.</summary>
-    public static readonly SavedViewPage Search = new("search", "search", "Search", Permission.ReadTeamEdition, [("q", 500)], []);
+    public static readonly SavedViewPage Search = new("search", "Search", Permission.ReadTeamEdition, [("q", 500)], []);
 }
 
 /// <summary>

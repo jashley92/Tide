@@ -7,24 +7,17 @@
    With Inline, Save view ends the row of pills (and the row is there with no views yet); without it the page has its
    own Save view button, which calls StartSave (Actions has it beside its tabs). *@
 
-@if (Inline || _saved.Count > 0)
+@if (Inline || Saved.Count > 0)
 {
     var current = Active;
     <nav class="tide-savedviews-list @Class" aria-label="Saved views">
-        @foreach (var v in _saved)
+        @foreach (var v in Saved)
         {
             var on = v.Id == current?.Id;
             var menu = Menu(v);
             <span class="tide-savedview" @key="v.Id">
-                @if (OnOpen.HasDelegate)
-                {
-                    <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@Href(v)" aria-current="@(on ? "page" : null)"
-                       @onclick="() => OnOpen.InvokeAsync(v.Query)" @onclick:preventDefault="true">@v.Name</a>
-                }
-                else
-                {
-                    <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@Href(v)" aria-current="@(on ? "page" : null)">@v.Name</a>
-                }
+                <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@Href(v)" aria-current="@(on ? "page" : null)"
+                   @onclick="() => OnOpen.InvokeAsync(v.Query)" @onclick:preventDefault="OnOpen.HasDelegate">@v.Name</a>
                 <MenuButton Label="@MenuLabel(v, menu)" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu" Items="@menu" />
             </span>
         }
@@ -38,17 +31,16 @@
 }
 
 @* Save view and Rename: the view's name. Kept open, saying why, when it's refused (a name already used, the 12th view). *@
-<ConfirmDialog @ref="_nameDialog" Form="true" Confirming="SaveName" ConfirmDisabled="@string.IsNullOrWhiteSpace(_newName)" ConfirmIcon="bi-bookmark-check">
+<ConfirmDialog @ref="_nameDialog" Form="true" Confirming="SaveName" ConfirmDisabled="@string.IsNullOrWhiteSpace(NewName)" ConfirmIcon="bi-bookmark-check">
     <label class="tide-field-label" for="saved-view-name">Name</label>
-    <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
+    <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="NewName" @bind:event="oninput"
            placeholder="@Placeholder" autocomplete="off" @onkeydown="NameKey" />
     <div class="form-text">@(_renaming is null ? $"Keeps {What} as a pill on this page. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
     @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
 </ConfirmDialog>
-<ConfirmDialog @ref="_confirm" />
+<ConfirmDialog @ref="Confirmer" />
 
 @code {
-    /// <summary>The page the views are of.</summary>
     [Parameter, EditorRequired] public SavedViewPage Page { get; set; } = default!;
 
     /// <summary>What's shown, as a view of it keeps it (<see cref="SavedViewService.QueryOf"/>): null when it's more than
@@ -61,7 +53,6 @@
     /// <summary>What a view of the page keeps, for Save view's words: "this tab, layout and filters".</summary>
     [Parameter] public string What { get; set; } = "these filters";
 
-    /// <summary>The Name box's example.</summary>
     [Parameter] public string Placeholder { get; set; } = "My P1s";
 
     [Parameter] public string? Class { get; set; }
@@ -78,44 +69,41 @@
     // Kept from the prerender, so the pills are there on the first interactive draw rather than appearing after it.
     [PersistentState] public IReadOnlyList<SavedViewEntry>? Kept { get; set; }
 
-    private IReadOnlyList<SavedViewEntry> _saved = [];
     private ConfirmDialog _nameDialog = default!;
-    private ConfirmDialog _confirm = default!;
     private Guid? _renaming;
-    private string? _newName, _nameError;
+    private string? _nameError;
 
-    internal IReadOnlyList<SavedViewEntry> Saved => _saved;
-    internal string? NewName { get => _newName; set => _newName = value; }
+    internal IReadOnlyList<SavedViewEntry> Saved => Kept ?? [];
+    internal string? NewName { get; set; }
     internal string? NameError => _nameError;
-    internal ConfirmDialog Confirmer => _confirm;
+    internal ConfirmDialog Confirmer { get; private set; } = default!;
 
     /// <summary>Whether another view may be kept: fewer than 12, and what's shown fits in one.</summary>
-    public bool CanSave => _saved.Count < SavedViewService.MaxViews && !string.IsNullOrEmpty(Query);
+    public bool CanSave => Saved.Count < SavedViewService.MaxViews && !string.IsNullOrEmpty(Query);
 
     /// <summary>Save view's tooltip, saying why it's held back when it is.</summary>
-    public string SaveTitle => _saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another"
+    public string SaveTitle => Saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another"
         : string.IsNullOrEmpty(Query) ? "Nothing to keep yet: choose some filters first, or shorten the search"
         : $"Keep {What} as a view of your own, a pill on this page";
 
     /// <summary>The saved view that is what's shown, if one is: the first, when two keep the same filters.</summary>
-    internal SavedViewEntry? Active => Query is { Length: > 0 } shown ? _saved.FirstOrDefault(v => v.Query == shown) : null;
+    internal SavedViewEntry? Active => Query is { Length: > 0 } shown ? Saved.FirstOrDefault(v => v.Query == shown) : null;
 
     protected override async Task OnInitializedAsync()
     {
         try { Kept ??= await SavedViews.ListAsync(Page); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        _saved = Kept ?? [];
-        // A page's own Save view is drawn before these are read: drawn again, it says whether another fits.
-        await OnChanged.InvokeAsync();
+        // A page's own Save view is drawn before these are read, as open to use: drawn again only when no more fit.
+        if (Saved.Count >= SavedViewService.MaxViews) await OnChanged.InvokeAsync();
     }
 
-    private string Href(SavedViewEntry v) => Page.Route + "?" + v.Query;
+    private string Href(SavedViewEntry v) => Page.Key + "?" + v.Query;
 
     private IReadOnlyList<MenuButton.Item> Menu(SavedViewEntry v)
     {
         var items = new List<MenuButton.Item> { new("Rename", "bi-pencil", EventCallback.Factory.Create(this, () => StartRename(v))) };
-        if (_saved[0] != v) items.Add(new("Move earlier", "bi-arrow-left", EventCallback.Factory.Create(this, () => MoveSaved(v, -1))));
-        if (_saved[^1] != v) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
+        if (Saved[0] != v) items.Add(new("Move earlier", "bi-arrow-left", EventCallback.Factory.Create(this, () => MoveSaved(v, -1))));
+        if (Saved[^1] != v) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
         items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, () => DeleteSaved(v))));
         return items;
     }
@@ -130,19 +118,19 @@
     // Enter in the Name box saves, as in a form (the dialog's button is held back while it's empty).
     private async Task NameKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !e.Repeat && !string.IsNullOrWhiteSpace(_newName)) await _nameDialog.Confirm();
+        if (e.Key == "Enter" && !e.Repeat && !string.IsNullOrWhiteSpace(NewName)) await _nameDialog.Confirm();
     }
 
     /// <summary>Save view: asks for the name of a view of what's shown.</summary>
     public async Task StartSave()
     {
-        (_renaming, _newName, _nameError) = (null, null, null);
+        (_renaming, NewName, _nameError) = (null, null, null);
         await _nameDialog.Ask("Save this view", null, "Save view", danger: false);
     }
 
     internal async Task StartRename(SavedViewEntry v)
     {
-        (_renaming, _newName, _nameError) = (v.Id, v.Name, null);
+        (_renaming, NewName, _nameError) = (v.Id, v.Name, null);
         await _nameDialog.Ask($"Rename \"{v.Name}\"", null, "Rename", danger: false);
     }
 
@@ -154,12 +142,12 @@
         {
             if (_renaming is { } id)
             {
-                await SavedViews.RenameAsync(Page, id, _newName ?? "");
+                await SavedViews.RenameAsync(Page, id, NewName ?? "");
                 Toasts.Show("View renamed.");
             }
             else
             {
-                var saved = await SavedViews.SaveAsync(Page, _newName ?? "", Query ?? throw new ArgumentException("These filters are too long to keep as a view."));
+                var saved = await SavedViews.SaveAsync(Page, NewName ?? "", Query ?? throw new ArgumentException("These filters are too long to keep as a view."));
                 Toasts.Show($"Saved \"{saved.Name}\" as a view.");
             }
             await Reload();
@@ -184,7 +172,7 @@
 
     internal async Task DeleteSaved(SavedViewEntry v)
     {
-        if (!await _confirm.Ask($"Delete \"{v.Name}\"?", "Only your shortcut goes: nothing it shows changes.", "Delete view")) return;
+        if (!await Confirmer.Ask($"Delete \"{v.Name}\"?", "Only your shortcut goes: nothing it shows changes.", "Delete view")) return;
         try
         {
             await SavedViews.DeleteAsync(Page, v.Id);
@@ -196,7 +184,7 @@
 
     private async Task Reload()
     {
-        _saved = Kept = await SavedViews.ListAsync(Page);
+        Kept = await SavedViews.ListAsync(Page);
         StateHasChanged();
         await OnChanged.InvokeAsync();
     }

@@ -69,14 +69,13 @@
         }
         @* Save view for the pills under the tabs (SavedViewPills), which say whether another fits. *@
         <button type="button" class="tide-filter-add" id="save-view" disabled="@(_savedViews?.CanSave == false)" @onclick="() => _savedViews!.StartSave()"
-                title="@_savedViews?.SaveTitle">
+                title="@(_savedViews?.SaveTitle ?? "Keep this tab, layout and filters as a view of your own, a pill on this page")">
             <span class="bi bi-bookmark-plus" aria-hidden="true"></span> <span class="tide-viewtool-text">Save view</span>
         </button>
     </div>
     <TabBar Label="Layout" Level="TabLevel.Sub" Class="tide-actions-layout" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
-@* The person's own saved views, under the tabs. *@
 <SavedViewPills @ref="_savedViews" Page="SavedViewPage.Actions" Query="@ShownQuery()" What="this tab, layout and filters" Placeholder="My team's P1s"
                 Class="tide-actions-saved" OnChanged="StateHasChanged" />
 
@@ -805,7 +804,6 @@ else
 
     private SavedViewPills? _savedViews;
 
-    /// <summary>The pills under the tabs, which keep the person's views of this page.</summary>
     internal SavedViewPills SavedViews => _savedViews!;
 
     /// <summary>The query a view of what's shown keeps (what the address says, but never the list's page), in the order a

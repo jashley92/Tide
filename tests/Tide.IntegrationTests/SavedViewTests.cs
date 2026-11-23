@@ -194,6 +194,8 @@ public class SavedViewTests : IDisposable
         SavedViewService.Normalize(SavedViewPage.Articles, "page=4&new=1&tag=ransomware&assess=p1-p2&from=2026-10-01&author=me&q=edge vpn")
             .Should().Be("q=edge%20vpn&author=me&assess=p1-p2&tag=ransomware&from=2026-10-01");
         SavedViewService.TryNormalize(SavedViewPage.Articles, "layout=board").Should().BeNull();
+        new Tide.Application.Articles.ArticleFilter().ToQuery().Keys.Should().BeEquivalentTo(SavedViewPage.Articles.Parameters.Select(p => p.Name),
+            "a filter the list's address gains is one a view can keep");
         SavedViewService.Normalize(SavedViewPage.Search, "q=evil%5B.%5Dcom").Should().Be("q=evil%5B.%5Dcom");
         SavedViewService.TryNormalize(SavedViewPage.Search, "q=x&tab=new").Should().BeNull();
         SavedViewService.QueryOf(SavedViewPage.Search, [new("q", null)]).Should().BeEmpty("no search, nothing to keep");
