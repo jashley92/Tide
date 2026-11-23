@@ -369,9 +369,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ActionId");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ActionIndicators");
                 });
@@ -1065,6 +1071,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ArticleId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HostRev")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Note")
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
@@ -1077,9 +1087,17 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("HostRev");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ArticleIndicators");
                 });
