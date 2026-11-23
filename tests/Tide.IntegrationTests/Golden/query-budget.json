@@ -132,8 +132,8 @@
       "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 51,
-      "maxParameters": 6,
+      "parameters": 55,
+      "maxParameters": 8,
       "rowsRead": 33
     },
     "Search(text)": {
@@ -350,7 +350,7 @@
       "reads": 22,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 117,
+      "parameters": 121,
       "maxParameters": 31,
       "rowsRead": 33
     },

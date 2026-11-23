@@ -67,7 +67,10 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
     public static readonly JobDefinition AuditArchive = new("audit-archive", "Archiving the audit log", "daily, when Audit:RetentionDays is set: months older go to files, then out of the database",
         TimeSpan.FromDays(1), TimeSpan.FromHours(2), 7113);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, AuditArchive];
+    
+    public static readonly JobDefinition IndicatorKeys = new("indicator-keys", "Keying stored indicators", "once after an upgrade, until every older indicator has its lookup keys",
+        TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7109);
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, AuditArchive, IndicatorKeys];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));
