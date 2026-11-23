@@ -183,6 +183,7 @@ builder.Services.AddHostedService<MetricImportHostedService>();
 builder.Services.AddHostedService<UpdateCheckHostedService>();
 builder.Services.AddHostedService<WebhookHostedService>();
 builder.Services.AddHostedService<UrlHashFillHostedService>();
+builder.Services.AddHostedService<ActivityFileHostedService>();
 builder.Services.AddHostedService<IndicatorKeyFillHostedService>();
 builder.Services.AddHostedService<SearchIndexHostedService>();
 builder.Services.AddHostedService<MeetingAttendanceHostedService>();
