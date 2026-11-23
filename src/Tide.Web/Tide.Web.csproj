@@ -22,4 +22,15 @@
     </PackageReference>
   </ItemGroup>
 
+
+  <!-- The SQL Server migration ids this build carries, beside its DLLs: Upgrade-Tide.ps1 reads the list from the build it
+       replaces (its rollback snapshot) to decide whether that build may start on the database again, rather than reading
+       the ids out of Tide.Migrations.SqlServer.dll's bytes, which it keeps only as a fallback. -->
+  <Target Name="TideMigrationList" AfterTargets="Publish">
+    <ItemGroup>
+      <_TideMigration Include="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/2*_*.cs"
+                      Exclude="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/*.Designer.cs" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)migrations-sqlserver.txt" Lines="@(_TideMigration->'%(Filename)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>

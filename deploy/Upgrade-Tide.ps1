@@ -675,6 +675,11 @@ Write-Host "    Target version  : $targetVersion"
 Write-Host "    Site folder     : $SitePath"
 Write-Host "    Database        : $DbName on $SqlInstance ($schemaMode)"
 Write-Host ""
+# What stopping the site would end, from the activity.json the app writes into Files:RootPath.
+$filesRoot = if ($liveCfg.Files -and $liveCfg.Files.RootPath) { [string]$liveCfg.Files.RootPath } else { 'App_Data/files' }
+if (-not [IO.Path]::IsPathRooted($filesRoot)) { $filesRoot = Join-Path $SitePath $filesRoot }
+$activity = Get-TideActivityWarning -File (Join-Path $filesRoot 'activity.json') -NowUtc ([datetime]::UtcNow)
+if ($activity) { Write-Warn2 "$activity The upgrade stops the site for a few minutes; consider a quieter time." }
 # At ConfirmImpact Medium ShouldProcess says yes without asking, so it can't stand in for the prompt; under -WhatIf
 # the run stops here.
 if ($dryRun) {
@@ -683,7 +688,7 @@ if ($dryRun) {
 }
 if (-not $PSCmdlet.ShouldProcess($iisPath, "Upgrade TIDE")) { Write-Warn2 "Aborted."; return }
 if (-not $Force -and -not $PSBoundParameters.ContainsKey('Confirm')) {
-    $ans = Read-Host "Back up and deploy? (y/N)"
+    $ans = Read-Host $(if ($activity) { "People are using TIDE. Back up and deploy anyway? (y/N)" } else { "Back up and deploy? (y/N)" })
     if ($ans -notmatch '^(y|yes)$') { Write-Warn2 "Aborted."; return }
 }
 

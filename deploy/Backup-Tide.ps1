@@ -16,6 +16,8 @@
       files\dp-keys\          the Data Protection key ring
       files\site\             the site's appsettings.Production.json
       backup-set.json         what's in the set
+    Each -Log run also brings the newest set's files up to date (new files only; nothing is removed), so the database
+    and the files restore to the same point, within the log backups' 15 minutes.
     A set holds a whole TIDE: Test-TideRestore.ps1 restores one and checks it.
 
     The database is in the FULL recovery model (Install-Database.ps1 sets it), so its transaction log is cleared only by
@@ -144,6 +146,24 @@ if ($Log) {
             }
         }
         Write-Host "Log backup: $trn" -ForegroundColor Green
+        # The files to the same point (RPO 15 minutes for both, decided 2026-11-21): files are written once and named by
+        # id, so copying what's new into the newest set (robocopy without /MIR, nothing removed) makes that set plus
+        # today's log backups restore to any point with every file its database rows name. Not with -DatabaseBackupFolder
+        # alone (no set to add to) or before the first set.
+        $newest = @(Get-TideBackupSets $Destination -Server $env:COMPUTERNAME -Site $site.Folder | Select-Object -First 1)
+        if ($newest.Count -eq 1) {
+            try {
+                foreach ($f in Get-TideBackupFolders $site) {
+                    if (-not (Test-Path $f.Path)) { continue }
+                    $copied = Copy-TideFolder -From $f.Path -To (Join-Path $newest[0].FullName "files\$($f.Label)")
+                    Write-Host "  $($f.Label): brought up to date in $($newest[0].Name) ($($copied.Files) files)" -ForegroundColor Gray
+                }
+            }
+            catch {
+                Write-Host "The log backup is done, but bringing the files up to date in $($newest[0].Name) failed: $($_.Exception.Message)" -ForegroundColor Red
+                exit 1
+            }
+        }
         exit 0
     }
     catch {
