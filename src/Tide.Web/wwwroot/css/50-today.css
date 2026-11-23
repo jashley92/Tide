@@ -276,13 +276,18 @@ a.tide-werun-chip:hover { text-decoration: underline; }
    ones. It opens by itself on a wide window (reading-auto: the person hasn't chosen; below 1400px it's not shown and the
    list has the width). */
 .tide-triage-layout.reading { display: grid; grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); gap: var(--tide-space-3); align-items: start; }
-.tide-reading { position: sticky; top: .75rem; max-height: calc(100vh - 1.5rem); overflow: auto; }
+.tide-reading { position: sticky; top: .75rem; overflow: auto; }
 .tide-reading-head { display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between; }
 .tide-reading-title { font-size: 1.05rem; margin: 0 0 .25rem; }
 /* Read it here, Read again and Open the site in the pane's head, on one row beside its title, which wraps. */
 .tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .tide-reading-tools { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--tide-space-2); flex: none; }
 .tide-reading-tools > .btn { white-space: nowrap; }
+/* The decision bar (41-intake.css has the decision itself). On a wide window its buttons are one row, by construction:
+   the article's title in Attach gives way, the dismiss reason narrows, and the pane's text gives way. */
+.tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+/* From the bar, the attach list opens upwards, over the pane's text. */
+.tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
 .tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
 .tide-meeting-notes { overflow-wrap: anywhere; line-height: 1.55; }
 .tide-meeting-notes > li + li { margin-top: .2rem; }
@@ -303,30 +308,23 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-reading-found { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .5rem; color: var(--tide-text-muted); }
 @media (max-width: 1000.98px) {
   .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
-  .tide-reading { position: static; max-height: none; order: -1; }
+  /* Above the list. Brought into view after V (triage.js), it stops below the top bar, which sticks. */
+  .tide-reading { position: static; max-height: none; order: -1; scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
   /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
   .tide-reading-head { flex-wrap: wrap; }
-  /* Brought into view after V (triage.js), it stops below the top bar, which sticks. */
-  .tide-reading { scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
 }
-@media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
 @media (max-width: 1399.98px) {
     .tide-triage-layout.reading-auto { display: block; }
     .tide-triage-layout.reading-auto > .tide-reading { display: none; }
 }
-/* Beside the list, the pane sticks below the top bar (which sticks too), not under it, and the pane's text gives way so
-   the decision bar at its foot stays in the pane. */
+/* Beside the list, the pane sticks below the top bar (which sticks too), not under it (below 1400px; from there the page
+   is a column, below), and the pane's text gives way so the decision bar at its foot stays in the pane. */
 @media (min-width: 1001px) {
     .tide-reading { top: calc(var(--tide-height-top) + var(--tide-space-3)); max-height: calc(100vh - var(--tide-height-top) - 2 * var(--tide-space-3));
         display: flex; flex-direction: column; overflow: visible; }
     .tide-reading > * { flex: none; }
     .tide-reading > .tide-reading-text { flex: 0 1 auto; min-height: 6rem; }
 }
-/* The decision bar (41-intake.css has the decision itself). On a wide window its buttons are one row, by construction:
-   the article's title in Attach gives way, the dismiss reason narrows, and the pane's text gives way. */
-.tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
-/* From the bar, the attach list opens upwards, over the pane's text. */
-.tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
 @media (min-width: 1400px) {
     .tide-reading .tide-triage-acts .btn:not(.tide-triage-attach) { flex: none; white-space: nowrap; }
     /* The main button keeps its verb and takes the room the others leave: only the article's title in it gives way,
@@ -389,15 +387,15 @@ a.tide-werun-chip:hover { text-decoration: underline; }
     html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
     html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
 }
-/* Triage's context rail: what TIDE knows about the selected item (its flat sections are the rail's own). Its CVEs'
-   facts three across, the covering article (.tide-rail-article) with its open actions, the same event's other reports
-   with Attach all and Not the same, the story, and what it names of Our stack. */
+@media (forced-colors: active) { .tide-reading-text mark { outline: 1px solid CanvasText; } }
+/* ---- Triage's context rail (TriageRail/): what TIDE knows about the selected item. Its flat sections are Today 3.1's,
+   in 90-option-e.css. Its CVEs' facts three across, the covering article (.tide-rail-article) with its open actions,
+   the same event's other reports with Attach all and Not the same, the story, and what it names of Our stack. ---- */
 .tide-triage-rail-cve + .tide-triage-rail-cve { margin-top: var(--tide-space-3); }
 .tide-triage-rail-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: var(--tide-space-2) 0; }
 .tide-triage-rail-critical { color: var(--tide-threat); }
 .tide-triage-rail-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; margin-bottom: var(--tide-space-2); }
 .tide-triage-rail-cves > p:last-child { margin-top: var(--tide-space-2); }
-.tide-rail-list .btn.tide-rail-list-title { font-size: inherit; line-height: inherit; text-align: start; white-space: normal; }
 .tide-triage-rail-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 .tide-triage-rail-acts > input { flex: 1 1 10rem; min-width: 0; width: auto; }
 

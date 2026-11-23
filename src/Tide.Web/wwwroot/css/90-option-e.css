@@ -225,6 +225,8 @@
 /* Also raised from it: each its title and number, then its team and how it stands. */
 .tide-rail-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--tide-space-2); font-size: var(--tide-text-sm); }
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
+/* A title that is a button (Triage's same-event reports): it reads as the list's other titles. */
+.tide-rail-list .btn.tide-rail-list-title { font-size: inherit; line-height: inherit; text-align: start; white-space: normal; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
 
