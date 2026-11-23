@@ -213,7 +213,9 @@ erDiagram
     }
     AiDrafts {
         uuid Id PK
-        uuid ArticleId FK
+        int Kind
+        uuid ArticleId FK "nullable"
+        string Subject
         string Provider
         string InputHash
         int InputTlp
@@ -839,13 +841,17 @@ A comment on one part of an article under review. The author resolves it. Cascad
 
 ### `AiDrafts` (S, A)
 
-One AI draft of an article ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)). It records who asked,
-which provider and model answered, a hash of the prompt and its TLP, and the suggestions that passed the checks. The
-source text itself is never kept. Written by `AssistService`.
+One AI draft ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)): of an article, a report section's
+assessment or a brief's title slide line. It records who asked, which provider and model answered, a hash of the prompt
+and its TLP, and the suggestions that passed the checks. The source text itself is never kept. Written by
+`AssistService` (articles) and `ProseAssistService` (the other kinds).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `Id`, `ArticleId` | uniqueidentifier | no | `ArticleId` FK → `Articles`, **cascade**. Indexed. |
+| `Id` | uniqueidentifier | no | |
+| `Kind` | int | no | `AiDraftKind`: 0 Article, 1 ReportAssessment, 2 TitleLine. |
+| `ArticleId` | uniqueidentifier | yes | The article drafted; FK → `Articles`, **cascade**. Indexed. Null for the other kinds. |
+| `Subject` | nvarchar(64) | yes | For the other kinds: the report section (`2026-10/headlines`) or the brief's id. |
 | `Provider` | nvarchar(40) | no | `AzureOpenAI`, or `Pasted` for an answer from an approved tool pasted back. |
 | `Model` | nvarchar(100) | no | Empty for a pasted answer. |
 | `PromptVersion` | int | no | |

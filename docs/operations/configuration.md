@@ -159,7 +159,9 @@ is one, else the code default). **Where** is "Server" (file or environment varia
 | `App:BaseUrl` | blank | The address readers reach TIDE at (`https://tide.example.org`). Used for links in email, webhooks and corrections (a Markdown link written from the root, `/actions/12`, among them), and as an allowed origin for the Blazor circuit (`CircuitOriginMiddleware`). Blank leaves links out. | Server | Start-up |
 | `App:PathBase` | blank | A sub-path such as `/tide`, only behind a reverse proxy that forwards one. Letters, digits, `-`, `_`, `.` in `/`-separated parts; anything else stops start-up (`PathBaseSetting.Normalize`). Under IIS as an application within another site, IIS sets the path base and this stays blank. | Server | Start-up |
 | `Files:PurgeRemovedAfterDays` | not set (kept for good) | When set (at least 30), a daily job deletes the bytes of action and comment files removed longer ago than this, and of files on actions deleted that long ago, unless anything else still uses them (an article's screenshot, a brief's sent copy, a live file). The file's row and SHA-256 stay; the action's removed files say "Bytes purged …", and it can no longer be restored. Off by default (decided 2026-11-21). | Server | Live |
-| `DataProtection:KeyPath` | blank (in-memory keys, development) | An absolute folder. A relative path stops start-up. The key ring is persisted there and protected with machine-scope DPAPI. The installer sets `<data root>\dp-keys`. Without it, every app-pool recycle signs everyone out, and webhook secrets can't be read. | Server | Start-up |
+| `DataProtection:KeyPath` | blank (in-memory keys, development) | An absolute folder. A relative path stops start-up. The key ring is persisted there and protected with machine-scope DPAPI, or with `DataProtection:CertificateThumbprint`'s certificate when that is set. The installer sets `<data root>\dp-keys`. Without it, every app-pool recycle signs everyone out, and webhook secrets can't be read. | Server | Start-up |
+| `DataProtection:CertificateThumbprint` | blank (machine DPAPI) | An option for a key ring another server can read (a warm standby, a restore to a new server): new keys are protected with this certificate from `LocalMachine\My`, which needs its private key, readable by the app pool. A certificate that's missing or has no private key stops start-up with why; one that expires within 30 days, or has, is a warning on Diagnostics (keys still read). See [backup-and-recovery.md](backup-and-recovery.md#a-warm-standby-optional). | Server | Start-up |
+| `DataProtection:PreviousThumbprints` | blank | After a renewal: the older certificates (comma-separated) whose keys may still be read. | Server | Start-up |
 
 ### Role mapping
 
@@ -386,6 +388,15 @@ anywhere otherwise.
 | `Logging:EventLog:LogLevel:*` | not set | Raise the Windows event log's level alone; see [INSTALL.md](../INSTALL.md#logs). Recycle the app pool after changing. |
 
 `Program.cs` silences `Microsoft.Extensions.Diagnostics.HealthChecks`; `/health` logs one warning a minute instead.
+
+### Diagnostics
+
+| Key | Default | Notes |
+|---|---|---|
+| `Diagnostics:SlowSqlMs` | `500` | A database command that takes longer is logged as a Warning, event id 7201, with its SQL text and never its parameters' values, and listed under Performance on Diagnostics. `0` turns the warning off; every command is still timed. Takes effect without a restart. |
+| `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Takes effect without a restart. |
+
+Timings stay in the server's memory for a day and are cleared by a restart; nothing is sent anywhere.
 
 ## Settings kept only in the database
 

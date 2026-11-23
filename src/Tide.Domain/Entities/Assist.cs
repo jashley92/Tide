@@ -4,16 +4,25 @@ using Tide.Domain.Enums;
 namespace Tide.Domain.Entities;
 
 /// <summary>
-/// One AI draft of an article (ADR 0004): who asked, which provider and model, the prompt version, a hash of what was
-/// sent and its TLP, what it was based on, and the suggestions that passed the checks. How many the analyst accepted
-/// and rejected is counted as they decide. The source text itself is never kept.
+/// One AI draft (ADR 0004): of an article, a report section's assessment or a brief's title slide line (<see cref="Kind"/>).
+/// Who asked, which provider and model, the prompt version, a hash of what was sent and its TLP, what it was based on,
+/// and the suggestions that passed the checks. How many the person accepted and rejected is counted as they decide. The
+/// source text itself is never kept.
 /// </summary>
 public class AiDraft : AuditableEntity
 {
     public const int MaxBasedOn = 1000;
     public const int MaxSuggestions = 60_000;
+    public const int MaxSubject = 64;
 
-    public Guid ArticleId { get; set; }
+    public AiDraftKind Kind { get; set; } = AiDraftKind.Article;
+
+    /// <summary>The article drafted; null for a draft of something else (<see cref="Kind"/>).</summary>
+    public Guid? ArticleId { get; set; }
+
+    /// <summary>What a draft of something other than an article was for: the report section ("2026-10/headlines") or the
+    /// brief (its id). Null for an article's.</summary>
+    public string? Subject { get; set; }
 
     /// <summary>"AzureOpenAI", or "Pasted" for an answer run in an approved tool and pasted back.</summary>
     public string Provider { get; set; } = string.Empty;

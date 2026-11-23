@@ -134,7 +134,8 @@ Beside the brief, in the context rail:
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
 - **reviews asked of you**;
-- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place; then,
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place (the
+  line's form offers *Suggest a title slide line*, or *Copy a prompt* without an AI provider); then,
   once the meeting has ended, the **meeting recap**: the actions raised (by team and holder, as the wrap-up slide has
   them), the notes (open or done), the articles carried to a later brief, and who attended. On your own notes,
   *Raise as action* (the note as the title, on its article; then "Raised as A-14", which opens it) and *Mark done*
@@ -1037,7 +1038,10 @@ opening Trends on what it counted; the strip isn't printed or in the CSV.
 
 Each section has the team's assessment, saved with its period (**Save assessment**) with a TLP of its own and an
 "Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
-who reads the report reads them. A colleague's save shows live, and one to a box with unsaved changes is said above it
+who reads the report reads them. Under each box, *Draft an assessment* (with an AI provider) or *Copy a prompt* (without
+one, then paste the tool's JSON answer and *Check it*) shows a draft with any number not in the report flagged; *Use it*
+puts it in the box unsaved, and *Reject* drops it. While the AI limit is below the numbers' AMBER (GREEN by default), the
+control says so instead, and that an administrator can raise it. A colleague's save shows live, and one to a box with unsaved changes is said above it
 rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
 included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
 way is marked "(to date)".
@@ -1327,7 +1331,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | People & distribution | Access & distribution | `/admin/access` | Which AD groups get which role, the editions' TLP ceilings, and who each edition goes to. |
 | People & distribution | Email templates | `/admin/email-templates` | The wording of the reminder and rotation emails, with a preview and a test send. |
 | People & distribution | API access | `/admin/api` | Tokens for the SOC's other tools to call TIDE's API, and webhooks TIDE posts to. |
-| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage. |
+| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage; and how fast it has been (Performance: requests, page events and database commands over the last hour and day, the slow ones, memory). |
 | System | Server configuration | `/admin/system/server` | What's set on the server, read-only. Secrets show only whether they're set. |
 | System | Setting sources | `/admin/system/sources` | Where each setting's value comes from: the app, the installer's file, or the environment. |
 | System | Configuration bundle | `/admin/system/bundle` | This server's install answers file, and the app's setup to copy to another server. |

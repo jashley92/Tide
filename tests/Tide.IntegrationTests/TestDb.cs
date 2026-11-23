@@ -218,6 +218,12 @@ public sealed class MemoryFileStore : IFileStore
     public Stream? OpenRead(Guid id) => Files.TryGetValue(id, out var b) ? new MemoryStream(b) : null;
 
     public void Delete(Guid id) => Files.Remove(id);
+
+    /// <summary>When each file was written, for the stored-file check; files written by WriteAsync are a day old.</summary>
+    public Dictionary<Guid, DateTimeOffset> Written { get; } = [];
+
+    public IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List() =>
+        Files.Keys.Select(id => (id, Written.TryGetValue(id, out var at) ? at : DateTimeOffset.UtcNow.AddDays(-1))).ToList();
 }
 
 /// <summary>
@@ -635,6 +641,9 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public Tide.Application.Assist.AssistService Assist(Tide.Application.Assist.AiOptions? options = null) =>
         new(this, User, Ai, Http, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Stack(), Scorecard(),
             new StaticOptionsMonitor<IntakeOptions>(new IntakeOptions()));
+
+    public Tide.Application.Assist.ProseAssistService ProseAssist(Tide.Application.Assist.AiOptions? options = null) =>
+        new(this, User, Ai, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Reports(), Settings());
 
     public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null, IOutboundHttp? http = null) =>
         new(this, User, http ?? Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),
