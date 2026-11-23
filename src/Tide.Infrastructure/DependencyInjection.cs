@@ -5,6 +5,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Assist;
 using Tide.Application.Distribution;
 using Tide.Application.Intake;
+using Tide.Application.Operations;
 using Tide.Infrastructure.Assist;
 using Tide.Infrastructure.Notifications;
 using Tide.Infrastructure.Persistence;
@@ -36,10 +37,14 @@ public static class DependencyInjection
                     sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly).EnableRetryOnFailure());
             else
                 options.UseSqlite(connectionString ?? "Data Source=App_Data/tide.db");
-            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(),
+                sp.GetRequiredService<SlowCommandInterceptor>());
         }
 
         services.AddScoped<AuditInterceptor>();
+        // Times every command for Diagnostics and warns of a slow one (Diagnostics:SlowSqlMs; 0 turns the warning off).
+        services.AddSingleton(sp => new SlowCommandInterceptor(sp.GetRequiredService<PerformanceMonitor>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SlowCommandInterceptor>>(), config.GetValue("Diagnostics:SlowSqlMs", 500)));
         // What a save changed reaches colleagues' open pages (the feed is one per app; the origin one per circuit).
         services.AddSingleton<ChangeFeed>();
         services.AddScoped<ChangeOrigin>();

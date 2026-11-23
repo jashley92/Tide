@@ -1,0 +1,111 @@
+@using Tide.Application.Operations
+@using Tide.Infrastructure.Persistence
+@inject PerformanceMonitor Monitor
+@inject SlowCommandInterceptor SlowSql
+@inject IConfiguration Config
+@inject OrgClock Clock
+
+@* How fast this process has been: kept in memory since it started (at most a day), so a restart clears it. *@
+<section class="tide-card" aria-labelledby="diag-perf">
+    <h2 id="diag-perf"><span class="bi bi-speedometer2" aria-hidden="true"></span> Performance</h2>
+    <p class="small tide-muted">
+        Timed in this process since @Ui.When(Clock, Monitor.Since) (at most the last day; a restart starts again).
+        <strong>@Monitor.CircuitsOpen</strong> @(Monitor.CircuitsOpen == 1 ? "page is" : "pages are") open now, at most @Monitor.PeakCircuits() at once in the last day.
+        Memory @DiagnosticsAdmin.FormatBytes(Environment.WorkingSet), of which @DiagnosticsAdmin.FormatBytes(GC.GetGCMemoryInfo().HeapSizeBytes) is the .NET heap.
+        Thread pool: @ThreadPool.ThreadCount threads, @ThreadPool.PendingWorkItemCount waiting.
+    </p>
+    <div class="tide-card-scroll">
+        <table class="tide-table tide-perf" aria-labelledby="diag-perf">
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col" class="text-end">Last hour</th>
+                    <th scope="col" class="text-end">Median</th>
+                    <th scope="col" class="text-end">95%</th>
+                    <th scope="col" class="text-end">95%, last day</th>
+                    <th scope="col" class="text-end">Slowest, last day</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var (kind, label) in Kinds)
+                {
+                    var hour = Monitor.Summary(kind, 1, Take);
+                    var day = Monitor.Summary(kind, PerformanceMonitor.Hours, Take).ToDictionary(s => s.Name);
+                    @if (day.Count == 0)
+                    {
+                        <tr><th scope="row" class="fw-semibold">@label</th><td colspan="5" class="tide-muted">None timed yet</td></tr>
+                        continue;
+                    }
+                    @foreach (var name in day.Keys.Where(n => n == "*").Concat(hour.Select(h => h.Name).Where(n => n != "*")).Concat(day.Keys.Where(n => n != "*")).Distinct().Take(Take + 1))
+                    {
+                        var h = hour.FirstOrDefault(s => s.Name == name);
+                        var d = day[name];
+                        <tr>
+                            @if (name == "*") { <th scope="row" class="fw-semibold">@label</th> }
+                            else { <th scope="row" class="tide-data small fw-normal ps-4">@name</th> }
+                            <td class="text-end">@(h?.Count.ToString("N0") ?? "0")</td>
+                            <td class="text-end text-nowrap">@Ms(h?.P50Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(h?.P95Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(d.P95Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(d.MaxMs)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="small tide-muted mt-2">
+        Times are estimates within about 40%. Requests are pages and files the browser asks for; page events are clicks and
+        typing on an open page. A database command over @(SlowSql.ThresholdMs > 0 ? $"{SlowSql.ThresholdMs:N0} ms" : "(off)") is logged as a
+        Warning (event id @SlowCommandInterceptor.EventId), a page event over @(EventMs > 0 ? $"{EventMs:N0} ms" : "(off)") likewise
+        (@Tide.Web.Services.PerformanceCircuitHandler.EventId): <span class="tide-data">Diagnostics:SlowSqlMs</span>, <span class="tide-data">Diagnostics:SlowEventMs</span>.
+    </p>
+
+    @if (Monitor.SlowCommands() is { Count: > 0 } commands)
+    {
+        <h3 class="h6 mt-3" id="diag-slow-sql">Slow database commands</h3>
+        <table class="tide-table" aria-labelledby="diag-slow-sql">
+            <thead><tr><th scope="col">When</th><th scope="col" class="text-end">Took</th><th scope="col">Command (no values)</th></tr></thead>
+            <tbody>
+                @foreach (var c in commands)
+                {
+                    <tr>
+                        <td class="text-nowrap">@Ui.When(Clock, c.AtUtc)</td>
+                        <td class="text-end text-nowrap">@Ms(c.Ms)</td>
+                        <td><details><summary class="tide-data small">@Short(c.Sql)</summary><pre class="tide-data small mb-0 tide-diag-sql">@c.Sql</pre></details></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (Monitor.SlowEvents() is { Count: > 0 } events)
+    {
+        <h3 class="h6 mt-3" id="diag-slow-events">Slow page events</h3>
+        <table class="tide-table" aria-labelledby="diag-slow-events">
+            <thead><tr><th scope="col">When</th><th scope="col" class="text-end">Took</th><th scope="col">Page</th></tr></thead>
+            <tbody>
+                @foreach (var e in events)
+                {
+                    <tr><td class="text-nowrap">@Ui.When(Clock, e.AtUtc)</td><td class="text-end text-nowrap">@Ms(e.Ms)</td><td class="tide-data small">@e.Page</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const int Take = 8;
+
+    private static readonly (TimedKind Kind, string Label)[] Kinds =
+        [(TimedKind.Request, "Requests"), (TimedKind.PageEvent, "Page events"), (TimedKind.DbCommand, "Database commands")];
+
+    private int EventMs => Config.GetValue("Diagnostics:SlowEventMs", 1000);
+
+    internal static string Ms(double? ms) => ms is not { } v ? "—" : v >= 1000 ? $"{v / 1000:0.0} s" : v >= 10 ? $"{v:N0} ms" : $"{v:0.#} ms";
+
+    private static string Short(string sql)
+    {
+        var one = string.Join(' ', sql.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return one.Length > 160 ? one[..160] + "…" : one;
+    }
+}
