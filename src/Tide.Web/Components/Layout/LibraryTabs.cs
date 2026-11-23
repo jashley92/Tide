@@ -41,7 +41,7 @@ public static class LibraryTabs
         new(Playbooks, "Playbooks", "bi-journal-check", Permission.ReadActions, "checklist steps runbook library", ["playbooks", "admin/playbooks"], ChangeFeed.Playbooks)
             { About = "Checklists an action starts from. Their steps are copied, so an edit leaves started actions alone." },
         new(BoardRules, "Board rules", "bi-palette", Permission.ReadActions, "card rules colour color label library", ["board-rules"])
-            { About = "How the Actions board and list mark actions: the first rule that matches sets the colour. Administrators set them." },
+            { About = "How the Actions board and list mark actions: the first rule that matches sets the color. Administrators set them." },
     ];
 
     /// <summary>The tabs <paramref name="user"/> may open, in order.</summary>

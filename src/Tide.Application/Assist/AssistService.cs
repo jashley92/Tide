@@ -175,7 +175,7 @@ public sealed class AssistService(IAppDbContextFactory dbs, ICurrentUser user, I
         return new(id, suggestions, basedOn, ai.Model, Names(input));
     }
 
-    /// <summary>The whole prompt for "Copy a prompt", to run in a tool the organisation has approved. Refused above the TLP limit.</summary>
+    /// <summary>The whole prompt for "Copy a prompt", to run in a tool the organization has approved. Refused above the TLP limit.</summary>
     public Task<string> PromptAsync(Guid articleId, ArticleForm form, string? sourceText, string? sourceOrigin, CancellationToken ct = default) =>
         PromptAsync(articleId, form, One(form, sourceText, sourceOrigin), ct);
 

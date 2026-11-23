@@ -337,7 +337,7 @@
         @if (_writing)
         {
             <div class="mb-3" data-submit-scope>
-                <textarea class="tide-query tide-autogrow" maxlength="@HuntQuery.MaxWritten" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText" @bind:event="oninput"></textarea>
+                <textarea class="tide-query tide-autogrow" maxlength="@HuntQuery.MaxWritten" spellcheck="false" aria-label="Your query" placeholder="A behavioral hunt, for example: php-fpm spawning a shell" @bind="_ownText" @bind:event="oninput"></textarea>
                 <div class="d-flex gap-2 mt-2">
                     <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" data-submit @onclick="AddOwn">Add the query</button>
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => _adding = Adder.None">Cancel</button>

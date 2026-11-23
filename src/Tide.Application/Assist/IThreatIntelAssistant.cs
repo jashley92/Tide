@@ -4,7 +4,7 @@ namespace Tide.Application.Assist;
 
 /// <summary>
 /// AI help (config section <c>Ai</c>, ADR 0004). Off until a provider is set: with none, nothing is ever sent, and the
-/// editor offers only "Copy a prompt" for a tool the organisation has approved. The key is a server secret (the
+/// editor offers only "Copy a prompt" for a tool the organization has approved. The key is a server secret (the
 /// <c>Ai__ApiKey</c> environment variable or protected configuration), never an in-app setting.
 /// </summary>
 public sealed class AiOptions
