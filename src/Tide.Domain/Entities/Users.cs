@@ -123,4 +123,8 @@ public class StoredFile : AuditableEntity
 
     /// <summary>Lower-case hex SHA-256 of the bytes.</summary>
     public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>When its bytes were deleted by the removed-file purge (<c>Files:PurgeRemovedAfterDays</c>, off by default):
+    /// every place that used it had removed it that long before. The row and its hash stay, for the record.</summary>
+    public DateTimeOffset? BytesPurgedAtUtc { get; set; }
 }

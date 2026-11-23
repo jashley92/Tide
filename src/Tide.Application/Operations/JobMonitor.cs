@@ -64,12 +64,15 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(15), 7107);
     public static readonly JobDefinition UrlHashes = new("url-hashes", "Hashing stored addresses", "once after an upgrade, until every older article and link has its address hash",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7108);
+    public static readonly JobDefinition FilePurge = new("file-purge", "Purging removed files' bytes", "daily, when Files:PurgeRemovedAfterDays is set",
+        TimeSpan.FromDays(1), TimeSpan.FromHours(1), 7114);
     public static readonly JobDefinition IndicatorKeys = new("indicator-keys", "Keying stored indicators", "once after an upgrade, until every older indicator has its lookup keys",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7109);
     public static readonly JobDefinition SearchIndex = new("search-index", "Search index", "every 10 seconds, the articles edited since; after an upgrade, every article",
         TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10), 7110);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex];
+    
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex, FilePurge];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));

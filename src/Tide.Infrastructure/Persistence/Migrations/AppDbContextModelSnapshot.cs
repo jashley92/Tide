@@ -3431,6 +3431,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("BytesPurgedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)
