@@ -218,6 +218,12 @@ public sealed class MemoryFileStore : IFileStore
     public Stream? OpenRead(Guid id) => Files.TryGetValue(id, out var b) ? new MemoryStream(b) : null;
 
     public void Delete(Guid id) => Files.Remove(id);
+
+    /// <summary>When each file was written, for the stored-file check; files written by WriteAsync are a day old.</summary>
+    public Dictionary<Guid, DateTimeOffset> Written { get; } = [];
+
+    public IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List() =>
+        Files.Keys.Select(id => (id, Written.TryGetValue(id, out var at) ? at : DateTimeOffset.UtcNow.AddDays(-1))).ToList();
 }
 
 /// <summary>

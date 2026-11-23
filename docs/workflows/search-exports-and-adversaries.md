@@ -28,6 +28,10 @@ How editions cut by TLP is in [editions-and-tlp.md](../architecture/editions-and
 One box at the top of every page (`TopSearch.razor`) opens `/search?q=`. Search is open to the team edition and shows
 every TLP, as the article pages do; Readers have the published archive's own filter instead.
 
+**Saved searches.** Under the box, *Save view* keeps the search shown (`q`) under a name, as Actions keeps its views
+(`SavedViewPills`, `SavedViewPage.Search`): a pill each that runs it again, marked while it's the search shown, with a
+⋮ menu to rename, move or delete it. Up to 12 a person, their own. Before a search there's nothing to keep.
+
 **How a query matches** (`SearchService.SearchAsync`, `SearchText`):
 
 1. The query is split into terms (`SearchText.Terms`): words or "quoted phrases", at least two characters each, without

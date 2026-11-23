@@ -364,6 +364,13 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 | `Updates:CheckIntervalHours` | `24` | 6 to 168. | In app: **System › Updates** | At once |
 | `Updates:Repository` | `jashley92/Tide` | `owner/name`. | Server | Next check |
 
+### Audit log
+
+| Key | Default | Notes |
+|---|---|---|
+| `Audit:RetentionDays` | not set (kept forever) | When set, a daily job archives each whole calendar month older than this many days to a compressed file, records its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then removes those rows from the database. Under 365 is held to 365. Off by default (decided 2026-11-21). |
+| `Audit:ArchivePath` | `audit-archive` under `Files:RootPath` | Where the archives go. The default is inside the file store, so `Backup-Tide.ps1` carries them in every set. |
+
 ### Telemetry (OTLP, opt-in)
 
 Off unless `Telemetry:OtlpEndpoint` is set (decided 2026-11-21: opt-in, metrics only by default). Nothing is sent
@@ -387,6 +394,15 @@ anywhere otherwise.
 | `Logging:EventLog:LogLevel:*` | not set | Raise the Windows event log's level alone; see [INSTALL.md](../INSTALL.md#logs). Recycle the app pool after changing. |
 
 `Program.cs` silences `Microsoft.Extensions.Diagnostics.HealthChecks`; `/health` logs one warning a minute instead.
+
+### Diagnostics
+
+| Key | Default | Notes |
+|---|---|---|
+| `Diagnostics:SlowSqlMs` | `500` | A database command that takes longer is logged as a Warning, event id 7201, with its SQL text and never its parameters' values, and listed under Performance on Diagnostics. `0` turns the warning off; every command is still timed. Takes effect without a restart. |
+| `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Takes effect without a restart. |
+
+Timings stay in the server's memory for a day and are cleared by a restart; nothing is sent anywhere.
 
 ## Settings kept only in the database
 

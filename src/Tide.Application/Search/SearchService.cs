@@ -208,6 +208,9 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     private static int Size(int size) => Math.Clamp(size, 1, MaxHits);
 
+    // Up to this many articles whose search text isn't current are matched part by part by their ids; more, by the filter.
+    private const int StaleById = 500;
+
     // The hits before a page: none for the first, and never past MaxTake (a page there shows the last that fits).
     private static int Skip(int page, int size) => Math.Clamp((page - 1) * Size(size), 0, Math.Max(0, MaxTake - Size(size)));
 
@@ -218,10 +221,15 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         IQueryable<Article> all = db.Articles.AsNoTracking();
         if (except.Count > 0) all = all.Where(a => !except.Contains(a.Id));
         // Two queries, joined: the articles whose search text is current, matched by one LIKE on it; and the few whose
-        // text isn't (a save marked it, or it isn't built yet), matched part by part. Apart, SQL Server reads the parts only
-        // for the few; as one OR it read them for every article (it doesn't stop at the first branch as SQLite does).
+        // text isn't (a save marked it, or it isn't built yet), matched part by part. Which are the few is read first, by
+        // id: left to the plan, SQL Server can match the parts of every article before it filters to the few (it did on a
+        // 4-core server). None, the usual case, leaves out the part-by-part query; very many (after an upgrade, until the
+        // rebuild catches up) are matched by the filter itself.
         var indexed = all.Where(ArticleSearchIndex.Current);
-        var scanned = all.Where(ArticleSearchIndex.Stale);
+        var stale = await all.Where(ArticleSearchIndex.Stale).Select(a => a.Id).OrderBy(id => id).Take(StaleById + 1).ToListAsync(ct);
+        var scanned = stale.Count == 0 ? null
+            : stale.Count <= StaleById ? all.Where(a => stale.Contains(a.Id))
+            : all.Where(ArticleSearchIndex.Stale);
         var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
@@ -236,9 +244,9 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             Expression<Func<Article, bool>>? profiled = profiles.Count == 0 ? null : a => adversaryTags.Any(t => t.ArticleId == a.Id && profiles.Contains(t.AdversaryId));
             // A term holding the parts' separator could match across two parts in the text: matched part by part instead.
             indexed = indexed.Where(term.Contains(ArticleSearchRow.Separator) ? AnyForm(PartsMatch, term, tagged, profiled) : AnyForm(TextMatch, term, tagged, profiled));
-            scanned = scanned.Where(AnyForm(PartsMatch, term, tagged, profiled));
+            scanned = scanned?.Where(AnyForm(PartsMatch, term, tagged, profiled));
         }
-        var q = indexed.Concat(scanned);
+        var q = scanned is null ? indexed : indexed.Concat(scanned);
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
         // page neither repeats nor skips what an earlier one ranked differently. Only ids and titles: cheap at this size.
         // The match is a scan of every article, so it runs once: one more than MaxTake says there are more than the pages

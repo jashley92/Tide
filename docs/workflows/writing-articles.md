@@ -47,6 +47,11 @@ the list to the articles that person authored (`?author=<their user id>`); a per
 nothing, not everything. Both go with the other filters (Mine and Draft is your drafts in flight).
 `ArticleService.Whose` holds the Mine rule in one place; By … keeps crediting the author.
 
+A set of filters used often ("P1–P2 threats this quarter tagged Ransomware") can be kept as a **saved view**
+(`SavedViewPills`, `SavedViewPage.Articles`), as on Actions: *Save view* over the list keeps the filters in the address
+(never the page), and each view is a pill that opens them. A view of Mine keeps `author=me`, so it's whoever opens it.
+Up to 12 a person, their own; anyone who reads the team edition may keep them.
+
 ## What an article holds
 
 ![Article editor](../screenshots/article-editor.png)

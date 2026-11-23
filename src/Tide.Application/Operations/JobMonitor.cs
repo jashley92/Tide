@@ -64,12 +64,19 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(15), 7107);
     public static readonly JobDefinition UrlHashes = new("url-hashes", "Hashing stored addresses", "once after an upgrade, until every older article and link has its address hash",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7108);
+    public static readonly JobDefinition FileSweep = new("file-sweep", "Checking stored files", "weekly: reports files missing, without a row, or changed; deletes nothing",
+        TimeSpan.FromDays(7), TimeSpan.FromHours(2), 7112);
+
+    public static readonly JobDefinition AuditArchive = new("audit-archive", "Archiving the audit log", "daily, when Audit:RetentionDays is set: months older go to files, then out of the database",
+        TimeSpan.FromDays(1), TimeSpan.FromHours(2), 7113);
+
+    
     public static readonly JobDefinition IndicatorKeys = new("indicator-keys", "Keying stored indicators", "once after an upgrade, until every older indicator has its lookup keys",
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7109);
     public static readonly JobDefinition SearchIndex = new("search-index", "Search index", "every 10 seconds, the articles edited since; after an upgrade, every article",
         TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10), 7110);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex];
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex, FileSweep, AuditArchive];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));
