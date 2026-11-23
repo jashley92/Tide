@@ -252,6 +252,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7109 | Keying stored indicators |
 | 7110 | Search index |
 | 7112 | Checking stored files |
+| 7113 | Archiving the audit log |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -264,6 +265,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
 | Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
 | Checking stored files | `FileSweepHostedService` | An hour after start-up, then weekly | Reports rows whose bytes are missing, files with no row (older than an hour), and a sample of 50 files whose SHA-256 no longer matches; a Warning (7112) when it finds any. Deletes and changes nothing |
+| Archiving the audit log | `AuditArchiveHostedService` | Daily, from an hour after start-up | Only with `Audit:RetentionDays` set: whole months older go to `audit-archive` files, then out of the database |
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
 | Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
 

@@ -364,6 +364,13 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 | `Updates:CheckIntervalHours` | `24` | 6 to 168. | In app: **System › Updates** | At once |
 | `Updates:Repository` | `jashley92/Tide` | `owner/name`. | Server | Next check |
 
+### Audit log
+
+| Key | Default | Notes |
+|---|---|---|
+| `Audit:RetentionDays` | not set (kept forever) | When set, a daily job archives each whole calendar month older than this many days to a compressed file, records its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then removes those rows from the database. Under 365 is held to 365. Off by default (decided 2026-11-21). |
+| `Audit:ArchivePath` | `audit-archive` under `Files:RootPath` | Where the archives go. The default is inside the file store, so `Backup-Tide.ps1` carries them in every set. |
+
 ### Telemetry (OTLP, opt-in)
 
 Off unless `Telemetry:OtlpEndpoint` is set (decided 2026-11-21: opt-in, metrics only by default). Nothing is sent
