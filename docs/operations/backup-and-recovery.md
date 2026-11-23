@@ -140,6 +140,9 @@ flowchart TD
 2. Restore the set's `.bak` over the database `WITH NORECOVERY`, then the log backups taken after it in order, the
    last `WITH RECOVERY` (to a point in time with `STOPAT` if you're undoing a mistake).
 3. Copy the set's `files\files` to the data root's `files`, and `files\dp-keys` to `dp-keys`, replacing what's there.
+   Each log backup (`-Log`) also copies the files added since into the newest set, so the newest set holds every file up
+   to the last log backup: the database and the files both restore to within 15 minutes (the recovery point decided on
+   2026-11-21). A file newer than the point you restore to is harmless: no row names it.
 4. If the settings file was lost, copy `files\site\appsettings.Production.json` into the site folder, and set the
    environment variables from your vault.
 5. Start the app pool, and check `/health` answers `Healthy` and **Administration › System › Diagnostics** is clean.
@@ -151,9 +154,32 @@ flowchart TD
 1. Install the prerequisites and run `Install-Database.ps1` and `Install-Tide.ps1` with the server's answers file
    ([INSTALL.md](../INSTALL.md)). Lost it? The old server's **Configuration bundle** page writes one; keep a copy.
 2. Stop the pool, restore the database as above, and copy the files folder.
-3. Copy `dp-keys` only if the server's machine key is the same; otherwise leave the new, empty ring. Then re-add each
-   webhook on **Administration › API access** and give its new secret to the receiver.
+3. Copy `dp-keys`. With a certificate-protected ring (`DataProtection:CertificateThumbprint`), import the certificate
+   with its private key on the new server first, and the ring reads as it did. With machine DPAPI (the default) the old
+   ring is unreadable there: leave the new, empty ring, then re-add each webhook on **Administration › API access** and
+   give its new secret to the receiver.
 4. Start the pool and verify (`Verify-Install.ps1`, Diagnostics).
+
+### A warm standby (optional)
+
+TIDE runs as one process by design (ADR 0001): there is no active-active. For a server you can switch to within minutes
+if the live one is lost, with the database's own availability left to your DBA:
+
+1. **Key ring on a certificate.** Issue a certificate for TIDE (an internal CA's, two years or more), import it with its
+   private key into `LocalMachine\My` on both servers, and give the app pool's identity read access to its key (MMC ›
+   Certificates › Manage Private Keys). Set `DataProtection:CertificateThumbprint` on both. Keys made from then on are
+   readable on either server. A key made before the switch stays DPAPI-protected, readable only on the old server,
+   until it expires (90 days): until then, a failover loses saved webhook secrets (re-add them) and signs everyone out.
+   When the certificate is renewed, set the new thumbprint and move the old one to `DataProtection:PreviousThumbprints`.
+2. **Files and keys on a share.** Set `Files:RootPath` and `DataProtection:KeyPath` to a UNC share both servers' app pool
+   identities (one gMSA) can modify, such as `\\files01\tide\files` and `\\files01\tide\dp-keys`. Diagnostics' storage check
+   confirms the app can write there.
+3. **The standby.** Install it with the same answers file. Leave its app pool **stopped**: a second running process is
+   flagged as an alarm on Diagnostics and `/health/jobs`, and its caches would go stale. Keep its site at the same release
+   (upgrade both).
+4. **Failing over.** Point DNS (or the load balancer) at the standby, start its app pool, and check `/health` and
+   Diagnostics. Meetings in progress and unsaved edits on the old server are lost; open pages reconnect after a refresh.
+   Kerberos needs the `HTTP/<name>` SPN on the account both pools run as. Expect a few minutes, most of it DNS.
 
 ### After a failed upgrade
 
@@ -224,6 +250,8 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7107 | Webhooks |
 | 7108 | Hashing stored addresses |
 | 7109 | Keying stored indicators |
+| 7110 | Search index |
+| 7112 | Checking stored files |
 | 7113 | Archiving the audit log |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
@@ -236,8 +264,10 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Update check | `UpdateCheckHostedService` | 2 minutes after start, then every `Updates:CheckIntervalHours`; re-reads the switch every 5 minutes | `Updates:CheckEnabled` |
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
 | Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
+| Checking stored files | `FileSweepHostedService` | An hour after start-up, then weekly | Reports rows whose bytes are missing, files with no row (older than an hour), and a sample of 50 files whose SHA-256 no longer matches; a Warning (7112) when it finds any. Deletes and changes nothing |
 | Archiving the audit log | `AuditArchiveHostedService` | Daily, from an hour after start-up | Only with `Audit:RetentionDays` set: whole months older go to `audit-archive` files, then out of the database |
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
+| Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
 
 ### Timers and periodic work in the request path
 
@@ -300,8 +330,12 @@ page's connection and everyone's since start); and whether a newer release is ou
 | `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
-| "Background job … failed", event ids 7101 to 7109 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
+| "A database command took …", event id 7201 | Application log | A command ran past `Diagnostics:SlowSqlMs`. A few are normal (a big export); many point at an index, statistics or a busy server. Diagnostics › Performance lists the last 20 with their SQL. |
+| "An event on … took …", event id 7202 | Application log | A click or keystroke on that page took past `Diagnostics:SlowEventMs`. |
+| Performance on Diagnostics | The page | Requests, page events and database commands in the last hour and day (median, 95th percentile, slowest), memory and the thread pool. Open pages are under Connections. |
+| "Background job … failed", event ids 7101 to 7110 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
+| "The weekly check of stored files found problems", event id 7112 | Application log | A file the database names is missing (restore it from the newest set), a file has no row (left by a failed delete or an older database: harmless), or a file's bytes changed (disk fault or tampering: restore it and look into the disk). Nothing was changed. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
 How to read the log, and how to raise its level, is in [INSTALL.md](../INSTALL.md#logs).

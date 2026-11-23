@@ -267,12 +267,17 @@ function Invoke-TideBundleCheck {
 
 # --- Rolling back: may the previous build start against the database as it is now? --------------------------------
 
-# The SQL Server migration ids a build knows: the string of each [Migration("<id>")] attribute in the build's
+# The SQL Server migration ids a build knows: from the migrations-sqlserver.txt its publish wrote beside the DLLs (a build
+# from before the list was shipped has none), else the string of each [Migration("<id>")] attribute in the build's
 # Tide.Migrations.SqlServer.dll. The assembly is read as bytes, not loaded: Windows PowerShell 5.1 runs on .NET Framework,
 # which can't load a .NET 10 assembly. An attribute keeps its string in the assembly as UTF-8 after a byte giving its
-# length, so an id counts only where that byte is its length. Throws when the folder has no such assembly, or it names
-# no migration.
+# length, so an id counts only where that byte is its length. Throws when the folder has neither, or they name no migration.
 function Get-TideBuildMigrations([string] $Folder) {
+    $list = Join-Path $Folder 'migrations-sqlserver.txt'
+    if (Test-Path -LiteralPath $list -PathType Leaf) {
+        $listed = @(Get-Content -LiteralPath $list | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d{14}_[A-Za-z0-9_]+$' })
+        if ($listed.Count -gt 0) { return @($listed | Sort-Object -Unique) }
+    }
     $dll = Join-Path $Folder 'Tide.Migrations.SqlServer.dll'
     if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw "$dll isn't there." }
     # Latin-1 maps each byte to the character of the same code, so a match's index is its offset in the file.
@@ -579,3 +584,24 @@ function Remove-TideTree([string] $Path) {
     }
     [IO.Directory]::Delete($Path, $false)
 }
+
+# --- Before stopping the site: is anyone working? ----------------------------------------------------------------
+
+# A sentence saying what an upgrade would end, from the activity.json the app writes into its data root every 30 s: the
+# open pages (their unsaved work is lost) and the meetings running in present mode. $null when the file isn't there, can't
+# be read, is older than -FreshSeconds (the app isn't running), or shows nobody.
+function Get-TideActivityWarning([string] $File, [datetime] $NowUtc, [int] $FreshSeconds = 120) {
+    if (-not $File -or -not (Test-Path -LiteralPath $File -PathType Leaf)) { return $null }
+    try { $a = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+    if ($null -eq $a -or $null -eq $a.atUtc) { return $null }
+    # A string on Windows PowerShell 5.1, a DateTime on PowerShell 7: the cast reads either (invariant culture, its offset).
+    try { $at = ([datetime]$a.atUtc).ToUniversalTime() } catch { return $null }
+    if ([math]::Abs(($NowUtc - $at).TotalSeconds) -gt $FreshSeconds) { return $null }
+    $pages = [int]$a.openPages; $meetings = [int]$a.liveMeetings
+    if ($pages -le 0 -and $meetings -le 0) { return $null }
+    $parts = @()
+    if ($pages -gt 0) { $parts += "$pages page$(if ($pages -ne 1) { 's are' } else { ' is' }) open (unsaved work on them is lost)" }
+    if ($meetings -gt 0) { $parts += "$meetings meeting$(if ($meetings -ne 1) { 's are' } else { ' is' }) running in present mode ($((@($a.meetingDays) -join ', '))): it ends" }
+    return "TIDE is in use: " + ($parts -join '; ') + '.'
+}
+

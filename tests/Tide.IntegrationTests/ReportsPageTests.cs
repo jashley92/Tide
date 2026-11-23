@@ -68,6 +68,25 @@ public class ReportsPageTests(TideApp app) : IClassFixture<TideApp>
         november.Should().Contain("Monthly report · November 2026").And.NotContain("October was quiet");
     }
 
+    [Fact]
+    public async Task TheDraftControl_SaysWhyWhenTheNumbersAreAboveTheLimit_AndAUsedDraftFillsTheBoxUnsaved()
+    {
+        // The test app keeps the default AI limit (GREEN), below the numbers' AMBER: the control says why. A used draft is an
+        // ordinary unsaved edit.
+        await using var r = await ComponentHarness.RenderAsync<Reports>(app, "/reports?p=2026-10");
+        System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("Draft an assessment is unavailable. The report's numbers are marked TLP:AMBER, above the AI limit (TLP:GREEN)")
+            .And.NotContain("copy a prompt", "nothing marked above the limit can be copied out either");
+
+        await r.Click(c =>
+        {
+            c.UseDraft("headlines", new Tide.Application.Assist.ProseDraft(Guid.NewGuid(), "A quiet October.", [], TlpLevel.Amber, "the Headlines numbers"));
+            return c.SetParametersAsync(Microsoft.AspNetCore.Components.ParameterView.Empty);
+        });
+
+        (await r.Html()).Should().Contain("A quiet October.");
+        r.Component.Dirty("headlines").Should().BeTrue("nothing is saved without the lead");
+    }
+
     private async Task SaveAs(string name, Period period, string section, string text, TlpLevel tlp)
     {
         await using var scope = ComponentHarness.SignedIn(app, new ComponentHarness.SignIn("dev:" + name.ToLowerInvariant(), name, "Analyst"));

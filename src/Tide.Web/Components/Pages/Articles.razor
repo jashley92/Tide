@@ -201,11 +201,11 @@
     // A person by id, as By … names them: you, or by their name on their articles.
     private string? AuthorName(string id) => id == CurrentUser.UserId ? "You" : _authors.FirstOrDefault(a => a.Id == id)?.Name;
 
-    // The pills: Mine (the author filter holding "me"), then presets of the status filter, the statuses looked for most.
+    // The pills: Mine (the author filter holding "me": what you're writing), then presets of the status filter, the statuses looked for most.
     // Status holds one value, so Draft and Ready take turns; Mine goes with either.
     internal static readonly IReadOnlyList<FilterPill> Pills =
     [
-        new("mine", "Mine", "author", [ArticleFilter.Me]) { Title = "The articles you wrote" },
+        new("mine", "Mine", "author", [ArticleFilter.Me]) { Title = "The articles you're writing: your own, and any handed to you" },
         new("draft", "Draft", "status", [nameof(ArticleStatus.Draft)]),
         new("ready", "Ready", "status", [nameof(ArticleStatus.Ready)]),
     ];
@@ -272,14 +272,14 @@
         }
     }
 
-    // By …'s choices: you (Mine), then everyone else who has written an article, with how many. Someone from a link
-    // who has written none is still shown as chosen, so the filter can be seen and removed.
+    // By …'s choices: Mine (what you're writing), then everyone who has written an article, you first, with how many.
+    // Mine goes by the writer and the people by the author, so only the people carry a count. Someone from a link who
+    // has written none is still shown as chosen, so the filter can be seen and removed.
     private IReadOnlyList<FilterOption> AuthorOptions()
     {
         var me = CurrentUser.UserId;
-        var mine = _authors.FirstOrDefault(a => a.Id == me)?.Articles ?? 0;
-        List<FilterOption> options = [new(ArticleFilter.Me, $"You ({mine})")];
-        options.AddRange(_authors.Where(a => a.Id != me).Select(a => new FilterOption(a.Id, $"{a.Name} ({a.Articles})", "People")));
+        List<FilterOption> options = [new(ArticleFilter.Me, "Mine: what you're writing")];
+        options.AddRange(_authors.OrderBy(a => a.Id != me).Select(a => new FilterOption(a.Id, $"{(a.Id == me ? "You" : a.Name)} ({a.Articles})", "People")));
         if (_filter.Author is { } chosen && options.All(o => o.Value != chosen))
             options.Add(new(chosen, AuthorName(chosen) ?? "Someone who has written none", "People"));
         return options;

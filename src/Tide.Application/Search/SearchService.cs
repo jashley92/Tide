@@ -215,8 +215,13 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, List<Guid> except, int skip, int take, CancellationToken ct)
     {
-        IQueryable<Article> q = db.Articles.AsNoTracking();
-        if (except.Count > 0) q = q.Where(a => !except.Contains(a.Id));
+        IQueryable<Article> all = db.Articles.AsNoTracking();
+        if (except.Count > 0) all = all.Where(a => !except.Contains(a.Id));
+        // Two queries, joined: the articles whose search text is current, matched by one LIKE on it; and the few whose
+        // text isn't (a save marked it, or it isn't built yet), matched part by part. Apart, SQL Server reads the parts only
+        // for the few; as one OR it read them for every article (it doesn't stop at the first branch as SQLite does).
+        var indexed = all.Where(ArticleSearchIndex.Current);
+        var scanned = all.Where(ArticleSearchIndex.Stale);
         var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
@@ -229,17 +234,11 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 .Where(AnyForm<Adversary>((x, p) => EF.Functions.Like(x.Name, p, SearchText.Escape) || EF.Functions.Like(x.Aliases!, p, SearchText.Escape), term))
                 .Select(x => x.Id).ToListAsync(ct);
             Expression<Func<Article, bool>>? profiled = profiles.Count == 0 ? null : a => adversaryTags.Any(t => t.ArticleId == a.Id && profiles.Contains(t.AdversaryId));
-            q = q.Where(AnyForm<Article>((a, p) =>
-                EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
-                || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
-                || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
-                || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
-                || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
-                || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
-                || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
-                || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
-                || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape)), term, tagged, profiled));
+            // A term holding the parts' separator could match across two parts in the text: matched part by part instead.
+            indexed = indexed.Where(term.Contains(ArticleSearchRow.Separator) ? AnyForm(PartsMatch, term, tagged, profiled) : AnyForm(TextMatch, term, tagged, profiled));
+            scanned = scanned.Where(AnyForm(PartsMatch, term, tagged, profiled));
         }
+        var q = indexed.Concat(scanned);
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
         // page neither repeats nor skips what an earlier one ranked differently. Only ids and titles: cheap at this size.
         // The match is a scan of every article, so it runs once: one more than MaxTake says there are more than the pages
@@ -441,6 +440,22 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         (await db.ActionComments.AsNoTracking().Where(c => actionIds.Contains(c.ActionId)).OrderBy(c => c.AtUtc)
             .Select(c => new { c.ActionId, c.Text }).ToListAsync(ct))
         .GroupBy(c => c.ActionId).ToDictionary(g => g.Key, g => g.Select(c => c.Text).ToList());
+
+    // Every part of an article a search reads, matched one by one: what its search text (ArticleSearchRow) holds.
+    private static readonly Expression<Func<Article, string, bool>> PartsMatch = (a, p) =>
+        EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
+        || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
+        || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
+        || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
+        || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
+        || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
+        || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
+        || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
+        || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape));
+
+    // An article whose search text is current: one LIKE on it stands for every part's (the parts are apart in it by a
+    // character no term holds, so a term can't match across two).
+    private static readonly Expression<Func<Article, string, bool>> TextMatch = (a, p) => EF.Functions.Like(a.SearchRow!.Text, p, SearchText.Escape);
 
     /// <summary>
     /// <paramref name="match"/> (an entity and a LIKE pattern) for any of <paramref name="term"/>'s forms, or

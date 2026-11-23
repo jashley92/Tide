@@ -132,11 +132,12 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     /// <summary>
-    /// The articles that are <paramref name="userId"/>'s, for Mine: whose an article is, in one place. For now that's
-    /// its author. Once an article can be handed on to a writer to finish, Mine is the writer's (the writer, else the
-    /// author), and this line is the one to change. By … still credits the author.
+    /// The articles that are <paramref name="userId"/>'s, for Mine: whose an article is, in one place. That's who is
+    /// writing it now (ADR 0031), so a draft handed to a colleague is theirs to finish and leaves its author's Mine. The
+    /// migration gave every older article its author as writer; a row with no writer still reads as its author's
+    /// (<see cref="Article.CurrentWriterId"/>, which the database can't read). By … still credits the author.
     /// </summary>
-    private static IQueryable<Article> Whose(IQueryable<Article> q, string userId) => q.Where(a => a.AuthorId == userId);
+    private static IQueryable<Article> Whose(IQueryable<Article> q, string userId) => q.Where(a => (a.WriterId ?? a.AuthorId) == userId);
 
     // The filters past the words and status, each as the trends report counts it (TrendsService.ReportAsync).
     private IQueryable<Article> Narrowed(IAppDbContext db, IQueryable<Article> q, ArticleFilter f)

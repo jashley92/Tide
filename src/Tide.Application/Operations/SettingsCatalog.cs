@@ -76,6 +76,12 @@ public static class SettingsCatalog
         new("AI drafting", "Highest TLP sent", "Ai:MaxTlp"),
         new("AI drafting", "Web search for open sources", "Ai:WebGrounding"),
         new("AI drafting", "Time limit (seconds)", "Ai:TimeoutSeconds"),
+
+        new("Telemetry (OTLP)", "Collector", "Telemetry:OtlpEndpoint", SettingKind.Url),
+        new("Telemetry (OTLP)", "Protocol", "Telemetry:Protocol"),
+        new("Telemetry (OTLP)", "Headers", "Telemetry:Headers", SettingKind.Secret),
+        new("Telemetry (OTLP)", "Request traces", "Telemetry:Traces"),
+        new("Telemetry (OTLP)", "Share of requests traced", "Telemetry:TraceSampleRatio"),
     ];
 
     /// <summary>The settings an administrator can change in the app; the server's value is the default until then. The

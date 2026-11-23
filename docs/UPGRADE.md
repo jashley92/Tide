@@ -65,6 +65,12 @@ Updates** shows with the newest version filled in:
 & 'D:\inetpub\tide-deploy\Upgrade-Tide.ps1' -Version v0.2.0
 ```
 
+Before it stops anything it reads the `activity.json` the running app writes into its data root every 30 seconds, and
+says when pages are open (their unsaved work is lost) or a meeting is running in present mode (it ends), then asks
+before going on; `-Force` goes on with only the warning. If it has to roll back, it reads which migrations the build it
+replaced knows from that build's `migrations-sqlserver.txt` (shipped in the app folder since this release), or, for an
+older build, from its `Tide.Migrations.SqlServer.dll`.
+
 It downloads `tide-v0.2.0.zip` and its `.sha256` from this repository's releases (through `-Proxy` if the server needs
 one), refuses a bundle whose hash doesn't match, and hands over to the bundle's own copy of the script, so a fix to the
 upgrade itself takes effect in the upgrade that ships it. `-Version latest` takes the newest release (or, before 1.0,

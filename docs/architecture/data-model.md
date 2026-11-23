@@ -213,7 +213,9 @@ erDiagram
     }
     AiDrafts {
         uuid Id PK
-        uuid ArticleId FK
+        int Kind
+        uuid ArticleId FK "nullable"
+        string Subject
         string Provider
         string InputHash
         int InputTlp
@@ -796,6 +798,7 @@ where noted, they're written by `ArticleService` and `ArticleForm`.
 | `ArticleTags` | `(ArticleId, TagId)` | | `TagId` FK → `ScorecardTags`, **restrict**. Indexed. |
 | `ArticleTechniques` | `(ArticleId, TechniqueId)` | `TechniqueId` nvarchar(16) | An ATT&CK id ("T1566.001") from the embedded catalog, so there's no FK. Indexed. No tactic is stored; `MitreTactic` isn't persisted anywhere. |
 | `ArticleIndicators` | `Id` | `ArticleId` (indexed), `Type` int, `Value` nvarchar(2000), `Note` nvarchar(300) null, `ValueKey` nvarchar(64) null (indexed), `HostRev` nvarchar(300) null (indexed) | Stored in live, canonical form (`IocObservable.Normalize`) and shown defanged. `ActionService` adds to it when an indicator is added on an action raised from the article. `ValueKey` is the SHA-256 of the value in lower case and `HostRev` the host it names reversed by label (`com.example.mail`), both set with `Value` (`IndicatorKey`): a lookup seeks the indicator itself by `ValueKey` and its host's other indicators by `HostRev` (equal, or starting with it and a dot). Rows saved before they were kept are keyed by a background job after an upgrade (`IndicatorKeyFill`); until then a lookup matches a row with no `ValueKey` by its value. |
+| `ArticleSearch` | `ArticleId` (FK to `Articles`, cascade) | `Text` nvarchar(max), `Builder` int, `Dirty` bit (filtered index where 1), `Stamp` uniqueidentifier | What a text search matches an article by: its title, summary, why it matters, recommended actions, actors, sectors, source, bullets, indicator values and notes, CVE ids, technique ids and captions, as stored, joined by U+001F so a term can't span two. A save that changes one marks the row `Dirty` with a new `Stamp` in the same transaction (`SearchDirtyInterceptor`, which adds a marked row with each new article); the Search index job rebuilds it (`ArticleSearchIndex`), writing only if the stamp is unchanged. A search uses the row only when it isn't dirty and its `Builder` is the current one; otherwise it matches that article part by part. Its migration adds a marked row for every article already there; the job builds them, and marks rows an older `Builder` built once at start-up. Not audited. |
 | `ArticleCves` | `(ArticleId, CveId)` | `CveId` nvarchar(24) | Indexed by `CveId`. `IntakeService` adds the item's CVEs on promote. |
 | `ArticleLinks` | `Id` | `ArticleId` (indexed), `Url` nvarchar(2000), `Title` nvarchar(500), `SourceName` nvarchar(200) null, `PublishedAtUtc` null, `AddedAtUtc`, `AddedByName` nvarchar(256), `UrlHash` nvarchar(64) null (indexed) | Other reports of the same story, added from triage. Written by `ArticleService` and `IntakeService`. `UrlHash` is SHA-256 of `Url`'s canonical form, set with `Url`, as `Articles.SourceUrlHash` is. |
 | `ArticleProducts` | `(ArticleId, ProductId)` | | `ProductId` FK → `StackProducts`, **restrict**. "We run" tags. Written by `StackService`. |
@@ -838,13 +841,17 @@ A comment on one part of an article under review. The author resolves it. Cascad
 
 ### `AiDrafts` (S, A)
 
-One AI draft of an article ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)). It records who asked,
-which provider and model answered, a hash of the prompt and its TLP, and the suggestions that passed the checks. The
-source text itself is never kept. Written by `AssistService`.
+One AI draft ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)): of an article, a report section's
+assessment or a brief's title slide line. It records who asked, which provider and model answered, a hash of the prompt
+and its TLP, and the suggestions that passed the checks. The source text itself is never kept. Written by
+`AssistService` (articles) and `ProseAssistService` (the other kinds).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `Id`, `ArticleId` | uniqueidentifier | no | `ArticleId` FK → `Articles`, **cascade**. Indexed. |
+| `Id` | uniqueidentifier | no | |
+| `Kind` | int | no | `AiDraftKind`: 0 Article, 1 ReportAssessment, 2 TitleLine. |
+| `ArticleId` | uniqueidentifier | yes | The article drafted; FK → `Articles`, **cascade**. Indexed. Null for the other kinds. |
+| `Subject` | nvarchar(64) | yes | For the other kinds: the report section (`2026-10/headlines`) or the brief's id. |
 | `Provider` | nvarchar(40) | no | `AzureOpenAI`, or `Pasted` for an answer from an approved tool pasted back. |
 | `Model` | nvarchar(100) | no | Empty for a pasted answer. |
 | `PromptVersion` | int | no | |
@@ -1625,6 +1632,7 @@ log masks again when it shows a row.
 | `CveRecord` | `CveRecords` | Refreshed from public sources. |
 | `DetectionRule` | `DetectionRules` | Every import touches every rule's `LastSeenAtUtc`. |
 | `FeedItemText` | `FeedItemTexts` | Kept publisher text. Copying it into the log would retain it past its prune. |
+| `ArticleSearchRow` | `ArticleSearch` | An article's searched parts again, each audited in its own right; rebuilt in the background. |
 
 Writes made with `ExecuteUpdateAsync` or `ExecuteDeleteAsync` don't pass through the interceptor either (see
 [Conventions](#conventions-that-apply-everywhere)).

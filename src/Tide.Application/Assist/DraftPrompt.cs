@@ -190,10 +190,12 @@ public static class DraftPrompt
         return string.Join("; ", parts);
     }
 
-    private static string Lf(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
+    // Shared with ProsePrompt and ReportDraftChecks, so every prompt is hashed alike and fenced alike.
+    internal static string Lf(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-    private static string OneLine(string text) => string.Join(' ', text.Split((char[])['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+    internal static string OneLine(string text) => string.Join(' ', text.Split((char[])['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
 
     // The fence can't be closed from inside the text.
-    private static string Unfenced(string text) => text.Replace("SOURCE>>>", "SOURCE> >>", StringComparison.Ordinal).Replace("<<<SOURCE", "<< <SOURCE", StringComparison.Ordinal);
+    internal static string Unfenced(string text, string fence = "SOURCE") =>
+        text.Replace(fence + ">>>", fence + "> >>", StringComparison.Ordinal).Replace("<<<" + fence, "<< <" + fence, StringComparison.Ordinal);
 }

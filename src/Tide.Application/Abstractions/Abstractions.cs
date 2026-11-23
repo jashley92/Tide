@@ -46,6 +46,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<ArticleIndicator> ArticleIndicators { get; }
     DbSet<ArticleCve> ArticleCves { get; }
     DbSet<ArticleLink> ArticleLinks { get; }
+    DbSet<ArticleSearchRow> ArticleSearch { get; }
     DbSet<Brief> Briefs { get; }
     DbSet<BriefItem> BriefItems { get; }
     DbSet<BriefSend> BriefSends { get; }
@@ -208,4 +209,7 @@ public interface IFileStore
     Stream? OpenRead(Guid id);
 
     void Delete(Guid id);
+
+    /// <summary>Every file the store holds: its id and when it was last written. For the weekly check of stored files.</summary>
+    IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List();
 }
