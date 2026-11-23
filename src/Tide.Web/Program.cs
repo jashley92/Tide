@@ -87,6 +87,8 @@ if (!string.IsNullOrWhiteSpace(dpKeyPath))
 }
 
 builder.Services.AddInfrastructure(builder.Configuration);
+// An OTLP exporter only when Telemetry:OtlpEndpoint is set: metrics by default, sampled and scrubbed traces when asked.
+builder.Services.AddTideTelemetry(builder.Configuration);
 builder.Services.AddApplication(builder.Configuration);
 
 // --- Authentication: Windows integrated in production, the dev handler locally ---
