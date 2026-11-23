@@ -31,7 +31,7 @@
         <div class="tide-admin-index mb-0">
             <div>
                 <h3 class="h6" id="diag-data-tables">Largest tables</h3>
-                <table class="tide-table" aria-labelledby="diag-data-tables">
+                <table class="tide-table tide-data-sizes" aria-labelledby="diag-data-tables">
                     <thead><tr><th scope="col">Table</th><th scope="col" class="text-end">Rows</th><th scope="col" class="text-end">Size</th><th scope="col" class="text-end">Rows, 30 days</th></tr></thead>
                     <tbody>
                         @foreach (var t in r.Tables.Take(Take))
@@ -51,7 +51,7 @@
                 @if (r.Folders.Count == 0) { <p class="small tide-muted">The data root couldn't be read, or is empty.</p> }
                 else
                 {
-                    <table class="tide-table" aria-labelledby="diag-data-files">
+                    <table class="tide-table tide-data-sizes" aria-labelledby="diag-data-files">
                         <thead><tr><th scope="col">Folder</th><th scope="col" class="text-end">Size</th></tr></thead>
                         <tbody>
                             @foreach (var f in r.Folders) { <tr><th scope="row" class="tide-data small fw-normal">@f.Name</th><td class="text-end">@Bytes(f.Bytes)</td></tr> }

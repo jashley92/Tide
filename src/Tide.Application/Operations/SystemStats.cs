@@ -130,6 +130,9 @@ public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOpt
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { return (null, null); }
     }
 
+    /// <summary>What the store's own files (screenshots, action and comment files) are listed as.</summary>
+    public const string StoredFiles = "Stored files (screenshots, action files)";
+
     /// <summary>The data root's top-level folders with their bytes (files directly in it as "(top level)"); null when it
     /// can't be read.</summary>
     public static List<FolderSize>? Folders(string root)
@@ -139,8 +142,10 @@ public sealed class SystemStats(IAppDbContextFactory dbs, IDataUsage usage, IOpt
             var dir = new DirectoryInfo(root);
             if (!dir.Exists) return null;
             var each = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-            var list = dir.EnumerateDirectories().Where(d => !d.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                .Select(d => new FolderSize(d.Name, d.EnumerateFiles("*", each).Sum(f => f.Length))).ToList();
+            // The store's own files sit in folders named by the first two hex digits of their id: together, one line.
+            var sizes = dir.EnumerateDirectories().Where(d => !d.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                .Select(d => (Name: d.Name.Length == 2 && d.Name.All(char.IsAsciiHexDigit) ? StoredFiles : d.Name, Bytes: d.EnumerateFiles("*", each).Sum(f => f.Length)));
+            var list = sizes.GroupBy(s => s.Name).Select(g => new FolderSize(g.Key, g.Sum(s => s.Bytes))).ToList();
             var top = dir.EnumerateFiles().Sum(f => f.Length);
             if (top > 0) list.Add(new FolderSize("(top level)", top));
             return [.. list.OrderByDescending(f => f.Bytes)];

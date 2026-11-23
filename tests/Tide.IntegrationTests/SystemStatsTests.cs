@@ -33,6 +33,11 @@ public class SystemStatsTests : IDisposable
         using var db = new TestDb(provider: provider);
         Directory.CreateDirectory(Path.Combine(_root, "screenshots"));
         await File.WriteAllBytesAsync(Path.Combine(_root, "screenshots", "a.png"), new byte[3000]);
+        foreach (var fan in new[] { "3a", "f0" })
+        {
+            Directory.CreateDirectory(Path.Combine(_root, fan));
+            await File.WriteAllBytesAsync(Path.Combine(_root, fan, Guid.NewGuid().ToString("N") + ".bin"), new byte[500]);
+        }
         await File.WriteAllBytesAsync(Path.Combine(_root, "loose.txt"), new byte[10]);
         await using (var ctx = db.Context())
         {
@@ -50,8 +55,8 @@ public class SystemStatsTests : IDisposable
         report.Tables.Single(t => t.Name == "Articles").Rows.Should().Be(2);
         report.Tables.Should().NotContain(t => t.Name == "__EFMigrationsHistory");
         if (provider == TestDb.SqlServer) report.Tables.Single(t => t.Name == "Articles").Bytes.Should().BePositive("sa can read the partition stats");
-        report.Folders.Should().Equal(new FolderSize("screenshots", 3000), new FolderSize("(top level)", 10));
-        report.Latest.FilesBytes.Should().Be(3010);
+        report.Folders.Should().Equal(new FolderSize("screenshots", 3000), new FolderSize(SystemStats.StoredFiles, 1000), new FolderSize("(top level)", 10));
+        report.Latest.FilesBytes.Should().Be(4010);
         (report.Month, report.Quarter).Should().Be((null, null), "nothing older yet");
     }
 
