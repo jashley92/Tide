@@ -28,7 +28,7 @@ namespace Tide.IntegrationTests.Audit;
 /// Each tier writes a markdown table to <c>TIDE_PERF_OUT</c> (the workflow's summary). <c>TIDE_UPDATE_BUDGET=1</c> writes
 /// what it measured as the new budget, as the query budget does.
 /// </summary>
-public class NightlyPerfTests(ITestOutputHelper output)
+public partial class NightlyPerfTests(ITestOutputHelper output)
 {
     public const double Factor = 2;
     public const int Runs = 5;
@@ -76,6 +76,7 @@ public class NightlyPerfTests(ITestOutputHelper output)
     {
         using var db = await SeededAsync(TestDb.SqlServer);
         var measured = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        var costliest = new Dictionary<string, string>(StringComparer.Ordinal);
         await using var admin = new SqlConnection(SqlServerFactAttribute.Server);
         await admin.OpenAsync();
         foreach (var (name, call) in Pages(db))
@@ -88,6 +89,7 @@ public class NightlyPerfTests(ITestOutputHelper output)
             // Every statement run since the cache was cleared: this test's database is the only one at work.
             cmd.CommandText = "SELECT ISNULL(SUM(total_logical_reads), 0) FROM sys.dm_exec_query_stats";
             measured[name] = Convert.ToDouble(await cmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            costliest[name] = await CostliestAsync(admin);
         }
         if (Updating) { Write("logical-reads.json", measured); return; }
 
@@ -99,12 +101,40 @@ public class NightlyPerfTests(ITestOutputHelper output)
             var was = baseline.GetValueOrDefault(name);
             var limit = Math.Max(was * (1 + ReadsAllowance), was + 20);
             var verdict = was <= 0 ? "no baseline" : reads > limit ? "**over: fails**" : "ok";
-            if (was > 0 && reads > limit) failures.Add($"{name}: {reads:N0} logical reads, over its {was:N0} baseline by more than a quarter");
+            if (was > 0 && reads > limit)
+                failures.Add($"{name}: {reads:N0} logical reads, over its {was:N0} baseline by more than a quarter. Its costliest statements:\n{costliest[name]}");
             rows.Append(CultureInfo.InvariantCulture, $"| {name} | {reads:N0} | {(was > 0 ? was.ToString("N0", CultureInfo.InvariantCulture) : "—")} | {verdict} |\n");
         }
         Report("Logical reads (SQL Server, " + Factor + "× data)", rows.ToString());
         if (failures.Count > 0) Assert.Fail(string.Join("\n", failures));
     }
+
+    // The three statements that read most since the cache was cleared, with their plans' operators (and estimated rows), so
+    // a page over its baseline says which query and which plan.
+    private static async Task<string> CostliestAsync(SqlConnection admin)
+    {
+        await using var cmd = admin.CreateCommand();
+        cmd.CommandText = """
+            SELECT TOP 3 s.total_logical_reads, s.execution_count, LEFT(t.text, 400), CAST(p.query_plan AS nvarchar(max))
+            FROM sys.dm_exec_query_stats s
+            CROSS APPLY sys.dm_exec_sql_text(s.sql_handle) t
+            OUTER APPLY sys.dm_exec_text_query_plan(s.plan_handle, s.statement_start_offset, s.statement_end_offset) p
+            ORDER BY s.total_logical_reads DESC
+            """;
+        var text = new StringBuilder();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var plan = reader.IsDBNull(3) ? "" : reader.GetString(3);
+            var ops = PlanOps().Matches(plan).Select(m => m.Groups[1].Value + "~" + m.Groups[2].Value);
+            text.Append(CultureInfo.InvariantCulture,
+                $"  {reader.GetInt64(0):N0} reads in {reader.GetInt64(1)} runs: {reader.GetString(2).ReplaceLineEndings(" ")}\n    plan: {string.Join(", ", ops)}\n");
+        }
+        return text.ToString();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("PhysicalOp=\"([^\"]+)\"[^>]*?EstimateRows=\"([^\"]+)\"")]
+    private static partial System.Text.RegularExpressions.Regex PlanOps();
 
     private static async Task<TestDb> SeededAsync(string provider)
     {
