@@ -101,14 +101,14 @@ else if (_canSend)
                             <div class="form-check mt-2 mb-0">
                                 <input class="form-check-input" type="checkbox" id="@(id)-checked" checked="@_bothChecked.Contains(edition)" disabled="@_busy"
                                        aria-describedby="@(id)-plan" @onchange="e => TickBoth(edition, e.Value is true)" />
-                                <label class="form-check-label small" for="@(id)-checked">@BothCheckedLabel(edition)</label>
+                                <label class="form-check-label small" for="@(id)-checked">@(edition == Edition.Public ? "Company-wide" : "Team edition") checked</label>
                             </div>
                         </div>
                     }
                 </div>
                 <button type="button" class="btn btn-primary btn-sm mt-2" id="send-both"
                         disabled="@(_busy || !Editions.All(_bothChecked.Contains) || !MaySend || Editions.Any(HeldForReview))"
-                        @onclick="SendBoth"><span class="bi bi-send-check" aria-hidden="true"></span> @SendBothLabel(_plans[Edition.Team], _plans[Edition.Public])</button>
+                        @onclick="SendBoth"><span class="bi bi-send-check" aria-hidden="true"></span> Send both (@_plans[Edition.Team].Recipients.Count + @_plans[Edition.Public].Recipients.Count)</button>
             }
             <div class="small mt-1" aria-live="polite">@_bothNote</div>
         </section>
@@ -159,7 +159,7 @@ else if (_canSend)
                     }
                     else
                     {
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_checked.Contains(edition) || !plan.EmailEnabled || plan.Recipients.Count == 0 || plan.Articles == 0 || !MaySend || HeldForReview(edition))"
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_checked.Contains(edition) || !CanGo(plan) || !MaySend || HeldForReview(edition))"
                                 @onclick="() => SendNow(_plans[edition])"><span class="bi bi-send-check" aria-hidden="true"></span> @SendConfirmation.Label(plan)</button>
                     }
                     <a class="btn btn-link btn-sm" href="@EmailUrl(edition)" target="_blank" rel="noopener">The email in a new tab</a>
@@ -487,15 +487,10 @@ else if (_canSend)
     /// <summary>Whether Send both is offered: both editions can go now (email on, someone on each list, something in
     /// each) and neither has gone, or may have, or is going. Otherwise each edition is sent on its own.</summary>
     internal bool BothDue =>
-        !SendPending
-        && Editions.All(e => _plans.GetValueOrDefault(e) is { } p
-            && p.LastSentAtUtc is null && p.EmailEnabled && p.Recipients.Count > 0 && p.Articles > 0);
+        !SendPending && Editions.All(e => _plans.GetValueOrDefault(e) is { LastSentAtUtc: null } p && CanGo(p));
 
-    /// <summary>Send both's ticks: "Team edition checked", "Company-wide checked".</summary>
-    public static string BothCheckedLabel(Edition e) => e == Edition.Public ? "Company-wide checked" : "Team edition checked";
-
-    /// <summary>Send both's button, named for the two lists: "Send both (12 + 840)".</summary>
-    public static string SendBothLabel(SendPlan team, SendPlan company) => $"Send both ({team.Recipients.Count} + {company.Recipients.Count})";
+    // Email is on, someone is on the list and there's something to send.
+    private static bool CanGo(SendPlan p) => p.EmailEnabled && p.Recipients.Count > 0 && p.Articles > 0;
 
     // Both editions, each as its own send of the plan shown (DistributionService.SendAsync checks each again as it goes),
     // the team edition first. One that doesn't go (refused, failed at the relay, or not known to have gone) stops there:
@@ -508,17 +503,21 @@ else if (_canSend)
         _bothNote = null;
         _bothChecked.Clear();
         var said = new List<string>();
-        var allWent = true;
+        string? stopped = null;   // why the sends stopped, once one didn't go
         var logged = false;   // a send was frozen and logged, so the brief may be Sent now
         try
         {
-            for (var i = 0; i < plans.Count; i++)
+            foreach (var plan in plans)
             {
-                var plan = plans[i];
                 var name = BriefRenderer.EditionName(plan.Edition).ToLowerInvariant();
+                if (stopped is not null)
+                {
+                    said.Add($"The {name} wasn't sent. Check the send log, then send it on its own below.");
+                    _notes[plan.Edition] = "Not sent: the edition before it didn't go.";
+                    continue;
+                }
                 _checked.Remove(plan.Edition);
                 _again.Remove(plan.Edition);
-                string stopped;
                 try
                 {
                     var send = await Distribution.SendAsync(plan, _withoutMeeting);
@@ -539,15 +538,8 @@ else if (_canSend)
                 }
                 _notes[plan.Edition] = stopped;
                 said.Add(stopped);
-                foreach (var rest in plans.Skip(i + 1))
-                {
-                    var restName = BriefRenderer.EditionName(rest.Edition).ToLowerInvariant();
-                    said.Add($"The {restName} wasn't sent. Check the send log, then send it on its own below.");
-                    _notes[rest.Edition] = "Not sent: the edition before it didn't go.";
-                }
-                allWent = false;
-                break;
             }
+            var allWent = stopped is null;
             _bothNote = string.Join(" ", said);
             if (allWent) Toasts.Show(_bothNote);
             else Toasts.Error(_bothNote);
