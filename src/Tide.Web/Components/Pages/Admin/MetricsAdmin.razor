@@ -214,8 +214,8 @@
     private static string Threshold(MetricDefinition m, decimal? t) => t is { } v ? MetricMath.Format(m.Format, v) : "—";
 
     private static string ThresholdHelp(MetricDirection d) => d == MetricDirection.HigherIsBetter
-        ? "A value at or below a threshold colours it (critical must be at or below warning)."
-        : "A value at or above a threshold colours it (critical must be at or above warning).";
+        ? "A value at or below a threshold colors it (critical must be at or below warning)."
+        : "A value at or above a threshold colors it (critical must be at or above warning).";
 
     private async Task Edit(MetricForm form)
     {

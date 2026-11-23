@@ -3,7 +3,7 @@ namespace Tide.Domain.Enums;
 /// <summary>
 /// Traffic Light Protocol 2.0 (FIRST): how widely information may be shared. Every article, bullet and screenshot
 /// carries one; the brief editions are cut by it. CLEAR = no limit; GREEN = the community; AMBER = recipients'
-/// organisations on a need-to-know basis; AMBER+STRICT = the recipient's organisation only; RED = named recipients only.
+/// organizations on a need-to-know basis; AMBER+STRICT = the recipient's organization only; RED = named recipients only.
 /// </summary>
 public enum TlpLevel
 {

@@ -12,7 +12,7 @@
 <div class="tide-page-head">
     <div>
         <h1 class="tide-admin-title">Card rules</h1>
-        <div class="tide-sub">An action matching all of a rule's conditions gets its label; the first matching rule sets its colour. Rules shown as filters are offered under + Filter on the Actions page, with their counts.</div>
+        <div class="tide-sub">An action matching all of a rule's conditions gets its label; the first matching rule sets its color. Rules shown as filters are offered under + Filter on the Actions page, with their counts.</div>
     </div>
     @if (_editing is null)
     {
@@ -30,7 +30,7 @@
                 <input id="cr-name" class="form-control form-control-sm" maxlength="60" @bind="_editing.Name" placeholder="P1 overdue" />
             </div>
             <div class="col-md-3">
-                <label class="tide-field-label" for="cr-colour">Colour</label>
+                <label class="tide-field-label" for="cr-colour">Color</label>
                 <select id="cr-colour" class="form-select form-select-sm" @bind="_editing.Colour">
                     @foreach (var c in Enum.GetValues<CardColour>()) { <option value="@c">@c</option> }
                 </select>
@@ -181,7 +181,7 @@ else
 
     private async Task Delete(ActionCardRule r)
     {
-        if (!await _confirm.Ask($"Delete {r.Name}?", "Cards and rows lose its colour and label, and it's no longer offered as a filter.", "Delete rule")) return;
+        if (!await _confirm.Ask($"Delete {r.Name}?", "Cards and rows lose its color and label, and it's no longer offered as a filter.", "Delete rule")) return;
         await Run(() => RuleSvc.DeleteAsync(r.Id));
     }
 

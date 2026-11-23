@@ -26,7 +26,7 @@
 else if (_rules.Count == 0)
 {
     <div class="tide-card">
-        <EmptyState Icon="bi-palette" Title="No board rules yet.">Every card shows in its plain colour. An administrator can add rules.</EmptyState>
+        <EmptyState Icon="bi-palette" Title="No board rules yet.">Every card shows in its plain color. An administrator can add rules.</EmptyState>
     </div>
 }
 else if (Shown.Count == 0)
@@ -41,7 +41,7 @@ else
         <h2 id="br-list-h">Rules, in order <span class="tide-count tide-muted fw-normal">(@Shown.Count)</span></h2>
         <p class="small tide-muted">An action that matches all of a rule's conditions gets its label. Rules offered as a filter are under + Filter on the Actions page.</p>
         <table class="tide-table">
-            <thead><tr><th scope="col">Label</th><th scope="col">Matches actions that are</th><th scope="col">Colour</th><th scope="col">Offered as a filter</th></tr></thead>
+            <thead><tr><th scope="col">Label</th><th scope="col">Matches actions that are</th><th scope="col">Color</th><th scope="col">Offered as a filter</th></tr></thead>
             <tbody>
                 @foreach (var r in Shown)
                 {
