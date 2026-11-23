@@ -3000,6 +3000,13 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Page")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("actions");
+
                     b.Property<string>("Query")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3015,7 +3022,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Name")
+                    b.HasIndex("UserId", "Page", "Name")
                         .IsUnique();
 
                     b.ToTable("SavedActionViews");

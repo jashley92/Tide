@@ -176,6 +176,10 @@ KEV list) and **We run it** (a product on Our stack). Names a CVE and KEV are on
 other off. The source is under **+ Filter**, and shows as a chip while one is chosen. They combine, and they're kept
 in the address too. The tabs and the order (Newest, Likely used) sit apart from the filters.
 
+**Saved views** sit over the filter bar, as on Actions: **Save view** keeps the tab and filters shown under a name
+("KEV we run, since the brief"), never the item selected or the page. Each is a pill that opens it in place, marked
+while it's what's shown, with a ⋮ menu to rename, move or delete it. They're each person's own, up to 12.
+
 A feed can be filtered by its own tags and by title words. Sponsored items are skipped too, on by default: a list of
 marker phrases ("Sponsored by", "Partner content", "Advertorial") is looked for as whole words in each item's author,
 source, tags, title and the start of its summary, and a list of exceptions ("state-sponsored") keeps the headlines
@@ -335,7 +339,9 @@ filter bar has **Mine**, **Draft** and **Ready** as pills (Mine goes with either
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
-sent. Trends opens this list
+sent. Over the list, **saved views** keep a set of filters under a name ("P1–P2 threats this quarter"), as on
+Actions: a pill each, marked while it's what's shown, a ⋮ menu to rename, move or delete it, and **Save view**; each
+person's own, up to 12. Trends opens this list
 pre-filtered when you click a count; opened from a tactic or technique, each row shows the techniques it was counted
 for. An analyst starts an article here with **New article**: a title, a source, a link and a TLP, which is set first
 because the parts start from it. A new screenshot starts at TLP:AMBER, or the article's marking when that's higher, so
@@ -530,7 +536,8 @@ each way in the last 7 days, a drop target for each.*
   tabs (Mine, My teams, All open…) stay tabs.
 - **Saved views.** *Save view*, beside the tabs, keeps the tab, layout and filters shown under a name (up to 60
   characters). Each saved view is a pill after the tabs that opens it, marked while it's what's shown; its ⋮ menu
-  renames, moves or deletes it. They're each person's own, up to 12, on any computer.
+  renames, moves or deletes it. They're each person's own, up to 12, on any computer. Triage, Articles and Search
+  keep views the same way, each its own 12.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed strip counts the last 7 days; *Show the last 30 days* takes it back 30.
@@ -645,6 +652,9 @@ each way in the last 7 days, a drop target for each.*
 **Route:** `/search` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)
 
 One box at the top of every page.
+
+- **Saved searches.** Under the box, **Save view** keeps the search shown under a name, as a pill that runs it again,
+  marked while it's the one shown, with a ⋮ menu to rename, move or delete it. Each person's own, up to 12.
 
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
   ATT&CK techniques by name and captions, with the matches marked. Each kind's heading says how many matched, 50 to a

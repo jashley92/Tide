@@ -3005,6 +3005,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)");
 
+                    b.Property<string>("Page")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("actions");
+
                     b.Property<string>("Query")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3020,7 +3027,7 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Name")
+                    b.HasIndex("UserId", "Page", "Name")
                         .IsUnique();
 
                     b.ToTable("SavedActionViews");

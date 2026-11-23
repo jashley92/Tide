@@ -36,22 +36,32 @@ public class UserPreference
 }
 
 /// <summary>
-/// One person's named combination of the Actions page's tab, layout and filters, shown beside its tabs. Kept as the
-/// page's own query string, checked and put in a fixed order by <c>SavedViewService</c> before it's stored. One
-/// person's, so not shared and not audited.
+/// One person's named combination of a list page's tab, layout and filters (Actions, Triage, Articles or Search), shown
+/// as a pill on that page. Kept as the page's own query string, checked and put in a fixed order by
+/// <c>SavedViewService</c> before it's stored. One person's, so not shared and not audited. The table keeps the name it
+/// had when only Actions had views: renaming it wasn't worth a migration.
 /// </summary>
 public class SavedActionView : Entity
 {
     public const int MaxName = 60;
+
+    /// <summary>The longest <see cref="Page"/>.</summary>
+    public const int MaxPage = 20;
+
+    /// <summary>The page of every view kept from before the other pages had views.</summary>
+    public const string ActionsPage = "actions";
 
     /// <summary>The longest query kept: every parameter at its longest, escaped, fits.</summary>
     public const int MaxQuery = 2000;
 
     /// <summary>The person's stable id (<see cref="AppUser.Sid"/>).</summary>
     public string UserId { get; set; } = string.Empty;
+
+    /// <summary>The page it's a view of: "actions", "triage", "articles" or "search" (<c>SavedViewPage.Key</c>).</summary>
+    public string Page { get; set; } = ActionsPage;
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>What follows <c>actions?</c>, e.g. "view=open&amp;layout=list&amp;priority=p1,p2". Never the list's page.</summary>
+    /// <summary>What follows the page's address and <c>?</c>, e.g. "view=open&amp;layout=list&amp;priority=p1,p2". Never the list's page.</summary>
     public string Query { get; set; } = string.Empty;
 
     /// <summary>Where it sits among the person's views, from 0.</summary>

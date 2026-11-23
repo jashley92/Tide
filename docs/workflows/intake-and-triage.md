@@ -281,7 +281,11 @@ What triage does with it:
 2. The filter bar (`FilterBar`): words in titles and CVEs, the pills *Since last brief* (`since=true`), *Names a CVE*
    (`cve=any`), *KEV* (`cve=kev`) and *We run it* (`named=true`), the source under *+ Filter* (`source=`, a chip
    while chosen), the *Newest* / *Likely used* order, and the count. *Names a CVE* and *KEV* are one filter, so they
-   take turns.
+   take turns. Over it, the person's own **saved views** (`SavedViewPills`, `SavedViewPage.Triage`), as on Actions:
+   *Save view* keeps the tab and filters (`tab`, `source`, `q`, `since`, `cve`, `named`, `older`), never the item
+   selected (`at=`, `row=`), the page or a promote form, and each view's pill opens it in place (`Triage.OpenView`:
+   the page writes its own address as it goes, so a plain link to the address the router last saw would change
+   nothing). Up to 12 a person; anyone who can triage may keep them.
 3. The selected item: its source with its Admiralty grade, its TLP and its excerpt.
 4. CVE chips: the CVSS score, the EPSS percentage and, where it applies, KEV.
 5. The item's decisions: *Promote* (P) or, on a covered report, *Attach to “…”*, *Shortlist* (S), *Dismiss* (X) with a

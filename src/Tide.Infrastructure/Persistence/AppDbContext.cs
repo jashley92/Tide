@@ -113,13 +113,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Value).HasMaxLength(200);
         });
 
-        // Names are unique per person ignoring case (the service checks; the index holds the exact name against a race).
+        // Names are unique per person and page ignoring case (the service checks; the index holds the exact name against
+        // a race). Rows kept from before the other pages had views are the Actions page's.
         b.Entity<SavedActionView>(e =>
         {
             e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.Page).HasMaxLength(SavedActionView.MaxPage).HasDefaultValue(SavedActionView.ActionsPage);
             e.Property(x => x.Name).HasMaxLength(SavedActionView.MaxName);
             e.Property(x => x.Query).HasMaxLength(SavedActionView.MaxQuery);
-            e.HasIndex(x => new { x.UserId, x.Name }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.Page, x.Name }).IsUnique();
         });
 
         b.Entity<AdGroupRoleMapping>(e =>

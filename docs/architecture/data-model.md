@@ -544,6 +544,7 @@ erDiagram
     SavedActionViews {
         uuid Id PK
         string UserId UK
+        string Page UK
         string Name UK
         string Query
         int SortOrder
@@ -1407,20 +1408,22 @@ Written by `UserPreferenceService`.
 
 ### `SavedActionViews` (not audited)
 
-A person's own named view of the Actions page: the tab, layout and filters to open it with. Its own table rather than
-`UserPreferences` rows, because a person keeps several, each with a name and a place in their order, where a
-preference is one fixed value per name.
+A person's own named view of a list page (Actions, Triage, Articles or Search): the tab, layout and filters to open it
+with. Its own table rather than `UserPreferences` rows, because a person keeps several, each with a name and a place
+in their order, where a preference is one fixed value per name. The table keeps the name it had when only Actions had
+views: renaming it wasn't worth a migration.
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | `Id` | uniqueidentifier | no | |
 | `UserId` | nvarchar(256) | no | Whose it is (`Users.Sid`). Every read and write is of the signed-in person's own. |
-| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Name)` is **unique**; the service also refuses the same name in another case. |
-| `Query` | nvarchar(2000) | no | What follows `actions?`, as `SavedViewService.Normalize` writes it: only the page's own parameters, each within its length, in a fixed order, never `page`. |
-| `SortOrder` | int | no | Its place among the person's views, from 0. |
+| `Page` | nvarchar(20) | no | Which page it's a view of: `actions` (the default, and every view kept before the others had views), `triage`, `articles` or `search` (`SavedViewPage.Key`). |
+| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Page, Name)` is **unique**; the service also refuses the same name in another case. |
+| `Query` | nvarchar(2000) | no | What follows the page's address and `?`, as `SavedViewService.Normalize` writes it: only that page's own parameters (`SavedViewPage.Parameters`), each within its length, in a fixed order, never the list's page or (Triage) the row selected. |
+| `SortOrder` | int | no | Its place among the person's views of the page, from 0. |
 | `CreatedAtUtc` | datetimeoffset | no | |
 
-At most 12 per person (`SavedViewService.MaxViews`). Written by `SavedViewService`.
+At most 12 per person and page (`SavedViewService.MaxViews`). Written by `SavedViewService`.
 
 ### `RoleMappings` (A)
 
@@ -1619,7 +1622,7 @@ log masks again when it shows a row.
 | `AuditLogEntry` | `AuditLog` | The log itself. |
 | `AppUser` | `Users` | The sign-in mirror changes on every sign-in. |
 | `UserPreference` | `UserPreferences` | A person's own view choices change nothing anyone else sees. |
-| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of the Actions page. |
+| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of Actions, Triage, Articles and Search. |
 | `NotificationMark` | `NotificationMarks` | Machine bookkeeping for reminders. |
 | `FeedItem` | `FeedItems` | Machine intake. Polls and prunes would flood the log. |
 | `CveRecord` | `CveRecords` | Refreshed from public sources. |
