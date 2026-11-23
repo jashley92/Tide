@@ -636,6 +636,9 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         new(this, User, Ai, Http, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Stack(), Scorecard(),
             new StaticOptionsMonitor<IntakeOptions>(new IntakeOptions()));
 
+    public Tide.Application.Assist.ProseAssistService ProseAssist(Tide.Application.Assist.AiOptions? options = null) =>
+        new(this, User, Ai, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Reports(), Settings());
+
     public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null, IOutboundHttp? http = null) =>
         new(this, User, http ?? Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),
             time ?? TimeProvider.System, polls: Polls);
