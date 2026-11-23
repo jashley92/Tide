@@ -36,6 +36,7 @@
 @inject ChangeOrigin Origin
 @inject PrerenderHandoff Handoff
 @inject TimeProvider Time
+@inject PaletteCommands PaletteVerbs
 @implements IDisposable
 
 <PageTitle>@(_form?.Title ?? "Article") · TIDE</PageTitle>
@@ -768,6 +769,22 @@ else
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
         _autosavePause = new((int)AutosavePause.TotalMilliseconds, Time);
         if (StartPane == PreviewPane) _pane = PreviewPane;
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
+    }
+
+    // Ctrl+K's verbs on an article: the sticky bar's Add to today's brief and Save and mark ready, while the bar offers
+    // them, running what its buttons run. Save and mark ready only while its button is enabled: a draft nothing blocks.
+    private IDisposable? _verbs;
+
+    internal IEnumerable<PaletteCommand> Verbs()
+    {
+        if (!_canWrite || _busy || _article is null || _form is null) yield break;
+        if (!OnTodaysBrief)
+            yield return new("Add this article to today's brief", "brief running order", Permission.WriteArticles, "This article",
+                AddToTodaysBrief, "bi-journal-plus");
+        if (_article.Status == ArticleStatus.Draft && ArticleChecks.NotReady(Checks().Checks) is null)
+            yield return new("Save and mark ready", "article ready status", Permission.WriteArticles, "This article",
+                MarkReady, "bi-check2");
     }
 
     private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
@@ -795,6 +812,7 @@ else
     public void Dispose()
     {
         _live?.Dispose();
+        _verbs?.Dispose();
         _autosavePause?.Now();   // a pause still running saves nothing once the editor has gone
         _disposed = true;
         if (_keys is null) return;

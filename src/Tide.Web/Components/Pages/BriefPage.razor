@@ -19,6 +19,7 @@
 @inject ChangeOrigin Origin
 @inject LiveMeetings Meetings
 @inject PrerenderHandoff Handoff
+@inject PaletteCommands PaletteVerbs
 @using Tide.Web.Components.Today
 @implements IDisposable
 
@@ -502,6 +503,17 @@ else
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
+    }
+
+    // Ctrl+K's verb on Today: Mark ready, while it's the brief's next step, through its own confirmation (AskReady).
+    private IDisposable? _verbs;
+
+    internal IEnumerable<PaletteCommand> Verbs()
+    {
+        if (!AsToday || !_canWrite || _busy || _brief is null) yield break;
+        if (BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null) == BriefNext.MarkReady)
+            yield return new("Mark the brief ready", "today meeting ready", Permission.WriteArticles, "Today", AskReady, "bi-check2-square");
     }
 
     // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes
@@ -695,6 +707,7 @@ else
         _around?.Dispose();
         _meetingLive?.Dispose();
         Meetings.Changed -= MeetingStartedOrEnded;
+        _verbs?.Dispose();
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>

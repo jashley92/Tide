@@ -93,13 +93,22 @@ Three layouts, in `src/Tide.Web/Components/Layout`:
 |---|---|---|
 | `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`, in a `<nav>`); then a column (`.tide-main`) of the top bar (a `<header>`) with the team name, `TopSearch` (team edition only), `CommandPalette`, the brief chip (`BriefChip`, for those who make the brief), `ShortcutsOverlay` and `ProfileMenu`; the content (`<main id="main-content">`: the live meeting banner (`LiveMeetingJoin`) and the page inside `PageBoundary`); the page's context rail after `</main>`, and its Context button, when it has one; `ToastHost` (a region named Notifications); Blazor's `#blazor-error-ui` (`role="alert"`). Each is a landmark of its own, none nested in another ([Accessibility](#accessibility)). |
 | `AdminLayout` | Every page under `/admin` (`@layout AdminLayout`) | Nested in `MainLayout`. An "Administration" title (drawn as large as an `h1` but not a heading, so the page's own title is the `h1`), the groups as page-level tabs, a group's pages as sub-tabs (`TabBar`), then the page. "new" shows beside Updates when the update check found a release. |
-| `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons. |
+| `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons (and the palette with no commands, `Verbs="false"`). |
 
 **The sidebar.** `NavMenu` draws `NavPages.GroupsFor(user)`: every page the person may open, under small group labels
 (Daily, Intelligence, Insight, Team, Company-wide, Administration), the daily ones first. `NavPages.All()` is the single list
 of sidebar pages, with each page's icon, address, group, the permissions it needs (all of them) and extra keywords;
 the command palette reads the same list, so the two never disagree. A group with no page for the person isn't drawn.
 The sidebar's visibility rule is only a hint: each page's own `[Authorize]` policy decides.
+
+**The palette's commands.** A page offers verbs to `Ctrl+K` through the scoped `PaletteCommands` service: it registers a
+function returning `PaletteCommand(Label, Keywords, Permission, Scope, Run)` lines, with its `StateHasChanged`, in
+`OnInitialized` and disposes the registration in `Dispose`, so a verb is only listed on its page. The function is read
+each time the palette draws, so it follows the page's state (a draft, the selected Triage row, what an action page
+offers). `Run` is the page's own button method, and the page is redrawn after it (the palette's event doesn't), so
+its confirmation and the service's permission check still apply. The palette hides a verb whose `Permission` the
+person lacks, runs it once it has closed and given focus back, and lists only verbs after `>`
+(`PaletteEntries.Filter`). Registered today by `ArticleEditorPanel`, `BriefPage` (Today), `Triage` and `ActionPage`.
 
 - **Counts.** Triage shows the number of new items (`IntakeService.NewCountAsync`, for `WriteArticles`) and Actions the
   person's overdue actions (`ActionService.MyOverdueCountAsync`, for `WorkActions`, in red). They're read when the
@@ -836,7 +845,7 @@ that the letter-shortcut switch turns off.
 | Where | Keys |
 |---|---|
 | Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `]` (letter): show or hide the context rail (listed only on a page that has one). `Ctrl Enter` or `⌘ Enter`: post or save the text box you're in (where its form or dialog has one main action). `Esc`: close a dialog or menu. `Alt Z` or `⌥ Z`: undo, while a toast offers Undo (the newest). |
-| The Go to box | `↓` `↑`: next and previous result. `Enter`: open it. `Esc`: close, back where you were. |
+| The Go to box | `↓` `↑`: next and previous result. `Enter`: open it, or run the command. `>` typed first: only the commands. `Esc`: close, back where you were. |
 | Triage | `↓` `↑`, or `J` `K`: next and previous item; `J` on a page's last row goes on to the next page, and `K` on its first back to the previous page's last row. `S` shortlist, `X` dismiss, `D` mark a duplicate of the similar article, `P` promote, `O` open the source in a new tab, `V` read it here, `R` put back in New (all letters). In the promote form, `Enter` promotes and writes, `Shift Enter` promotes and keeps triaging. `Esc`: close the promote form or reading pane. On a group, `Enter` or `→` opens it and `←` closes it. |
 | Library | `↓` `↑`, or `J` `K` (letters): the next and previous entry; `J` at the end of a page goes on to the next, `K` at the start back. `Enter`: go into the selected entry. |
 | Actions list | `↓` `↑`, or `J` `K` (letters): next and previous action, across pages. `T` (letter): take the selected action, when it's yours to take. `Enter`: open it. `Tab` to a row's status, `Enter` to open the statuses it can move to. |

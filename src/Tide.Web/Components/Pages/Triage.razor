@@ -16,6 +16,7 @@
 @inject Tide.Application.Stack.StackService Stack
 @inject ReadingService Reading
 @inject PrerenderHandoff Handoff
+@inject PaletteCommands PaletteVerbs
 @inject UserPreferenceService Prefs
 @using Tide.Application.Preferences
 @using Tide.Web.Components.TriageRail
@@ -1307,6 +1308,7 @@ else
         // First, so a page closed during the loads below has already stopped listening.
         _live = new LiveChanges(Changes, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, Heard);
         Polls.Changed += PollsChanged;
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
         _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
@@ -1753,6 +1755,18 @@ else
         StateHasChanged();
     }
 
+    // Ctrl+K's verb in Triage: P's, opening the selected row's promote form (or a group's Promote as one); nothing is
+    // promoted until the form is sent.
+    private IDisposable? _verbs;
+
+    internal IEnumerable<PaletteCommand> Verbs()
+    {
+        if (_sourcesTab || _busy || _promoting is not null || Current is not { } line) yield break;
+        if (line.Row is { } row ? Promotable(row.Item.Status) : line.Group is not null && Promotable(_status))
+            yield return new("Promote the selected item", "article write triage", Permission.WriteArticles, "Triage",
+                () => Act(TriageStep.Promote), "bi-file-earmark-plus");
+    }
+
     private async Task Act(TriageStep what)
     {
         if (Current is not { } line || _busy) return;
@@ -2097,6 +2111,7 @@ else
         _marks?.Dispose();
         _tabMarks?.Dispose();
         if (_ticking is not null) await _ticking.DisposeAsync();
+        _verbs?.Dispose();
         await JS.StopAsync("tideTriage.stop");
         _ref?.Dispose();
     }
