@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Tide.Domain.Common;
 using Tide.Domain.Enums;
+using Tide.Domain.Observables;
 
 namespace Tide.Domain.Entities;
 
@@ -263,12 +264,37 @@ public class ArticleTechnique
 }
 
 /// <summary>An indicator on an article, stored live (refanged, canonical) and shown defanged.</summary>
-public class ArticleIndicator : Entity
+public class ArticleIndicator : Entity, IKeyedIndicator
 {
+    private IndicatorType _type;
+    private string _value = string.Empty;
+
     public Guid ArticleId { get; set; }
-    public IndicatorType Type { get; set; }
-    public string Value { get; set; } = string.Empty;
+
+    public IndicatorType Type
+    {
+        get => _type;
+        set { _type = value; HostRev = IndicatorKey.HostRevOf(value, _value); }
+    }
+
+    public string Value
+    {
+        get => _value;
+        set { _value = value; ValueKey = IndicatorKey.ValueOf(value); HostRev = IndicatorKey.HostRevOf(_type, value); }
+    }
+
     public string? Note { get; set; }
+
+    /// <summary>
+    /// <see cref="IndicatorKey.ValueOf"/> of <see cref="Value"/>: stored and indexed, so an exact lookup seeks. It follows
+    /// <see cref="Value"/> whenever that's set; null only on a row saved before it was kept, until the background fill
+    /// (<c>IndicatorKeyFill</c>) reaches it.
+    /// </summary>
+    public string? ValueKey { get; private set; }
+
+    /// <summary>The host it names, reversed by label (<see cref="IndicatorKey.HostRevOf(IndicatorType, string)"/>): stored and
+    /// indexed, so "the same host or under it" is a range. Null when it names none.</summary>
+    public string? HostRev { get; private set; }
 }
 
 /// <summary>

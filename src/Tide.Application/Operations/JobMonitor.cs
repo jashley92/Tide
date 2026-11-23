@@ -67,7 +67,10 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
     public static readonly JobDefinition FileSweep = new("file-sweep", "Checking stored files", "weekly: reports files missing, without a row, or changed; deletes nothing",
         TimeSpan.FromDays(7), TimeSpan.FromHours(2), 7112);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, FileSweep];
+    
+    public static readonly JobDefinition IndicatorKeys = new("indicator-keys", "Keying stored indicators", "once after an upgrade, until every older indicator has its lookup keys",
+        TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7109);
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, FileSweep, IndicatorKeys];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));
