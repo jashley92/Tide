@@ -40,22 +40,24 @@ public static class FileSweep
 
     public static async Task<SweepResult> RunAsync(IAppDbContext db, IFileStore store, DateTimeOffset now, Random? random = null, CancellationToken ct = default)
     {
-        var rows = await db.Files.AsNoTracking().IgnoreQueryFilters().Select(f => new { f.Id, f.Sha256 }).ToDictionaryAsync(f => f.Id, f => f.Sha256, ct);
+        var rows = (await db.Files.AsNoTracking().IgnoreQueryFilters().Select(f => f.Id).ToListAsync(ct)).ToHashSet();
         var disk = store.List().ToDictionary(f => f.Id, f => f.WrittenAtUtc);
-        var orphans = disk.Where(f => !rows.ContainsKey(f.Key) && now - f.Value > Settle).Select(f => f.Key).ToList();
-        var missing = rows.Keys.Where(id => !disk.ContainsKey(id)).ToList();
+        var orphans = disk.Where(f => !rows.Contains(f.Key) && now - f.Value > Settle).Select(f => f.Key).ToList();
+        var missing = rows.Where(id => !disk.ContainsKey(id)).ToList();
 
         // A different sample each week, each file at most once.
-        var present = rows.Keys.Where(disk.ContainsKey).ToArray();
+        var present = rows.Where(disk.ContainsKey).ToArray();
         (random ?? Random.Shared).Shuffle(present);
         var sample = present.Take(Sample).ToList();
+        var hashes = await db.Files.AsNoTracking().IgnoreQueryFilters().Where(f => sample.Contains(f.Id)).ToDictionaryAsync(f => f.Id, f => f.Sha256, ct);
         var mismatched = new List<Guid>();
         foreach (var id in sample)
         {
             await using var bytes = store.OpenRead(id);
             if (bytes is null) continue;   // removed since it was listed
             var hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(bytes, ct));
-            if (!string.Equals(hash, rows[id], StringComparison.OrdinalIgnoreCase)) mismatched.Add(id);
+            // Uploads store lower case; a row written by hand or by an older tool might not.
+            if (!string.Equals(hash, hashes[id], StringComparison.OrdinalIgnoreCase)) mismatched.Add(id);
         }
 
         var examples = missing.Take(MaxExamples).Select(id => $"missing {id}")

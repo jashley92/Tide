@@ -54,9 +54,10 @@ public sealed class DiskFileStore : IFileStore
         foreach (var dir in Directory.EnumerateDirectories(_root))
         {
             if (Path.GetFileName(dir).Length != 2) continue;
-            foreach (var file in Directory.EnumerateFiles(dir, "*.bin"))
-                if (Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out var id))
-                    yield return (id, new DateTimeOffset(File.GetLastWriteTimeUtc(file), TimeSpan.Zero));
+            // FileInfo carries its time from the enumeration itself: no extra call per file.
+            foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*.bin"))
+                if (Guid.TryParseExact(Path.GetFileNameWithoutExtension(file.Name), "N", out var id))
+                    yield return (id, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero));
         }
     }
 
