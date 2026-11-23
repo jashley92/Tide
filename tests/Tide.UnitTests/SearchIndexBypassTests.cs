@@ -22,6 +22,7 @@ public partial class SearchIndexBypassTests
     private static readonly Dictionary<(string File, string Table), string> Allowed = new()
     {
         [("Tide.Application/Files/ScreenshotService.cs", "Articles")] = "sets ScreenshotsChangedAtUtc, a time no search reads",
+        [("Tide.Application/Articles/ArticleHandoffService.cs", "Articles")] = "claims the writer (WriterId, WriterName, WriterSinceUtc, HandoffNote), which no search reads",
     };
 
     [Fact]

@@ -12,7 +12,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261122040454_ArticleSearch")]
+    [Migration("20261123055106_ArticleSearch")]
     partial class ArticleSearch
     {
         /// <inheritdoc />
@@ -903,6 +903,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("HandoffNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -975,6 +979,17 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("int");
+
+                    b.Property<string>("WriterId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WriterName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("WriterSinceUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
@@ -2215,6 +2230,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2234,6 +2252,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("DoneAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("EditedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2243,6 +2264,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
 
                     b.HasIndex("BriefId", "AtUtc");
 
@@ -2761,6 +2784,54 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasKey("Dialect", "Kind");
 
                     b.ToTable("QueryTemplates");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ReportAssessment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PeriodKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Section")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("Tlp")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PeriodKey", "Section")
+                        .IsUnique();
+
+                    b.ToTable("ReportAssessments");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ReviewComment", b =>
@@ -4111,6 +4182,11 @@ namespace Tide.Migrations.SqlServer.Migrations
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingNote", b =>
                 {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Tide.Domain.Entities.Brief", null)
                         .WithMany()
                         .HasForeignKey("BriefId")

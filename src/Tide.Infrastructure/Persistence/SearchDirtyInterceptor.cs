@@ -27,18 +27,31 @@ public sealed class SearchDirtyInterceptor : SaveChangesInterceptor
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
-        if (eventData.Context is { } ctx) MarkAsync(ctx, sync: true, default).GetAwaiter().GetResult();
+        if (eventData.Context is { } ctx && Changed(ctx) is { } changed)
+        {
+            var found = new List<ArticleSearchRow>();
+            foreach (var chunk in Unread(ctx, changed.Existing).Chunk(Chunk))
+                found.AddRange(ctx.Set<ArticleSearchRow>().Where(r => chunk.Contains(r.ArticleId)).ToList());
+            Mark(ctx, changed, found);
+        }
         return result;
     }
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
         InterceptionResult<int> result, CancellationToken cancellationToken = default)
     {
-        if (eventData.Context is { } ctx) await MarkAsync(ctx, sync: false, cancellationToken);
+        if (eventData.Context is { } ctx && Changed(ctx) is { } changed)
+        {
+            var found = new List<ArticleSearchRow>();
+            foreach (var chunk in Unread(ctx, changed.Existing).Chunk(Chunk))
+                found.AddRange(await ctx.Set<ArticleSearchRow>().Where(r => chunk.Contains(r.ArticleId)).ToListAsync(cancellationToken));
+            Mark(ctx, changed, found);
+        }
         return result;
     }
 
-    private static async Task MarkAsync(DbContext ctx, bool sync, CancellationToken ct)
+    // The articles this save adds, and those it changes a searched part of; null for none.
+    private static (HashSet<Guid> Added, HashSet<Guid> Existing)? Changed(DbContext ctx)
     {
         ctx.ChangeTracker.DetectChanges();
         var (added, changed) = (new HashSet<Guid>(), new HashSet<Guid>());
@@ -59,25 +72,29 @@ public sealed class SearchDirtyInterceptor : SaveChangesInterceptor
         // An article removed takes its row with it (a cascade); one added has none yet.
         foreach (var e in ctx.ChangeTracker.Entries<Article>().Where(e => e.State == EntityState.Deleted)) changed.Remove(e.Entity.Id);
         changed.ExceptWith(added);
-        if (added.Count == 0 && changed.Count == 0) return;
+        return added.Count == 0 && changed.Count == 0 ? null : (added, changed);
+    }
 
-        var rows = ctx.Set<ArticleSearchRow>();
-        var have = new Dictionary<Guid, ArticleSearchRow>();
-        foreach (var row in ctx.ChangeTracker.Entries<ArticleSearchRow>().Select(e => e.Entity)) have[row.ArticleId] = row;
-        var unread = changed.Where(id => !have.ContainsKey(id)).ToList();
-        foreach (var chunk in unread.Chunk(Chunk))
-        {
-            var q = rows.Where(r => chunk.Contains(r.ArticleId));
-            foreach (var row in sync ? q.ToList() : await q.ToListAsync(ct)) have[row.ArticleId] = row;
-        }
-        foreach (var id in added.Concat(changed))
+    // The changed articles whose row this context isn't already tracking: those are read from the database.
+    private static List<Guid> Unread(DbContext ctx, HashSet<Guid> existing)
+    {
+        var tracked = ctx.ChangeTracker.Entries<ArticleSearchRow>().Select(e => e.Entity.ArticleId).ToHashSet();
+        return existing.Where(id => !tracked.Contains(id)).ToList();
+    }
+
+    // Marks each article's row (tracked, or read into the context), and adds a marked row for one with none.
+    private static void Mark(DbContext ctx, (HashSet<Guid> Added, HashSet<Guid> Existing) changed, List<ArticleSearchRow> read)
+    {
+        var have = ctx.ChangeTracker.Entries<ArticleSearchRow>().Select(e => e.Entity).Concat(read)
+            .GroupBy(r => r.ArticleId).ToDictionary(g => g.Key, g => g.First());
+        foreach (var id in changed.Added.Concat(changed.Existing))
         {
             if (have.TryGetValue(id, out var row))
             {
                 row.Dirty = true;
                 row.Stamp = Guid.NewGuid();
             }
-            else rows.Add(new ArticleSearchRow { ArticleId = id, Dirty = true, Stamp = Guid.NewGuid() });
+            else ctx.Set<ArticleSearchRow>().Add(new ArticleSearchRow { ArticleId = id, Dirty = true, Stamp = Guid.NewGuid() });
         }
     }
 
