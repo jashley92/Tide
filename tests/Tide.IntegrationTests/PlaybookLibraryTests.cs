@@ -383,7 +383,7 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
 
         (await app.CreateClient().GetStringAsync("/library/board-rules")).Should().Contain("href=\"admin/card-rules\"",
             "editing them stays in Administration, linked from the page's header");
-        (await app.CreateClient().GetStringAsync("/actions")).Should().Contain("href=\"library/board-rules\"", "the Actions page links to them");
+        (await app.CreateClient().GetStringAsync("/actions?layout=list")).Should().Contain("href=\"library/board-rules\"", "the Actions list links to them");
     }
 
     [Fact]
