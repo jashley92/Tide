@@ -232,7 +232,26 @@ Reports (`/reports`, `ReportService.BuildAsync`) is the report a team lead owes 
 assembled from what TIDE already counts: headline numbers against the period before, the outcomes, each opening
 metric over the period (last value, average, lowest, highest, days with no value, days past a threshold), the topics
 and techniques briefed most, and the actions raised by team. Every number comes from `TrendsService` or `MetricsService`,
-so it can't disagree with Trends or Metrics. `GET /reports/export.csv?p=` downloads it as one CSV, a row per number.
+so it can't disagree with Trends or Metrics.
+
+Each section has the team's **assessment**: what the numbers mean, in words. It's saved with its period and section
+(`ReportService.SaveAssessmentAsync`, the `ReportAssessments` table), so next quarter's report can look back at this
+one's, with a TLP of its own (a judgement may name the team's own gaps; AMBER unless changed) and an "Edited by Pat,
+Nov 3" line under it. Opening a period loads its assessments; each is saved with its own **Save assessment** button, as
+the brief's opening note is, and clearing the text and saving removes it. Leaving with an unsaved assessment asks first.
+
+- **Stale edits.** A save is checked against the assessment the box was filled from (`EditVersion`): if a colleague
+  saved or cleared it meanwhile, theirs stands, the save is refused, and the page keeps what was typed and says who
+  saved (`ChangedElsewhere`).
+- **Live.** Every save is published on the period's topic (`ChangeFeed.Report`, `report:2026-10`), so an open Reports
+  page shows a colleague's assessment without a reload; a box with unsaved changes keeps them.
+- **Marking.** The report's title shows the highest marking it holds: AMBER for the numbers, raised by any assessment
+  marked above that (`ReportService.Marking`).
+
+`GET /reports/export.csv?p=` downloads it as one CSV: a row per number, and after each section's numbers its assessment
+(the text in `text`, who edited it last in `name`). Every row has a `tlp` column, and the file's name carries the highest
+marking it holds ([ADR 0012](../decisions/0012-exports-carry-tlp-and-stable-ids.md)): `tide-report-2026-10-amber.csv`,
+or `-red.csv` once a TLP:RED assessment is in it.
 
 ### Team commitments
 
@@ -289,6 +308,7 @@ before this was kept start from the date they had at the upgrade, with no moves.
 |---|---|
 | Enter or clear the day's numbers | `EnterMetrics` (Analyst, Admin); on a sent day, `Administer` |
 | See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics only for those who write articles, and Reports for them and for managers; the pages stay open) |
+| Write the report's assessments | `EnterMetrics` or `WriteArticles` (Analyst, Admin; `ReportService.CanAssess`). A manager reads them |
 | Team commitments and its CSV | `ReadActions` (a tab of Reports, and linked from Workload) |
 | A team's commitments by person | `ReadActions` for one's own line; `ManagePeople` (Manager, Admin) for everyone's (`TeamScorecardService.PeopleAsync`) |
 | Brief timeliness and its CSV | `PresentBriefs` for one's own days, `ManagePeople` (Manager, Admin) for everyone's (`Policies.BriefTimeliness`, then `BriefTimelinessService`) |

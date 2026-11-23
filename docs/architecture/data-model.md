@@ -466,6 +466,12 @@ erDiagram
         int Applied
         bool Rejected
     }
+    ReportAssessments {
+        uuid Id PK
+        string PeriodKey "UK with Section"
+        string Section
+        int Tlp
+    }
 ```
 
 ### Rotation
@@ -1279,6 +1285,23 @@ from an administrator's upload or from the drop folder (`MetricDropFolder`).
 | `Rejected` | bit | no | The whole file was refused and nothing was applied. |
 | `Problems` | nvarchar(4000) | yes | Why rows were skipped, one per line, up to the first 50. |
 | stamps | | | **S** columns. |
+
+### `ReportAssessments` (A, V)
+
+The team's assessment of one section of a period's report (**Reports**), kept so a later report can look back at it.
+One per section per period. Written by `ReportService.SaveAssessmentAsync`; clearing the text deletes the row (the
+audit trail keeps every version). Saves are published on the period's change-feed topic (`report:{PeriodKey}`).
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `PeriodKey` | nvarchar(16) | no | The period's key: `2026-10` (month), `2026-Q4` (quarter), `2026-W44` (ISO week). Unique with `Section`. |
+| `Section` | nvarchar(32) | no | `headlines`, `outcomes`, `metrics`, `topics` or `teams` (`ReportService.Sections`). |
+| `Text` | nvarchar(4000) | no | The assessment as written. |
+| `Tlp` | int | no | `TlpLevel`: its own marking, since a judgement may name the team's own gaps. The report and its CSV are marked at the highest of AMBER (the numbers) and these. |
+| `UpdatedById`, `UpdatedByName` | nvarchar(256) | no | Who saved it last: the "Edited by" line under it. |
+| `UpdatedAtUtc` | datetimeoffset | no | When. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token: a save from a page that read an older assessment is refused. |
 
 ## Rotation and the calendar
 

@@ -87,6 +87,8 @@ public class CapabilitiesTests : IDisposable
         ["Read Our stack and adversaries"] = (db, _) => db.Stack().ListAsync(),
         ["Edit Our stack and adversaries"] = (db, _) => db.Stack().SaveAsync(new StackForm { Name = "Contoso " + Guid.NewGuid().ToString("N")[..6] }),
         ["Reports, trends and exports"] = (db, _) => db.Trends().ArticlesAsync([], new Dictionary<Guid, DateOnly>()),
+        ["Write the report's assessments"] = (db, _) => db.Reports().SaveAssessmentAsync(new Tide.Application.Trends.Period(Tide.Application.Trends.PeriodKind.Month, 2026, 8),
+            "headlines", "Probe " + Guid.NewGuid().ToString("N")[..6], TlpLevel.Amber, null),
         ["Team commitments scorecard and its CSV"] = (db, _) => db.TeamScorecard().BuildAsync(),
         ["Team commitments by person (who held each action on its due date)"] = (db, s) => db.TeamScorecard().PeopleAsync(s.Team),
         ["Brief timeliness: every analyst's days and the team summary, and the CSV"] = (db, _) => db.Timeliness().BuildAsync(),
