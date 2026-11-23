@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
+using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Observables;
 
@@ -44,23 +45,25 @@ public static class IndicatorKeyFill
     /// </summary>
     public static async Task<(int Filled, bool Done)> FillAsync(IAppDbContext db, int batches, int batch = Batch, CancellationToken ct = default)
     {
-        var filled = 0;
+        var (filled, articlesDone) = (0, false);
         for (var n = 0; n < batches; n++)
         {
-            var articles = await Articles(db).AsNoTracking().OrderBy(i => i.Id).Take(batch).Select(i => new { i.Id, i.Type, i.Value }).ToListAsync(ct);
-            if (articles.Count > 0)
-            {
-                await CaseUpdate.RunAsync(Articles(db), ArticleColumns,
-                    articles.Select(i => (i.Id, new string?[] { IndicatorKey.ValueOf(i.Value), IndicatorKey.HostRevOf(i.Type, i.Value) })).ToList(), ct);
-                filled += articles.Count;
-                continue;
-            }
-            var actions = await Actions(db).AsNoTracking().OrderBy(i => i.Id).Take(batch).Select(i => new { i.Id, i.Value }).ToListAsync(ct);
-            if (actions.Count == 0) return (filled, true);
-            await CaseUpdate.RunAsync(Actions(db), ActionColumns, actions.Select(i => (i.Id, new string?[] { IndicatorKey.ValueOf(i.Value) })).ToList(), ct);
-            filled += actions.Count;
+            var keyed = articlesDone ? 0 : await StepAsync(Articles(db), ArticleColumns, i => [IndicatorKey.ValueOf(i.Value), IndicatorKey.HostRevOf(i.Type, i.Value)], batch, ct);
+            articlesDone = keyed == 0;
+            if (articlesDone) keyed = await StepAsync(Actions(db), ActionColumns, i => [IndicatorKey.ValueOf(i.Value)], batch, ct);
+            if (keyed == 0) return (filled, true);
+            filled += keyed;
         }
         return (filled, false);
+    }
+
+    // Keys the first batch of rows left in one table: reads them, then writes their keys in one UPDATE. How many it keyed.
+    private static async Task<int> StepAsync<T>(IQueryable<T> left, IReadOnlyList<Expression<Func<T, string?>>> columns, Func<T, string?[]> keys,
+        int batch, CancellationToken ct) where T : Entity
+    {
+        var rows = await left.AsNoTracking().OrderBy(i => i.Id).Take(batch).ToListAsync(ct);
+        if (rows.Count > 0) await CaseUpdate.RunAsync(left, columns, rows.Select(i => (i.Id, keys(i))).ToList(), ct);
+        return rows.Count;
     }
 
     private static readonly IReadOnlyList<Expression<Func<ArticleIndicator, string?>>> ArticleColumns = [i => i.ValueKey, i => i.HostRev];

@@ -1,6 +1,5 @@
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
+using Tide.Domain.Common;
 using Tide.Domain.Enums;
 
 namespace Tide.Domain.Observables;
@@ -20,8 +19,7 @@ public static class IndicatorKey
     /// The key an exact lookup matches <paramref name="value"/> by: the SHA-256 (64 hex characters) of the value in lower
     /// case, as SQL Server's case-insensitive comparison and the old exact LIKE matched it.
     /// </summary>
-    public static string ValueOf(string value) =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value.ToLowerInvariant())));
+    public static string ValueOf(string value) => UrlCanonicalizer.Hash(value.ToLowerInvariant());
 
     /// <summary>
     /// The host an indicator of <paramref name="type"/> names, in lower case without a trailing dot: a domain or address
@@ -52,4 +50,14 @@ public static class IndicatorKey
 
     /// <summary>The <see cref="HostRevOf"/> of the host an indicator of <paramref name="type"/> names.</summary>
     public static string? HostRevOf(IndicatorType type, string value) => HostRevOf(HostOf(type, value));
+}
+
+/// <summary>An indicator row an exact lookup finds by its <see cref="ValueKey"/>: an article's or an action's.</summary>
+public interface IKeyedIndicator
+{
+    IndicatorType Type { get; }
+    string Value { get; }
+
+    /// <summary><see cref="IndicatorKey.ValueOf"/> of <see cref="Value"/>; null on a row not yet keyed.</summary>
+    string? ValueKey { get; }
 }

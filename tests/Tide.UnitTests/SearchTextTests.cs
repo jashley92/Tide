@@ -59,7 +59,7 @@ public class SearchTextTests
     [InlineData(IndicatorType.IpAddress, "203.0.113.45", "203.0.113.45")]
     [InlineData(IndicatorType.Url, "https://[2001:db8::1]/x", "2001:db8::1")]
     [InlineData(IndicatorType.FileHash, "d41d8cd98f00b204e9800998ecf8427e", null)]
-    public void HostOf_NamesTheHost(IndicatorType type, string value, string? host) => SearchText.HostOf(type, value).Should().Be(host);
+    public void HostOf_NamesTheHost(IndicatorType type, string value, string? host) => IndicatorKey.HostOf(type, value).Should().Be(host);
 
     [Theory]
     [InlineData(IndicatorType.Domain, "Mail.Bad.Example.net.", "net.example.bad.mail")]
