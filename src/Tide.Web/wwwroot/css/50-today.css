@@ -112,15 +112,12 @@
 .tide-pick-list .form-check-input { flex: none; margin-top: .2rem; }
 .tide-pick-list label, .tide-pick-list .tide-pick-text { min-width: 0; font-size: var(--tide-text-sm); }
 
-.tide-toast .tide-toast-undo { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto;
-    min-height: 24px; padding: 0 .25rem; }
-.tide-toast .tide-toast-undo + button { margin-left: var(--tide-space-2); }
-.tide-toast .tide-toast-undo:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
-/* A link on to what the toast's step made (Triage's "Write it"), worded and placed as Undo is, before it. */
-.tide-toast .tide-toast-link { color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto;
-    min-height: 24px; padding: 0 .25rem; white-space: nowrap; }
-.tide-toast .tide-toast-link + button { margin-left: var(--tide-space-2); }
-.tide-toast .tide-toast-link:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+/* Undo, and a link on to what the toast's step made (Triage's "Write it", before Undo), worded and placed alike. */
+.tide-toast .tide-toast-undo, .tide-toast .tide-toast-link { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold);
+    text-decoration: underline; margin-left: auto; min-height: 24px; padding: 0 .25rem; }
+.tide-toast .tide-toast-link { white-space: nowrap; }
+.tide-toast .tide-toast-undo + button, .tide-toast .tide-toast-link + button { margin-left: var(--tide-space-2); }
+.tide-toast .tide-toast-undo:focus-visible, .tide-toast .tide-toast-link:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 
 /* Triage's "Attach to…" (AttachPicker): a combobox in the row, over the recent drafts and ready articles. */
 .tide-attach { position: relative; display: inline-flex; }

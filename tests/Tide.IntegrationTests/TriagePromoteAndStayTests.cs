@@ -151,6 +151,28 @@ public class TriagePromoteAndStayTests(StayApp app) : IClassFixture<StayApp>
     }
 
     [Fact]
+    public async Task TheSidebarsTriageCount_FollowsAPromoteThatStays_AndItsUndo()
+    {
+        await Seed("count", 2);
+        await using var r = await RenderAsync<Triage>(app, "/triage?q=stay-count");
+        await r.HtmlOnce(TitleOf("count", 1));
+        await using var menu = await RenderBesideAsync<NavMenu, Triage>(r);
+        int before;
+        await using (var scope = SignedIn(app, SignIn.Analyst)) before = await scope.ServiceProvider.GetRequiredService<IntakeService>().NewCountAsync();
+        (await menu.Html()).Should().Contain(NavMenu.CountTitle("Triage", before, "new"));
+
+        await r.Click(t => t.OnTriageKey("promote"));
+        await Stay(r);
+        var promoted = NavMenu.CountTitle("Triage", before - 1, "new");
+        (await menu.HtmlOnce(promoted)).Should().Contain(promoted, "the sidebar counts the promoted item out, though the page stayed");
+
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<ToastService>();
+        await r.Click(_ => toasts.UndoAsync(LastToast(r).Id));
+        var undone = NavMenu.CountTitle("Triage", before, "new");
+        (await menu.HtmlOnce(undone)).Should().Contain(undone, "and back in once the promote is undone");
+    }
+
+    [Fact]
     public async Task PromoteAndWrite_StillOpensTheDraft()
     {
         var ids = await Seed("write", 1);

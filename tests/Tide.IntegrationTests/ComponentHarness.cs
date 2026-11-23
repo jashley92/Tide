@@ -50,6 +50,9 @@ public static class ComponentHarness
 
     public sealed record Rendered<T>(HtmlRenderer Renderer, HtmlRootComponent Root, T Component, AsyncServiceScope Scope, HttpContext Signedin) : IAsyncDisposable
     {
+        /// <summary>Whether disposing this ends the scope: not for a component rendered beside another (<see cref="RenderBesideAsync"/>).</summary>
+        public bool OwnsScope { get; init; } = true;
+
         public Task<string> Html() => Renderer.Dispatcher.InvokeAsync(Root.ToHtmlString);
 
         /// <summary>The markup once it shows <paramref name="text"/> (a dialog opened after the page read the database).</summary>
@@ -97,7 +100,7 @@ public static class ComponentHarness
         public async ValueTask DisposeAsync()
         {
             await Renderer.DisposeAsync();
-            await Scope.DisposeAsync();
+            if (OwnsScope) await Scope.DisposeAsync();
         }
     }
 
@@ -124,7 +127,21 @@ public static class ComponentHarness
         var sp = scope.ServiceProvider;
         var signedIn = sp.GetRequiredService<IHttpContextAccessor>().HttpContext!;
         if (sp.GetRequiredService<NavigationManager>() is IHostEnvironmentNavigationManager nav) nav.Initialize(baseUri, baseUri.TrimEnd('/') + path);
+        return await RenderInAsync<T>(scope, signedIn, values);
+    }
 
+    /// <summary>Renders <typeparamref name="TOther"/> in <paramref name="beside"/>'s services, as the same circuit draws a
+    /// second component (the sidebar beside the page): it hears the page's changes as its own circuit's. The page's scope
+    /// stays the page's.</summary>
+    public static async Task<Rendered<TOther>> RenderBesideAsync<TOther, T>(Rendered<T> beside) where TOther : IComponent =>
+        await RenderInAsync<TOther>(beside.Scope, beside.Signedin, null) with { OwnsScope = false };
+
+    private static async Task<Rendered<T>> RenderInAsync<T>(AsyncServiceScope scope, HttpContext signedIn, Dictionary<string, object?>? values)
+        where T : IComponent
+    {
+        var sp = scope.ServiceProvider;
+        // The sign-in flows into the render from here (it's held per async flow, so a second render sets it again).
+        sp.GetRequiredService<IHttpContextAccessor>().HttpContext = signedIn;
         var renderer = new HtmlRenderer(sp, sp.GetRequiredService<ILoggerFactory>());
         T? got = default;
         var root = await renderer.Dispatcher.InvokeAsync(async () =>

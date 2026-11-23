@@ -103,7 +103,8 @@ The sidebar's visibility rule is only a hint: each page's own `[Authorize]` poli
 
 - **Counts.** Triage shows the number of new items (`IntakeService.NewCountAsync`, for `WriteArticles`) and Actions the
   person's overdue actions (`ActionService.MyOverdueCountAsync`, for `WorkActions`, in red). They're read when the
-  menu starts and on each navigation, never on a re-render. A failed read keeps the last value and logs once per run
+  menu starts and on each navigation, never on a re-render. The Triage count is read again too after a poll or pull,
+  and after the person's own triage on the page beside it (a dismissal, a promote that stays on the inbox, an undo). A failed read keeps the last value and logs once per run
   of failures, because the menu sits outside the page's error boundary. The count is in each link's accessible name, which
   starts with the words on screen ("Triage 4 new"; "Triage 99+, 120 new" past 99).
 - **Collapse.** The button at the top collapses the sidebar to icons. `theme.js` (`tideNav.toggle`) sets

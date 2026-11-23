@@ -12,8 +12,9 @@ namespace Tide.Application.Intake;
 /// </summary>
 public sealed record TriagePromotion(PromoteOutcome Outcome, DateOnly? BriefDate = null, string? NotOnBrief = null)
 {
-    /// <summary>What the toast's Undo takes back, when there's something this promote made to take back.</summary>
-    public PromoteUndo? Undo { get; init; }
+    /// <summary>What the toast's Undo takes back, when there's something this promote made to take back: the promote's
+    /// own, unless the brief step adds to it.</summary>
+    public PromoteUndo? Undo { get; init; } = Outcome.Undo;
 }
 
 /// <summary>
@@ -42,7 +43,7 @@ public sealed class TriagePromoter(IntakeService intake, BriefService briefs, IC
         // The brief's own rule (BriefService: building a brief), asked first.
         if (form.AddToBrief && !user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only analysts can build briefs.");
         var outcome = await intake.PromoteOrJoinAsync(ids, form, ct);
-        if (!form.AddToBrief) return new(outcome) { Undo = outcome.Undo };
+        if (!form.AddToBrief) return new(outcome);
         if (!outcome.Made) return new(outcome, NotOnBrief: $"{outcome.By} made this article, so it wasn't added to the brief.");
         try
         {
@@ -57,12 +58,12 @@ public sealed class TriagePromoter(IntakeService intake, BriefService briefs, IC
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException)
         {
             // The brief was sent, or its day can't have one: the draft stays, and why it isn't on the brief is said.
-            return new(outcome, NotOnBrief: ex.Message) { Undo = outcome.Undo };
+            return new(outcome, NotOnBrief: ex.Message);
         }
         catch (DbUpdateException)
         {
             // A colleague changed the brief at the same moment: theirs stands, and this one can be added from Today.
-            return new(outcome, NotOnBrief: "The brief changed at the same moment, so the draft wasn't added. Add it from Today.") { Undo = outcome.Undo };
+            return new(outcome, NotOnBrief: "The brief changed at the same moment, so the draft wasn't added. Add it from Today.");
         }
     }
 
