@@ -16,6 +16,9 @@ public sealed class IndicatorKeyFillHostedService(IServiceScopeFactory scopes, J
 
     private int _filled;
 
+    // The rows left, counted once (a count reads every row still to key) and then less each run's.
+    private int? _left;
+
     protected override JobDefinition Job => JobMonitor.IndicatorKeys;
 
     protected override string Filled => "Every stored indicator has its lookup keys";
@@ -24,8 +27,10 @@ public sealed class IndicatorKeyFillHostedService(IServiceScopeFactory scopes, J
 
     protected override async Task<(bool Done, string Result)> FillAsync(IAppDbContext db, CancellationToken ct)
     {
+        _left ??= await IndicatorKeyFill.LeftAsync(db, ct);
         var (filled, done) = await IndicatorKeyFill.FillAsync(db, BatchesPerPass, ct: ct);
         _filled += filled;
-        return (done, done ? $"done: {_filled:N0} keyed" : $"{filled:N0} keyed, {await IndicatorKeyFill.LeftAsync(db, ct):N0} left");
+        _left = Math.Max(0, _left.Value - filled);
+        return (done, done ? $"done: {_filled:N0} keyed" : $"{filled:N0} keyed, about {_left:N0} left");
     }
 }

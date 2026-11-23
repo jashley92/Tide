@@ -134,9 +134,6 @@ public static partial class SearchText
     public static int? ActionNumber(string term) =>
         ActionNumberRx().Match(term.Trim()) is { Success: true } m && int.TryParse(m.Groups[1].Value, out var n) ? n : null;
 
-    /// <summary>The host an indicator names (a domain, the host of a URL or email address, an IP address), lower-cased; or null.</summary>
-    public static string? HostOf(IndicatorType type, string value) => IndicatorKey.HostOf(type, value);
-
     /// <summary>Whether <paramref name="host"/> is <paramref name="target"/> or, for a name, one of its subdomains.</summary>
     public static bool SameOrUnder(string host, string target) =>
         string.Equals(host, target, StringComparison.OrdinalIgnoreCase)

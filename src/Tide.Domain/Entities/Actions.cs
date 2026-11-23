@@ -566,7 +566,7 @@ public class HuntQuery : Entity
 /// An indicator added on an action that has no article (one raised from the board, say). An action raised from an article
 /// adds its indicators to the article instead, so the brief, exports and other actions see them too.
 /// </summary>
-public class ActionIndicator : Entity
+public class ActionIndicator : Entity, IKeyedIndicator
 {
     private string _value = string.Empty;
 

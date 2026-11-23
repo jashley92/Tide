@@ -316,7 +316,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var exactTotal = rows.Count > MaxSightings ? await matching.CountAsync(ct) : rows.Count;
 
         // The same host under another indicator: a subdomain, a URL or email address on the domain, the domain of a URL.
-        var host = SearchText.HostOf(type, value);
+        var host = IndicatorKey.HostOf(type, value);
         var related = new List<ArticleIndicator>();
         if (host is not null)
         {
@@ -324,7 +324,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             var seen = rows.Select(r => r.Id).ToHashSet();
             related = (await Lookups.OnHost(db, host, hostTypes)
                     .OrderBy(i => i.Id).Take(MaxSightings * 3).ToListAsync(ct))
-                .Where(i => !seen.Contains(i.Id) && SearchText.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
+                .Where(i => !seen.Contains(i.Id) && IndicatorKey.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
                 .ToList();
         }
 

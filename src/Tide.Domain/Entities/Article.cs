@@ -267,7 +267,7 @@ public class ArticleTechnique
 }
 
 /// <summary>An indicator on an article, stored live (refanged, canonical) and shown defanged.</summary>
-public class ArticleIndicator : Entity
+public class ArticleIndicator : Entity, IKeyedIndicator
 {
     private IndicatorType _type;
     private string _value = string.Empty;
