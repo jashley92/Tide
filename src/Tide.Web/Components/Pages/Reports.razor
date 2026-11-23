@@ -135,6 +135,9 @@ else
     private PeriodReport? _report;
     private bool _failed, _busy, _canAssess;
 
+    // Why no assessment can be drafted (the numbers are marked above the AI limit), said in place of the Draft buttons.
+    private string? _draftBlocked;
+
     // Each section's assessment: as saved (absent when none is), as typed, its TLP as chosen, and the edit version the
     // box was filled from, which its save is checked against (ReportService.SaveAssessmentAsync).
     private readonly Dictionary<string, ReportAssessment> _saved = new();
@@ -177,6 +180,7 @@ else
         {
             _report = await ReportSvc.BuildAsync(_period);
             Absorb(await ReportSvc.AssessmentsAsync(_period), who: null);
+            if (_canAssess) _draftBlocked = await Drafts.ReportBlockedAsync();
         }
         catch (Exception ex)
         {
@@ -409,7 +413,7 @@ else
                     }
                 </div>
                 <ProseDraftAssist Label="Draft an assessment" Id="@($"draft-{section}")" Placeholder='{ "assessment": "…" }'
-                                  HasText="@(!string.IsNullOrWhiteSpace(_notes.GetValueOrDefault(section)))"
+                                  HasText="@(!string.IsNullOrWhiteSpace(_notes.GetValueOrDefault(section)))" Blocked="@_draftBlocked"
                                   Prompt="() => Drafts.ReportPromptAsync(_period, section)" Draft="() => Drafts.DraftReportAsync(_period, section)"
                                   Pasted="a => Drafts.ReportFromPastedAsync(_period, section, a)" OnUse="d => UseDraft(section, d)" />
             }

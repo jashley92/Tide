@@ -26,8 +26,8 @@ public sealed record ProseDraft(Guid DraftId, string Text, IReadOnlyList<string>
 /// AI help with the two other pieces of prose written on a schedule (ADR 0004): a report section's assessment and a
 /// brief's title slide line. Each is drafted from what the person could already see, cut at the lower of
 /// <see cref="AiOptions.MaxTlp"/> and the team edition's ceiling, so nothing above either is read: a report's section
-/// numbers (counts) and the titles and bottom lines of the articles counted, or the brief's articles' titles and bottom
-/// lines. With a provider it's sent and answered; without one, "Copy a prompt" gives the same prompt to run in an approved
+/// numbers (only when their marking, AMBER, is within the cut) and the titles and bottom lines of the articles counted, or
+/// the brief's articles' titles and bottom lines. With a provider it's sent and answered; without one, "Copy a prompt" gives the same prompt to run in an approved
 /// tool and the answer is pasted back. Either way the answer goes through <see cref="ReportDraftChecks"/>, numbers
 /// included, and is stored as an <see cref="AiDraft"/>. Nothing is saved to the report or the brief here: the draft fills
 /// the box, and the person edits and saves it. Who may draft is who may write the text today: the report's assessors
@@ -95,13 +95,14 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
         Require(AiDraftKind.ReportAssessment);
         var name = ReportService.Sections.Where(s => s.Key == section).Select(s => s.Name).FirstOrDefault()
             ?? throw new ArgumentException("That isn't a section of the report.");
-        var report = await reports.BuildAsync(period, ct);
         var cut = await CutAsync(ct);
+        if (Above(cut) is { } why) throw new InvalidOperationException(why);
+        var report = await reports.BuildAsync(period, ct);
         var withArticles = WithArticles.Contains(section);
         var articles = withArticles ? await ArticlesAsync(report.Counted, cut, ct) : [];
         var numbers = Numbers(report, section);
         var heading = $"{ReportService.Name(period)}{(report.Partial ? " (to date)" : "")}, compared with {period.Previous.Label} · {name}";
-        var tlp = articles.Count == 0 ? TlpLevel.Clear : articles.Max(a => a.Tlp);
+        var tlp = articles.Select(a => a.Tlp).Append(SectionMarking).Max();
         var basedOn = $"the {name} numbers" + (withArticles ? $" · {Articles(articles.Count)} (at or under {Tlp.Label(cut)})" : "");
         return new(new ProseInput(AiDraftKind.ReportAssessment, heading, numbers, articles.Select(a => a.Article).ToList()), $"{period.Key}/{section}", tlp, basedOn);
     }
@@ -131,6 +132,33 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
         var max = options.CurrentValue.MaxTlp;
         var team = (await editions.ReadAsync(ct)).Team;
         return max < team ? max : team;
+    }
+
+    /// <summary>The marking a report section's numbers carry, as the page shows them (<see cref="ReportService.Marking"/>
+    /// with no assessment: the assessment itself is never sent).</summary>
+    private static TlpLevel SectionMarking => ReportService.Marking([]);
+
+    /// <summary>
+    /// Why no report section can be drafted, when its numbers are marked above what may be sent (the lower of the AI limit
+    /// and the team edition's ceiling): the Draft control says so in place of its buttons. Null when drafting is open. A
+    /// number the page marks AMBER doesn't leave under a GREEN limit, by the provider or a copied prompt.
+    /// </summary>
+    public async Task<string?> ReportBlockedAsync(CancellationToken ct = default)
+    {
+        Require(AiDraftKind.ReportAssessment);
+        // The AI limit alone usually decides, without reading the ceiling.
+        if (Above(options.CurrentValue.MaxTlp) is { } why) return why;
+        return Above(await CutAsync(ct));
+    }
+
+    private string? Above(TlpLevel cut)
+    {
+        if (SectionMarking <= cut) return null;
+        var max = options.CurrentValue.MaxTlp;
+        return max < SectionMarking
+            ? $"The report's numbers are marked {Tlp.Label(SectionMarking)}, above the AI limit ({Tlp.Label(max)}), so nothing from the report is sent. "
+                + "An administrator can raise the limit (Ai:MaxTlp)."
+            : $"The report's numbers are marked {Tlp.Label(SectionMarking)}, above the team edition's ceiling ({Tlp.Label(cut)}), so nothing from the report is sent.";
     }
 
     // The counted articles at or under the cut (an edition leaves out an article above its ceiling, BriefEditions.BuildArticle),

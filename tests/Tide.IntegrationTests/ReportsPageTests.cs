@@ -69,11 +69,13 @@ public class ReportsPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task EachAssessment_OffersADraft_AndAUsedDraftFillsTheBoxUnsaved()
+    public async Task TheDraftControl_SaysWhyWhenTheNumbersAreAboveTheLimit_AndAUsedDraftFillsTheBoxUnsaved()
     {
-        // No AI provider in the test app: copying a prompt is offered, and a used draft is an ordinary unsaved edit.
+        // The test app keeps the default AI limit (GREEN), below the numbers' AMBER: the control says why. A used draft is an
+        // ordinary unsaved edit.
         await using var r = await ComponentHarness.RenderAsync<Reports>(app, "/reports?p=2026-10");
-        System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("Draft an assessment: copy a prompt");
+        System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("Draft an assessment is unavailable. The report's numbers are marked TLP:AMBER, above the AI limit (TLP:GREEN)")
+            .And.NotContain("copy a prompt", "nothing marked above the limit can be copied out either");
 
         await r.Click(c =>
         {

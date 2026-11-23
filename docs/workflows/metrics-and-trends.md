@@ -273,7 +273,9 @@ the brief's opening note is, and clearing the text and saving removes it. Leavin
 - **Drafting one** ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)). *Draft an assessment* under each box
   (`ProseAssistService`) drafts it with the AI provider from the section's numbers as shown (with the period before
   and the change) and, for Headlines and Topics and techniques, the titles and bottom lines of the articles counted, cut
-  at the lower of `Ai:MaxTlp` and the team edition's ceiling. With no provider, *Copy a prompt* copies the instructions,
+  at the lower of `Ai:MaxTlp` and the team edition's ceiling. The numbers are AMBER on the page, so when that cut is
+  below AMBER (`Ai:MaxTlp` is GREEN by default) nothing is sent or copied, and the control says so in place of its
+  buttons (`ProseAssistService.ReportBlockedAsync`); an administrator can raise `Ai:MaxTlp`. With no provider, *Copy a prompt* copies the instructions,
   the answer's JSON schema and that material to run in an approved tool, and the JSON answer is pasted back. Either way
   every number the answer states is checked against the material (`ReportDraftChecks.Numbers`), and any it didn't give
   is named under the draft. *Use it* puts the draft in the box, unsaved, marked at least as high as the articles it read;

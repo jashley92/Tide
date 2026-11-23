@@ -113,10 +113,10 @@ public class ProseAssistTests : IDisposable
     {
         await Brief(new DateOnly(2026, 9, 8), BriefStatus.Sent,
             Article("Ivanti flaws chained", "Exploited at scale.", TlpLevel.Clear),
-            Article("Our VPN gap", "We still run the old build.", TlpLevel.Amber));
+            Article("Our VPN gap", "We still run the old build.", TlpLevel.Red));
         _db.Ai.Json = """{"assessment": "We briefed 2 articles, up 2 on August; 40% were threats."}""";
 
-        var draft = await _db.ProseAssist().DraftReportAsync(Sep, "headlines");
+        var draft = await _db.ProseAssist(AmberLimit).DraftReportAsync(Sep, "headlines");
 
         var sent = _db.Ai.Asked.Single();
         sent.SchemaName.Should().Be("tide_report_assessment");
@@ -124,24 +124,56 @@ public class ProseAssistTests : IDisposable
             .And.Contain("- Articles briefed: 2 (the period before: 0; change +2)")
             .And.Contain("Ivanti flaws chained").And.NotContain("Our VPN gap").And.NotContain("old build");
         draft.UnknownNumbers.Should().Equal("40");
-        draft.InputTlp.Should().Be(TlpLevel.Clear);
-        draft.BasedOn.Should().Be("the Headlines numbers · 1 article's title and bottom line (at or under TLP:GREEN)");
+        draft.InputTlp.Should().Be(TlpLevel.Amber, "the numbers are marked AMBER on the page");
+        draft.BasedOn.Should().Be("the Headlines numbers · 1 article's title and bottom line (at or under TLP:AMBER)");
 
         await using var ctx = _db.Context();
         var stored = await ctx.AiDrafts.SingleAsync();
         (stored.Kind, stored.Subject, stored.Offered).Should().Be((AiDraftKind.ReportAssessment, "2026-09/headlines", 1));
     }
 
+    // The report's numbers are AMBER on the page, so drafting from them needs a limit that allows AMBER.
+    private static readonly AiOptions AmberLimit = new() { MaxTlp = TlpLevel.Amber };
+
     [Fact]
     public async Task AReportSectionAboutActionsOrMetrics_IsDraftedFromItsNumbersAlone()
     {
         await Brief(new DateOnly(2026, 9, 8), BriefStatus.Sent, Article("Ivanti flaws chained", "Exploited at scale.", TlpLevel.Clear));
 
-        var prompt = await _db.ProseAssist().ReportPromptAsync(Sep, "outcomes");
+        var prompt = await _db.ProseAssist(AmberLimit).ReportPromptAsync(Sep, "outcomes");
 
         prompt.Should().Contain("Overdue at period end: 0").And.NotContain("ARTICLES:").And.NotContain("Ivanti");
-        var bad = () => _db.ProseAssist().ReportPromptAsync(Sep, "nonsense");
+        var bad = () => _db.ProseAssist(AmberLimit).ReportPromptAsync(Sep, "nonsense");
         await bad.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task ReportNumbersMarkedAboveTheLimit_AreNeverSent_ByTheProviderOrACopiedPrompt_AndTheControlSaysWhy()
+    {
+        await Brief(new DateOnly(2026, 9, 8), BriefStatus.Sent, Article("Ivanti flaws chained", "Exploited at scale.", TlpLevel.Clear));
+        var assist = _db.ProseAssist();   // the default limit, GREEN: below the numbers' AMBER
+
+        var why = await assist.ReportBlockedAsync();
+        why.Should().Be("The report's numbers are marked TLP:AMBER, above the AI limit (TLP:GREEN), so nothing from the report is sent. "
+            + "An administrator can raise the limit (Ai:MaxTlp).");
+        var draft = () => assist.DraftReportAsync(Sep, "headlines");
+        (await draft.Should().ThrowAsync<InvalidOperationException>()).WithMessage(why);
+        var copy = () => assist.ReportPromptAsync(Sep, "outcomes");
+        await copy.Should().ThrowAsync<InvalidOperationException>();
+        var pasted = () => assist.ReportFromPastedAsync(Sep, "headlines", """{"assessment": "Quiet."}""");
+        await pasted.Should().ThrowAsync<InvalidOperationException>();
+        _db.Ai.Asked.Should().BeEmpty();
+        await using (var ctx = _db.Context())
+            (await ctx.AiDrafts.CountAsync()).Should().Be(0);
+
+        // The team edition's ceiling below AMBER blocks it too, whatever the AI limit.
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Green);
+        (await _db.ProseAssist(AmberLimit).ReportBlockedAsync()).Should().Contain("above the team edition's ceiling (TLP:GREEN)");
+        (await _db.ProseAssist(new AiOptions { MaxTlp = TlpLevel.Red }).ReportBlockedAsync()).Should().NotBeNull();
+
+        await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Amber);
+        (await _db.ProseAssist(AmberLimit).ReportBlockedAsync()).Should().BeNull();
     }
 
     [Fact]

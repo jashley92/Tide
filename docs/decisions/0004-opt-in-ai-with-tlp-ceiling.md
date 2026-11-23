@@ -63,8 +63,10 @@ chooses to.
     bottom lines of the brief's articles. A used line takes the highest TLP among them.
 - **The cut.** The articles are read at the lower of `Ai:MaxTlp` and the team edition's ceiling, through the same cut
   the editions use (`BriefEditions`), so nothing above either is read. Only titles and bottom lines go, never bullets,
-  "why it matters" or our notes. The report's counts are the team's own aggregate numbers, not anyone's content, and go
-  without a TLP of their own; the draft's recorded `InputTlp` is the highest among the articles sent.
+  "why it matters" or our notes. The report's numbers go at the marking the page gives them (`ReportService.Marking`,
+  AMBER): when that's above the cut, nothing from the report is sent, by the provider or a copied prompt, and the Draft
+  control says why (an administrator can raise `Ai:MaxTlp`). A number the page marks AMBER doesn't leave under a GREEN
+  limit. The draft's recorded `InputTlp` is the highest of the numbers' marking and the articles sent.
 - **The numbers check.** `ReportDraftChecks.Numbers` flags every number the answer states that the material doesn't
   (compared by value, so "1,204" matches "1204"). The draft is still shown, with the flagged numbers named, for the person
   to check before using it. A pasted answer goes through the same checks.

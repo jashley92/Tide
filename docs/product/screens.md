@@ -1039,7 +1039,8 @@ Each section has the team's assessment, saved with its period (**Save assessment
 "Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
 who reads the report reads them. Under each box, *Draft an assessment* (with an AI provider) or *Copy a prompt* (without
 one, then paste the tool's JSON answer and *Check it*) shows a draft with any number not in the report flagged; *Use it*
-puts it in the box unsaved, and *Reject* drops it. A colleague's save shows live, and one to a box with unsaved changes is said above it
+puts it in the box unsaved, and *Reject* drops it. While the AI limit is below the numbers' AMBER (GREEN by default), the
+control says so instead, and that an administrator can raise it. A colleague's save shows live, and one to a box with unsaved changes is said above it
 rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
 included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
 way is marked "(to date)".

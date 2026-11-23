@@ -8,45 +8,53 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 
-<div class="tide-noprint mt-2">
-    <div class="d-flex gap-2 flex-wrap align-items-center">
-        @if (Assist.ProviderReady)
-        {
-            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="DraftIt"><span class="bi bi-stars" aria-hidden="true"></span> @Label</button>
-        }
-        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@(Assist.ProviderReady ? $"Copy a prompt: {Label}" : null)" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(Assist.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
-    </div>
-    @if (_pasting)
-    {
-        <div data-submit-scope>
-            <label class="tide-field-label mt-2" for="@($"{Id}-answer")">The tool's answer (JSON)</label>
-            <textarea id="@($"{Id}-answer")" class="form-control form-control-sm tide-data tide-autogrow" rows="2" maxlength="@ArticleService.MaxPaste"
-                      placeholder="@Placeholder" @bind="_answer" @bind:event="oninput"></textarea>
-            <div class="d-flex gap-2 mt-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" data-submit @onclick="CheckPasted">Check it</button>
-                <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => (_pasting, _answer) = (false, null)">Cancel</button>
-            </div>
-        </div>
-    }
-    @if (_draft is { } d)
-    {
-        <div class="tide-draft-item" aria-live="polite">
-            <div class="tide-field-label">Draft <TlpBadge Level="d.InputTlp" /></div>
-            <div class="tide-draft-text">@d.Text</div>
-            @if (d.UnknownNumbers.Count > 0)
+@if (Blocked is { } why)
+{
+    @* Nothing can be sent: said plainly, in place of the buttons. *@
+    <div class="tide-noprint mt-2 small tide-muted" role="note"><span class="bi bi-shield-lock" aria-hidden="true"></span> @Label is unavailable. @why</div>
+}
+else
+{
+    <div class="tide-noprint mt-2">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+            @if (Assist.ProviderReady)
             {
-                <div class="tide-field-error small mt-1" role="note">
-                    @(d.UnknownNumbers.Count == 1 ? "This number isn't" : "These numbers aren't") in what it was drafted from: @string.Join(", ", d.UnknownNumbers). Check before using it.
-                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="DraftIt"><span class="bi bi-stars" aria-hidden="true"></span> @Label</button>
             }
-            <div class="tide-muted small mt-1">Based on: @d.BasedOn · @(string.IsNullOrEmpty(d.Model) ? "pasted answer" : d.Model)</div>
-            <div class="d-flex gap-2 mt-1">
-                <button type="button" class="btn @(d.UnknownNumbers.Count > 0 ? "btn-outline-secondary" : "btn-primary") btn-sm" @onclick="() => Decide(true)">@(HasText ? "Replace mine" : "Use it")</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Decide(false)">Reject</button>
-            </div>
+            <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@(Assist.ProviderReady ? $"Copy a prompt: {Label}" : null)" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(Assist.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
         </div>
-    }
-</div>
+        @if (_pasting)
+        {
+            <div data-submit-scope>
+                <label class="tide-field-label mt-2" for="@($"{Id}-answer")">The tool's answer (JSON)</label>
+                <textarea id="@($"{Id}-answer")" class="form-control form-control-sm tide-data tide-autogrow" rows="2" maxlength="@ArticleService.MaxPaste"
+                          placeholder="@Placeholder" @bind="_answer" @bind:event="oninput"></textarea>
+                <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" data-submit @onclick="CheckPasted">Check it</button>
+                    <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => (_pasting, _answer) = (false, null)">Cancel</button>
+                </div>
+            </div>
+        }
+        @if (_draft is { } d)
+        {
+            <div class="tide-draft-item" aria-live="polite">
+                <div class="tide-field-label">Draft <TlpBadge Level="d.InputTlp" /></div>
+                <div class="tide-draft-text">@d.Text</div>
+                @if (d.UnknownNumbers.Count > 0)
+                {
+                    <div class="tide-field-error small mt-1" role="note">
+                        @(d.UnknownNumbers.Count == 1 ? "This number isn't" : "These numbers aren't") in what it was drafted from: @string.Join(", ", d.UnknownNumbers). Check before using it.
+                    </div>
+                }
+                <div class="tide-muted small mt-1">Based on: @d.BasedOn · @(string.IsNullOrEmpty(d.Model) ? "pasted answer" : d.Model)</div>
+                <div class="d-flex gap-2 mt-1">
+                    <button type="button" class="btn @(d.UnknownNumbers.Count > 0 ? "btn-outline-secondary" : "btn-primary") btn-sm" @onclick="() => Decide(true)">@(HasText ? "Replace mine" : "Use it")</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Decide(false)">Reject</button>
+                </div>
+            </div>
+        }
+    </div>
+}
 
 @code {
     /// <summary>What the button does: "Draft an assessment", "Suggest a title slide line".</summary>
@@ -69,6 +77,9 @@
 
     /// <summary>The box already has text: "Replace mine" rather than "Use it".</summary>
     [Parameter] public bool HasText { get; set; }
+
+    /// <summary>Why nothing can be drafted here (above the AI limit), shown in place of the buttons; null when it can be.</summary>
+    [Parameter] public string? Blocked { get; set; }
 
     /// <summary>The person used the draft: the page puts it in the box, unsaved.</summary>
     [Parameter] public EventCallback<ProseDraft> OnUse { get; set; }
