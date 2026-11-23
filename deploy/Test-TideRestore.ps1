@@ -10,6 +10,8 @@
     instance; give a recovery server's to test there), and checks:
       - DBCC CHECKDB finds no corruption;
       - the restored database has TIDE's migration history;
+      - the installed build can run on the restored database (Tide.Web.dll --verify-database: migrations and a page of
+        each core table);
       - every screenshot the database lists is in the set's files folder at its recorded size, and -Sample of them (200;
         -HashAll for every one) hash to their recorded SHA-256;
       - the set holds the Data Protection key ring (skipped, and said so, when DataProtection:KeyPath isn't set, as then
@@ -148,6 +150,21 @@ try {
         Add-Check 'schema' ($migrations -gt 0) "$migrations migration(s) recorded"
         $stored = @(Invoke-TideSqlQuery -Connection $conn -Sql "SELECT Id, SizeBytes, Sha256 FROM $scratch.dbo.Files")
     } finally { $conn.Dispose() }
+
+    # Whether the installed build would run on the restored database: Tide.Web.dll --verify-database opens it, checks
+    # the build knows every migration it records and none is missing, and reads a page of each core table. Run as this
+    # account (Windows authentication); with -SqlCredential there's no way to hand it a password safely, so it's skipped.
+    $webDll = Join-Path $site.Folder 'Tide.Web.dll'
+    if ($SqlCredential) { Add-Check 'app' $true -Skipped -Detail "a SQL login was given (-SqlCredential), and there's no safe way to hand its password to the app's check" }
+    elseif (-not (Test-Path -LiteralPath $webDll) -or -not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        Add-Check 'app' $true -Skipped -Detail "no Tide.Web.dll in $($site.Folder), or no dotnet on the PATH"
+    }
+    else {
+        $verifyConn = New-TideConnectionString -SqlInstance $SqlInstance -DbName $ScratchDatabase -ValidateServerCertificate:$live.ValidateServerCertificate -ApplicationName 'TIDE restore drill'
+        $said = @(& dotnet $webDll --verify-database $verifyConn 2>&1 | ForEach-Object { "$_" })
+        $verified = $LASTEXITCODE -eq 0
+        Add-Check 'app' $verified $(if ($verified) { 'the installed build can run on the restored database' } else { ($said | Where-Object { $_ -like 'FAIL*' } | Select-Object -First 3) -join ' ' })
+    }
 
     # Every screenshot the database lists, in the set's copy of the file store, at its recorded size; a sample re-hashed.
     $root = Join-Path $BackupSet 'files\files'
