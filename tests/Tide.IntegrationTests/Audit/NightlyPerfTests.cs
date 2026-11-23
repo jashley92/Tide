@@ -147,6 +147,13 @@ public partial class NightlyPerfTests(ITestOutputHelper output)
             await using var ctx = db.Context();
             if (await Tide.Application.Search.ArticleSearchIndex.RebuildAsync(ctx, 1000) < 1000) break;
         }
+        // Statistics as a running server has them (auto-update, or the maintenance plan's nightly update), not as the
+        // first query after the seed happened to sample them: the plans, and so the reads, then don't depend on when.
+        if (provider == TestDb.SqlServer)
+        {
+            await using var ctx = db.Context();
+            await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(ctx.Database, "EXEC sp_updatestats");
+        }
         return db;
     }
 
