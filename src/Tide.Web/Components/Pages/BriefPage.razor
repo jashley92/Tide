@@ -725,14 +725,14 @@ else
     public string? PrerenderedState { get; set; }
 
     // Takes what the prerendered page read: everything the page draws from, so the first interactive draw is the
-    // prerendered page again.
-    private void Adopt(BriefPage p)
+    // prerendered page again, and the palette's verbs the same as the prerender's (a test adopts one too).
+    internal void Adopt(BriefPage p)
     {
         (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
         (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
         (_readiness, _analystId, _intro, _introTlp, _teamNote) = (p._readiness, p._analystId, p._intro, p._introTlp, p._teamNote);
         (_candidates, _shortlist, _actions, _meeting, _carried, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._carried, p._newInFeed, p._newOnKev);
-        (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
+        (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers, _sendBoth) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers, p._sendBoth);
         _loading = false;
     }
 

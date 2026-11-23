@@ -463,6 +463,25 @@ public class PaletteSendBothVerbTests(TideApp app) : IClassFixture<TideApp>
     }
 }
 
+/// <summary>
+/// Send both on a page the browser loaded: the interactive page adopts what the prerender read instead of reading it
+/// again (the Today and brief pages), and Send both editions must come with it.
+/// </summary>
+public class PaletteSendBothPrerenderTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task TheInteractivePage_AdoptingThePrerendersRead_StillOffersSendBothEditions()
+    {
+        var day = await SendBoth.DayAsync(app);
+        await using var prerendered = await PaletteSendBothVerbTests.OpenBrief(app, day);
+        (await PaletteSendBothVerbTests.Verbs(prerendered)).Should().Contain(v => v.Label == "Send both editions");
+
+        var interactive = new BriefPage();
+        await prerendered.Renderer.Dispatcher.InvokeAsync(() => interactive.Adopt(prerendered.Component));
+        interactive.Verbs().Should().Contain(v => v.Label == "Send both editions", "nothing was read again, so it's what the prerender read");
+    }
+}
+
 /// <summary>Send both held for a required review: its button is disabled, so the palette doesn't offer it.</summary>
 public class PaletteSendBothHeldTests(TideApp app) : IClassFixture<TideApp>
 {
