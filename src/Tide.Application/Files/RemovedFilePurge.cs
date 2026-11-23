@@ -27,14 +27,21 @@ public static class RemovedFilePurge
     {
         if (Days(configuredDays) is not { } days) return 0;
         var cutoff = now.AddDays(-days);
+        var due = Due(db, cutoff);
         var purged = 0;
         for (var i = 0; i < batches; i++)
         {
-            var ids = await Due(db, cutoff).OrderBy(id => id).Take(Batch).ToListAsync(ct);
+            var ids = await due.OrderBy(id => id).Take(Batch).ToListAsync(ct);
             if (ids.Count == 0) break;
-            foreach (var id in ids) store.Delete(id);
-            purged += await db.Files.IgnoreQueryFilters().Where(f => ids.Contains(f.Id) && f.BytesPurgedAtUtc == null)
+            // Mark first, re-checking in the same statement that each is still due: a restore, or a new use, that lands
+            // after the read keeps its file. Only the files this run marked lose their bytes.
+            await db.Files.IgnoreQueryFilters().Where(f => ids.Contains(f.Id) && due.Contains(f.Id))
                 .ExecuteUpdateAsync(s => s.SetProperty(f => f.BytesPurgedAtUtc, now), ct);
+            var marked = await db.Files.IgnoreQueryFilters().Where(f => ids.Contains(f.Id) && f.BytesPurgedAtUtc == now)
+                .Select(f => f.Id).ToListAsync(ct);
+            foreach (var id in marked) store.Delete(id);
+            purged += marked.Count;
+            if (marked.Count == 0) break;
         }
         return purged;
     }
