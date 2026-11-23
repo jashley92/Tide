@@ -36,9 +36,9 @@ public static class Shortcuts
     public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
 
     /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
-    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
-    /// someone who <paramref name="canTake"/> actions on, and the article editor's keys only for someone who
-    /// <paramref name="canEdit"/> articles.</summary>
+    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T, and its keys for
+    /// choosing several actions, are listed only for someone who <paramref name="canTake"/> actions on, and the article
+    /// editor's keys only for someone who <paramref name="canEdit"/> articles.</summary>
     public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true, bool canEdit = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
@@ -65,7 +65,7 @@ public static class Shortcuts
             // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
                 var group = !relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board : ActionsList;
-                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey)] });
+                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey && !SelectKeys.Contains(k))] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -143,6 +143,16 @@ public static class Shortcuts
 
     private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
 
+    // Choosing several actions on the list to act on together (the selection bar), on this page of it.
+    private static readonly IReadOnlyList<Shortcut> SelectKeys =
+    [
+        new(["Space"], "On a row: choose the action, or leave it out, to act on several at once"),
+        new(["Shift J"], "Choose the next action too", Letter: true),
+        new(["Shift K"], "Choose the previous action too", Letter: true),
+        new(["Shift ↓", "Shift ↑"], "Choose the next or previous action too"),
+        new(["Esc"], "Clear the actions chosen"),
+    ];
+
     private static readonly ShortcutGroup ActionsList = new("Actions list",
     [
         new(["↓", "↑"], "Next and previous action"),
@@ -151,6 +161,7 @@ public static class Shortcuts
         TakeKey,
         new(["Enter"], "Open the selected action"),
         new(["Tab", "Enter"], "A row's status opens the statuses it can move to"),
+        .. SelectKeys,
     ]);
 
     private static readonly ShortcutGroup Board = new("Actions board",

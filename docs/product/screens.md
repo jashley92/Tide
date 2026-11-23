@@ -501,6 +501,12 @@ each way in the last 7 days, a drop target for each.*
   (the checklist, the hunt state, or "No update for 3 days"), the due date and the status. **Take it** is on the rows
   you may take, and the status is a menu for whoever may move the action. When Mine is empty but your teams have work
   nobody holds, one line says so, with *Show them*.
+- **Several at once (the list).** Each row has a checkbox, and `Space` on a row, `Shift+J` and `Shift+K` choose rows
+  too. While any are chosen, a bar over the list says how many (on this page: another page or other filters clear the
+  choice) and offers Take, Assign to…, Move to, Set due date, Hand off to team…, Record no hits and close (for sweeps and
+  hunts whose queries were run) and Clear (`Esc`). Each action is changed as it would be on its own, with its own line
+  in its history; any that changed since the list was read, or that the person may not change, are left as they are,
+  named in the toast and still chosen. A move that cancels them, or says they don't apply, asks why once for all.
 - **The selected action.** On the list a row is selected, and on the board a card (the address keeps it: `?row=`,
   `?card=`). `J` and `K` or the arrows move it (on the board `←` and `→` go between lanes), `T` takes it and `Enter`
   opens it. The context rail shows it: its Next line; Take it, Assign… (list) or Move to (board), and Open; its kind,

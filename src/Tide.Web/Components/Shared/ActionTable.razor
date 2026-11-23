@@ -5,7 +5,9 @@
    it), due date and SLA, and status (a menu to change it, for whoever may work the action).
    One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. A page that
    gives Selected has a selected row (RowSelection), which its keys move (RowKeys). A narrower window stacks each row
-   (app.css), so the table names its parts with ARIA roles (Stacks). *@
+   (app.css), so the table names its parts with ARIA roles (Stacks). A page that gives Picked has a checkbox on each
+   row, to choose several and act on them together (the Actions list's selection bar); while any are chosen, the bar
+   takes the place of each row's Take it and Status menu. *@
 
 <DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
            FilterLabel="Filter actions" FilterPlaceholder="Title, A-number, team, person or article" Filter="@Filter" DefaultSort="DefaultSort"
@@ -14,6 +16,69 @@
            Selected="@(SelectedId is null ? null : r => r.Id == SelectedId)" OnSelect="OnSelect" GroupNote="GroupNote" Stacks="true">
     <RowTemplate Context="r">
         <td role="cell">
+            @if (Picked is not null)
+            {
+                @* The checkbox sits beside the title, in its cell, rather than in a column of its own: the table is no wider. *@
+                <div class="tide-row-pick">
+                    <input type="checkbox" class="form-check-input" checked="@Picked(r)" @onchange="() => OnPick.InvokeAsync(r)"
+                           aria-label="@($"Select {Ui.ActionLabel(r.Number)}, {r.Title}")" />
+                    <div>@TitleCell(r)</div>
+                </div>
+            }
+            else
+            {
+                @TitleCell(r)
+            }
+        </td>
+        <td role="cell" class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
+        <td role="cell" class="small">
+            @r.TeamName<div class="tide-muted"><HolderText Label="@r.Holder("Unassigned")" Short="true" /></div>
+            @if (!Picking && CanTake?.Invoke(r) == true)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap tide-row-take" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(r)"
+                        aria-label="@($"Take it: {Ui.ActionLabel(r.Number)}, {r.Title}")">Take it</button>
+            }
+        </td>
+        <td role="cell" class="small tide-col-progress">
+            @if (r.ChecklistTotal > 0)
+            {
+                <div>Checklist @r.ChecklistDone of @r.ChecklistTotal</div>
+            }
+            @if (ActionGuide.IsHunt(r.Kind))
+            {
+                @* As the board's card says it: a sweep with no query yet hasn't been run either. *@
+                <div class="tide-muted">@HuntBadge.Text(r.Hunted ?? HuntResult.NotRun)</div>
+            }
+            else if (r.IsOpen && Quiet(r) is { } quiet)
+            {
+                <div class="tide-muted">@quiet</div>
+            }
+        </td>
+        <td role="cell" class="small text-nowrap">
+            @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
+            <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
+        </td>
+        <td role="cell" class="small">
+            @if (!Picking && CanWork?.Invoke(r) == true)
+            {
+                @* The status, as a menu of the others to move it to (the board's Move menu, in place). *@
+                <MenuButton Label="@ActionService.StatusName(r.Status)" AriaLabel="@($"Status of {Ui.ActionLabel(r.Number)}: {ActionService.StatusName(r.Status)}")"
+                            MenuLabel="@($"Move {Ui.ActionLabel(r.Number)} to")" ButtonClass="@Badge.Css(ActionStatusBadge.Tone(r.Status), extra: "tide-status-menu")"
+                            Disabled="Busy" Items="@StatusItems(r)" />
+            }
+            else
+            {
+                <ActionStatusBadge Status="r.Status" />
+            }
+            @if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }
+        </td>
+    </RowTemplate>
+</DataTable>
+
+@code {
+    // The title cell's content: the parent it's part of, the title and number, its kind, rule labels, article and parts.
+    private RenderFragment TitleCell(ActionRow r) => __builder =>
+    {
             @if (r.ParentNumber is { } parent)
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
@@ -46,53 +111,8 @@
             {
                 <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
             }
-        </td>
-        <td role="cell" class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
-        <td role="cell" class="small">
-            @r.TeamName<div class="tide-muted"><HolderText Label="@r.Holder("Unassigned")" Short="true" /></div>
-            @if (CanTake?.Invoke(r) == true)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap tide-row-take" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(r)"
-                        aria-label="@($"Take it: {Ui.ActionLabel(r.Number)}, {r.Title}")">Take it</button>
-            }
-        </td>
-        <td role="cell" class="small tide-col-progress">
-            @if (r.ChecklistTotal > 0)
-            {
-                <div>Checklist @r.ChecklistDone of @r.ChecklistTotal</div>
-            }
-            @if (ActionGuide.IsHunt(r.Kind))
-            {
-                @* As the board's card says it: a sweep with no query yet hasn't been run either. *@
-                <div class="tide-muted">@HuntBadge.Text(r.Hunted ?? HuntResult.NotRun)</div>
-            }
-            else if (r.IsOpen && Quiet(r) is { } quiet)
-            {
-                <div class="tide-muted">@quiet</div>
-            }
-        </td>
-        <td role="cell" class="small text-nowrap">
-            @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
-            <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
-        </td>
-        <td role="cell" class="small">
-            @if (CanWork?.Invoke(r) == true)
-            {
-                @* The status, as a menu of the others to move it to (the board's Move menu, in place). *@
-                <MenuButton Label="@ActionService.StatusName(r.Status)" AriaLabel="@($"Status of {Ui.ActionLabel(r.Number)}: {ActionService.StatusName(r.Status)}")"
-                            MenuLabel="@($"Move {Ui.ActionLabel(r.Number)} to")" ButtonClass="@Badge.Css(ActionStatusBadge.Tone(r.Status), extra: "tide-status-menu")"
-                            Disabled="Busy" Items="@StatusItems(r)" />
-            }
-            else
-            {
-                <ActionStatusBadge Status="r.Status" />
-            }
-            @if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }
-        </td>
-    </RowTemplate>
-</DataTable>
+    };
 
-@code {
     [Parameter, EditorRequired] public IReadOnlyList<ActionRow>? Rows { get; set; }
     [Parameter, EditorRequired] public DateOnly Today { get; set; }
 
@@ -137,6 +157,15 @@
 
     /// <summary>Whether the person may work a row's action: its status is then a menu to move it (none when not set).</summary>
     [Parameter] public Func<ActionRow, bool>? CanWork { get; set; }
+
+    /// <summary>Whether a row is among those chosen; given, each row has a checkbox (none when not set).</summary>
+    [Parameter] public Func<ActionRow, bool>? Picked { get; set; }
+
+    /// <summary>A row's checkbox changed: the page adds it to those chosen, or takes it out.</summary>
+    [Parameter] public EventCallback<ActionRow> OnPick { get; set; }
+
+    /// <summary>Some rows are chosen: the selection bar acts on them, in place of each row's Take it and Status menu.</summary>
+    [Parameter] public bool Picking { get; set; }
 
     /// <summary>A status chosen from a row's menu: the page moves the action there.</summary>
     [Parameter] public EventCallback<(ActionRow Row, ActionStatus To)> OnMove { get; set; }
@@ -184,7 +213,7 @@
     private static readonly IReadOnlyList<TableColumn<ActionRow>> Columns =
     [
         new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + Ui.ActionLabel(r.Number) + " " + r.ArticleTitle },
-        new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind) },
+        new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind), Class = "tide-col-kind" },
         new("team", "Team and owner") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + r.Holder("Unassigned").Short },
         new("progress", "Progress"),
         new("due", "Due") { SortBy = r => r.DueDate },
