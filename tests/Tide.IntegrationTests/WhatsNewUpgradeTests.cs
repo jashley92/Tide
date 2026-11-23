@@ -30,7 +30,7 @@ public sealed class UpgradedApp : TideApp
 /// </summary>
 public class WhatsNewUpgradeTests(UpgradedApp app) : IClassFixture<UpgradedApp>
 {
-    private static readonly ReleaseVersion V1_13 = new(1, 13, 0), V1_14 = new(1, 14, 0);
+    private static readonly ReleaseVersion V1_13 = new(1, 13, 0), V1_14 = new(1, 14, 0), V1_16 = new(1, 16, 0);
 
     private async Task<Dictionary<string, string>> Record()
     {
@@ -55,13 +55,13 @@ public class WhatsNewUpgradeTests(UpgradedApp app) : IClassFixture<UpgradedApp>
         await using (var scope = SignedIn(app, UpgradedApp.LongStanding))
         {
             var due = await scope.ServiceProvider.GetRequiredService<WhatsNewService>().DueAsync();
-            due.Select(h => h.Version).Should().Equal(V1_14, V1_13);
+            due.Select(h => h.Version).Should().Equal(V1_16, V1_14, V1_13);
         }
 
         await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: UpgradedApp.LongStanding);
         await r.Click(c => c.CheckAsync());
         var html = await r.Html();
-        html.Should().Contain("What&#x27;s new in TIDE 1.14.0").And.Contain("tide-whatsnew-release\">1.14.0").And.Contain("tide-whatsnew-release\">1.13.0");
+        html.Should().Contain("What&#x27;s new in TIDE 1.16.0").And.Contain("tide-whatsnew-release\">1.16.0").And.Contain("tide-whatsnew-release\">1.14.0").And.Contain("tide-whatsnew-release\">1.13.0");
         html.IndexOf("tide-whatsnew-release\">1.14.0", StringComparison.Ordinal).Should()
             .BeLessThan(html.IndexOf("tide-whatsnew-release\">1.13.0", StringComparison.Ordinal), "newest first");
         html.Should().Contain("context rail", "v1.13.0's layout change is among them");
@@ -72,7 +72,7 @@ public class WhatsNewUpgradeTests(UpgradedApp app) : IClassFixture<UpgradedApp>
     {
         await using var scope = SignedIn(app, UpgradedApp.LongStandingViewer);
         var due = await scope.ServiceProvider.GetRequiredService<WhatsNewService>().DueAsync();
-        due.Select(h => h.Version).Should().Equal(V1_14, V1_13);
+        due.Select(h => h.Version).Should().Equal(V1_16, V1_14, V1_13);
     }
 
     [Fact]

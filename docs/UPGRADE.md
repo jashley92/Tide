@@ -223,6 +223,100 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.16.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds fourteen migrations, in this order:
+`ActionCreatedAtIndex`, `ActionClosedAtIndex`, `WebhookCursors`, `DetectionRuleCaller`, `ArticleUrlHashes`,
+`ArticleWriter`, `ReportAssessments`, `MeetingNoteFollowUps`, `IndicatorKeys`, `AiDraftKinds`, `ArticleSearch`,
+`SystemStatsAndBackupRuns`, `SavedViewPages` and `StoredFileBytesPurged`. None of the earlier ones change. On a
+DbaApplies install, the DBA applies them first: the bundle now carries `deploy\sql\tide-schema-sqlserver.sql`, an
+idempotent script of every migration, so `Install-Database.ps1 -SchemaMode DbaApplies -ApplySchema` works.
+
+**Behaves differently**
+- **Webhooks refuse loopback and link-local addresses**, including the cloud metadata address 169.254.169.254, as feeds
+  already did. Private networks stay allowed (`Webhooks:AllowPrivateNetworks`, on by default), so internal receivers
+  keep working. Redirects aren't followed. A webhook run stops after 5 minutes and resumes where it stopped.
+- **`{{article.cves}}` in an outreach template gives the CVE numbers only**, one a line. Its KEV and EPSS notes moved
+  to the new `{{article.cves-detailed}}`. Saved templates that use it send shorter emails.
+- **The theme follows the system** for anyone who hasn't chosen one. A light or dark choice already saved stays.
+- **Settings forms save only what you changed**, and refuse the save if another administrator changed the same setting
+  since the page loaded.
+- **A failed upgrade always rolls back**, and never starts the old build on a schema it doesn't know. The restore
+  drill drops only its own scratch databases.
+- **An escalation email that went isn't sent again** if its run dies part way. The daily prune clears old reminder
+  and escalation marks.
+
+**After upgrading**
+- **Two fills run in the background.** *Keying stored indicators* (event 7109) and *Search index* (event 7110) work
+  through existing rows after start-up. Search and indicator lookups give the same answers while they run; they're
+  only slower until the fills finish. Diagnostics shows both under Background jobs.
+- **Re-run `deploy\sql\02-Grant-Backup.sql`**, so `Backup-Tide.ps1` can record each run in the new `dbo.BackupRuns`
+  table. Until you do, backups still work and only warn that they couldn't record the run.
+- **The upgrade asks before stopping a busy site.** If people are using TIDE, `Upgrade-Tide.ps1` asks
+  *People are using TIDE. Back up and deploy anyway? (y/N)*. Each build ships `migrations-sqlserver.txt` for rollback.
+- **Upgrades prune their own backups.** After a successful upgrade the newest three upgrades' backups are kept
+  (`-KeepUpgradeBackups`, `0` keeps everything); see [Upgrading with Upgrade-Tide.ps1](#upgrading-with-upgrade-tideps1).
+
+**New, and off until you turn it on**
+- **Audit log archive.** With `Audit:RetentionDays` set (365 or more), each whole month older than that is written to a
+  gzipped file with a SHA-256 manifest under the file store, read back, and only then deleted from the database.
+- **Purging removed files' bytes.** With `Files:PurgeRemovedAfterDays` set (30 or more), a daily job (event 7114) deletes
+  the bytes of files removed that long ago. The row and its hash stay, and backups still hold the bytes; the file
+  shows *Bytes purged* instead of *Restore*.
+- **A stale-backup warning.** With `Backup:StaleAfterHours` set, `/health/jobs` reports Degraded when the newest backup
+  is older than that (event 7205).
+- **Metrics to your own monitoring.** `Telemetry:OtlpEndpoint` sends request, Kestrel and runtime metrics over OTLP
+  (`Telemetry:Protocol`, `Telemetry:Headers`, a secret). Traces only with `Telemetry:Traces`, sampled
+  (`Telemetry:TraceSampleRatio`, 0.05) and without query strings. Nothing is sent unless the endpoint is set.
+- **A key ring another server can read.** `DataProtection:CertificateThumbprint` protects new keys with that
+  certificate (`DataProtection:PreviousThumbprints` keeps old ones readable), for a warm standby
+  ([operations](operations/backup-and-recovery.md)). Diagnostics says how keys are protected and warns 30 days before
+  the certificate expires. Keys made before the switch stay machine-bound until they expire.
+
+**New**
+- **Diagnostics › Performance**: requests, page events and database commands, with medians, 95th percentiles and the
+  slowest. Slow SQL (over 500 ms, event 7201) and slow page events (over 1 s, event 7202) are logged. Nothing leaves
+  the server.
+- **Diagnostics › Data & retention**: the largest tables, files by folder, growth over 30 and 90 days, free disk, the
+  last backups and the retention settings. `/health/jobs` reports Degraded under 10% free disk (event 7203).
+- **A weekly stored-file check** (event 7112) compares files on disk with their rows and samples their hashes. It
+  reports; it never deletes.
+- **`Tide.Web.dll --verify-database`** says whether a build can run on a database (migrations both ways, a page of each
+  core table). The restore drill runs it as its *app* check.
+- **Each 15-minute log backup also copies new files**, so files and the database are both recoverable to within 15
+  minutes.
+- **How long the meeting takes** (Administration › Organization, 5 to 180 minutes, 30 by default). Present mode's clock
+  shows time against it.
+- **AI drafting of report assessments** respects the page's marking. The report's numbers are AMBER, so at the default
+  `Ai:MaxTlp` (GREEN) drafting is off and says why. Raise it to AMBER to allow it. With no provider set, *Copy a prompt*
+  and paste the answer back.
+
+**For people using TIDE**
+- **Outreach templates** can list an article's other links (`{{article.other-links}}`) and its CVE links
+  (`{{article.cve-links}}`). A placeholder ending in `?` is left out when there's nothing to fill, `{{name|text}}`
+  gives text for an empty one, and `{{#name}} … {{else}} … {{/name}}` keeps or drops a section. The template form has
+  an *Insert placeholder* menu, offers names as `{{` is typed, checks as you write and previews the draft on an
+  action. A starter nobody has edited offers its newer version (*Use it*).
+- **Triage**: promote and keep going (`Shift+Enter`, with *Undo*), choose several items to decide together, a KEV
+  round-up, and saved views. Dismissing a group asks the reason, and a single dismiss or shortlist can be undone.
+- **Articles**: *Mine* (what you're writing) and *By…*, saved views, drafts in progress on Today, and *Hand to…* a
+  colleague. Editor keys: `G` then a letter, `N` for the next gap, `Ctrl+Shift+Enter` to mark ready.
+- **Ctrl+K runs the page's commands** (`>` lists only those). **Actions** can be changed several at once.
+- **Report assessments are saved** for their period, with a TLP and who edited them. Trends and Reports say what moved.
+- **Meetings**: send both editions at once, meeting notes become actions, an ended meeting shows a recap, and who ran
+  a meeting is kept.
+- **Accessibility**: every page passes an automated WCAG A/AA scan, click targets are at least 24px, and screen
+  readers hear the labels shown on screen.
+
+**Changes**
+- **Faster on large sites.** Indicator lookups, text search, Triage's *already covered*, reminders, the digest,
+  webhooks, detection-rule sync, Trends and the action lists read only the rows they need. Each article's searched
+  text lives in one `ArticleSearch` row, rebuilt within about 10 seconds of a save. Answers and their order are
+  unchanged.
+- **Job event ids run 7101 to 7114**; performance and health warnings use 7201 to 7205.
+- **Dependencies**: System.DirectoryServices.AccountManagement 11.0.0, System.Security.Cryptography.Pkcs 11.0.0, and
+  EF Core and its tool pinned together.
+
 ### v1.15.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `SourceUserAgent` (two columns on

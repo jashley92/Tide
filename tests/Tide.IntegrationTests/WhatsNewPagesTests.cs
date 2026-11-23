@@ -38,16 +38,16 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
             (await r.Html()).Should().NotContain("tide-whatsnew", "nothing is drawn before it's checked");
             await r.Click(c => c.CheckAsync());
             var html = await r.Html();
-            html.Should().Contain("What&#x27;s new in TIDE 1.14.0").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
+            html.Should().Contain("What&#x27;s new in TIDE 1.16.0").And.Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
             html.Should().Contain("For analysts").And.Contain("For presenters").And.NotContain("For administrators")
                 .And.NotContain("For viewers and action owners");
-            html.Should().Contain("href=\"help?release=1.14.0#v1-14-0\"").And.Contain("See all changes");
+            html.Should().Contain("href=\"help?release=1.16.0#v1-16-0\"").And.Contain("See all changes");
             r.Component.IsOpen.Should().BeTrue();
             (await Seen(who)).Should().BeEmpty("it's marked seen as it's closed, so a reload while it's up shows it again");
             await r.Click(c => c.CloseAsync());
             (await r.Html()).Should().NotContain("tide-whatsnew");
         }
-        (await Seen(who)).Should().Be("1.15.0", "it's marked seen, up to the release running, as it closes");
+        (await Seen(who)).Should().Be("1.16.0", "it's marked seen, up to the release running, as it closes");
 
         await using var again = await RenderAsync<WhatsNewDialog>(app, "/triage", @as: who);
         await again.Click(c => c.CheckAsync());
@@ -61,17 +61,16 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         app.Services.GetRequiredService<ReleaseHistory>().UpgradedFrom.Should().BeNull();
         await using var scope = SignedIn(app, Person("Analyst"));
         var due = await scope.ServiceProvider.GetRequiredService<WhatsNewService>().DueAsync();
-        due.Select(h => h.Version.ToString()).Should().Equal("1.14.0");
+        due.Select(h => h.Version.ToString()).Should().Equal("1.16.0");
     }
 
     [Fact]
     public async Task AnAdministrator_AlsoReadsTheAdministratorsHighlights()
     {
-        // 1.15.0 has highlights for administrators alone: an administrator is shown it, an analyst the newest release
-        // with highlights for them (1.14.0, above).
+        // 1.16.0 has highlights for every group: an administrator reads theirs beside the rest.
         await using var r = await RenderAsync<WhatsNewDialog>(app, "/", @as: Person("Admin"));
         await r.Click(c => c.CheckAsync());
-        (await r.Html()).Should().Contain("What&#x27;s new in TIDE 1.15.0").And.Contain("For administrators");
+        (await r.Html()).Should().Contain("What&#x27;s new in TIDE 1.16.0").And.Contain("For administrators");
     }
 
     [Fact]
@@ -224,7 +223,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain("Step 1 of");
         html.Should().NotContain("class=\"tide-tip\"", "a page's tip waits while the tour runs");
-        (await Seen(who)).Should().Be("1.15.0");
+        (await Seen(who)).Should().Be("1.16.0");
     }
 
     [Fact]
@@ -252,7 +251,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, c => c.WhatsNew!.SeeTheDayAsync());
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("1 of");
-        (await Seen(who)).Should().Be("1.15.0");
+        (await Seen(who)).Should().Be("1.16.0");
     }
 
     [Fact]
