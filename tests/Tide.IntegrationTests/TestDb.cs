@@ -291,7 +291,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         // Retrying, as production's SQL Server is (EnableRetryOnFailure): a transaction the code opens itself must then run
         // inside the execution strategy, and one that doesn't fails here as it would there.
         _options = Configure(new DbContextOptionsBuilder<AppDbContext>(), retrying)
-            .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
+            .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new SearchDirtyInterceptor(), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
             .Options;
         if (_connection is not null)
         {
@@ -635,6 +635,9 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public Tide.Application.Assist.AssistService Assist(Tide.Application.Assist.AiOptions? options = null) =>
         new(this, User, Ai, Http, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Stack(), Scorecard(),
             new StaticOptionsMonitor<IntakeOptions>(new IntakeOptions()));
+
+    public Tide.Application.Assist.ProseAssistService ProseAssist(Tide.Application.Assist.AiOptions? options = null) =>
+        new(this, User, Ai, new StaticOptionsMonitor<Tide.Application.Assist.AiOptions>(options ?? new Tide.Application.Assist.AiOptions()), Reports(), Settings());
 
     public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null, IOutboundHttp? http = null) =>
         new(this, User, http ?? Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),

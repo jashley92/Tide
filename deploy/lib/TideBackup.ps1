@@ -119,14 +119,20 @@ function Get-TideStoredFilePath([string] $Root, [guid] $Id) {
 }
 
 # Copies a folder with robocopy; returns its file count and bytes. Robocopy's exit codes 0-7 are success.
+# The app's heartbeat for Upgrade-Tide.ps1 (activity.json, written into Files:RootPath every 30 s) is runtime state, not
+# data: no set carries it.
+$script:TideNeverCopied = @('activity.json', 'activity.json.tmp')
+
 function Copy-TideFolder {
-    param([Parameter(Mandatory)] [string] $From, [Parameter(Mandatory)] [string] $To, [string[]] $ExcludeDirs = @())
+    # -NoCount: skip counting what the destination holds (the 15-minute log run, which only adds new files to a set).
+    param([Parameter(Mandatory)] [string] $From, [Parameter(Mandatory)] [string] $To, [string[]] $ExcludeDirs = @(), [switch] $NoCount)
     $From = Get-TideCleanPath $From; $To = Get-TideCleanPath $To   # a trailing backslash would break robocopy's quoting
     New-Item -ItemType Directory -Force -Path $To | Out-Null
-    $rcArgs = @($From, $To, '/E', '/COPY:DAT', '/DCOPY:T', '/R:2', '/W:5', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')
+    $rcArgs = @($From, $To, '/E', '/COPY:DAT', '/DCOPY:T', '/R:2', '/W:5', '/NP', '/NFL', '/NDL', '/NJH', '/NJS', '/XF') + $script:TideNeverCopied
     if ($ExcludeDirs.Count) { $rcArgs += "/XD"; $rcArgs += $ExcludeDirs }
     & robocopy @rcArgs | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Copying $From to $To failed (robocopy exit $LASTEXITCODE)." }
+    if ($NoCount) { return $null }
     $files = @(Get-ChildItem -Path $To -Recurse -File -Force -ErrorAction SilentlyContinue)
     return [pscustomobject]@{ Files = $files.Count; Bytes = [long](($files | Measure-Object -Property Length -Sum).Sum) }
 }

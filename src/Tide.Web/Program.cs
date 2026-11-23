@@ -37,6 +37,13 @@ var culture = CultureInfo.GetCultureInfo("en-US");
 CultureInfo.DefaultThreadCurrentCulture = culture;
 CultureInfo.DefaultThreadCurrentUICulture = culture;
 
+// Tide.Web.dll --verify-database "<connection string>": whether this build can run on a database, without starting the
+// site (the restore drill runs it on its scratch copy). It exits with its answer.
+if (await DatabaseVerifier.RunIfAskedAsync(args, Console.Out) is { } verified)
+{
+    Environment.Exit(verified);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // A failing readiness probe is reported once a minute by the /health endpoint itself (below), not as an Error per probe.
@@ -81,12 +88,21 @@ if (!string.IsNullOrWhiteSpace(dpKeyPath))
     var keyDir = Path.GetFullPath(dpKeyPath);
     Directory.CreateDirectory(keyDir);
     dp.PersistKeysToFileSystem(new DirectoryInfo(keyDir));
-    // Machine-scope DPAPI works for a gMSA/app-pool identity with no loaded user profile.
-    if (OperatingSystem.IsWindows())
+    // A certificate when one is set (an option: a standby server, or a restore to a new one, can read the ring); otherwise
+    // machine-scope DPAPI, which works for a gMSA/app-pool identity with no loaded user profile. A key written before the
+    // switch stays DPAPI-protected, readable on this server only, until it expires (docs/operations/backup-and-recovery.md).
+    if (Tide.Web.Security.KeyRingCertificate.Thumbprints(builder.Configuration) is { Count: > 0 } thumbprints)
+    {
+        var certs = Tide.Web.Security.KeyRingCertificate.Find(thumbprints);
+        dp.ProtectKeysWithCertificate(certs[0]).UnprotectKeysWithAnyCertificate([.. certs]);
+    }
+    else if (OperatingSystem.IsWindows())
         dp.ProtectKeysWithDpapi(protectToLocalMachine: true);
 }
 
 builder.Services.AddInfrastructure(builder.Configuration);
+// An OTLP exporter only when Telemetry:OtlpEndpoint is set: metrics by default, sampled and scrubbed traces when asked.
+builder.Services.AddTideTelemetry(builder.Configuration);
 builder.Services.AddApplication(builder.Configuration);
 
 // --- Authentication: Windows integrated in production, the dev handler locally ---
@@ -184,7 +200,9 @@ builder.Services.AddHostedService<UpdateCheckHostedService>();
 builder.Services.AddHostedService<WebhookHostedService>();
 builder.Services.AddHostedService<UrlHashFillHostedService>();
 builder.Services.AddHostedService<PerformanceListener>();
+builder.Services.AddHostedService<ActivityFileHostedService>();
 builder.Services.AddHostedService<IndicatorKeyFillHostedService>();
+builder.Services.AddHostedService<SearchIndexHostedService>();
 builder.Services.AddHostedService<MeetingAttendanceHostedService>();
 builder.Services.AddScoped<SystemSettings>();
 builder.Services.AddScoped<SystemDiagnostics>();

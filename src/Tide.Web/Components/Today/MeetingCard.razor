@@ -1,4 +1,6 @@
+@using Tide.Application.Assist
 @inject ICurrentUser CurrentUser
+@inject ProseAssistService Drafts
 
 @* The brief's meeting: when it meets, who presents and the title slide line, who the rotation has, then (until the
    meeting has ended, when the recap card takes them) who attended and the notes. Whoever writes the brief changes the presenter and the line (until it's sent) in a form that opens from
@@ -67,6 +69,10 @@
         <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @ref="_intro" @bind="_line" @bind:event="oninput" @bind:after="SendLine"
                   placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
         <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
+        @* Drafted from the brief's articles under the AI limit; a used line takes the highest TLP among them. *@
+        <ProseDraftAssist Label="Suggest a title slide line" Id="intro-draft" Placeholder='{ "line": "…" }' HasText="@(!string.IsNullOrWhiteSpace(_line))"
+                          Prompt="() => Drafts.TitleLinePromptAsync(Brief.Id)" Draft="() => Drafts.DraftTitleLineAsync(Brief.Id)"
+                          Pasted="a => Drafts.TitleLineFromPastedAsync(Brief.Id, a)" OnUse="UseDraft" />
         <div class="d-flex gap-2 mt-2">
             <button class="btn btn-outline-secondary btn-sm" disabled="@Busy" data-submit @onclick="() => Closing(OnSave)">Save</button>
             <button type="button" class="btn btn-link btn-sm" disabled="@Busy" @onclick="() => Closing(OnCancel)">Cancel</button>
@@ -161,6 +167,14 @@
     {
         _sent.Add(_line ?? "");
         return IntroChanged.InvokeAsync(_line);
+    }
+
+    // A suggested line the person chose to use: it goes in the box, unsaved, at the highest TLP of what it was drafted from.
+    internal async Task UseDraft(ProseDraft draft)
+    {
+        _line = draft.Text;
+        await SendLine();
+        await IntroTlpChanged.InvokeAsync(draft.InputTlp);
     }
 
     protected override void OnParametersSet()

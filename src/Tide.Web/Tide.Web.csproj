@@ -13,6 +13,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.*" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.21.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
     <!-- Resolve a Windows user's real display name (First Last) from AD; used only at runtime on Windows. -->
     <PackageReference Include="System.DirectoryServices.AccountManagement" Version="11.*" />
@@ -22,4 +25,18 @@
     </PackageReference>
   </ItemGroup>
 
+
+  <!-- The SQL Server migration ids this build carries, beside its DLLs: Upgrade-Tide.ps1 reads the list from the build it
+       replaces (its rollback snapshot) to decide whether that build may start on the database again, rather than reading
+       the ids out of Tide.Migrations.SqlServer.dll's bytes, which it keeps only as a fallback. -->
+  <Target Name="TideMigrationList" AfterTargets="Publish">
+    <ItemGroup>
+      <_TideMigration Include="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/2*_*.cs"
+                      Exclude="$(MSBuildThisFileDirectory)../Tide.Migrations.SqlServer/Migrations/*.Designer.cs" />
+    </ItemGroup>
+    <ItemGroup>
+      <_TideMigrationId Include="@(_TideMigration->'%(Filename)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)migrations-sqlserver.txt" Lines="@(_TideMigrationId->DistinctWithCase())" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>

@@ -672,7 +672,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<int>("Accepted")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("ArticleId")
+                    b.Property<Guid?>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("BasedOn")
@@ -694,6 +694,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("InputTlp")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
                         .HasColumnType("int");
 
                     b.Property<string>("Model")
@@ -721,6 +724,10 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Rejected")
                         .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Suggestions")
                         .IsRequired()
@@ -1244,6 +1251,32 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsUnique();
 
                     b.ToTable("ArticleScreenshots");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ArticleSearchRow", b =>
+                {
+                    b.Property<Guid>("ArticleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Builder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Dirty")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("Stamp")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("ArticleId");
+
+                    b.HasIndex("Dirty")
+                        .HasFilter("[Dirty] = 1");
+
+                    b.ToTable("ArticleSearch", (string)null);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ArticleTag", b =>
@@ -3883,8 +3916,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasOne("Tide.Domain.Entities.Article", null)
                         .WithMany()
                         .HasForeignKey("ArticleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>
@@ -3989,6 +4021,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired();
 
                     b.Navigation("File");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ArticleSearchRow", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.Article", null)
+                        .WithOne("SearchRow")
+                        .HasForeignKey("Tide.Domain.Entities.ArticleSearchRow", "ArticleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ArticleTag", b =>
@@ -4290,6 +4331,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Navigation("Products");
 
                     b.Navigation("Screenshots");
+
+                    b.Navigation("SearchRow");
 
                     b.Navigation("Tags");
 

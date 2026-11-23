@@ -49,6 +49,34 @@ a model the organization has approved, if at all.
 - **The record.** Each draft is stored in `AiDrafts` with its provider, model, prompt version, input hash and TLP,
   what it was based on, and how many suggestions were offered, accepted and rejected. The source text isn't kept.
 
+## Amendment (November 2026): the report's assessments and the title slide line
+
+AI help now covers two more pieces of prose written on a schedule. Everything above holds for them: off without a
+provider (and *Copy a prompt* then works as in the editor), capped by TLP, checked, recorded, and used only when a person
+chooses to.
+
+- **The uses.**
+  - *Draft an assessment*, beside each section's assessment on Reports. It's drafted from the section's numbers as the
+    report shows them (with the period before and the change, so the model needn't work one out), and for Headlines and
+    Topics and techniques the titles and bottom lines of the articles counted in the period, newest 40.
+  - *Suggest a title slide line*, in the brief's meeting card where the line is edited. It's drafted from the titles and
+    bottom lines of the brief's articles. A used line takes the highest TLP among them.
+- **The cut.** The articles are read at the lower of `Ai:MaxTlp` and the team edition's ceiling, through the same cut
+  the editions use (`BriefEditions`), so nothing above either is read. Only titles and bottom lines go, never bullets,
+  "why it matters" or our notes. The report's numbers go at the marking the page gives them (`ReportService.Marking`,
+  AMBER): when that's above the cut, nothing from the report is sent, by the provider or a copied prompt, and the Draft
+  control says why (an administrator can raise `Ai:MaxTlp`). A number the page marks AMBER doesn't leave under a GREEN
+  limit. The draft's recorded `InputTlp` is the highest of the numbers' marking and the articles sent.
+- **The numbers check.** `ReportDraftChecks.Numbers` flags every number the answer states that the material doesn't
+  (compared by value, so "1,204" matches "1204"). The draft is still shown, with the flagged numbers named, for the person
+  to check before using it. A pasted answer goes through the same checks.
+- **Who may draft.** Whoever may write the text: a report's assessments, `ReportService.CanAssess` (`EnterMetrics` or
+  `WriteArticles`); the title slide line, `WriteArticles`, until the brief is sent. Neither is widened.
+- **Nothing is saved by the draft.** *Use it* fills the box as an unsaved edit; the person edits it and saves as before.
+- **The record.** `AiDrafts.Kind` says what a draft was for (`Article`, `ReportAssessment`, `TitleLine`); `ArticleId` is
+  null for the new kinds, and `Subject` holds the report section (`2026-10/headlines`) or the brief's id. Each kind's
+  prompt has its own version (`ProsePrompt`).
+
 ## Consequences
 
 The deterministic helpers (the indicator finder, the CVE parser, the readiness checks) must stay good on their own,

@@ -158,7 +158,9 @@ is one, else the code default). **Where** is "Server" (file or environment varia
 | `AllowedHosts` | `*` | Host names separated by `;`. The installer writes the site's name. A request for another name gets HTTP 400. | Server | Next request |
 | `App:BaseUrl` | blank | The address readers reach TIDE at (`https://tide.example.org`). Used for links in email, webhooks and corrections (a Markdown link written from the root, `/actions/12`, among them), and as an allowed origin for the Blazor circuit (`CircuitOriginMiddleware`). Blank leaves links out. | Server | Start-up |
 | `App:PathBase` | blank | A sub-path such as `/tide`, only behind a reverse proxy that forwards one. Letters, digits, `-`, `_`, `.` in `/`-separated parts; anything else stops start-up (`PathBaseSetting.Normalize`). Under IIS as an application within another site, IIS sets the path base and this stays blank. | Server | Start-up |
-| `DataProtection:KeyPath` | blank (in-memory keys, development) | An absolute folder. A relative path stops start-up. The key ring is persisted there and protected with machine-scope DPAPI. The installer sets `<data root>\dp-keys`. Without it, every app-pool recycle signs everyone out, and webhook secrets can't be read. | Server | Start-up |
+| `DataProtection:KeyPath` | blank (in-memory keys, development) | An absolute folder. A relative path stops start-up. The key ring is persisted there and protected with machine-scope DPAPI, or with `DataProtection:CertificateThumbprint`'s certificate when that is set. The installer sets `<data root>\dp-keys`. Without it, every app-pool recycle signs everyone out, and webhook secrets can't be read. | Server | Start-up |
+| `DataProtection:CertificateThumbprint` | blank (machine DPAPI) | An option for a key ring another server can read (a warm standby, a restore to a new server): new keys are protected with this certificate from `LocalMachine\My`, which needs its private key, readable by the app pool. A certificate that's missing or has no private key stops start-up with why; one that expires within 30 days, or has, is a warning on Diagnostics (keys still read). See [backup-and-recovery.md](backup-and-recovery.md#a-warm-standby-optional). | Server | Start-up |
+| `DataProtection:PreviousThumbprints` | blank | After a renewal: the older certificates (comma-separated) whose keys may still be read. | Server | Start-up |
 
 ### Role mapping
 
@@ -361,6 +363,19 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 | `Updates:CheckEnabled` | `false` | One anonymous GitHub request per interval. | In app: **System › Updates** | At once (re-read every 5 minutes; server default: start-up) |
 | `Updates:CheckIntervalHours` | `24` | 6 to 168. | In app: **System › Updates** | At once |
 | `Updates:Repository` | `jashley92/Tide` | `owner/name`. | Server | Next check |
+
+### Telemetry (OTLP, opt-in)
+
+Off unless `Telemetry:OtlpEndpoint` is set (decided 2026-11-21: opt-in, metrics only by default). Nothing is sent
+anywhere otherwise.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Telemetry:OtlpEndpoint` | not set (off) | Your collector, such as `http://otel01:4317`. When set, request durations by route, Kestrel's connections and the .NET runtime's metrics (memory, GC, thread pool) are exported, as service `TIDE` with the server's name. No TIDE data is in them. |
+| `Telemetry:Protocol` | `grpc` | `http` for OTLP over HTTP/protobuf (port 4318 usually). |
+| `Telemetry:Headers` | not set | Headers for the collector, such as `x-api-key=...`. A secret: an environment variable, not the file. |
+| `Telemetry:Traces` | `false` | `true` adds request traces: a sample of requests (below), never the Blazor connection or health probes, with the query string removed (a search's words are in it). No database statements are traced. |
+| `Telemetry:TraceSampleRatio` | `0.05` | The share of requests traced, 0 to 1. |
 
 ### Logging
 

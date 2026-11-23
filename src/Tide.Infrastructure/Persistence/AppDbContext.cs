@@ -44,6 +44,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ArticleIndicator> ArticleIndicators => Set<ArticleIndicator>();
     public DbSet<ArticleCve> ArticleCves => Set<ArticleCve>();
     public DbSet<ArticleLink> ArticleLinks => Set<ArticleLink>();
+    public DbSet<ArticleSearchRow> ArticleSearch => Set<ArticleSearchRow>();
     public DbSet<Brief> Briefs => Set<Brief>();
     public DbSet<BriefItem> BriefItems => Set<BriefItem>();
     public DbSet<BriefSend> BriefSends => Set<BriefSend>();
@@ -344,6 +345,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.InputHash).HasMaxLength(64);
             e.Property(x => x.BasedOn).HasMaxLength(AiDraft.MaxBasedOn);
             e.Property(x => x.Suggestions).HasMaxLength(AiDraft.MaxSuggestions);
+            e.Property(x => x.Subject).HasMaxLength(AiDraft.MaxSubject);
         });
 
         b.Entity<ArticleTechnique>(e =>
@@ -779,6 +781,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ETag).HasMaxLength(200);
             e.Property(x => x.LastModified).HasMaxLength(100);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
+        });
+
+        b.Entity<ArticleSearchRow>(e =>
+        {
+            e.ToTable("ArticleSearch");
+            e.HasKey(x => x.ArticleId);
+            e.HasOne<Article>().WithOne(a => a.SearchRow).HasForeignKey<ArticleSearchRow>(x => x.ArticleId).OnDelete(DeleteBehavior.Cascade);
+            // The background rebuild reads only the rows a save has marked: a handful, whatever the table's size.
+            e.HasIndex(x => x.Dirty).HasFilter("[Dirty] = 1");
         });
 
         b.Entity<FeedItemText>(e =>
