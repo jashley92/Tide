@@ -112,10 +112,12 @@
 .tide-pick-list .form-check-input { flex: none; margin-top: .2rem; }
 .tide-pick-list label, .tide-pick-list .tide-pick-text { min-width: 0; font-size: var(--tide-text-sm); }
 
-.tide-toast .tide-toast-undo { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto;
-    min-height: 24px; padding: 0 .25rem; }
-.tide-toast .tide-toast-undo + button { margin-left: var(--tide-space-2); }
-.tide-toast .tide-toast-undo:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+/* Undo, and a link on to what the toast's step made (Triage's "Write it", before Undo), worded and placed alike. */
+.tide-toast .tide-toast-undo, .tide-toast .tide-toast-link { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold);
+    text-decoration: underline; margin-left: auto; min-height: 24px; padding: 0 .25rem; }
+.tide-toast .tide-toast-link { white-space: nowrap; }
+.tide-toast .tide-toast-undo + button, .tide-toast .tide-toast-link + button { margin-left: var(--tide-space-2); }
+.tide-toast .tide-toast-undo:focus-visible, .tide-toast .tide-toast-link:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 
 /* Triage's "Attach to…" (AttachPicker): a combobox in the row, over the recent drafts and ready articles. */
 .tide-attach { position: relative; display: inline-flex; }
@@ -276,7 +278,18 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 .tide-reading-head { display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between; }
 .tide-reading-title { font-size: 1.05rem; margin: 0 0 .25rem; }
 .tide-reading-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; border: 1px solid var(--tide-border); border-radius: 6px; padding: .6rem .75rem; max-height: 60vh; overflow: auto; }
-.tide-meeting-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.tide-meeting-notes { overflow-wrap: anywhere; line-height: 1.55; }
+.tide-meeting-notes > li + li { margin-top: .2rem; }
+.tide-meeting-note-text { white-space: pre-wrap; }
+/* A note's own buttons, and what came of it (Done, Raised as A-14), under its text. Named apart from present mode's
+   .tide-note-text / .tide-note-tools, whose indent would push the text away from its bullet. */
+.tide-meeting-note-tools { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.tide-note-done > .tide-meeting-note-text { color: var(--tide-text-muted); }
+.tide-note-done-badge { font-size: var(--tide-text-xs); font-weight: 600; color: var(--tide-ok); }
+/* The meeting recap: each list under its own subhead, the actions grouped by who holds them. */
+.tide-recap-list { list-style: none; padding-left: 0; margin: .15rem 0 .5rem; }
+.tide-recap-list > li + li { margin-top: .15rem; }
+.tide-recap-group + .tide-recap-group { margin-top: .4rem; }
 .tide-reading-text mark { padding: 0 .15rem; border-radius: 3px; color: inherit; }
 .tide-reading-text .tide-read-cve { background: var(--tide-threat-soft); font-weight: 600; }
 .tide-reading-text .tide-read-ioc { background: var(--tide-warn-soft); font-family: var(--tide-font-data); font-size: .85em; }

@@ -51,6 +51,7 @@ else
     var overdue = _report.Find("actions:overdue-at-end")!;
     var hunted = _report.Find("actions:hunted")!;
     var hits = _report.Find("actions:hits")!;
+    <TrendHighlightsStrip Highlights="@_highlights" Against="@_end.Previous.Label" Href="@(h => Href(view: TrendHighlightsStrip.ViewOf(h.Key), line: h.Key, at: h.At))" />
     @* Each tile opens what it counts (the drill-down below), and says how it compares with the period before. *@
     <div class="tide-load-nums tide-trend-tiles">
         <a href="@Href(line: articles.Key, at: _end)" title="The articles counted in @_end.Label"><strong>@articles.Current</strong><span>Articles</span><small><TrendChange Row="articles" /></small></a>
@@ -274,6 +275,7 @@ else
     [SupplyParameterFromQuery(Name = "tactic")] public string? TacticParam { get; set; }
 
     private TrendReport? _report;
+    private IReadOnlyList<TrendHighlight> _highlights = [];
     private (Period End, bool Subs, int Span)? _loaded;
     private Period _end;
     private int _span;
@@ -362,6 +364,7 @@ else
                     _report = report;
                 }
                 _loaded = (_end, Subs, _span);
+                _highlights = TrendHighlights.From(_report, TrendsSvc.IsPartial(_end));
             }
             _tactic = _view == "attack" && TacticParam?.StartsWith("tactic:", StringComparison.Ordinal) == true ? _report?.Find(TacticParam) : null;
             await LoadDrill(reading);

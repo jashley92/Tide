@@ -1,8 +1,7 @@
-@inject OrgClock Clock
 @inject ICurrentUser CurrentUser
 
-@* The brief's meeting: when it meets, who presents and the title slide line, who the rotation has, then who attended
-   and the notes. Whoever writes the brief changes the presenter and the line (until it's sent) in a form that opens from
+@* The brief's meeting: when it meets, who presents and the title slide line, who the rotation has, then (until the
+   meeting has ended, when the recap card takes them) who attended and the notes. Whoever writes the brief changes the presenter and the line (until it's sent) in a form that opens from
    its buttons, and stays open while what's typed isn't saved. The presenter and the line as typed are the page's
    (bound), so it can say they're unsaved and keep them through a reload. *@
 
@@ -73,26 +72,16 @@
             <button type="button" class="btn btn-link btn-sm" disabled="@Busy" @onclick="() => Closing(OnCancel)">Cancel</button>
         </div>
     }
-    @if (ShowAttendance && Meeting.Attendees.Count > 0)
+    @* Once the meeting has ended, the recap card under this one lists who attended and the notes instead. *@
+    @if (!Recapped && ShowAttendance && Meeting.Attendees.Count > 0)
     {
         <h3 class="tide-subhead">Attended</h3>
         <div class="small">@string.Join(", ", Meeting.Attendees.Select(a => a.Name))</div>
     }
-    @if (Meeting.Notes.Count > 0)
+    @if (!Recapped && Meeting.Notes.Count > 0)
     {
         <h3 class="tide-subhead">Meeting notes</h3>
-        @foreach (var (title, notes) in NoteGroups())
-        {
-            <div class="tide-meeting-notes-group">
-                <div class="tide-muted small">@title</div>
-                <ul class="tide-meeting-notes small">
-                    @foreach (var n in notes)
-                    {
-                        <li><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</li>
-                    }
-                </ul>
-            </div>
-        }
+        <MeetingNoteList Brief="Brief" Meeting="Meeting" OnChanged="OnNotesChanged" />
     }
 </section>
 
@@ -136,6 +125,12 @@
 
     /// <summary>Who attended is shown: the meeting has been held or is running, or its day has gone.</summary>
     [Parameter] public bool ShowAttendance { get; set; }
+
+    /// <summary>The meeting recap card shows who attended and the notes, so this card leaves them out.</summary>
+    [Parameter] public bool Recapped { get; set; }
+
+    /// <summary>A note was raised or marked done: the page reads the meeting and its actions again.</summary>
+    [Parameter] public EventCallback OnNotesChanged { get; set; }
 
     /// <summary>The page is saving: Save waits.</summary>
     [Parameter] public bool Busy { get; set; }
@@ -216,15 +211,5 @@
         if (_focus is not { } field || !FormShown) return;
         _focus = null;
         await (field == Field.Presenter ? _analyst : _intro).TryFocusAsync(orGone: true);
-    }
-
-    // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
-    private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()
-    {
-        var items = Brief.Items.ToDictionary(i => i.ArticleId);
-        return Meeting.Notes.GroupBy(n => n.ArticleId)
-            .Select(g => (Item: g.Key is { } id ? items.GetValueOrDefault(id) : null, Notes: g))
-            .OrderBy(g => g.Notes.Key is null ? int.MaxValue : g.Item?.SortOrder ?? int.MaxValue - 1)
-            .Select(g => (g.Notes.Key is null ? "The meeting" : g.Item?.Article?.Title ?? "An article since taken off", (IEnumerable<MeetingNote>)g.Notes));
     }
 }

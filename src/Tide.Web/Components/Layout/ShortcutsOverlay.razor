@@ -94,7 +94,9 @@
         catch (JSException) { /* the defaults stand */ }
         catch (JSDisconnectedException) { return; }
         // T on the Actions list is listed for whoever may be given actions (WorkActions, or WriteArticles for all of them).
-        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail, CurrentUser.Has(Permission.WorkActions) || CurrentUser.Has(Permission.WriteArticles));
+        // The article editor's keys are listed for whoever can edit articles (the fields are theirs).
+        var write = CurrentUser.Has(Permission.WriteArticles);
+        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail, CurrentUser.Has(Permission.WorkActions) || write, write);
         _open = true;
         StateHasChanged();
     }

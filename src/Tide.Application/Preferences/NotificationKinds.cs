@@ -63,12 +63,17 @@ public static class NotificationKinds
         "Swap or cover requests to you, and notices when one is approved, recorded or declined.",
         [On, Off], Permission.WriteArticles, []);
 
+    // Sent when it happens, so no scan, as the rotation's requests are: to the one analyst handed an article.
+    public static readonly NotificationKind ArticleHandoffs = new(NotifyArticleHandoffs, "Articles handed to you",
+        "An email when a colleague hands you an article to finish. It's on your Today page either way.",
+        [On, Off], Permission.WriteArticles, []);
+
     public static readonly NotificationKind Digest = new(NotifyDigest, "Personal digest",
         "Your actions that are due soon or overdue, and those newly given to you.",
         [Off, Daily, Weekly], Permission.ReadActions, [ReminderKind.PersonalDigest]);
 
     /// <summary>All of them: the switches in the page's order, then the personal digest.</summary>
-    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, OutreachFollowUp, Handoffs, RotationReminders, RotationRequests, Digest];
+    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, OutreachFollowUp, Handoffs, RotationReminders, RotationRequests, ArticleHandoffs, Digest];
 
     /// <summary>The kind named <paramref name="name"/>, or null.</summary>
     public static NotificationKind? Find(string name) => All.FirstOrDefault(k => k.Name == name);

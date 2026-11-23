@@ -230,6 +230,7 @@ erDiagram
     Briefs ||--o{ MeetingAttendees : "cascade"
     Briefs ||--o{ MeetingNotes : "cascade"
     Articles |o..o{ MeetingNotes : "ArticleId on screen"
+    Actions |o--o{ MeetingNotes : "ActionId raised, restrict"
 
     Briefs {
         uuid Id PK
@@ -258,6 +259,8 @@ erDiagram
         uuid BriefId FK
         uuid ArticleId
         string AuthorId
+        uuid ActionId FK
+        datetime DoneAtUtc
     }
 ```
 
@@ -770,8 +773,11 @@ Written by `ArticleService` (editor saves, status, delete). `ArticleForm` applie
 | `Sectors` | nvarchar(500) | yes | Comma-separated, as typed. |
 | `Status` | int | no | `ArticleStatus`. Indexed. |
 | `StoryId` | uniqueidentifier | yes | FK → `Stories`, **set null**. Indexed. |
-| `AuthorId`, `AuthorName` | nvarchar(256) | no | |
-| `EditVersion` | uniqueidentifier | no | Concurrency token. Changes on every save, including a status change. |
+| `AuthorId`, `AuthorName` | nvarchar(256) | no | Who started it: the credit, kept when it's handed on. |
+| `WriterId`, `WriterName` | nvarchar(256) | yes | Who is writing it now (ADR [0031](../decisions/0031-an-article-has-an-author-and-a-writer.md)): the author until it's handed on (`ArticleHandoffService`). Empty reads as the author (`Article.CurrentWriterId`). The `ArticleWriter` migration filled it with the author for every article before it. |
+| `WriterSinceUtc` | datetimeoffset | yes | When the writer took it: made, or handed on. Filled with `CreatedAtUtc` by the migration. |
+| `HandoffNote` | nvarchar(300) | yes | What the last hand-off asked of the writer, shown to them on Today. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token. Changes on every save, including a status change. A hand-off leaves it alone. |
 | `ScreenshotsChangedAtUtc` | datetimeoffset | yes | Set when a screenshot is added or removed, which leaves `EditVersion` unchanged. A review recorded before this time is out of date. |
 | stamps | | | **S** columns. `CreatedAtUtc` is indexed. |
 
@@ -914,6 +920,8 @@ One person's note at a meeting, made against the article on screen as its author
 | `ArticleId` | uniqueidentifier | yes | The article on screen. **No FK**. Null for a note on the whole meeting. |
 | `AtUtc`, `EditedAtUtc` | datetimeoffset | no / yes | |
 | `Text` | nvarchar(max) | no | A new note is at most 2,000 characters. One carried over from the legacy `Briefs.MeetingNotes` can be up to 8,000. |
+| `ActionId` | uniqueidentifier | yes | The action its author raised from it ("Raised as A-14", `MeetingService.RaiseFromNoteAsync`). FK → `Actions`, **restrict** (actions are cancelled, never deleted). Indexed. One per note. |
+| `DoneAtUtc` | datetimeoffset | yes | When its author marked it done (`MarkNoteDoneAsync`); null while it's open. |
 
 ## Distribution and sends
 

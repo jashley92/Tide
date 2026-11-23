@@ -1,0 +1,42 @@
+@* What moved this period (P13): the lines of the trend report that changed most, as chips. Each opens Trends on its line
+   and period, the way every Trends number opens to what it counted. Not printed: the report's own sections are. *@
+@using Tide.Application.Trends
+
+<section class="tide-highlights tide-noprint" aria-labelledby="highlights-h">
+    <h2 id="highlights-h" class="tide-highlights-h">What moved</h2>
+    @if (Highlights.Count == 0)
+    {
+        <span class="small tide-muted">Nothing moved by much against @Against.</span>
+    }
+    else
+    {
+        <ul class="tide-highlights-list">
+            @foreach (var h in Highlights)
+            {
+                <li @key="h.Key">
+                    <a class="tide-chip tide-highlight" href="@Href(h)" title="@($"What {h.Name} counted in {h.At.Label}")">
+                        <span class="bi @(h.Up ? "bi-arrow-up-right" : "bi-arrow-down-right")" aria-hidden="true"></span>
+                        <span><strong>@h.Name</strong>: @h.Detail</span>
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<TrendHighlight> Highlights { get; set; } = [];
+
+    /// <summary>Where a highlight opens: Trends, on its line and period.</summary>
+    [Parameter, EditorRequired] public Func<TrendHighlight, string> Href { get; set; } = default!;
+
+    /// <summary>The period compared with, as the empty strip names it ("Sep 2026").</summary>
+    [Parameter, EditorRequired] public string Against { get; set; } = "";
+
+    /// <summary>The Trends view that lists a line: ATT&amp;CK for a tactic or technique, Actions for an action line, else
+    /// the tags view (which holds the article lines too).</summary>
+    public static string ViewOf(string key) =>
+        key.StartsWith("actions:", StringComparison.Ordinal) ? "actions"
+        : key.StartsWith("technique:", StringComparison.Ordinal) || key.StartsWith("tactic:", StringComparison.Ordinal) ? "attack"
+        : "tags";
+}

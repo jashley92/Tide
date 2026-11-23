@@ -1,0 +1,71 @@
+@* What came out of the brief's meeting, once it has ended: the wrap-up slide's who is doing what (by team and holder),
+   the notes (open or done, each person's own to raise or mark done), the articles carried to a later brief, and who
+   attended. Built from the team edition (WrapUp.Recap), so it names nothing above that edition's ceiling. *@
+
+<section class="tide-card" aria-labelledby="recap-h" data-recap>
+    <h2 id="recap-h">Meeting recap</h2>
+
+    @{ var raised = Recap.WhoHasWhat.Sum(g => g.Actions.Count); }
+    <h3 class="tide-subhead">Actions raised (@raised)</h3>
+    @foreach (var g in Recap.WhoHasWhat)
+    {
+        <div class="tide-recap-group small" data-recap-holder>
+            <strong>@g.Who</strong>
+            <ul class="tide-recap-list">
+                @foreach (var r in g.Actions)
+                {
+                    <li><a href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a> @r.Title <span class="tide-muted text-nowrap">· @ActionService.StatusName(r.Status)</span></li>
+                }
+            </ul>
+        </div>
+    }
+    @if (raised == 0) { <p class="small tide-muted mb-2">No actions raised on these articles.</p> }
+
+    <h3 class="tide-subhead">Meeting notes (@Recap.OpenNotes open, @(Recap.Notes.Count - Recap.OpenNotes) done)</h3>
+    @if (Recap.Notes.Count > 0)
+    {
+        <MeetingNoteList Brief="Brief" Meeting="Meeting" OnChanged="OnChanged" />
+    }
+    else
+    {
+        <p class="small tide-muted mb-2">No notes were taken.</p>
+    }
+
+    <h3 class="tide-subhead">Carried to a later brief (@Recap.Carried.Count)</h3>
+    @if (Recap.Carried.Count > 0)
+    {
+        <ul class="tide-recap-list small">
+            @foreach (var c in Recap.Carried)
+            {
+                <li>@c.Title <span class="tide-muted text-nowrap">· <a href="@Ui.BriefUrl(c.To)">@Ui.ShortDay(c.To)</a></span></li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
+    }
+
+    <h3 class="tide-subhead">Attended (@Recap.Attendees.Count)</h3>
+    @if (Recap.Attendees.Count > 0)
+    {
+        <div class="small">@string.Join(", ", Recap.Attendees.Select(a => a.Name))</div>
+    }
+    else
+    {
+        <p class="small tide-muted mb-0">Nobody was recorded as attending.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Brief Brief { get; set; } = default!;
+
+    /// <summary>The recap, from the team edition and the meeting's record.</summary>
+    [Parameter, EditorRequired] public MeetingRecap Recap { get; set; } = default!;
+
+    /// <summary>The meeting's record, for the notes' "Raised as" links.</summary>
+    [Parameter, EditorRequired] public MeetingRecord Meeting { get; set; } = default!;
+
+    /// <summary>A note was raised or marked done: the page reads the meeting and its actions again.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+}

@@ -424,7 +424,7 @@ A `DbUpdateException` (a colleague editing, starting or sending the next brief a
 read again and redone, up to three attempts, so the meeting never ends with its carry lost.
 
 Then present mode ends the live meeting (`LiveMeetings.End`), everyone in it lands on the wrap-up, and `LeftAsync`
-records when each person left. A meeting everyone left without ending still gets its left times: see the edge cases below. The brief page keeps who attended and the notes, by article. It says who attended once
+records when each person left. A meeting everyone left without ending still gets its left times: see the edge cases below. The brief page keeps who attended and the notes, by article (see [The meeting recap](#the-meeting-recap)). It says who attended once
 the meeting has been held (`BriefService.MeetingHeld`), while it runs, or once the brief's day has gone (a meeting
 that ran and was never ended, as after a restart, still had who it had); never before, so people recorded at a meeting
 started ahead of its day and never ended (a version before 1.13 allowed that start) aren't shown as having attended
@@ -438,6 +438,38 @@ Before it marks anything, present mode reads the saved brief again. If it was pu
 a moment ago from the brief page, it shows the wrap-up as it is now and asks to end again, rather than leave a reopened
 brief unmarked or carry articles from one already presented. If the presenter came back from a drop, it isn't this page's
 to end: "… is presenting again".
+
+### The meeting recap
+
+Once the meeting has been held (`BriefService.MeetingHeld`), the brief page's rail shows a **Meeting recap** card under
+the Meeting card (`MeetingRecapCard`), and the Meeting card stops listing who attended and the notes, which the recap
+lists instead. It's built by `WrapUp.Recap` from the team edition, as the wrap-up slide is, so nothing above that
+edition's ceiling is named:
+
+| List | From |
+|---|---|
+| Actions raised | `WrapUp.WhoHasWhat` over the team edition's actions: by team, then by holder (the team's own last), each with its status. The same list as the wrap-up slide's "Who is doing what". |
+| Meeting notes | Every note, grouped by the article it was written against, each open or **Done**; the heading counts both. |
+| Carried to a later brief | The team edition's articles the meeting carried on (`BriefService.CarriedAsync`, from `BriefItem.CarriedFromBriefId`), each with the day it went to. |
+| Attended | Who attended, as the Meeting card listed them. |
+
+**A note becomes a follow-up.** Notes are each person's own, so only a note's author sees its buttons, on the brief
+page (the Meeting card before the meeting ends, the recap after):
+
+- **Raise as action** (`MeetingService.RaiseFromNoteAsync`): the note's text, on one line and cut to an action's
+  300 characters, becomes the title, on the article the note was written against (none for a note on the meeting as a
+  whole). It's raised as present mode's Raise raises a recommended line, through `ActionService.QuickAddAsync` (and so
+  `CreateAsync`): the kind guessed from its wording (`RecommendedActions.GuessKind`), the team that last took that kind
+  if it's still in use, else the first internal team; held by whoever raises it when they're on that team; for the
+  brief's day when it has gone. A team that warns at its limit asks why first (`OverLimitDialog`). The note keeps the
+  action (`MeetingNote.ActionId`) and shows **Raised as A-14**, which opens it; it can't raise a second ("That note was
+  raised already, as A-14."). Only someone who may create actions raises (`MeetingService.CanRaiseNotes`: an analyst;
+  a Viewer or an action owner takes notes but has no Raise).
+- **Mark done**, and **Reopen** once done (`MeetingService.MarkNoteDoneAsync`, `MeetingNote.DoneAtUtc`). Anyone who
+  takes notes marks their own.
+
+Anyone else's note is refused in the service ("Only its author can raise a note as an action.", "Only its author can
+mark a note done."), not only hidden in the page. A recap email is not built yet.
 
 ## Back to ready: reopening a meeting
 
@@ -508,7 +540,8 @@ meeting time (`OrgClock.MeetingStart`), and the presenter can pick another time 
 | Read briefs, the brief page, Today | `ReadTeamEdition`, or a seat in that brief's live meeting | `BriefPage.razor` policy; `BriefService.RequireRead` |
 | Start a brief, change the running order, presenter, title slide line, opening note, mark ready | `WriteArticles` | `BriefService.RequireWrite` |
 | Open present mode, join and follow, raise a hand | `JoinMeetings` | `Present.razor` policy; `MeetingService.JoinedAsync` |
-| Take meeting notes | `ReadTeamEdition` and `MeetingNotes` | `MeetingService.CanNote` |
+| Take meeting notes; mark your own done | `ReadTeamEdition` and `MeetingNotes` | `MeetingService.CanNote` |
+| Raise your own note as an action | `ReadTeamEdition`, `MeetingNotes` and `WriteArticles` | `MeetingService.CanRaiseNotes`; `ActionService.CreateAsync` |
 | Start, run and end the meeting, mark discussed, add attendees by name, Back to ready | `PresentBriefs` (Analyst, Admin) | `BriefService.RequirePresent`; `MeetingService.RequirePresent`; `Present.razor` `_canPresent` |
 | Carry articles on ending, or bring them back on reopening | `PresentBriefs` and `WriteArticles` | `MarkPresentedAsync`, `ReopenAsync` |
 
@@ -532,6 +565,8 @@ meeting time (`OrgClock.MeetingStart`), and the presenter can pick another time 
 | A meeting time before the brief's day, or in the future | Refused. |
 | A Visitor keeps a page open after the meeting | Their reads are refused; the page forgets what it showed. |
 | A note against an article not on the brief | Refused. |
+| A note raised as an action a second time (a double click, two tabs) | Refused, naming the action it raised. |
+| A colleague's note raised or marked done | Refused in `MeetingService`: only its author does either. |
 
 ## Where it lives in code
 
@@ -542,7 +577,8 @@ meeting time (`OrgClock.MeetingStart`), and the presenter can pick another time 
 | Starting, running order, notes, ready, ending, carrying, reopening | `src/Tide.Application/Briefs/BriefService.cs` |
 | The step strip and status labels | `src/Tide.Application/Briefs/BriefProgress.cs` (`BriefSteps`) |
 | The editions | `src/Tide.Application/Briefs/BriefEdition.cs` (`BriefEditions.Build`, `BriefEdition.ShowTeamNote`) |
-| Attendance and notes | `src/Tide.Application/Briefs/MeetingService.cs` |
+| Attendance and notes, a note raised or marked done | `src/Tide.Application/Briefs/MeetingService.cs` |
+| The wrap-up's lists and the meeting recap | `src/Tide.Application/Briefs/WrapUp.cs` (`WhoHasWhat`, `Recap`); `src/Tide.Web/Components/Today/MeetingRecapCard.razor`, `MeetingNoteList.razor` |
 | Live meetings seen from the services, the Visitor window | `src/Tide.Application/Briefs/MeetingsInProgress.cs` (`IMeetingsInProgress`, `MeetingAccess`) |
 | The live meeting | `src/Tide.Web/Services/LiveMeetings.cs` |
 | Metric slides | `src/Tide.Application/Metrics/MetricSlides.cs` |

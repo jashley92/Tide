@@ -3,14 +3,17 @@ using Tide.Application.Actions;
 using Tide.Application.Search;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Shared;
+using Tide.Web.Services;
 
 namespace Tide.Web.Components.Layout;
 
-/// <summary>What a palette entry opens: a page, a tab of one (the Library's), a "New …" command, a search hit, or the search page itself.</summary>
+/// <summary>What a palette entry opens: a page, a tab of one (the Library's), a command (a verb: "New article", the
+/// page's own "Mark the brief ready"), a search hit, or the search page itself.</summary>
 public enum PaletteKind { Page, Tab, Command, Article, Action, Story, Search }
 
-/// <summary>One line in the command palette: what it says, where it goes, and a word or two about what it is.</summary>
-public sealed record PaletteEntry(string Label, string Href, string Icon, PaletteKind Kind, string Detail, string? Keywords = null);
+/// <summary>One line in the command palette: what it says, where it goes (or, for a page's verb, what it runs), and a
+/// word or two about what it is.</summary>
+public sealed record PaletteEntry(string Label, string Href, string Icon, PaletteKind Kind, string Detail, string? Keywords = null, Func<Task>? Run = null);
 
 /// <summary>
 /// The command palette's entries (CommandPalette): the pages someone may open, as the sidebar lists them (NavPages),
@@ -39,6 +42,56 @@ public static class PaletteEntries
         if (user.Has(Permission.PresentBriefs))
             list.Add(new("Present today's brief", Ui.PresentUrl(briefDay), "bi-easel", PaletteKind.Command, "Command", "meeting slides"));
         return list;
+    }
+
+    /// <summary>What starts a query that lists only the commands (verbs), as in an editor's command palette.</summary>
+    public const char VerbsOnly = '>';
+
+    /// <summary>Whether <paramref name="query"/> asks for the commands only ("&gt;", "&gt; ready"), and what's typed after it.</summary>
+    public static bool OnlyVerbs(string? query, out string rest)
+    {
+        var q = (query ?? "").Trim();
+        var only = q.StartsWith(VerbsOnly);
+        rest = only ? q[1..].Trim() : q;
+        return only;
+    }
+
+    /// <summary>The page's own verbs (<see cref="PaletteCommands"/>) as palette lines, said with where they apply.</summary>
+    public static IReadOnlyList<PaletteEntry> FromVerbs(IEnumerable<PaletteCommand> verbs) =>
+        verbs.Select(v => new PaletteEntry(v.Label, "", v.Icon, PaletteKind.Command, v.Scope, v.Keywords, v.Run)).ToList();
+
+    /// <summary>
+    /// A verb on an action named in what's typed, from anywhere: "take A-12" and "hand A-12" (or "hand off 12") open the
+    /// action with its own Take it or Hand off (<c>?do=</c>), which asks what its button would ask (whose action it is,
+    /// which team and why) and runs only when the page offers that flow. Only for someone who may work actions.
+    /// </summary>
+    public static IReadOnlyList<PaletteEntry> Typed(string? query, ICurrentUser user)
+    {
+        if (!(user.Has(Permission.WriteArticles) || user.Has(Permission.WorkActions))) return [];
+        var words = (query ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length is < 2 or > 3 || SearchText.ActionNumber(words[^1]) is not { } n) return [];
+        var label = Ui.ActionLabel(n);
+        return string.Join(' ', words[..^1]).ToLowerInvariant() switch
+        {
+            "take" => [new($"Take {label}", Ui.ActionUrl(n, "do=takeit"), "bi-person-check", PaletteKind.Command, "Action", "assign me mine")],
+            "hand" or "hand off" or "handoff" => [new($"Hand {label} to…", Ui.ActionUrl(n, "do=handoff"), "bi-box-arrow-right", PaletteKind.Command, "Action", "hand off team")],
+            _ => [],
+        };
+    }
+
+    /// <summary>
+    /// What the palette lists for <paramref name="query"/>: the page's verbs first, then a verb what's typed asks for
+    /// (unless the page has the same one), then the pages and commands; only the verbs (commands) after "&gt;". Without
+    /// <paramref name="verbs"/> (present mode, keys only), no verb at all.
+    /// </summary>
+    public static IReadOnlyList<PaletteEntry> Filter(IReadOnlyList<PaletteEntry> pageVerbs, IReadOnlyList<PaletteEntry> entries, string? query,
+        ICurrentUser user, bool verbs = true)
+    {
+        var only = OnlyVerbs(query, out var rest);
+        if (!verbs) return only ? [] : Match(entries.Where(e => e.Kind != PaletteKind.Command).ToList(), rest);
+        var typed = Typed(rest, user).Where(t => !pageVerbs.Any(v => string.Equals(v.Label, t.Label, StringComparison.OrdinalIgnoreCase)));
+        List<PaletteEntry> all = [.. Match(pageVerbs, rest), .. typed, .. Match(entries, rest)];
+        return only ? all.Where(e => e.Kind == PaletteKind.Command).ToList() : all;
     }
 
     /// <summary>The entries whose name (or other words) has every word of <paramref name="query"/>; all of them when it's empty.</summary>

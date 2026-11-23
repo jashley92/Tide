@@ -128,7 +128,8 @@ sequenceDiagram
 
 **Go to** (`Ctrl+K`, `CommandPalette.razor`) is separate: it jumps to a page, starts an article or action, or opens one
 by title or number. It lists an action it found only for someone who may read actions (`ReadActions`), as the search
-page links them (`PaletteEntries.FromSearch`). `?` lists the page's keyboard shortcuts.
+page links them (`PaletteEntries.FromSearch`). It also runs the page's own commands (`PaletteCommands`; see
+[screens](../product/screens.md)), and `>` lists only those. `?` lists the page's keyboard shortcuts.
 
 ## Similar articles
 

@@ -894,6 +894,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("HandoffNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -966,6 +970,17 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("int");
+
+                    b.Property<string>("WriterId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WriterName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("WriterSinceUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
@@ -2165,6 +2180,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2184,6 +2202,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("DoneAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("EditedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2193,6 +2214,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
 
                     b.HasIndex("BriefId", "AtUtc");
 
@@ -4100,6 +4123,11 @@ namespace Tide.Migrations.SqlServer.Migrations
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingNote", b =>
                 {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Tide.Domain.Entities.Brief", null)
                         .WithMany()
                         .HasForeignKey("BriefId")

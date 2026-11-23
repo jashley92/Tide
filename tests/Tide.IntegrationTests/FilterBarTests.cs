@@ -435,11 +435,15 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         var html = WebUtility.HtmlDecode(await r.Html());
         FilterBarHtml.Pressed(html, "Draft").Should().BeTrue();
         html.Should().NotContain("Remove filter Status: Draft", "the Draft pill says it").And.Contain("aria-label=\"Remove filter Tactic: Initial Access\"");
-        r.Component.Defs.Select(d => d.Key).Should().Equal("status", "tactic", "technique", "withsubs", "assess", "tag", "from", "to");
+        FilterBarHtml.Pressed(html, "Mine").Should().BeFalse();
+        r.Component.Defs.Select(d => d.Key).Should().Equal("author", "status", "tactic", "technique", "withsubs", "assess", "tag", "from", "to");
+        r.Component.Defs.Single(d => d.Key == "author").Options[0].Value.Should().Be("me", "By … offers you first: Mine");
         r.Component.Defs.Single(d => d.Key == "tag").Options.Should().Contain(o => o.Value == "tag:none");
 
         (await Went(r, a => FilterBarHtml.Press(Articles.Pills, a.Defs, "draft"))).Should().NotContain("status=").And.NotContain("page=");
         (await Went(r, a => FilterBarHtml.Press(Articles.Pills, a.Defs, "ready"))).Should().Contain("status=ready");
+        (await Went(r, a => FilterBarHtml.Press(Articles.Pills, a.Defs, "mine"))).Should().Contain("author=me").And.Contain("status=draft", "Mine goes with Draft");
+        (await Went(r, a => FilterBarHtml.Set(a.Defs, "author", "S-1-5-21-DANA"))).Should().Contain("author=S-1-5-21-DANA");
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "status", "Presented"))).Should().Contain("status=presented");
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "tactic", "TA0002"))).Should().Contain("tactic=TA0002");
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "assess", "P1P2"))).Should().Contain("assess=p1-p2");
@@ -449,6 +453,23 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "withsubs", "true"))).Should().Contain("withsubs=true");
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "from", "2026-10-01"))).Should().Contain("from=2026-10-01");
         (await Went(r, a => FilterBarHtml.Set(a.Defs, "to"))).Should().NotContain("to=");
+    }
+
+    [Fact]
+    public async Task Articles_MineIsAPill_AndBySomeoneIsAChipNamingThem()
+    {
+        await using var mine = await ComponentHarness.RenderAsync<Articles>(app, "/articles?author=me");
+        var html = WebUtility.HtmlDecode(await mine.Html());
+        FilterBarHtml.Pressed(html, "Mine").Should().BeTrue();
+        html.Should().NotContain("Remove filter Mine", "the Mine pill says it");
+        (await Went(mine, a => FilterBarHtml.Press(Articles.Pills, a.Defs, "mine"))).Should().NotContain("author=");
+
+        // Someone from a link who has written nothing: still a chip to remove, and still chosen under By ….
+        await using var by = await ComponentHarness.RenderAsync<Articles>(app, "/articles?author=S-1-5-21-NOBODY");
+        html = WebUtility.HtmlDecode(await by.Html());
+        FilterBarHtml.Pressed(html, "Mine").Should().BeFalse();
+        html.Should().Contain("aria-label=\"Remove filter By: S-1-5-21-NOBODY\"").And.Contain("No articles match these filters");
+        by.Component.Defs.Single(d => d.Key == "author").Options.Should().Contain(o => o.Value == "S-1-5-21-NOBODY");
     }
 
     [Fact]

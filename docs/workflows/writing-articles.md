@@ -36,7 +36,15 @@ An article starts in one of two ways:
 | Triage | Promote, Promote as one, or the brief's Add article picker linking a shortlisted item | Title, source, link, date, CVEs, TLP from the source, the chosen classification and priority. See [intake-and-triage.md](intake-and-triage.md#promoting-an-item). |
 | The Articles list (`/articles`) | New article: title, source name, link, TLP | `ArticleService.CreateAsync`. The link must be http or https. |
 
-Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`).
+Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`), who is also its writer
+until they hand it on ([Handing an article on](#handing-an-article-on)).
+
+To find your own again, the Articles list has a **Mine** pill (`?author=me`): the articles that are yours, whoever
+opens the link. **+ Filter → By** lists everyone who has written an article, with how many, and narrows the list to one
+of them (`?author=<their user id>`); a person nobody has written as lists nothing, not everything. Both go with the
+other filters (Mine and Draft is your drafts in flight). For now an article is yours if you're its author.
+`ArticleService.Whose` holds that rule in one place, so when an article can be handed on to someone to finish, Mine
+can follow the writer instead with a one-line change. By … keeps crediting the author.
 
 ## What an article holds
 
@@ -118,6 +126,21 @@ the same audited methods Today does (`ArticleService.MarkWhyItMattersAmberAsync`
 Save saves it.
 
 On today's brief, `BriefStepper` walks to the article before or after this one in the running order.
+
+### Keys
+
+For someone who can edit (`wwwroot/js/editor.js` hears them, `ArticleEditorPanel.OnEditorKey` acts, `EditorKeys` says
+where they go). All are listed in the `?` overlay under *Editing the article* (`Shortcuts.For(path, canEdit:)`).
+
+| Keys | What they do |
+|---|---|
+| `G` then `B`, `U`, `W`, `R`, `I` or `T` | Go to the bottom line, the first bullet, why it matters, recommended actions, the new-indicator box or the scorecard tag search, focused. Bullets with none yet goes to its heading (nothing is added). Assessment and Screenshots have no letter. A `G` not followed by one of these within 1.5 seconds is dropped. |
+| `N` | The next gap the readiness checks flag on what's on screen (the section index's *Needed* and *check TLP*), after the section focus is in, in the order the page runs (Screenshots after Recommended), round to the first. It goes to the gap's field as a gap's link in the preview does, so a missing bullet adds an empty one. None: a toast says *No gaps*. |
+| `Ctrl Shift Enter` (`⌘ Shift Enter`) | *Save and mark ready* with its own checks (a blocking gap refuses it and says why, nothing saved), then the next article in today's running order, keeping the edition and tab the preview shows. A Ready article is saved if need be and moved on from. Not on today's brief, or the last on it: it stays, and the toast says so. |
+
+The letters pause as Triage's do (`rows.js`): while typing in a field, with focus in a menu, a dialog or the context
+rail, under an open confirmation, and when single-letter shortcuts are off (WCAG 2.1.4). `Ctrl Shift Enter` works from a
+field too, but not in a dialog; `Ctrl Enter` (`submitkeys.js`) ignores it.
 
 Leaving with unsaved changes asks first (`NavigationLock`, `LeaveDialog`). This is one of two prompts that stay the
 browser's own, because it has to be answered during navigation.
@@ -402,18 +425,38 @@ date once `ScreenshotsChangedAtUtc` is after its decision.
 
 | Step | Who | Code | Rule |
 |---|---|---|---|
-| Ask | The author, or any analyst | `ReviewService.AskAsync` | Reviewers are everyone who can write articles but the author and you, this week's presenter first (`ReviewersAsync`). An earlier open request is withdrawn. Someone else's open request can only be replaced by the author. |
+| Ask | The writer, or any analyst | `ReviewService.AskAsync` | Reviewers are everyone who can write articles but the writer and you, this week's presenter first (`ReviewersAsync`). An author who handed the article on may review it. An earlier open request is withdrawn. Someone else's open request can only be replaced by the writer. |
 | See it | The reviewer | Today (`AskedOfMeAsync`), `/articles/{id}/review` | The article as each edition will carry it. |
-| Comment | The reviewer and the author | `CommentAsync` | On a part: title, bottom line, a bullet, why it matters, recommended actions, or general, optionally quoting the words selected. |
-| Resolve | The reviewer and the author | `ResolveAsync` | The author sees comments in the editor and resolves them. |
+| Comment | The reviewer and the writer | `CommentAsync` | On a part: title, bottom line, a bullet, why it matters, recommended actions, or general, optionally quoting the words selected. |
+| Resolve | The reviewer and the writer | `ResolveAsync` | The writer sees comments in the editor and resolves them. |
 | Decide | The reviewer only | `DecideAsync` | With the checklist: TLP right for every part, every claim sourced, nothing internal in the company-wide edition, the bottom line stands alone. **Approving is refused when the article changed since the reviewer opened it.** |
-| Withdraw | The author, or whoever asked | `WithdrawAsync` | Only an open request. |
+| Withdraw | The writer, or whoever asked | `WithdrawAsync` | Only an open request. |
 
 **The rule** (`ReviewRule`): Off (default), AMBER and above, Threats, or AMBER or threats. "AMBER and above" looks at the
 article's highest marking (`ReviewService.Marking`). While it's on, `ReviewService.RequireApprovedAsync` holds every
 way an article can leave: an edition's send, the SharePoint copy, marking the brief distributed, finishing it as not
 sent, and a correction whose "now" lines add words. The Send dialog lists the brief's articles without a current
 approval (`GapsAsync`) whether or not the rule is on. See [distribution.md](distribution.md#review-holds).
+
+## Handing an article on
+
+An article has an **author**, who started it and keeps the credit (the archive, "By …" in the editor, the reports), and
+a **writer**, who has it now (ADR [0031](../decisions/0031-an-article-has-an-author-and-a-writer.md)). They're the same
+person until the article is handed on.
+
+- **Hand to…** in the editor's head, while the article is a Draft or Ready, for anyone who may edit it: pick a colleague
+  who can write articles (or yourself, to take it over) and add a note if you like (300 characters). The editor's line
+  under the title then reads "By Pat · Sam is writing it now".
+- It's saved by `ArticleHandoffService.HandToAsync` as the article's own save, so it's audited and the History reads
+  "Handed from Pat to Sam" with the note. It leaves the edit version alone: an editor open on the article can still
+  save. It's refused when someone else handed it on after the page was read.
+- The new writer sees it first on Today's **Drafts in progress**, marked *Handed to you* with the note, and is told by a
+  toast if Today is open. They're emailed too (`article-handoff`, marked with the article's TLP; an article above the
+  team edition's ceiling isn't named, nor is the note), unless they turned *Articles handed to you* off in My notifications.
+- "Mine" means the writer: the brief picker's *Only mine* and Today's drafts list the articles you're writing now.
+- Editing rights don't change: any analyst can still edit any article. **Reviews go by the writer**: whoever is
+  writing it can't review it and takes the author's part in its review; an author who handed it on may review it.
+- Taking a draft over (handing it to yourself) needs no waiting period. A presented article isn't handed on.
 
 ## History
 
@@ -436,9 +479,10 @@ the foreign keys refuse the delete and the same message is shown. Its screenshot
 | Open an article, read it, see related work and reviews | `ReadTeamEdition` | `ArticleEdit.razor` policy; `ArticleService.RequireRead`; `RelatedService` |
 | Create, save, mark ready, delete, add screenshots, indicators, tags, reports, stories | `WriteArticles` | `ArticleService.RequireWrite`; `ScreenshotService`; `StackService`; `AdversaryService`; `StoryService` |
 | Draft with AI, fetch the article, copy a prompt | `WriteArticles` | `AssistService.RequireWrite` |
-| Ask for, comment on, decide a review; open the review page | `WriteArticles`, and for comments and decisions being the reviewer or author | `ReviewService`; `ReviewPage.razor` policy |
+| Ask for, comment on, decide a review; open the review page | `WriteArticles`, and for comments and decisions being the reviewer or the writer | `ReviewService`; `ReviewPage.razor` policy |
 | Set the review rule | `Administer` | `ReviewService.SaveRuleAsync` |
 | See History | `WriteArticles` | `HistoryService` |
+| Hand an article on (Draft or Ready), to someone who can write articles | `WriteArticles` | `ArticleHandoffService` |
 
 A Viewer and an Action owner read articles at every marking inside TIDE, as analysts do; see
 [architecture/security.md](../architecture/security.md).

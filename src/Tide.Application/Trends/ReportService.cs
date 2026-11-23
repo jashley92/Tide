@@ -33,7 +33,11 @@ public sealed record ReportTop(string Name, int Current, int Change, string Line
 /// can't differ from Trends or Metrics.
 /// </summary>
 public sealed record PeriodReport(Period Period, bool Partial, IReadOnlyList<ReportFigure> Headlines, IReadOnlyList<ReportFigure> Outcomes,
-    IReadOnlyList<ReportMetric> Metrics, IReadOnlyList<ReportTop> Topics, IReadOnlyList<ReportTop> Techniques, IReadOnlyList<ReportTop> ByTeam);
+    IReadOnlyList<ReportMetric> Metrics, IReadOnlyList<ReportTop> Topics, IReadOnlyList<ReportTop> Techniques, IReadOnlyList<ReportTop> ByTeam)
+{
+    /// <summary>The lines that moved most (<see cref="TrendHighlights"/>), from the same trend report as the rest.</summary>
+    public IReadOnlyList<TrendHighlight> Highlights { get; init; } = [];
+}
 
 public sealed class ReportService(TrendsService trends, MetricsService metrics, OrgClock clock, IAppDbContextFactory dbs, ICurrentUser user)
 {
@@ -97,7 +101,9 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
                 numbers.Count(n => MetricMath.LevelOf(m, n) != MetricLevel.Normal));
         }).ToList();
 
-        return new PeriodReport(period, trends.IsPartial(period), headlines, outcomes, reportMetrics, topics, techniques, byTeam);
+        var partial = trends.IsPartial(period);
+        return new PeriodReport(period, partial, headlines, outcomes, reportMetrics, topics, techniques, byTeam)
+            { Highlights = TrendHighlights.From(report, partial) };
     }
 
     // --- assessments ------------------------------------------------------------------------------------------------

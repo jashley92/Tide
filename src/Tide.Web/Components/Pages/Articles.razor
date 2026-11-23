@@ -61,8 +61,8 @@
                ServerSide="true" Total="_total" PageSize="PageSize" PageInAddress="true" Busy="_reading"
                Filtered="_filter.Narrowed" OnQuery="Query">
         <Toolbar>
-            @* The filter bar after the table's own search box: Draft and Ready as pills, a chip for each other filter (each a
-               link to the list without it) and + Filter for the rest. The filters are the address's, as before. *@
+            @* The filter bar after the table's own search box: Mine, Draft and Ready as pills, a chip for each other filter
+               (each a link to the list without it) and + Filter for the rest. The filters are the address's, as before. *@
             <FilterBar Pills="Pills" Filters="Defs" Chips="Chips" Active="_filter.Narrowed" ClearHref="@Href(_filter.Cleared())" />
         </Toolbar>
         <Empty>
@@ -119,6 +119,7 @@
     /// <summary>The page of the list, from 1 (DataTable's <c>?page=</c>).</summary>
     // Text, not a number: "?page=abc" or one too big for an int is the first page, not a broken page.
     [SupplyParameterFromQuery(Name = DataTable<ArticleSummary>.PageParameter)] public string? PageParam { get; set; }
+    [SupplyParameterFromQuery(Name = "author")] public string? AuthorParam { get; set; }
     [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
     [SupplyParameterFromQuery(Name = "from")] public string? FromParam { get; set; }
     [SupplyParameterFromQuery(Name = "to")] public string? ToParam { get; set; }
@@ -148,6 +149,7 @@
     private ArticleFilter? _loaded;
     private IReadOnlyList<FilterChip> _chips = [];
     private IReadOnlyList<ScorecardCategory> _categories = [];
+    private IReadOnlyList<ArticleAuthor> _authors = [];
     private static readonly TableSort Newest = new("written", true);
     private TableSort? _sort = Newest;
     private bool _showNew;
@@ -171,6 +173,7 @@
         });
         _categories = await Scorecard.ListAsync(includeRetired: true);
         _tagOptions = TagOptions(_categories);
+        _authors = await ArticleSvc.AuthorsAsync();
     }
 
     public void Dispose() => _live?.Dispose();
@@ -182,11 +185,11 @@
         if (FilterValues.Number(New) == 1 && CurrentUser.Has(Permission.WriteArticles)) _showNew = true;
         var query = new Dictionary<string, string?>
         {
-            ["q"] = Q, ["status"] = StatusParam, ["from"] = FromParam, ["to"] = ToParam, ["assess"] = AssessParam, ["tag"] = TagParam,
+            ["q"] = Q, ["author"] = AuthorParam, ["status"] = StatusParam, ["from"] = FromParam, ["to"] = ToParam, ["assess"] = AssessParam, ["tag"] = TagParam,
             ["category"] = CategoryParam, ["tactic"] = TacticParam, ["technique"] = TechniqueParam, ["withsubs"] = WithSubsParam,
         };
         _filter = ArticleFilter.FromQuery(name => query.GetValueOrDefault(name));
-        _chips = _filter.Chips(TagName, CategoryName);
+        _chips = _filter.Chips(TagName, CategoryName, AuthorName);
         _page = TableView.PageFrom(PageParam);
         if (_filter != _loaded || _page != _loadedPage) await Load();
     }
@@ -195,9 +198,14 @@
 
     private string? CategoryName(string key) => _categories.FirstOrDefault(c => c.Key == key)?.Name;
 
-    // The pills: presets of the status filter, the statuses looked for most. It holds one value, so they take turns.
+    // A person by id, as By … names them: you, or by their name on their articles.
+    private string? AuthorName(string id) => id == CurrentUser.UserId ? "You" : _authors.FirstOrDefault(a => a.Id == id)?.Name;
+
+    // The pills: Mine (the author filter holding "me"), then presets of the status filter, the statuses looked for most.
+    // Status holds one value, so Draft and Ready take turns; Mine goes with either.
     internal static readonly IReadOnlyList<FilterPill> Pills =
     [
+        new("mine", "Mine", "author", [ArticleFilter.Me]) { Title = "The articles you wrote" },
         new("draft", "Draft", "status", [nameof(ArticleStatus.Draft)]),
         new("ready", "Ready", "status", [nameof(ArticleStatus.Ready)]),
     ];
@@ -224,6 +232,10 @@
         {
             var defs = new List<FilterDef>
             {
+                new("author", "By", FilterKind.Single, v => Go(_filter with { Author = FilterValues.First(v) }))
+                {
+                    Options = AuthorOptions(), Values = FilterValues.Of(_filter.Author),
+                },
                 new("status", "Status", FilterKind.Single, v => Go(_filter with { Status = FilterValues.Enum<ArticleStatus>(v) }))
                 {
                     Options = StatusOptions, Values = FilterValues.Of(_filter.Status?.ToString()),
@@ -252,12 +264,25 @@
                 },
             };
             if (CanTakeSubs)
-                defs.Insert(3, new("withsubs", "Sub-techniques", FilterKind.Single, v => Go(_filter with { WithSubtechniques = v.Count > 0 }))
+                defs.Insert(4, new("withsubs", "Sub-techniques", FilterKind.Single, v => Go(_filter with { WithSubtechniques = v.Count > 0 }))
                 {
                     Options = SubtechniqueOptions, Values = FilterValues.Of(_filter.WithSubtechniques),
                 });
             return defs;
         }
+    }
+
+    // By …'s choices: you (Mine), then everyone else who has written an article, with how many. Someone from a link
+    // who has written none is still shown as chosen, so the filter can be seen and removed.
+    private IReadOnlyList<FilterOption> AuthorOptions()
+    {
+        var me = CurrentUser.UserId;
+        var mine = _authors.FirstOrDefault(a => a.Id == me)?.Articles ?? 0;
+        List<FilterOption> options = [new(ArticleFilter.Me, $"You ({mine})")];
+        options.AddRange(_authors.Where(a => a.Id != me).Select(a => new FilterOption(a.Id, $"{a.Name} ({a.Articles})", "People")));
+        if (_filter.Author is { } chosen && options.All(o => o.Value != chosen))
+            options.Add(new(chosen, AuthorName(chosen) ?? "Someone who has written none", "People"));
+        return options;
     }
 
     private static IReadOnlyList<FilterOption> TagOptions(IEnumerable<ScorecardCategory> categories) =>
