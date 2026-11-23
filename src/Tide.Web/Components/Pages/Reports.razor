@@ -64,7 +64,7 @@ else if (_report is not { } r)
 else
 {
     <TrendHighlightsStrip Highlights="@r.Highlights" Against="@r.Period.Previous.Label" Href="@(h => TrendsLink(h.Key, TrendHighlightsStrip.ViewOf(h.Key), h.At))" />
-    <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
+    <h2 class="tide-report-title">@ReportService.Name(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
 
     <section class="tide-card" aria-labelledby="rep-headlines">
         <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
@@ -237,12 +237,6 @@ else
         await JS.StopAsync("print");
     }
 
-    private static string ReportName(Period p) => p.Kind switch
-    {
-        PeriodKind.Week => $"Weekly report · {p.Label}",
-        PeriodKind.Month => $"Monthly report · {p.Start.ToString("MMMM yyyy", CultureInfo.InvariantCulture)}",
-        _ => $"Quarterly report · {p.Label}",
-    };
 
     private static string Value(Tide.Domain.Entities.MetricDefinition m, decimal? v) => v is { } n ? Tide.Application.Metrics.MetricMath.Format(m.Format, n) : "—";
 

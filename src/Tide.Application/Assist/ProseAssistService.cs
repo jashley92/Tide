@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -16,9 +14,6 @@ using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
 namespace Tide.Application.Assist;
-
-/// <summary>Whether a provider is set (its name when so), and the AI limit: without one, only "Copy a prompt" is offered.</summary>
-public sealed record ProseAssistStatus(bool ProviderReady, string? Provider, TlpLevel MaxTlp);
 
 /// <summary>
 /// A checked draft: its text, the numbers it states that the material didn't (each flagged), the highest TLP of what it
@@ -47,7 +42,8 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
     /// <summary>The report sections whose assessment is drafted with the articles counted, not only the numbers.</summary>
     private static readonly HashSet<string> WithArticles = new(StringComparer.Ordinal) { "headlines", "topics" };
 
-    public ProseAssistStatus Status() => new(ai.Configured, ai.Configured ? ai.Provider : null, options.CurrentValue.MaxTlp);
+    /// <summary>Whether a provider is set up: without one, only "Copy a prompt" is offered.</summary>
+    public bool ProviderReady => ai.Configured;
 
     // --- the report's assessments -----------------------------------------------------------------------------------
 
@@ -101,11 +97,12 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
             ?? throw new ArgumentException("That isn't a section of the report.");
         var report = await reports.BuildAsync(period, ct);
         var cut = await CutAsync(ct);
-        var articles = WithArticles.Contains(section) ? await ArticlesAsync(report.Counted, cut, ct) : [];
+        var withArticles = WithArticles.Contains(section);
+        var articles = withArticles ? await ArticlesAsync(report.Counted, cut, ct) : [];
         var numbers = Numbers(report, section);
-        var heading = $"{Kind(period)} report, {period.Label}{(report.Partial ? " (to date)" : "")}, compared with {period.Previous.Label} · {name}";
+        var heading = $"{ReportService.Name(period)}{(report.Partial ? " (to date)" : "")}, compared with {period.Previous.Label} · {name}";
         var tlp = articles.Count == 0 ? TlpLevel.Clear : articles.Max(a => a.Tlp);
-        var basedOn = $"the {name} numbers" + (WithArticles.Contains(section) ? $" · {Articles(articles.Count)} (at or under {Tlp.Label(cut)})" : "");
+        var basedOn = $"the {name} numbers" + (withArticles ? $" · {Articles(articles.Count)} (at or under {Tlp.Label(cut)})" : "");
         return new(new ProseInput(AiDraftKind.ReportAssessment, heading, numbers, articles.Select(a => a.Article).ToList()), $"{period.Key}/{section}", tlp, basedOn);
     }
 
@@ -136,16 +133,16 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
         return max < team ? max : team;
     }
 
-    // The counted articles at or under the cut, as the team edition would show them, newest first.
+    // The counted articles at or under the cut (an edition leaves out an article above its ceiling, BriefEditions.BuildArticle),
+    // newest first: only the title, bottom line and TLP are read.
     private async Task<IReadOnlyList<(ProseArticle Article, TlpLevel Tlp)>> ArticlesAsync(IReadOnlyList<Guid> ids, TlpLevel cut, CancellationToken ct)
     {
         if (ids.Count == 0) return [];
         await using var db = await dbs.CreateAsync(ct);
         var list = ids.ToList();
-        var rows = await db.Articles.AsNoTracking().Where(a => list.Contains(a.Id) && a.Tlp <= cut).ToListAsync(ct);
-        return rows.Where(a => BriefEditions.BuildArticle(a, Edition.Team, cut) is not null)
-            .OrderByDescending(a => a.CreatedAtUtc).Take(MaxArticles)
-            .Select(a => (new ProseArticle(a.Title, a.Bluf), a.Tlp)).ToList();
+        var rows = await db.Articles.AsNoTracking().Where(a => list.Contains(a.Id) && a.Tlp <= cut)
+            .OrderByDescending(a => a.CreatedAtUtc).Take(MaxArticles).Select(a => new { a.Title, a.Bluf, a.Tlp }).ToListAsync(ct);
+        return rows.Select(a => (new ProseArticle(a.Title, a.Bluf), a.Tlp)).ToList();
     }
 
     /// <summary>
@@ -178,31 +175,30 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
     private async Task<ProseDraft> AskAsync(Prepared p, CancellationToken ct)
     {
         if (!ai.Configured) throw new InvalidOperationException("No AI provider is set up. Copy a prompt to run in an approved tool instead.");
-        var request = ProsePrompt.For(p.Input);
+        var request = ProsePrompt.Request(p.Input);
         var answer = await ai.AnswerAsync(request, ct);
         if (answer.Json is null) throw new InvalidOperationException(answer.Error ?? "The AI provider didn't answer.");
-        return await StoreAsync(p, ai.Provider, ai.Model, Hash(request.Instructions + request.Input), answer.Json, ct);
+        return await StoreAsync(p, ai.Provider, ai.Model, AssistService.Hash(request.Instructions + request.Input), answer.Json, ct);
     }
 
     private async Task<ProseDraft> PastedAsync(Prepared p, string? answer, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(answer)) throw new ArgumentException("Paste the tool's answer first.");
-        return await StoreAsync(p, AssistService.Pasted, "", Hash(ProsePrompt.ForCopy(p.Input)), answer, ct);
+        return await StoreAsync(p, AssistService.Pasted, "", AssistService.Hash(ProsePrompt.ForCopy(p.Input)), answer, ct);
     }
 
     private async Task<ProseDraft> StoreAsync(Prepared p, string provider, string model, string hash, string json, CancellationToken ct)
     {
-        var kind = p.Input.Kind;
-        var max = kind == AiDraftKind.TitleLine ? ProsePrompt.MaxTitleLine : ReportAssessment.MaxText;
-        var checkedProse = ReportDraftChecks.Check(json, ProsePrompt.Field(kind), max, ProsePrompt.Material(p.Input), oneLine: kind == AiDraftKind.TitleLine);
+        var spec = ProsePrompt.For(p.Input.Kind);
+        var checkedProse = ReportDraftChecks.Check(json, spec, ProsePrompt.Material(p.Input));
         await using var db = await dbs.CreateAsync(ct);
         var draft = new AiDraft
         {
-            Kind = kind,
+            Kind = p.Input.Kind,
             Subject = p.Subject,
             Provider = provider,
             Model = model.Length > 100 ? model[..100] : model,
-            PromptVersion = ProsePrompt.Version(kind),
+            PromptVersion = spec.Version,
             InputHash = hash,
             InputTlp = p.InputTlp,
             BasedOn = Words.Ellipsis(p.BasedOn, AiDraft.MaxBasedOn),
@@ -215,10 +211,6 @@ public sealed class ProseAssistService(IAppDbContextFactory dbs, ICurrentUser us
     }
 
     private static string Articles(int n) => n == 1 ? "1 article's title and bottom line" : $"{n} articles' titles and bottom lines";
-
-    private static string Kind(Period p) => p.Kind switch { PeriodKind.Week => "Weekly", PeriodKind.Month => "Monthly", _ => "Quarterly" };
-
-    private static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     // Who may write the text today may draft it; nobody else.
     private void Require(AiDraftKind kind)

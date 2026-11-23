@@ -10,11 +10,11 @@
 
 <div class="tide-noprint mt-2">
     <div class="d-flex gap-2 flex-wrap align-items-center">
-        @if (_status.ProviderReady)
+        @if (Assist.ProviderReady)
         {
             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="DraftIt"><span class="bi bi-stars" aria-hidden="true"></span> @Label</button>
         }
-        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@($"Copy a prompt: {Label}")" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(_status.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
+        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@($"Copy a prompt: {Label}")" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(Assist.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
     </div>
     @if (_pasting)
     {
@@ -41,8 +41,8 @@
             }
             <div class="tide-muted small mt-1">Based on: @d.BasedOn · @(string.IsNullOrEmpty(d.Model) ? "pasted answer" : d.Model)</div>
             <div class="d-flex gap-2 mt-1">
-                <button type="button" class="btn @(d.UnknownNumbers.Count > 0 ? "btn-outline-secondary" : "btn-primary") btn-sm" @onclick="UseIt">@(HasText ? "Replace mine" : "Use it")</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Reject">Reject</button>
+                <button type="button" class="btn @(d.UnknownNumbers.Count > 0 ? "btn-outline-secondary" : "btn-primary") btn-sm" @onclick="() => Decide(true)">@(HasText ? "Replace mine" : "Use it")</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Decide(false)">Reject</button>
             </div>
         </div>
     }
@@ -73,12 +73,9 @@
     /// <summary>The person used the draft: the page puts it in the box, unsaved.</summary>
     [Parameter] public EventCallback<ProseDraft> OnUse { get; set; }
 
-    private ProseAssistStatus _status = new(false, null, TlpLevel.Green);
     private ProseDraft? _draft;
     private bool _busy, _pasting;
     private string? _answer;
-
-    protected override void OnInitialized() => _status = Assist.Status();
 
     private async Task DraftIt() => await Run(async () => _draft = await Draft());
 
@@ -105,23 +102,12 @@
         finally { _busy = false; }
     }
 
-    internal async Task UseIt()
+    // Use it (into the box, through the page) or Reject: either way the draft goes, and the decision is counted.
+    internal async Task Decide(bool accepted)
     {
         if (_draft is not { } d) return;
         _draft = null;
-        await OnUse.InvokeAsync(d);
-        await Record(d, true);
-    }
-
-    internal async Task Reject()
-    {
-        if (_draft is not { } d) return;
-        _draft = null;
-        await Record(d, false);
-    }
-
-    private async Task Record(ProseDraft d, bool accepted)
-    {
+        if (accepted) await OnUse.InvokeAsync(d);
         try { await Assist.RecordAsync(d.DraftId, accepted); }
         catch (ForbiddenException) { /* counted only for whoever may write the text, who are the only ones here */ }
     }

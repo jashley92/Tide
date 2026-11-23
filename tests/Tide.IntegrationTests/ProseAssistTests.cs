@@ -58,7 +58,7 @@ public class ProseAssistTests : IDisposable
         await using var ctx = _db.Context();
         var stored = await ctx.AiDrafts.SingleAsync();
         (stored.Kind, stored.Subject, stored.ArticleId, stored.InputTlp, stored.Provider, stored.PromptVersion)
-            .Should().Be((AiDraftKind.TitleLine, brief.ToString(), (Guid?)null, TlpLevel.Green, AiOptions.AzureOpenAI, ProsePrompt.TitleLineVersion));
+            .Should().Be((AiDraftKind.TitleLine, brief.ToString(), (Guid?)null, TlpLevel.Green, AiOptions.AzureOpenAI, ProsePrompt.TitleLine.Version));
     }
 
     [Fact]
@@ -81,12 +81,12 @@ public class ProseAssistTests : IDisposable
         _db.Ai.Configured = false;
         var assist = _db.ProseAssist();
 
-        assist.Status().ProviderReady.Should().BeFalse();
+        assist.ProviderReady.Should().BeFalse();
         var noProvider = () => assist.DraftTitleLineAsync(brief);
         await noProvider.Should().ThrowAsync<InvalidOperationException>().WithMessage("No AI provider*");
 
         var prompt = await assist.TitleLinePromptAsync(brief);
-        prompt.Should().StartWith(ProsePrompt.Instructions(AiDraftKind.TitleLine)).And.Contain("JSON schema").And.Contain("Ivanti flaws chained").And.NotContain("Our VPN gap");
+        prompt.Should().StartWith(ProsePrompt.TitleLine.Instructions).And.Contain("JSON schema").And.Contain("Ivanti flaws chained").And.NotContain("Our VPN gap");
 
         var pasted = await assist.TitleLineFromPastedAsync(brief, "```json\n{\"line\": \"12 days of edge exploits\"}\n```");
         pasted.Text.Should().Be("12 days of edge exploits");
@@ -120,7 +120,7 @@ public class ProseAssistTests : IDisposable
 
         var sent = _db.Ai.Asked.Single();
         sent.SchemaName.Should().Be("tide_report_assessment");
-        sent.Input.Should().Contain("Monthly report, Sep 2026").And.Contain("Headlines")
+        sent.Input.Should().Contain("Monthly report · September 2026, compared with Aug 2026").And.Contain("Headlines")
             .And.Contain("- Articles briefed: 2 (the period before: 0; change +2)")
             .And.Contain("Ivanti flaws chained").And.NotContain("Our VPN gap").And.NotContain("old build");
         draft.UnknownNumbers.Should().Equal("40");

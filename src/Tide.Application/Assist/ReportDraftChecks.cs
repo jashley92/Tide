@@ -20,11 +20,11 @@ public sealed record CheckedProse(string Text, IReadOnlyList<string> UnknownNumb
 public static partial class ReportDraftChecks
 {
     /// <summary>
-    /// The answer's text in <paramref name="field"/> ("assessment", "line"), checked against <paramref name="input"/>, the
-    /// material as sent. <paramref name="oneLine"/> joins its lines. An answer that isn't the JSON asked for, or says
+    /// The answer's text in <paramref name="spec"/>'s field, checked against <paramref name="input"/>, the material as sent,
+    /// cut to the spec's limit and joined onto one line when it asks. An answer that isn't the JSON asked for, or says
     /// nothing, is refused.
     /// </summary>
-    public static CheckedProse Check(string json, string field, int max, string input, bool oneLine = false)
+    public static CheckedProse Check(string json, ProseSpec spec, string input)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(DraftChecks.Unwrapped(json), new JsonDocumentOptions { AllowTrailingCommas = true }); }
@@ -32,9 +32,9 @@ public static partial class ReportDraftChecks
         using (doc)
         {
             var root = doc.RootElement;
-            var raw = root.ValueKind == JsonValueKind.Object && root.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-            if (oneLine && raw is not null) raw = string.Join(' ', raw.Split((char[])['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
-            var text = DraftChecks.Text(raw, max) ?? throw new ArgumentException("The answer has no text to use. Run the prompt again.");
+            var raw = root.ValueKind == JsonValueKind.Object && root.TryGetProperty(spec.Field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            if (spec.OneLine && raw is not null) raw = DraftPrompt.OneLine(raw);
+            var text = DraftChecks.Text(raw, spec.Max) ?? throw new ArgumentException("The answer has no text to use. Run the prompt again.");
             return new CheckedProse(text, Numbers(text, input));
         }
     }

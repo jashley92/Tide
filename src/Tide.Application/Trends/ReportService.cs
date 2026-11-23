@@ -58,6 +58,14 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
         ("topics", "Topics and techniques"), ("teams", "Actions raised by team"),
     ];
 
+    /// <summary>The report's name: "Monthly report · October 2026", "Weekly report · Week of Oct 26", "Quarterly report · Q4 2026".</summary>
+    public static string Name(Period p) => p.Kind switch
+    {
+        PeriodKind.Week => $"Weekly report · {p.Label}",
+        PeriodKind.Month => $"Monthly report · {p.Start.ToString("MMMM yyyy", CultureInfo.InvariantCulture)}",
+        _ => $"Quarterly report · {p.Label}",
+    };
+
     /// <summary>The report for <paramref name="period"/>. Readable by whoever reads Trends (the team edition).</summary>
     public async Task<PeriodReport> BuildAsync(Period period, CancellationToken ct = default)
     {
