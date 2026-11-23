@@ -154,9 +154,32 @@ flowchart TD
 1. Install the prerequisites and run `Install-Database.ps1` and `Install-Tide.ps1` with the server's answers file
    ([INSTALL.md](../INSTALL.md)). Lost it? The old server's **Configuration bundle** page writes one; keep a copy.
 2. Stop the pool, restore the database as above, and copy the files folder.
-3. Copy `dp-keys` only if the server's machine key is the same; otherwise leave the new, empty ring. Then re-add each
-   webhook on **Administration › API access** and give its new secret to the receiver.
+3. Copy `dp-keys`. With a certificate-protected ring (`DataProtection:CertificateThumbprint`), import the certificate
+   with its private key on the new server first, and the ring reads as it did. With machine DPAPI (the default) the old
+   ring is unreadable there: leave the new, empty ring, then re-add each webhook on **Administration › API access** and
+   give its new secret to the receiver.
 4. Start the pool and verify (`Verify-Install.ps1`, Diagnostics).
+
+### A warm standby (optional)
+
+TIDE runs as one process by design (ADR 0001): there is no active-active. For a server you can switch to within minutes
+if the live one is lost, with the database's own availability left to your DBA:
+
+1. **Key ring on a certificate.** Issue a certificate for TIDE (an internal CA's, two years or more), import it with its
+   private key into `LocalMachine\My` on both servers, and give the app pool's identity read access to its key (MMC ›
+   Certificates › Manage Private Keys). Set `DataProtection:CertificateThumbprint` on both. Keys made from then on are
+   readable on either server. A key made before the switch stays DPAPI-protected, readable only on the old server,
+   until it expires (90 days): until then, a failover loses saved webhook secrets (re-add them) and signs everyone out.
+   When the certificate is renewed, set the new thumbprint and move the old one to `DataProtection:PreviousThumbprints`.
+2. **Files and keys on a share.** Set `Files:RootPath` and `DataProtection:KeyPath` to a UNC share both servers' app pool
+   identities (one gMSA) can modify, such as `\\files01\tide\files` and `\\files01\tide\dp-keys`. Diagnostics' storage check
+   confirms the app can write there.
+3. **The standby.** Install it with the same answers file. Leave its app pool **stopped**: a second running process is
+   flagged as an alarm on Diagnostics and `/health/jobs`, and its caches would go stale. Keep its site at the same release
+   (upgrade both).
+4. **Failing over.** Point DNS (or the load balancer) at the standby, start its app pool, and check `/health` and
+   Diagnostics. Meetings in progress and unsaved edits on the old server are lost; open pages reconnect after a refresh.
+   Kerberos needs the `HTTP/<name>` SPN on the account both pools run as. Expect a few minutes, most of it DNS.
 
 ### After a failed upgrade
 

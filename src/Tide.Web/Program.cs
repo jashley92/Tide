@@ -81,8 +81,15 @@ if (!string.IsNullOrWhiteSpace(dpKeyPath))
     var keyDir = Path.GetFullPath(dpKeyPath);
     Directory.CreateDirectory(keyDir);
     dp.PersistKeysToFileSystem(new DirectoryInfo(keyDir));
-    // Machine-scope DPAPI works for a gMSA/app-pool identity with no loaded user profile.
-    if (OperatingSystem.IsWindows())
+    // A certificate when one is set (an option: a standby server, or a restore to a new one, can read the ring); otherwise
+    // machine-scope DPAPI, which works for a gMSA/app-pool identity with no loaded user profile. A key written before the
+    // switch stays DPAPI-protected, readable on this server only, until it expires (docs/operations/backup-and-recovery.md).
+    if (Tide.Web.Security.KeyRingCertificate.Thumbprints(builder.Configuration) is { Count: > 0 } thumbprints)
+    {
+        var certs = Tide.Web.Security.KeyRingCertificate.Find(thumbprints);
+        dp.ProtectKeysWithCertificate(certs[0]).UnprotectKeysWithAnyCertificate([.. certs]);
+    }
+    else if (OperatingSystem.IsWindows())
         dp.ProtectKeysWithDpapi(protectToLocalMachine: true);
 }
 
