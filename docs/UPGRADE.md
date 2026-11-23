@@ -224,6 +224,26 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.16.1
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). No migrations.
+
+**New**
+- **`Upgrade-Tide.ps1 -KeepAllUpgradeBackups`** keeps every earlier upgrade's backups: the run deletes none of the
+  older `<database>-preupgrade-<time>.bak` files or `tide-upgrade-backups\<time>` folders, and says so. It does what
+  `-KeepUpgradeBackups 0` did in v1.16.0, which still works. Given with `-KeepUpgradeBackups` set to another number,
+  the script stops before changing anything.
+- **Saved queries offer their placeholders as you write.** In the Library's saved query form and *Save for the team* on
+  an action, typing `{{` lists `{{days}}`, `{{values}}` and each `{{values:<kind>}}`, and an *Insert placeholder* menu
+  puts one in at the cursor.
+
+**Changes**
+- **The placeholder list opens at the cursor.** Typing `{{` in an outreach template or a saved query opens the list just
+  under what you're typing, or over it near the bottom of the screen, not under the whole box.
+- **An inserted placeholder flashes.** *Insert placeholder* brings what it put in into view and marks it briefly, so
+  it's easy to find. With reduced motion, the mark shows and goes without fading.
+- **American spelling** in the text people read: organization, license, behavioral, color.
+
 ### v1.16.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds fourteen migrations, in this order:
