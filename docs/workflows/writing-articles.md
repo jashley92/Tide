@@ -446,7 +446,8 @@ person until the article is handed on.
 
 - **Hand to…** in the editor's head, while the article is a Draft or Ready, for anyone who may edit it: pick a colleague
   who can write articles (or yourself, to take it over) and add a note if you like (300 characters). The editor's line
-  under the title then reads "By Pat · Sam is writing it now".
+  under the title then reads "By Pat · Sam is writing it now". `Ctrl+K` offers it as *Hand this draft to…* whenever
+  the head does, opening the same dialog.
 - It's saved by `ArticleHandoffService.HandToAsync` as the article's own save, so it's audited and the History reads
   "Handed from Pat to Sam" with the note. It leaves the edit version alone: an editor open on the article can still
   save. It's refused when someone else handed it on after the page was read.

@@ -20,6 +20,7 @@
 @inject LiveMeetings Meetings
 @inject PrerenderHandoff Handoff
 @inject PaletteCommands PaletteVerbs
+@inject Tide.Application.Reviews.ReviewService Reviews
 @using Tide.Web.Components.Today
 @implements IDisposable
 
@@ -506,15 +507,25 @@ else
         _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
     }
 
-    // Ctrl+K's verb on Today: Mark ready, while it's the brief's next step, through its own confirmation (AskReady).
+    // Ctrl+K's verbs: on Today, Mark ready, while it's the brief's next step, through its own confirmation (AskReady). On
+    // any day's brief, Send both editions while the Send dialog's Send both could be pressed once its two ticks are
+    // (_sendBoth); it opens that dialog, whose ticks and button are still the only way to send.
     private IDisposable? _verbs;
 
     internal IEnumerable<PaletteCommand> Verbs()
     {
-        if (!AsToday || !_canWrite || _busy || _brief is null) yield break;
-        if (BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null) == BriefNext.MarkReady)
+        if (_brief is null) yield break;
+        if (AsToday && _canWrite && !_busy
+            && BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null) == BriefNext.MarkReady)
             yield return new("Mark the brief ready", "today meeting ready", Permission.WriteArticles, "Today", AskReady, "bi-check2-square");
+        if (_sendBoth)
+            yield return new("Send both editions", "send email team company-wide distribute", Permission.PresentBriefs, AsToday ? "Today" : "This brief",
+                AskSend, "bi-send-check");
     }
+
+    // Whether Send both is ready to press in the Send dialog, read with the send log (DistributePanel.BothCanGoAsync), for
+    // someone who may send once the meeting has been held.
+    private bool _sendBoth;
 
     // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes
     // nothing here, so only a start or an end redraws.
@@ -757,6 +768,8 @@ else
             // The send log, for the Send step; the latest real send of each edition, for the "as sent" links on a sent brief.
             _sends = await Sends.SendsAsync(_date);
             _nothingToSend = BriefSteps.NothingToSend(_brief, _teamMax, _publicMax);
+            _sendBoth = CurrentUser.Has(Permission.PresentBriefs)
+                && await DistributePanel.BothCanGoAsync(Sends, Reviews, Clock, _date, BriefService.MeetingHeld(_brief));
             if (_tab == 1) await LoadNumbers();
             _asSent = _brief.Status == BriefStatus.Sent
                 ? _sends.Where(x => !x.IsTest && x.Status == SendStatus.Sent)
