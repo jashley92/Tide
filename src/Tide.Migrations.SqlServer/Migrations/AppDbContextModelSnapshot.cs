@@ -1357,6 +1357,45 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("AuditLog");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.BackupRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("Bytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("FinishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Machine")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "FinishedAtUtc");
+
+                    b.ToTable("BackupRuns");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.Brief", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3056,6 +3095,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)");
 
+                    b.Property<string>("Page")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("actions");
+
                     b.Property<string>("Query")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3071,7 +3117,7 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Name")
+                    b.HasIndex("UserId", "Page", "Name")
                         .IsUnique();
 
                     b.ToTable("SavedActionViews");
@@ -3568,6 +3614,47 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("Stories");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.SystemStat", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("DatabaseBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<long?>("DiskFreeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("DiskTotalBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("FilesBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Folders")
+                        .IsRequired()
+                        .HasMaxLength(20000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Tables")
+                        .IsRequired()
+                        .HasMaxLength(20000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("TakenAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Day")
+                        .IsUnique();
+
+                    b.ToTable("SystemStats");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Team", b =>

@@ -48,6 +48,10 @@ public static class DependencyInjection
         services.AddSingleton<JobMonitor>();
         services.AddSingleton<PerformanceMonitor>();
         services.Configure<DiagnosticsOptions>(config.GetSection("Diagnostics"));
+        services.Configure<Tide.Application.History.AuditOptions>(config.GetSection("Audit"));
+        services.Configure<BackupOptions>(config.GetSection("Backup"));
+        services.AddScoped<SystemStats>();
+        services.AddSingleton<StorageAlerts>();
         services.AddSingleton<JobRunLog>();
         // One process runs the background jobs (the lease in the database); the others stand by.
         services.AddSingleton<BackgroundJobLease>();

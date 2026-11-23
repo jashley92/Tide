@@ -90,6 +90,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<JobLease> JobLeases => Set<JobLease>();
     public DbSet<JobProcess> JobProcesses => Set<JobProcess>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
+    public DbSet<SystemStat> SystemStats => Set<SystemStat>();
+    public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
 
     // Here, not where the provider is chosen, so every SQLite context gets it: the app's, start-up's migrations, the
     // design-time tools' and the tests', however each was configured.
@@ -115,13 +117,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Value).HasMaxLength(200);
         });
 
-        // Names are unique per person ignoring case (the service checks; the index holds the exact name against a race).
+        // Names are unique per person and page ignoring case (the service checks; the index holds the exact name against
+        // a race). Rows kept from before the other pages had views are the Actions page's.
         b.Entity<SavedActionView>(e =>
         {
             e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.Page).HasMaxLength(SavedActionView.MaxPage).HasDefaultValue(SavedActionView.ActionsPage);
             e.Property(x => x.Name).HasMaxLength(SavedActionView.MaxName);
             e.Property(x => x.Query).HasMaxLength(SavedActionView.MaxQuery);
-            e.HasIndex(x => new { x.UserId, x.Name }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.Page, x.Name }).IsUnique();
         });
 
         b.Entity<AdGroupRoleMapping>(e =>
@@ -761,6 +765,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Error).HasMaxLength(JobRun.MaxError);
             e.HasIndex(x => new { x.Job, x.StartedAtUtc });
             e.HasIndex(x => x.StartedAtUtc);
+        });
+
+        b.Entity<SystemStat>(e =>
+        {
+            e.HasIndex(x => x.Day).IsUnique();
+            e.Property(x => x.Tables).HasMaxLength(SystemStat.MaxTables);
+            e.Property(x => x.Folders).HasMaxLength(SystemStat.MaxTables);
+        });
+
+        b.Entity<BackupRun>(e =>
+        {
+            e.Property(x => x.Kind).HasMaxLength(BackupRun.MaxKind);
+            e.Property(x => x.Machine).HasMaxLength(BackupRun.MaxMachine);
+            e.Property(x => x.Path).HasMaxLength(BackupRun.MaxPath);
+            e.Property(x => x.Note).HasMaxLength(BackupRun.MaxNote);
+            e.HasIndex(x => new { x.Kind, x.FinishedAtUtc });
         });
 
         b.Entity<Source>(e =>

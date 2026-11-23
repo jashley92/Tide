@@ -546,6 +546,7 @@ erDiagram
     SavedActionViews {
         uuid Id PK
         string UserId UK
+        string Page UK
         string Name UK
         string Query
         int SortOrder
@@ -1414,20 +1415,22 @@ Written by `UserPreferenceService`.
 
 ### `SavedActionViews` (not audited)
 
-A person's own named view of the Actions page: the tab, layout and filters to open it with. Its own table rather than
-`UserPreferences` rows, because a person keeps several, each with a name and a place in their order, where a
-preference is one fixed value per name.
+A person's own named view of a list page (Actions, Triage, Articles or Search): the tab, layout and filters to open it
+with. Its own table rather than `UserPreferences` rows, because a person keeps several, each with a name and a place
+in their order, where a preference is one fixed value per name. The table keeps the name it had when only Actions had
+views: renaming it wasn't worth a migration.
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | `Id` | uniqueidentifier | no | |
 | `UserId` | nvarchar(256) | no | Whose it is (`Users.Sid`). Every read and write is of the signed-in person's own. |
-| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Name)` is **unique**; the service also refuses the same name in another case. |
-| `Query` | nvarchar(2000) | no | What follows `actions?`, as `SavedViewService.Normalize` writes it: only the page's own parameters, each within its length, in a fixed order, never `page`. |
-| `SortOrder` | int | no | Its place among the person's views, from 0. |
+| `Page` | nvarchar(20) | no | Which page it's a view of: `actions` (the default, and every view kept before the others had views), `triage`, `articles` or `search` (`SavedViewPage.Key`). |
+| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Page, Name)` is **unique**; the service also refuses the same name in another case. |
+| `Query` | nvarchar(2000) | no | What follows the page's address and `?`, as `SavedViewService.Normalize` writes it: only that page's own parameters (`SavedViewPage.Parameters`), each within its length, in a fixed order, never the list's page or (Triage) the row selected. |
+| `SortOrder` | int | no | Its place among the person's views of the page, from 0. |
 | `CreatedAtUtc` | datetimeoffset | no | |
 
-At most 12 per person (`SavedViewService.MaxViews`). Written by `SavedViewService`.
+At most 12 per person and page (`SavedViewService.MaxViews`). Written by `SavedViewService`.
 
 ### `RoleMappings` (A)
 
@@ -1598,9 +1601,42 @@ every `SaveChanges` it:
    into the **same save**, so a change and its record commit or fail together. A modification that changed nothing
    recordable is skipped.
 
+
+### `SystemStats` (not audited)
+
+A day's snapshot of how big TIDE is, written once a day by the Daily statistics job (`SystemStats.TakeAsync`), for
+Diagnostics' Data & retention panel and its 30- and 90-day growth. Never pruned: a row a day.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Day` | date | no | The organization's day. Unique: two processes can't both write one. |
+| `TakenAtUtc` | datetimeoffset | no | |
+| `DatabaseBytes` | bigint | yes | SQL Server: `sys.database_files`; SQLite: page count × page size. |
+| `FilesBytes` | bigint | yes | Everything under `Files:RootPath`. |
+| `DiskFreeBytes`, `DiskTotalBytes` | bigint | yes | The data root's disk. |
+| `Tables` | nvarchar(20000) | no | JSON: each table's rows and bytes (`sys.dm_db_partition_stats` with VIEW DATABASE STATE; rows only from `sys.partitions` without it; rows only on SQLite). |
+| `Folders` | nvarchar(20000) | no | JSON: the data root's top-level folders and their bytes. |
+
+### `BackupRuns` (not audited)
+
+A run of `Backup-Tide.ps1`, which records it here itself (the backup account needs INSERT on the table:
+`deploy/sql/02-Grant-Backup.sql`). Diagnostics shows the newest; `/health/jobs` reads the newest successful full one when
+`Backup:StaleAfterHours` is set. A backup product records nothing.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Kind` | nvarchar(10) | no | `full` (a nightly set) or `log`. Indexed with `FinishedAtUtc`. |
+| `FinishedAtUtc` | datetimeoffset | no | |
+| `Succeeded` | bit | no | |
+| `Machine` | nvarchar(100) | no | |
+| `Path` | nvarchar(400) | yes | The set's folder or the log backup's file. |
+| `Bytes` | bigint | yes | A full set's database backup size. |
+| `Note` | nvarchar(500) | yes | Why a run failed. |
 ### `AuditLog` (append-only)
 
-The C# class is `AuditLogEntry`. The app never updates or deletes these rows.
+The C# class is `AuditLogEntry`. The app never updates these rows, and deletes them only when `Audit:RetentionDays` is set (off by default, at least 365): the daily Archiving the audit log job first writes each whole month older than that to `audit-YYYY-MM-<stamp>.jsonl.gz` (one JSON object per row) with its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then deletes that month's rows (`AuditArchive`).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
@@ -1626,7 +1662,7 @@ log masks again when it shows a row.
 | `AuditLogEntry` | `AuditLog` | The log itself. |
 | `AppUser` | `Users` | The sign-in mirror changes on every sign-in. |
 | `UserPreference` | `UserPreferences` | A person's own view choices change nothing anyone else sees. |
-| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of the Actions page. |
+| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of Actions, Triage, Articles and Search. |
 | `NotificationMark` | `NotificationMarks` | Machine bookkeeping for reminders. |
 | `FeedItem` | `FeedItems` | Machine intake. Polls and prunes would flood the log. |
 | `CveRecord` | `CveRecords` | Refreshed from public sources. |

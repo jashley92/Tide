@@ -996,7 +996,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   anyone who can open Actions may keep up to 12 (`SavedViewService.MaxViews`), Viewers too, and no one sees or changes
   another's. A name is at most 60 characters, trimmed, and once per person whatever its case. The query keeps only
   the page's own parameters (`view`, `layout`, `group`, `rule`, `team`, `assignee`, `q`, `kind`, `priority`, `due`,
-  `status`, `parent`, `teams`, `raised`, `closed`, `on`), each within its length (`SavedViewService.Parameters`), in that order;
+  `status`, `parent`, `teams`, `raised`, `closed`, `on`), each within its length (`SavedViewPage.Actions`), in that order;
   anything else is refused and `page` is dropped. A view is a shortcut, not a filter of its own: one that names a team
   or rule since retired opens the page as any such link does.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,

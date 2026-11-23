@@ -23,9 +23,12 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
     background: transparent; color: var(--tide-text-muted); font-size: .8rem; white-space: nowrap; }
 .tide-filter-add:hover, .tide-filter-add[aria-expanded="true"] { color: var(--tide-text); border-color: var(--tide-accent); }
 .tide-filter-add:disabled { opacity: .55; cursor: not-allowed; }
-/* Saved views beside the Actions tabs: a pill each (the filter bar's, the accent tint for the one shown) with a small
-   menu button, then Save view in + Filter's dashed outline. */
+/* Saved views (SavedViewPills) under the Actions tabs, and over the filter bar on Triage and Articles and under the box
+   on Search: a pill each (the filter bar's, the accent tint for the one shown) with a small menu button, then Save view
+   in + Filter's dashed outline. */
 .tide-savedviews-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); }
+.tide-savedviews { margin: 0 0 var(--tide-space-3); }
+.tide-savedviews-search { margin: var(--tide-space-2) 0 0; }
 .tide-savedview { display: inline-flex; align-items: center; }
 .tide-savedview > .tide-chip { margin: 0; white-space: nowrap; text-decoration: none; }
 .tide-savedview > .tide-chip:hover { border-color: var(--tide-accent); }

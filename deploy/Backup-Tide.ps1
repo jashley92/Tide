@@ -119,6 +119,24 @@ $stamp = Get-TideStamp -Format 'yyyyMMdd-HHmm' -When $started
 $set = Join-Path $Destination ((Get-TideBackupSetPrefix $site) + $stamp)
 function Open-Master { New-TideSqlConnection -SqlInstance $db.Instance -DbName 'master' -SqlCredential $SqlCredential -ValidateServerCertificate:$db.ValidateServerCertificate -ApplicationName 'TIDE backup' }
 
+# Records the run in TIDE's own database (dbo.BackupRuns), so Diagnostics shows the last backup and /health/jobs can say
+# when it's stale (Backup:StaleAfterHours). Never fails the backup: an account without INSERT on the table (granted by
+# deploy\sql\02-Grant-Backup.sql), or a database from before the table, only gets a warning.
+function Write-TideBackupRun([string] $Kind, [bool] $Succeeded, [string] $Where, $Bytes, [string] $Note) {
+    try {
+        $c = New-TideSqlConnection -SqlInstance $db.Instance -DbName $db.Name -SqlCredential $SqlCredential -ValidateServerCertificate:$db.ValidateServerCertificate -ApplicationName 'TIDE backup'
+        try {
+            $null = Invoke-TideSqlQuery -Connection $c -Sql @'
+INSERT INTO dbo.BackupRuns (Id, Kind, FinishedAtUtc, Succeeded, Machine, Path, Bytes, Note)
+VALUES (NEWID(), @kind, SYSUTCDATETIME(), @ok, @machine, @path, @bytes, @note)
+'@ -Parameters @{ '@kind' = $Kind; '@ok' = $Succeeded; '@machine' = $env:COMPUTERNAME; '@path' = $(if ($Where) { $Where } else { [DBNull]::Value });
+                '@bytes' = $(if ($null -ne $Bytes) { [long]$Bytes } else { [DBNull]::Value }); '@note' = $(if ($Note) { $Note.Substring(0, [Math]::Min(500, $Note.Length)) } else { [DBNull]::Value }) }
+        } finally { $c.Dispose() }
+    } catch {
+        Write-Host "  (Couldn't record this run in the database for Diagnostics: $($_.Exception.Message))" -ForegroundColor Yellow
+    }
+}
+
 if ($Log) {
     try {
         $conn = Open-Master
@@ -145,6 +163,7 @@ if ($Log) {
             Get-ChildItem -Path $logFolder -Filter '*.trn' | Where-Object { $_.LastWriteTime -lt $sets[-1].CreationTime } | Remove-Item -Force
         }
         Write-Host "Log backup: $trn" -ForegroundColor Green
+        Write-TideBackupRun -Kind 'log' -Succeeded $true -Where $trn
         # The files to the same point (RPO 15 minutes for both, decided 2026-11-21): files are written once and named by
         # id, so copying what's new into the newest set (robocopy without /MIR, nothing removed) makes that set plus
         # today's log backups restore to any point with every file its database rows name. Not with -DatabaseBackupFolder
@@ -167,6 +186,7 @@ if ($Log) {
     }
     catch {
         Write-Host "Log backup failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-TideBackupRun -Kind 'log' -Succeeded $false -Note $_.Exception.Message
         exit 1
     }
 }
@@ -230,9 +250,11 @@ FROM msdb.dbo.backupset b WHERE b.database_name = @db AND b.type = 'D' ORDER BY 
         Write-Host "  Removed the old set $($old.Name)." -ForegroundColor Gray
     }
     Write-Host "Backup set complete: $set" -ForegroundColor Green
+    Write-TideBackupRun -Kind 'full' -Succeeded $true -Where $set -Bytes $dbBytes
 }
 catch {
     Write-Host "Backup failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-TideBackupRun -Kind 'full' -Succeeded $false -Where $set -Note $_.Exception.Message
     # A set that didn't finish (no backup-set.json) is removed, so it can't be mistaken for one or fill the destination.
     if ((Test-Path $set) -and -not (Test-Path (Join-Path $set 'backup-set.json'))) { Remove-Item -LiteralPath $set -Recurse -Force -ErrorAction SilentlyContinue }
     exit 1

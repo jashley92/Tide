@@ -202,6 +202,8 @@ builder.Services.AddHostedService<UrlHashFillHostedService>();
 builder.Services.AddHostedService<FileSweepHostedService>();
 builder.Services.AddHostedService<PerformanceListener>();
 builder.Services.AddHostedService<ActivityFileHostedService>();
+builder.Services.AddHostedService<AuditArchiveHostedService>();
+builder.Services.AddHostedService<SystemStatsHostedService>();
 builder.Services.AddHostedService<FilePurgeHostedService>();
 builder.Services.AddHostedService<IndicatorKeyFillHostedService>();
 builder.Services.AddHostedService<SearchIndexHostedService>();

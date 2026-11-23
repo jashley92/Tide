@@ -365,6 +365,13 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 | `Updates:CheckIntervalHours` | `24` | 6 to 168. | In app: **System › Updates** | At once |
 | `Updates:Repository` | `jashley92/Tide` | `owner/name`. | Server | Next check |
 
+### Audit log
+
+| Key | Default | Notes |
+|---|---|---|
+| `Audit:RetentionDays` | not set (kept forever) | When set, a daily job archives each whole calendar month older than this many days to a compressed file, records its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then removes those rows from the database. Under 365 is held to 365. Off by default (decided 2026-11-21). |
+| `Audit:ArchivePath` | `audit-archive` under `Files:RootPath` | Where the archives go. The default is inside the file store, so `Backup-Tide.ps1` carries them in every set. |
+
 ### Telemetry (OTLP, opt-in)
 
 Off unless `Telemetry:OtlpEndpoint` is set (decided 2026-11-21: opt-in, metrics only by default). Nothing is sent
@@ -397,6 +404,12 @@ anywhere otherwise.
 | `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Takes effect without a restart. |
 
 Timings stay in the server's memory for a day and are cleared by a restart; nothing is sent anywhere.
+
+### Backups
+
+| Key | Default | Notes |
+|---|---|---|
+| `Backup:StaleAfterHours` | not set (off) | When set, `/health/jobs` says Degraded, and the log gets a Warning (event id 7205) once an hour, while the newest successful full backup that `Backup-Tide.ps1` recorded is older than this many hours, or none is recorded. Leave it unset when a backup product, not the script, backs TIDE up: nothing is recorded then. 26 suits a nightly set. |
 
 ## Settings kept only in the database
 
