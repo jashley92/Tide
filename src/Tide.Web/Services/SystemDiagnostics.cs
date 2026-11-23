@@ -191,7 +191,7 @@ public sealed class SystemDiagnostics(
         list.Add(string.IsNullOrWhiteSpace(keys)
             ? new StorageInfo("Data Protection keys", null, false, null, null,
                 env.IsDevelopment() ? "Not set: development keeps the default key ring." : "Not set: sign-ins don't survive an app-pool recycle.")
-            : Folder("Data Protection keys", keys, probe: false, KeyCount(keys)));
+            : Folder("Data Protection keys", keys, probe: false, $"{KeyCount(keys)} {Protection().Note}".Trim()));
         return list;
     }
 
@@ -216,6 +216,12 @@ public sealed class SystemDiagnostics(
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { /* not shown */ }
         return new StorageInfo(label, path, exists, writable, free, note);
     }
+
+    // How new keys are protected: a certificate (readable on any server that holds it), with when it expires, or machine
+    // DPAPI (this server only).
+    // How new keys are protected, and a warning when the certificate expires soon (KeyRingCertificate.Describe).
+    private (string Note, string? Warning) Protection() =>
+        Tide.Web.Security.KeyRingCertificate.Describe(config, time.GetUtcNow(), OperatingSystem.IsWindows());
 
     private static string? KeyCount(string path)
     {
@@ -283,7 +289,9 @@ public sealed class SystemDiagnostics(
                 "admin/system/server"));
         var keys = storage[1];
         checks.Add(keys.Path is not null
-            ? new("Data Protection keys", keys.Exists ? CheckLevel.Ok : CheckLevel.Attention, keys.Exists ? "Kept on disk." : "The folder doesn't exist.")
+            ? !keys.Exists ? new("Data Protection keys", CheckLevel.Attention, "The folder doesn't exist.")
+                : Protection().Warning is { } expiring ? new("Data Protection keys", CheckLevel.Attention, $"Kept on disk. {expiring}", "admin/system/server")
+                : new("Data Protection keys", CheckLevel.Ok, "Kept on disk.")
             : new("Data Protection keys", env.IsDevelopment() ? CheckLevel.Info : CheckLevel.Attention, keys.Note ?? "", "admin/system/server"));
 
         checks.Add(!mail.Enabled ? new("Email", CheckLevel.Info, "Off (Email:Enabled): nothing is emailed.", "admin/system/server")

@@ -154,9 +154,32 @@ flowchart TD
 1. Install the prerequisites and run `Install-Database.ps1` and `Install-Tide.ps1` with the server's answers file
    ([INSTALL.md](../INSTALL.md)). Lost it? The old server's **Configuration bundle** page writes one; keep a copy.
 2. Stop the pool, restore the database as above, and copy the files folder.
-3. Copy `dp-keys` only if the server's machine key is the same; otherwise leave the new, empty ring. Then re-add each
-   webhook on **Administration › API access** and give its new secret to the receiver.
+3. Copy `dp-keys`. With a certificate-protected ring (`DataProtection:CertificateThumbprint`), import the certificate
+   with its private key on the new server first, and the ring reads as it did. With machine DPAPI (the default) the old
+   ring is unreadable there: leave the new, empty ring, then re-add each webhook on **Administration › API access** and
+   give its new secret to the receiver.
 4. Start the pool and verify (`Verify-Install.ps1`, Diagnostics).
+
+### A warm standby (optional)
+
+TIDE runs as one process by design (ADR 0001): there is no active-active. For a server you can switch to within minutes
+if the live one is lost, with the database's own availability left to your DBA:
+
+1. **Key ring on a certificate.** Issue a certificate for TIDE (an internal CA's, two years or more), import it with its
+   private key into `LocalMachine\My` on both servers, and give the app pool's identity read access to its key (MMC ›
+   Certificates › Manage Private Keys). Set `DataProtection:CertificateThumbprint` on both. Keys made from then on are
+   readable on either server. A key made before the switch stays DPAPI-protected, readable only on the old server,
+   until it expires (90 days): until then, a failover loses saved webhook secrets (re-add them) and signs everyone out.
+   When the certificate is renewed, set the new thumbprint and move the old one to `DataProtection:PreviousThumbprints`.
+2. **Files and keys on a share.** Set `Files:RootPath` and `DataProtection:KeyPath` to a UNC share both servers' app pool
+   identities (one gMSA) can modify, such as `\\files01\tide\files` and `\\files01\tide\dp-keys`. Diagnostics' storage check
+   confirms the app can write there.
+3. **The standby.** Install it with the same answers file. Leave its app pool **stopped**: a second running process is
+   flagged as an alarm on Diagnostics and `/health/jobs`, and its caches would go stale. Keep its site at the same release
+   (upgrade both).
+4. **Failing over.** Point DNS (or the load balancer) at the standby, start its app pool, and check `/health` and
+   Diagnostics. Meetings in progress and unsaved edits on the old server are lost; open pages reconnect after a refresh.
+   Kerberos needs the `HTTP/<name>` SPN on the account both pools run as. Expect a few minutes, most of it DNS.
 
 ### After a failed upgrade
 
@@ -303,6 +326,9 @@ page's connection and everyone's since start); and whether a newer release is ou
 | `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
+| "A database command took …", event id 7201 | Application log | A command ran past `Diagnostics:SlowSqlMs`. A few are normal (a big export); many point at an index, statistics or a busy server. Diagnostics › Performance lists the last 20 with their SQL. |
+| "An event on … took …", event id 7202 | Application log | A click or keystroke on that page took past `Diagnostics:SlowEventMs`. |
+| Performance on Diagnostics | The page | Requests, page events and database commands in the last hour and day (median, 95th percentile, slowest), memory and the thread pool. Open pages are under Connections. |
 | "Background job … failed", event ids 7101 to 7110 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |

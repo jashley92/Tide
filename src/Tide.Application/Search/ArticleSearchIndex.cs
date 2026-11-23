@@ -29,6 +29,11 @@ public static class ArticleSearchIndex
     public static readonly Expression<Func<Article, bool>> Current = a =>
         a.SearchRow != null && !a.SearchRow.Dirty && a.SearchRow.Builder == Builder;
 
+    /// <summary>Every article <see cref="Current"/> isn't: no row, marked by a save, or built by another builder. The search
+    /// matches these part by part. Written out rather than negated, so each query reads as a plain filter.</summary>
+    public static readonly Expression<Func<Article, bool>> Stale = a =>
+        a.SearchRow == null || a.SearchRow.Dirty || a.SearchRow.Builder != Builder;
+
     /// <summary>
     /// The text a search matches <paramref name="a"/> by: the same parts the per-part search reads, as stored, each
     /// apart from the next by <see cref="ArticleSearchRow.Separator"/>. Needs its bullets, indicators, CVEs, techniques

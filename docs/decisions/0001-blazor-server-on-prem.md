@@ -35,3 +35,8 @@ with Windows (Negotiate) authentication and keeps its data in SQL Server.
   IIS application under another site's path instead (`/tide`, still in its own pool, folder and database). Nothing in
   the app assumes the root: `<base href>` follows the request's path base. The cost is one origin shared with that
   site, so the option is documented as trusting the other app as much as TIDE.
+- **Recorded 2026-11-21: the availability story.** Server loss costs minutes of downtime, with the database's own
+  availability left to the DBA. A warm standby is an option, not the default: a certificate-protected key ring
+  (`DataProtection:CertificateThumbprint`), files and keys on a share, and a second server installed with its app pool
+  stopped, started by hand after a DNS switch ([backup-and-recovery.md](../operations/backup-and-recovery.md#a-warm-standby-optional)).
+  Active-active stays out: it would need a cross-server bus, shared locks and caches, and sticky circuits.

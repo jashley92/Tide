@@ -5,6 +5,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Assist;
 using Tide.Application.Distribution;
 using Tide.Application.Intake;
+using Tide.Application.Operations;
 using Tide.Infrastructure.Assist;
 using Tide.Infrastructure.Notifications;
 using Tide.Infrastructure.Persistence;
@@ -39,10 +40,13 @@ public static class DependencyInjection
                     sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly).EnableRetryOnFailure());
             else
                 options.UseSqlite(connectionString ?? "Data Source=App_Data/tide.db");
-            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(), SearchDirty);
+            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(),
+                sp.GetRequiredService<SlowCommandInterceptor>(), SearchDirty);
         }
 
         services.AddScoped<AuditInterceptor>();
+        // Times every command for Diagnostics and warns of a slow one (Diagnostics:SlowSqlMs).
+        services.AddSingleton<SlowCommandInterceptor>();
         // What a save changed reaches colleagues' open pages (the feed is one per app; the origin one per circuit).
         services.AddSingleton<ChangeFeed>();
         services.AddScoped<ChangeOrigin>();
@@ -71,7 +75,7 @@ public static class DependencyInjection
         return services;
     }
 
-    private const string SqlServer = "SqlServer", Sqlite = "Sqlite";
+    internal const string SqlServer = "SqlServer", Sqlite = "Sqlite";
 
     /// <summary>
     /// <c>Database:Provider</c> as it's used: SqlServer, or Sqlite (blank, in development). Anything else stops start-up
