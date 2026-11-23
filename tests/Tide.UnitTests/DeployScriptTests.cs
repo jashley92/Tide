@@ -290,7 +290,6 @@ public partial class DeployScriptTests
             return i;
         }
         var translate = At("$PSBoundParameters['KeepUpgradeBackups'] = 0");
-        At("[void]$PSBoundParameters.Remove('KeepAllUpgradeBackups')").Should().BeGreaterThan(translate);
         translate.Should().BeLessThan(At("foreach ($k in $PSBoundParameters.Keys)"),
             "an older bundle's script doesn't accept the switch, and the handover passes only what it accepts, so " +
             "dropping it there would prune: it goes on as -KeepUpgradeBackups 0, which v1.16.0 reads as keep everything");

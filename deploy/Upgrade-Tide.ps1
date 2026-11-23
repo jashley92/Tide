@@ -181,7 +181,6 @@ if ($KeepAllUpgradeBackups) {
     }
     $KeepUpgradeBackups = 0
     $PSBoundParameters['KeepUpgradeBackups'] = 0
-    [void]$PSBoundParameters.Remove('KeepAllUpgradeBackups')
 }
 # -WhatIf stops at the confirmation, before anything changes. Until then the run stages the build in TEMP and runs the
 # preflight for real (an extraction or New-Item skipped by -WhatIf would only break it); the flag is still passed on by
