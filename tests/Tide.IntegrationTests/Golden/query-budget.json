@@ -121,28 +121,28 @@
       "rowsRead": 3033
     },
     "Search(CVE)": {
-      "reads": 22,
+      "reads": 23,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 140,
+      "parameters": 141,
       "maxParameters": 11,
-      "rowsRead": 103
+      "rowsRead": 605
     },
     "Search(indicator)": {
-      "reads": 22,
+      "reads": 23,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 55,
+      "parameters": 56,
       "maxParameters": 8,
-      "rowsRead": 33
+      "rowsRead": 535
     },
     "Search(text)": {
-      "reads": 14,
+      "reads": 15,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 369,
+      "parameters": 370,
       "maxParameters": 50,
-      "rowsRead": 1120
+      "rowsRead": 1622
     },
     "Today": {
       "reads": 42,
@@ -339,28 +339,28 @@
       "rowsRead": 3033
     },
     "Search(CVE)": {
-      "reads": 22,
+      "reads": 23,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 163,
+      "parameters": 164,
       "maxParameters": 12,
-      "rowsRead": 103
+      "rowsRead": 605
     },
     "Search(indicator)": {
-      "reads": 22,
+      "reads": 23,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 124,
+      "parameters": 125,
       "maxParameters": 34,
-      "rowsRead": 33
+      "rowsRead": 535
     },
     "Search(text)": {
-      "reads": 14,
+      "reads": 15,
       "saves": 0,
       "rowsWritten": 0,
-      "parameters": 415,
+      "parameters": 416,
       "maxParameters": 50,
-      "rowsRead": 1120
+      "rowsRead": 1622
     },
     "Today": {
       "reads": 42,
@@ -392,7 +392,7 @@
       "rowsWritten": 0,
       "parameters": 987,
       "maxParameters": 250,
-      "rowsRead": 1739
+      "rowsRead": 1736
     },
     "Triage.Inbox(Duplicate)": {
       "reads": 18,
@@ -408,7 +408,7 @@
       "rowsWritten": 0,
       "parameters": 2147,
       "maxParameters": 450,
-      "rowsRead": 3423
+      "rowsRead": 3422
     },
     "Triage.Inbox(Promoted)": {
       "reads": 18,
