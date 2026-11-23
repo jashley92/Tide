@@ -5,14 +5,14 @@
   "Actions.List(Open)": 50,
   "Brief.Candidates": 110,
   "Reports(month)": 50,
-  "Search(CVE)": 220,
-  "Search(indicator)": 440,
-  "Search(text)": 110,
-  "Trends(24 months)": 220,
+  "Search(CVE)": 180,
+  "Search(indicator)": 390,
+  "Search(text)": 160,
+  "Trends(24 months)": 250,
   "Trends(6 months)": 70,
-  "Triage.Inbox(Dismissed)": 310,
-  "Triage.Inbox(Duplicate)": 170,
-  "Triage.Inbox(New)": 300,
-  "Triage.Inbox(Promoted)": 220,
-  "Triage.Inbox(Shortlisted)": 190
+  "Triage.Inbox(Dismissed)": 300,
+  "Triage.Inbox(Duplicate)": 180,
+  "Triage.Inbox(New)": 310,
+  "Triage.Inbox(Promoted)": 210,
+  "Triage.Inbox(Shortlisted)": 170
 }
