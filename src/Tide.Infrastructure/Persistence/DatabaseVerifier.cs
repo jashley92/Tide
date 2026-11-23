@@ -41,10 +41,10 @@ public static class DatabaseVerifier
         var builder = new DbContextOptionsBuilder<AppDbContext>();
         if (provider == DependencyInjection.Sqlite) builder.UseSqlite(connectionString);
         else builder.UseSqlServer(connectionString, sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly));
-        var ok = true;
+        var failed = new List<string>();
         async Task Say(bool passed, string what)
         {
-            ok &= passed;
+            if (!passed) failed.Add(what);
             await output.WriteLineAsync($"{(passed ? "OK  " : "FAIL")} {what}");
         }
         try
@@ -84,8 +84,8 @@ public static class DatabaseVerifier
         {
             await Say(false, $"The database couldn't be checked: {ex.GetBaseException().Message}");
         }
-        await output.WriteLineAsync(ok ? "This build can run on the database." : "This build can't run on the database as it is.");
-        return ok ? 0 : 1;
+        await output.WriteLineAsync(failed.Count == 0 ? "This build can run on the database." : "This build can't run on the database as it is.");
+        return failed.Count == 0 ? 0 : 1;
     }
 
     private static IEnumerable<(string Name, Func<CancellationToken, Task<int>> Read)> Pages(AppDbContext db) =>
