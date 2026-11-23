@@ -1,6 +1,7 @@
 @page "/articles"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @using Tide.Application.Scorecard
+@using Tide.Application.Preferences
 @inject ArticleService ArticleSvc
 @inject ScorecardService Scorecard
 @inject NavigationManager Nav
@@ -54,6 +55,9 @@
         </form>
     </div>
 }
+
+@* The person's own saved views of the list's filters (SavedViewPills), and Save view. *@
+<SavedViewPills Page="SavedViewPage.Articles" Query="@ShownQuery" Inline="true" Placeholder="P1–P2 threats this quarter" Class="tide-savedviews" />
 
 <div class="tide-card">
     <DataTable TItem="ArticleSummary" Items="_rows" Columns="Columns" Key="r => r.Id" One="article" Many="articles" Caption="Articles"
@@ -209,6 +213,9 @@
         new("draft", "Draft", "status", [nameof(ArticleStatus.Draft)]),
         new("ready", "Ready", "status", [nameof(ArticleStatus.Ready)]),
     ];
+
+    /// <summary>The filters shown, as a saved view keeps them (never the list's page).</summary>
+    internal string? ShownQuery => SavedViewService.QueryOf(SavedViewPage.Articles, _filter.ToQuery());
 
     // The chips, as the filter words them (the dates as one period), each a link to the list without it.
     internal IReadOnlyList<FilterChipView> Chips => [.. _chips.Select(c => new FilterChipView(c.Label, c.Key, Href(c.Without)))];

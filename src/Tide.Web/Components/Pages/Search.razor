@@ -28,6 +28,8 @@
         <button class="btn btn-primary" type="submit"><span class="bi bi-search" aria-hidden="true"></span> Search</button>
     </form>
     <div class="form-text">Every word must match. Defanged indicators work too (<span class="tide-data">evil[.]com</span>, <span class="tide-data">hxxps://…</span>).</div>
+    @* The person's own saved searches (SavedViewPills), and Save view for the one shown. *@
+    <SavedViewPills Page="SavedViewPage.Search" Query="@ShownQuery" Inline="true" What="this search" Placeholder="Our VPN's CVEs" Class="tide-savedviews tide-savedviews-search" />
 </div>
 
 @if (_loading)
@@ -226,6 +228,9 @@ else if (_results is { Terms.Count: > 0 } r)
 
 @code {
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    /// <summary>The search shown, as a saved view keeps it: none before one is run.</summary>
+    internal string? ShownQuery => SavedViewService.QueryOf(SavedViewPage.Search, [new("q", string.IsNullOrWhiteSpace(Q) ? null : Q.Trim())]);
 
     private string? _text, _query, _searched;
     private SearchResults? _results;
