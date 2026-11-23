@@ -60,6 +60,26 @@ public class FileSweepTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task The_job_reports_a_clean_store_quietly_and_warns_of_problems()
+    {
+        using var db = new TestDb();
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Tide.Application.Abstractions.IAppDbContextFactory>(services, db);
+        await using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        var log = new ListLogger<Tide.Web.Services.FileSweepHostedService>();
+        var job = new Tide.Web.Services.FileSweepHostedService(
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(provider),
+            db.Store, new Tide.Application.Operations.JobMonitor(TimeProvider.System), new HeldLease(), TimeProvider.System, log);
+
+        (await job.RunAsync(CancellationToken.None)).Should().StartWith("0 rows, 0 files: 0 missing");
+        log.Warnings.Should().BeEmpty();
+
+        db.Store.Files[Guid.NewGuid()] = [1];
+        (await job.RunAsync(CancellationToken.None)).Should().Contain("1 without a row");
+        log.Warnings.Should().ContainSingle().Which.Should().Contain("Nothing was changed");
+    }
+
     private sealed class Env : Microsoft.Extensions.Hosting.IHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Testing";
