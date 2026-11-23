@@ -71,4 +71,36 @@ public class AuditArchiveTests : IDisposable
         await using (var ctx = db.Context())
             (await AuditArchive.RunAsync(ctx, new AuditOptions { RetentionDays = 365 }, _folder, Now.AddHours(1))).Should().BeEmpty("nothing left to archive");
     }
+
+    [Fact]
+    public async Task The_job_archives_into_the_file_stores_folder_and_says_what_it_did()
+    {
+        using var db = new TestDb();
+        await using (var ctx = db.Context())
+        {
+            ctx.AuditLog.Add(new AuditLogEntry { AtUtc = DateTimeOffset.UtcNow.AddYears(-3), UserId = "x", UserName = "X", Action = "Added", EntityType = "Article", EntityKey = "old" });
+            await ctx.SaveChangesAsync();
+        }
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Tide.Application.Abstractions.IAppDbContextFactory>(services, db);
+        await using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        Tide.Web.Services.AuditArchiveHostedService Job(int? days) => new(
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(provider),
+            new Tide.TestSupport.StaticOptionsMonitor<AuditOptions>(new AuditOptions { RetentionDays = days }),
+            new Tide.TestSupport.StaticOptionsMonitor<Tide.Application.Files.FileStoreOptions>(new Tide.Application.Files.FileStoreOptions { RootPath = _folder }),
+            new Env(), new Tide.Application.Operations.JobMonitor(TimeProvider.System), new HeldLease(), TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Tide.Web.Services.AuditArchiveHostedService>.Instance);
+
+        (await Job(null).RunAsync(CancellationToken.None)).Should().Be("nothing older than the retention", "off: nothing archived");
+        (await Job(400).RunAsync(CancellationToken.None)).Should().StartWith("1 rows archived");
+        Directory.EnumerateFiles(Path.Combine(_folder, "audit-archive"), "audit-*.jsonl.gz").Should().ContainSingle();
+    }
+
+    private sealed class Env : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Testing";
+        public string ApplicationName { get; set; } = "Tide";
+        public string ContentRootPath { get; set; } = Path.GetTempPath();
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    }
 }
