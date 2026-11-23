@@ -499,3 +499,21 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change the query templates.");
     }
 }
+
+/// <summary>A placeholder a saved query can have, as the Insert menu and typing "{{" offer it.</summary>
+public sealed record QueryPlaceholder(string Name, string Description)
+{
+    public string Written => "{{" + Name + "}}";
+
+    /// <summary>
+    /// Every placeholder a saved query can have, in the order they're offered: the days back, every indicator, then
+    /// each kind on its own.
+    /// </summary>
+    public static readonly IReadOnlyList<QueryPlaceholder> All =
+    [
+        new("days", "How many days back to look: the action's window."),
+        new("values", "The action's indicators, written as the language writes a list."),
+        .. Enum.GetValues<HuntValueKind>().Select(k => new QueryPlaceholder(
+            HuntQueryBuilder.ValuesPlaceholder(k)[2..^2], $"{HuntValues.Label(k)} only.")),
+    ];
+}

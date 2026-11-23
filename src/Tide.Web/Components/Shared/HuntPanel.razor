@@ -258,11 +258,18 @@
         <label class="tide-field-label" for="hunt-s-about">What it's for (optional)</label>
         <input id="hunt-s-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="_saveDescription" />
     </div>
-    <div class="mt-2">
-        <label class="tide-field-label" for="hunt-s-text">Query</label>
-        <textarea id="hunt-s-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
-        <LengthNote Value="@_saveText" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
-        <SavedQueryHelp Id="hunt-s-text-help" />
+    <div class="mt-2" data-oi data-oi-names="@QueryInsertMenu.SuggestNames">
+        <QueryInsertMenu PanelId="hunt-s-insert" />
+        <div class="tide-oi-field mt-2">
+            <label class="tide-field-label" for="hunt-s-text">Query</label>
+            <textarea id="hunt-s-text" class="tide-query tide-autogrow" maxlength="@ArticleService.MaxPaste" spellcheck="false"
+                      data-oi-target data-oi-default aria-autocomplete="list" aria-controls="hunt-s-text-list" aria-describedby="hunt-s-text-help"
+                      @bind="_saveText" @bind:event="oninput"></textarea>
+            <ul id="hunt-s-text-list" class="tide-oi-suggest" role="listbox" aria-label="Placeholders" data-oi-list-for="hunt-s-text" hidden></ul>
+            <span class="visually-hidden" role="status" data-oi-status></span>
+            <LengthNote Value="@_saveText" Max="SavedQuery.MaxText" Cap="ArticleService.MaxPaste" />
+            <SavedQueryHelp Id="hunt-s-text-help" />
+        </div>
     </div>
 </ConfirmDialog>
 
