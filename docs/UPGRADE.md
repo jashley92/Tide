@@ -117,7 +117,7 @@ What it does, in order:
    `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`). A backup that reads back wrong stops the
    upgrade with nothing deployed. Reading it back needs `CREATE DATABASE` permission (`dbcreator`) as well as the right
    to back up; without it the upgrade warns that the backup was written `WITH CHECKSUM` but not read back, and carries
-   on. The upgrade doesn't remove old pre-upgrade backups: clear them out of the backup folder from time to time.
+   on. Older upgrades' backups are pruned once this one has succeeded (step 6).
 4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
    files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
    `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
@@ -141,6 +141,30 @@ What it does, in order:
    then the database is as it was, and the previous build is started again if it was running when the upgrade began
    (on AppMigrates, a pool already stopped may be an earlier failed upgrade's, so it stays stopped). On success it writes `VERSION.txt` into the site (the version, the one before, when and who), and
    refreshes the kept deploy scripts.
+6. **Prunes older upgrade backups**, on a proven success only. Each upgrade's folder holds a `snapshot.json` naming the server
+   and site folder it belongs to, and whether that upgrade succeeded. The upgrade keeps the newest
+   `-KeepUpgradeBackups` (3 by default, this run's among them) successful upgrades' `<database>-preupgrade-<time>.bak`
+   files and `<time>` folders, deletes the older ones, and lists each it deleted. A failed run doesn't count toward
+   the number, and a failed run's backups newer than the last successful upgrade are always kept: after failed
+   retries, the first one's backup may be the only one from before its migrations. Only this install's backups are
+   touched:
+   - a folder only when its `snapshot.json` names this server and site folder. Sibling sites (`D:\inetpub\tide` and
+     `D:\inetpub\tide-test`) share `tide-upgrade-backups`;
+   - a `.bak` only when one of those records names it and this SQL Server's backup history (`msdb`) records it for
+     this database, with the name matched case and all. Another server sharing the backup folder, or a database whose
+     name differs only in case, keeps its own. If the history can't be read, none is deleted.
+
+   Backups from upgrades before these records existed (folders without a `snapshot.json`, and the `.bak` files they
+   took) are never pruned: once you no longer need them, delete them by hand from `tide-upgrade-backups` and SQL
+   Server's backup folder.
+
+   The `.bak` files are deleted only when the web server reaches the folder: a UNC path, or SQL Server on the same
+   host. Otherwise the upgrade warns and lists the older ones, for you to delete there. With `-BackupRoot` nothing is
+   pruned, since that run's record isn't with the others. A link (junction) inside a folder is removed as a link,
+   never followed. `0` keeps everything. A failed or rolled-back upgrade deletes nothing, since its backups may be
+   needed for a restore. Nor does one whose start wasn't proven (Windows authentication answered the warm-up, and the
+   upgrade asks you to check the site), which isn't recorded as a success either. A backup that can't be deleted is a
+   warning, not a failed upgrade.
 
 Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.
 
