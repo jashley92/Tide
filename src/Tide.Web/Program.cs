@@ -181,6 +181,7 @@ builder.Services.AddHostedService<MetricImportHostedService>();
 builder.Services.AddHostedService<UpdateCheckHostedService>();
 builder.Services.AddHostedService<WebhookHostedService>();
 builder.Services.AddHostedService<UrlHashFillHostedService>();
+builder.Services.AddHostedService<IndicatorKeyFillHostedService>();
 builder.Services.AddHostedService<MeetingAttendanceHostedService>();
 builder.Services.AddScoped<SystemSettings>();
 builder.Services.AddScoped<SystemDiagnostics>();
