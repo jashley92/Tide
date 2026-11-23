@@ -106,30 +106,9 @@ public static class UrlHashFill
     public static Task FinishAsync(IAppDbContext db, CancellationToken ct = default) =>
         db.Settings.Where(s => s.Key == PendingKey).ExecuteDeleteAsync(ct);
 
-    // One UPDATE for the batch: SET hash = CASE WHEN Id = @id1 THEN @hash1 WHEN ... ELSE hash END, where the id is one of
-    // the batch's. Only a row still without a hash is written: one saved meanwhile has its own, from its own address.
+    // One UPDATE for the batch (CaseUpdate). Only a row still without a hash is written: one saved meanwhile has its own,
+    // from its own address.
     private static Task<int> StoreAsync<T>(IQueryable<T> unhashed, Expression<Func<T, string?>> column, IReadOnlyList<(Guid Id, string Hash)> rows,
-        CancellationToken ct) where T : Entity
-    {
-        var batch = new Values(rows.Select(r => r.Id).ToArray(), rows.Select(r => (string?)r.Hash).ToArray());
-        var ids = batch.Ids;
-        var x = column.Parameters[0];
-        var id = Expression.Property(x, nameof(Entity.Id));
-        // Read from a captured object, as a lambda's closure is, not written in as constants: so each id and hash is a
-        // parameter and the statement is the same for every full batch (one cached query and plan, not one per batch).
-        var held = Expression.Constant(batch);
-        Expression value = column.Body;
-        for (var i = rows.Count - 1; i >= 0; i--)
-            value = Expression.Condition(
-                Expression.Equal(id, Expression.ArrayIndex(Expression.Field(held, nameof(Values.Ids)), Expression.Constant(i))),
-                Expression.ArrayIndex(Expression.Field(held, nameof(Values.Hashes)), Expression.Constant(i)), value);
-        var hash = Expression.Lambda<Func<T, string?>>(value, x);
-        return unhashed.Where(r => ids.Contains(r.Id)).ExecuteUpdateAsync(s => s.SetProperty(column, hash), ct);
-    }
-
-    private sealed class Values(Guid[] ids, string?[] hashes)
-    {
-        public readonly Guid[] Ids = ids;
-        public readonly string?[] Hashes = hashes;
-    }
+        CancellationToken ct) where T : Entity =>
+        CaseUpdate.RunAsync(unhashed, [column], rows.Select(r => (r.Id, new string?[] { r.Hash })).ToList(), ct);
 }

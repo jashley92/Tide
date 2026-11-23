@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Tide.Application.Search;
 using Tide.Domain.Enums;
+using Tide.Domain.Observables;
 
 namespace Tide.UnitTests;
 
@@ -58,7 +59,35 @@ public class SearchTextTests
     [InlineData(IndicatorType.IpAddress, "203.0.113.45", "203.0.113.45")]
     [InlineData(IndicatorType.Url, "https://[2001:db8::1]/x", "2001:db8::1")]
     [InlineData(IndicatorType.FileHash, "d41d8cd98f00b204e9800998ecf8427e", null)]
-    public void HostOf_NamesTheHost(IndicatorType type, string value, string? host) => SearchText.HostOf(type, value).Should().Be(host);
+    public void HostOf_NamesTheHost(IndicatorType type, string value, string? host) => IndicatorKey.HostOf(type, value).Should().Be(host);
+
+    [Theory]
+    [InlineData(IndicatorType.Domain, "Mail.Bad.Example.net.", "net.example.bad.mail")]
+    [InlineData(IndicatorType.Url, "https://cdn.bad.example.net:8443/a?b", "net.example.bad.cdn")]
+    [InlineData(IndicatorType.EmailAddress, "billing@bad.example.net", "net.example.bad")]
+    [InlineData(IndicatorType.IpAddress, "203.0.113.45", "203.0.113.45")]
+    [InlineData(IndicatorType.Url, "https://[2001:db8::1]/x", "2001:db8::1")]
+    [InlineData(IndicatorType.FileHash, "d41d8cd98f00b204e9800998ecf8427e", null)]
+    public void HostRevOf_ReversesANamesLabels_AndKeepsAnAddress(IndicatorType type, string value, string? rev) =>
+        IndicatorKey.HostRevOf(type, value).Should().Be(rev);
+
+    [Fact]
+    public void HostRevOf_AHostNameStartsWithEveryNameItsUnder_AndNoLookalikeDoes()
+    {
+        var under = IndicatorKey.HostRevOf(IndicatorType.Domain, "evil.com") + ".";
+        IndicatorKey.HostRevOf(IndicatorType.Domain, "mail.evil.com").Should().StartWith(under);
+        IndicatorKey.HostRevOf(IndicatorType.Domain, "notevil.com").Should().NotStartWith(under).And.NotBe("com.evil");
+        IndicatorKey.HostRevOf(IndicatorType.Domain, "evil.com.attacker.net").Should().NotStartWith(under);
+        IndicatorKey.HostRevOf(IndicatorType.Domain, new string('a', 400) + ".com").Should().BeNull("no host name is that long");
+    }
+
+    [Fact]
+    public void ValueOf_IsTheSameInEitherCase_AndFitsItsColumn()
+    {
+        IndicatorKey.ValueOf("HTTPS://Evil.Example.net/X").Should().Be(IndicatorKey.ValueOf("https://evil.example.net/x")).And.HaveLength(64);
+        IndicatorKey.ValueOf(new string('a', 2000)).Should().HaveLength(64);
+        IndicatorKey.ValueOf("evil.example.net").Should().NotBe(IndicatorKey.ValueOf("evil.example.net "));
+    }
 
     [Fact]
     public void SameOrUnder_TakesSubdomainsButNotLookalikesOrOtherAddresses()

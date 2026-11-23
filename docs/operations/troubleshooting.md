@@ -88,7 +88,7 @@ failure and counts, not content.
   intervals, at least 15 minutes), or failing (its last 3 or more runs failed: `Degraded`).
 - **Where to look:** Diagnostics › Health checks › "Background jobs" names the job and why; the jobs table shows its
   last error and the recent failures. The log has a Warning per failed run, "Background job … failed (N in a row)",
-  under the job's event id (7101 to 7108, listed in
+  under the job's event id (7101 to 7110, listed in
   [backup-and-recovery.md](backup-and-recovery.md#hosted-services-inside-the-app)).
 - **Fix:** fix what the error names (the relay for reminders, the proxy for feeds and the CVE data). A hung job
   usually waits on a host that never answers: recycle the pool to start it again. Overdue with no failures means the

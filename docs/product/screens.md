@@ -285,6 +285,12 @@ the page stops it after the source it's on.
 ![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
 
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
+- **Several at once.** Space on a row, Shift+J or Shift+K, or a row's checkbox chooses items; the selection bar takes
+  the decision bar's place: how many, Promote as one (2 to 8, any feeds), Shortlist, Dismiss…, Attach to… and Clear.
+  Only the page shown is chosen, and the bar says so.
+- **KEV round-up.** On the KEV filter, *Promote the N KEV items since the last brief as one…* opens a promote form for
+  up to 20 of them; the draft gets a bullet per KEV-listed CVE from TIDE's CVE records and "Patch the KEV additions we
+  run" as its recommended action.
 
 ### What triage already knows
 
@@ -330,8 +336,9 @@ The triage keys are listed under [keyboard shortcuts](../architecture/frontend.m
 **Route:** `/articles` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
 Every article, as a list that filters as you type, sorts by any heading, and pages rather than cutting off. The
-filter bar has **Mine**, **Draft** and **Ready** as pills (Mine goes with either); **+ Filter** holds the rest: by
-(you, or anyone who has written an article, with how many), status, ATT&CK tactic, technique (with
+filter bar has **Mine** (the articles you're writing now, handed to you included), **Draft** and **Ready** as pills
+(Mine goes with either); **+ Filter** holds the rest: by (Mine, or anyone who has started an article, by author, with
+how many), status, ATT&CK tactic, technique (with
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
@@ -680,8 +687,9 @@ for, and each runs that button, asking what the button would ask:
 | Where | Commands |
 |---|---|
 | Anywhere | *New article*, *New action*, *Present today's brief*; type "take A-12" or "hand A-12" for *Take A-12* or *Hand A-12 to…*, which open the action and run its own *Take it* or *Hand off* |
-| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft) |
+| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft nothing blocks, as its button), *Hand this draft to…* (a Draft or Ready article, whenever the head offers *Hand to…*; it opens the same dialog) |
 | Today | *Mark the brief ready*, while that's the brief's next step (with its *Ready anyway?* question when there's something to look at first) |
+| A day's brief, Today included | *Send both editions*, for someone who may send, while the Send dialog's *Send both* could be pressed once its two ticks are: both editions due, the meeting held, not before the brief's day, neither held for a required review. It opens the Send dialog; nothing goes until both ticks and *Send both* there |
 | Triage | *Promote the selected item*, which opens the row's promote form, as `P` does |
 | An action | *Take A-12* (asking first when a colleague has it), *Hand A-12 to…* (the hand-off dialog), *Copy A-12's hunt query* |
 

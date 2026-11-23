@@ -103,4 +103,42 @@ public class SystemStatsTests : IDisposable
         var (free, total) = SystemStats.Disk(Path.GetTempPath());
         (free, total).Should().Match<(long?, long?)>(d => d.Item1 > 0 && d.Item2 >= d.Item1);
     }
+
+    [Fact]
+    public async Task The_job_takes_the_days_snapshot_reads_the_newest_backup_and_health_says_when_its_stale()
+    {
+        using var db = new TestDb();
+        Directory.CreateDirectory(_root);
+        await using (var ctx = db.Context())
+        {
+            ctx.BackupRuns.Add(new BackupRun { Kind = "full", Succeeded = true, FinishedAtUtc = DateTimeOffset.UtcNow.AddHours(-50), Machine = "WEB1" });
+            await ctx.SaveChangesAsync();
+        }
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddScoped(services, _ => Stats(db, staleAfterHours: 26));
+        await using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        var (jobs, watch, log) = (new JobMonitor(TimeProvider.System), new BackupWatch(), new ListLogger<Tide.Web.Services.SystemStatsHostedService>());
+        var job = new Tide.Web.Services.SystemStatsHostedService(
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(provider),
+            jobs, new HeldLease(), watch, TimeProvider.System, log);
+
+        watch.Read.Should().BeFalse();
+        await job.PassAsync(CancellationToken.None);
+
+        watch.LastFull.Should().BeCloseTo(DateTimeOffset.UtcNow.AddHours(-50), TimeSpan.FromMinutes(1));
+        log.Warnings.Should().ContainSingle().Which.Should().Contain("50 hours ago");
+        jobs.Get(JobMonitor.Statistics).LastDetail.Should().Be("today's snapshot taken");
+        await using (var ctx = db.Context()) (await ctx.SystemStats.CountAsync()).Should().Be(1);
+
+        await job.PassAsync(CancellationToken.None);
+        log.Warnings.Should().ContainSingle("a lasting problem is logged once an hour");
+
+        var health = await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, Stats(db, 26), watch)
+            .CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        health.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
+        health.Description.Should().Contain("Backup:StaleAfterHours");
+        (await new Tide.Web.Services.JobsHealthCheck(jobs, new HeldLease(), TimeProvider.System, Stats(db), watch)
+            .CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext())).Status
+            .Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy, "off unless a limit is set");
+    }
 }

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Tide.Application.Abstractions;
 using Tide.Domain.Entities;
+using Tide.Domain.Observables;
 
 namespace Tide.Infrastructure.Persistence;
 
@@ -43,6 +44,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ArticleIndicator> ArticleIndicators => Set<ArticleIndicator>();
     public DbSet<ArticleCve> ArticleCves => Set<ArticleCve>();
     public DbSet<ArticleLink> ArticleLinks => Set<ArticleLink>();
+    public DbSet<ArticleSearchRow> ArticleSearch => Set<ArticleSearchRow>();
     public DbSet<Brief> Briefs => Set<Brief>();
     public DbSet<BriefItem> BriefItems => Set<BriefItem>();
     public DbSet<BriefSend> BriefSends => Set<BriefSend>();
@@ -359,6 +361,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Value).HasMaxLength(2000);
             e.Property(x => x.Note).HasMaxLength(300);
             e.HasIndex(x => x.ArticleId);
+            e.Property(x => x.ValueKey).HasMaxLength(64);
+            e.HasIndex(x => x.ValueKey);
+            e.Property(x => x.HostRev).HasMaxLength(IndicatorKey.MaxHostRev);
+            e.HasIndex(x => x.HostRev);
         });
 
         b.Entity<ArticleLink>(e =>
@@ -612,6 +618,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Note).HasMaxLength(300);
             e.Property(x => x.AddedByName).HasMaxLength(256);
             e.HasIndex(x => x.ActionId);
+            e.Property(x => x.ValueKey).HasMaxLength(64);
+            e.HasIndex(x => x.ValueKey);
         });
 
         b.Entity<ActionChecklistItem>(e =>
@@ -790,6 +798,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ETag).HasMaxLength(200);
             e.Property(x => x.LastModified).HasMaxLength(100);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
+        });
+
+        b.Entity<ArticleSearchRow>(e =>
+        {
+            e.ToTable("ArticleSearch");
+            e.HasKey(x => x.ArticleId);
+            e.HasOne<Article>().WithOne(a => a.SearchRow).HasForeignKey<ArticleSearchRow>(x => x.ArticleId).OnDelete(DeleteBehavior.Cascade);
+            // The background rebuild reads only the rows a save has marked: a handful, whatever the table's size.
+            e.HasIndex(x => x.Dirty).HasFilter("[Dirty] = 1");
         });
 
         b.Entity<FeedItemText>(e =>

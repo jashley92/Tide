@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Tide.Domain.Common;
 using Tide.Domain.Enums;
+using Tide.Domain.Observables;
 
 namespace Tide.Domain.Entities;
 
@@ -174,6 +175,9 @@ public class Article : AuditableEntity
     public List<ArticleIndicator> Indicators { get; set; } = [];
     public List<ArticleCve> Cves { get; set; } = [];
 
+    /// <summary>The text a search matches it by (<see cref="ArticleSearchRow"/>); loaded only by a query that reads it.</summary>
+    public ArticleSearchRow? SearchRow { get; set; }
+
     /// <summary>The TLP a part of this article actually carries: its own, or the article's when that's higher.</summary>
     public TlpLevel Effective(TlpLevel partTlp) => partTlp > Tlp ? partTlp : Tlp;
 
@@ -263,12 +267,37 @@ public class ArticleTechnique
 }
 
 /// <summary>An indicator on an article, stored live (refanged, canonical) and shown defanged.</summary>
-public class ArticleIndicator : Entity
+public class ArticleIndicator : Entity, IKeyedIndicator
 {
+    private IndicatorType _type;
+    private string _value = string.Empty;
+
     public Guid ArticleId { get; set; }
-    public IndicatorType Type { get; set; }
-    public string Value { get; set; } = string.Empty;
+
+    public IndicatorType Type
+    {
+        get => _type;
+        set { _type = value; HostRev = IndicatorKey.HostRevOf(value, _value); }
+    }
+
+    public string Value
+    {
+        get => _value;
+        set { _value = value; ValueKey = IndicatorKey.ValueOf(value); HostRev = IndicatorKey.HostRevOf(_type, value); }
+    }
+
     public string? Note { get; set; }
+
+    /// <summary>
+    /// <see cref="IndicatorKey.ValueOf"/> of <see cref="Value"/>: stored and indexed, so an exact lookup seeks. It follows
+    /// <see cref="Value"/> whenever that's set; null only on a row saved before it was kept, until the background fill
+    /// (<c>IndicatorKeyFill</c>) reaches it.
+    /// </summary>
+    public string? ValueKey { get; private set; }
+
+    /// <summary>The host it names, reversed by label (<see cref="IndicatorKey.HostRevOf(IndicatorType, string)"/>): stored and
+    /// indexed, so "the same host or under it" is a range. Null when it names none.</summary>
+    public string? HostRev { get; private set; }
 }
 
 /// <summary>
@@ -306,4 +335,35 @@ public class ArticleCve
 {
     public Guid ArticleId { get; set; }
     public string CveId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The text a search matches an article by: every part it searches (title, summary, the why and the actions, actors,
+/// sectors, source, bullets, indicators and their notes, CVEs, techniques, captions) in one column, so a search is one
+/// LIKE per spelling over one table rather than one over seven columns and six child tables. Kept beside the article,
+/// not on it, so the article's row, edit version and history are untouched. A save that changes a part marks the row
+/// <see cref="Dirty"/> in the same transaction; a background job rebuilds it. Until it has, and for a row
+/// built by an older <see cref="Builder"/> (or an article added outside the app, with none), a search matches that article the
+/// old way, so it's never wrong. Every article gets a row: its migration adds a marked one for each already there, and a
+/// save adds one with each new article.
+/// </summary>
+public class ArticleSearchRow
+{
+    /// <summary>What separates the parts in <see cref="Text"/>: a control character no search term holds, so a term can't
+    /// match across two parts.</summary>
+    public const char Separator = '\u001F';
+
+    public Guid ArticleId { get; set; }
+
+    /// <summary>The searched parts, as stored (a LIKE matches them as it matched each part), joined by <see cref="Separator"/>.</summary>
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>The version of the code that built <see cref="Text"/>; a row built by another is rebuilt.</summary>
+    public int Builder { get; set; }
+
+    /// <summary>A save has changed a part since <see cref="Text"/> was built.</summary>
+    public bool Dirty { get; set; }
+
+    /// <summary>New with every change marked: a rebuild is written only if no save marked the row again meanwhile.</summary>
+    public Guid Stamp { get; set; }
 }

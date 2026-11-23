@@ -16,6 +16,9 @@ namespace Tide.Infrastructure;
 
 public static class DependencyInjection
 {
+    // Stateless: one serves every context.
+    private static readonly SearchDirtyInterceptor SearchDirty = new();
+
     /// <summary>Registers persistence, the role and user directories, file storage and email.</summary>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
@@ -37,7 +40,7 @@ public static class DependencyInjection
                     sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly).EnableRetryOnFailure());
             else
                 options.UseSqlite(connectionString ?? "Data Source=App_Data/tide.db");
-            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(), SearchDirty);
         }
 
         services.AddScoped<AuditInterceptor>();

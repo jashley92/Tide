@@ -366,9 +366,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ActionId");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ActionIndicators");
                 });
@@ -1055,6 +1061,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ArticleId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HostRev")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Note")
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
@@ -1067,9 +1077,17 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ValueKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("HostRev");
+
+                    b.HasIndex("ValueKey");
 
                     b.ToTable("ArticleIndicators");
                 });
@@ -1221,6 +1239,32 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("ArticleScreenshots");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ArticleSearchRow", b =>
+                {
+                    b.Property<Guid>("ArticleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Builder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Dirty")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("Stamp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ArticleId");
+
+                    b.HasIndex("Dirty")
+                        .HasFilter("[Dirty] = 1");
+
+                    b.ToTable("ArticleSearch", (string)null);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ArticleTag", b =>
@@ -4048,6 +4092,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Navigation("File");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ArticleSearchRow", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.Article", null)
+                        .WithOne("SearchRow")
+                        .HasForeignKey("Tide.Domain.Entities.ArticleSearchRow", "ArticleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ArticleTag", b =>
                 {
                     b.HasOne("Tide.Domain.Entities.Article", null)
@@ -4347,6 +4400,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Navigation("Products");
 
                     b.Navigation("Screenshots");
+
+                    b.Navigation("SearchRow");
 
                     b.Navigation("Tags");
 

@@ -113,6 +113,8 @@ public class TriagePromoteUndoTests(StayApp app) : IClassFixture<StayApp>
         "ActionItem.ArticleId", "AiDraft.ArticleId", "ArticleAdversary.ArticleId", "ArticleBullet.ArticleId", "ArticleCve.ArticleId",
         "ArticleIndicator.ArticleId", "ArticleLink.ArticleId", "ArticleProduct.ArticleId", "ArticleReview.ArticleId",
         "ArticleScreenshot.ArticleId", "ArticleTag.ArticleId", "ArticleTechnique.ArticleId", "BriefItem.ArticleId", "FeedItem.ArticleId",
+        // The promote's own save adds the article's search row, so the snapshot counts it; its rebuild updates it in place.
+        "ArticleSearchRow.ArticleId",
     ];
 
     [Fact]

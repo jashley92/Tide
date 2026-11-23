@@ -128,7 +128,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // The verbs offered now, read as the palette reads them (signed in as the page was).
-    private static Task<List<PaletteCommand>> Verbs<T>(Rendered<T> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
+    internal static Task<List<PaletteCommand>> Verbs<T>(Rendered<T> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
     {
         var sp = r.Scope.ServiceProvider;
         sp.GetRequiredService<IHttpContextAccessor>().HttpContext = r.Signedin;
@@ -140,11 +140,11 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
     private static IReadOnlyList<ToastService.Toast> Toasts<T>(Rendered<T> r) => r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts;
 
     // A draft with its bottom line and (unless asked otherwise) a bullet, so nothing blocks it being marked ready.
-    private async Task<Guid> Draft(string title, bool bullet = true)
+    private async Task<Guid> Draft(string title, bool bullet = true, ArticleStatus status = ArticleStatus.Draft)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var article = new Article { Title = title, AuthorId = SignIn.Analyst.UserId, AuthorName = "Tester", Tlp = TlpLevel.Clear, Bluf = "Exploited in the wild." };
+        var article = new Article { Title = title, AuthorId = SignIn.Analyst.UserId, AuthorName = "Tester", Tlp = TlpLevel.Clear, Bluf = "Exploited in the wild.", Status = status };
         if (bullet) article.Bullets.Add(new ArticleBullet { Text = "Patch it.", Tlp = TlpLevel.Clear });
         db.Articles.Add(article);
         await db.SaveChangesAsync();
@@ -162,7 +162,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
         var id = await Draft("Palette verbs on an article");
         await using var r = await OpenArticle(id);
         (await Verbs(r)).Select(v => (v.Label, v.Scope)).Should().Equal(
-            ("Add this article to today's brief", "This article"), ("Save and mark ready", "This article"));
+            ("Add this article to today's brief", "This article"), ("Save and mark ready", "This article"), ("Hand this draft to…", "This article"));
 
         var add = await VerbOf(r, "Add this article to today's brief");
         await r.Click(_ => add.Run());
@@ -174,7 +174,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(_ => markReady.Run());
         (await As(sp => sp.GetRequiredService<ArticleService>().GetAsync(id)))!.Status.Should().Be(ArticleStatus.Ready);
         Toasts(r).Should().Contain(t => t.Message == "Marked ready for a brief.");
-        (await Verbs(r)).Should().BeEmpty("it's on today's brief and ready: neither is offered any more");
+        (await Verbs(r)).Select(v => v.Label).Should().Equal(["Hand this draft to…"], "it's on today's brief and ready: only Hand to… is still offered");
     }
 
     [Fact]
@@ -183,11 +183,34 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
         var id = await Draft("Palette verbs on an unready draft", bullet: false);
         await using var r = await OpenArticle(id);
         System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("It isn't ready yet: Add at least one bullet.", "the editor's own button says why it's disabled");
-        (await Verbs(r)).Select(v => v.Label).Should().Equal("Add this article to today's brief");
+        (await Verbs(r)).Select(v => v.Label).Should().Equal("Add this article to today's brief", "Hand this draft to…");
 
         var marking = () => As(sp => sp.GetRequiredService<ArticleService>().SetStatusAsync(id, ArticleStatus.Ready));
         (await marking.Should().ThrowAsync<InvalidOperationException>()).WithMessage("It isn't ready yet: Add at least one bullet.");
         (await As(sp => sp.GetRequiredService<ArticleService>().GetAsync(id)))!.Status.Should().Be(ArticleStatus.Draft);
+    }
+
+    [Fact]
+    public async Task HandThisDraftTo_OpensTheHeadsHandToDialog_AndHandsNothingUntilItsAnswered()
+    {
+        var id = await Draft("Palette hand-off draft");
+        await using var r = await OpenArticle(id);
+        (await r.Html()).Should().Contain("bi-person-up", "the head offers Hand to…, so the palette does");
+        var hand = await VerbOf(r, "Hand this draft to…");
+        (hand.Permission, hand.Scope).Should().Be((Permission.WriteArticles, "This article"));
+
+        await r.Press(_ => hand.Run());
+        (await r.HtmlOnce("Hand this article to a colleague")).Should().Contain("Hand it to", "the head's own dialog");
+        (await As(sp => sp.GetRequiredService<ArticleService>().GetAsync(id)))!.CurrentWriterId.Should().Be(SignIn.Analyst.UserId, "nothing moves until it's answered");
+    }
+
+    [Fact]
+    public async Task AnArticleNoLongerBeingWritten_IsNotOfferedHandThisDraftTo_AsTheHeadHasNoHandTo()
+    {
+        var id = await Draft("Palette hand-off presented", status: ArticleStatus.Presented);
+        await using var r = await OpenArticle(id);
+        (await r.Html()).Should().NotContain("bi-person-up", "the head offers no Hand to…");
+        (await Verbs(r)).Should().NotContain(v => v.Label == "Hand this draft to…");
     }
 
     [Fact]
@@ -405,5 +428,91 @@ public class PaletteTodayVerbTests(TideApp app) : IClassFixture<TideApp>
         await r.Renderer.Dispatcher.InvokeAsync(() => asking!);
         await using (var scope = SignedIn(app, SignIn.Analyst))
             (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(today))!.Status.Should().Be(BriefStatus.Ready);
+    }
+}
+
+/// <summary>The brief's Send both editions, in an app of its own so the day's sends are this test's.</summary>
+public class PaletteSendBothVerbTests(TideApp app) : IClassFixture<TideApp>
+{
+    internal static Task<List<PaletteCommand>> Verbs(Rendered<BriefPage> r) => PaletteVerbsTests.Verbs(r);
+
+    // The day's brief as it's opened: today's is Today, the start page.
+    internal static Task<Rendered<BriefPage>> OpenBrief(TideApp app, DateOnly day) =>
+        RenderAsync<BriefPage>(app, "/", new() { ["Day"] = Tide.Web.Components.Shared.Ui.IsoDay(day), ["AsToday"] = IsToday(app, day) });
+
+    private static bool IsToday(TideApp app, DateOnly day) => day == app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+
+    [Fact]
+    public async Task SendBothEditions_OpensTheSendDialog_AndSendsNothing_AndGoesOnceTheyHaveGone()
+    {
+        var day = await SendBoth.DayAsync(app);
+        await using var r = await OpenBrief(app, day);
+        var send = (await Verbs(r)).Should().ContainSingle(v => v.Label == "Send both editions").Which;
+        (send.Permission, send.Scope).Should().Be((Permission.PresentBriefs, IsToday(app, day) ? "Today" : "This brief"));
+
+        await r.Press(_ => send.Run());
+        SendBoth.Tag(await r.HtmlOnce("id=\"send-both-h\"")).Should().Contain("disabled", "the dialog's own Send both, waiting for its two ticks");
+        (await SendBoth.RealSendsAsync(r, day)).Should().BeEmpty("the verb only opens the confirmation");
+
+        // Both editions gone: the dialog no longer offers Send both, and neither does the palette.
+        var distribution = SendFromTodayTests.SignedIn(r);
+        foreach (var edition in new[] { Edition.Team, Edition.Public })
+            await distribution.SendAsync(await distribution.PlanAsync(day, edition));
+        await using var after = await OpenBrief(app, day);
+        (await Verbs(after)).Should().NotContain(v => v.Label == "Send both editions");
+    }
+}
+
+/// <summary>
+/// Send both on a page the browser loaded: the interactive page adopts what the prerender read instead of reading it
+/// again (the Today and brief pages), and Send both editions must come with it.
+/// </summary>
+public class PaletteSendBothPrerenderTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task TheInteractivePage_AdoptingThePrerendersRead_StillOffersSendBothEditions()
+    {
+        var day = await SendBoth.DayAsync(app);
+        await using var prerendered = await PaletteSendBothVerbTests.OpenBrief(app, day);
+        (await PaletteSendBothVerbTests.Verbs(prerendered)).Should().Contain(v => v.Label == "Send both editions");
+
+        var interactive = new BriefPage();
+        await prerendered.Renderer.Dispatcher.InvokeAsync(() => interactive.Adopt(prerendered.Component));
+        interactive.Verbs().Should().Contain(v => v.Label == "Send both editions", "nothing was read again, so it's what the prerender read");
+    }
+}
+
+/// <summary>Send both held for a required review: its button is disabled, so the palette doesn't offer it.</summary>
+public class PaletteSendBothHeldTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task AnEditionHeldForReview_HidesSendBothEditions_AsItsButtonIsDisabled()
+    {
+        var day = await SendBoth.DayAsync(app, Tide.Application.Reviews.ReviewRule.AmberAndAbove);
+        await using var r = await PaletteSendBothVerbTests.OpenBrief(app, day);
+        (await PaletteSendBothVerbTests.Verbs(r)).Should().NotContain(v => v.Label == "Send both editions");
+
+        await r.Press(p => p.AskSend());
+        SendBoth.Tag(await r.HtmlOnce("id=\"send-both-h\"")).Should().Contain("disabled");
+    }
+}
+
+/// <summary>Send both before the meeting has been held: its button waits for the meeting, and so does the palette.</summary>
+public class PaletteSendBothBeforeMeetingTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task BeforeTheMeeting_SendBothEditionsIsNotOffered()
+    {
+        var day = await SendBoth.DayAsync(app, held: false);
+        await using (var r = await PaletteSendBothVerbTests.OpenBrief(app, day))
+            (await PaletteSendBothVerbTests.Verbs(r)).Should().NotContain(v => v.Label == "Send both editions");
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            await briefs.MarkPresentedAsync((await briefs.GetOrStartAsync(day)).Id);
+        }
+        await using var held = await PaletteSendBothVerbTests.OpenBrief(app, day);
+        (await PaletteSendBothVerbTests.Verbs(held)).Should().Contain(v => v.Label == "Send both editions", "the meeting has been held");
     }
 }
