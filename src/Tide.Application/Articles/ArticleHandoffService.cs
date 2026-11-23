@@ -44,21 +44,11 @@ public sealed class ArticleHandoffService(IAppDbContextFactory dbs, ICurrentUser
         return await WritersAsync(db, writer, ct);
     }
 
-    // Everyone whose roles (as last seen at sign-in) let them write articles, but the writer now.
-    private async Task<IReadOnlyList<ArticleWriterChoice>> WritersAsync(IAppDbContext db, string writer, CancellationToken ct)
-    {
-        var people = new Dictionary<string, AppUser>();
-        foreach (var role in WriterRoles)
-            foreach (var u in await db.Users.AsNoTracking().Where(u => u.RolesCsv.Contains(role)).ToListAsync(ct))
-                people.TryAdd(u.Sid, u);
-        return [.. people.Values.Where(u => u.Sid != writer && u.DisplayName.Length > 0 && StoredRoles.Has(u.RolesCsv, Permission.WriteArticles))
+    // Everyone who can write articles but the writer now.
+    private async Task<IReadOnlyList<ArticleWriterChoice>> WritersAsync(IAppDbContext db, string writer, CancellationToken ct) =>
+        [.. (await StoredRoles.WritersAsync(db, ct)).Where(u => u.Sid != writer)
             .Select(u => new ArticleWriterChoice(u.Sid, u.DisplayName, u.Sid == user.UserId))
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)];
-    }
-
-    // The roles that can write articles: the first cut of who may be handed one.
-    private static readonly string[] WriterRoles = RoleDefinitions.SystemRoles
-        .Where(r => r.Value.Contains(Permission.WriteArticles)).Select(r => r.Key.ToString()).ToArray();
 
     /// <summary>
     /// Hands <paramref name="articleId"/> to <paramref name="toUserId"/> with an optional <paramref name="note"/>. Refused

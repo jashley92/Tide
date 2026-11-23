@@ -167,18 +167,10 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
         await using var db = await dbs.CreateAsync(ct);
         var writer = await WriterOf(db, articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
         var presenter = await rotation.PresenterAsync(clock.CurrentBriefDate, ct);
-        var users = new Dictionary<string, AppUser>();
-        foreach (var role in Writers)
-            foreach (var u in await db.Users.AsNoTracking().Where(u => u.RolesCsv.Contains(role)).ToListAsync(ct))
-                users.TryAdd(u.Sid, u);
-        return users.Values.Where(u => u.Sid != writer && u.Sid != user.UserId && u.DisplayName.Length > 0 && CanWrite(u.RolesCsv))
+        return (await StoredRoles.WritersAsync(db, ct)).Where(u => u.Sid != writer && u.Sid != user.UserId)
             .Select(u => new Reviewer(u.Sid, u.DisplayName, presenter?.Id == u.Sid))
             .OrderByDescending(r => r.Presenting).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
-
-    // The roles that can write articles, so review them; a user's roles are as last seen at sign-in.
-    private static readonly string[] Writers = RoleDefinitions.SystemRoles
-        .Where(r => r.Value.Contains(Permission.WriteArticles)).Select(r => r.Key.ToString()).ToArray();
 
     internal static bool CanWrite(string rolesCsv) => StoredRoles.Has(rolesCsv, Permission.WriteArticles);
 
