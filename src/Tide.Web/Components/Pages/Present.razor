@@ -185,10 +185,15 @@ else
                     </div>
                 }
                 <TlpBadge Level="edition.Marking" />
-                <select class="form-select form-select-sm" aria-label="Edition shown" value="@_edition" @onchange="SetEdition" disabled="@(_view is not null)">
-                    <option value="@Edition.Team">Team edition</option>
-                    <option value="@Edition.Public">Company-wide edition</option>
-                </select>
+                @* The edition shown, as the segmented switch used everywhere else for Team / Company-wide. Held while a
+                   meeting runs: everyone follows the presenter's. *@
+                <div class="tide-seg" role="group" aria-label="Edition shown">
+                    @foreach (var (ed, name) in EditionChoices)
+                    {
+                        <button type="button" class="tide-seg-opt @(_edition == ed ? "on" : "")" aria-pressed="@Ui.Aria(_edition == ed)"
+                                disabled="@(_view is not null)" @onclick="() => SetEdition(new ChangeEventArgs { Value = ed.ToString() })">@name</button>
+                    }
+                </div>
                 @if (TeamEdition && _readsTeam && !RehearsalAsked)
                 {
                     var unseen = Unseen;
@@ -1461,7 +1466,10 @@ else
         (_watch, _watchedDay) = (Meetings.Watch(_date, Circuit.CircuitId), _date);
     }
 
-    private string Elapsed => $"{(int)(DateTimeOffset.UtcNow - (_view?.StartedAtUtc ?? _startedAt)).TotalMinutes} min";
+    // The time gone against the meeting's length (Org:MeetingMinutes), as the design has it: "4 of 30 min".
+    private string Elapsed => $"{(int)(DateTimeOffset.UtcNow - (_view?.StartedAtUtc ?? _startedAt)).TotalMinutes} of {Clock.MeetingMinutes} min";
+
+    private static readonly (Edition, string)[] EditionChoices = [(Edition.Team, "Team"), (Edition.Public, "Company-wide")];
 
     private BriefItem? ItemFor(Guid articleId) => _brief?.Items.FirstOrDefault(i => i.ArticleId == articleId);
 

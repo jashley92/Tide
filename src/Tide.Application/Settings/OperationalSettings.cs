@@ -29,6 +29,8 @@ public static class OperationalSettings
     public const string StaleBlockedDays = "Org:StaleBlockedDays";
     // How long a page's Show me around link shows (OrgOptions.GuideLinkDays).
     public const string GuideLinkDays = "Org:GuideLinkDays";
+    // How long the brief's meeting is meant to take (OrgOptions.MeetingMinutes).
+    public const string MeetingMinutes = "Org:MeetingMinutes";
 
     /// <summary>The brief day's deadlines for its analyst: both editions sent by <see cref="SentBy"/>, the SharePoint copy
     /// posted by <see cref="PostedBy"/> where one is required. 24-hour, in the organization's zone.</summary>
@@ -135,6 +137,7 @@ public static class OperationalSettings
         [StaleOpenDays] = Number("Business days an open action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
         [StaleBlockedDays] = Number("Business days a blocked action may go without an update", StaleLimits.MinDays, StaleLimits.MaxDays),
         [GuideLinkDays] = Number("Days a page's Show me around link shows", OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays),
+        [MeetingMinutes] = Number("The meeting's length in minutes", OrgOptions.MinMeetingMinutes, OrgOptions.MaxMeetingMinutes),
         [SentBy] = Time("The brief's sent-by time"),
         [PostedBy] = Time("The SharePoint posted-by time"),
         [ReminderTime] = Time("The reminder time"),
@@ -237,6 +240,7 @@ public static class OperationalSettings
         s.Use(StaleOpenDays, v => o.StaleOpenDays = int.Parse(v, Invariant));
         s.Use(StaleBlockedDays, v => o.StaleBlockedDays = int.Parse(v, Invariant));
         s.Use(GuideLinkDays, v => o.GuideLinkDays = int.Parse(v, Invariant));
+        s.Use(MeetingMinutes, v => o.MeetingMinutes = int.Parse(v, Invariant));
         s.Use(SentBy, v => o.SentBy = v);
         s.Use(PostedBy, v => o.PostedBy = v);
     }
