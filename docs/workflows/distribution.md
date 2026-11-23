@@ -173,6 +173,10 @@ both lists ("Send both (12 + 840)"), stays disabled until both are ticked. It's 
 edition's own button is: before the brief's day, before the meeting ends (unless "Sent without a meeting"), or while
 either edition holds an article that needs review. Reading the plans again clears both ticks.
 
+`Ctrl+K` on the brief offers *Send both editions* while that button could be pressed once both are ticked (the same
+rule, `DistributePanel.BothCanGoAsync`, read with the page's send log). It only opens the Send dialog: the two ticks
+and the button there still send.
+
 It adds no send path. `DistributePanel.SendBoth` calls `DistributionService.SendAsync` twice in sequence, the team
 edition first, with the two plans the dialog showed. Each is its own frozen `BriefSend`, checked again as it goes
 (every step above, review holds included), so ADR [0007](../decisions/0007-frozen-sends-and-cid-email.md) is unchanged.
