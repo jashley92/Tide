@@ -225,10 +225,26 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
 
 ### v1.16.0
 
-Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds nine migrations, in this order: `ArticleWriter`,
-`ReportAssessments`, `MeetingNoteFollowUps`, `IndicatorKeys`, `AiDraftKinds`, `ArticleSearch`,
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds fourteen migrations, in this order:
+`ActionCreatedAtIndex`, `ActionClosedAtIndex`, `WebhookCursors`, `DetectionRuleCaller`, `ArticleUrlHashes`,
+`ArticleWriter`, `ReportAssessments`, `MeetingNoteFollowUps`, `IndicatorKeys`, `AiDraftKinds`, `ArticleSearch`,
 `SystemStatsAndBackupRuns`, `SavedViewPages` and `StoredFileBytesPurged`. None of the earlier ones change. On a
-DbaApplies install, the DBA applies them first.
+DbaApplies install, the DBA applies them first: the bundle now carries `deploy\sql\tide-schema-sqlserver.sql`, an
+idempotent script of every migration, so `Install-Database.ps1 -SchemaMode DbaApplies -ApplySchema` works.
+
+**Behaves differently**
+- **Webhooks refuse loopback and link-local addresses**, including the cloud metadata address 169.254.169.254, as feeds
+  already did. Private networks stay allowed (`Webhooks:AllowPrivateNetworks`, on by default), so internal receivers
+  keep working. Redirects aren't followed. A webhook run stops after 5 minutes and resumes where it stopped.
+- **`{{article.cves}}` in an outreach template gives the CVE numbers only**, one a line. Its KEV and EPSS notes moved
+  to the new `{{article.cves-detailed}}`. Saved templates that use it send shorter emails.
+- **The theme follows the system** for anyone who hasn't chosen one. A light or dark choice already saved stays.
+- **Settings forms save only what you changed**, and refuse the save if another administrator changed the same setting
+  since the page loaded.
+- **A failed upgrade always rolls back**, and never starts the old build on a schema it doesn't know. The restore
+  drill drops only its own scratch databases.
+- **An escalation email that went isn't sent again** if its run dies part way. The daily prune clears old reminder
+  and escalation marks.
 
 **After upgrading**
 - **Two fills run in the background.** *Keying stored indicators* (event 7109) and *Search index* (event 7110) work
@@ -275,11 +291,31 @@ DbaApplies install, the DBA applies them first.
   `Ai:MaxTlp` (GREEN) drafting is off and says why. Raise it to AMBER to allow it. With no provider set, *Copy a prompt*
   and paste the answer back.
 
+**For people using TIDE**
+- **Outreach templates** can list an article's other links (`{{article.other-links}}`) and its CVE links
+  (`{{article.cve-links}}`). A placeholder ending in `?` is left out when there's nothing to fill, `{{name|text}}`
+  gives text for an empty one, and `{{#name}} … {{else}} … {{/name}}` keeps or drops a section. The template form has
+  an *Insert placeholder* menu, offers names as `{{` is typed, checks as you write and previews the draft on an
+  action. A starter nobody has edited offers its newer version (*Use it*).
+- **Triage**: promote and keep going (`Shift+Enter`, with *Undo*), choose several items to decide together, a KEV
+  round-up, and saved views. Dismissing a group asks the reason, and a single dismiss or shortlist can be undone.
+- **Articles**: *Mine* (what you're writing) and *By…*, saved views, drafts in progress on Today, and *Hand to…* a
+  colleague. Editor keys: `G` then a letter, `N` for the next gap, `Ctrl+Shift+Enter` to mark ready.
+- **Ctrl+K runs the page's commands** (`>` lists only those). **Actions** can be changed several at once.
+- **Report assessments are saved** for their period, with a TLP and who edited them. Trends and Reports say what moved.
+- **Meetings**: send both editions at once, meeting notes become actions, an ended meeting shows a recap, and who ran
+  a meeting is kept.
+- **Accessibility**: every page passes an automated WCAG A/AA scan, click targets are at least 24px, and screen
+  readers hear the labels shown on screen.
+
 **Changes**
-- **Indicator lookups and text search read far less.** Each indicator stores an indexed key, and each article's searched
+- **Faster on large sites.** Indicator lookups, text search, Triage's *already covered*, reminders, the digest,
+  webhooks, detection-rule sync, Trends and the action lists read only the rows they need. Each article's searched
   text lives in one `ArticleSearch` row, rebuilt within about 10 seconds of a save. Answers and their order are
   unchanged.
 - **Job event ids run 7101 to 7114**; performance and health warnings use 7201 to 7205.
+- **Dependencies**: System.DirectoryServices.AccountManagement 11.0.0, System.Security.Cryptography.Pkcs 11.0.0, and
+  EF Core and its tool pinned together.
 
 ### v1.15.0
 
