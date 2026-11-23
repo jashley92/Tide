@@ -25,7 +25,7 @@ public class KeyRingCertificateTests
     }
 
     [Fact]
-    public void A_certificate_that_is_missing_has_no_private_key_or_has_expired_is_refused_with_why()
+    public void A_certificate_that_is_missing_or_has_no_private_key_is_refused_with_why_and_an_expiry_is_only_warned_of()
     {
         using var current = Make(DateTimeOffset.UtcNow.AddYears(1));
         using var expired = Make(DateTimeOffset.UtcNow.AddDays(-1));
@@ -38,13 +38,15 @@ public class KeyRingCertificateTests
         {
             X509Store Open() => new(StoreName.My, StoreLocation.CurrentUser);
             KeyRingCertificate.Find([current.Thumbprint, expired.Thumbprint], Open()).Select(c => c.Thumbprint)
-                .Should().Equal([current.Thumbprint, expired.Thumbprint], "an expired previous certificate still reads its old keys");
+                .Should().Equal([current.Thumbprint, expired.Thumbprint], "an expired certificate still reads its keys");
             FluentActions.Invoking(() => KeyRingCertificate.Find(["00112233445566778899AABBCCDDEEFF00112233"], Open()))
                 .Should().Throw<InvalidOperationException>().WithMessage("*isn't in the machine's Personal store*");
             FluentActions.Invoking(() => KeyRingCertificate.Find([publicOnly.Thumbprint], Open()))
                 .Should().Throw<InvalidOperationException>().WithMessage("*has no private key*");
-            FluentActions.Invoking(() => KeyRingCertificate.Find([expired.Thumbprint], Open()))
-                .Should().Throw<InvalidOperationException>().WithMessage("*expired on*PreviousThumbprints*");
+            KeyRingCertificate.Find([expired.Thumbprint], Open()).Should().ContainSingle("an expiry doesn't stop the site: Diagnostics warns of it");
+            KeyRingCertificate.ExpiryNote(expired, DateTimeOffset.UtcNow).Warning.Should().Contain("expired on").And.Contain("PreviousThumbprints");
+            KeyRingCertificate.ExpiryNote(current, DateTimeOffset.UtcNow).Warning.Should().BeNull();
+            KeyRingCertificate.ExpiryNote(current, DateTimeOffset.UtcNow.AddYears(1).AddDays(-10)).Warning.Should().Contain("renew it soon");
         }
         finally
         {
