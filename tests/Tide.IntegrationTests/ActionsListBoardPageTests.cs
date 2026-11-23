@@ -97,13 +97,13 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
 
         // What Held by: nobody always wrote, a link and a view saved before the pill, opens with the pill on.
         var who = new SignIn($"dev:al-views-{Guid.NewGuid():N}", "Views tester", "Analyst");
-        await As(sp => sp.GetRequiredService<SavedViewService>().SaveAsync("Nobody's", "view=open&layout=list&assignee=none"), who);
+        await As(sp => sp.GetRequiredService<SavedViewService>().SaveAsync(SavedViewPage.Actions, "Nobody's", "view=open&layout=list&assignee=none"), who);
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&assignee=none", @as: who))
         {
             var html = WebUtility.HtmlDecode(await r.HtmlOnce("action"));
             FilterBarHtml.Pressed(html, "No owner").Should().BeTrue();
             html.Should().NotContain("Held by nobody", "the pill says it");
-            r.Component.ActiveSaved!.Name.Should().Be("Nobody's");
+            r.Component.SavedViews.Active!.Name.Should().Be("Nobody's");
             (await Went(r, a => PressPill(a, "noowner"))).Should().NotContain("assignee=", "pressed again it's off");
         }
 

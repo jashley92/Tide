@@ -1,7 +1,9 @@
 @page "/reports"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @using System.Globalization
+@using Tide.Application.Assist
 @inject ReportService ReportSvc
+@inject ProseAssistService Drafts
 @inject TrendsService TrendsSvc
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -15,7 +17,8 @@
    the outcomes, the opening metrics, the topics and techniques briefed most, and the actions by team, from the same
    counts as Trends and Metrics. Each section has the team's assessment, saved per period with its own TLP (a judgement
    may name the team's own gaps), so last quarter's can be looked up; it prints and exports with the report. A colleague's
-   save shows live, as the brief's opening note does. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month
+   save shows live, as the brief's opening note does. Whoever writes them can have one drafted (ProseDraftAssist, ADR
+   0004) into the box, unsaved. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month
    by default. *@
 
 <PageTitle>Reports · TIDE</PageTitle>
@@ -61,7 +64,7 @@ else if (_report is not { } r)
 else
 {
     <TrendHighlightsStrip Highlights="@r.Highlights" Against="@r.Period.Previous.Label" Href="@(h => TrendsLink(h.Key, TrendHighlightsStrip.ViewOf(h.Key), h.At))" />
-    <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
+    <h2 class="tide-report-title">@ReportService.Name(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
 
     <section class="tide-card" aria-labelledby="rep-headlines">
         <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
@@ -132,6 +135,9 @@ else
     private PeriodReport? _report;
     private bool _failed, _busy, _canAssess;
 
+    // Why no assessment can be drafted (the numbers are marked above the AI limit), said in place of the Draft buttons.
+    private string? _draftBlocked;
+
     // Each section's assessment: as saved (absent when none is), as typed, its TLP as chosen, and the edit version the
     // box was filled from, which its save is checked against (ReportService.SaveAssessmentAsync).
     private readonly Dictionary<string, ReportAssessment> _saved = new();
@@ -174,6 +180,7 @@ else
         {
             _report = await ReportSvc.BuildAsync(_period);
             Absorb(await ReportSvc.AssessmentsAsync(_period), who: null);
+            if (_canAssess) _draftBlocked = await Drafts.ReportBlockedAsync();
         }
         catch (Exception ex)
         {
@@ -234,12 +241,6 @@ else
         await JS.StopAsync("print");
     }
 
-    private static string ReportName(Period p) => p.Kind switch
-    {
-        PeriodKind.Week => $"Weekly report · {p.Label}",
-        PeriodKind.Month => $"Monthly report · {p.Start.ToString("MMMM yyyy", CultureInfo.InvariantCulture)}",
-        _ => $"Quarterly report · {p.Label}",
-    };
 
     private static string Value(Tide.Domain.Entities.MetricDefinition m, decimal? v) => v is { } n ? Tide.Application.Metrics.MetricMath.Format(m.Format, n) : "—";
 
@@ -291,6 +292,14 @@ else
     internal void Note(string section, string? text) => _notes[section] = text ?? string.Empty;
 
     internal void SetTlp(string section, TlpLevel tlp) => _tlps[section] = tlp;
+
+    /// <summary>A drafted assessment the person chose to use: it goes in the box, unsaved, marked at least as high as
+    /// what it was drafted from.</summary>
+    internal void UseDraft(string section, ProseDraft draft)
+    {
+        _notes[section] = draft.Text;
+        if (draft.InputTlp > _tlps.GetValueOrDefault(section, ReportService.NumbersTlp)) _tlps[section] = draft.InputTlp;
+    }
 
     /// <summary>Whether <paramref name="section"/>'s box differs from its saved assessment.</summary>
     internal bool Dirty(string section)
@@ -403,6 +412,10 @@ else
                         <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Fill(section)">Cancel</button>
                     }
                 </div>
+                <ProseDraftAssist Label="Draft an assessment" Id="@($"draft-{section}")" Placeholder='{ "assessment": "…" }'
+                                  HasText="@(!string.IsNullOrWhiteSpace(_notes.GetValueOrDefault(section)))" Blocked="@_draftBlocked"
+                                  Prompt="() => Drafts.ReportPromptAsync(_period, section)" Draft="() => Drafts.DraftReportAsync(_period, section)"
+                                  Pasted="a => Drafts.ReportFromPastedAsync(_period, section, a)" OnUse="d => UseDraft(section, d)" />
             }
             else if (saved is not null)
             {

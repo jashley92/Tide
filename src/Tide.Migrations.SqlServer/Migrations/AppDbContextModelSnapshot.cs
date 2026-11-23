@@ -672,7 +672,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<int>("Accepted")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("ArticleId")
+                    b.Property<Guid?>("ArticleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("BasedOn")
@@ -694,6 +694,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("InputTlp")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
                         .HasColumnType("int");
 
                     b.Property<string>("Model")
@@ -721,6 +724,10 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Rejected")
                         .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Suggestions")
                         .IsRequired()
@@ -3088,6 +3095,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)");
 
+                    b.Property<string>("Page")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("actions");
+
                     b.Property<string>("Query")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -3103,7 +3117,7 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Name")
+                    b.HasIndex("UserId", "Page", "Name")
                         .IsUnique();
 
                     b.ToTable("SavedActionViews");
@@ -3989,8 +4003,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasOne("Tide.Domain.Entities.Article", null)
                         .WithMany()
                         .HasForeignKey("ArticleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>

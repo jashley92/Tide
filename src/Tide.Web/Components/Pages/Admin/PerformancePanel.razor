@@ -1,0 +1,107 @@
+@using Microsoft.Extensions.Options
+@using Tide.Application.Operations
+@inject PerformanceMonitor Monitor
+@inject IOptionsMonitor<DiagnosticsOptions> Options
+@inject OrgClock Clock
+
+@* How fast this process has been: kept in memory since it started (at most a day), so a restart clears it. *@
+<section class="tide-card" aria-labelledby="diag-perf">
+    <h2 id="diag-perf"><span class="bi bi-speedometer2" aria-hidden="true"></span> Performance</h2>
+    <p class="small tide-muted">
+        Timed in this process since the app started (at most the last day; a restart starts again). The pages open now are
+        under Connections. Memory @DiagnosticsAdmin.FormatBytes(Environment.WorkingSet), of which
+        @DiagnosticsAdmin.FormatBytes(GC.GetGCMemoryInfo().HeapSizeBytes) is the .NET heap. Thread pool: @ThreadPool.ThreadCount threads,
+        @ThreadPool.PendingWorkItemCount waiting.
+    </p>
+    <div class="tide-card-scroll">
+        <table class="tide-table tide-perf" aria-labelledby="diag-perf">
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col" class="text-end">Last hour</th>
+                    <th scope="col" class="text-end">Median</th>
+                    <th scope="col" class="text-end">95%</th>
+                    <th scope="col" class="text-end">95%, last day</th>
+                    <th scope="col" class="text-end">Slowest, last day</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var (kind, label) in Kinds)
+                {
+                    var rows = Monitor.Rows(kind, Take);
+                    @if (rows.Count == 0)
+                    {
+                        <tr><th scope="row" class="fw-semibold">@label</th><td colspan="5" class="tide-muted">None timed yet</td></tr>
+                        continue;
+                    }
+                    @foreach (var (day, hour) in rows)
+                    {
+                        <tr>
+                            @if (day.Name == PerformanceMonitor.All) { <th scope="row" class="fw-semibold">@label</th> }
+                            else { <th scope="row" class="tide-data small fw-normal ps-4">@day.Name</th> }
+                            <td class="text-end">@((hour?.Count ?? 0).ToString("N0"))</td>
+                            <td class="text-end text-nowrap">@Ms(hour?.P50Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(hour?.P95Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(day.P95Ms)</td>
+                            <td class="text-end text-nowrap">@Ms(day.MaxMs)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="small tide-muted mt-2">
+        Times are estimates within about 40%. Requests are pages and files the browser asks for; page events are clicks and
+        typing on an open page. A database command over @Threshold(Options.CurrentValue.SlowSqlMs) is logged as a
+        Warning (event id @PerformanceMonitor.SlowSqlEventId), a page event over @Threshold(Options.CurrentValue.SlowEventMs) likewise
+        (@PerformanceMonitor.SlowPageEventId): <span class="tide-data">Diagnostics:SlowSqlMs</span>, <span class="tide-data">Diagnostics:SlowEventMs</span>.
+    </p>
+
+    @if (Monitor.SlowCommands() is { Count: > 0 } commands)
+    {
+        <h3 class="h6 mt-3" id="diag-slow-sql">Slow database commands</h3>
+        <table class="tide-table" aria-labelledby="diag-slow-sql">
+            <thead><tr><th scope="col">When</th><th scope="col" class="text-end">Took</th><th scope="col">Command (no values)</th></tr></thead>
+            <tbody>
+                @foreach (var c in commands)
+                {
+                    <tr>
+                        <td class="text-nowrap">@Ui.When(Clock, c.AtUtc)</td>
+                        <td class="text-end text-nowrap">@Ms(c.Ms)</td>
+                        <td><details><summary class="tide-data small">@Short(c.Sql)</summary><pre class="tide-data small mb-0 tide-diag-sql">@c.Sql</pre></details></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (Monitor.SlowEvents() is { Count: > 0 } events)
+    {
+        <h3 class="h6 mt-3" id="diag-slow-events">Slow page events</h3>
+        <table class="tide-table" aria-labelledby="diag-slow-events">
+            <thead><tr><th scope="col">When</th><th scope="col" class="text-end">Took</th><th scope="col">Page</th></tr></thead>
+            <tbody>
+                @foreach (var e in events)
+                {
+                    <tr><td class="text-nowrap">@Ui.When(Clock, e.AtUtc)</td><td class="text-end text-nowrap">@Ms(e.Ms)</td><td class="tide-data small">@e.Page</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const int Take = 8;
+
+    private static readonly (TimedKind Kind, string Label)[] Kinds =
+        [(TimedKind.Request, "Requests"), (TimedKind.PageEvent, "Page events"), (TimedKind.DbCommand, "Database commands")];
+
+    private static string Threshold(int ms) => ms > 0 ? $"{ms:N0} ms" : "(off)";
+
+    internal static string Ms(double? ms) => ms is not { } v ? "—" : v >= 1000 ? $"{v / 1000:0.0} s" : v >= 10 ? $"{v:N0} ms" : $"{v:0.#} ms";
+
+    private static string Short(string sql)
+    {
+        var one = string.Join(' ', sql.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return one.Length > 160 ? one[..160] + "…" : one;
+    }
+}

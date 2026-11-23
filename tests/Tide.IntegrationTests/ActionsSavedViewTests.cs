@@ -16,16 +16,16 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
     // Each test signs in as its own person, so what one saves can't reach another (or the rest of the suite's tester).
     private static SignIn Person(string role = "Analyst") => new($"dev:views-{Guid.NewGuid():N}", "Views tester", role);
 
-    private async Task<IReadOnlyList<ActionsSavedView>> Saved(SignIn who)
+    private async Task<IReadOnlyList<SavedViewEntry>> Saved(SignIn who)
     {
         await using var scope = SignedIn(app, who);
-        return await scope.ServiceProvider.GetRequiredService<SavedViewService>().ListAsync();
+        return await scope.ServiceProvider.GetRequiredService<SavedViewService>().ListAsync(SavedViewPage.Actions);
     }
 
-    private async Task<ActionsSavedView> Save(SignIn who, string name, string query)
+    private async Task<SavedViewEntry> Save(SignIn who, string name, string query)
     {
         await using var scope = SignedIn(app, who);
-        return await scope.ServiceProvider.GetRequiredService<SavedViewService>().SaveAsync(name, query);
+        return await scope.ServiceProvider.GetRequiredService<SavedViewService>().SaveAsync(SavedViewPage.Actions, name, query);
     }
 
     [Fact]
@@ -35,15 +35,15 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&priority=p1,p2&page=2", @as: who))
         {
             (await r.Html()).Should().Contain("Save view");
-            await r.Press(p => p.StartSave());
+            await r.Press(p => p.SavedViews.StartSave());
             (await r.HtmlOnce("Save this view")).Should().Contain("saved-view-name");
             await r.Click(async p =>
             {
-                p.NewName = "  Urgent  ";
-                (await p.SaveName()).Should().BeTrue(p.NameError);
+                p.SavedViews.NewName = "  Urgent  ";
+                (await p.SavedViews.SaveName()).Should().BeTrue(p.SavedViews.NameError);
             });
-            r.Component.Saved.Should().ContainSingle().Which.Name.Should().Be("Urgent", "the name is trimmed");
-            r.Component.ActiveSaved!.Name.Should().Be("Urgent", "what's shown is the view just saved");
+            r.Component.SavedViews.Saved.Should().ContainSingle().Which.Name.Should().Be("Urgent", "the name is trimmed");
+            r.Component.SavedViews.Active!.Name.Should().Be("Urgent", "what's shown is the view just saved");
         }
         (await Saved(who)).Should().ContainSingle().Which.Query.Should().Be("view=open&layout=list&priority=p1,p2", "the list's page isn't part of a view");
 
@@ -69,7 +69,7 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
         }
 
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&status=blocked&priority=p1", @as: who))
-            r.Component.ActiveSaved.Should().BeNull("another filter on top is no longer the saved view");
+            r.Component.SavedViews.Active.Should().BeNull("another filter on top is no longer the saved view");
 
         await using (var other = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&status=blocked", @as: Person()))
             WebUtility.HtmlDecode(await other.Html()).Should().NotContain("Blocked list", "someone else's views aren't shown");
@@ -83,35 +83,30 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
         var second = await Save(who, "Second", "view=mine&layout=list");
 
         await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: who);
-        await r.Press(p => p.StartRename(first));
+        await r.Press(p => p.SavedViews.StartRename(first));
         WebUtility.HtmlDecode(await r.HtmlOnce("Only the name changes")).Should().Contain("Rename \"First\"");
         await r.Click(async p =>
         {
-            p.NewName = "Second";
-            (await p.SaveName()).Should().BeFalse("Second is taken");
-            p.NameError.Should().Contain("already have a view named");
-            p.NewName = "All open";
-            (await p.SaveName()).Should().BeTrue(p.NameError);
+            p.SavedViews.NewName = "Second";
+            (await p.SavedViews.SaveName()).Should().BeFalse("Second is taken");
+            p.SavedViews.NameError.Should().Contain("already have a view named");
+            p.SavedViews.NewName = "All open";
+            (await p.SavedViews.SaveName()).Should().BeTrue(p.SavedViews.NameError);
         });
 
-        await r.Click(p => p.MoveSaved(second, -1));
-        r.Component.Saved.Select(v => v.Name).Should().Equal("Second", "All open");
+        await r.Click(p => p.SavedViews.MoveSaved(second, -1));
+        r.Component.SavedViews.Saved.Select(v => v.Name).Should().Equal("Second", "All open");
 
-        await r.Press(p => p.DeleteSaved(second));
+        await r.Press(p => p.SavedViews.DeleteSaved(second));
         (await r.HtmlOnce("Delete view")).Should().Contain("Only your shortcut goes");
         await ConfirmDelete(r);
-        (await r.Until(p => p.Saved.Count == 1)).Should().BeTrue(string.Join("; ", r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Select(t => t.Message)));
+        (await r.Until(p => p.SavedViews.Saved.Count == 1)).Should().BeTrue(string.Join("; ", r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Select(t => t.Message)));
         (await Saved(who)).Should().ContainSingle().Which.Name.Should().Be("All open");
     }
 
     // The confirm dialog's Delete view, pressed as a click on it would. Straight on the renderer's thread: the delete
     // carries on in the flow that asked (Press), which a second Press would sign out.
-    private static Task ConfirmDelete(Rendered<ActionsBoard> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
-    {
-        var confirm = (Tide.Web.Components.Shared.ConfirmDialog)typeof(ActionsBoard)
-            .GetField("_confirm", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(r.Component)!;
-        return confirm.Confirm();
-    });
+    private static Task ConfirmDelete(Rendered<ActionsBoard> r) => r.Renderer.Dispatcher.InvokeAsync(() => r.Component.SavedViews.Confirmer.Confirm());
 
     [Fact]
     public async Task AtTwelveViews_SaveViewIsHeldBack()
@@ -120,6 +115,6 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
         for (var i = 1; i <= SavedViewService.MaxViews; i++) await Save(who, $"View {i}", $"view=open&parent={i}");
         await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: who);
         WebUtility.HtmlDecode(await r.Html()).Should().Contain("You can keep up to 12 views");
-        r.Component.Saved.Should().HaveCount(SavedViewService.MaxViews);
+        r.Component.SavedViews.Saved.Should().HaveCount(SavedViewService.MaxViews);
     }
 }

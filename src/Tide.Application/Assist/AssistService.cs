@@ -206,7 +206,7 @@ public sealed class AssistService(IAppDbContextFactory dbs, ICurrentUser user, I
         RequireWrite();
         if (count <= 0) return;
         await using var db = await dbs.CreateAsync(ct);
-        var draft = await db.AiDrafts.FirstOrDefaultAsync(d => d.Id == draftId, ct);
+        var draft = await db.AiDrafts.FirstOrDefaultAsync(d => d.Id == draftId && d.Kind == AiDraftKind.Article, ct);
         if (draft is null) return;
         if (accepted) draft.Accepted += count;
         else draft.Rejected += count;
@@ -334,7 +334,7 @@ public sealed class AssistService(IAppDbContextFactory dbs, ICurrentUser user, I
             .Select(i => i.Source).FirstOrDefaultAsync(ct);
     }
 
-    private static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    internal static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     private void RequireWrite()
     {

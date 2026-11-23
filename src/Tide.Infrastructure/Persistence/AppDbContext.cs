@@ -117,13 +117,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Value).HasMaxLength(200);
         });
 
-        // Names are unique per person ignoring case (the service checks; the index holds the exact name against a race).
+        // Names are unique per person and page ignoring case (the service checks; the index holds the exact name against
+        // a race). Rows kept from before the other pages had views are the Actions page's.
         b.Entity<SavedActionView>(e =>
         {
             e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.Page).HasMaxLength(SavedActionView.MaxPage).HasDefaultValue(SavedActionView.ActionsPage);
             e.Property(x => x.Name).HasMaxLength(SavedActionView.MaxName);
             e.Property(x => x.Query).HasMaxLength(SavedActionView.MaxQuery);
-            e.HasIndex(x => new { x.UserId, x.Name }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.Page, x.Name }).IsUnique();
         });
 
         b.Entity<AdGroupRoleMapping>(e =>
@@ -347,6 +349,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.InputHash).HasMaxLength(64);
             e.Property(x => x.BasedOn).HasMaxLength(AiDraft.MaxBasedOn);
             e.Property(x => x.Suggestions).HasMaxLength(AiDraft.MaxSuggestions);
+            e.Property(x => x.Subject).HasMaxLength(AiDraft.MaxSubject);
         });
 
         b.Entity<ArticleTechnique>(e =>

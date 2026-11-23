@@ -92,6 +92,16 @@ public sealed record ArticleFilter
 
     private static string Long(DateOnly d) => d.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Every name <see cref="ToQuery"/> writes, with its longest value, in the order a saved view keeps them: a filter added
+    /// to the address goes here too, or a view of it can't be kept.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Name, int Max)> Parameters =
+    [
+        ("q", 200), ("author", MaxAuthor), ("status", 16), ("assess", 16), ("tag", 64), ("category", 64),
+        ("tactic", 6), ("technique", 9), ("withsubs", 5), ("from", 10), ("to", 10),
+    ];
+
     /// <summary>The address's query: every filter set, by name; null for the rest (so they drop out of a link).</summary>
     public IReadOnlyDictionary<string, object?> ToQuery() => new Dictionary<string, object?>
     {

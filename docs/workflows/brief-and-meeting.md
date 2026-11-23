@@ -152,6 +152,13 @@ Two different notes, often confused:
 Both are refused once the brief is Sent: the note went out in the team email as it was then. Every rendering asks the
 edition whether to show the note (`BriefEdition.ShowTeamNote`), so there's one place that decides.
 
+**Suggest a title slide line.** In the meeting card's form, under the line, an analyst can have the line drafted
+([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md), `ProseAssistService`) from the titles and bottom lines of
+the brief's articles in the team edition cut at the lower of `Ai:MaxTlp` and that edition's ceiling. With no AI provider,
+*Copy a prompt* copies the instructions, the JSON schema and that material for an approved tool, and the answer is pasted
+back. The answer is checked as a report assessment's is (any number the articles don't state is named), and *Use it*
+puts it in the box, unsaved, with its TLP set to the highest of the articles it read. Not once the brief is sent.
+
 ## Brief status
 
 ```mermaid

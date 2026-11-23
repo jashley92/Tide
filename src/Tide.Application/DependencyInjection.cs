@@ -46,6 +46,9 @@ public static class DependencyInjection
         services.Configure<Api.WebhookOptions>(config.GetSection("Webhooks"));
         services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
+        services.AddSingleton<PerformanceMonitor>();
+        services.Configure<DiagnosticsOptions>(config.GetSection("Diagnostics"));
+        services.Configure<Tide.Application.History.AuditOptions>(config.GetSection("Audit"));
         services.Configure<BackupOptions>(config.GetSection("Backup"));
         services.AddScoped<SystemStats>();
         services.AddSingleton<StorageAlerts>();
@@ -90,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<ArticleService>();
         services.AddScoped<ArticleHandoffService>();
         services.AddScoped<AssistService>();
+        services.AddScoped<ProseAssistService>();
         services.AddScoped<HolidayService>();
         services.AddScoped<Preferences.UserPreferenceService>();
         services.AddSingleton(Operations.ReleaseNotesCatalog.Embedded);

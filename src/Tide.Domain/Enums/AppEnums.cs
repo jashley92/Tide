@@ -448,3 +448,16 @@ public enum CardRuleSla
     DueSoon = 2,
     OverdueOrDueSoon = 3,
 }
+
+/// <summary>What an AI draft (<see cref="Entities.AiDraft"/>) was for (ADR 0004).</summary>
+public enum AiDraftKind
+{
+    /// <summary>An article, in the editor: bottom line, bullets, techniques, tags, indicators.</summary>
+    Article = 0,
+
+    /// <summary>The assessment of one section of a period's report.</summary>
+    ReportAssessment = 1,
+
+    /// <summary>A brief's title slide line.</summary>
+    TitleLine = 2,
+}

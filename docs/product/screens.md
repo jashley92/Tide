@@ -134,7 +134,8 @@ Beside the brief, in the context rail:
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
 - **reviews asked of you**;
-- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place; then,
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place (the
+  line's form offers *Suggest a title slide line*, or *Copy a prompt* without an AI provider); then,
   once the meeting has ended, the **meeting recap**: the actions raised (by team and holder, as the wrap-up slide has
   them), the notes (open or done), the articles carried to a later brief, and who attended. On your own notes,
   *Raise as action* (the note as the title, on its article; then "Raised as A-14", which opens it) and *Mark done*
@@ -175,6 +176,10 @@ has the search box (titles and CVEs) and four pills: **Since last brief**, **Nam
 KEV list) and **We run it** (a product on Our stack). Names a CVE and KEV are one filter, so turning one on turns the
 other off. The source is under **+ Filter**, and shows as a chip while one is chosen. They combine, and they're kept
 in the address too. The tabs and the order (Newest, Likely used) sit apart from the filters.
+
+**Saved views** sit over the filter bar, as on Actions: **Save view** keeps the tab and filters shown under a name
+("KEV we run, since the brief"), never the item selected or the page. Each is a pill that opens it in place, marked
+while it's what's shown, with a ⋮ menu to rename, move or delete it. They're each person's own, up to 12.
 
 A feed can be filtered by its own tags and by title words. Sponsored items are skipped too, on by default: a list of
 marker phrases ("Sponsored by", "Partner content", "Advertorial") is looked for as whole words in each item's author,
@@ -342,7 +347,9 @@ how many), status, ATT&CK tactic, technique (with
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
-sent. Trends opens this list
+sent. Over the list, **saved views** keep a set of filters under a name ("P1–P2 threats this quarter"), as on
+Actions: a pill each, marked while it's what's shown, a ⋮ menu to rename, move or delete it, and **Save view**; each
+person's own, up to 12. Trends opens this list
 pre-filtered when you click a count; opened from a tactic or technique, each row shows the techniques it was counted
 for. An analyst starts an article here with **New article**: a title, a source, a link and a TLP, which is set first
 because the parts start from it. A new screenshot starts at TLP:AMBER, or the article's marking when that's higher, so
@@ -537,7 +544,8 @@ each way in the last 7 days, a drop target for each.*
   tabs (Mine, My teams, All open…) stay tabs.
 - **Saved views.** *Save view*, beside the tabs, keeps the tab, layout and filters shown under a name (up to 60
   characters). Each saved view is a pill after the tabs that opens it, marked while it's what's shown; its ⋮ menu
-  renames, moves or deletes it. They're each person's own, up to 12, on any computer.
+  renames, moves or deletes it. They're each person's own, up to 12, on any computer. Triage, Articles and Search
+  keep views the same way, each its own 12.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed strip counts the last 7 days; *Show the last 30 days* takes it back 30.
@@ -652,6 +660,9 @@ each way in the last 7 days, a drop target for each.*
 **Route:** `/search` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)
 
 One box at the top of every page.
+
+- **Saved searches.** Under the box, **Save view** keeps the search shown under a name, as a pill that runs it again,
+  marked while it's the one shown, with a ⋮ menu to rename, move or delete it. Each person's own, up to 12.
 
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
   ATT&CK techniques by name and captions, with the matches marked. Each kind's heading says how many matched, 50 to a
@@ -1037,7 +1048,10 @@ opening Trends on what it counted; the strip isn't printed or in the CSV.
 
 Each section has the team's assessment, saved with its period (**Save assessment**) with a TLP of its own and an
 "Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
-who reads the report reads them. A colleague's save shows live, and one to a box with unsaved changes is said above it
+who reads the report reads them. Under each box, *Draft an assessment* (with an AI provider) or *Copy a prompt* (without
+one, then paste the tool's JSON answer and *Check it*) shows a draft with any number not in the report flagged; *Use it*
+puts it in the box unsaved, and *Reject* drops it. While the AI limit is below the numbers' AMBER (GREEN by default), the
+control says so instead, and that an administrator can raise it. A colleague's save shows live, and one to a box with unsaved changes is said above it
 rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
 included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
 way is marked "(to date)".
@@ -1327,7 +1341,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | People & distribution | Access & distribution | `/admin/access` | Which AD groups get which role, the editions' TLP ceilings, and who each edition goes to. |
 | People & distribution | Email templates | `/admin/email-templates` | The wording of the reminder and rotation emails, with a preview and a test send. |
 | People & distribution | API access | `/admin/api` | Tokens for the SOC's other tools to call TIDE's API, and webhooks TIDE posts to. |
-| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage; and how big it is (Data & retention: tables, files, growth, disk, backups, what's pruned). |
+| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage; and how fast it has been (Performance: requests, page events and database commands over the last hour and day, the slow ones, memory); and how big it is (Data & retention: tables, files, growth, disk, backups, what's pruned). |
 | System | Server configuration | `/admin/system/server` | What's set on the server, read-only. Secrets show only whether they're set. |
 | System | Setting sources | `/admin/system/sources` | Where each setting's value comes from: the app, the installer's file, or the environment. |
 | System | Configuration bundle | `/admin/system/bundle` | This server's install answers file, and the app's setup to copy to another server. |

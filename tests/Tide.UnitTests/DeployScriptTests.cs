@@ -651,6 +651,51 @@ public partial class DeployScriptPowerShellTests
     }
 
     [Fact]
+    public void A_builds_shipped_migration_list_is_read_before_its_assembly()
+    {
+        var r = Run("""
+            $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-list-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            try {
+                Set-Content -LiteralPath (Join-Path $dir 'migrations-sqlserver.txt') -Value @('20261026020200_Initial', '', 'not an id', '20261123054826_IndicatorKeys', '20261026020200_Initial')
+                $listed = @(Get-TideBuildMigrations $dir)
+                Set-Content -LiteralPath (Join-Path $dir 'migrations-sqlserver.txt') -Value @('nothing here')
+                $empty = try { Get-TideBuildMigrations $dir; 'read' } catch { $_.Exception.Message }
+            } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{ listed = $listed; empty = $empty })
+            """);
+        r.GetProperty("listed").EnumerateArray().Select(x => x.GetString()).Should().Equal("20261026020200_Initial", "20261123054826_IndicatorKeys");
+        r.GetProperty("empty").GetString().Should().Contain("isn't there", "a list with no id falls back to the assembly");
+    }
+
+    [Fact]
+    public void An_upgrade_warns_while_pages_are_open_or_a_meeting_runs_and_not_from_a_stale_file()
+    {
+        var r = Run("""
+            $dir = Join-Path ([IO.Path]::GetTempPath()) ('tide-activity-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $f = Join-Path $dir 'activity.json'
+            $now = [datetime]::new(2026, 11, 23, 12, 0, 0, [DateTimeKind]::Utc)
+            function Put($at, $pages, $meetings) {
+                Set-Content -LiteralPath $f -Encoding UTF8 -Value ((@{ atUtc = $at; openPages = $pages; liveMeetings = $meetings; meetingDays = @('2026-11-23') } | ConvertTo-Json))
+            }
+            try {
+                Put '2026-11-23T11:59:30+00:00' 4 1;  $both = Get-TideActivityWarning $f $now
+                Put '2026-11-23T11:59:30+00:00' 1 0;  $one = Get-TideActivityWarning $f $now
+                Put '2026-11-23T11:59:30+00:00' 0 0;  $nobody = Get-TideActivityWarning $f $now
+                Put '2026-11-23T11:50:00+00:00' 9 1;  $stale = Get-TideActivityWarning $f $now
+                Set-Content -LiteralPath $f -Value '{ not json'; $broken = Get-TideActivityWarning $f $now
+                $missing = Get-TideActivityWarning (Join-Path $dir 'none.json') $now
+            } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+            ConvertTo-Json -Compress -InputObject ([ordered]@{ both = $both; one = $one; nobody = $nobody; stale = $stale; broken = $broken; missing = $missing })
+            """);
+        r.GetProperty("both").GetString().Should().Contain("4 pages are open").And.Contain("1 meeting is running in present mode (2026-11-23)");
+        r.GetProperty("one").GetString().Should().Contain("1 page is open").And.NotContain("meeting");
+        foreach (var quiet in new[] { "nobody", "stale", "broken", "missing" })
+            r.GetProperty(quiet).ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null, quiet);
+    }
+
+    [Fact]
     public void A_script_that_manages_IIS_says_how_to_run_it_when_started_in_PowerShell_7()
     {
         var r = Run("""

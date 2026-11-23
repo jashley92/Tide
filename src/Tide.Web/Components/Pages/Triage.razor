@@ -59,7 +59,9 @@ else
 <div class="tide-inbox-view">
 @* The filter bar (FilterBar): the words, the pills, the source under + Filter. What we'd act on first: items naming a CVE
    (or one on CISA's KEV list, as TIDE's CVE records say), or a product on Our stack. Names a CVE and KEV are one filter
-   (cve=), so they take turns. *@
+   (cve=), so they take turns. Above it, the person's own saved views of the tab and filters (SavedViewPills). *@
+<SavedViewPills Page="SavedViewPage.Triage" Query="@ShownQuery" Inline="true" What="this tab and filters" Placeholder="KEV we run, since the brief"
+                Class="tide-savedviews" OnOpen="OpenView" />
 <FilterBar Pills="Pills" Filters="Defs" Active="Narrowed" OnChanged="Refilter" OnClear="ClearFilters"
            Count="@(_loaded && _rows.Count > 0 ? CountText : null)">
     <Search>
@@ -822,6 +824,22 @@ else
         return Refilter();
     }
 
+    /// <summary>The tab and filters shown, as a saved view keeps them: never the row (<c>at=</c>, <c>row=</c>) or the page.</summary>
+    internal string? ShownQuery => SavedViewService.TryNormalize(SavedViewPage.Triage, PageHref(1)[SavedViewPage.Triage.Key.Length..]);
+
+    /// <summary>
+    /// Opens a saved view in place, at its first page. Not by its link: the page writes its own address as it goes
+    /// (RememberTab), so a link to the address the router last saw would change nothing.
+    /// </summary>
+    internal async Task OpenView(string query)
+    {
+        var values = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(query);
+        string? Get(string name) => values.TryGetValue(name, out var v) ? v.ToString() : null;
+        Use(ViewOf(Get("tab"), Get("source"), Get("q"), Get("since"), Get("cve"), Get("named"), Get("older")));
+        (_promoting, _promotingGroup, _attaching) = (null, null, false);
+        await Refilter();
+    }
+
     /// <summary>A filter changed: its first page, and the address says so.</summary>
     internal async Task Refilter()
     {
@@ -1340,18 +1358,22 @@ else
     // The tab and filters an address asks for, as they're shown: what the list is of.
     private sealed record View(bool SourcesTab, FeedItemStatus Status, Guid? Source, string? Search, bool Since, InboxCves Cves, bool Named, bool Older);
 
-    // What the address asks for: a tab or source it doesn't know, or "since" before any brief, is left out.
-    private View Asked()
+    // What the address asks for.
+    private View Asked() => ViewOf(TabParam, SourceParam, SearchParam, SinceParam, CveParam, NamedParam, OlderParam);
+
+    // What an address's tab and filters ask for (the page's own, or a saved view's): a tab or source it doesn't know, or
+    // "since" before any brief, is left out.
+    private View ViewOf(string? tabParam, string? sourceParam, string? searchParam, string? sinceParam, string? cveParam, string? namedParam, string? olderParam)
     {
-        var sourcesTab = string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase);
-        var status = !sourcesTab && Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab) ? tab : FeedItemStatus.New;
+        var sourcesTab = string.Equals(tabParam, SourcesKey, StringComparison.OrdinalIgnoreCase);
+        var status = !sourcesTab && Enum.TryParse<FeedItemStatus>(tabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab) ? tab : FeedItemStatus.New;
         return new View(sourcesTab, status,
-            FilterValues.Id(SourceParam) is { } sid && _sources.Any(s => s.Id == sid) ? sid : null,
-            string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim(),
-            FilterValues.Flag(SinceParam) && _lastBriefAt is not null,
-            Enum.TryParse<InboxCves>(CveParam, ignoreCase: true, out var cves) && Enum.IsDefined(cves) ? cves : InboxCves.All,
-            FilterValues.Flag(NamedParam),
-            FilterValues.Flag(OlderParam) && status == FeedItemStatus.New && !sourcesTab);
+            FilterValues.Id(sourceParam) is { } sid && _sources.Any(s => s.Id == sid) ? sid : null,
+            string.IsNullOrWhiteSpace(searchParam) ? null : searchParam.Trim(),
+            FilterValues.Flag(sinceParam) && _lastBriefAt is not null,
+            Enum.TryParse<InboxCves>(cveParam, ignoreCase: true, out var cves) && Enum.IsDefined(cves) ? cves : InboxCves.All,
+            FilterValues.Flag(namedParam),
+            FilterValues.Flag(olderParam) && status == FeedItemStatus.New && !sourcesTab);
     }
 
     // What's shown now (the address the page last wrote, or would write). The Sources tab is the same whichever tab was

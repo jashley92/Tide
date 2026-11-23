@@ -212,6 +212,9 @@ public interface IFileStore
 
     void Delete(Guid id);
 
+    /// <summary>Every file the store holds: its id and when it was last written. For the weekly check of stored files.</summary>
+    IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List();
+
     /// <summary>The folder the files are kept in, resolved as the store resolves Files:RootPath; null for a store with none.</summary>
     string? Root => null;
 }

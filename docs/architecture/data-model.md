@@ -213,7 +213,9 @@ erDiagram
     }
     AiDrafts {
         uuid Id PK
-        uuid ArticleId FK
+        int Kind
+        uuid ArticleId FK "nullable"
+        string Subject
         string Provider
         string InputHash
         int InputTlp
@@ -544,6 +546,7 @@ erDiagram
     SavedActionViews {
         uuid Id PK
         string UserId UK
+        string Page UK
         string Name UK
         string Query
         int SortOrder
@@ -839,13 +842,17 @@ A comment on one part of an article under review. The author resolves it. Cascad
 
 ### `AiDrafts` (S, A)
 
-One AI draft of an article ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)). It records who asked,
-which provider and model answered, a hash of the prompt and its TLP, and the suggestions that passed the checks. The
-source text itself is never kept. Written by `AssistService`.
+One AI draft ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)): of an article, a report section's
+assessment or a brief's title slide line. It records who asked, which provider and model answered, a hash of the prompt
+and its TLP, and the suggestions that passed the checks. The source text itself is never kept. Written by
+`AssistService` (articles) and `ProseAssistService` (the other kinds).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `Id`, `ArticleId` | uniqueidentifier | no | `ArticleId` FK → `Articles`, **cascade**. Indexed. |
+| `Id` | uniqueidentifier | no | |
+| `Kind` | int | no | `AiDraftKind`: 0 Article, 1 ReportAssessment, 2 TitleLine. |
+| `ArticleId` | uniqueidentifier | yes | The article drafted; FK → `Articles`, **cascade**. Indexed. Null for the other kinds. |
+| `Subject` | nvarchar(64) | yes | For the other kinds: the report section (`2026-10/headlines`) or the brief's id. |
 | `Provider` | nvarchar(40) | no | `AzureOpenAI`, or `Pasted` for an answer from an approved tool pasted back. |
 | `Model` | nvarchar(100) | no | Empty for a pasted answer. |
 | `PromptVersion` | int | no | |
@@ -1408,20 +1415,22 @@ Written by `UserPreferenceService`.
 
 ### `SavedActionViews` (not audited)
 
-A person's own named view of the Actions page: the tab, layout and filters to open it with. Its own table rather than
-`UserPreferences` rows, because a person keeps several, each with a name and a place in their order, where a
-preference is one fixed value per name.
+A person's own named view of a list page (Actions, Triage, Articles or Search): the tab, layout and filters to open it
+with. Its own table rather than `UserPreferences` rows, because a person keeps several, each with a name and a place
+in their order, where a preference is one fixed value per name. The table keeps the name it had when only Actions had
+views: renaming it wasn't worth a migration.
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | `Id` | uniqueidentifier | no | |
 | `UserId` | nvarchar(256) | no | Whose it is (`Users.Sid`). Every read and write is of the signed-in person's own. |
-| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Name)` is **unique**; the service also refuses the same name in another case. |
-| `Query` | nvarchar(2000) | no | What follows `actions?`, as `SavedViewService.Normalize` writes it: only the page's own parameters, each within its length, in a fixed order, never `page`. |
-| `SortOrder` | int | no | Its place among the person's views, from 0. |
+| `Page` | nvarchar(20) | no | Which page it's a view of: `actions` (the default, and every view kept before the others had views), `triage`, `articles` or `search` (`SavedViewPage.Key`). |
+| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Page, Name)` is **unique**; the service also refuses the same name in another case. |
+| `Query` | nvarchar(2000) | no | What follows the page's address and `?`, as `SavedViewService.Normalize` writes it: only that page's own parameters (`SavedViewPage.Parameters`), each within its length, in a fixed order, never the list's page or (Triage) the row selected. |
+| `SortOrder` | int | no | Its place among the person's views of the page, from 0. |
 | `CreatedAtUtc` | datetimeoffset | no | |
 
-At most 12 per person (`SavedViewService.MaxViews`). Written by `SavedViewService`.
+At most 12 per person and page (`SavedViewService.MaxViews`). Written by `SavedViewService`.
 
 ### `RoleMappings` (A)
 
@@ -1627,7 +1636,7 @@ A run of `Backup-Tide.ps1`, which records it here itself (the backup account nee
 | `Note` | nvarchar(500) | yes | Why a run failed. |
 ### `AuditLog` (append-only)
 
-The C# class is `AuditLogEntry`. The app never updates or deletes these rows.
+The C# class is `AuditLogEntry`. The app never updates these rows, and deletes them only when `Audit:RetentionDays` is set (off by default, at least 365): the daily Archiving the audit log job first writes each whole month older than that to `audit-YYYY-MM-<stamp>.jsonl.gz` (one JSON object per row) with its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then deletes that month's rows (`AuditArchive`).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
@@ -1653,7 +1662,7 @@ log masks again when it shows a row.
 | `AuditLogEntry` | `AuditLog` | The log itself. |
 | `AppUser` | `Users` | The sign-in mirror changes on every sign-in. |
 | `UserPreference` | `UserPreferences` | A person's own view choices change nothing anyone else sees. |
-| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of the Actions page. |
+| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of Actions, Triage, Articles and Search. |
 | `NotificationMark` | `NotificationMarks` | Machine bookkeeping for reminders. |
 | `FeedItem` | `FeedItems` | Machine intake. Polls and prunes would flood the log. |
 | `CveRecord` | `CveRecords` | Refreshed from public sources. |
