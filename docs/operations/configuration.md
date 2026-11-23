@@ -377,8 +377,8 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 
 | Key | Default | Notes |
 |---|---|---|
-| `Diagnostics:SlowSqlMs` | `500` | A database command that takes longer is logged as a Warning, event id 7201, with its SQL text and never its parameters' values, and listed under Performance on Diagnostics. `0` turns the warning off; every command is still timed. Read at start. |
-| `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Read when a page opens. |
+| `Diagnostics:SlowSqlMs` | `500` | A database command that takes longer is logged as a Warning, event id 7201, with its SQL text and never its parameters' values, and listed under Performance on Diagnostics. `0` turns the warning off; every command is still timed. Takes effect without a restart. |
+| `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Takes effect without a restart. |
 
 Timings stay in the server's memory for a day and are cleared by a restart; nothing is sent anywhere.
 

@@ -42,9 +42,8 @@ public static class DependencyInjection
         }
 
         services.AddScoped<AuditInterceptor>();
-        // Times every command for Diagnostics and warns of a slow one (Diagnostics:SlowSqlMs; 0 turns the warning off).
-        services.AddSingleton(sp => new SlowCommandInterceptor(sp.GetRequiredService<PerformanceMonitor>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SlowCommandInterceptor>>(), config.GetValue("Diagnostics:SlowSqlMs", 500)));
+        // Times every command for Diagnostics and warns of a slow one (Diagnostics:SlowSqlMs).
+        services.AddSingleton<SlowCommandInterceptor>();
         // What a save changed reaches colleagues' open pages (the feed is one per app; the origin one per circuit).
         services.AddSingleton<ChangeFeed>();
         services.AddScoped<ChangeOrigin>();

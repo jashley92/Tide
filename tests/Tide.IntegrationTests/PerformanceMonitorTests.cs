@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tide.Application.Operations;
 using Tide.Infrastructure.Persistence;
+using Tide.TestSupport;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -16,18 +17,12 @@ namespace Tide.IntegrationTests;
 /// </summary>
 public class PerformanceMonitorTests
 {
-    private sealed class Clock(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
-
     private static readonly DateTimeOffset Start = new(2026, 11, 21, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public void Percentiles_are_read_over_the_last_hour_or_day_and_an_hour_a_day_old_is_dropped()
     {
-        var clock = new Clock(Start);
+        var clock = new TestClock(Start);
         var monitor = new PerformanceMonitor(clock);
         for (var i = 0; i < 90; i++) monitor.Record(TimedKind.Request, "/today", 10);
         for (var i = 0; i < 10; i++) monitor.Record(TimedKind.Request, "/today", 1000);
@@ -54,7 +49,7 @@ public class PerformanceMonitorTests
     [Fact]
     public void Names_past_the_limit_go_under_other_and_the_slow_lists_keep_the_newest()
     {
-        var monitor = new PerformanceMonitor(new Clock(Start));
+        var monitor = new PerformanceMonitor(new TestClock(Start));
         for (var i = 0; i < PerformanceMonitor.MaxNames + 50; i++) monitor.Record(TimedKind.PageEvent, $"/page{i}", 1);
         monitor.Summary(TimedKind.PageEvent, 1, take: 1000).Count.Should().BeLessThanOrEqualTo(PerformanceMonitor.MaxNames + 3);
         monitor.Summary(TimedKind.PageEvent, 1, take: 1000).Should().Contain(s => s.Name == PerformanceMonitor.Other);
@@ -65,23 +60,27 @@ public class PerformanceMonitorTests
     }
 
     [Fact]
-    public void Circuits_are_counted_with_the_most_open_at_once()
+    public void A_name_timed_this_hour_but_not_among_the_days_busiest_is_still_a_row()
     {
-        var monitor = new PerformanceMonitor(new Clock(Start));
-        monitor.CircuitOpened();
-        monitor.CircuitOpened();
-        monitor.CircuitClosed();
-        monitor.CircuitOpened();
-        monitor.CircuitClosed();
-        (monitor.CircuitsOpen, monitor.PeakCircuits()).Should().Be((1, 2));
+        var clock = new TestClock(Start);
+        var monitor = new PerformanceMonitor(clock);
+        for (var i = 0; i < 3; i++)
+            for (var n = 0; n < 10; n++) monitor.Record(TimedKind.Request, $"/busy{i}", 5);
+        clock.Now = Start.AddHours(3);
+        monitor.Record(TimedKind.Request, "/quiet", 5);
+
+        var rows = monitor.Rows(TimedKind.Request, take: 2);
+        rows.Select(r => r.Day.Name).Should().Equal(PerformanceMonitor.All, "/busy0", "/busy1");
+        rows[0].Hour!.Count.Should().Be(1, "only /quiet this hour");
+        rows[1].Hour.Should().BeNull("nothing in the last hour");
     }
 
     [Fact]
     public void A_slow_command_is_logged_with_its_text_and_never_a_value()
     {
-        var monitor = new PerformanceMonitor(new Clock(Start));
+        var monitor = new PerformanceMonitor(new TestClock(Start));
         var log = new ListLogger<SlowCommandInterceptor>();
-        var interceptor = new SlowCommandInterceptor(monitor, log, thresholdMs: 500);
+        var interceptor = new SlowCommandInterceptor(monitor, new Options(new DiagnosticsOptions { SlowSqlMs = 500 }), log);
         using var connection = new SqliteConnection("Data Source=:memory:");
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT \"Id\" FROM \"Articles\" WHERE \"Title\" LIKE @p0";
@@ -107,4 +106,11 @@ public class PerformanceMonitorTests
     private static CommandExecutedEventData Executed(DbConnection connection, DbCommand command, TimeSpan duration) =>
         new(null!, (_, _) => "", connection, command, command.CommandText, null, DbCommandMethod.ExecuteNonQuery, Guid.NewGuid(), Guid.NewGuid(), 0,
             false, false, Start, duration, CommandSource.Unknown);
+
+    private sealed class Options(DiagnosticsOptions value) : Microsoft.Extensions.Options.IOptionsMonitor<DiagnosticsOptions>
+    {
+        public DiagnosticsOptions CurrentValue => value;
+        public DiagnosticsOptions Get(string? name) => value;
+        public IDisposable? OnChange(Action<DiagnosticsOptions, string?> listener) => null;
+    }
 }

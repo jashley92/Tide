@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.Extensions.Options;
 using Tide.Application.Operations;
 
 namespace Tide.Web.Services;
@@ -48,29 +49,19 @@ public sealed class PerformanceListener(PerformanceMonitor monitor) : IHostedSer
 }
 
 /// <summary>
-/// Counts the open circuits (pages) and times every event on one (a click, a keystroke the page handles, a navigation) for
-/// <see cref="PerformanceMonitor"/>, by the page it's on. One that takes longer than <c>Diagnostics:SlowEventMs</c> (1,000
-/// by default; 0 turns the warning off) is logged as a Warning with event id <see cref="EventId"/> and the page's path,
-/// without its query string (a search's words are in it) and with ids shown as <c>{id}</c>.
+/// Times every event on an open page (a click, a keystroke the page handles, a navigation) for
+/// <see cref="PerformanceMonitor"/>, by the page it's on. One that takes longer than
+/// <see cref="DiagnosticsOptions.SlowEventMs"/> (1,000 by default; 0 turns the warning off) is logged as a Warning with
+/// event id <see cref="PerformanceMonitor.SlowPageEventId"/> and the page's path, without its query string (a search's
+/// words are in it) and with ids shown as <c>{id}</c>. Open pages are counted where Diagnostics already counts them
+/// (Connections).
 /// </summary>
-public sealed partial class PerformanceCircuitHandler(PerformanceMonitor monitor, NavigationManager nav, IConfiguration config,
+public sealed partial class PerformanceCircuitHandler(PerformanceMonitor monitor, NavigationManager nav, IOptionsMonitor<DiagnosticsOptions> options,
     ILogger<PerformanceCircuitHandler> log) : CircuitHandler
 {
-    public const int EventId = 7202;
-
-    private readonly int _thresholdMs = config.GetValue("Diagnostics:SlowEventMs", 1000);
-
-    public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        monitor.CircuitOpened();
-        return Task.CompletedTask;
-    }
-
-    public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        monitor.CircuitClosed();
-        return Task.CompletedTask;
-    }
+    // The page's name for the address it was last worked out for: it changes only on a navigation.
+    private string? _uri;
+    private string _page = "(starting)";
 
     public override Func<CircuitInboundActivityContext, Task> CreateInboundActivityHandler(Func<CircuitInboundActivityContext, Task> next) =>
         async context =>
@@ -82,10 +73,12 @@ public sealed partial class PerformanceCircuitHandler(PerformanceMonitor monitor
                 var ms = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var page = Page();
                 monitor.Record(TimedKind.PageEvent, page, ms);
-                if (_thresholdMs > 0 && ms >= _thresholdMs)
+                var threshold = options.CurrentValue.SlowEventMs;
+                if (threshold > 0 && ms >= threshold)
                 {
                     monitor.SlowEvent(ms, page);
-                    log.LogWarning(new EventId(EventId, "SlowPageEvent"), "An event on {Page} took {Ms:N0} ms (over {Threshold:N0} ms).", page, ms, _thresholdMs);
+                    log.LogWarning(new EventId(PerformanceMonitor.SlowPageEventId, "SlowPageEvent"), "An event on {Page} took {Ms:N0} ms (over {Threshold:N0} ms).",
+                        page, ms, threshold);
                 }
             }
         };
@@ -93,7 +86,11 @@ public sealed partial class PerformanceCircuitHandler(PerformanceMonitor monitor
     // The page's path from the app's base, ids replaced; before the circuit knows its address, "(starting)".
     private string Page()
     {
-        try { return PageOf(nav.ToBaseRelativePath(nav.Uri)); }
+        try
+        {
+            if (!ReferenceEquals(nav.Uri, _uri)) (_uri, _page) = (nav.Uri, PageOf(nav.ToBaseRelativePath(nav.Uri)));
+            return _page;
+        }
         catch (InvalidOperationException) { return "(starting)"; }
     }
 

@@ -289,7 +289,7 @@ page's connection and everyone's since start); and whether a newer release is ou
 | "Background job … failed", event ids 7101 to 7108 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | "A database command took …", event id 7201 | Application log | A command ran past `Diagnostics:SlowSqlMs`. A few are normal (a big export); many point at an index, statistics or a busy server. Diagnostics › Performance lists the last 20 with their SQL. |
 | "An event on … took …", event id 7202 | Application log | A click or keystroke on that page took past `Diagnostics:SlowEventMs`. |
-| Performance on Diagnostics | The page | Requests, page events and database commands in the last hour and day (median, 95th percentile, slowest), open pages, memory and the thread pool. |
+| Performance on Diagnostics | The page | Requests, page events and database commands in the last hour and day (median, 95th percentile, slowest), memory and the thread pool. Open pages are under Connections. |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
