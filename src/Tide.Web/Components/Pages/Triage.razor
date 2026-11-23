@@ -1,6 +1,7 @@
 @page "/triage"
 @attribute [Authorize(Policy = Policies.WriteArticles)]
 @inject IntakeService Intake
+@inject TriagePromoter Promoter
 @inject SourcePollGuard Polls
 @inject CveService Cves
 @inject NavigationManager Nav
@@ -540,7 +541,7 @@ else
             <p class="tide-triage-why">@Suggestion(attachTo, line.Members.SelectMany(m => m.Coverage).FirstOrDefault(), n, Clock.Today)</p>
             if (_promoting == group.Newest && _promotingGroup is not null)
             {
-                @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {n} as one and write")
+                @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {n} as one and write", "Promote as one and keep triaging")
                 return;
             }
             <div class="tide-triage-acts">
@@ -586,7 +587,7 @@ else
         <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1, Clock.Today)</p>
         if (_promoting == item.Id && _promotingGroup is null)
         {
-            @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write")
+            @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write", "Promote and keep triaging")
             return;
         }
         <div class="tide-triage-acts">
@@ -1064,10 +1065,13 @@ else
         _ => "Nothing here.",
     };
 
-    // Promote asks four things in the decision itself (an item's, or a group's; in the bar or the row), then opens the
-    // draft. Enter (in the title) promotes; Esc or Cancel closes it and gives focus back to the row. The letter keys are off while it's open.
-    private RenderFragment PromoteFields(TlpLevel fromSources, string fromText, string submit) =>
-        @<form class="tide-promote-form tide-card mb-0 mt-1" aria-label="Promote to an article" @onsubmit="SubmitPromote" @onclick:stopPropagation="true">
+    // Promote asks four things in the decision itself (an item's, or a group's; in the bar or the row), and whether the
+    // draft goes on today's brief too. Then either it opens the draft (Promote and write: the form's submit, so Enter, as
+    // it always has), or the inbox stays and the next item is selected (Promote and keep triaging: Shift+Enter, through
+    // triage.js), with a toast to write it later or undo it. Esc or Cancel closes the form and gives focus back to the
+    // row. The letter keys are off while it's open.
+    private RenderFragment PromoteFields(TlpLevel fromSources, string fromText, string submit, string stay) =>
+        @<form class="tide-promote-form tide-card mb-0 mt-1" aria-label="Promote to an article" @onsubmit="() => SubmitPromote()" @onclick:stopPropagation="true">
             <div class="mb-2">
                 <label class="tide-field-label" for="promote-title">Article title</label>
                 <input id="promote-title" class="form-control form-control-sm" required maxlength="@ArticleService.MaxTitle" @bind="_pf.Title" @bind:event="oninput" />
@@ -1109,12 +1113,39 @@ else
                 </div>
                 <span class="form-text m-0">@fromText</span>
             </div>
+            @* On for the day's presenter and off for others, until the person changes it; then as they last left it, kept
+               apart for presenting days and other days (UserPreferences.TriagePromoteToBrief and ...Presenting). *@
+            <div class="form-check mb-2">
+                <input type="checkbox" class="form-check-input" id="promote-brief" checked="@_pf.AddToBrief" @onchange="SetAddToBrief" />
+                <label class="form-check-label" for="promote-brief">Add to @BriefDayText</label>
+            </div>
             <div class="d-flex gap-2 flex-wrap align-items-center">
-                <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy"><span class="bi bi-pencil-square" aria-hidden="true"></span> @submit</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CancelPromote">Cancel</button>
-                <span class="form-text m-0">Enter promotes, Esc cancels</span>
+                <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy" aria-keyshortcuts="Enter"><span class="bi bi-pencil-square" aria-hidden="true"></span> @submit</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm tide-promote-stay" data-promote-stay disabled="@_busy" aria-keyshortcuts="Shift+Enter"
+                        @onclick="() => SubmitPromote(stay: true)"><span class="bi bi-inbox" aria-hidden="true"></span> @stay</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm tide-promote-cancel" @onclick="CancelPromote">Cancel</button>
+                <span class="form-text m-0">Enter writes it, Shift+Enter keeps triaging, Esc cancels</span>
             </div>
         </form>;
+
+    // "today's brief", or the day's when today isn't a working day ("the brief for Mon Nov 23"): where the tick puts it.
+    private string BriefDayText => Promoter.BriefDate == Clock.Today ? "today's brief" : $"the brief for {Ui.ShortDay(Promoter.BriefDate)}";
+
+    // Whether "Add to today's brief" starts ticked: the person's choice, kept as they change it (a failure to keep it
+    // changes nothing on screen). Whether they present the brief picks which choice: each has its own default.
+    private bool _toBrief, _presenting;
+
+    private string BriefTickPreference => _presenting ? UserPreferences.TriagePromoteToBriefPresenting : UserPreferences.TriagePromoteToBrief;
+
+    internal async Task SetAddToBrief(ChangeEventArgs e)
+    {
+        var on = e.Value is true || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        _pf.AddToBrief = on;
+        if (on == _toBrief) return;
+        _toBrief = on;
+        try { await Prefs.SetAsync(BriefTickPreference, on ? UserPreferences.On : UserPreferences.Off); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
 
     private static string Short(string s) => s.Length > 60 ? s[..60] + "…" : s;
 
@@ -1292,7 +1323,10 @@ else
             _sources = await Intake.SourcesAsync(includeRetired: true);
             _sourceOptions = [.. _sources.Select(s => new FilterOption(s.Id.ToString(), s.Name))];
             _lastBriefAt = await Intake.LastBriefAtAsync();
-            _readingPref = await Prefs.GetAsync(UserPreferences.TriageReading);
+            _presenting = await Promoter.PresentsAsync();
+            var prefs = await Prefs.GetAsync([UserPreferences.TriageReading, BriefTickPreference]);
+            _readingPref = prefs[UserPreferences.TriageReading];
+            _toBrief = prefs[BriefTickPreference] == UserPreferences.On;
         }
         Use(Asked());
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -1370,7 +1404,7 @@ else
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
         (_page, _addressPage, _total, _cveFilter, _named, _older) = (p._page, p._addressPage, p._total, p._cveFilter, p._named, p._older);
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
-        (_readingPref, _readRow, _read, _readCves) = (p._readingPref, p._readRow, p._read, p._readCves);
+        (_readingPref, _readRow, _read, _readCves, _toBrief, _presenting) = (p._readingPref, p._readRow, p._read, p._readCves, p._toBrief, p._presenting);
         _open.UnionWith(p._open);
         _loaded = true;
     }
@@ -1807,6 +1841,7 @@ else
             Classification = threat ? Classification.Threat : Classification.Informational,
             Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
             Tlp = row.Source.DefaultTlp,
+            AddToBrief = _toBrief,
         };
         _promoting = item.Id;
         _promotingGroup = null;
@@ -1830,6 +1865,7 @@ else
             Classification = threat ? Classification.Threat : Classification.Informational,
             Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
             Tlp = GroupTlp(line),
+            AddToBrief = _toBrief,
         };
         _promoting = group.Newest;
         _promotingGroup = group;
@@ -1846,20 +1882,106 @@ else
         _focus = "tideTriage.focusRow";
     }
 
-    internal async Task SubmitPromote()
+    /// <summary>
+    /// The promote form's two ways out. Promote and write (Enter; <paramref name="stay"/> false): the draft is made and
+    /// opened, as it always was. Promote and keep triaging (Shift+Enter): the draft is made and the inbox stays, the row
+    /// gone from the tab and the next line selected (as after S or X), with a toast that opens the draft (Write it) or
+    /// takes the promote back (Undo, or Alt+Z). Either way, with the tick, the draft goes on today's brief. Nothing is
+    /// fetched: an open reading pane follows the selection with text already kept.
+    /// </summary>
+    internal async Task SubmitPromote(bool stay = false)
     {
         if (_promoting is not { } id || _busy) return;
         var group = _promotingGroup;
+        var title = string.IsNullOrWhiteSpace(_pf.Title) ? Current?.Row?.Item.Title ?? Current?.Members.FirstOrDefault()?.Item.Title ?? "" : _pf.Title.Trim();
         _busy = true;
         try
         {
-            var outcome = await Intake.PromoteOrJoinAsync(group?.Ids ?? [id], _pf);
+            var done = await Promoter.PromoteAsync(group?.Ids ?? [id], _pf);
+            var outcome = done.Outcome;
             Announce();
-            if (outcome.Made) Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
-            else Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in this article.");
+            if (stay)
+            {
+                (_promoting, _promotingGroup) = (null, null);
+                await Load();
+                _focus = "tideTriage.focusRow";
+                ToldStayed(done, group, title);
+                return;
+            }
+            var said = outcome.Made ? (group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.")
+                : $"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in this article.";
+            if (done.NotOnBrief is { } why) Toasts.Warn($"{said} It isn't on the brief: {why}");
+            else Toasts.Show(said + OnBriefSaid(done));
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
             await JS.StopAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older));
             Nav.NavigateTo($"articles/{outcome.ArticleId}");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // " It's on today's brief." when the tick put it there; nothing otherwise.
+    private string OnBriefSaid(TriagePromotion done) =>
+        done.BriefDate is not { } day ? "" : day == Clock.Today ? " It's on today's brief." : $" It's on the brief for {Ui.ShortDay(day)}.";
+
+    // The toast after Promote and keep triaging: what was made (or that a colleague made it first), whether it's on the
+    // brief, Write it, and Undo while there's a draft of this person's to take back.
+    private void ToldStayed(TriagePromotion done, TriageGroup? group, string title)
+    {
+        var outcome = done.Outcome;
+        var link = new ToastService.ToastLink($"/articles/{outcome.ArticleId}", outcome.Made ? "Write it" : "Open it");
+        if (!outcome.Made)
+        {
+            Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in an article.", link);
+            return;
+        }
+        var said = (group is null ? $"Promoted “{Short(title)}” to a draft." : $"Promoted {group.Ids.Count} reports as one draft, “{Short(title)}”.")
+            + (done.NotOnBrief is { } why ? $" It isn't on the brief: {why}" : OnBriefSaid(done));
+        Func<Task>? undo = done.Undo is { } u ? async () =>
+        {
+            // From the toast: this page re-renders itself, as the click wasn't on it.
+            await UndoPromote(u);
+            StateHasChanged();
+        } : null;
+        Toasts.Show(said, link, undo, warning: done.NotOnBrief is not null);
+    }
+
+    // Waits, on the page's own thread, for the step being saved to finish: true once nothing is, false after UndoWait.
+    private async Task<bool> Idle()
+    {
+        for (var waited = TimeSpan.Zero; _busy; waited += UndoPoll)
+        {
+            if (waited >= UndoWait) return false;
+            await Task.Delay(UndoPoll);
+        }
+        return true;
+    }
+
+    internal static readonly TimeSpan UndoWait = TimeSpan.FromSeconds(10), UndoPoll = TimeSpan.FromMilliseconds(100);
+
+    // Undo of a promote that stayed on the inbox, from its toast (or Alt+Z): the draft deleted, off the brief the tick put
+    // it on, and its reports back as they were, unless someone has worked on the draft since. The report is selected
+    // again where it's shown; an open reading pane follows with text already kept, never fetching.
+    internal async Task UndoPromote(PromoteUndo undo)
+    {
+        // The toast has gone as its Undo was pressed, so it's never dropped without a word: it waits for a step still
+        // being saved (another promote, a dismissal) to finish, then runs; if that takes too long, it says so.
+        if (_busy && !await Idle())
+        {
+            Toasts.Error("The promote wasn't undone: another change was still being saved. Delete the draft from the editor (Write it, then Delete draft) if it isn't wanted.");
+            return;
+        }
+        _busy = true;
+        try
+        {
+            var back = await Promoter.UndoAsync(undo);
+            var n = undo.Reports.Count;
+            Toasts.Show(back ? $"Promote undone: the draft is deleted, and {(n == 1 ? "the item is" : $"the {n} reports are")} back where {(n == 1 ? "it was" : "they were")}."
+                : "Nothing to undo: the draft has been worked on since, so it stays.");
+            Announce();
+            await Load();
+            // Load has already followed the selection it made; the pane follows this one.
+            if (back && SelectItem(undo.Reports[0].Id)) await Follow();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }

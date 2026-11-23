@@ -142,6 +142,9 @@ export const shots = [
     annotate: [['.tide-triage-group', 1, 'l'], ['.tide-triage-decide', 2], ['section.tide-card:has(#rail-same-h)', 3, 'l']] },
   { name: 'today-feeds', route: '/', viewport: desktop, clip: '.tide-steps, .tide-feeds-nudge', pad: 20, when: feedsNoted },
   { name: 'triage-pull-all', route: '/triage?tab=sources', viewport: desktop, clip: '.tide-card:has(.tide-pull-head)', pad: 20 },
+  // The promote form's two ways out and the brief tick (opening it changes nothing).
+  { name: 'triage-promote-stay', route: '/triage', viewport: wide, clip: '.tide-reading .tide-triage-decide', pad: 20,
+    setup: async page => { await page.keyboard.press('p'); await page.locator('form.tide-promote-form').waitFor(); } },
   { name: 'doc-actions-board', route: '/actions?view=open&layout=board', viewport: desktop,
     annotate: [['.tide-actions-views', 1, 'l'], ['.tide-filterbar', 2, 'l'], ['.tide-kcard.selected', 3], ['.tide-kstrip', 4, 'l']] },
   { name: 'present-needs-review', route: '/present/{today}', viewport: desktop, setup: toSlide('.tide-slide-open') },

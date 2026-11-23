@@ -127,6 +127,7 @@ public static class DependencyInjection
         services.AddScoped<CardRuleService>();
         services.AddScoped<ReminderService>();
         services.AddScoped<IntakeService>();
+        services.AddScoped<TriagePromoter>();
         services.AddScoped<ReadingService>();
         services.AddScoped<CveService>();
         services.AddScoped<StoryService>();
