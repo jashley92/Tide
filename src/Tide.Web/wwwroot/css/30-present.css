@@ -16,6 +16,12 @@
 .tide-present .btn-primary { --bs-btn-color: var(--tide-slide-on-accent); --bs-btn-bg: var(--tide-slide-accent); --bs-btn-border-color: var(--tide-slide-accent); --bs-btn-hover-color: var(--tide-slide-on-accent); --bs-btn-hover-bg: var(--tide-slide-accent-hover); --bs-btn-hover-border-color: var(--tide-slide-accent-hover); }
 .tide-present .btn-outline-secondary { --bs-btn-color: var(--tide-slide-text); --bs-btn-border-color: var(--tide-slide-line-strong); --bs-btn-hover-bg: var(--tide-slide-line); --bs-btn-hover-color: var(--tide-slide-strong); --bs-btn-hover-border-color: var(--tide-slide-line-strong); --bs-btn-active-bg: var(--tide-slide-done); --bs-btn-active-color: var(--tide-slide-strong); font-size: .8em; }
 .tide-present-tools .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; width: auto; }
+/* The edition switch (Team / Company-wide), on the slide's dark bar. */
+.tide-present-tools .tide-seg { border-color: var(--tide-slide-line-strong); }
+.tide-present-tools .tide-seg-opt { color: var(--tide-slide-text); font-size: .8em; padding: .3em .8em; white-space: nowrap; }
+.tide-present-tools .tide-seg-opt + .tide-seg-opt { border-left-color: var(--tide-slide-line-strong); }
+.tide-present-tools .tide-seg-opt:hover:not(:disabled) { background: var(--tide-slide-line); }
+.tide-present-tools .tide-seg-opt.on { background: var(--tide-slide-done); color: var(--tide-slide-strong); }
 .tide-slide-inner { max-width: 1500px; margin: 0 auto; }
 /* Fit, then scroll. The slide is a size container: its spacing follows the room it has (cqh, cqi, in clamp()). Its type
    follows --tide-fit, which present.js sets on the body to the largest size from 80% to 100% at which the slide fits;

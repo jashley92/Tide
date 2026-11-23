@@ -460,7 +460,8 @@ that fits its kind.
   by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
   team) opens All open instead. Each tab (Mine, My teams, All open, Overdue, Recently closed) shows its count, and
   they stay on one row, scrolling sideways in themselves when they don't fit.
-- **The board.** Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
+- **The board.** Its header is New action alone: Workload, Board rules and External teams head the list (and its
+  rail's About this page). Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
   scrolls on its own. A card shows its title, the article's short title, a KEV flag, its checklist progress, a sweep's
   hunt state and how long it has been in its lane. A card is dragged to another lane, or moved from its Move menu by
   keyboard. Under the lanes a strip counts what closed as Done, Cancelled and Not applicable in the last 7 days. A card
@@ -674,8 +675,10 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
 
 *Actions that need review: why each is there, its last update, and one thing to do.*
 
-The footer names each slide ("1 · Edge VPN"). Screenshots zoom, articles are ticked off as discussed, and the editions
-can be switched on screen. A slide too tall for the screen shrinks a little, then scrolls inside itself.
+The footer names each slide ("1 · Edge VPN") and shows the time gone against the meeting's length ("4 of 30 min"; the
+length is an Organization setting, 30 minutes by default). Screenshots zoom, articles are ticked off as discussed, and
+the editions can be switched on screen with the Team / Company-wide switch in the top bar (held while a meeting runs). A
+slide too tall for the screen shrinks a little, then scrolls inside itself.
 
 **Start the meeting** and it's live for the team: a banner on every page, and a Join button on the brief. Invite
 everyone on the team edition in (or paste the copied link). People who join follow the presenter's slide, can browse
