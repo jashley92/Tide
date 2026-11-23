@@ -78,10 +78,10 @@
         @if (d is not null)
         {
             var others = d.Articles.Count(x => x.Id != ArticleId);
-            <div class="small"><a href="@($"adversaries/{a.Id}")">Seen before: @Ui.Plural(others, "other article")@(d.BriefedThisQuarter > 0 ? $" · {Ui.Plural(d.BriefedThisQuarter, "brief")} this quarter" : "")</a></div>
+            <div class="small"><a class="tide-hit-line" href="@($"adversaries/{a.Id}")">Seen before: @Ui.Plural(others, "other article")@(d.BriefedThisQuarter > 0 ? $" · {Ui.Plural(d.BriefedThisQuarter, "brief")} this quarter" : "")</a></div>
             @foreach (var x in d.Articles.Where(x => x.Id != ArticleId).Take(3))
             {
-                <div class="small tide-muted">@Ui.ShortDay(x.On) · <a href="@($"articles/{x.Id}")">@x.Title</a></div>
+                <div class="small tide-muted">@Ui.ShortDay(x.On) · <a class="tide-hit-line" href="@($"articles/{x.Id}")">@x.Title</a></div>
             }
         }
     };

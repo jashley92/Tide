@@ -1,7 +1,7 @@
 [
-  { "rule": "target-size", "page": "save-view-enter", "target": ".tide-savedview-menu", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-board-closed-link-opens", "target": ".tide-chip-remove", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-board-closed-link-opens", "target": "Remove filter", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "editor-bullet-grows", "target": "#src", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" },
-  { "rule": "target-size", "page": "actions-take-focus-last", "target": ".tide-sort", "reason": "WCAG 2.2 target size, found when the gate added wcag22aa: fixed in the follow-up after the stylesheet split (#322)" }
+  { "rule": "target-size", "page": "editor-bullet-grows", "target": "#src", "reason": "Not a small target: at the scroll position this check leaves, the Source field is partly under the sticky section bar, which axe counts as obscured (Linux fonts only)" },
+  { "rule": "target-size", "page": "actions-take-focus-last", "target": ".tide-sort", "reason": "Not a small target (it's 24px now): having scrolled to the last row, the check leaves the table's headings partly under the sticky top bar, which axe counts as obscured" },
+  { "rule": "target-size", "page": "triage-v-narrow-780-row1", "target": ".tide-filterbar > .btn-outline-secondary", "reason": "Not a small target: at 780px V opens the reading pane over the list, and it covers all but an 11px strip of the filter bar's Dismiss all button, which axe counts as obscured" },
+  { "rule": "target-size", "page": "triage-v-narrow-780-row2", "target": ".tide-filterbar > .btn-outline-secondary", "reason": "Not a small target: at 780px V opens the reading pane over the list, and it covers all but an 11px strip of the filter bar's Dismiss all button, which axe counts as obscured" },
+  { "rule": "target-size", "page": "triage-v-narrow-780-row13", "target": ".tide-filterbar > .btn-outline-secondary", "reason": "Not a small target: at 780px V opens the reading pane over the list, and it covers all but an 11px strip of the filter bar's Dismiss all button, which axe counts as obscured" }
 ]
