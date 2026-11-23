@@ -254,6 +254,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7111 | Daily statistics |
 | 7112 | Checking stored files |
 | 7113 | Archiving the audit log |
+| 7114 | Purging removed files' bytes |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -270,6 +271,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
 | Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
 | Daily statistics | `SystemStatsHostedService` | Every 5 minutes | Once a day: a snapshot of the tables', files' and disk's sizes (`SystemStats`) for Data & retention on Diagnostics. Every pass: reads the newest backup `Backup-Tide.ps1` recorded, and warns of a low disk (7203) or a stale backup (7205) |
+| Purging removed files' bytes | `FilePurgeHostedService` | Daily, from an hour after start-up | Only with `Files:PurgeRemovedAfterDays` set: the bytes of files removed (or on actions deleted) longer ago, used nowhere else; rows and hashes stay |
 
 ### Timers and periodic work in the request path
 

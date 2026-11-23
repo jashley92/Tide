@@ -3489,6 +3489,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("BytesPurgedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)

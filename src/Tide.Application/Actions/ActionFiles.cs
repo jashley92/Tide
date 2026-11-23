@@ -38,6 +38,10 @@ public sealed record ActionFileRow(Guid FileId, string FileName, long SizeBytes,
     public string? RemovedByName { get; init; }
     public string? RemovedReason { get; init; }
 
+    /// <summary>When a removed file's bytes were purged (<c>Files:PurgeRemovedAfterDays</c>): its record and hash stay, but
+    /// it can't be downloaded or restored.</summary>
+    public DateTimeOffset? BytesPurgedAtUtc { get; init; }
+
     /// <summary>For a file kept from a deleted comment: that comment's author. It's listed as added by them, at the
     /// comment's time.</summary>
     public string? FromCommentBy { get; init; }
@@ -274,6 +278,8 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         var found = await FindFileAsync(db, fileId, ct) ?? throw Gone();
         var file = found.File;
         if (!file.IsRemoved) return;
+        if (await db.Files.AsNoTracking().Where(f => f.Id == fileId).Select(f => f.BytesPurgedAtUtc).FirstOrDefaultAsync(ct) is { } purged)
+            throw new ArgumentException($"{file.FileName}'s bytes were purged on {purged.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}, after it had been removed for the time Files:PurgeRemovedAfterDays allows: only its record is kept.");
         // A comment's files don't count towards the action's limit.
         if (found.CommentBy is null
             && await db.ActionFiles.CountAsync(f => f.ActionId == found.ActionId && f.RemovedAtUtc == null, ct) >= ActionFile.MaxPerAction)
@@ -336,21 +342,21 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         var own = await (from f in db.ActionFiles.AsNoTracking()
                          join s in db.Files.AsNoTracking() on f.FileId equals s.Id
                          where f.ActionId == actionId
-                         select new { f, s.ContentType }).ToListAsync(ct);
+                         select new { f, s.ContentType, s.BytesPurgedAtUtc }).ToListAsync(ct);
         comments ??= await db.ActionComments.AsNoTracking().Include(c => c.Files).Where(c => c.ActionId == actionId).ToListAsync(ct);
         var ids = comments.SelectMany(c => c.Files).Select(f => f.FileId).ToList();
         var stored = ids.Count == 0
             ? []
-            : await db.Files.AsNoTracking().Where(s => ids.Contains(s.Id)).Select(s => new { s.Id, s.Sha256, s.ContentType }).ToDictionaryAsync(s => s.Id, ct);
+            : await db.Files.AsNoTracking().Where(s => ids.Contains(s.Id)).Select(s => new { s.Id, s.Sha256, s.ContentType, s.BytesPurgedAtUtc }).ToDictionaryAsync(s => s.Id, ct);
         // An action's own file is judged by its name too, as a comment's is below and as its download is (OpenAsync), so a
         // kind of file added to the risky list since it was uploaded is listed, and downloads, zip first.
-        var rows = own.Select(x => (x.f, x.ContentType, Risk: x.f.RiskReason ?? FileRisk.Reason(x.f.FileName, null)))
+        var rows = own.Select(x => (x.f, x.ContentType, x.BytesPurgedAtUtc, Risk: x.f.RiskReason ?? FileRisk.Reason(x.f.FileName, null)))
             .Select(x => new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.f.Sha256), x.ContentType, x.f.AddedByName,
                 x.f.AddedAtUtc, x.f.Description, ActionFile.ShowsInlineFor(x.f.IsImage, x.f.TypeNote, x.Risk), x.Risk, x.f.TypeNote)
             {
                 DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById, CanRemove = CanRemove(user, x.f.AddedById),
                 RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
-                FromCommentBy = x.f.FromCommentBy,
+                FromCommentBy = x.f.FromCommentBy, BytesPurgedAtUtc = x.BytesPurgedAtUtc,
             })
             .ToList();
         // A comment's file added before its risk was recorded is judged by its name (its bytes were checked to be an image
@@ -365,6 +371,7 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
                 {
                     CommentId = f.CommentId, AddedById = c.AuthorId, CanRemove = CanRemove(user, c.AuthorId),
                     RemovedAtUtc = f.RemovedAtUtc, RemovedByName = f.RemovedByName, RemovedReason = f.RemovedReason,
+                    BytesPurgedAtUtc = s.BytesPurgedAtUtc,
                 });
             }
         var live = rows.Where(r => r.RemovedAtUtc is null).OrderByDescending(r => r.AddedAtUtc).ThenBy(r => r.FileName, StringComparer.Ordinal).ToList();

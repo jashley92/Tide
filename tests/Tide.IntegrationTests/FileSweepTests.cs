@@ -19,9 +19,11 @@ public class FileSweepTests
         var now = DateTimeOffset.UtcNow;
         StoredFile Row(byte[] bytes) => new() { FileName = "a.png", ContentType = "image/png", SizeBytes = bytes.Length, Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) };
         var (good, changed, gone) = (Row([1, 2, 3]), Row([4, 5, 6]), Row([7, 8, 9]));
+        var purged = Row([10]);
+        purged.BytesPurgedAtUtc = now.AddDays(-1);   // its bytes deleted on purpose: not missing
         await using (var ctx = db.Context())
         {
-            ctx.Files.AddRange(good, changed, gone);
+            ctx.Files.AddRange(good, changed, gone, purged);
             await ctx.SaveChangesAsync();
         }
         db.Store.Files[good.Id] = [1, 2, 3];
@@ -34,10 +36,10 @@ public class FileSweepTests
         await using (var ctx = db.Context())
         {
             var r = await FileSweep.RunAsync(ctx, db.Store, now, new Random(1));
-            (r.Rows, r.OnDisk, r.Missing, r.Orphans, r.Checked, r.Mismatched).Should().Be((3, 4, 1, 1, 2, 1), "a fresh upload's bytes may come before its row");
+            (r.Rows, r.OnDisk, r.Missing, r.Orphans, r.Checked, r.Mismatched).Should().Be((4, 4, 1, 1, 2, 1), "a fresh upload's bytes may come before its row, and a purged file's bytes are gone on purpose");
             r.Clean.Should().BeFalse();
             r.Examples.Should().BeEquivalentTo([$"missing {gone.Id}", $"no row {stray}", $"hash differs {changed.Id}"]);
-            r.Summary().Should().StartWith("3 rows, 4 files: 1 missing, 1 without a row, 1 of 2 sampled don't match their hash");
+            r.Summary().Should().StartWith("4 rows, 4 files: 1 missing, 1 without a row, 1 of 2 sampled don't match their hash");
         }
         db.Store.Files.Should().HaveCount(4, "it only reports");
     }

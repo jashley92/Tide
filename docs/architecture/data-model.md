@@ -1570,7 +1570,7 @@ flowchart LR
 
 | What | Where | Notes |
 |---|---|---|
-| File metadata | `Files` table (class `StoredFile`, **S**, **A**) | `FileName` nvarchar(260), `ContentType` nvarchar(100) (sniffed from the bytes, never the browser's claim), `SizeBytes` bigint, `Sha256` nvarchar(64). |
+| File metadata | `Files` table (class `StoredFile`, **S**, **A**) | `FileName` nvarchar(260), `ContentType` nvarchar(100) (sniffed from the bytes, never the browser's claim), `SizeBytes` bigint, `Sha256` nvarchar(64), `BytesPurgedAtUtc` null (set by the removed-file purge, `Files:PurgeRemovedAfterDays`: the bytes are gone, the row and hash stay). |
 | File bytes | Disk, under `Files:RootPath`, outside the web root | `DiskFileStore` (`src/Tide.Infrastructure/Storage/DiskFileStore.cs`) names each file `<id as N>.bin` in a folder named after the id's first two characters. It writes to `.partial` and then moves into place, so a reader never sees half a file. A relative root is under the content root, which is for development only. |
 | Who holds a file | `ArticleScreenshots.FileId`, `BriefSendImages.FileId`, `ActionFiles.FileId` (all unique), `ActionCommentFiles.FileId`, `HuntQueries.EvidenceFileId`, and `OutreachMessages.ReplyFileId` (no FK) | Every FK to `Files` is **restrict**, so a `Files` row can't be deleted while something holds it. |
 | Frozen send images | Separate `Files` rows | `DistributionService` copies each screenshot's bytes when it freezes a send, so the archive survives the screenshot's removal. |

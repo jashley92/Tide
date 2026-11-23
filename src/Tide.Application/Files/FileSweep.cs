@@ -40,10 +40,12 @@ public static class FileSweep
 
     public static async Task<SweepResult> RunAsync(IAppDbContext db, IFileStore store, DateTimeOffset now, Random? random = null, CancellationToken ct = default)
     {
-        var rows = (await db.Files.AsNoTracking().IgnoreQueryFilters().Select(f => f.Id).ToListAsync(ct)).ToHashSet();
+        var all = await db.Files.AsNoTracking().IgnoreQueryFilters().Select(f => new { f.Id, Purged = f.BytesPurgedAtUtc != null }).ToListAsync(ct);
+        var rows = all.Select(f => f.Id).ToHashSet();
         var disk = store.List().ToDictionary(f => f.Id, f => f.WrittenAtUtc);
         var orphans = disk.Where(f => !rows.Contains(f.Key) && now - f.Value > Settle).Select(f => f.Key).ToList();
-        var missing = rows.Where(id => !disk.ContainsKey(id)).ToList();
+        // A row whose bytes were purged on purpose (Files:PurgeRemovedAfterDays) isn't missing them.
+        var missing = all.Where(f => !f.Purged && !disk.ContainsKey(f.Id)).Select(f => f.Id).ToList();
 
         // A different sample each week, each file at most once.
         var present = rows.Where(disk.ContainsKey).ToArray();

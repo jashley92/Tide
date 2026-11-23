@@ -161,9 +161,16 @@
                             <span class="bi bi-file-earmark-x tide-file-icon" aria-hidden="true"></span>
                             <span class="tide-file-name" title="@f.FileName">@f.FileName</span>
                             <span class="tide-file-size">@Ui.Size(f.SizeBytes)</span>
-                            <button class="btn btn-outline-secondary btn-sm tide-file-restore" disabled="@_busy" @onclick="() => Restore(f)" aria-label="Restore @f.FileName">Restore</button>
+                            @if (f.BytesPurgedAtUtc is null)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm tide-file-restore" disabled="@_busy" @onclick="() => Restore(f)" aria-label="Restore @f.FileName">Restore</button>
+                            }
                         </div>
                         <div class="tide-file-sub tide-file-sub-wrap">Removed by @f.RemovedByName, @Ui.When(Clock, f.RemovedAtUtc!.Value): @f.RemovedReason</div>
+                        @if (f.BytesPurgedAtUtc is { } purged)
+                        {
+                            <div class="tide-file-sub tide-file-sub-wrap">Bytes purged @Ui.When(Clock, purged): only this record and its hash are kept.</div>
+                        }
                         <div class="tide-file-sub tide-file-sub-wrap">
                             <span>@RemovedSource(f)</span>
                             @if (f.Sha256 is { } hash)

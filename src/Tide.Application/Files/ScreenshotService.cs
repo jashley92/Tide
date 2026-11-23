@@ -14,6 +14,10 @@ public sealed class FileStoreOptions
     /// <summary>Where the bytes are kept: an absolute path outside the web root in production.</summary>
     public string RootPath { get; set; } = "App_Data/files";
 
+    /// <summary>How long a removed action or comment file (or a deleted action's) keeps its bytes before they're purged;
+    /// unset (the default) keeps them for good, at least 30 when set (<see cref="RemovedFilePurge"/>).</summary>
+    public int? PurgeRemovedAfterDays { get; set; }
+
     /// <summary>The largest screenshot accepted, in megabytes.</summary>
     public int MaxImageMB { get; set; } = 15;
 
