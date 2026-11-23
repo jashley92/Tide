@@ -253,7 +253,20 @@ public class WhatsNewTests
         v.Highlights.Sections[RoleGroup.Analysts].Should().Contain("Saved views").And.Contain("Shift+Enter");
         v.Highlights.Sections[RoleGroup.Administrators].Should().Contain("Diagnostics").And.Contain("02-Grant-Backup.sql");
         v.Highlights.Sections[RoleGroup.ViewersAndActionOwners].Should().Contain("several actions");
-        ReleaseNotesCatalog.Embedded.Newest.Should().Be(V("1.16.0"));
+    }
+
+    // A patch with notes and no highlights: newest, and nobody's What's new opens for it.
+    [Fact]
+    public void TheBuiltInCatalog_HasV1161sNotes_AndNoHighlights_SoWhatsNewStaysOnV116()
+    {
+        var c = ReleaseNotesCatalog.Embedded;
+        c.Newest.Should().Be(V("1.16.1"));
+        var v = c.Releases.Single(r => r.Version == V("1.16.1"));
+        v.Notes.Should().Contain("-KeepAllUpgradeBackups").And.Contain("No migrations.");
+        v.Highlights.Should().BeNull();
+        var everyone = RoleGroups.Headings.Select(h => h.Group).ToList();
+        c.Due(V("1.16.1"), V("1.16.0"), everyone).Should().BeEmpty("someone who saw 1.16.0's has nothing new to see");
+        c.Due(V("1.16.1"), null, everyone).Single().Version.Should().Be(V("1.16.0"), "a new install still sees the latest highlights");
     }
 
     [Fact]

@@ -47,7 +47,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
             await r.Click(c => c.CloseAsync());
             (await r.Html()).Should().NotContain("tide-whatsnew");
         }
-        (await Seen(who)).Should().Be("1.16.0", "it's marked seen, up to the release running, as it closes");
+        (await Seen(who)).Should().Be("1.16.1", "it's marked seen, up to the release running, as it closes");
 
         await using var again = await RenderAsync<WhatsNewDialog>(app, "/triage", @as: who);
         await again.Click(c => c.CheckAsync());
@@ -223,7 +223,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain("Step 1 of");
         html.Should().NotContain("class=\"tide-tip\"", "a page's tip waits while the tour runs");
-        (await Seen(who)).Should().Be("1.16.0");
+        (await Seen(who)).Should().Be("1.16.1");
     }
 
     [Fact]
@@ -251,7 +251,7 @@ public class WhatsNewPagesTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, c => c.WhatsNew!.SeeTheDayAsync());
         var html = await r.Html();
         html.Should().NotContain("tide-whatsnew").And.Contain("tide-tour").And.Contain(guide).And.Contain("1 of");
-        (await Seen(who)).Should().Be("1.16.0");
+        (await Seen(who)).Should().Be("1.16.1");
     }
 
     [Fact]
