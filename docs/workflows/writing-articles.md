@@ -127,6 +127,21 @@ Save saves it.
 
 On today's brief, `BriefStepper` walks to the article before or after this one in the running order.
 
+### Keys
+
+For someone who can edit (`wwwroot/js/editor.js` hears them, `ArticleEditorPanel.OnEditorKey` acts, `EditorKeys` says
+where they go). All are listed in the `?` overlay under *Editing the article* (`Shortcuts.For(path, canEdit:)`).
+
+| Keys | What they do |
+|---|---|
+| `G` then `B`, `U`, `W`, `R`, `I` or `T` | Go to the bottom line, the first bullet, why it matters, recommended actions, the new-indicator box or the scorecard tag search, focused. Bullets with none yet goes to its heading (nothing is added). Assessment and Screenshots have no letter. A `G` not followed by one of these within 1.5 seconds is dropped. |
+| `N` | The next gap the readiness checks flag on what's on screen (the section index's *Needed* and *check TLP*), after the section focus is in, in the order the page runs (Screenshots after Recommended), round to the first. It goes to the gap's field as a gap's link in the preview does, so a missing bullet adds an empty one. None: a toast says *No gaps*. |
+| `Ctrl Shift Enter` (`⌘ Shift Enter`) | *Save and mark ready* with its own checks (a blocking gap refuses it and says why, nothing saved), then the next article in today's running order, keeping the edition and tab the preview shows. A Ready article is saved if need be and moved on from. Not on today's brief, or the last on it: it stays, and the toast says so. |
+
+The letters pause as Triage's do (`rows.js`): while typing in a field, with focus in a menu, a dialog or the context
+rail, under an open confirmation, and when single-letter shortcuts are off (WCAG 2.1.4). `Ctrl Shift Enter` works from a
+field too, but not in a dialog; `Ctrl Enter` (`submitkeys.js`) ignores it.
+
 Leaving with unsaved changes asks first (`NavigationLock`, `LeaveDialog`). This is one of two prompts that stay the
 browser's own, because it has to be answered during navigation.
 

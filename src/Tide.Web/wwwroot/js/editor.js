@@ -8,9 +8,16 @@
 // Its reader preview (ReaderPreview): keys 1 and 2 pick the Team or Company-wide edition, unless focus is in a field, a
 // dialog is open, or single-character shortcuts are switched off; the edition shown is kept in the address
 // (?edition=company) without a navigation, so the editor's unsaved-changes guard isn't asked.
+// The editor's own keys (ArticleEditorPanel, for someone who can edit): G then a letter goes to a section's first field
+// (B bottom line, U bullets, W why it matters, R recommended actions, I indicators, T tags); N goes to the next gap the
+// readiness checks flag, after the section focus is in; Ctrl+Shift+Enter saves, marks ready and goes on to the next
+// article on today's brief. The letters pause as Triage's do (rows.js): while typing in a field, with focus in a menu,
+// a dialog or the context rail, under an open confirmation, and when single-character shortcuts are off. A G not
+// followed by one of those letters within a second and a half is let go, and the next key is the page's as usual.
+// Ctrl+Shift+Enter works from a field too (it isn't a character), but not in a menu or dialog.
 window.tideEditor = (function () {
-    let ref = null;
-    const typing = window.tideShortcuts.typing, inMenu = window.tideShortcuts.inMenu;
+    let ref = null, keysRef = null, gWait = 0;
+    const shortcuts = window.tideShortcuts, typing = shortcuts.typing, inMenu = shortcuts.inMenu;
 
     function onStep(e) {
         if (e.defaultPrevented) return;   // the palette took it (Ctrl+K, then typing before its box is up)
@@ -36,7 +43,60 @@ window.tideEditor = (function () {
         ref.invokeMethodAsync('OnEditionKey', e.key).catch(function () { });
     }
 
+    // The letters after G that name a section.
+    const sections = ['b', 'u', 'w', 'r', 'i', 't'];
+
+    function letGo() { clearTimeout(gWait); gWait = 0; }
+
+    // The section focus is in, by its heading's id (sec-bluf), for N to go on from; none above the first or outside them.
+    function sectionAt(el) {
+        const section = el && el.closest ? el.closest('section[aria-labelledby]') : null;
+        return section ? section.getAttribute('aria-labelledby') : null;
+    }
+
+    function send(key, at) {
+        if (keysRef) keysRef.invokeMethodAsync('OnEditorKey', key, at).catch(function () { });
+    }
+
+    function onEditorKey(e) {
+        if (!keysRef) return;
+        if (e.defaultPrevented || e.isComposing) { letGo(); return; }   // another's key (J, K, 1, 2): a G waiting goes
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+            if (e.repeat || inMenu(e.target) || document.querySelector('.tide-modal')) return;
+            e.preventDefault();
+            send('ready-next', null);
+            return;
+        }
+        if (e.key === 'Shift' || e.key === 'CapsLock') return;   // on the way to a capital: the G still waits
+        if (e.ctrlKey || e.metaKey || e.altKey) { letGo(); return; }
+        if (document.querySelector('.tide-modal') || shortcuts.inRail(e.target)) return;
+        if (typing(e.target) || inMenu(e.target)) { letGo(); return; }
+        if (!shortcuts.on() && shortcuts.isLetter(e)) return;
+        const key = (e.key || '').toLowerCase();
+        if (gWait) {
+            letGo();
+            if (sections.indexOf(key) < 0) return;
+            e.preventDefault();
+            send('go-' + key, null);
+            return;
+        }
+        if (key === 'g') {
+            e.preventDefault();
+            gWait = setTimeout(letGo, 1500);
+        } else if (key === 'n') {
+            e.preventDefault();
+            send('gap', sectionAt(document.activeElement));
+        }
+    }
+
     return {
+        // Starts the editor's own keys for its .NET object, or stops them (null).
+        editorKeys: function (dotnetRef) {
+            document.removeEventListener('keydown', onEditorKey);
+            letGo();
+            keysRef = dotnetRef;
+            if (keysRef) document.addEventListener('keydown', onEditorKey);
+        },
         // The words selected on the page, for a review comment (EP-80): trimmed, at most 300 characters.
         selection: function () {
             const sel = window.getSelection ? window.getSelection().toString() : '';

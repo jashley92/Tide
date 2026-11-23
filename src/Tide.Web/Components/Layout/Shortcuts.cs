@@ -37,8 +37,9 @@ public static class Shortcuts
 
     /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
     /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
-    /// someone who <paramref name="canTake"/> actions on.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true)
+    /// someone who <paramref name="canTake"/> actions on, and the article editor's keys only for someone who
+    /// <paramref name="canEdit"/> articles.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true, bool canEdit = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -71,6 +72,7 @@ public static class Shortcuts
                 break;
             case "articles" when segments.Length > 1:
                 groups.Add(ArticlePage);
+                if (canEdit) groups.Add(ArticleEditing);
                 groups.Add(Screenshots);
                 break;
             case "trends" or "metrics":
@@ -171,6 +173,19 @@ public static class Shortcuts
         new(["K"], "On today's brief: the previous article", Letter: true),
         new(["Enter"], "In the new-indicator box: add the indicator"),
         new(["Esc"], "Close the ATT&CK picker; Tab stays inside it while it's open"),
+    ]);
+
+    // The editor's own keys (editor.js), for someone who can edit articles: the fields are theirs.
+    private static readonly ShortcutGroup ArticleEditing = new("Editing the article",
+    [
+        new(["G then B"], "Go to the bottom line", Letter: true),
+        new(["G then U"], "Go to the bullets", Letter: true),
+        new(["G then W"], "Go to why it matters", Letter: true),
+        new(["G then R"], "Go to the recommended actions", Letter: true),
+        new(["G then I"], "Go to the indicators", Letter: true),
+        new(["G then T"], "Go to the tags", Letter: true),
+        new(["N"], "The next gap the readiness checks find, round to the first", Letter: true),
+        new(["Ctrl Shift Enter", "⌘ Shift Enter"], "Save and mark ready, then the next article on today's brief"),
     ]);
 
     private static readonly ShortcutGroup Screenshots = new("A screenshot shown full size",

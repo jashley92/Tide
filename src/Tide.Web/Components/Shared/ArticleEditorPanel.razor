@@ -17,7 +17,10 @@
    something now reaches everyone, the article is on a sent brief (each waits for Save), or a colleague saved meanwhile
    (autosave stops; what was typed stays in the form). It waits while Discard's question or the leave question is open,
    so what the answer drops isn't saved first, and it tries again after another pause when an upload or another save
-   held it up. *@
+   held it up.
+   Keys, for someone who can edit (editor.js): G then B, U, W, R, I or T goes to a section's first field (EditorKeys); N
+   to the next gap the readiness checks flag, after the section focus is in, round to the first; Ctrl+Shift+Enter saves,
+   marks ready and goes on to the next article on today's brief (SaveReadyNextAsync). *@
 @inject ArticleService ArticleSvc
 @inject ScreenshotService Shots
 @inject BriefService Briefs
@@ -396,7 +399,7 @@ else
                 }
                 @if (_canWrite)
                 {
-                    <IndicatorAdd @ref="_indicatorBox" Have="_form.Indicators" HaveCves="_form.Cves" Adding="AddIndicators" />
+                    <IndicatorAdd @ref="_indicatorBox" InputId="f-indicator" Have="_form.Indicators" HaveCves="_form.Cves" Adding="AddIndicators" />
                 }
             </section>
 
@@ -476,7 +479,7 @@ else
                            Start the meeting does), rather than saving and then being refused. *@
                         var notReady = ArticleChecks.NotReady(checks);
                         <button type="button" class="btn btn-outline-secondary" data-guide="mark-ready" disabled="@(_busy || notReady is not null)"
-                                aria-describedby="@(notReady is null ? null : _notReadyId)" @onclick="MarkReady">Save and mark ready</button>
+                                aria-keyshortcuts="Control+Shift+Enter" aria-describedby="@(notReady is null ? null : _notReadyId)" @onclick="MarkReady">Save and mark ready</button>
                         @if (notReady is not null)
                         {
                             <span id="@_notReadyId" class="small tide-muted">@notReady</span>
@@ -548,6 +551,10 @@ else
 
     /// <summary>The way through today's brief (BriefStepper), shown in place of the breadcrumbs while the article is on it.</summary>
     [Parameter] public RenderFragment? Stepper { get; set; }
+
+    /// <summary>The address of another article on today's brief, for Ctrl+Shift+Enter to go on to: the page's, keeping the
+    /// edition and tab it shows (BriefStepper.Href), or the plain address.</summary>
+    [Parameter] public Func<Guid, string>? StepHref { get; set; }
 
     /// <summary>
     /// The form as it is on screen, saved or not: fired once the article loads (or reloads) and after every edit, for a
@@ -632,6 +639,9 @@ else
 
     private (ArticlePart Part, string? Field)? _jumpTo;
 
+    /// <summary>For tests: where the next draw takes focus (a section, and the field in it), until it has.</summary>
+    internal (ArticlePart Part, string? Field)? JumpingTo => _jumpTo;
+
     private async Task JumpAsync()
     {
         var (part, field) = _jumpTo!.Value;
@@ -683,6 +693,9 @@ else
 
     private void OpenShot(ScreenshotForm s) => _shot = ShotSet.FirstOrDefault(x => x.FileId == s.FileId);
     private bool _registered;
+
+    // The editor's keys' way back here (editor.js), from the first draw for someone who can edit until the editor goes.
+    private DotNetObjectReference<ArticleEditorPanel>? _keys;
     private string? _excerpt;
     private IReadOnlyList<ArticleLink> _links = [];
 
@@ -784,6 +797,10 @@ else
         _live?.Dispose();
         _autosavePause?.Now();   // a pause still running saves nothing once the editor has gone
         _disposed = true;
+        if (_keys is null) return;
+        // Nothing waits on it: the keys stop with the page either way, and a closed tab has none to stop.
+        _ = JS.StopAsync("tideEditor.editorKeys", [null]).AsTask();
+        _keys.Dispose();
     }
 
     // Loads when the article changes, not whenever the page around it redraws, which would drop what's being typed.
@@ -883,6 +900,8 @@ else
         if (_registered || _form is null || !_canWrite) return;
         _registered = true;
         await JS.StopAsync("tidePasteDrop.register", "shot-zone", "shot-input", "shot-input", false);
+        _keys = DotNetObjectReference.Create(this);
+        await JS.StopAsync("tideEditor.editorKeys", _keys);
     }
 
     // Counts edits, so a save knows whether more were typed while it ran (the fields stay open meanwhile).
@@ -1362,21 +1381,84 @@ else
         _revealHistory = _history.IsOpen;
     }
 
-    internal async Task MarkReady()
+    internal Task MarkReady() => MarkReadyAsync("Marked ready for a brief.");
+
+    // Save and mark ready, saying `done` once it's ready; false when it isn't (a blocking gap, a save or the status refused).
+    private async Task<bool> MarkReadyAsync(string done)
     {
         // Checked on what's on screen before saving, so a refusal isn't "Saved." followed by "It isn't ready yet".
         if (ArticleChecks.NotReady(Checks().Checks) is { } notReady)
         {
             Toasts.Error(notReady);
-            return;
+            return false;
         }
-        if (_dirty && !await Save()) return;
-        await SetStatus(ArticleStatus.Ready, "Marked ready for a brief.");
+        if (_dirty && !await Save()) return false;
+        return await SetStatus(ArticleStatus.Ready, done);
     }
 
     internal Task BackToDraft() => SetStatus(ArticleStatus.Draft, "Back to draft.");
 
-    private async Task SetStatus(ArticleStatus status, string done)
+    // The editor's keys (editor.js), for someone who can edit: "go-b" and the like (G then a letter), "gap" (N, from the
+    // section focus is in, by its heading's id) and "ready-next" (Ctrl+Shift+Enter). A call from the script isn't an event
+    // the renderer draws after by itself: the bar's state (busy, saved, ready) is drawn here once it's done.
+    [JSInvokable]
+    public async Task OnEditorKey(string key, string? at)
+    {
+        if (_form is null || !_canWrite) return;
+        if (key == "gap") await NextGapAsync(at);
+        else if (key == "ready-next") await SaveReadyNextAsync();
+        else if (key.StartsWith("go-", StringComparison.Ordinal) && key.Length == 4 && EditorKeys.Section(key[3]) is { } part)
+            await GoToSectionAsync(part);
+        else return;
+        StateHasChanged();
+    }
+
+    /// <summary>G then a letter: to the section's first field (<see cref="EditorKeys.FieldId"/>), or its heading when it has
+    /// none (Bullets with no bullet yet). Nothing is added, unlike a gap's link.</summary>
+    internal Task GoToSectionAsync(ArticlePart part) => Jump(part, EditorKeys.FieldId(part, _form!.Bullets.Count));
+
+    /// <summary>
+    /// N: to the next gap the readiness checks flag on what's on screen (the section index's "Needed" and "check TLP"),
+    /// after the section with the heading id <paramref name="at"/> in the order the page runs, round to the first; to its
+    /// field, as a gap's link in the preview goes. None: a toast says so.
+    /// </summary>
+    internal Task NextGapAsync(string? at)
+    {
+        var (checks, why) = Checks();
+        var gaps = checks.Select(c => c.Part).Concat(why is null ? [] : [why.Part]);
+        if (EditorKeys.NextGap(gaps, EditorKeys.SectionOf(at)) is { } part) return FocusFieldAsync(part);
+        Toasts.Show("No gaps: nothing is missing.");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Ctrl+Shift+Enter: Save and mark ready (its own checks, as the button: a blocking gap refuses it and says why), then
+    /// on to the next article in today's running order. A ready (or presented) article is saved and moved on from as it
+    /// is. Not on today's brief, or the last on it: it stays, and the toast says so. Refused or failed: it stays.
+    /// </summary>
+    internal async Task SaveReadyNextAsync()
+    {
+        if (_form is null || _article is null || !_canWrite || _busy) return;
+        var id = Id;
+        var order = await Briefs.RunningOrderAsync(Briefs.CurrentDate);
+        var at = order.Select(s => s.ArticleId).ToList().IndexOf(id);
+        Guid? next = at >= 0 && at + 1 < order.Count ? order[at + 1].ArticleId : null;
+        var stay = next is not null ? "" : at < 0 ? " It isn't on today's brief, so there's no next article." : " It's the last article on today's brief.";
+        if (_article.Status == ArticleStatus.Draft)
+        {
+            if (!await MarkReadyAsync("Marked ready for a brief." + stay)) return;
+        }
+        else if (_dirty)
+        {
+            if (!await Save()) return;
+            if (stay.Length > 0) Toasts.Show(stay.TrimStart());
+        }
+        else if (stay.Length > 0) Toasts.Show($"It's already {(_article.Status == ArticleStatus.Ready ? "ready" : "presented")}.{stay}");
+        // Moved on meanwhile (the stepper, Back), or typed into while it saved: the leave question is the guard's.
+        if (next is { } to && id == Id) Nav.NavigateTo((StepHref ?? (a => BriefStepper.Href(a, null)))(to));
+    }
+
+    private async Task<bool> SetStatus(ArticleStatus status, string done)
     {
         _busy = true;
         try
@@ -1400,8 +1482,13 @@ else
                 _changedBy ??= "Someone else";
             }
             Toasts.Show(done);
+            return true;
         }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
         finally { _busy = false; }
     }
 

@@ -353,6 +353,11 @@ story and similar articles follow. On a phone an Edit / Preview switch shows it.
 ‹ Previous Next ›") walks to the article before or after it, and J and K press it. Someone who can't write articles
 sees the reader preview, with the article's actions, as the whole page.
 
+**Keys for writing** (listed under `?`): G then B, U, W, R, I or T goes to the bottom line, bullets, why it matters,
+recommended actions, indicators or tags; N goes to the next gap the readiness checks find, round to the first, or says
+"No gaps"; Ctrl+Shift+Enter saves and marks the article ready, then opens the next one on today's brief. The letters
+pause while you type in a field and when single-letter shortcuts are off.
+
 **It saves itself.** After a two-second pause in typing the form is saved, and the save bar says "Saving…", then
 "Saved at 3:17 PM", or why it didn't. It never saves over a colleague's newer version (it stops and says who), and it
 never saves a change to a TLP marking, or anything that would put a part into the company-wide edition: those wait
