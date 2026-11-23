@@ -73,6 +73,12 @@
 .tide-triage-member { padding-left: calc(.6rem + var(--tide-space-6)); background: var(--tide-surface-2); }
 .tide-triage-member.selected { background: var(--tide-accent-soft); }
 .tide-triage-member .tide-triage-excerpt { font-size: var(--tide-text-sm); margin: var(--tide-space-1) 0 0; }
+/* P4: several items chosen. Each line still to decide has a checkbox before its title (the mouse's Space); a chosen
+   line that isn't the selected one is tinted, so what's chosen reads down the list. The selection bar takes the
+   decision bar's place and look; it names how many in the accent's text colour. */
+.tide-triage-pick { flex: none; margin: .2em 0 0; }
+.tide-triage-picked:not(.selected) { background: var(--tide-surface-2); border-left-color: var(--tide-accent); }
+.tide-triage-selbar .tide-triage-why strong { color: var(--tide-accent-text); }
 .tide-reliability { font-family: var(--tide-font-data); font-weight: var(--tide-weight-bold); font-size: .74rem; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-sm); padding: 0 .3rem; }
 .tide-story-timeline { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--tide-border); }
 .tide-story-timeline li { position: relative; padding: .2rem 0 .9rem 1.1rem; }

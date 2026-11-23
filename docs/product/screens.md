@@ -285,6 +285,12 @@ the page stops it after the source it's on.
 ![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
 
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
+- **Several at once.** Space on a row, Shift+J or Shift+K, or a row's checkbox chooses items; the selection bar takes
+  the decision bar's place: how many, Promote as one (2 to 8, any feeds), Shortlist, Dismiss…, Attach to… and Clear.
+  Only the page shown is chosen, and the bar says so.
+- **KEV round-up.** On the KEV filter, *Promote the N KEV items since the last brief as one…* opens a promote form for
+  up to 20 of them; the draft gets a bullet per KEV-listed CVE from TIDE's CVE records and "Patch the KEV additions we
+  run" as its recommended action.
 
 ### What triage already knows
 
