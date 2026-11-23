@@ -1,0 +1,18 @@
+{
+  "Actions.Board": 12263,
+  "Actions.List(Closed)": 9255,
+  "Actions.List(Mine)": 7479,
+  "Actions.List(Open)": 12261,
+  "Brief.Candidates": 87060,
+  "Reports(month)": 15159,
+  "Search(CVE)": 262484,
+  "Search(indicator)": 555068,
+  "Search(text)": 234709,
+  "Trends(24 months)": 14467,
+  "Trends(6 months)": 14947,
+  "Triage.Inbox(Dismissed)": 179806,
+  "Triage.Inbox(Duplicate)": 141533,
+  "Triage.Inbox(New)": 147360,
+  "Triage.Inbox(Promoted)": 179533,
+  "Triage.Inbox(Shortlisted)": 141480
+}
