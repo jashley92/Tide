@@ -1,0 +1,206 @@
+@* The Actions list's selection bar: once rows are chosen (a row's checkbox, Space, Shift+J or Shift+K), it says how
+   many and acts on them together, in place of each row's Take it and Status menu. Take, Assign to…, Move to, Set due
+   date, Hand off to team…, and for sweeps and hunts Record no hits and close. ActionService.ManyAsync makes each change
+   as it's made to one action alone (who may, the rules, a history line each), and refuses one that changed since the
+   list was read; the rest go ahead, and the toast says which didn't and why. What a change needs is asked once for all
+   (the person, the reason a move cancels them, the date, the team and why). The choice is this page's: turning the
+   page or changing the filters clears it, and the bar says so. *@
+@inject ActionService ActionSvc
+@inject TeamService TeamSvc
+@inject ToastService Toasts
+
+<div class="tide-selbar" role="region" aria-label="Chosen actions">
+    <span class="tide-selbar-count" role="status"><strong>@Picked.Count selected</strong> <span class="tide-muted">on this page</span></span>
+    <div class="tide-selbar-actions">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="many-take" disabled="@_busy" @onclick="Take">Take</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="many-assign" disabled="@_busy" @onclick="AskAssign">Assign to…</button>
+        <MenuButton Label="Move to" ButtonClass="btn btn-outline-secondary btn-sm" MenuLabel="Move the chosen actions to" Disabled="_busy" Items="MoveItems" />
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="many-due" disabled="@_busy" @onclick="AskDue">Set due date</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="many-handoff" disabled="@_busy" @onclick="AskHandOff">Hand off to team…</button>
+        @if (Picked.Any(r => ActionGuide.IsHunt(r.Kind)))
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="many-nohits" disabled="@_busy" @onclick="AskNoHits"
+                    title="Close each sweep or hunt Done, as no hits: each needs a query on record that was run and found nothing">Record no hits and close</button>
+        }
+        <button type="button" class="btn btn-link btn-sm" id="many-clear" disabled="@_busy" @onclick="() => OnClear.InvokeAsync()">Clear <kbd class="tide-kbd">Esc</kbd></button>
+    </div>
+    <p class="tide-selbar-note small tide-muted mb-0">Only this page's actions are chosen: turning the page or changing the filters clears the choice.</p>
+    @if (_last is { Refused.Count: > 0 } last)
+    {
+        <p class="tide-selbar-result small mb-0" role="status">@last.Text.</p>
+    }
+</div>
+
+<ConfirmDialog @ref="_dialog" Form="true" ConfirmDisabled="@(!Ready)">
+    @switch (_asking)
+    {
+        case ManyKind.Assign:
+            <label class="tide-field-label" for="many-assignee">Give them to</label>
+            <select id="many-assignee" class="form-select form-select-sm" @bind="_assignee">
+                <option value="">Nobody</option>
+                @foreach (var p in _people)
+                {
+                    <option value="@p.UserId">@p.DisplayName</option>
+                }
+            </select>
+            <div class="form-text">Members of the chosen actions' teams. Each goes to them only where they're on its team.</div>
+            break;
+        case ManyKind.Move:
+            <label class="tide-field-label" for="many-reason">Why</label>
+            <textarea id="many-reason" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@MaxNote"
+                      @bind="_reason" @bind:event="oninput"></textarea>
+            <div class="form-text">Kept in each one's history.</div>
+            break;
+        case ManyKind.SetDue:
+            <label class="tide-field-label" for="many-due-date">Due</label>
+            <input id="many-due-date" type="date" class="form-control form-control-sm tide-maxw-sm" @bind="_due" />
+            break;
+        case ManyKind.HandOff:
+            <label class="tide-field-label" for="many-team">Hand them to</label>
+            <select id="many-team" class="form-select form-select-sm mb-2" @bind="_team">
+                <option value="">Choose a team…</option>
+                @foreach (var t in Teams.Where(t => !t.IsRetired))
+                {
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </select>
+            <label class="tide-field-label" for="many-handoff-why">Why</label>
+            <textarea id="many-handoff-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxHandoffReason"
+                      @bind="_reason" @bind:event="oninput"></textarea>
+            <div class="form-text">Kept in each one's history and shown on it. The team is told, as it is of a hand-off.</div>
+            break;
+    }
+</ConfirmDialog>
+
+@code {
+    /// <summary>The rows chosen, on the page shown.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ActionRow> Picked { get; set; } = [];
+
+    /// <summary>The teams, for Hand off to team….</summary>
+    [Parameter] public IReadOnlyList<Team> Teams { get; set; } = [];
+
+    /// <summary>A change was made (to some, or none): the page reads the list again, and keeps the refused ones chosen.</summary>
+    [Parameter] public EventCallback<ManyResult> OnDone { get; set; }
+
+    /// <summary>Clear (Esc).</summary>
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    /// <summary>The longest note a closing move keeps (ActionService.ApplyStatus).</summary>
+    public const int MaxNote = 2000;
+
+    private ConfirmDialog _dialog = default!;
+    private ManyKind? _asking;
+    private string? _assignee, _reason;
+    private Guid? _team;
+    private DateOnly? _due;
+    private IReadOnlyList<TeamMember> _people = [];
+    private bool _busy;
+    private ManyResult? _last;
+
+    /// <summary>What the last change came to (a test reads it).</summary>
+    internal ManyResult? Last => _last;
+
+    /// <summary>Whether it's asking now, and about what (a test reads it).</summary>
+    internal ManyKind? Asking => _asking;
+
+    /// <summary>The reason as typed (a test types it here).</summary>
+    internal string? Reason { get => _reason; set => _reason = value; }
+
+    // What the dialog needs before it goes ahead.
+    private bool Ready => _asking switch
+    {
+        ManyKind.Move => !string.IsNullOrWhiteSpace(_reason),
+        ManyKind.SetDue => _due is not null,
+        ManyKind.HandOff => _team is not null && !string.IsNullOrWhiteSpace(_reason),
+        _ => true,
+    };
+
+    // Move to: the open statuses, and the two ways of closing without saying what came of it. Done says what came of each,
+    // so it's done one at a time (or, for sweeps and hunts, Record no hits and close).
+    private IReadOnlyList<MenuButton.Item> MoveItems =>
+        [.. ActionItem.StatusOrder.Where(s => s != ActionStatus.Done)
+            .Select(s => new MenuButton.Item(ActionService.StatusName(s), Run: EventCallback.Factory.Create(this, () => Move(s))))];
+
+    internal Task Take() => Run(ManyOp.Take());
+
+    /// <summary>Move to <paramref name="to"/>: a move that cancels them, or says they don't apply, asks why once for all.</summary>
+    internal async Task Move(ActionStatus to)
+    {
+        if (!ManyOp.AsksWhy(to))
+        {
+            await Run(ManyOp.MoveTo(to));
+            return;
+        }
+        _reason = null;
+        var status = ActionService.StatusName(to);
+        if (await Ask(ManyKind.Move, $"Move {Ui.Plural(Picked.Count, "action")} to {status}", "Say once why: each one's history keeps it.", $"Move to {status}"))
+            await Run(ManyOp.MoveTo(to, _reason));
+    }
+
+    internal async Task AskAssign()
+    {
+        // Who each may be given to: the members of their teams who can hold an action, as the action page offers.
+        var teams = Picked.Select(r => r.TeamId).ToHashSet();
+        try
+        {
+            _people = [.. (await TeamSvc.ListAsync(holdersOnly: true)).Where(t => teams.Contains(t.Id)).SelectMany(t => t.Members)
+                .DistinctBy(m => m.UserId).OrderBy(m => m.DisplayName, StringComparer.CurrentCultureIgnoreCase)];
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        _assignee = null;
+        if (await Ask(ManyKind.Assign, $"Assign {Ui.Plural(Picked.Count, "action")}", null, "Assign"))
+            await Run(ManyOp.AssignTo(string.IsNullOrEmpty(_assignee) ? null : _assignee));
+    }
+
+    internal async Task AskDue()
+    {
+        _due = null;
+        if (await Ask(ManyKind.SetDue, $"Set when {Ui.Plural(Picked.Count, "action")} {(Picked.Count == 1 ? "is" : "are")} due", "Whoever holds each keeps it.", "Set due date")
+            && _due is { } due)
+            await Run(ManyOp.DueOn(due));
+    }
+
+    internal async Task AskHandOff()
+    {
+        (_team, _reason) = (null, null);
+        if (await Ask(ManyKind.HandOff, $"Hand off {Ui.Plural(Picked.Count, "action")}", null, "Hand off") && _team is { } team)
+            await Run(ManyOp.HandTo(team, _reason ?? ""));
+    }
+
+    internal async Task AskNoHits()
+    {
+        var hunts = Picked.Count(r => ActionGuide.IsHunt(r.Kind));
+        if (await Ask(null, $"Close {Ui.Plural(hunts, "sweep or hunt", "sweeps or hunts")} as no hits",
+                "Each closes Done (No hits) only when its queries on record were all run and found nothing; any other is left as it is, and named.",
+                "Record no hits and close"))
+            await Run(ManyOp.NoHits());
+    }
+
+    private async Task<bool> Ask(ManyKind? kind, string title, string? message, string label)
+    {
+        _asking = kind;
+        try { return await _dialog.Ask(title, message, label, danger: false); }
+        finally { _asking = null; }
+    }
+
+    // Makes the change to each chosen action, from the copy of it the list read, and says how it went.
+    private async Task Run(ManyOp op)
+    {
+        if (_busy || Picked.Count == 0) return;
+        _busy = true;
+        try
+        {
+            var rows = Picked;
+            _last = await ActionSvc.ManyAsync([.. rows.Select(r => r.Id)], op, rows.ToDictionary(r => r.Id, r => r.EditVersion));
+            if (_last.Refused.Count == 0) Toasts.Show(_last.Text + ".");
+            else Toasts.Error(_last.Text + ".");
+            await OnDone.InvokeAsync(_last);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

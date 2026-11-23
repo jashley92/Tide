@@ -29,7 +29,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-savedview { display: inline-flex; align-items: center; }
 .tide-savedview > .tide-chip { margin: 0; white-space: nowrap; text-decoration: none; }
 .tide-savedview > .tide-chip:hover { border-color: var(--tide-accent); }
-.tide-savedview-menu { border: 0; background: none; padding: .1rem .2rem; color: var(--tide-text-muted); border-radius: var(--tide-radius-pill); line-height: 1; font-size: .8rem; }
+.tide-savedview-menu { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; border: 0; background: none; padding: .1rem .2rem;
+    color: var(--tide-text-muted); border-radius: var(--tide-radius-pill); line-height: 1; font-size: .8rem; }
 .tide-savedview-menu:hover, .tide-savedview-menu[aria-expanded="true"] { color: var(--tide-text); background: var(--tide-surface-2); }
 .tide-savedview-menu:focus-visible, .tide-savedview > .tide-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .tide-filter-item { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .55rem; border: 0; border-radius: var(--tide-radius-md);
@@ -430,4 +431,13 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-present-action.is-beside .tide-status-opt:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
     .tide-present-action.is-beside .tide-status-opt:last-child:nth-child(3n + 2) { grid-column: span 2; }
 }
-
+/* The Actions list's checkboxes, for choosing several rows (beside each title, in its cell, so the table is no wider),
+   and the selection bar over the list that acts on those chosen
+   (ActionSelectionBar): how many, then what can be done to them, wrapping on a narrow window; what came of the last
+   change under it while some it refused stay chosen. */
+.tide-row-pick { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--tide-space-2); align-items: start; }
+.tide-row-pick > .form-check-input { margin: .2em 0 0; }
+.tide-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3);
+    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); background: var(--tide-accent-soft); }
+.tide-selbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); }
+.tide-selbar-note, .tide-selbar-result { flex: 1 0 100%; }

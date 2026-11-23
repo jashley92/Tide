@@ -20,13 +20,25 @@ public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string PresentedB
 public sealed record Reopening(int Carried, DateOnly? CarriedTo, string? Blocked = null);
 
 /// <summary>An article that could go on a brief: recent, and not on it yet. <see cref="LastBriefed"/> is the latest
-/// other brief it's on, if any (on a past day that can be a later one).</summary>
+/// other brief it's on, if any (on a past day that can be a later one). <see cref="WriterId"/> is who is writing it now
+/// (ADR 0031: the author until it's handed on), <see cref="EditedAtUtc"/> when it was last saved, or made.</summary>
 public sealed record BriefCandidate(Guid Id, string Title, Classification Classification, Priority? Priority, TlpLevel Tlp,
-    ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "")
+    ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, DateOnly? LastBriefed, string AuthorId = "",
+    string WriterId = "", string WriterName = "", DateTimeOffset? EditedAtUtc = null, DateTimeOffset? WriterSinceUtc = null,
+    string? HandoffNote = null)
 {
     /// <summary>Whether it's still to be briefed: Draft or Ready, as an article carried over from an earlier brief's "not
     /// discussed" stays. "Add article (N ready, M drafts)" counts these; a presented one is shown only on request.</summary>
     public bool Available => Status is ArticleStatus.Draft or ArticleStatus.Ready;
+
+    /// <summary>Already in the running order of the brief it's offered for: Today's <i>Drafts in progress</i> lists these
+    /// too, marked, so the presenter sees every unfinished draft in one place.</summary>
+    public bool OnBrief { get; init; }
+
+    /// <summary>An article on the brief, as a candidate: what the drafts card lists for one in the running order.</summary>
+    public static BriefCandidate OnTheBrief(Article a) =>
+        new(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName, a.CreatedAtUtc, null, a.AuthorId,
+            a.CurrentWriterId, a.CurrentWriterName, a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote) { OnBrief = true };
 }
 
 /// <summary>An article on a brief, in its place in the running order: what the article page's stepper walks.</summary>
@@ -160,7 +172,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             .Select(a => new
             {
                 Row = new BriefCandidate(a.Id, a.Title, a.Classification, a.Priority, a.Tlp, a.Status, a.AuthorName,
-                    a.CreatedAtUtc, null, a.AuthorId),
+                    a.CreatedAtUtc, null, a.AuthorId, a.WriterId ?? a.AuthorId, a.WriterName ?? a.AuthorName,
+                    a.ModifiedAtUtc ?? a.CreatedAtUtc, a.WriterSinceUtc, a.HandoffNote),
                 // Both start from the article's own brief items (indexed by article), not from the briefs.
                 LastBriefed = db.BriefItems.Where(i => i.ArticleId == a.Id)
                     .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => (DateOnly?)b.BriefDate).Max(),
@@ -576,6 +589,16 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         if (!MeetingAccess.SeatedFor(user, _meetings, brief.Id)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         return await BriefEditions.ActionsAsync(db, brief, ct);
+    }
+
+    /// <summary>The articles the brief's meeting carried to a later brief, each with that brief's day, for its recap.</summary>
+    public async Task<IReadOnlyList<(Guid ArticleId, DateOnly To)>> CarriedAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        return (await db.BriefItems.AsNoTracking().Where(i => i.CarriedFromBriefId == briefId)
+                .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate }).ToListAsync(ct))
+            .Select(x => (x.ArticleId, x.BriefDate)).ToList();
     }
 
     private static async Task<Brief> Editable(IAppDbContext db, Guid briefId, CancellationToken ct)

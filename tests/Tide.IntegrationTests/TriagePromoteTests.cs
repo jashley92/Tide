@@ -51,7 +51,7 @@ public class TriagePromoteTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("id=\"promote-priority\"").And.Contain("<option value=\"P3\" selected")
             .And.Contain("<option value=\"Amber\" selected").And.Contain("From the source: TLP:AMBER")
             .And.Contain("type=\"submit\" class=\"btn btn-primary btn-sm\"").And.Contain("Promote and write")
-            .And.Contain(">Cancel</button>").And.Contain("Enter promotes, Esc cancels");
+            .And.Contain(">Cancel</button>").And.Contain("Enter writes it, Shift+Enter keeps triaging, Esc cancels");
         html.Should().NotContain("Shortlist <span class=\"tide-kbd\">S</span>", "the form takes the action buttons' place");
 
         await r.Click(t => t.OnTriageKey("dismiss"));

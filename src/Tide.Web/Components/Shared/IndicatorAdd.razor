@@ -13,7 +13,7 @@
         </select>
     </div>
     <div class="col-md-6">
-        <input class="form-control form-control-sm" maxlength="2000" placeholder="@(Cves ? "Add an indicator or CVE (defanged is fine)" : "Add an indicator (defanged is fine)")" aria-label="New indicator"
+        <input id="@InputId" class="form-control form-control-sm" maxlength="2000" placeholder="@(Cves ? "Add an indicator or CVE (defanged is fine)" : "Add an indicator (defanged is fine)")" aria-label="New indicator"
                disabled="@Disabled" @bind="_newValue" @bind:event="oninput" @bind:after="GuessType" @onkeydown="NewIndicatorKey" />
     </div>
     <div class="col-md-3">
@@ -71,6 +71,9 @@
 
     /// <summary>Takes what's to be added; true when it was, and the box is cleared.</summary>
     [Parameter, EditorRequired] public Func<Addition, Task<bool>> Adding { get; set; } = default!;
+
+    /// <summary>The id of the box a new indicator is typed into, for a key to take you there (the editor's G I).</summary>
+    [Parameter] public string? InputId { get; set; }
 
     /// <summary>Holds the add buttons back while the parent's step runs.</summary>
     [Parameter] public bool Disabled { get; set; }

@@ -31,7 +31,8 @@
             aria-label="Menu"><span class="bi bi-list" aria-hidden="true"></span></button>
 </div>
 
-<nav aria-label="Main" id="tide-nav-links">
+@* MainLayout's <nav class="sidebar"> is the landmark, so the brand and the buttons above are in it too. *@
+<div class="tide-side-links" id="tide-nav-links">
     <ul class="tide-nav">
         @* Every page this person may open, under small group labels, the daily ones first. NavPages says
            who sees each, and the command palette reads it too. A label is text, not a control: every link is shown.
@@ -50,7 +51,7 @@
             </li>
         }
     </ul>
-</nav>
+</div>
 
 @code {
     private int _newItems;
@@ -61,10 +62,12 @@
     protected override async Task OnInitializedAsync()
     {
         Nav.LocationChanged += OnLocationChanged;
-        // A poll or a pull (the system's changes to triage, this page's own Pull all among them) brings new items: the
-        // Triage count is read again, as Triage's New tab is.
+        // A poll or a pull (the system's changes to triage) brings new items, and this person's own triage on the page
+        // beside it (a dismissal, a promote that stays on the inbox, an undo) takes them away: either way the Triage
+        // count is read again, as Triage's New tab is. The menu listens under an origin of its own, as LiveChanges skips
+        // its origin's changes and these are its own circuit's.
         if (CurrentUser.Has(Permission.WriteArticles))
-            _polled = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Triage && c.ActorId == "system", InvokeAsync, async _ =>
+            _polled = new LiveChanges(Feed, new ChangeOrigin(), c => c.Topic == ChangeFeed.Triage && (c.ActorId == "system" || c.Origin == Origin.Id), InvokeAsync, async _ =>
             {
                 await LoadCountsAsync();
                 StateHasChanged();

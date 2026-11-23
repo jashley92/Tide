@@ -53,6 +53,37 @@ public class ReviewTests : IDisposable
     }
 
     [Fact]
+    public async Task AHandedOnArticle_IsReviewedByAnyoneButItsWriter_AndTheWriterTakesTheAuthorsPart()
+    {
+        await People();
+        const string Ada = "S-1-5-21-ADA";
+        await using (var ctx = _db.Context())
+        {
+            ctx.Users.Add(new AppUser { Sid = Ada, DisplayName = "Ada", RolesCsv = "Admin" });
+            await ctx.SaveChangesAsync();
+        }
+        var article = await Article();
+        await using (var ctx = _db.Context())
+        {
+            var a = ctx.Articles.Single(x => x.Id == article);
+            (a.WriterId, a.WriterName) = (Sam, "Sam");   // handed to Sam (ADR 0031)
+            await ctx.SaveChangesAsync();
+        }
+
+        As(Ada, "Ada");
+        (await Reviews().ReviewersAsync(article)).Select(r => r.Name).Should().Equal(["Test Analyst"],
+            "the author who handed it on may review it; Sam, who is writing it, and Ada, asking, may not");
+        await FluentActions.Invoking(() => Reviews().AskAsync(article, Sam, null)).Should().ThrowAsync<ArgumentException>();
+        var review = await Reviews().AskAsync(article, Author, null);
+
+        As(Author, "Test Analyst");
+        (await Reviews().AskedOfMeAsync()).Single().ArticleId.Should().Be(article);
+        As(Sam, "Sam");
+        await Reviews().WithdrawAsync(review);   // the writer takes back a request someone else made, as the author did
+        (await Reviews().ForArticleAsync(article)).Review.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AnAdmin_CanBeAskedToReview_AndReviews_ButAnActionOwnerCant()
     {
         await People();
@@ -470,6 +501,85 @@ public class ReviewPageTests(TideApp app) : IClassFixture<TideApp>
         (await review.Html()).Should().Contain("Review: review-page story").And.Contain("No review requested.");
         await using var access = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Admin.AccessAdmin>(app, "/admin/access");
         (await access.Html()).Should().Contain("Review before send").And.Contain("Required for threats");
+    }
+
+    // The editor shows the review as one line in its head ("Review: <state>" and what to do next) and History as a button
+    // at the end of the save bar, rather than a Review card above the form and a History card above the bar.
+    [Fact]
+    public async Task TheEditor_DrawsTheReviewLine_AndTheHistoryButton_NotTheCards()
+    {
+        Guid article;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            article = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync("review-line story", "Vendor", null);
+
+        var html = await app.CreateClient().GetStringAsync($"/articles/{article}");
+
+        var head = html[html.IndexOf("class=\"tide-page-head", StringComparison.Ordinal)..html.IndexOf("class=\"tide-editor\"", StringComparison.Ordinal)];
+        head.Should().Contain("class=\"tide-review-line\"").And.Contain("Review:").And.Contain("not asked (")
+            .And.Contain("aria-controls=\"review-panel\"").And.Contain("data-guide=\"ask-review\"").And.Contain("Ask for a review");
+        html.Should().NotContain("tide-review-card").And.NotContain("who changed what, and when", "History is the save bar's button now");
+
+        var bar = html[html.IndexOf("class=\"tide-sticky-save", StringComparison.Ordinal)..];
+        var history = bar.IndexOf("tide-history-link", StringComparison.Ordinal);
+        history.Should().BePositive().And.BeLessThan(bar.IndexOf("</div>", StringComparison.Ordinal), "History is in the bar, last");
+        bar[history..].Should().Contain("aria-expanded=\"false\"");
+        bar[bar.IndexOf("</div>", StringComparison.Ordinal)..].Should().Contain("tide-history-compact", "the list opens below the bar, not in it");
+    }
+
+    // Each state reads as one line: waiting with Take the request back, then asked for changes with the open comments,
+    // Resolve and asking again in the panel the line's button opens.
+    [Fact]
+    public async Task TheReviewLine_SaysWhereItStands_AndItsPanelHoldsTheCommentsAndAsking()
+    {
+        const string SamId = "dev:review-line-sam";
+        var sam = new ComponentHarness.SignIn(SamId, "Sam Line", "Analyst");
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            db.Users.Add(new AppUser { Sid = SamId, DisplayName = "Sam Line", RolesCsv = "Analyst" });
+            await db.SaveChangesAsync();
+        }
+        Guid article, review;
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            article = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync("review-line states", "Vendor", null);
+            review = await scope.ServiceProvider.GetRequiredService<ReviewService>().AskAsync(article, SamId, "Check the TLP");
+        }
+
+        async Task<ComponentHarness.Rendered<Tide.Web.Components.Shared.ReviewCard>> Card()
+        {
+            Article a;
+            await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+                a = (await scope.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(article))!;
+            return await ComponentHarness.RenderAsync<Tide.Web.Components.Shared.ReviewCard>(app, $"/articles/{article}", new() { ["Article"] = a, ["CanWrite"] = true });
+        }
+
+        await using (var waiting = await Card())
+        {
+            var html = await waiting.Html();
+            html.Should().Contain("data-review=\"asked\"").And.Contain("waiting for Sam Line").And.Contain("Take the request back")
+                .And.Contain("Open the review").And.NotContain("review-panel", "there's nothing to ask or read yet");
+        }
+
+        await using (var scope = ComponentHarness.SignedIn(app, sam))
+        {
+            var reviews = scope.ServiceProvider.GetRequiredService<ReviewService>();
+            await reviews.CommentAsync(review, "bluf", null, "Say who is affected.");
+            var read = ReviewService.ContentVersion((await scope.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(article))!);
+            await reviews.DecideAsync(review, false, [], read);
+        }
+
+        await using var changes = await Card();
+        var closed = await changes.Html();
+        closed.Should().Contain("data-review=\"changes\"").And.Contain("Sam Line asked for changes (1 open)")
+            .And.Contain("Comments and ask again").And.Contain("aria-expanded=\"false\"").And.NotContain("Take the request back");
+        closed.Should().MatchRegex("id=\"review-panel\"[^>]*hidden", "the panel is closed until asked for");
+
+        await changes.Click(c => { c.Toggle(); return Task.CompletedTask; });
+        var open = await changes.Html();
+        open.Should().Contain("aria-expanded=\"true\"").And.Contain("Say who is affected.").And.Contain("Resolve</button>").And.Contain("Send the request")
+            .And.Contain("id=\"review-who\"").And.Contain($"maxlength=\"{ArticleReview.MaxNote}\"");
+        open.Should().NotMatchRegex("id=\"review-panel\"[^>]*hidden");
     }
 
     private static object? Field(object o, string name) => o.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(o);

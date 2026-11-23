@@ -907,7 +907,7 @@ Briefed Apr 1 2026-04-01; Briefed Mar 31, again Apr 1 2026-03-31; Written 00:10 
             new MetricValue { DefinitionId = metric.Id, BriefDate = new(2026, 9, 1), Value = 4, EnteredById = "x", EnteredByName = "X" },
             new MetricValue { DefinitionId = metric.Id, BriefDate = new(2026, 9, 2), Value = 12, EnteredById = "x", EnteredByName = "X" });
 
-        var reports = new ReportService(Trends(), _db.Metrics(), _db.Clock);
+        var reports = new ReportService(Trends(), _db.Metrics(), _db.Clock, _db, _db.User);
         var r = await reports.BuildAsync(Sep);
 
         r.Headlines.Single(h => h.Name == "Threats").Current.Should().Be(1);
@@ -929,7 +929,7 @@ Briefed Apr 1 2026-04-01; Briefed Mar 31, again Apr 1 2026-03-31; Written 00:10 
 
         var csv = ReportService.ToCsv(report);
 
-        csv.Should().Contain("Topics,'\t=1+1,2,1\n").And.Contain("Topics,'=cmd,3,4\n");
+        csv.Should().Contain("Topics,'\t=1+1,2,1,TLP:AMBER,\n").And.Contain("Topics,'=cmd,3,4,TLP:AMBER,\n");
     }
 
     [Fact]
@@ -942,7 +942,7 @@ Briefed Apr 1 2026-04-01; Briefed Mar 31, again Apr 1 2026-03-31; Written 00:10 
             new MetricValue { DefinitionId = metric.Id, BriefDate = _db.Clock.Today, Value = 12, EnteredById = "x", EnteredByName = "X" });
 
         var later = Period.Of(PeriodKind.Week, _db.Clock.Today.AddDays(14));
-        var r = await new ReportService(Trends(), _db.Metrics(), _db.Clock).BuildAsync(later);
+        var r = await new ReportService(Trends(), _db.Metrics(), _db.Clock, _db, _db.User).BuildAsync(later);
 
         var m = r.Metrics.Single();
         (m.Latest, m.Average, m.Highest, m.Missing, m.Breaches).Should().Be(((decimal?)null, (decimal?)null, (decimal?)null, 0, 0));

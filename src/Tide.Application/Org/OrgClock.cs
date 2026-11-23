@@ -12,6 +12,10 @@ public sealed class OrgOptions
     /// <summary>When the daily brief is presented, in <see cref="TimeZone"/> ("10:30").</summary>
     public string MeetingTime { get; set; } = "10:30";
 
+    /// <summary>How long the brief's meeting is meant to take, in minutes: present mode's footer shows the time gone
+    /// against it ("4 of 30 min").</summary>
+    public int MeetingMinutes { get; set; } = DefaultMeetingMinutes;
+
     /// <summary>The name shown in the header and on slides ("Cyber Threat Intelligence").</summary>
     public string TeamName { get; set; } = "Cyber Threat Intelligence";
 
@@ -43,6 +47,9 @@ public sealed class OrgOptions
 
     /// <summary>The least, default and most days for <see cref="GuideLinkDays"/>.</summary>
     public const int MinGuideLinkDays = 1, DefaultGuideLinkDays = 5, MaxGuideLinkDays = 90;
+
+    /// <summary>The least, default and most minutes for <see cref="MeetingMinutes"/>.</summary>
+    public const int MinMeetingMinutes = 5, DefaultMeetingMinutes = 30, MaxMeetingMinutes = 180;
 }
 
 /// <summary>
@@ -54,7 +61,7 @@ public sealed class OrgOptions
 public sealed class OrgClock : IDisposable
 {
     private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide, Actions.StaleLimits Stale,
-        int GuideLinkDays, TimeOnly SentBy, TimeOnly PostedBy);
+        int GuideLinkDays, TimeOnly SentBy, TimeOnly PostedBy, int MeetingMinutes);
 
     private readonly TimeProvider _time;
     private readonly IDisposable? _listening;
@@ -102,6 +109,9 @@ public sealed class OrgClock : IDisposable
     /// <summary>Days a page's "Show me around" link shows (<see cref="OrgOptions.GuideLinkDays"/>).</summary>
     public int GuideLinkDays => _now.GuideLinkDays;
 
+    /// <summary>How long the brief's meeting is meant to take (<see cref="OrgOptions.MeetingMinutes"/>).</summary>
+    public int MeetingMinutes => _now.MeetingMinutes;
+
     /// <summary>When a day's brief is due sent, and its SharePoint copy due posted (<see cref="OrgOptions.SentBy"/>,
     /// <see cref="OrgOptions.PostedBy"/>), as times of day in <see cref="Zone"/>.</summary>
     public TimeOnly SentBy => _now.SentBy;
@@ -119,7 +129,8 @@ public sealed class OrgClock : IDisposable
         string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide,
         new(StaleDays(o.StaleOpenDays), StaleDays(o.StaleBlockedDays)),
         Math.Clamp(o.GuideLinkDays, OrgOptions.MinGuideLinkDays, OrgOptions.MaxGuideLinkDays),
-        TimeOr(o.SentBy, OrgOptions.DefaultSentBy), TimeOr(o.PostedBy, OrgOptions.DefaultPostedBy));
+        TimeOr(o.SentBy, OrgOptions.DefaultSentBy), TimeOr(o.PostedBy, OrgOptions.DefaultPostedBy),
+        Math.Clamp(o.MeetingMinutes, OrgOptions.MinMeetingMinutes, OrgOptions.MaxMeetingMinutes));
 
     // A server's time as given, or the default when it isn't one (a saved one always is: the page checks it).
     private static TimeOnly TimeOr(string? value, TimeOnly fallback) =>

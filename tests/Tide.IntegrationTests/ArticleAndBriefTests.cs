@@ -357,7 +357,7 @@ public class BriefServiceTests : IDisposable
 
         var brief = await briefs.GetOrStartAsync(Monday);
         (await briefs.CandidatesAsync(brief.Id)).Select(c => c.Id).Should().BeEquivalentTo([first, second]);
-        (await briefs.CandidatesAsync(brief.Id)).Should().OnlyContain(c => c.AuthorId == _db.User.UserId, "the picker's \"Only mine\" filters on it");
+        (await briefs.CandidatesAsync(brief.Id)).Should().OnlyContain(c => c.WriterId == _db.User.UserId, "the picker's \"Only mine\" filters on the writer, who starts as the author");
         await briefs.AddArticleAsync(brief.Id, first);
         await briefs.AddArticleAsync(brief.Id, second);
         await briefs.AddArticleAsync(brief.Id, second);   // twice is once

@@ -5,45 +5,32 @@
 
 @* Who changed what and when on an article or a brief, newest first, read from the audit log (HistoryService). Closed
    until asked for, and loaded then, 50 at a time. Analysts only: the log holds every field at every marking, so it's
-   never drawn for an action owner or a Reader (the service refuses them too). *@
+   never drawn for an action owner or a Reader (the service refuses them too).
+   A brief's is a card with its own button. The editor's is Compact: its "History" button is at the end of the save bar
+   (Toggle), and the list opens here, below the bar rather than in it. *@
 @if (CurrentUser.Has(Permission.WriteArticles))
 {
-    <section class="tide-card tide-section" aria-labelledby="@(_id)-head">
-        <h2 id="@(_id)-head" class="mb-0">
-            <button type="button" class="tide-disclosure" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_id)-body" @onclick="Toggle">
-                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
-                History
-                <span class="tide-disclosure-sum">who changed what, and when</span>
-            </button>
-        </h2>
-        <div id="@(_id)-body" class="tide-disclosure-body" hidden="@(!_open)">
-            @if (_entries is null)
-            {
-                <p class="small tide-muted mb-0">@(_error ?? "Loading…")</p>
-            }
-            else if (_entries.Count == 0)
-            {
-                <p class="small tide-muted mb-0">No changes recorded yet.</p>
-            }
-            else
-            {
-                <ul class="tide-timeline tide-history">
-                    @foreach (var e in _entries)
-                    {
-                        <li @key="e.Id">
-                            <span class="tide-muted">@Ui.When(Clock, e.AtUtc) &middot; @e.UserName</span>
-                            <div class="fw-semibold">@e.What</div>
-                            <ChangeLines Changes="e.Changes" Changed="@(e.What == "Changed")" />
-                        </li>
-                    }
-                </ul>
-                @if (_hasMore)
-                {
-                    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="More">Show @HistoryService.PageSize older</button>
-                }
-            }
-        </div>
-    </section>
+    if (Compact)
+    {
+        <section id="@BodyId" class="tide-card tide-section tide-history-compact" aria-label="History" hidden="@(!_open)">
+            @Body
+        </section>
+    }
+    else
+    {
+        <section class="tide-card tide-section" aria-labelledby="@(_id)-head">
+            <h2 id="@(_id)-head" class="mb-0">
+                <button type="button" class="tide-disclosure" aria-expanded="@(_open ? "true" : "false")" aria-controls="@BodyId" @onclick="Toggle">
+                    <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+                    History
+                    <span class="tide-disclosure-sum">who changed what, and when</span>
+                </button>
+            </h2>
+            <div id="@BodyId" class="tide-disclosure-body" hidden="@(!_open)">
+                @Body
+            </div>
+        </section>
+    }
 }
 
 @code {
@@ -56,12 +43,52 @@
     /// <summary>Changes when the thing is saved, so an open history reloads with the new change at the top.</summary>
     [Parameter] public Guid Version { get; set; }
 
+    /// <summary>Just the list, opened by a button elsewhere (<see cref="Toggle"/>; the editor's save bar has it), rather
+    /// than a card with its own heading and button.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    /// <summary>The list's id, for that button's aria-controls.</summary>
+    [Parameter] public string? ListId { get; set; }
+
+    /// <summary>Whether the list is open.</summary>
+    public bool IsOpen => _open;
+
     private readonly string _id = Ui.NewId("hist");
+    private string BodyId => ListId ?? _id + "-body";
     private bool _open, _busy, _hasMore;
     private int _next;
     private List<HistoryEntry>? _entries;
     private string? _error;
     private Guid _loadedFor, _loadedVersion;
+
+    private RenderFragment Body => __builder =>
+    {
+        if (_entries is null)
+        {
+            <p class="small tide-muted mb-0">@(_error ?? "Loading…")</p>
+        }
+        else if (_entries.Count == 0)
+        {
+            <p class="small tide-muted mb-0">No changes recorded yet.</p>
+        }
+        else
+        {
+            <ul class="tide-timeline tide-history">
+                @foreach (var e in _entries)
+                {
+                    <li @key="e.Id">
+                        <span class="tide-muted">@Ui.When(Clock, e.AtUtc) &middot; @e.UserName</span>
+                        <div class="fw-semibold">@e.What</div>
+                        <ChangeLines Changes="e.Changes" Changed="@(e.What == "Changed")" />
+                    </li>
+                }
+            </ul>
+            @if (_hasMore)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="More">Show @HistoryService.PageSize older</button>
+            }
+        }
+    };
 
     protected override async Task OnParametersSetAsync()
     {

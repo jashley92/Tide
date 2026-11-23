@@ -111,11 +111,15 @@ The brief takes the page:
 - **the opening note**, read-only until **Edit**, marked *Not updated* while it's carried from the last brief, with
   *Still current*;
 - **My actions**;
-- **Not on a brief yet**: what hasn't been on any brief, Ready articles (anyone's) first, then your own drafts, newest
-  first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
+- **Not on a brief yet**: the Ready articles (anyone's) that haven't been on any brief, newest first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
   rest are under *Add article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't
   write the brief sees **Recently presented** there instead: only articles that have been presented, so never a
   draft's title; every marking, as the brief beside it names them;
+- **Drafts in progress**, under it, for whoever writes the brief: the drafts of the last 14 days not on today's brief,
+  and the drafts in today's running order, marked *On today's brief*; yours first, then the team's, each most recently edited first, with who is writing it now and when it was last
+  edited, and its marking. A draft handed to you says *Handed to you*, with the note it came with, and a toast says so
+  while Today is open. Up to 6, then *All N drafts* on the Articles list. Someone who doesn't write the brief never
+  sees it;
 - **today's numbers**, each box with the value it's compared with.
 
 Beside the brief, in the context rail:
@@ -130,7 +134,11 @@ Beside the brief, in the context rail:
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
 - **reviews asked of you**;
-- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place;
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place; then,
+  once the meeting has ended, the **meeting recap**: the actions raised (by team and holder, as the wrap-up slide has
+  them), the notes (open or done), the articles carried to a later brief, and who attended. On your own notes,
+  *Raise as action* (the note as the title, on its article; then "Raised as A-14", which opens it) and *Mark done*
+  (*Reopen* once done). Before the meeting ends, the notes and their buttons are on the meeting card;
 - **coming up** for you on the rotation, and the brief's **history**.
 
 An action owner's Today leads with the queue. A colleague's save never replaces what you're typing in the meeting form
@@ -260,8 +268,22 @@ the page stops it after the source it's on.
 
 ### Promoting
 
-- **Inline promote form.** Clicking a title opens the promote form in place. It suggests a priority from the
+- **Inline promote form.** Clicking a title, or P, opens the promote form in place. It suggests a priority from the
   item's CVE data and says why ("Suggested P1: on KEV, CVSS 10").
+- **Two ways out.** **Promote and write** (Enter, the main button) makes the draft and opens it in the editor, as it
+  always has. **Promote and keep triaging** (Shift+Enter) makes the draft and stays on the inbox: the row leaves the
+  tab, the next one is selected, and a toast says what was made, with **Write it** (opens the draft) and **Undo**
+  (Alt+Z too). Undo deletes the draft and puts the item back where it was, Shortlisted included, as long as nobody has
+  worked on the draft since (an edit, a tag, a link, an AI draft, a review, an action: anything), and removes a brief
+  the promote started if nothing else has touched it. So four promotes cost no page changes, and the drafts wait on the Promoted tab and the
+  Articles list.
+- **Add to today's brief.** A tick in the form puts the draft on the end of today's running order (the next working
+  day's on a weekend), starting the brief if there's none, with either button. It's off until the analyst ticks it, and
+  then it stays as they left it. If the brief has been sent, the draft is still made and the toast says why it isn't on
+  the brief.
+
+![The promote form, with Promote and write, Promote and keep triaging and the brief tick](../screenshots/triage-promote-stay.png)
+
 - **Back to the same row.** After *Promote and write*, Back returns to the same row.
 
 ### What triage already knows
@@ -308,7 +330,8 @@ The triage keys are listed under [keyboard shortcuts](../architecture/frontend.m
 **Route:** `/articles` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
 Every article, as a list that filters as you type, sorts by any heading, and pages rather than cutting off. The
-filter bar has **Draft** and **Ready** as pills; **+ Filter** holds the rest: status, ATT&CK tactic, technique (with
+filter bar has **Mine**, **Draft** and **Ready** as pills (Mine goes with either); **+ Filter** holds the rest: by
+(you, or anyone who has written an article, with how many), status, ATT&CK tactic, technique (with
 or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
 dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
 "Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
@@ -333,6 +356,11 @@ carries it, with what that edition leaves out marked for the writer; keys 1 and 
 story and similar articles follow. On a phone an Edit / Preview switch shows it. On today's brief, a stepper ("4 of 5
 ‹ Previous Next ›") walks to the article before or after it, and J and K press it. Someone who can't write articles
 sees the reader preview, with the article's actions, as the whole page.
+
+**Keys for writing** (listed under `?`): G then B, U, W, R, I or T goes to the bottom line, bullets, why it matters,
+recommended actions, indicators or tags; N goes to the next gap the readiness checks find, round to the first, or says
+"No gaps"; Ctrl+Shift+Enter saves and marks the article ready, then opens the next one on today's brief. The letters
+pause while you type in a field and when single-letter shortcuts are off.
 
 **It saves itself.** After a two-second pause in typing the form is saved, and the save bar says "Saving…", then
 "Saved at 3:17 PM", or why it didn't. It never saves over a colleague's newer version (it stops and says who), and it
@@ -415,7 +443,7 @@ story.
 **TLP everywhere.** The article, each bullet, each screenshot and "why it matters to us" carry a TLP 2.0 marking,
 and a part never counts lower than its article. On a threat, "why it matters to us" starts at AMBER, since it usually
 names our own systems. Analysts can see each article's and each brief's **History**: who changed which field, and
-when. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
+when. In the editor it's the **History** button at the end of the save bar, and the list opens below the bar. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
 
 Leaving the editor with unsaved changes asks whether to save, discard or stay. So does leaving other pages with
 something typed and not saved: an Email template's wording, copies or archive address; an action's comment, an edit
@@ -436,7 +464,12 @@ week's presenter is suggested). The reviewer gets it on Today and opens the revi
   the bottom line stands alone;
 - *Approve* or *Ask for changes*.
 
-The author sees the comments in the editor and resolves them. A change to what the article says after approval (a
+In the editor the review is one line at the end of the byline under the title: *Review: not asked (optional)* (or
+*required*, when an administrator's rule covers the article), *waiting for Sam*, *Sam asked for changes (2 open)*,
+*approved by Sam* or *changed since Sam approved it*, with when, and the one thing to do next. *Ask for a review*,
+*Ask again* or *Comments* opens a small panel under the row with the reviewer, a note and *Send the request*, and the
+comments, each with *Resolve*; *Open the review* (or *Review it*, for the reviewer) goes to the review page, and *Take the
+request back* withdraws a request still waiting. The author resolves the comments there. A change to what the article says after approval (a
 screenshot added or removed included) puts the review out of date; marking it Ready doesn't, and an approval is
 refused if the article changed while the reviewer was reading it. The Send dialog lists the brief's articles that
 haven't been reviewed. Review is optional; an administrator can require it (Access & distribution) for anything AMBER
@@ -455,7 +488,8 @@ that fits its kind.
   by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
   team) opens All open instead. Each tab (Mine, My teams, All open, Overdue, Recently closed) shows its count, and
   they stay on one row, scrolling sideways in themselves when they don't fit.
-- **The board.** Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
+- **The board.** Its header is New action alone: Workload, Board rules and External teams head the list (and its
+  rail's About this page). Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
   scrolls on its own. A card shows its title, the article's short title, a KEV flag, its checklist progress, a sweep's
   hunt state and how long it has been in its lane. A card is dragged to another lane, or moved from its Move menu by
   keyboard. Under the lanes a strip counts what closed as Done, Cancelled and Not applicable in the last 7 days. A card
@@ -471,6 +505,12 @@ each way in the last 7 days, a drop target for each.*
   (the checklist, the hunt state, or "No update for 3 days"), the due date and the status. **Take it** is on the rows
   you may take, and the status is a menu for whoever may move the action. When Mine is empty but your teams have work
   nobody holds, one line says so, with *Show them*.
+- **Several at once (the list).** Each row has a checkbox, and `Space` on a row, `Shift+J` and `Shift+K` choose rows
+  too. While any are chosen, a bar over the list says how many (on this page: another page or other filters clear the
+  choice) and offers Take, Assign to…, Move to, Set due date, Hand off to team…, Record no hits and close (for sweeps and
+  hunts whose queries were run) and Clear (`Esc`). Each action is changed as it would be on its own, with its own line
+  in its history; any that changed since the list was read, or that the person may not change, are left as they are,
+  named in the toast and still chosen. A move that cancels them, or says they don't apply, asks why once for all.
 - **The selected action.** On the list a row is selected, and on the board a card (the address keeps it: `?row=`,
   `?card=`). `J` and `K` or the arrows move it (on the board `←` and `→` go between lanes), `T` takes it and `Enter`
   opens it. The context rail shows it: its Next line; Take it, Assign… (list) or Move to (board), and Open; its kind,
@@ -633,7 +673,20 @@ One box at the top of every page.
   its CVSS, EPSS and KEV status, the sweeps of the articles' indicators, **Seen with**, the articles about it (each
   once) and what was done, with the same rail.
 
-**Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). `?`
+**Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). It also
+does things: the page you're on offers its commands first, each only for someone allowed to use the button it stands
+for, and each runs that button, asking what the button would ask:
+
+| Where | Commands |
+|---|---|
+| Anywhere | *New article*, *New action*, *Present today's brief*; type "take A-12" or "hand A-12" for *Take A-12* or *Hand A-12 to…*, which open the action and run its own *Take it* or *Hand off* |
+| An article | *Add this article to today's brief* (until it's on it), *Save and mark ready* (a draft) |
+| Today | *Mark the brief ready*, while that's the brief's next step (with its *Ready anyway?* question when there's something to look at first) |
+| Triage | *Promote the selected item*, which opens the row's promote form, as `P` does |
+| An action | *Take A-12* (asking first when a colleague has it), *Hand A-12 to…* (the hand-off dialog), *Copy A-12's hunt query* |
+
+Typing `>` first lists only the commands. Each says how it went where its button does (a toast, mostly). In present
+mode `Ctrl+K` goes to places only: no commands over the slides. `?`
 lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
 `Ctrl+Enter` (`⌘ Enter` on a Mac) does its form's main action: posts the comment or note, saves the template or
 settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.
@@ -669,8 +722,10 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
 
 *Actions that need review: why each is there, its last update, and one thing to do.*
 
-The footer names each slide ("1 · Edge VPN"). Screenshots zoom, articles are ticked off as discussed, and the editions
-can be switched on screen. A slide too tall for the screen shrinks a little, then scrolls inside itself.
+The footer names each slide ("1 · Edge VPN") and shows the time gone against the meeting's length ("4 of 30 min"; the
+length is an Organization setting, 30 minutes by default). Screenshots zoom, articles are ticked off as discussed, and
+the editions can be switched on screen with the Team / Company-wide switch in the top bar (held while a meeting runs). A
+slide too tall for the screen shrinks a little, then scrolls inside itself.
 
 **Start the meeting** and it's live for the team: a banner on every page, and a Join button on the brief. Invite
 everyone on the team edition in (or paste the copied link). People who join follow the presenter's slide, can browse
@@ -680,7 +735,8 @@ hands in order. People raise and lower their own hand there, and take notes (eac
 screen as they began it). Attendance is recorded as people join. Anyone in the meeting on the team edition can add
 people who were there, from the box under *Attended* on the wrap-up (the presenter, from their rail), and take off
 whoever they added; the presenter can take off anyone, joined or added. With no meeting live, before or after it, whoever can
-present corrects the list from the rail. The brief's page keeps who attended and the notes, by article.
+present corrects the list from the rail. The brief's page keeps who attended and the notes, by article, and once the
+meeting has ended shows its recap, where each person raises their own notes as actions or marks them done.
 
 
 **The presenter's rail** holds what only the presenter does, and is never on a follower's screen. From 1500px wide
@@ -734,6 +790,10 @@ with screenshots embedded rather than fetched.
 
 - **Before it goes.** You can preview the email exactly as it will go and send a test copy to yourself. The send
   itself needs an explicit confirmation that shows the marking and every recipient.
+- **Both at once.** When both editions are due and neither has gone, **Send both** shows the two plans side by side
+  (each edition's marking, subject and recipient count) with a tick for each, and one button, "Send both (12 + 840)",
+  that waits for both ticks. They still go as two sends, the team edition first; if it doesn't go, the company-wide
+  edition waits, and the dialog says which went. Re-sends and corrections use each edition's own confirmation.
 - **A record of what went.** Each send freezes a copy of what went, HTML and images, and logs who sent it to whom.
 
 ![Team edition email](../screenshots/email-team.png)
@@ -938,6 +998,10 @@ Month on month or quarter on quarter, Trends counts:
 - the follow-up work: actions raised by kind and team, done on time or late, outcomes, hunts and their hits, and
   what was open or overdue when each period ended.
 
+**What moved**, at the top, names up to five lines that changed most against the period before (and the same quarter a
+year back): "T1190 Exploit Public-Facing Application: 12, up from 4", "Phishing tag: none this month, after 5". Small
+numbers are left out (a line needs 3 on one side). Each opens to what it counted.
+
 Chart any line, as many as you like. Click any number to see the articles or actions behind it, or open them as a
 pre-filtered Articles list, ready for the monthly or quarterly threat trends report. Opened from a tactic or
 technique, each article in the list shows the techniques it was counted for. The table, or a period's articles with
@@ -954,7 +1018,8 @@ Reports has three tabs, each keeping its own address: **Monthly report** (`/repo
 is in the sidebar for analysts, administrators and managers.
 
 The report a team lead owes for a week, a month or a quarter (the last full month by default), from the same counts
-as Trends and Metrics, marked AMBER:
+as Trends and Metrics, marked AMBER. Above it, Trends' **What moved** strip names the lines that changed most, each
+opening Trends on what it counted; the strip isn't printed or in the CSV.
 
 1. **Headlines**, against the period before;
 2. **Outcomes**, against the period before;
@@ -962,8 +1027,12 @@ as Trends and Metrics, marked AMBER:
 4. **Topics and techniques** briefed most;
 5. **Actions raised by team**.
 
-Each section has room for the lead's assessment, which prints with the report but isn't saved; moving to another period
-starts with empty boxes. *Print* prints the report without the app's frame. A period still under way is marked "(to date)".
+Each section has the team's assessment, saved with its period (**Save assessment**) with a TLP of its own and an
+"Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
+who reads the report reads them. A colleague's save shows live, and one to a box with unsaved changes is said above it
+rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
+included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
+way is marked "(to date)".
 
 ## Team commitments
 
@@ -1250,7 +1319,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | People & distribution | Access & distribution | `/admin/access` | Which AD groups get which role, the editions' TLP ceilings, and who each edition goes to. |
 | People & distribution | Email templates | `/admin/email-templates` | The wording of the reminder and rotation emails, with a preview and a test send. |
 | People & distribution | API access | `/admin/api` | Tokens for the SOC's other tools to call TIDE's API, and webhooks TIDE posts to. |
-| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage. |
+| System | Diagnostics | `/admin/system` | Whether TIDE is healthy: the database, background jobs, email and storage; and how fast it has been (Performance: requests, page events and database commands over the last hour and day, the slow ones, open pages, memory). |
 | System | Server configuration | `/admin/system/server` | What's set on the server, read-only. Secrets show only whether they're set. |
 | System | Setting sources | `/admin/system/sources` | Where each setting's value comes from: the app, the installer's file, or the environment. |
 | System | Configuration bundle | `/admin/system/bundle` | This server's install answers file, and the app's setup to copy to another server. |

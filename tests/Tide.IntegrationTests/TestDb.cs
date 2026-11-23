@@ -503,7 +503,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 
-    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live, Clock);
+    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live, Clock, Actions());
 
     public RotationService Rotation(OrgClock? clock = null) =>
         new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates, Boundary);
@@ -606,6 +606,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public Tide.Application.Search.SearchService Search() => new(this, User);
 
     public Tide.Application.Trends.TrendsService Trends() => new(this, User, Clock);
+
+    public Tide.Application.Trends.ReportService Reports() => new(Trends(), Metrics(), Clock, this, User);
     public Tide.Application.Trends.TeamScorecardService TeamScorecard(OrgClock? clock = null) => new(this, User, clock ?? Clock);
     public Tide.Application.Trends.BriefTimelinessService Timeliness(OrgClock? clock = null) =>
         new(this, User, clock ?? Clock, Rotation(clock), Settings(), new StaticOptionsMonitor<DistributionOptions>(DistributionOptions));

@@ -23,12 +23,19 @@ public sealed record FilterChip(string Label, ArticleFilter Without, string Key)
 /// The dates are when an article counts on the trends report: the day it was first briefed, else (never briefed, and
 /// not a draft) the day it was written. A tag or technique of <see cref="None"/> means one with none. A technique counts
 /// its sub-techniques only with <see cref="WithSubtechniques"/>, as the report rolls them up; with a tactic too, it's
-/// the technique under that tactic (one technique on the article does both).
+/// the technique under that tactic (one technique on the article does both). <see cref="Author"/> of <see cref="Me"/>
+/// is Mine: the signed-in person's, as ArticleService decides whose an article is.
 /// </para>
 /// </summary>
 public sealed record ArticleFilter
 {
     public const string None = "none";
+
+    /// <summary>The <see cref="Author"/> that means whoever is signed in: Mine. A link of it opens each person's own.</summary>
+    public const string Me = "me";
+
+    /// <summary>The longest person's id the address keeps (a user id's column is as long).</summary>
+    public const int MaxAuthor = 256;
 
     public string? Search { get; init; }
     public ArticleStatus? Status { get; init; }
@@ -49,8 +56,11 @@ public sealed record ArticleFilter
 
     public bool WithSubtechniques { get; init; }
 
+    /// <summary>Whose: <see cref="Me"/> (Mine), or a person's user id (By …). An id nobody has lists nothing.</summary>
+    public string? Author { get; init; }
+
     /// <summary>Whether anything other than the words narrows the list.</summary>
-    public bool Narrowed => Status is not null || From is not null || To is not null || Assessment is not null || Tag is not null
+    public bool Narrowed => Author is not null || Status is not null || From is not null || To is not null || Assessment is not null || Tag is not null
                             || Category is not null || Tactic is not null || Technique is not null;
 
     /// <summary>Whether a tactic or a technique (other than <see cref="None"/>) narrows the list: each article is listed for some of its techniques.</summary>
@@ -83,6 +93,7 @@ public sealed record ArticleFilter
     public IReadOnlyDictionary<string, object?> ToQuery() => new Dictionary<string, object?>
     {
         ["q"] = string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
+        ["author"] = Author,
         ["status"] = Status?.ToString().ToLowerInvariant(),
         ["from"] = From is { } f ? Day(f) : null,
         ["to"] = To is { } t ? Day(t) : null,
@@ -110,6 +121,10 @@ public sealed record ArticleFilter
         return new ArticleFilter
         {
             Search = Text(get("q")),
+            // "me" in any case is Mine; an id as it's written (ids compare exactly), too long to be one left out.
+            Author = Text(get("author")) is { } author && author.Length <= MaxAuthor
+                ? author.Equals(Me, StringComparison.OrdinalIgnoreCase) ? Me : author
+                : null,
             Status = Enum.TryParse<ArticleStatus>(get("status"), ignoreCase: true, out var s) && Enum.IsDefined(s) ? s : null,
             From = Date(get("from")),
             To = Date(get("to")),
@@ -181,11 +196,14 @@ public sealed record ArticleFilter
 
     /// <summary>
     /// A chip for each filter other than the words (the filter box shows those), in the order the filter row has them.
-    /// <paramref name="tagName"/> and <paramref name="categoryName"/> name a key, else the key is shown.
+    /// <paramref name="tagName"/> and <paramref name="categoryName"/> name a key, and <paramref name="authorName"/> a
+    /// person's id, else the key is shown.
     /// </summary>
-    public IReadOnlyList<FilterChip> Chips(Func<string, string?> tagName, Func<string, string?> categoryName)
+    public IReadOnlyList<FilterChip> Chips(Func<string, string?> tagName, Func<string, string?> categoryName, Func<string, string?>? authorName = null)
     {
         var chips = new List<FilterChip>();
+        if (Author is { } author)
+            chips.Add(new(author == Me ? "Mine" : "By: " + (authorName?.Invoke(author) ?? author), this with { Author = null }, "author"));
         if (DatesLabel is { } dates) chips.Add(new(dates, this with { From = null, To = null }, "from"));
         if (Status is { } s) chips.Add(new("Status: " + s, this with { Status = null }, "status"));
         if (Assessment is { } a) chips.Add(new("Assessment: " + AssessmentName(a), this with { Assessment = null }, "assess"));

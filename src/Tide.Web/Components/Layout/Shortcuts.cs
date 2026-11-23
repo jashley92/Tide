@@ -28,7 +28,8 @@ public static class Shortcuts
     public static readonly ShortcutGroup Palette = new("In the Go to box",
     [
         new(["↓", "↑"], "Next and previous result"),
-        new(["Enter"], "Open the result"),
+        new(["Enter"], "Open the result, or run the command"),
+        new([">"], "Typed first: list only the commands (Save and mark ready, Take A-12)"),
         new(["Esc"], "Close, back where you were"),
     ]);
 
@@ -36,9 +37,10 @@ public static class Shortcuts
     public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
 
     /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
-    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
-    /// someone who <paramref name="canTake"/> actions on.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true)
+    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T, and its keys for
+    /// choosing several actions, are listed only for someone who <paramref name="canTake"/> actions on, and the article
+    /// editor's keys only for someone who <paramref name="canEdit"/> articles.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true, bool canEdit = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -64,13 +66,14 @@ public static class Shortcuts
             // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
                 var group = !relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board : ActionsList;
-                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey)] });
+                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey && !SelectKeys.Contains(k))] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
                 break;
             case "articles" when segments.Length > 1:
                 groups.Add(ArticlePage);
+                if (canEdit) groups.Add(ArticleEditing);
                 groups.Add(Screenshots);
                 break;
             case "trends" or "metrics":
@@ -91,7 +94,9 @@ public static class Shortcuts
         new(["S"], "Shortlist", Letter: true),
         new(["X"], "Dismiss", Letter: true),
         new(["D"], "Mark as a duplicate of the similar article", Letter: true),
-        new(["P"], "Promote to an article", Letter: true),
+        new(["P"], "Promote to an article (opens the promote form)", Letter: true),
+        new(["Enter"], "In the promote form: promote and write the article"),
+        new(["Shift Enter"], "In the promote form: promote and keep triaging (the next item is selected)"),
         new(["Esc"], "Close the promote form or the reading pane"),
         new(["O"], "Open the source in a new tab", Letter: true),
         new(["V"], "Read it here (fetched from its site only when nothing is kept); pressed again, close the reading pane", Letter: true),
@@ -139,6 +144,16 @@ public static class Shortcuts
 
     private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
 
+    // Choosing several actions on the list to act on together (the selection bar), on this page of it.
+    private static readonly IReadOnlyList<Shortcut> SelectKeys =
+    [
+        new(["Space"], "On a row: choose the action, or leave it out, to act on several at once"),
+        new(["Shift J"], "Choose the next action too", Letter: true),
+        new(["Shift K"], "Choose the previous action too", Letter: true),
+        new(["Shift ↓", "Shift ↑"], "Choose the next or previous action too"),
+        new(["Esc"], "Clear the actions chosen"),
+    ];
+
     private static readonly ShortcutGroup ActionsList = new("Actions list",
     [
         new(["↓", "↑"], "Next and previous action"),
@@ -147,6 +162,7 @@ public static class Shortcuts
         TakeKey,
         new(["Enter"], "Open the selected action"),
         new(["Tab", "Enter"], "A row's status opens the statuses it can move to"),
+        .. SelectKeys,
     ]);
 
     private static readonly ShortcutGroup Board = new("Actions board",
@@ -169,6 +185,19 @@ public static class Shortcuts
         new(["K"], "On today's brief: the previous article", Letter: true),
         new(["Enter"], "In the new-indicator box: add the indicator"),
         new(["Esc"], "Close the ATT&CK picker; Tab stays inside it while it's open"),
+    ]);
+
+    // The editor's own keys (editor.js), for someone who can edit articles: the fields are theirs.
+    private static readonly ShortcutGroup ArticleEditing = new("Editing the article",
+    [
+        new(["G then B"], "Go to the bottom line", Letter: true),
+        new(["G then U"], "Go to the bullets", Letter: true),
+        new(["G then W"], "Go to why it matters", Letter: true),
+        new(["G then R"], "Go to the recommended actions", Letter: true),
+        new(["G then I"], "Go to the indicators", Letter: true),
+        new(["G then T"], "Go to the tags", Letter: true),
+        new(["N"], "The next gap the readiness checks find, round to the first", Letter: true),
+        new(["Ctrl Shift Enter", "⌘ Shift Enter"], "Save and mark ready, then the next article on today's brief"),
     ]);
 
     private static readonly ShortcutGroup Screenshots = new("A screenshot shown full size",

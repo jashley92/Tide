@@ -191,6 +191,7 @@ The `appsettings.json` comment names every role, and the seed accepts each.
 |---|---|---|---|---|
 | `Org:TimeZone` | `America/New_York` | An IANA id this server knows. The page offers the server's zones. | In app: **Organization settings** | At once |
 | `Org:MeetingTime` | `10:30` | 24-hour `HH:mm`. | In app: **Organization settings** | At once |
+| `Org:MeetingMinutes` | `30` | Whole number, 5 to 180. How long the brief's meeting is meant to take: present mode's footer shows the time gone against it ("4 of 30 min"). | In app: **Organization settings** | At once |
 | `Org:TeamName` | `Cyber Threat Intelligence` | 1 to 80 characters. Shown in the header, on slides and in emails. | In app: **Organization settings** | At once |
 | `Org:ActionBesideSlide` | `false` | `true`: an action opened in a meeting shows beside the slide, which narrows for it, rather than over it. Turn it on after a rehearsal in the meeting room. | In app: **Organization settings** | At once |
 | `Org:StaleOpenDays` | `2` | Whole number, 1 to 30. Business days an Open or In progress action may go without an update by a person before the meeting's **Actions that need review** slide lists it. | In app: **Organization settings** | At once |
@@ -372,6 +373,15 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 
 `Program.cs` silences `Microsoft.Extensions.Diagnostics.HealthChecks`; `/health` logs one warning a minute instead.
 
+### Diagnostics
+
+| Key | Default | Notes |
+|---|---|---|
+| `Diagnostics:SlowSqlMs` | `500` | A database command that takes longer is logged as a Warning, event id 7201, with its SQL text and never its parameters' values, and listed under Performance on Diagnostics. `0` turns the warning off; every command is still timed. Read at start. |
+| `Diagnostics:SlowEventMs` | `1000` | An event on an open page (a click, typing it handles) that takes longer is logged as a Warning, event id 7202, with the page's path (no query string, ids as `{id}`). `0` turns it off. Read when a page opens. |
+
+Timings stay in the server's memory for a day and are cleared by a restart; nothing is sent anywhere.
+
 ## Settings kept only in the database
 
 These rows live in the `Settings` table with no server default.
@@ -394,7 +404,8 @@ app's own bookkeeping.
 **Administration › Email templates** rewords the notification emails: due soon (`due-soon`), overdue (`overdue`), the
 weekly team digest (`digest`), the personal digest (`personal-digest`), outreach follow-up (`outreach-follow-up`), a hand-off
 (`handoff`), the external team reminder (`external-reminder`), the escalation contact's copy (`escalation`), brief not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
-declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`).
+declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`), and an article
+handed to you (`article-handoff`).
 `EmailTemplateCatalog` holds each one's default subject, heading and Markdown body and the `{{Name}}` values it fills.
 
 - A changed part is a `Settings` row `EmailTemplate:{id}:{Subject|Heading|Body}`. A part saved as its default has no

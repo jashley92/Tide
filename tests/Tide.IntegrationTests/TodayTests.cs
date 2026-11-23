@@ -588,6 +588,7 @@ public class SendFromTodayRealSendTests(TideApp app) : IClassFixture<TideApp>
             // The edition that went offers neither its tick nor its send: the company-wide edition is the one ready to go,
             // and sending the team edition again is a choice of its own, under its warning.
             TeamSend(html).Should().NotContain("id=\"send-team-checked\"").And.NotContain("Send to 2</button>").And.Contain("id=\"send-team-again\"");
+            html.Should().NotContain("id=\"send-both-h\"", "Send both is for when neither edition has gone");
             html.Should().Contain("id=\"send-public-checked\"").And.NotContain("id=\"send-public-again\"");
             await r.Click(d => { d.SendAgain(Edition.Team); return Task.CompletedTask; });
             var again = TeamSend(await r.Html());

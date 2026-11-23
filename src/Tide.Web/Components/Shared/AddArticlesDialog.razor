@@ -93,7 +93,8 @@
     private string AddLabel => PickedCount switch { 0 => "Add", 1 => "Add 1 article", var n => $"Add {n} articles" };
 
     // Still to be briefed first (in the service's order), then, when asked for, the ones already presented.
-    private IEnumerable<BriefCandidate> Shown => (_onlyMine ? Candidates.Where(c => c.AuthorId == CurrentUser.UserId) : Candidates)
+    // "Mine" is what I'm writing now: a draft handed to me is mine, one I handed on isn't (ADR 0031).
+    private IEnumerable<BriefCandidate> Shown => (_onlyMine ? Candidates.Where(c => c.WriterId == CurrentUser.UserId) : Candidates)
         .Where(c => _showBriefed || c.Available).OrderBy(c => c.Available ? 0 : 1);
 
     /// <summary>Triage's Shortlisted tab at this item, with its promote form open.</summary>
