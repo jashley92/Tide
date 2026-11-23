@@ -223,6 +223,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7106 | Update check |
 | 7107 | Webhooks |
 | 7108 | Hashing stored addresses |
+| 7111 | Daily statistics |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -234,6 +235,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Update check | `UpdateCheckHostedService` | 2 minutes after start, then every `Updates:CheckIntervalHours`; re-reads the switch every 5 minutes | `Updates:CheckEnabled` |
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
 | Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
+| Daily statistics | `SystemStatsHostedService` | Every 5 minutes | Once a day: a snapshot of the tables', files' and disk's sizes (`SystemStats`) for Data & retention on Diagnostics. Every pass: reads the newest backup `Backup-Tide.ps1` recorded, and warns of a low disk (7203) or a stale backup (7205) |
 
 ### Timers and periodic work in the request path
 
@@ -293,7 +295,10 @@ page's connection and everyone's since start); and whether a newer release is ou
 | Watch | Where | Means |
 |---|---|---|
 | `/health` not `Healthy` | Your monitor | The database is down or slow, or the app isn't running. |
-| `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
+| `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing; or the data root's disk is under 10% free; or (with `Backup:StaleAfterHours` set) the newest full backup is too old. Diagnostics says which. |
+| "The data root's disk has … free", event id 7203 | Application log | Under 10% free on the disk holding `Files:RootPath`; logged once an hour while it lasts. |
+| "The newest full backup finished …", event id 7205 | Application log | Only with `Backup:StaleAfterHours` set: the nightly set hasn't run, or failed. |
+| Data & retention on Diagnostics | The page | The largest tables, files by folder, growth over 30 and 90 days, disk free, the last backups recorded, and what's pruned when. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
 | "Background job … failed", event ids 7101 to 7108 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |

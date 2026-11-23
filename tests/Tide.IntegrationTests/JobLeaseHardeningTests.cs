@@ -270,7 +270,9 @@ public class SecondProcessAlarmTests(SecondProcessApp app) : IClassFixture<Secon
     {
         var res = await app.CreateClient().GetAsync("/health/jobs");
         (await res.Content.ReadAsStringAsync()).Should().Be("Degraded");
-        var check = new JobsHealthCheck(new JobMonitor(TimeProvider.System), new AlarmLease(), TimeProvider.System);
+        await using var scope = app.Services.CreateAsyncScope();
+        var check = new JobsHealthCheck(new JobMonitor(TimeProvider.System), new AlarmLease(), TimeProvider.System,
+            scope.ServiceProvider.GetRequiredService<SystemStats>(), new BackupWatch());
         var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
         result.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
         result.Description.Should().Contain("WEB01, process 100").And.Contain("WEB02, process 200");

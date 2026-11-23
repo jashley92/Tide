@@ -199,16 +199,25 @@ public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs, TimeProvider t
 /// <summary>
 /// <c>/health/jobs</c>: whether the background jobs are working (<see cref="JobHealth"/>): Unhealthy when a job turned on
 /// is hung or overdue, Degraded when one keeps failing, Healthy otherwise, and Healthy while this process stands by under
-/// the job lease. From memory only: it asks the database nothing.
+/// the job lease. Degraded too when the data root's disk is under 10% free, or (only when <c>Backup:StaleAfterHours</c> is
+/// set) the newest full backup is older than that. From memory and the disk only: it asks the database nothing (the
+/// newest backup's time is read every few minutes by the statistics job).
 /// </summary>
-public sealed class JobsHealthCheck(JobMonitor jobs, IJobLease lease, TimeProvider time) : IHealthCheck
+public sealed class JobsHealthCheck(JobMonitor jobs, IJobLease lease, TimeProvider time, SystemStats stats, BackupWatch backups) : IHealthCheck
 {
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
     {
         var report = JobHealth.Evaluate(jobs.States, lease.Status, time.GetUtcNow());
         var why = report.StandingBy ? "Standing by: another process runs the background jobs." : string.Join(" ", report.Findings.Select(f => f.Text));
         if (report.Alarm is { } alarm) why = (alarm + " " + why).TrimEnd();
-        return Task.FromResult(report.Level switch
+        var level = report.Level;
+        // Until the newest backup has been read once, a stale backup isn't claimed.
+        foreach (var problem in new[] { stats.DiskProblem(), backups.Read ? stats.BackupProblem(backups.LastFull) : null }.OfType<string>())
+        {
+            why = (why + " " + problem).Trim();
+            if (level == JobHealthLevel.Healthy) level = JobHealthLevel.Degraded;
+        }
+        return Task.FromResult(level switch
         {
             JobHealthLevel.Healthy => HealthCheckResult.Healthy(why),
             JobHealthLevel.Degraded => HealthCheckResult.Degraded(why),

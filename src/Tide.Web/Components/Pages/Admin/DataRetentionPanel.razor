@@ -1,0 +1,120 @@
+@using Microsoft.Extensions.Options
+@using Tide.Application.Actions
+@using Tide.Application.Intake
+@using Tide.Application.Operations
+@inject SystemStats Stats
+@inject IOptionsMonitor<IntakeOptions> Intake
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+@* Read-only: how big TIDE is, how fast it grows, and what's pruned. From the daily snapshot (the statistics job). *@
+<section class="tide-card" aria-labelledby="diag-data">
+    <h2 id="diag-data"><span class="bi bi-hdd-stack" aria-hidden="true"></span> Data &amp; retention</h2>
+    @if (_report is not { } r)
+    {
+        <LoadingBlock />
+    }
+    else if (r.Latest is not { } latest)
+    {
+        <p class="small tide-muted mb-0">No snapshot yet: the statistics job takes one shortly after the app starts, then once a day.</p>
+    }
+    else
+    {
+        <p class="small tide-muted">
+            As of @Ui.When(Clock, latest.TakenAtUtc). Database @Bytes(latest.DatabaseBytes)@Growth(latest.DatabaseBytes, r.Month?.DatabaseBytes, r.Quarter?.DatabaseBytes);
+            files @Bytes(latest.FilesBytes)@Growth(latest.FilesBytes, r.Month?.FilesBytes, r.Quarter?.FilesBytes).
+            @if (latest.DiskFreeBytes is { } free && latest.DiskTotalBytes is > 0)
+            {
+                <text>The data root's disk has @Bytes(free) free of @Bytes(latest.DiskTotalBytes) (@((free * 100.0 / latest.DiskTotalBytes.Value).ToString("0.#"))%); under 10% is Degraded on /health/jobs.</text>
+            }
+        </p>
+        <div class="tide-admin-index mb-0">
+            <div>
+                <h3 class="h6" id="diag-data-tables">Largest tables</h3>
+                <table class="tide-table" aria-labelledby="diag-data-tables">
+                    <thead><tr><th scope="col">Table</th><th scope="col" class="text-end">Rows</th><th scope="col" class="text-end">Size</th><th scope="col" class="text-end">Rows, 30 days</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in r.Tables.Take(Take))
+                        {
+                            <tr>
+                                <th scope="row" class="tide-data small fw-normal">@t.Name</th>
+                                <td class="text-end">@t.Rows.ToString("N0")</td>
+                                <td class="text-end text-nowrap">@Bytes(t.Bytes)</td>
+                                <td class="text-end text-nowrap">@RowGrowth(t, _monthTables)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3 class="h6" id="diag-data-files">Files by folder</h3>
+                @if (r.Folders.Count == 0) { <p class="small tide-muted">The data root couldn't be read, or is empty.</p> }
+                else
+                {
+                    <table class="tide-table" aria-labelledby="diag-data-files">
+                        <thead><tr><th scope="col">Folder</th><th scope="col" class="text-end">Size</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in r.Folders) { <tr><th scope="row" class="tide-data small fw-normal">@f.Name</th><td class="text-end">@Bytes(f.Bytes)</td></tr> }
+                        </tbody>
+                    </table>
+                }
+                <h3 class="h6 mt-3" id="diag-data-backup">Backups</h3>
+                <p class="small mb-0">
+                    @if (r.LastFull is { } full) { <text>Last full set @Ui.When(Clock, full.FinishedAtUtc) on @full.Machine@(full.Bytes is { } b ? $", {Bytes(b)}" : ""). </text> }
+                    else { <text>None recorded: Backup-Tide.ps1 records each set here (a backup product records nothing). </text> }
+                    @if (r.LastLog is { } log) { <text>Last log backup @Ui.When(Clock, log.FinishedAtUtc).</text> }
+                </p>
+            </div>
+        </div>
+    }
+    <h3 class="h6 mt-3" id="diag-data-kept">What's kept</h3>
+    <table class="tide-kv" aria-labelledby="diag-data-kept">
+        <tbody>
+            @foreach (var (what, kept) in Retention)
+            {
+                <tr><th scope="row">@what</th><td>@kept</td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private const int Take = 12;
+    private DataReport? _report;
+    private Dictionary<string, long> _monthTables = [];
+
+    private IReadOnlyList<(string What, string Kept)> Retention =>
+    [
+        ("Feed items", $"New, dismissed and duplicate items {Intake.CurrentValue.RetentionDays} days (Intake:RetentionDays); shortlisted and promoted ones always"),
+        ("Kept article text", $"{Intake.CurrentValue.ReadingDays} days (Intake:ReadingDays)"),
+        ("Job history", $"{(int)JobRunLog.Keep.TotalDays} days"),
+        ("Reminder marks", $"Past periods, and closed actions' after {ReminderService.MarkRetentionDays} days"),
+        ("Audit log, briefs sent, actions, removed files", "Always: the record"),
+        ("Daily snapshots, backups recorded", "Always (a row a day)"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _report = await Stats.ReportAsync(Retention);
+            if (_report.Month is { } month)
+                _monthTables = (System.Text.Json.JsonSerializer.Deserialize<List<TableSize>>(month.Tables, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) ?? [])
+                    .ToDictionary(t => t.Name, t => t.Rows);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private static string Bytes(long? bytes) => bytes is { } b ? DiagnosticsAdmin.FormatBytes(b) : "—";
+
+    private static string Growth(long? now, long? month, long? quarter) =>
+        now is not { } n ? "" : (month, quarter) switch
+        {
+            ({ } m, { } q) => $" (+{DiagnosticsAdmin.FormatBytes(Math.Max(0, n - m))} in 30 days, +{DiagnosticsAdmin.FormatBytes(Math.Max(0, n - q))} in 90)",
+            ({ } m, null) => $" (+{DiagnosticsAdmin.FormatBytes(Math.Max(0, n - m))} in 30 days)",
+            _ => "",
+        };
+
+    private static string RowGrowth(TableSize t, Dictionary<string, long> month) =>
+        month.TryGetValue(t.Name, out var then) ? (t.Rows - then).ToString("+#,0;-#,0;0") : "—";
+}

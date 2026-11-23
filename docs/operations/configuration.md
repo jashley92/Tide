@@ -373,6 +373,12 @@ deployment and a key. Otherwise analysts can still copy a prompt to an approved 
 
 `Program.cs` silences `Microsoft.Extensions.Diagnostics.HealthChecks`; `/health` logs one warning a minute instead.
 
+### Backups
+
+| Key | Default | Notes |
+|---|---|---|
+| `Backup:StaleAfterHours` | not set (off) | When set, `/health/jobs` says Degraded, and the log gets a Warning (event id 7205) once an hour, while the newest successful full backup that `Backup-Tide.ps1` recorded is older than this many hours, or none is recorded. Leave it unset when a backup product, not the script, backs TIDE up: nothing is recorded then. 26 suits a nightly set. |
+
 ## Settings kept only in the database
 
 These rows live in the `Settings` table with no server default.

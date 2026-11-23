@@ -46,6 +46,9 @@ public static class DependencyInjection
         services.Configure<Api.WebhookOptions>(config.GetSection("Webhooks"));
         services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
+        services.Configure<BackupOptions>(config.GetSection("Backup"));
+        services.AddScoped<SystemStats>();
+        services.AddSingleton<BackupWatch>();
         services.AddSingleton<JobRunLog>();
         // One process runs the background jobs (the lease in the database); the others stand by.
         services.AddSingleton<BackgroundJobLease>();

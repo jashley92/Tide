@@ -91,6 +91,8 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<JobLease> JobLeases { get; }
     DbSet<JobProcess> JobProcesses { get; }
     DbSet<JobRun> JobRuns { get; }
+    DbSet<SystemStat> SystemStats { get; }
+    DbSet<BackupRun> BackupRuns { get; }
 
     /// <summary>The connection's transactions, for a claim that takes several rows or none (a group promote).</summary>
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
