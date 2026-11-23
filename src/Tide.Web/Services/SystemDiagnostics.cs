@@ -191,7 +191,7 @@ public sealed class SystemDiagnostics(
         list.Add(string.IsNullOrWhiteSpace(keys)
             ? new StorageInfo("Data Protection keys", null, false, null, null,
                 env.IsDevelopment() ? "Not set: development keeps the default key ring." : "Not set: sign-ins don't survive an app-pool recycle.")
-            : Folder("Data Protection keys", keys, probe: false, KeyCount(keys)));
+            : Folder("Data Protection keys", keys, probe: false, $"{KeyCount(keys)} {Protection()}".Trim()));
         return list;
     }
 
@@ -216,6 +216,12 @@ public sealed class SystemDiagnostics(
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { /* not shown */ }
         return new StorageInfo(label, path, exists, writable, free, note);
     }
+
+    // How new keys are protected: a certificate (readable on any server that holds it) or machine DPAPI (this one only).
+    private string Protection() =>
+        Tide.Web.Security.KeyRingCertificate.Thumbprints(config) is [var current, ..]
+            ? $"Protected with certificate {current}, readable on any server that has it."
+            : OperatingSystem.IsWindows() ? "Protected with machine DPAPI: readable on this server only." : "";
 
     private static string? KeyCount(string path)
     {
