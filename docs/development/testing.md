@@ -346,6 +346,26 @@ Without a SQL Server to hand ([a throwaway one in Docker](getting-started.md#a-t
 minute), set the `SqlServer` entries to the numbers the `sql-server` job's failure names. A new hot operation is added
 to `QueryBudgetTests.MeasureAsync` and gets its budget the same way: until it has one, the test fails naming it.
 
+## Nightly performance
+
+Tiers 2 and 3 of the performance budget (the query budget above is Tier 1, on every PR), in
+`tests/Tide.IntegrationTests/Audit/NightlyPerfTests.cs`, off unless `TIDE_PERF` is set. `.github/workflows/perf.yml`
+runs them nightly on main, by hand, or on a pull request labelled `perf`; the tables go in the run's summary.
+
+- **Timings (SQLite):** the read-only hot pages on the scale harness's data at 2×, the median of 5 warm runs each,
+  against `Golden/timing-budget.json`. Over the budget is a warning; over twice it fails (decided 2026-11-21: report,
+  then gate at 2×). Timings vary run to run (the same call by up to 1.8×), hence the room.
+- **Logical reads (SQL Server):** the same pages, the pages SQL Server read for each (`sys.dm_exec_query_stats`, after
+  clearing the plan cache), against `Golden/logical-reads.json`; more than a quarter over fails. They don't vary with the
+  machine, and they show whether a plan uses its index.
+
+To set a budget after a deliberate change (or a faster runner), run with `TIDE_UPDATE_BUDGET=1` (and `TIDE_TEST_SQL` for
+the logical reads): timings are written at 1.5× what was measured, rounded up to 10 ms; reads as measured.
+
+```bash
+TIDE_PERF=1 TIDE_UPDATE_BUDGET=1 dotnet test tests/Tide.IntegrationTests -c Release --filter "FullyQualifiedName~NightlyPerfTests"
+```
+
 ## Continuous integration
 
 Two workflows live in `.github/workflows`. Scripts they call live in `tools/ci` and `tools/upgrade-test`.

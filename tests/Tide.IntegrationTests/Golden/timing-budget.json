@@ -1,0 +1,15 @@
+{
+  "Actions.Board": 80,
+  "Actions.List(Closed)": 50,
+  "Actions.List(Open)": 90,
+  "Brief.Candidates": 150,
+  "Reports(month)": 70,
+  "Search(CVE)": 450,
+  "Search(indicator)": 910,
+  "Search(text)": 150,
+  "Trends(24 months)": 530,
+  "Trends(6 months)": 90,
+  "Triage.Inbox(Dismissed)": 380,
+  "Triage.Inbox(New)": 510,
+  "Triage.Inbox(Shortlisted)": 300
+}

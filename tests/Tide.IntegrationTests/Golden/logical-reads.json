@@ -1,0 +1,15 @@
+{
+  "Actions.Board": 12280,
+  "Actions.List(Closed)": 9272,
+  "Actions.List(Open)": 12278,
+  "Brief.Candidates": 88073,
+  "Reports(month)": 15203,
+  "Search(CVE)": 261424,
+  "Search(indicator)": 552733,
+  "Search(text)": 232055,
+  "Trends(24 months)": 14524,
+  "Trends(6 months)": 14990,
+  "Triage.Inbox(Dismissed)": 179829,
+  "Triage.Inbox(New)": 141278,
+  "Triage.Inbox(Shortlisted)": 141497
+}

@@ -320,20 +320,23 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     {
         if (Lookups.IndicatorOf(term) is not { } looked) return null;
         var (type, value, family) = looked;
+        var exact = SearchText.Literal(value);
         var matching = Lookups.Carrying(db, looked);
         var rows = await matching.OrderBy(i => i.Id).Take(MaxSightings + 1).ToListAsync(ct);
         var exactTotal = rows.Count > MaxSightings ? await matching.CountAsync(ct) : rows.Count;
 
         // The same host under another indicator: a subdomain, a URL or email address on the domain, the domain of a URL.
-        var host = IndicatorKey.HostOf(type, value);
+        var host = SearchText.HostOf(type, value);
         var related = new List<ArticleIndicator>();
         if (host is not null)
         {
             var hostTypes = new[] { IndicatorType.Domain, IndicatorType.Url, IndicatorType.EmailAddress, IndicatorType.IpAddress };
+            var near = SearchText.Contains(host);
             var seen = rows.Select(r => r.Id).ToHashSet();
-            related = (await Lookups.OnHost(db, host, hostTypes)
+            related = (await db.ArticleIndicators.AsNoTracking()
+                    .Where(i => hostTypes.Contains(i.Type) && EF.Functions.Like(i.Value, near, SearchText.Escape))
                     .OrderBy(i => i.Id).Take(MaxSightings * 3).ToListAsync(ct))
-                .Where(i => !seen.Contains(i.Id) && IndicatorKey.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
+                .Where(i => !seen.Contains(i.Id) && SearchText.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
                 .ToList();
         }
 
@@ -349,7 +352,8 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var on = sightings.Where(s => !s.Related).Select(s => s.Article).DistinctBy(a => a.Id).ToList();
 
         // An action can carry indicators of its own (one raised with no article): it's on this one too.
-        var carrying = await Lookups.ActionsCarrying(db, looked)
+        var carrying = await db.ActionIndicators.AsNoTracking()
+            .Where(i => family.Contains(i.Type) && EF.Functions.Like(i.Value, exact, SearchText.Escape))
             .Select(i => i.ActionId).Distinct().OrderBy(id => id).Take(MaxHits).ToListAsync(ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, carrying, MaxHits, ct);
         var sweeping = actions.Items

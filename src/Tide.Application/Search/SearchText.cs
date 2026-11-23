@@ -134,6 +134,20 @@ public static partial class SearchText
     public static int? ActionNumber(string term) =>
         ActionNumberRx().Match(term.Trim()) is { Success: true } m && int.TryParse(m.Groups[1].Value, out var n) ? n : null;
 
+    /// <summary>The host an indicator names (a domain, the host of a URL or email address, an IP address), lower-cased; or null.</summary>
+    public static string? HostOf(IndicatorType type, string value)
+    {
+        var v = value.Trim();
+        var host = type switch
+        {
+            IndicatorType.Domain or IndicatorType.IpAddress => v,
+            IndicatorType.EmailAddress => v.LastIndexOf('@') is var at and >= 0 ? v[(at + 1)..] : null,
+            IndicatorType.Url => Uri.TryCreate(v, UriKind.Absolute, out var uri) ? uri.Host.Trim('[', ']') : null,
+            _ => null,
+        };
+        return string.IsNullOrWhiteSpace(host) ? null : host.TrimEnd('.').ToLowerInvariant();
+    }
+
     /// <summary>Whether <paramref name="host"/> is <paramref name="target"/> or, for a name, one of its subdomains.</summary>
     public static bool SameOrUnder(string host, string target) =>
         string.Equals(host, target, StringComparison.OrdinalIgnoreCase)
