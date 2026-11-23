@@ -111,6 +111,12 @@ public class NightlyPerfTests(ITestOutputHelper output)
         var db = new TestDb(provider: provider, time: new TestClock(QueryBudgetTests.At));
         db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
         await ScaleSeed.SeedAsync(db, Factor);
+        // The search text built, as the Search index job keeps it: the steady state, not the minutes after an upgrade.
+        while (true)
+        {
+            await using var ctx = db.Context();
+            if (await Tide.Application.Search.ArticleSearchIndex.RebuildAsync(ctx, 1000) < 1000) break;
+        }
         return db;
     }
 
