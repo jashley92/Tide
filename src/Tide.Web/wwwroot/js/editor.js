@@ -17,7 +17,7 @@
 // Ctrl+Shift+Enter works from a field too (it isn't a character), but not in a menu or dialog.
 window.tideEditor = (function () {
     let ref = null, keysRef = null, gWait = 0;
-    const typing = window.tideShortcuts.typing, inMenu = window.tideShortcuts.inMenu;
+    const shortcuts = window.tideShortcuts, typing = shortcuts.typing, inMenu = shortcuts.inMenu;
 
     function onStep(e) {
         if (e.defaultPrevented) return;   // the palette took it (Ctrl+K, then typing before its box is up)
@@ -45,7 +45,6 @@ window.tideEditor = (function () {
 
     // The letters after G that name a section.
     const sections = ['b', 'u', 'w', 'r', 'i', 't'];
-    const shortcuts = window.tideShortcuts;
 
     function letGo() { clearTimeout(gWait); gWait = 0; }
 
