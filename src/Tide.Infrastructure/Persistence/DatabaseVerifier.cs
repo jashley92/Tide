@@ -41,12 +41,8 @@ public static class DatabaseVerifier
         var builder = new DbContextOptionsBuilder<AppDbContext>();
         if (provider == DependencyInjection.Sqlite) builder.UseSqlite(connectionString);
         else builder.UseSqlServer(connectionString, sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly));
-        var failed = new List<string>();
-        async Task Say(bool passed, string what)
-        {
-            if (!passed) failed.Add(what);
-            await output.WriteLineAsync($"{(passed ? "OK  " : "FAIL")} {what}");
-        }
+        var report = new Report(output);
+        var Say = report.SayAsync;
         try
         {
             await using var db = new AppDbContext(builder.Options);
@@ -84,8 +80,7 @@ public static class DatabaseVerifier
         {
             await Say(false, $"The database couldn't be checked: {ex.GetBaseException().Message}");
         }
-        await output.WriteLineAsync(failed.Count == 0 ? "This build can run on the database." : "This build can't run on the database as it is.");
-        return failed.Count == 0 ? 0 : 1;
+        return await report.EndAsync();
     }
 
     private static IEnumerable<(string Name, Func<CancellationToken, Task<int>> Read)> Pages(AppDbContext db) =>
@@ -101,4 +96,23 @@ public static class DatabaseVerifier
 
     // The rows a page read, loaded as entities (so every mapped column is read), counted.
     private static async Task<int> Rows<T>(Task<List<T>> page) => (await page).Count;
+
+    // What was checked, said as it goes, and whether all of it passed.
+    private sealed class Report(TextWriter output)
+    {
+        private readonly List<string> _failed = [];
+
+        public async Task SayAsync(bool passed, string what)
+        {
+            if (!passed) _failed.Add(what);
+            await output.WriteLineAsync($"{(passed ? "OK  " : "FAIL")} {what}");
+        }
+
+        public async Task<int> EndAsync()
+        {
+            var ok = _failed.Count == 0;
+            await output.WriteLineAsync(ok ? "This build can run on the database." : "This build can't run on the database as it is.");
+            return ok ? 0 : 1;
+        }
+    }
 }
