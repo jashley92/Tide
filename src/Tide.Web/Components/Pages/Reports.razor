@@ -60,6 +60,7 @@ else if (_report is not { } r)
 }
 else
 {
+    <TrendHighlightsStrip Highlights="@r.Highlights" Against="@r.Period.Previous.Label" Href="@(h => TrendsLink(h.Key, TrendHighlightsStrip.ViewOf(h.Key), h.At))" />
     <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
 
     <section class="tide-card" aria-labelledby="rep-headlines">
@@ -247,7 +248,7 @@ else
     private static string Num(double? v, string unit) => v is not { } n ? "—" : unit == " days" ? Words.Days(n) : Words.Num(n) + unit;
 
     // A trend line's numbers open in Trends, on the line, for this period.
-    private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
+    private string TrendsLink(string line, string view, Period? at = null) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={(at ?? _period).Key}";
 
     private RenderFragment Figures(IReadOnlyList<ReportFigure> figures, string headingId) => __builder =>
     {
