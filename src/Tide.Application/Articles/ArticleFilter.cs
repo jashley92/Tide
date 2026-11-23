@@ -24,7 +24,7 @@ public sealed record FilterChip(string Label, ArticleFilter Without, string Key)
 /// not a draft) the day it was written. A tag or technique of <see cref="None"/> means one with none. A technique counts
 /// its sub-techniques only with <see cref="WithSubtechniques"/>, as the report rolls them up; with a tactic too, it's
 /// the technique under that tactic (one technique on the article does both). <see cref="Author"/> of <see cref="Me"/>
-/// is Mine: the signed-in person's, as ArticleService decides whose an article is.
+/// is Mine: the ones the signed-in person is writing, as ArticleService decides whose an article is.
 /// </para>
 /// </summary>
 public sealed record ArticleFilter
@@ -56,7 +56,10 @@ public sealed record ArticleFilter
 
     public bool WithSubtechniques { get; init; }
 
-    /// <summary>Whose: <see cref="Me"/> (Mine), or a person's user id (By …). An id nobody has lists nothing.</summary>
+    /// <summary>
+    /// Whose: <see cref="Me"/> (Mine: what the signed-in person is writing now), or a person's user id (By …: what they
+    /// started, as its author). An id nobody has lists nothing.
+    /// </summary>
     public string? Author { get; init; }
 
     /// <summary>Whether anything other than the words narrows the list.</summary>

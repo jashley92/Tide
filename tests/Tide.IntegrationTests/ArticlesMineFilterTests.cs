@@ -6,7 +6,8 @@ using Tide.Domain.Enums;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// The article list's Mine and By …: Mine is the signed-in person's articles, By … one person's by id, either goes with
+/// The article list's Mine and By …: Mine is what the signed-in person is writing now (ADR 0031), By … what one person
+/// authored, by id; either goes with
 /// the other filters, and an id nobody has lists nothing rather than everything.
 /// </summary>
 public class ArticlesMineFilterTests : IDisposable
@@ -43,7 +44,7 @@ public class ArticlesMineFilterTests : IDisposable
         (await Titles(new ArticleFilter { Author = ArticleFilter.Me })).Should().Equal("My own KEV round-up");
         (await Titles(new ArticleFilter { Author = Dana })).Should().Equal("Dana's phishing wave", "Dana's ransomware note");
         (await Titles(new ArticleFilter { Author = Sam })).Should().Equal("Sam's VPN zero-day");
-        (await Titles(new ArticleFilter { Author = _db.User.UserId })).Should().Equal(["My own KEV round-up"], "By … the person's own id is Mine");
+        (await Titles(new ArticleFilter { Author = _db.User.UserId })).Should().Equal(["My own KEV round-up"], "By … the person's own id: nothing handed on yet");
 
         // Mine follows whoever is signed in: the same link lists each person's own.
         _db.User.UserId = Dana;
@@ -78,6 +79,33 @@ public class ArticlesMineFilterTests : IDisposable
         (await Titles(new ArticleFilter { Author = ArticleFilter.Me, Status = ArticleStatus.Draft })).Should().Equal("My draft");
         (await Titles(new ArticleFilter { Author = ArticleFilter.Me, Search = "ready" })).Should().Equal("My ready one");
         (await Titles(new ArticleFilter { Author = Dana, Status = ArticleStatus.Ready })).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AHandedOnDraft_IsUnderTheNewWritersMine_NotTheAuthors_AndByStillCreditsTheAuthor()
+    {
+        var handed = await _db.Articles().CreateAsync("Mine to hand on");
+        await _db.Articles().CreateAsync("Mine to keep");
+        await WrittenBy(Dana, "Dana Analyst", "Dana's own");
+        await using (var db = _db.Context())
+            await db.Articles.Where(a => a.Id == handed).ExecuteUpdateAsync(x => x.SetProperty(a => a.WriterId, Dana).SetProperty(a => a.WriterName, "Dana Analyst"));
+
+        (await Titles(new ArticleFilter { Author = ArticleFilter.Me })).Should().Equal(["Mine to keep"], "a draft handed on is Dana's to finish");
+        (await Titles(new ArticleFilter { Author = _db.User.UserId })).Should().Equal(["Mine to hand on", "Mine to keep"], "By … credits the author");
+
+        _db.User.UserId = Dana;
+        (await Titles(new ArticleFilter { Author = ArticleFilter.Me })).Should().Equal("Dana's own", "Mine to hand on");
+        (await Titles(new ArticleFilter { Author = Dana })).Should().Equal("Dana's own");
+    }
+
+    [Fact]
+    public async Task AnArticleWithNoWriterRecorded_IsItsAuthors()
+    {
+        var id = await _db.Articles().CreateAsync("Written before there were writers");
+        await using (var db = _db.Context())
+            await db.Articles.Where(a => a.Id == id).ExecuteUpdateAsync(x => x.SetProperty(a => a.WriterId, (string?)null).SetProperty(a => a.WriterName, (string?)null));
+
+        (await Titles(new ArticleFilter { Author = ArticleFilter.Me })).Should().Equal("Written before there were writers");
     }
 
     [Fact]

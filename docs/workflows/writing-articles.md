@@ -39,12 +39,13 @@ An article starts in one of two ways:
 Either way it's a **Draft** authored by the person who made it (`AuthorId`, `AuthorName`), who is also its writer
 until they hand it on ([Handing an article on](#handing-an-article-on)).
 
-To find your own again, the Articles list has a **Mine** pill (`?author=me`): the articles that are yours, whoever
-opens the link. **+ Filter → By** lists everyone who has written an article, with how many, and narrows the list to one
-of them (`?author=<their user id>`); a person nobody has written as lists nothing, not everything. Both go with the
-other filters (Mine and Draft is your drafts in flight). For now an article is yours if you're its author.
-`ArticleService.Whose` holds that rule in one place, so when an article can be handed on to someone to finish, Mine
-can follow the writer instead with a one-line change. By … keeps crediting the author.
+To find your own again, the Articles list has a **Mine** pill (`?author=me`): the articles you're writing now, whoever
+opens the link. That's your own until you hand one on, and any a colleague handed to you; a draft you handed on is the
+new writer's to finish, so it leaves your Mine (ADR 0031). An article with no writer recorded reads as its author's.
+**+ Filter → By** offers Mine first, then everyone who has started an article (you too), with how many, and narrows
+the list to the articles that person authored (`?author=<their user id>`); a person nobody has written as lists
+nothing, not everything. Both go with the other filters (Mine and Draft is your drafts in flight).
+`ArticleService.Whose` holds the Mine rule in one place; By … keeps crediting the author.
 
 ## What an article holds
 
@@ -453,7 +454,8 @@ person until the article is handed on.
 - The new writer sees it first on Today's **Drafts in progress**, marked *Handed to you* with the note, and is told by a
   toast if Today is open. They're emailed too (`article-handoff`, marked with the article's TLP; an article above the
   team edition's ceiling isn't named, nor is the note), unless they turned *Articles handed to you* off in My notifications.
-- "Mine" means the writer: the brief picker's *Only mine* and Today's drafts list the articles you're writing now.
+- "Mine" means the writer: the brief picker's *Only mine*, Today's drafts and the Articles list's **Mine** list the
+  articles you're writing now. The Articles list's **By …** still goes by the author.
 - Editing rights don't change: any analyst can still edit any article. **Reviews go by the writer**: whoever is
   writing it can't review it and takes the author's part in its review; an author who handed it on may review it.
 - Taking a draft over (handing it to yourself) needs no waiting period. A presented article isn't handed on.
