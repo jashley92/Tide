@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Tide.Application.Intake;
+using Tide.Application.Indicators;
 using Tide.Domain.Common;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Domain.Observables;
 using Tide.Infrastructure.Persistence;
 
 namespace Tide.IntegrationTests;
@@ -404,6 +406,49 @@ public class MigrationFillTests
             stored["s-1-5-21-test-7\u001Fx\u001Fy"].Should().Be("s-1-5-21-test-7", "up to the first mark");
             stored["api:sécurité 🚨 sync\u001F42"].Should().Be("api:sécurité 🚨 sync", "an accent and an emoji are counted as the app counts them");
             stored.Where(s => s.Value is not null).Should().HaveCount(3,"an imported rule, and a push from before callers were kept, has none");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task IndicatorKeys_AreFilledForTheRowsAlreadyThere_ADeletedActionsToo(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var article = new Article { Title = "Keyed after the upgrade", AuthorId = "x", AuthorName = "X" };
+        var team = new Team { Key = "cyber-defense", Name = "Cyber Defense" };
+        var gone = new ActionItem { Number = 1, Title = "A deleted sweep", Kind = ActionKind.IocSweep, Team = team, DeletedAtUtc = Decided };
+        var longUrl = "https://Evil.example.net/" + new string('x', 1950);
+        await using (var ctx = database.Context())
+        {
+            ctx.AddRange(article, team, gone);
+            ctx.ArticleIndicators.AddRange(
+                new ArticleIndicator { ArticleId = article.Id, Type = IndicatorType.Domain, Value = "Mail.Evil.example.net" },
+                new ArticleIndicator { ArticleId = article.Id, Type = IndicatorType.Url, Value = longUrl },
+                new ArticleIndicator { ArticleId = article.Id, Type = IndicatorType.FileHash, Value = "d41d8cd98f00b204e9800998ecf8427e" });
+            ctx.ActionIndicators.Add(new ActionIndicator { ActionId = gone.Id, Type = IndicatorType.IpAddress, Value = "198.51.100.7", AddedByName = "X" });
+            await ctx.SaveChangesAsync();
+        }
+        await using (var ctx = database.Context()) (await IndicatorKeyFill.DoneAsync(ctx)).Should().BeTrue("rows saved since are keyed as they're saved");
+
+        database.UpgradeAgainFrom("IndicatorKeys");
+
+        await using (var ctx = database.Context())
+        {
+            (await ctx.ArticleIndicators.AsNoTracking().CountAsync(i => i.ValueKey == null && i.HostRev == null)).Should().Be(3, "the upgrade adds the keys empty");
+            (await IndicatorKeyFill.LeftAsync(ctx)).Should().Be(4, "a deleted action's indicator is keyed too: it may be restored");
+            while (!(await IndicatorKeyFill.FillAsync(ctx, batches: 1, batch: 2)).Done) { }
+        }
+        await using (var ctx = database.Context())
+        {
+            (await ctx.ArticleIndicators.AsNoTracking().OrderBy(i => i.Type).Select(i => new { i.Type, i.ValueKey, i.HostRev }).ToListAsync())
+                .Select(i => (i.Type, i.ValueKey, i.HostRev)).Should().BeEquivalentTo(new (IndicatorType, string?, string?)[]
+                {
+                    (IndicatorType.Domain, IndicatorKey.ValueOf("mail.evil.example.net"), "net.example.evil.mail"),
+                    (IndicatorType.Url, IndicatorKey.ValueOf(longUrl.ToLowerInvariant()), "net.example.evil"),
+                    (IndicatorType.FileHash, IndicatorKey.ValueOf("d41d8cd98f00b204e9800998ecf8427e"), null),
+                });
+            (await ctx.ActionIndicators.IgnoreQueryFilters([ActionItem.DeletedFilter]).AsNoTracking().SingleAsync()).ValueKey.Should().Be(IndicatorKey.ValueOf("198.51.100.7"));
+            (await IndicatorKeyFill.DoneAsync(ctx)).Should().BeTrue();
         }
     }
 
