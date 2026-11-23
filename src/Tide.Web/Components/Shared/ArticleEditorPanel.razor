@@ -76,8 +76,13 @@ else
             {
                 <h1>@_form.Title</h1>
             }
-            <div class="tide-sub">By @_article.AuthorName &middot; @Ui.When(Clock, _article.CreatedAtUtc)
-                @if (_article.ModifiedAtUtc is { } m) { <text> &middot; saved @Ui.When(Clock, m)</text> }
+            @* The byline, then the review as one line at the row's end (after the title, as the page guide walks them), its
+               panel (asking, the comments) under the row when opened. *@
+            <div class="tide-sub tide-head-byline">
+                <span>By @_article.AuthorName &middot; @Ui.When(Clock, _article.CreatedAtUtc)
+                    @if (_article.ModifiedAtUtc is { } m) { <text> &middot; saved @Ui.When(Clock, m)</text> }
+                </span>
+                <ReviewCard Article="_article" CanWrite="_canWrite" />
             </div>
         </div>
         @if (_article.Indicators.Count > 0 || _article.Cves.Count > 0)
@@ -87,7 +92,6 @@ else
     </div>
 
     var (checks, why) = Checks();
-    <ReviewCard Article="_article" CanWrite="_canWrite" />
     @if (Aside is not null && _canWrite)
     {
         <TabBar Label="Show" Level="TabLevel.Sub" Class="tide-ws-switch" Active="@_pane" OnSelect="ShowPane"
@@ -434,7 +438,11 @@ else
                 <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
             </section>
 
-            <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
+            @if (!_canWrite)
+            {
+                @* No save bar to put its button in (HistoryPanel draws nothing for anyone who can't write articles). *@
+                <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
+            }
 
             @if (_canWrite)
             {
@@ -482,7 +490,13 @@ else
                     {
                         <button type="button" class="btn btn-link text-danger ms-auto" disabled="@_busy" @onclick="Delete">Delete draft</button>
                     }
+                    @* Last in the bar: who changed what, and when, opened below the bar. *@
+                    <button type="button" class="btn btn-link btn-sm tide-history-link" aria-expanded="@(_history?.IsOpen == true ? "true" : "false")"
+                            aria-controls="@_historyId" @onclick="ToggleHistory">
+                        <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> <span class="tide-link-words">History</span>
+                    </button>
                 </div>
+                <HistoryPanel @ref="_history" Id="_article.Id" Version="_article.EditVersion" Compact="true" ListId="@_historyId" />
             }
         </div>
 
@@ -830,6 +844,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_jumpTo is not null) await JumpAsync();
+        if (_revealHistory)
+        {
+            _revealHistory = false;
+            await JS.BestEffortAsync("tideEditor.reveal", _historyId);
+        }
         if (_focusSaved)
         {
             _focusSaved = false;
@@ -1317,6 +1336,19 @@ else
     }
 
     private readonly string _notReadyId = Ui.NewId("not-ready");
+    private readonly string _historyId = Ui.NewId("history");
+    private HistoryPanel? _history;
+
+    private bool _revealHistory;
+
+    // The save bar's History button opens the list drawn below the bar, and the page scrolls to it once it's drawn (the
+    // bar is at the window's foot, the list below the last section).
+    private async Task ToggleHistory()
+    {
+        if (_history is null) return;
+        await _history.Toggle();
+        _revealHistory = _history.IsOpen;
+    }
 
     internal async Task MarkReady()
     {

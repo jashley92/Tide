@@ -144,6 +144,27 @@ html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or
     .tide-sticky-save .btn { white-space: nowrap; }
     .tide-sticky-save .tide-dirty, .tide-sticky-save .tide-saved { flex-basis: 100%; }
 }
+/* The save bar's last button, "History": the list opens below the bar (HistoryPanel, Compact), not in it. Pushed to the
+   bar's end, after Delete draft when that's there. Hidden in the Preview pane, where the list is too. */
+.tide-sticky-save .tide-history-link { margin-left: auto; padding-inline: 0; }
+.tide-sticky-save .ms-auto ~ .tide-history-link { margin-left: 0; }
+.tide-editor[data-pane="preview"] .tide-history-link { display: none; }
+.tide-history-link[aria-expanded="true"] .tide-disclosure-chev, .tide-review-toggle[aria-expanded="true"] .tide-disclosure-chev { transform: rotate(90deg); }
+/* Both disclosures underline their words, not the chevron and the space before them. */
+:is(.tide-history-link, .tide-review-toggle) { text-decoration: none; }
+:is(.tide-history-link, .tide-review-toggle) .tide-link-words { text-decoration: underline; }
+.tide-history-compact { margin-top: var(--tide-space-3); scroll-margin-top: 4.5rem; } /* opened, it scrolls up with the bar's row above it */
+.tide-head-byline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-3); }
+/* The review, one line at the end of the editor's byline row: "Review: <state>" and what to do next; its panel (asking,
+   the comments) takes the row's whole width under it when opened. */
+.tide-review-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-3); margin-left: auto; min-width: 0; font-size: var(--tide-text-sm); }
+.tide-review-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); min-width: 0; }
+.tide-review-state:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+.tide-review-line .btn-link { padding: 0; font-size: inherit; }
+.tide-review-panel { flex: 0 0 100%; min-width: 0; margin-bottom: var(--tide-space-2); color: var(--tide-text); background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); padding: var(--tide-space-2) var(--tide-space-3); }
+.tide-review-panel > .tide-review-comments { margin-top: 0; }
+.tide-review-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
+.tide-review-comments + .tide-review-ask { margin-top: var(--tide-space-2); }
 /* The editor's section index: it stays under the top bar as you scroll, and a section you jump to stops below them. */
 html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-section-pills { position: sticky; top: var(--tide-height-top); z-index: 4; background: var(--tide-bg); padding: var(--tide-space-2) 0; margin-bottom: var(--tide-space-2); }

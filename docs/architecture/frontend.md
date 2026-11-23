@@ -344,7 +344,7 @@ step for a control they can't.
   middle, with no arrow.
 - **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked, with each page's
   own guide inline (Triage's, the editor's, Actions'; **Skip the details** on a section's first step goes past it):
-  Today's strip, triage, writing the newest draft, Save, Ask for review, Mark ready, Add to today's brief, the running
+  Today's strip, triage, writing the newest draft, Save, Ask for a review, Mark ready, Add to today's brief, the running
   order, a row's Set to AMBER, the edition check, Mark ready in the page head, Present, which opens present mode in
   rehearsal (`?rehearse=1&guide=day`) where Learn to present's steps run as the day's and come back to Today at Send
   (`Present.BackToTheDayFrom`; refused while the meeting is live, with a note), then Actions, an action, and Search on a
@@ -484,7 +484,8 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `ProfileMenu` | The account menu. Its theme and letter-shortcut switches are groups of `menuitemradio`s, as a menu may hold only menu items and groups of them. |
 | `TableScroll` | The box a wide table scrolls sideways in (`table-responsive`): it takes focus (`tabindex="0"`), so the keyboard can scroll it, and it's a `region` named by the heading it's under (`LabelledBy`) or in words (`Label`). Every report and admin table that scrolls sits in one. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
-| `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
+| `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). A card with its own button on a brief; `Compact` in the editor, where the save bar's last button (**History**) opens the list below the bar. |
+| `ReviewCard` | The article's review in the editor's head, as one line (`Review:` where it stands, and what to do next); its button opens a panel under the byline for asking and the comments. |
 | `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |
 | `Badge`, `TlpBadge`, `StatusBadge` | Badges, the TLP 2.0 label (black ground, as FIRST specifies), and status chips (`Badges.cs`). |
 | `EscalatedBadge` | "Escalated", filled red, given when it was escalated while it still is (`ActionItem.EscalatedSince`, `ActionRow.EscalatedSince`); nothing otherwise. On the list row (`ActionTable`), the board card (`ActionKanban`), the action's page, the meeting's open-actions slide and the edition's list (`Badges.cs`). |

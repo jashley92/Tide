@@ -3703,6 +3703,22 @@ const autosaved = autosaveAfter(async page => {
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
 const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
+/** Setup: wider letters, then the review line's button pressed: its panel (asking, the comments) opens under the byline. */
+const openReview = async page => {
+  await wideFont(page);
+  await page.locator('.tide-review-toggle').click();
+  await page.locator('#review-panel').waitFor();
+  await idle(page);
+};
+
+/** Setup: wider letters, then the save bar's History pressed: the list loads below the bar. */
+const openHistory = async page => {
+  await wideFont(page);
+  await page.locator('.tide-sticky-save .tide-history-link').click();
+  await page.locator('.tide-history-compact .tide-history').waitFor();
+  await idle(page);
+};
+
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
   await wideFont(page);
@@ -4295,9 +4311,19 @@ const pages = [
   // The head's badges wrap under the people here rather than run off a phone's edge, for an analyst and a reviewer.
   ...['', '?roles=Viewer'].map(roles => ({ name: `editor-head-crowded${roles ? '-viewer' : ''}`, route: `/articles/{vpnArticle}${roles}`, setup: crowdedHead,
     widths: [390, 780], rules: [noSidewaysScroll, fits('.tide-page-head-main'), fits('.tide-page-head-main > .d-flex')] })),
-  // Someone who can't edit reads the preview as the page: one column with the Review card above it, not a narrow strip.
+  // Someone who can't edit reads the preview as the page, not a narrow strip, with the review as one line in the head.
   { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
-    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), sameColumn('.tide-review-card', '.tide-editor-side'), fits('.tide-editor-side')] },
+    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), visible('.tide-head-byline .tide-review-line'),
+      fits('.tide-head-byline'), fits('.tide-editor-side')] },
+  // The review is one line at the end of the byline, under the title ("Review: <state>" and what to do next); its button opens a
+  // panel under the row, the row's width, with asking (the reviewer and a note) and the comments.
+  { name: 'editor-review-open', route: '/articles/{vpnArticle}', setup: openReview, widths: [1920, 1440, 390],
+    rules: [noSidewaysScroll, visible('.tide-page-head-main .tide-review-line'), visible('#review-panel'), attr('.tide-review-toggle', 'aria-expanded', 'true'),
+      fits('.tide-head-byline'), fits('#review-panel'), fits('.tide-review-ask'), hidden('.tide-review-card')] },
+  // History is the save bar's last button; the list it opens is below the bar, not in it.
+  { name: 'editor-history-open', route: '/articles/{vpnArticle}', setup: openHistory, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-history-link'), attr('.tide-history-link', 'aria-expanded', 'true'),
+      visible('.tide-history-compact .tide-history'), hidden('.tide-sticky-save .tide-history'), fits('.tide-history-compact'), fits('.tide-sticky-save')] },
   // Autosave in the save bar, first in it: "Saved at" after a pause in typing, or why it held off; the bar one row on a
   // wide window, and wrapping within the window on a phone, its words whole.
   { name: 'editor-autosaved', route: '/articles/{vpnArticle}', setup: autosaved, widths: [1920, 390],

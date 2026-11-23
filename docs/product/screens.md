@@ -415,7 +415,7 @@ story.
 **TLP everywhere.** The article, each bullet, each screenshot and "why it matters to us" carry a TLP 2.0 marking,
 and a part never counts lower than its article. On a threat, "why it matters to us" starts at AMBER, since it usually
 names our own systems. Analysts can see each article's and each brief's **History**: who changed which field, and
-when. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
+when. In the editor it's the **History** button at the end of the save bar, and the list opens below the bar. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
 
 Leaving the editor with unsaved changes asks whether to save, discard or stay. So does leaving other pages with
 something typed and not saved: an Email template's wording, copies or archive address; an action's comment, an edit
@@ -436,7 +436,12 @@ week's presenter is suggested). The reviewer gets it on Today and opens the revi
   the bottom line stands alone;
 - *Approve* or *Ask for changes*.
 
-The author sees the comments in the editor and resolves them. A change to what the article says after approval (a
+In the editor the review is one line at the end of the byline under the title: *Review: not asked (optional)* (or
+*required*, when an administrator's rule covers the article), *waiting for Sam*, *Sam asked for changes (2 open)*,
+*approved by Sam* or *changed since Sam approved it*, with when, and the one thing to do next. *Ask for a review*,
+*Ask again* or *Comments* opens a small panel under the row with the reviewer, a note and *Send the request*, and the
+comments, each with *Resolve*; *Open the review* (or *Review it*, for the reviewer) goes to the review page, and *Take the
+request back* withdraws a request still waiting. The author resolves the comments there. A change to what the article says after approval (a
 screenshot added or removed included) puts the review out of date; marking it Ready doesn't, and an approval is
 refused if the article changed while the reviewer was reading it. The Send dialog lists the brief's articles that
 haven't been reviewed. Review is optional; an administrator can require it (Access & distribution) for anything AMBER
