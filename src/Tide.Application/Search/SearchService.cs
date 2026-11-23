@@ -445,14 +445,6 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
         || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape));
 
-    // An article whose search text is current: one LIKE on it stands for every part's.
-    private static readonly Expression<Func<Article, bool>> Indexed = a =>
-        a.SearchRow != null && !a.SearchRow.Dirty && a.SearchRow.Builder == ArticleSearchIndex.Builder;
-
-    // One whose text isn't (none yet, a save marked it, or an older build's): its parts are matched one by one, as before.
-    private static readonly Expression<Func<Article, bool>> Unindexed = a =>
-        a.SearchRow == null || a.SearchRow.Dirty || a.SearchRow.Builder != ArticleSearchIndex.Builder;
-
     /// <summary>
     /// Whether an article matches <paramref name="term"/> in any part, in any of its forms, or <paramref name="extras"/>:
     /// by its search text where that's current (a LEFT JOIN to one row), and part by part where it isn't, so an edit is
@@ -466,7 +458,9 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var text = AnyForm<Article>((a, p) => EF.Functions.Like(a.SearchRow!.Text, p, SearchText.Escape), term);
         var a = parts.Parameters[0];
         Expression In(Expression<Func<Article, bool>> e) => new Swap(e.Parameters[0], a).Visit(e.Body);
-        Expression body = Expression.OrElse(Expression.AndAlso(In(Indexed), In(text)), Expression.AndAlso(In(Unindexed), parts.Body));
+        // Where the text is current one LIKE on it stands for every part's; elsewhere the parts are matched one by one.
+        var current = In(ArticleSearchIndex.Current);
+        Expression body = Expression.OrElse(Expression.AndAlso(current, In(text)), Expression.AndAlso(Expression.Not(current), parts.Body));
         foreach (var extra in extras.OfType<Expression<Func<Article, bool>>>()) body = Expression.OrElse(body, In(extra));
         return Expression.Lambda<Func<Article, bool>>(body, a);
     }

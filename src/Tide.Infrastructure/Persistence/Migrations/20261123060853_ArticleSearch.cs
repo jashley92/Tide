@@ -11,8 +11,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Created empty: the search index job builds every article's row after start-up, and until an article has
-            // one a search matches it part by part, as before.
+            // One marked row for each article already there: the search index job builds them after start-up, and until
+            // an article's row is built a search matches it part by part, as before. A new article gets its row as it's saved.
             migrationBuilder.CreateTable(
                 name: "ArticleSearch",
                 columns: table => new
@@ -21,8 +21,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     Text = table.Column<string>(type: "TEXT", nullable: false),
                     Builder = table.Column<int>(type: "INTEGER", nullable: false),
                     Dirty = table.Column<bool>(type: "INTEGER", nullable: false),
-                    Stamp = table.Column<Guid>(type: "TEXT", nullable: false),
-                    BuiltAtUtc = table.Column<long>(type: "INTEGER", nullable: true)
+                    Stamp = table.Column<Guid>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -40,6 +39,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                 table: "ArticleSearch",
                 column: "Dirty",
                 filter: "[Dirty] = 1");
+
+            migrationBuilder.Sql("""
+            INSERT INTO "ArticleSearch" ("ArticleId", "Text", "Builder", "Dirty", "Stamp") SELECT "Id", '', 0, 1, '00000000-0000-0000-0000-000000000000' FROM "Articles";
+            """);
         }
 
         /// <inheritdoc />

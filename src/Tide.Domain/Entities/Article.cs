@@ -342,8 +342,10 @@ public class ArticleCve
 /// sectors, source, bullets, indicators and their notes, CVEs, techniques, captions) in one column, so a search is one
 /// LIKE per spelling over one table rather than one over seven columns and six child tables. Kept beside the article,
 /// not on it, so the article's row, edit version and history are untouched. A save that changes a part marks the row
-/// <see cref="Dirty"/> in the same transaction; a background job rebuilds it. Until it has, and for an article with no
-/// row or one built by an older <see cref="Builder"/>, a search matches that article the old way, so it's never wrong.
+/// <see cref="Dirty"/> in the same transaction; a background job rebuilds it. Until it has, and for a row
+/// built by an older <see cref="Builder"/> (or an article added outside the app, with none), a search matches that article the
+/// old way, so it's never wrong. Every article gets a row: its migration adds a marked one for each already there, and a
+/// save adds one with each new article.
 /// </summary>
 public class ArticleSearchRow
 {
@@ -364,6 +366,4 @@ public class ArticleSearchRow
 
     /// <summary>New with every change marked: a rebuild is written only if no save marked the row again meanwhile.</summary>
     public Guid Stamp { get; set; }
-
-    public DateTimeOffset? BuiltAtUtc { get; set; }
 }

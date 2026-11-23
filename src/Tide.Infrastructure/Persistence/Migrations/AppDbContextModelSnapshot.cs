@@ -1249,9 +1249,6 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<int>("Builder")
                         .HasColumnType("INTEGER");
 
-                    b.Property<long?>("BuiltAtUtc")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("Dirty")
                         .HasColumnType("INTEGER");
 

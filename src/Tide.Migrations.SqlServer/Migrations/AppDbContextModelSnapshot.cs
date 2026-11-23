@@ -1254,9 +1254,6 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<int>("Builder")
                         .HasColumnType("int");
 
-                    b.Property<DateTimeOffset?>("BuiltAtUtc")
-                        .HasColumnType("datetimeoffset");
-
                     b.Property<bool>("Dirty")
                         .HasColumnType("bit");
 

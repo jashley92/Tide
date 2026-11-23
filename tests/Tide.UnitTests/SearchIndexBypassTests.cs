@@ -11,13 +11,6 @@ namespace Tide.UnitTests;
 /// </summary>
 public partial class SearchIndexBypassTests
 {
-    private static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Tide.sln"))) return dir.FullName;
-        throw new InvalidOperationException("Couldn't find the repo root (Tide.sln).");
-    }
-
     // File (from src) and the table, and why the statement leaves every searched part as it was.
     private static readonly Dictionary<(string File, string Table), string> Allowed = new()
     {
@@ -28,7 +21,7 @@ public partial class SearchIndexBypassTests
     [Fact]
     public void No_bulk_statement_changes_an_articles_searched_parts_unseen()
     {
-        var src = Path.Combine(Root(), "src");
+        var src = Path.Combine(DeployScriptTests.RepoRoot(), "src");
         var (found, seen) = (new List<string>(), new HashSet<(string, string)>());
         foreach (var path in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
         {

@@ -12,7 +12,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261123055106_ArticleSearch")]
+    [Migration("20261123060903_ArticleSearch")]
     partial class ArticleSearch
     {
         /// <inheritdoc />
@@ -1256,9 +1256,6 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Builder")
                         .HasColumnType("int");
-
-                    b.Property<DateTimeOffset?>("BuiltAtUtc")
-                        .HasColumnType("datetimeoffset");
 
                     b.Property<bool>("Dirty")
                         .HasColumnType("bit");

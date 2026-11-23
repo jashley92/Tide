@@ -7,9 +7,10 @@ namespace Tide.Web.Services;
 /// <summary>
 /// Keeps the articles' search text current (<see cref="ArticleSearchIndex"/>): every <see cref="Poll"/> it rebuilds the
 /// rows saves have marked, a batch at a time, so a search goes back to the fast match within seconds of an edit (it finds
-/// the edit at once either way). After an upgrade, or with a new <see cref="ArticleSearchIndex.Builder"/>, it first builds
-/// every article's row, a run at a time; searches get faster as it goes. Only the process holding the job lease runs it.
-/// A pass with nothing to do is recorded only every <see cref="Quiet"/>, so the job history isn't filled with them.
+/// the edit at once either way). After an upgrade every article's row is marked, so it builds them all, a pass at a time;
+/// searches get faster as it goes. Only the process holding the job lease runs it. Its work is recorded as one run every
+/// <see cref="Quiet"/> (the job's interval on Diagnostics), with how many it rebuilt since, so an analyst's autosaves don't
+/// fill the job history.
 /// </summary>
 public sealed class SearchIndexHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, TimeProvider time,
     ILogger<SearchIndexHostedService> log) : BackgroundService
@@ -17,17 +18,17 @@ public sealed class SearchIndexHostedService(IServiceScopeFactory scopes, JobMon
     /// <summary>How often it looks for marked rows.</summary>
     public static readonly TimeSpan Poll = TimeSpan.FromSeconds(10);
 
-    /// <summary>How often a pass with nothing to rebuild is recorded as a run (the job's interval on Diagnostics).</summary>
+    /// <summary>How often its work is recorded as a run.</summary>
     public static readonly TimeSpan Quiet = JobMonitor.SearchIndex.Interval;
 
-    /// <summary>Batches rebuilt in one run.</summary>
+    /// <summary>Batches rebuilt in one pass.</summary>
     public const int BatchesPerPass = 10;
 
-    // Whether every article has had a row of the current builder since this process started: then only marked rows are
-    // looked for (a seek), not missing or older ones (a scan). A row is added with every new article, and the builder
-    // can't change while the process runs.
-    private bool _complete;
-    private DateTimeOffset? _quietSince;
+    // Rows built by an older builder are marked once per process (a new build is a new process); rebuilt since the last run
+    // recorded; when that run's period began.
+    private bool _olderMarked;
+    private int _built;
+    private DateTimeOffset? _since;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -40,68 +41,43 @@ public sealed class SearchIndexHostedService(IServiceScopeFactory scopes, JobMon
         }
     }
 
-    /// <summary>One look: rebuilds what's marked (or, until it's all built, missing), recorded as a run when there was
-    /// any; never throws but to cancel (a failure is recorded and logged by the monitor).</summary>
+    /// <summary>One look: rebuilds what's marked, and records a run once a <see cref="Quiet"/> period has passed. Never
+    /// throws but to cancel: a failure is recorded on Diagnostics and logged under the job's event id.</summary>
     internal async Task PassAsync(CancellationToken ct)
     {
-        if (!await lease.HoldAsync(ct))
-        {
-            _complete = false;   // another process may have run an older build meanwhile
-            return;
-        }
+        if (!await lease.HoldAsync(ct)) return;
         var started = time.GetUtcNow();
-        var inRun = false;
+        _since ??= started;
         try
         {
             await using var scope = scopes.CreateAsyncScope();
-            var dbs = scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>();
-            var (built, more) = await RebuildAsync(dbs, started, batches: 1, ct);
-            if (built == 0 && !more)
+            await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
+            if (!_olderMarked)
             {
-                _complete = true;
-                if (_quietSince is { } since && started - since < Quiet) return;
-                _quietSince = started;
-                jobs.Succeeded(JobMonitor.SearchIndex, started, "up to date");
+                await ArticleSearchIndex.MarkOlderBuildsAsync(db, ct);
+                _olderMarked = true;
             }
-            else
+            var more = true;
+            for (var i = 0; i < BatchesPerPass && more; i++)
             {
-                _quietSince = null;
-                inRun = true;
-                await jobs.RunAsync(JobMonitor.SearchIndex, async () =>
-                {
-                    var (rest, left) = await RebuildAsync(dbs, started, BatchesPerPass - 1, ct);
-                    built += rest;
-                    if (!left) _complete = true;
-                    await using var db = await dbs.CreateAsync(ct);
-                    return left ? $"{built:N0} rebuilt, {await ArticleSearchIndex.LeftAsync(db, ct):N0} left" : $"{built:N0} rebuilt";
-                });
+                var taken = await ArticleSearchIndex.RebuildAsync(db, ct: ct);
+                _built += taken;
+                more = taken == ArticleSearchIndex.Batch;
             }
+            if (started - _since < Quiet && !more) return;
+            jobs.Succeeded(JobMonitor.SearchIndex, _since.Value,
+                more ? $"{_built:N0} rebuilt, {await ArticleSearchIndex.LeftAsync(db, ct):N0} left" : _built == 0 ? "up to date" : $"{_built:N0} rebuilt");
+            (_built, _since) = (0, started);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            // A run's failure is recorded and logged by the monitor; one before it (the database not answering) is recorded
-            // here. Either way it's tried again at the next poll.
-            if (inRun) log.LogDebug(ex, "The search index run failed; it's tried again shortly.");
-            else jobs.Failed(JobMonitor.SearchIndex, ex);
+            log.LogDebug(ex, "The search index pass failed; it's tried again at the next poll.");
+            jobs.Failed(JobMonitor.SearchIndex, ex);
         }
         finally
         {
             jobs.Scheduled(JobMonitor.SearchIndex, true, time.GetUtcNow() + Poll, Quiet);
         }
-    }
-
-    // Up to the given batches, each in its own context; whether any are left.
-    private async Task<(int Built, bool More)> RebuildAsync(IAppDbContextFactory dbs, DateTimeOffset now, int batches, CancellationToken ct)
-    {
-        var built = 0;
-        for (var i = 0; i < batches; i++)
-        {
-            await using var db = await dbs.CreateAsync(ct);
-            var (n, more) = await ArticleSearchIndex.RebuildAsync(db, now, markedOnly: _complete, ct: ct);
-            built += n;
-            if (!more) return (built, false);
-        }
-        return (built, true);
     }
 }

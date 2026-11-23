@@ -8,7 +8,7 @@ namespace Tide.IntegrationTests;
 
 /// <summary>
 /// A text search matches an article by its search text (<see cref="ArticleSearchRow"/>) where that's current, and part by
-/// part where it isn't: the same articles in the same order whether no row is built yet, every one is, or every one is
+/// part where it isn't: the same articles in the same order whether no row is built yet, every one is, every one is
 /// out of date; an edit is found at once; and the background rebuild brings rows back to current.
 /// </summary>
 public class ArticleSearchIndexTests
@@ -40,6 +40,8 @@ public class ArticleSearchIndexTests
 
         await using (var ctx = db.Context()) await ctx.ArticleSearch.ExecuteUpdateAsync(s => s.SetProperty(r => r.Dirty, true));
         (await AnswersAsync(db)).Should().Equal(unbuilt, "an out-of-date row is matched part by part");
+        await using (var ctx = db.Context()) await ctx.ArticleSearch.ExecuteDeleteAsync();
+        (await AnswersAsync(db)).Should().Equal(unbuilt, "an article with no row (added outside the app) is matched part by part");
 
         // What the answers are: each query against what it should and shouldn't find (the order is checked above).
         HashSet<Guid> Found(string q) => unbuilt.Single(a => a.StartsWith(q + ": ", StringComparison.Ordinal))[(q.Length + 2)..]
@@ -141,9 +143,11 @@ public class ArticleSearchIndexTests
         await using (var ctx = db.Context()) await ctx.ArticleSearch.ExecuteUpdateAsync(s => s.SetProperty(r => r.Builder, ArticleSearchIndex.Builder - 1));
         await using (var ctx = db.Context())
         {
+            (await ArticleSearchIndex.LeftAsync(ctx)).Should().Be(1, "only the one a save marked, until the app starts");
+            (await ArticleSearchIndex.MarkOlderBuildsAsync(ctx)).Should().Be(ids.Count - 1);
             (await ArticleSearchIndex.LeftAsync(ctx)).Should().Be(ids.Count);
-            (await ArticleSearchIndex.RebuildAsync(ctx, Now, markedOnly: true)).Built.Should().Be(1, "only the marked one, when the rest are known current");
         }
+        (await AnswersAsync(db)).Should().NotBeEmpty("an older build's row is matched part by part meanwhile");
         await BuildAllAsync(db);
         await using (var ctx = db.Context())
         {
@@ -157,7 +161,7 @@ public class ArticleSearchIndexTests
         while (true)
         {
             await using var ctx = db.Context();
-            if (!(await ArticleSearchIndex.RebuildAsync(ctx, Now, markedOnly: false, batch: 3)).More) return;
+            if (await ArticleSearchIndex.RebuildAsync(ctx, batch: 3) < 3) return;
         }
     }
 

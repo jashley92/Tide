@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Tide.Application.Intake;
+using Tide.Application.Search;
 using Tide.Application.Indicators;
 using Tide.Domain.Common;
 using Tide.Domain.Entities;
@@ -474,6 +475,34 @@ public class MigrationFillTests
                 .Should().Be(("dev:pat", "Pat", (DateTimeOffset?)stored[draft.Id].CreatedAtUtc, (string?)null), "the author has been writing it since it was started");
             (stored[presented.Id].WriterId, stored[presented.Id].WriterName).Should().Be(("dev:sam", "Sam"));
             stored.Values.Should().OnlyContain(a => a.CurrentWriterId == a.AuthorId && a.AuthorId != "");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ArticleSearch_GivesEveryArticleAlreadyThereAMarkedRow_ThatTheRebuildFills(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var (one, two) = (new Article { Title = "Ransomware at a vendor", AuthorId = "x", AuthorName = "X" },
+            new Article { Title = "Edge appliances", Bluf = "Patched.", AuthorId = "x", AuthorName = "X" });
+        await using (var ctx = database.Context())
+        {
+            ctx.Articles.AddRange(one, two);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ArticleSearch");
+
+        await using (var ctx = database.Context())
+        {
+            (await ctx.ArticleSearch.AsNoTracking().OrderBy(r => r.ArticleId).Select(r => new { r.ArticleId, r.Dirty, r.Text }).ToListAsync())
+                .Should().BeEquivalentTo(new[] { one.Id, two.Id }.Select(id => new { ArticleId = id, Dirty = true, Text = "" }));
+            (await ArticleSearchIndex.RebuildAsync(ctx)).Should().Be(2);
+        }
+        await using (var ctx = database.Context())
+        {
+            (await ArticleSearchIndex.LeftAsync(ctx)).Should().Be(0);
+            (await ctx.ArticleSearch.AsNoTracking().SingleAsync(r => r.ArticleId == two.Id)).Text.Should().Be("Edge appliances" + ArticleSearchRow.Separator + "Patched.");
         }
     }
 

@@ -11,7 +11,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261123055056_ArticleSearch")]
+    [Migration("20261123060853_ArticleSearch")]
     partial class ArticleSearch
     {
         /// <inheritdoc />
@@ -1250,9 +1250,6 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Builder")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("BuiltAtUtc")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("Dirty")

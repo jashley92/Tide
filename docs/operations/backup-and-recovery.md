@@ -227,7 +227,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
 | Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
-| Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. A quiet pass is recorded every 5 minutes |
+| Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
 
 ### Timers and periodic work in the request path
 
