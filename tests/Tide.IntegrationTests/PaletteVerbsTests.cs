@@ -86,11 +86,26 @@ public class PaletteVerbFilterTests
     public void APagesVerb_IsHiddenWithoutItsPermission_AndGoneWithThePage()
     {
         var verbs = new PaletteCommands();
-        var page = verbs.Register(() => [Verb("Save and mark ready"), Verb("Copy A-3's hunt query", Permission.ReadActions)]);
+        var page = verbs.Register(() => [Verb("Save and mark ready"), Verb("Copy A-3's hunt query", Permission.ReadActions)], () => { });
         Labels(PaletteEntries.FromVerbs(verbs.For(new FakeUser(AppRole.Analyst)))).Should().Equal("Save and mark ready", "Copy A-3's hunt query");
         Labels(PaletteEntries.FromVerbs(verbs.For(new FakeUser(AppRole.Viewer)))).Should().Equal("Copy A-3's hunt query");
         page.Dispose();
         verbs.For(new FakeUser(AppRole.Analyst)).Should().BeEmpty("the page has gone");
+    }
+
+    [Fact]
+    public async Task APagesVerb_DrawsThePageAgain_AfterItRuns_EvenWhenItFails()
+    {
+        var verbs = new PaletteCommands();
+        var drawn = 0;
+        using var page = verbs.Register(() => [Verb("Fine"), Verb("Fails", run: () => throw new InvalidOperationException("No."))], () => drawn++);
+        var analyst = new FakeUser(AppRole.Analyst);
+
+        await verbs.For(analyst).Single(v => v.Label == "Fine").Run();
+        drawn.Should().Be(1, "as a click on the page's own button would");
+        var failing = () => verbs.For(analyst).Single(v => v.Label == "Fails").Run();
+        await failing.Should().ThrowAsync<InvalidOperationException>("the palette says it in a toast");
+        drawn.Should().Be(2);
     }
 }
 
@@ -124,13 +139,13 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
 
     private static IReadOnlyList<ToastService.Toast> Toasts<T>(Rendered<T> r) => r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts;
 
-    // A draft with its bottom line and a bullet, so nothing blocks it being marked ready.
-    private async Task<Guid> Draft(string title)
+    // A draft with its bottom line and (unless asked otherwise) a bullet, so nothing blocks it being marked ready.
+    private async Task<Guid> Draft(string title, bool bullet = true)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var article = new Article { Title = title, AuthorId = SignIn.Analyst.UserId, AuthorName = "Tester", Tlp = TlpLevel.Clear, Bluf = "Exploited in the wild." };
-        article.Bullets.Add(new ArticleBullet { Text = "Patch it.", Tlp = TlpLevel.Clear });
+        if (bullet) article.Bullets.Add(new ArticleBullet { Text = "Patch it.", Tlp = TlpLevel.Clear });
         db.Articles.Add(article);
         await db.SaveChangesAsync();
         return article.Id;
@@ -160,6 +175,19 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
         (await As(sp => sp.GetRequiredService<ArticleService>().GetAsync(id)))!.Status.Should().Be(ArticleStatus.Ready);
         Toasts(r).Should().Contain(t => t.Message == "Marked ready for a brief.");
         (await Verbs(r)).Should().BeEmpty("it's on today's brief and ready: neither is offered any more");
+    }
+
+    [Fact]
+    public async Task ADraftThatIsntReady_IsNotOfferedSaveAndMarkReady_AsItsButtonIsDisabled_AndTheServiceRefusesIt()
+    {
+        var id = await Draft("Palette verbs on an unready draft", bullet: false);
+        await using var r = await OpenArticle(id);
+        System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("It isn't ready yet: Add at least one bullet.", "the editor's own button says why it's disabled");
+        (await Verbs(r)).Select(v => v.Label).Should().Equal("Add this article to today's brief");
+
+        var marking = () => As(sp => sp.GetRequiredService<ArticleService>().SetStatusAsync(id, ArticleStatus.Ready));
+        (await marking.Should().ThrowAsync<InvalidOperationException>()).WithMessage("It isn't ready yet: Add at least one bullet.");
+        (await As(sp => sp.GetRequiredService<ArticleService>().GetAsync(id)))!.Status.Should().Be(ArticleStatus.Draft);
     }
 
     [Fact]
@@ -308,7 +336,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await RenderAsync<CommandPalette>(app, "/");
         var ran = 0;
         using var page = r.Scope.ServiceProvider.GetRequiredService<PaletteCommands>()
-            .Register(() => [new PaletteCommand("Mark the brief ready", "", Permission.WriteArticles, "Today", () => { ran++; return Task.CompletedTask; })]);
+            .Register(() => [new PaletteCommand("Mark the brief ready", "", Permission.WriteArticles, "Today", () => { ran++; return Task.CompletedTask; })], () => { });
 
         await r.Click(p => { p.Open(); return Task.CompletedTask; });
         (await Shown(r, "> mark")).Select(e => e.Label).Should().Equal("Mark the brief ready");
@@ -326,7 +354,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
     {
         await using var r = await RenderAsync<CommandPalette>(app, $"/present/{Today:yyyy-MM-dd}", new() { ["ShowButton"] = false, ["Verbs"] = false });
         using var page = r.Scope.ServiceProvider.GetRequiredService<PaletteCommands>()
-            .Register(() => [new PaletteCommand("Mark the brief ready", "", null, "Today", () => Task.CompletedTask)]);
+            .Register(() => [new PaletteCommand("Mark the brief ready", "", null, "Today", () => Task.CompletedTask)], () => { });
         (await Shown(r, "")).Should().NotContain(e => e.Kind == PaletteKind.Command).And.NotBeEmpty();
         (await Shown(r, ">")).Should().BeEmpty();
         (await Shown(r, "take A-1")).Should().NotContain(e => e.Kind == PaletteKind.Command);

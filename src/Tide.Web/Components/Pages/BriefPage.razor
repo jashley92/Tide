@@ -500,7 +500,7 @@ else
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
-        _verbs = PaletteVerbs.Register(Verbs);
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
     }
 
     // Ctrl+K's verb on Today: Mark ready, while it's the brief's next step, through its own confirmation (AskReady).
@@ -510,8 +510,7 @@ else
     {
         if (!AsToday || !_canWrite || _busy || _brief is null) yield break;
         if (BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null) == BriefNext.MarkReady)
-            yield return new("Mark the brief ready", "today meeting ready", Permission.WriteArticles, "Today",
-                PaletteCommands.Then(AskReady, StateHasChanged), "bi-check2-square");
+            yield return new("Mark the brief ready", "today meeting ready", Permission.WriteArticles, "Today", AskReady, "bi-check2-square");
     }
 
     // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes

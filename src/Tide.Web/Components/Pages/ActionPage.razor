@@ -819,7 +819,7 @@ else
     protected override void OnInitialized()
     {
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
-        _verbs = PaletteVerbs.Register(Verbs);
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
     }
 
     // Ctrl+K's verbs on an action: Take it and Hand off when the page offers them (Run, so Take asks first when a
@@ -831,12 +831,11 @@ else
         if (_detail is not { Action: var a } || _busy) yield break;
         var label = Ui.ActionLabel(a.Number);
         if (_offered.Contains(ActionFlow.TakeIt))
-            yield return new($"Take {label}", "assign me mine", null, label, PaletteCommands.Then(() => Run(ActionFlow.TakeIt), StateHasChanged), "bi-person-check");
+            yield return new($"Take {label}", "assign me mine", null, label, () => Run(ActionFlow.TakeIt), "bi-person-check");
         if (_offered.Contains(ActionFlow.HandOff))
-            yield return new($"Hand {label} to…", "hand off team", null, label, PaletteCommands.Then(() => Run(ActionFlow.HandOff), StateHasChanged), "bi-box-arrow-right");
+            yield return new($"Hand {label} to…", "hand off team", null, label, () => Run(ActionFlow.HandOff), "bi-box-arrow-right");
         if (HuntToCopy(a) is not null)
-            yield return new($"Copy {label}'s hunt query", "clipboard siem kql", Permission.ReadActions, label,
-                PaletteCommands.Then(CopyHuntQuery, StateHasChanged), "bi-clipboard");
+            yield return new($"Copy {label}'s hunt query", "clipboard siem kql", Permission.ReadActions, label, CopyHuntQuery, "bi-clipboard");
     }
 
     // The query the hunt's Copy would be pressed on next: the first not yet run, else the first.

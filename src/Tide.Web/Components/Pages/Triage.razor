@@ -1277,7 +1277,7 @@ else
         // First, so a page closed during the loads below has already stopped listening.
         _live = new LiveChanges(Changes, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, Heard);
         Polls.Changed += PollsChanged;
-        _verbs = PaletteVerbs.Register(Verbs);
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
         _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
@@ -1730,7 +1730,7 @@ else
         if (_sourcesTab || _busy || _promoting is not null || Current is not { } line) yield break;
         if (line.Row is { } row ? Promotable(row.Item.Status) : line.Group is not null && Promotable(_status))
             yield return new("Promote the selected item", "article write triage", Permission.WriteArticles, "Triage",
-                PaletteCommands.Then(() => Act(TriageStep.Promote), StateHasChanged), "bi-file-earmark-plus");
+                () => Act(TriageStep.Promote), "bi-file-earmark-plus");
     }
 
     private async Task Act(TriageStep what)
