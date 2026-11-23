@@ -35,7 +35,8 @@
          backup is restored.
       6. On a proven start only: mark this run's backup record succeeded and prune this install's older upgrade backups,
          keeping the newest -KeepUpgradeBackups (3) successful upgrades' pre-upgrade .bak files and backup folders, this
-         run's among them, and every failed run's since the last success. A failed or rolled-back upgrade deletes nothing.
+         run's among them, and every failed run's since the last success (-KeepAllUpgradeBackups keeps them all). A
+         failed or rolled-back upgrade deletes nothing.
 
     Integrated authentication throughout: no secrets are read or written. Windows PowerShell 5.1 only: PowerShell 7
     doesn't have the IIS: drive, so the script refuses to run there.
@@ -110,9 +111,14 @@
     sites share tide-upgrade-backups), and a .bak that one of those records names and this SQL Server's backup history
     records for this database, its name matched case and all. A folder or .bak from before the records is never
     pruned: clear those by hand. The .bak files are pruned only when this host reaches the folder: a UNC path, or SQL
-    Server on this host; otherwise the upgrade lists the older ones it left. With -BackupRoot nothing is pruned. 0 keeps
-    everything. A failed or rolled-back upgrade deletes nothing, nor does one whose start wasn't proven (Windows
-    authentication answered the warm-up), and a backup that can't be deleted is a warning.
+    Server on this host; otherwise the upgrade lists the older ones it left. With -BackupRoot nothing is pruned. To keep
+    every backup, use -KeepAllUpgradeBackups (0 does the same, for scripts written for v1.16.0). A failed or
+    rolled-back upgrade deletes nothing, nor does one whose start wasn't proven (Windows authentication answered the
+    warm-up), and a backup that can't be deleted is a warning.
+
+.PARAMETER KeepAllUpgradeBackups
+    Keep every upgrade's backups: this upgrade deletes none of the older pre-upgrade .bak files or backup folders. The
+    same as -KeepUpgradeBackups 0; it can't be given with another number.
 
 .PARAMETER Force
     Don't ask before backing up and deploying. -WhatIf runs the checks and stops before any change.
@@ -152,6 +158,7 @@ param(
     [string] $DataRoot,
     [switch] $SkipDbBackup,
     [ValidateRange(0, 1000)] [int] $KeepUpgradeBackups = 3,
+    [switch] $KeepAllUpgradeBackups,
     [int]    $WarmupTimeoutSec = 660,   # past the app's 600 s startupTimeLimit (web.config)
     [switch] $Force,
 
@@ -166,6 +173,16 @@ $ErrorActionPreference = 'Stop'
 # there it would stop part way with the site down.
 . (Join-Path $PSScriptRoot 'lib\TideIis.ps1')
 Assert-TideWindowsPowerShell 'Upgrade-Tide.ps1'
+# -KeepAllUpgradeBackups is -KeepUpgradeBackups 0, and is passed on as that: an older bundle's script (the handover below
+# passes only what it accepts) would otherwise drop the switch and prune.
+if ($KeepAllUpgradeBackups) {
+    if ($PSBoundParameters.ContainsKey('KeepUpgradeBackups') -and $KeepUpgradeBackups -ne 0) {
+        throw "-KeepAllUpgradeBackups keeps every backup, so it can't be given with -KeepUpgradeBackups $KeepUpgradeBackups. Nothing has been changed."
+    }
+    $KeepUpgradeBackups = 0
+    $PSBoundParameters['KeepUpgradeBackups'] = 0
+    [void]$PSBoundParameters.Remove('KeepAllUpgradeBackups')
+}
 # -WhatIf stops at the confirmation, before anything changes. Until then the run stages the build in TEMP and runs the
 # preflight for real (an extraction or New-Item skipped by -WhatIf would only break it); the flag is still passed on by
 # the handover to the bundle's script below.
@@ -982,6 +999,7 @@ if ($plan.MarkSucceeded) {
     catch { Write-Warn2 "Couldn't mark this upgrade's backup record (snapshot.json in $BackupRoot) as succeeded: $($_.Exception.Message)" }
 }
 if ($plan.Note) { Write-Warn2 $plan.Note }
+if ($plan.MarkSucceeded -and $KeepUpgradeBackups -eq 0) { Write-Step "Keeping every older upgrade backup (-KeepAllUpgradeBackups): none deleted" }
 if ($plan.PruneBaks -or $plan.PruneFolders) {
     Write-Step "Pruning older upgrade backups (keeping the newest $KeepUpgradeBackups successful upgrades' of each)"
     $pruned = 0
