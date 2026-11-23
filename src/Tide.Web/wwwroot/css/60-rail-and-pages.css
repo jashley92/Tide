@@ -27,7 +27,7 @@ html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide
 .tide-rail-toggle[aria-expanded="true"] { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 @media (min-width: 1500px) {
     /* Nested, so the pages that take the whole window (.content's own rule, above) are named once here. */
-    main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) {
+    .tide-main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) {
         & > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
         html:not([data-rail="closed"]) & > .tide-rail { display: flex; }
         html:not([data-rail="closed"]) & > .content:has(+ .tide-rail) { max-width: min(1400px, calc(100% - var(--tide-width-rail))); }

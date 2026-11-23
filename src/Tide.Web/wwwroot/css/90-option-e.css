@@ -86,7 +86,7 @@
 /* Toasts sit left of a docked rail, never over its buttons. */
 @media (min-width: 1500px) {
     /* Where the rail docks (its own rule above): a page with a rail, other than one that takes the whole window. */
-    html:not([data-rail="closed"]):has(main > .tide-rail):not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) .tide-toasts {
+    html:not([data-rail="closed"]):has(.tide-main > .tide-rail):not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) .tide-toasts {
         right: calc(var(--tide-width-rail) + var(--tide-space-4));
     }
 }
@@ -432,15 +432,15 @@ html[data-file-drag] .tide-page-drop { display: flex; }
    closing. From 1800px the pane has the room for them in one row again. */
 @media (min-width: 1500px) and (max-width: 1799.98px) {
     /* Dismiss keeps its reason beside it, at its full width, and the two go to the next row together, at its end. */
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; width: auto; max-width: none; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; width: auto; max-width: none; }
     /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
        the first screen. */
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
     /* The pane's title takes its whole width, breaking only between words, and Read it here (or again), Open the site
        and Close go on a row of their own under it, Close at its end. */
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head { flex-wrap: wrap; }
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head { flex-wrap: wrap; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
 }
 /* ---- end Triage 3.2 ---- */
 /* ---- Search 3.6: an indicator or CVE lookup with the context rail (Search.razor, SearchRail/LookupSweeps.razor) ----
@@ -518,7 +518,7 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
 .tide-rail-list.tide-adv-rail-techniques { display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-2); }
 .tide-adv-rail-techniques > li { padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-chip-bg); white-space: nowrap; }
 @media (min-width: 1500px) and (max-width: 1759.98px) {
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-adv-grid { grid-template-columns: minmax(0, 1fr); }
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) .tide-adv-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* ---- end Adversaries ---- */
 
@@ -534,10 +534,10 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
    card. From 1500px the rail docks beside the board too (it was an overlay there), and the board takes the rest of the
    window; ] closes the rail and the board has the whole window again. ---- */
 @media (min-width: 1500px) {
-    main:has(.tide-board) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
-    html:not([data-rail="closed"]) main:has(.tide-board) > .tide-rail { display: flex; }
-    html:not([data-rail="closed"]) main:has(.tide-board) > .content:has(+ .tide-rail) { max-width: calc(100% - var(--tide-width-rail)); }
-    html:not([data-rail="closed"]):has(main > .tide-rail):has(.tide-board) .tide-toasts { right: calc(var(--tide-width-rail) + var(--tide-space-4)); }
+    .tide-main:has(.tide-board) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
+    html:not([data-rail="closed"]) .tide-main:has(.tide-board) > .tide-rail { display: flex; }
+    html:not([data-rail="closed"]) .tide-main:has(.tide-board) > .content:has(+ .tide-rail) { max-width: calc(100% - var(--tide-width-rail)); }
+    html:not([data-rail="closed"]):has(.tide-main > .tide-rail):has(.tide-board) .tide-toasts { right: calc(var(--tide-width-rail) + var(--tide-space-4)); }
 }
 /* The selected card, as the design marks it: an accent ring (a card rule's colour stays on its left edge), inside the lane's
    padding, so the lane never clips it. */
@@ -563,7 +563,7 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
    screen readers and tooltips, as in a narrower window), and the table's cells sit closer, Kind and Progress wrapping.
    Under 1600px the Kind column folds under each title, so the table fits with wider fonts too. */
 @media (min-width: 1500px) and (max-width: 1759.98px) {
-    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) {
         & .tide-viewtool-text, & .tide-actions-layout .tide-tabbar-item > span:not(.bi) {
             position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         & .tide-actions-views .tide-tabbar-item { padding-left: .45rem; padding-right: .45rem; }
@@ -574,7 +574,7 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
     }
 }
 @media (min-width: 1500px) and (max-width: 1599.98px) {
-    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+    html:not([data-rail="closed"]) .tide-main:has(> .tide-rail) {
         & .tide-table:has(.tide-action-row) > thead > tr > th:nth-child(2), & .tide-col-kind { display: none; }
         & .tide-action-kind { display: block; }
     }

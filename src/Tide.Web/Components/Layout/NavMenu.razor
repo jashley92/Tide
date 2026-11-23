@@ -31,7 +31,8 @@
             aria-label="Menu"><span class="bi bi-list" aria-hidden="true"></span></button>
 </div>
 
-<nav aria-label="Main" id="tide-nav-links">
+@* MainLayout's <nav class="sidebar"> is the landmark, so the brand and the buttons above are in it too. *@
+<div class="tide-side-links" id="tide-nav-links">
     <ul class="tide-nav">
         @* Every page this person may open, under small group labels, the daily ones first. NavPages says
            who sees each, and the command palette reads it too. A label is text, not a control: every link is shown.
@@ -50,7 +51,7 @@
             </li>
         }
     </ul>
-</nav>
+</div>
 
 @code {
     private int _newItems;

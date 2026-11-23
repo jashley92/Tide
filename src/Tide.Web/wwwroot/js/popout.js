@@ -46,9 +46,10 @@ window.tidePopout = (function () {
         // Measured where the stylesheet puts it, against its button.
         s.position = s.left = s.top = s.right = s.bottom = s.width = s.maxHeight = s.overflowY = '';
         const r = panel.getBoundingClientRect(), b = w.opener.getBoundingClientRect();
-        // Side to side, the page's own width: clear of the sidebar, and of the scrollbar's gutter, which the window keeps
-        // whether or not there's a scrollbar in it (scrollbar-gutter: stable), so it's not counted in clientWidth.
-        const de = document.documentElement, main = document.querySelector('main'), page = main ? main.getBoundingClientRect() : null;
+        // Side to side, the page's own width (.tide-main, the column of top bar and content): clear of the sidebar, and
+        // of the scrollbar's gutter, which the window keeps whether or not there's a scrollbar in it (scrollbar-gutter:
+        // stable), so it's not counted in clientWidth.
+        const de = document.documentElement, main = document.querySelector('.tide-main'), page = main ? main.getBoundingClientRect() : null;
         const minX = Math.max(0, page ? page.left : 0) + margin, maxX = Math.min(de.clientWidth, page ? page.right : Infinity) - margin;
         const minY = Math.max(0, topBar(w)) + margin, maxY = de.clientHeight - margin;
         const width = Math.min(r.width, maxX - minX);

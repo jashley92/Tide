@@ -3,13 +3,17 @@
 
 <a class="tide-skip-link" href="#main-content">Skip to content</a>
 
+@* Each part of the page is a landmark of its own, none inside another: the sidebar is the main navigation, the top bar
+   the banner (<header>), the page the one <main>, the context rail a complementary <aside> after it, and the toasts a
+   named region. The top bar and the rail are kept out of <main> so a screen reader's list of landmarks has each once;
+   .tide-main is a plain column the stylesheet lays out as <main> was. *@
 <div class="page">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="Main">
         <NavMenu />
-    </div>
+    </nav>
 
-    <main>
-        <div class="top-row">
+    <div class="tide-main">
+        <header class="top-row">
             <span class="tide-muted small">@Clock.TeamName</span>
             <div class="tide-top-find">
                 <AuthorizeView Policy="@Policies.ReadTeamEdition">
@@ -30,16 +34,18 @@
                     </div>
                 </Authorized>
             </AuthorizeView>
-        </div>
+        </header>
 
-        <article id="main-content" tabindex="-1" class="content">
+        @* Where the skip link goes and FocusOnNavigate looks for the h1. *@
+        <main id="main-content" tabindex="-1" class="content">
             <SecondProcessBanner />
             <LiveMeetingJoin />
             <PageBoundary>@Body</PageBoundary>
-        </article>
-        @* The page's context rail, when it has one: nothing is drawn here otherwise. *@
+        </main>
+        @* The page's context rail, when it has one: nothing is drawn here otherwise. After </main>, not in it, so it's a
+           top-level landmark, still after the content in reading order. *@
         <SectionOutlet SectionId="ContextRail.RegionSection" />
-    </main>
+    </div>
 </div>
 
 <ToastHost />
@@ -51,7 +57,8 @@
     </Authorized>
 </AuthorizeView>
 
-<div id="blazor-error-ui">
+@* Hidden until Blazor shows it; an alert then, so it's announced, and not content outside a landmark. *@
+<div id="blazor-error-ui" role="alert">
     Something went wrong. Reload the page to continue.
     <a href="" class="reload">Reload</a>
     <button type="button" class="dismiss" aria-label="Dismiss">&times;</button>

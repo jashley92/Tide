@@ -1877,13 +1877,13 @@ const selectShowsOptions = selector => ({
 });
 
 /** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
- * beside it (from where <main> starts). */
+ * beside it (from where .tide-main, the column of top bar and content, starts). */
 const insidePage = selector => ({
   name: `inside the page: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => {
     const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
-    const from = Math.max(0, document.querySelector('main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
+    const from = Math.max(0, document.querySelector('.tide-main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
     return shown.filter(r => r.left < from - 0.5 || r.right > to + 0.5)
       .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the page (${Math.round(from)} to ${to}px)`);
   }, selector),
