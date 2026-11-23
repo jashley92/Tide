@@ -990,12 +990,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        var items = (await db.FeedItems.AsNoTracking()
-            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "")
-            .Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
+        var items = (await NewWithCves(db).Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
         var kev = await KevAsync(db, items, ct);
         return items.Count(i => i.CveList.Any(kev.Contains));
     }
+
+    // The new items, from sources still in use, that name a CVE: where KEV ones are looked for.
+    private static IQueryable<FeedItem> NewWithCves(IAppDbContext db) =>
+        db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "");
 
     /// <summary>
     /// The new items a KEV round-up would promote (<see cref="KevRoundup"/>): those naming a CVE on CISA's KEV list, as
@@ -1007,7 +1009,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        var q = db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "");
+        var q = NewWithCves(db);
         if (since is { } s) q = q.Where(i => (i.PublishedAtUtc ?? i.FetchedAtUtc) >= s);
         var items = await q.OrderByDescending(i => i.PublishedAtUtc ?? i.FetchedAtUtc).ThenByDescending(i => i.Id)
             .Select(i => new FeedItem { Id = i.Id, Cves = i.Cves, Source = new Source { DefaultTlp = i.Source!.DefaultTlp } }).ToListAsync(ct);
@@ -1340,9 +1342,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var wanted = ids.Distinct().ToList();
         // A KEV round-up may be bigger than a suggested group (KevRoundup.MaxItems); any other promote of several is held
         // to a group's size, whatever chose them (a group, or several items selected in Triage).
-        var max = form.AsKevRoundup ? KevRoundup.MaxItems : TriageGroups.MaxSize;
-        if (wanted.Count < 1 || wanted.Count > max)
-            throw new ArgumentException(form.AsKevRoundup ? $"A KEV round-up promotes 1 to {max} items." : $"Promote 1 to {max} reports as one article.");
+        var (max, refused) = form.AsKevRoundup ? (KevRoundup.MaxItems, $"A KEV round-up promotes 1 to {KevRoundup.MaxItems} items.")
+            : (TriageGroups.MaxSize, $"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
+        if (wanted.Count < 1 || wanted.Count > max) throw new ArgumentException(refused);
         var single = wanted.Count == 1;
         List<FeedItem> items;
         HashSet<string> kevCves = [];
