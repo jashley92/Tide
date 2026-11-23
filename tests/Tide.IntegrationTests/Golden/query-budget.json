@@ -1,0 +1,438 @@
+{
+  "Sqlite": {
+    "Actions.Board": {
+      "reads": 3,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 204
+    },
+    "Actions.List(Closed)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 112
+    },
+    "Actions.List(Mine)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 51
+    },
+    "Actions.List(Open)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 201
+    },
+    "Brief.Candidates": {
+      "reads": 9,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 10,
+      "maxParameters": 2,
+      "rowsRead": 1048
+    },
+    "Reminders(BriefNotReady)": {
+      "reads": 4,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 5,
+      "maxParameters": 2,
+      "rowsRead": 11
+    },
+    "Reminders(Digest)": {
+      "reads": 5,
+      "saves": 1,
+      "rowsWritten": 1,
+      "parameters": 10,
+      "maxParameters": 3,
+      "rowsRead": 119
+    },
+    "Reminders(DueSoon)": {
+      "reads": 6,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 16,
+      "maxParameters": 4,
+      "rowsRead": 10
+    },
+    "Reminders(Escalation)": {
+      "reads": 14,
+      "saves": 2,
+      "rowsWritten": 992,
+      "parameters": 6943,
+      "maxParameters": 200,
+      "rowsRead": 813
+    },
+    "Reminders(ExternalReminder)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 1
+    },
+    "Reminders(OutreachFollowUp)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 1
+    },
+    "Reminders(Overdue)": {
+      "reads": 6,
+      "saves": 2,
+      "rowsWritten": 196,
+      "parameters": 1195,
+      "maxParameters": 201,
+      "rowsRead": 396
+    },
+    "Reminders(PersonalDigest)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 1
+    },
+    "Reminders(Presenting)": {
+      "reads": 4,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 8,
+      "maxParameters": 2,
+      "rowsRead": 6
+    },
+    "Reports(month)": {
+      "reads": 9,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 20,
+      "maxParameters": 4,
+      "rowsRead": 3033
+    },
+    "Search(CVE)": {
+      "reads": 22,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 140,
+      "maxParameters": 11,
+      "rowsRead": 103
+    },
+    "Search(indicator)": {
+      "reads": 22,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 51,
+      "maxParameters": 6,
+      "rowsRead": 33
+    },
+    "Search(text)": {
+      "reads": 14,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 369,
+      "maxParameters": 50,
+      "rowsRead": 1120
+    },
+    "Today": {
+      "reads": 42,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 495,
+      "maxParameters": 100,
+      "rowsRead": 2471
+    },
+    "Trends(24 months)": {
+      "reads": 7,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 8422
+    },
+    "Trends(6 months)": {
+      "reads": 7,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 2943
+    },
+    "Triage.Inbox(Dismissed)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1749
+    },
+    "Triage.Inbox(Duplicate)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 667,
+      "maxParameters": 150,
+      "rowsRead": 1459
+    },
+    "Triage.Inbox(New)": {
+      "reads": 30,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 2147,
+      "maxParameters": 450,
+      "rowsRead": 3456
+    },
+    "Triage.Inbox(Promoted)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1699
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "reads": 19,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 717,
+      "maxParameters": 150,
+      "rowsRead": 1460
+    },
+    "Webhooks.Deliver": {
+      "reads": 5,
+      "saves": 0,
+      "rowsWritten": 1,
+      "parameters": 15,
+      "maxParameters": 6,
+      "rowsRead": 12
+    }
+  },
+  "SqlServer": {
+    "Actions.Board": {
+      "reads": 3,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 204
+    },
+    "Actions.List(Closed)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 112
+    },
+    "Actions.List(Mine)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 51
+    },
+    "Actions.List(Open)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 201
+    },
+    "Brief.Candidates": {
+      "reads": 9,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 10,
+      "maxParameters": 2,
+      "rowsRead": 1048
+    },
+    "Reminders(BriefNotReady)": {
+      "reads": 4,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 5,
+      "maxParameters": 2,
+      "rowsRead": 11
+    },
+    "Reminders(Digest)": {
+      "reads": 5,
+      "saves": 1,
+      "rowsWritten": 1,
+      "parameters": 10,
+      "maxParameters": 3,
+      "rowsRead": 119
+    },
+    "Reminders(DueSoon)": {
+      "reads": 6,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 16,
+      "maxParameters": 4,
+      "rowsRead": 10
+    },
+    "Reminders(Escalation)": {
+      "reads": 14,
+      "saves": 2,
+      "rowsWritten": 25,
+      "parameters": 6943,
+      "maxParameters": 336,
+      "rowsRead": 813
+    },
+    "Reminders(ExternalReminder)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 1
+    },
+    "Reminders(OutreachFollowUp)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 1,
+      "maxParameters": 1,
+      "rowsRead": 1
+    },
+    "Reminders(Overdue)": {
+      "reads": 6,
+      "saves": 2,
+      "rowsWritten": 6,
+      "parameters": 1195,
+      "maxParameters": 201,
+      "rowsRead": 396
+    },
+    "Reminders(PersonalDigest)": {
+      "reads": 1,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 0,
+      "maxParameters": 0,
+      "rowsRead": 1
+    },
+    "Reminders(Presenting)": {
+      "reads": 4,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 8,
+      "maxParameters": 2,
+      "rowsRead": 6
+    },
+    "Reports(month)": {
+      "reads": 9,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 20,
+      "maxParameters": 4,
+      "rowsRead": 3033
+    },
+    "Search(CVE)": {
+      "reads": 22,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 162,
+      "maxParameters": 11,
+      "rowsRead": 103
+    },
+    "Search(indicator)": {
+      "reads": 22,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 117,
+      "maxParameters": 31,
+      "rowsRead": 33
+    },
+    "Search(text)": {
+      "reads": 14,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 413,
+      "maxParameters": 50,
+      "rowsRead": 1120
+    },
+    "Today": {
+      "reads": 42,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 495,
+      "maxParameters": 100,
+      "rowsRead": 2471
+    },
+    "Trends(24 months)": {
+      "reads": 7,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 8422
+    },
+    "Trends(6 months)": {
+      "reads": 7,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 18,
+      "maxParameters": 4,
+      "rowsRead": 2943
+    },
+    "Triage.Inbox(Dismissed)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1739
+    },
+    "Triage.Inbox(Duplicate)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 667,
+      "maxParameters": 150,
+      "rowsRead": 1459
+    },
+    "Triage.Inbox(New)": {
+      "reads": 30,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 2147,
+      "maxParameters": 450,
+      "rowsRead": 3423
+    },
+    "Triage.Inbox(Promoted)": {
+      "reads": 18,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 987,
+      "maxParameters": 250,
+      "rowsRead": 1699
+    },
+    "Triage.Inbox(Shortlisted)": {
+      "reads": 19,
+      "saves": 0,
+      "rowsWritten": 0,
+      "parameters": 717,
+      "maxParameters": 150,
+      "rowsRead": 1460
+    },
+    "Webhooks.Deliver": {
+      "reads": 5,
+      "saves": 0,
+      "rowsWritten": 1,
+      "parameters": 15,
+      "maxParameters": 6,
+      "rowsRead": 12
+    }
+  }
+}

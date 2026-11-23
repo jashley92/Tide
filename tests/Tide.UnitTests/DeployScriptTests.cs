@@ -178,6 +178,43 @@ public partial class DeployScriptTests
     }
 
     [Fact]
+    public void Older_upgrade_backups_are_pruned_only_after_the_new_build_answered_and_never_this_runs()
+    {
+        var script = Read("deploy", "Upgrade-Tide.ps1");
+        int At(string s)
+        {
+            var i = script.IndexOf(s, StringComparison.Ordinal);
+            i.Should().BeGreaterThan(-1, "the script has '{0}'", s);
+            return i;
+        }
+        var record = At("ConvertTo-Json | Set-Content -LiteralPath (Join-Path $BackupRoot 'snapshot.json')");
+        var stop = At("Stop-TideAppPool -Name $AppPoolName\n");
+        var lastRollback = script.LastIndexOf("Complete-Rollback \"", StringComparison.Ordinal);
+        var versionWritten = At("Set-Content -Path (Join-Path $SitePath 'VERSION.txt')");
+        var plan = At("$plan = Get-TidePrunePlan -StartProven $startProven -CustomBackupRoot (-not $upgradeBackupsDir) -Keep $KeepUpgradeBackups");
+        var markGate = At("if ($plan.MarkSucceeded) {");
+        var succeeded = At("Set-TideUpgradeSucceeded -Folder $BackupRoot");
+        var baksGate = At("if ($plan.PruneBaks) {");
+        var pruneBaks = At("Get-TidePrunableBaks -History $history -BakDir $bakDir -DbName $DbName -Files $inFolder");
+        var foldersGate = At("if ($plan.PruneFolders) {");
+        var pruneFolders = At("Get-TidePrunable -Items $snapshots -Keep $KeepUpgradeBackups -Exclude @($stamp)");
+        var complete = At("Write-Step \"Upgrade complete.\"");
+        new[] { record, stop, lastRollback, versionWritten, plan, markGate, succeeded, baksGate, pruneBaks, foldersGate, pruneFolders, complete }
+            .Should().BeInAscendingOrder(
+                "the record is written before anything changes, every failure rolls back and throws before the run is " +
+                "marked succeeded and the prune, and both go by the plan, so a failed upgrade keeps every backup");
+        script.IndexOf("Remove-Item -LiteralPath $path", StringComparison.Ordinal).Should().BeGreaterThan(baksGate);
+
+        // Only TIDE's own answer proves the start: the warm-up's 'started' verdicts, not Windows authentication's.
+        (script.Split("$startProven = $true").Length - 1).Should().Be(2);
+        var authCase = script[At("        'auth' {\n            Write-Warn2 (\"Couldn't prove the new build started")..At("        'other' { Write-Warn2 \"$HealthUrl answered")];
+        authCase.Should().Contain("$started = $true").And.NotContain("$startProven");
+        script.Should().NotContain("xp_delete_file", "the .bak files are deleted only through a path this host reaches");
+        script.Should().Contain("Remove-TideTree $old.FullName").And.NotContain("Remove-Item -LiteralPath $old.FullName -Recurse",
+            "Windows PowerShell 5.1's Remove-Item -Recurse follows a junction into its target");
+    }
+
+    [Fact]
     public void Whatever_fails_between_stopping_the_pool_and_starting_it_rolls_back_and_every_rollback_asks_whether_the_old_build_fits()
     {
         // A file the stale-file removal can't delete, an IIS setting that won't take, a pool that won't start: each throws
@@ -400,8 +437,9 @@ public partial class DeployScriptPowerShellTests
         var names = upgrade.GetProperty("Params").EnumerateArray().Select(p => p.GetProperty("Name").GetString()).ToList();
         names.Should().Contain(["BundleZip", "Version", "Repository", "Proxy", "AppSource", "Build", "SiteName", "AppPath", "SitePath",
             "AppPoolName", "SqlInstance", "DbName", "HealthUrl", "BackupRoot", "DataRoot", "SkipDbBackup", "Force", "ReleaseHashChecked",
-            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath"]);
+            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath", "KeepUpgradeBackups"]);
         string? Default(JsonElement s, string n) => s.GetProperty("Params").EnumerateArray().Single(p => p.GetProperty("Name").GetString() == n).GetProperty("Default").GetString();
+        Default(upgrade, "KeepUpgradeBackups").Should().Be("3", "docs/UPGRADE.md says an upgrade keeps three");
         Default(upgrade, "Repository").Should().Be("'jashley92/Tide'");
         Default(upgrade, "SiteName").Should().Be("'TIDE'", "Install-Tide.ps1's default site");
         upgrade.GetProperty("ShouldProcess").GetBoolean().Should().BeTrue("-WhatIf runs the checks and stops");
@@ -836,6 +874,242 @@ public partial class DeployScriptPowerShellTests
             """);
         foreach (var grant in new[] { "backupOperator", "dbcreator", "msdb", "stopsOnError" }) r.GetProperty(grant).GetBoolean().Should().BeTrue(grant);
         r.GetProperty("bad").GetString().Should().StartWith("BackupAccount must be an account name", "it goes into the SQL inside brackets and quotes");
+    }
+
+    [Fact]
+    public void Pruning_keeps_the_newest_successful_upgrades_and_this_runs_and_ignores_what_the_upgrade_didnt_write()
+    {
+        var r = Run("""
+            function S([string] $n, [bool] $ok = $true) { [pscustomobject]@{ Name = $n; Succeeded = $ok } }
+            function P([string] $stamp) { "Tide-preupgrade-$stamp.bak" }
+            $bak = Get-TidePreUpgradeBakPattern 'Tide'
+            $dir = Get-TideUpgradeFolderPattern
+            $baks = @(
+                (S (P '20260105-090000')), (S (P '20260101-090000')), (S (P '20260103-090000')), (S (P '20260102-090000')), (S (P '20260104-090000')),
+                (S 'Tide-test-preupgrade-20250101-090000.bak'),   # another database's
+                (S 'TIDE-preupgrade-20250101-090000.bak'),        # another database's, on a case-sensitive server
+                (S 'Tide-preupgrade-20251301-090000.bak'),        # not a real time
+                (S 'Tide-full-20250101.bak'), (S 'Tide-preupgrade-20250101-090000.bak.old'), (S 'notes.txt'))
+            $folders = @('20260101-090000', '20260102-090000', '20260103-090000', '20260104-090000', 'site-rollback', 'keep-me', '20260101-0900') |
+                ForEach-Object { [pscustomobject]@{ Name = $_; FullName = "D:\inetpub\tide-upgrade-backups\$_"; Succeeded = $true } }
+            $out = [ordered]@{
+                newest   = @(Get-TidePrunable -Items $baks -Keep 3 -Pattern $bak | ForEach-Object { $_.Name })
+                # This run's stamp sorts oldest (a clock set back): it's still never deleted.
+                thisRun  = @(Get-TidePrunable -Items $baks -Keep 1 -Exclude @((P '20260101-090000')) -Pattern $bak | ForEach-Object { $_.Name })
+                cased    = @(Get-TidePrunable -Items @((S 'TIDE-preupgrade-20260101-090000.bak'), (S 'Tide-preupgrade-20260102-090000.bak'), (S 'Tide-preupgrade-20260103-090000.bak')) -Keep 1 -Pattern $bak | ForEach-Object { $_.Name })
+                folders  = @(Get-TidePrunable -Items $folders -Keep 2 -Exclude @('20260104-090000') -Pattern $dir | ForEach-Object { $_.FullName })
+                fewer    = @(Get-TidePrunable -Items $baks -Keep 10 -Pattern $bak).Count
+                none     = @(Get-TidePrunable -Items $baks -Keep 0 -Pattern $bak).Count
+                empty    = @(Get-TidePrunable -Items @() -Keep 3 -Pattern $bak).Count
+                escaped  = @(Get-TidePrunable -Items @((S 'TideXDb-preupgrade-20260101-090000.bak'), (S 'TideXDb-preupgrade-20260102-090000.bak')) -Keep 1 -Pattern (Get-TidePreUpgradeBakPattern 'Tide.Db')).Count
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
+        Names("newest").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"],
+            "the newest three stay, and nothing that isn't this database's pre-upgrade backup is picked");
+        Names("thisRun").Should().Equal(["Tide-preupgrade-20260104-090000.bak", "Tide-preupgrade-20260103-090000.bak", "Tide-preupgrade-20260102-090000.bak"]);
+        Names("cased").Should().Equal(["Tide-preupgrade-20260102-090000.bak"], "'TIDE' is another database on a case-sensitive server");
+        Names("folders").Should().Equal(["D:\\inetpub\\tide-upgrade-backups\\20260102-090000", "D:\\inetpub\\tide-upgrade-backups\\20260101-090000"],
+            "only the upgrade's own <time> folders count");
+        r.GetProperty("fewer").GetInt32().Should().Be(0);
+        r.GetProperty("none").GetInt32().Should().Be(0, "-KeepUpgradeBackups 0 keeps everything");
+        r.GetProperty("empty").GetInt32().Should().Be(0);
+        r.GetProperty("escaped").GetInt32().Should().Be(0, "a database name is matched literally, its dot included");
+    }
+
+    [Fact]
+    public void Failed_upgrades_dont_use_up_the_keep_count_and_those_since_the_last_success_are_kept()
+    {
+        var r = Run("""
+            function New-Run([string] $stamp, [bool] $ok) { [pscustomobject]@{ Name = $stamp; Succeeded = $ok } }
+            $dir = Get-TideUpgradeFolderPattern
+            # A success, three failed retries, then this run succeeds.
+            $retries = @((New-Run '20260101-090000' $true), (New-Run '20260102-090000' $false), (New-Run '20260103-090000' $false), (New-Run '20260104-090000' $false), (New-Run '20260105-090000' $true))
+            # Two more successes later.
+            $later = $retries + @((New-Run '20260106-090000' $true), (New-Run '20260107-090000' $true))
+            # Keep 1: the failed runs newer than the last success before this one still stay.
+            $keepOne = @((New-Run '20260101-090000' $true), (New-Run '20260102-090000' $true), (New-Run '20260103-090000' $false), (New-Run '20260104-090000' $false), (New-Run '20260105-090000' $true))
+            $out = [ordered]@{
+                retries   = @(Get-TidePrunable -Items $retries -Keep 3 -Exclude @('20260105-090000') -Pattern $dir | ForEach-Object { $_.Name })
+                later     = @(Get-TidePrunable -Items $later -Keep 3 -Exclude @('20260107-090000') -Pattern $dir | ForEach-Object { $_.Name })
+                keepOne   = @(Get-TidePrunable -Items $keepOne -Keep 1 -Exclude @('20260105-090000') -Pattern $dir | ForEach-Object { $_.Name })
+                # No success before this run: every failed run's stays. A bare name counts as a failed run's.
+                noSuccess = @(Get-TidePrunable -Items @('20260101-090000', '20260102-090000', '20260103-090000') -Keep 1 -Exclude @('20260103-090000') -Pattern $dir).Count
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
+        Names("retries").Should().BeEmpty("the failed retries don't count toward three, and the first one's backup may be the only one from before its migrations");
+        Names("later").Should().Equal(["20260104-090000", "20260103-090000", "20260102-090000", "20260101-090000"],
+            "the newest three successes stay, and the failed runs are now older than the last success before this run");
+        Names("keepOne").Should().Equal(["20260102-090000", "20260101-090000"]);
+        r.GetProperty("noSuccess").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public void Only_pre_upgrade_backups_this_servers_history_records_for_this_database_are_pruned()
+    {
+        var r = Run("""
+            $history = @(
+                'D:\SQLBackup\Tide-preupgrade-20260101-090000.bak', 'D:\SQLBackup\Tide-preupgrade-20260102-090000.bak',
+                'd:\sqlbackup\Tide-preupgrade-20260103-090000.bak', 'D:\SQLBackup\Tide-preupgrade-20260104-090000.bak',
+                'D:\SQLBackup\TIDE-preupgrade-20250101-090000.bak',   # a database whose name differs only in case
+                'D:\SQLBackup\Tide-preupgrade-20250601-090000.bak',   # from before the records: no record names it
+                'E:\Elsewhere\Tide-preupgrade-20251201-090000.bak')    # another folder
+            $files = @(
+                'Tide-preupgrade-20260101-090000.bak', 'Tide-preupgrade-20260102-090000.bak', 'Tide-preupgrade-20260103-090000.bak',
+                'Tide-preupgrade-20260104-090000.bak', 'TIDE-preupgrade-20250101-090000.bak', 'Tide-preupgrade-20251201-090000.bak',
+                'Tide-preupgrade-20250601-090000.bak',
+                'Tide-preupgrade-20251101-090000.bak')               # another server's, sharing the folder
+            $snaps = @('20260101-090000', '20260102-090000', '20260103-090000', '20260104-090000') |
+                ForEach-Object { [pscustomobject]@{ Name = $_; Succeeded = $true; BakName = "Tide-preupgrade-$_.bak" } }
+            $this = 'Tide-preupgrade-20260104-090000.bak'
+            $out = [ordered]@{
+                reachable   = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup\' -DbName 'Tide' -Files $files -Snapshots $snaps -Keep 2 -Exclude @($this))
+                gone        = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files @($this) -Snapshots $snaps -Keep 1 -Exclude @($this)).Count
+                unreachable = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Snapshots $snaps -Keep 2 -Exclude @($this))
+                noHistory   = @(Get-TidePrunableBaks -History @() -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Snapshots $snaps -Keep 1 -Exclude @($this)).Count
+                unrecorded  = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Keep 1 -Exclude @($this)).Count
+                otherCase   = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'TIDE' -Files $files -Snapshots $snaps -Keep 1).Count
+                # A record's flag edited by hand to "true" or 1 isn't a success: those runs count as failed, newer than
+                # the last real success (20260101), so they stay.
+                handEdited  = @(Get-TidePrunableBaks -History $history -BakDir 'D:\SQLBackup' -DbName 'Tide' -Files $files -Keep 1 -Exclude @($this) -Snapshots @(
+                    [pscustomobject]@{ Name = 'a'; Succeeded = $true; BakName = 'Tide-preupgrade-20260101-090000.bak' },
+                    [pscustomobject]@{ Name = 'b'; Succeeded = 'true'; BakName = 'Tide-preupgrade-20260102-090000.bak' },
+                    [pscustomobject]@{ Name = 'c'; Succeeded = 1; BakName = 'Tide-preupgrade-20260103-090000.bak' },
+                    [pscustomobject]@{ Name = 'd'; Succeeded = $true; BakName = $this }))
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
+        Names("reachable").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"],
+            "a .bak this server's history doesn't record in the folder (another server's, another folder's), the database " +
+            "named in another case, and one from before the records (older than every success, yet no record names it) stay");
+        Names("handEdited").Should().Equal(["Tide-preupgrade-20260101-090000.bak"],
+            "with only 20260101 a real success, it's the last success before this run: the hand-edited ones are newer and stay, " +
+            "and 20260101 is past keep 1");
+        r.GetProperty("gone").GetInt32().Should().Be(0, "a file the history names but that's no longer there isn't returned");
+        Names("unreachable").Should().Equal(["Tide-preupgrade-20260102-090000.bak", "Tide-preupgrade-20260101-090000.bak"]);
+        r.GetProperty("noHistory").GetInt32().Should().Be(0, "with no history, nothing is ours");
+        r.GetProperty("unrecorded").GetInt32().Should().Be(0, "a backup no record names is never pruned");
+        r.GetProperty("otherCase").GetInt32().Should().Be(0, "'TIDE' has one backup in the history, which is kept");
+    }
+
+    [Fact]
+    public void A_records_succeeded_flag_counts_only_as_the_JSON_boolean_true()
+    {
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-flags-' + [guid]::NewGuid().ToString('N'))
+            try {
+                $flags = [ordered]@{ '20260101-090000' = 'true'; '20260102-090000' = '"true"'; '20260103-090000' = '1'; '20260104-090000' = 'false' }
+                foreach ($k in $flags.Keys) {
+                    New-Item -ItemType Directory -Force -Path (Join-Path $root $k) | Out-Null
+                    Set-Content -LiteralPath (Join-Path $root "$k\snapshot.json") -Encoding UTF8 -Value (
+                        '{ "format": 1, "server": "WEB1", "site": "C:\\inetpub\\tide", "bak": "", "succeeded": ' + $flags[$k] + ' }')
+                }
+                $snaps = @(Get-TideUpgradeSnapshots -Root $root -SitePath 'C:\inetpub\tide' -Server 'WEB1')
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+            $items = @(@{ Name = '20260101-090000'; Succeeded = $true }, @{ Name = '20260102-090000'; Succeeded = 'true' },
+                @{ Name = '20260103-090000'; Succeeded = 1 }, @{ Name = '20260104-090000'; Succeeded = $true }) | ForEach-Object { [pscustomobject]$_ }
+            $out = [ordered]@{
+                snaps = @($snaps | ForEach-Object { "$($_.Name):$($_.Succeeded)" })
+                # Keep 1, this run 20260104: with only 20260101 a success, the two between are a failed run's, newer than it.
+                pruned = @(Get-TidePrunable -Items $items -Keep 1 -Exclude @('20260104-090000') -Pattern (Get-TideUpgradeFolderPattern) | ForEach-Object { $_.Name })
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        r.GetProperty("snaps").EnumerateArray().Select(x => x.GetString()).Should().Equal(
+            "20260101-090000:True", "20260102-090000:False", "20260103-090000:False", "20260104-090000:False");
+        r.GetProperty("pruned").EnumerateArray().Select(x => x.GetString()).Should().Equal(["20260101-090000"],
+            "\"true\" and 1 don't count as successes, so those runs are kept as a failed run's newer than the last success");
+    }
+
+    [Fact]
+    public void Only_a_proven_start_is_recorded_as_a_success_and_prunes_and_BackupRoot_prunes_nothing()
+    {
+        var r = Run("""
+            function Show($p) { "$($p.MarkSucceeded):$($p.PruneBaks):$($p.PruneFolders):$([bool]$p.Note)" }
+            $out = [ordered]@{
+                proven     = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $false -Keep 3)
+                unproven   = Show (Get-TidePrunePlan -StartProven $false -CustomBackupRoot $false -Keep 3)
+                backupRoot = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $true -Keep 3)
+                keepNone   = Show (Get-TidePrunePlan -StartProven $true -CustomBackupRoot $false -Keep 0)
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        r.GetProperty("proven").GetString().Should().Be("True:True:True:False");
+        r.GetProperty("unproven").GetString().Should().Be("False:False:False:True",
+            "a start taken on trust may yet need a rollback by hand: it isn't a success and deletes nothing");
+        r.GetProperty("backupRoot").GetString().Should().Be("True:False:False:True",
+            "a -BackupRoot run's records aren't with the others, so neither its .bak files nor its folders are pruned");
+        r.GetProperty("keepNone").GetString().Should().Be("True:False:False:False");
+    }
+
+    [Fact]
+    public void Only_this_sites_upgrade_folders_are_pruned_and_a_junction_inside_one_is_never_followed()
+    {
+        var r = Run("""
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('tide-upgrades-' + [guid]::NewGuid().ToString('N'))
+            $outside = Join-Path ([IO.Path]::GetTempPath()) ('tide-target-' + [guid]::NewGuid().ToString('N'))
+            # A junction on Windows (no admin needed); elsewhere pwsh makes nothing for -ItemType Junction, so a symbolic link.
+            function New-Link([string] $path, [string] $target) {
+                $kind = if ($PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows) { 'Junction' } else { 'SymbolicLink' }
+                New-Item -ItemType $kind -Path $path -Value $target -ErrorAction Stop | Out-Null
+            }
+            function Add-Run([string] $stamp, [string] $site, [string] $server = 'WEB1', [switch] $Succeeded) {
+                $d = Join-Path $root $stamp
+                New-Item -ItemType Directory -Force -Path $d | Out-Null
+                New-TideUpgradeRecord -Server $server -SitePath $site -IisPath 'TIDE' -DbName 'Tide' -BakName "Tide-preupgrade-$stamp.bak" -Started 'x' |
+                    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $d 'snapshot.json') -Encoding UTF8
+                if ($Succeeded) { Set-TideUpgradeSucceeded -Folder $d -Completed 'y' }
+                return $d
+            }
+            try {
+                $mine = Add-Run '20260101-090000' 'C:\inetpub\tide' -Succeeded
+                New-Item -ItemType Directory -Force -Path (Join-Path $mine 'site-rollback') | Out-Null
+                New-Item -ItemType Directory -Force -Path $outside | Out-Null
+                Set-Content -LiteralPath (Join-Path $outside 'keep.txt') -Value 'not the snapshot''s'
+                New-Link (Join-Path (Join-Path $mine 'site-rollback') 'link') $outside
+                [void](Add-Run '20260102-090000' 'C:\inetpub\tide-test' -Succeeded)      # a sibling site's, sharing the folder
+                [void](Add-Run '20260103-090000' 'C:\inetpub\tide' -Server 'WEB2' -Succeeded)   # another server's
+                New-Item -ItemType Directory -Force -Path (Join-Path $root '20260104-090000') | Out-Null   # no record
+                $bad = Join-Path $root '20260105-090000'
+                New-Item -ItemType Directory -Force -Path $bad | Out-Null
+                Set-Content -LiteralPath (Join-Path $bad 'snapshot.json') -Value '{ not json'
+                [void](Add-Run '20260106-090000' 'C:\inetpub\tide\' -Succeeded)
+                $failed = Add-Run '20260107-090000' 'c:\inetpub\TIDE'
+                New-Link (Join-Path $root '20260108-090000') $mine   # a link to a run
+                [void](Add-Run '20260109-090000' 'C:\inetpub\tide' -Succeeded)          # this run
+
+                $snaps = @(Get-TideUpgradeSnapshots -Root $root -SitePath 'C:\inetpub\tide' -Server 'web1')
+                $prune = @(Get-TidePrunable -Items $snaps -Keep 2 -Exclude @('20260109-090000') -Pattern (Get-TideUpgradeFolderPattern))
+                foreach ($p in $prune) { Remove-TideTree $p.FullName }
+                $out = [ordered]@{
+                    snaps     = @($snaps | ForEach-Object { "$($_.Name):$($_.Succeeded):$($_.BakName)" })
+                    pruned    = @($prune | ForEach-Object { $_.Name })
+                    left      = @(Get-ChildItem -LiteralPath $root -Force | Sort-Object Name | ForEach-Object { $_.Name })
+                    targetKept = (Test-Path -LiteralPath (Join-Path $outside 'keep.txt'))
+                    linkTop   = $(try { Remove-TideTree (Join-Path $root '20260108-090000'); 'deleted' } catch { 'refused' })
+                }
+            } finally {
+                Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
+                    ForEach-Object { $l = $_.FullName; try { [IO.Directory]::Delete($l, $false) } catch { [IO.File]::Delete($l) } }
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $outside -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            ConvertTo-Json -Compress -InputObject $out
+            """);
+        string[] Names(string p) => r.GetProperty(p).EnumerateArray().Select(x => x.GetString()!).ToArray();
+        Names("snaps").Should().Equal(
+            ["20260101-090000:True:Tide-preupgrade-20260101-090000.bak", "20260106-090000:True:Tide-preupgrade-20260106-090000.bak",
+             "20260107-090000:False:Tide-preupgrade-20260107-090000.bak", "20260109-090000:True:Tide-preupgrade-20260109-090000.bak"],
+            "a sibling site's, another server's, one with no record or an unreadable one, and a link, aren't this site's");
+        Names("pruned").Should().Equal(["20260101-090000"], "the failed run is newer than the last success before this one");
+        Names("left").Should().Equal(["20260102-090000", "20260103-090000", "20260104-090000", "20260105-090000", "20260106-090000",
+            "20260107-090000", "20260108-090000", "20260109-090000"]);
+        r.GetProperty("targetKept").GetBoolean().Should().BeTrue("the junction inside the snapshot was removed as a link, not followed");
+        r.GetProperty("linkTop").GetString().Should().Be("refused");
     }
 
     [Fact]
