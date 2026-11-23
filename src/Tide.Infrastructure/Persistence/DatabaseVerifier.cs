@@ -26,14 +26,20 @@ public static class DatabaseVerifier
             return 2;
         }
         var p = Array.IndexOf(args, "--provider");
-        var provider = p >= 0 && p + 1 < args.Length ? args[p + 1] : "SqlServer";
+        string provider;
+        try { provider = DependencyInjection.DatabaseProvider(p >= 0 && p + 1 < args.Length ? args[p + 1] : DependencyInjection.SqlServer); }
+        catch (InvalidOperationException ex)
+        {
+            await output.WriteLineAsync(ex.Message);
+            return 2;
+        }
         return await RunAsync(args[at + 1], provider, output);
     }
 
     public static async Task<int> RunAsync(string connectionString, string provider, TextWriter output, CancellationToken ct = default)
     {
         var builder = new DbContextOptionsBuilder<AppDbContext>();
-        if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase)) builder.UseSqlite(connectionString);
+        if (provider == DependencyInjection.Sqlite) builder.UseSqlite(connectionString);
         else builder.UseSqlServer(connectionString, sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly));
         var ok = true;
         async Task Say(bool passed, string what)
@@ -54,7 +60,7 @@ public static class DatabaseVerifier
             var known = db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
             var applied = (await db.Database.GetAppliedMigrationsAsync(ct)).ToList();
             var unknown = applied.Where(m => !known.Contains(m)).ToList();
-            var pending = known.Where(m => !applied.Contains(m, StringComparer.Ordinal)).Order(StringComparer.Ordinal).ToList();
+            var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
             await Say(unknown.Count == 0, unknown.Count == 0 ? $"This build knows all {applied.Count} migrations the database records."
                 : $"The database records {unknown.Count} migration(s) this build doesn't know (a newer release's): {string.Join(", ", unknown.Take(5))}.");
             await Say(pending.Count == 0, pending.Count == 0 ? "No migration of this build is missing."

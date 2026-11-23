@@ -39,7 +39,7 @@ CultureInfo.DefaultThreadCurrentUICulture = culture;
 
 // Tide.Web.dll --verify-database "<connection string>": whether this build can run on a database, without starting the
 // site (the restore drill runs it on its scratch copy). It exits with its answer.
-if (await Tide.Infrastructure.Persistence.DatabaseVerifier.RunIfAskedAsync(args, Console.Out) is { } verified)
+if (await DatabaseVerifier.RunIfAskedAsync(args, Console.Out) is { } verified)
 {
     Environment.Exit(verified);
 }

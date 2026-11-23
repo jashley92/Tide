@@ -155,12 +155,12 @@ try {
     # the build knows every migration it records and none is missing, and reads a page of each core table. Run as this
     # account (Windows authentication); with -SqlCredential there's no way to hand it a password safely, so it's skipped.
     $webDll = Join-Path $site.Folder 'Tide.Web.dll'
-    if ($SqlCredential) { Add-Check 'app' $true -Skipped -Detail 'a SQL login was given (-SqlCredential): the app check uses Windows authentication only' }
+    if ($SqlCredential) { Add-Check 'app' $true -Skipped -Detail "a SQL login was given (-SqlCredential), and there's no safe way to hand its password to the app's check" }
     elseif (-not (Test-Path -LiteralPath $webDll) -or -not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Add-Check 'app' $true -Skipped -Detail "no Tide.Web.dll in $($site.Folder), or no dotnet on the PATH"
     }
     else {
-        $verifyConn = "Server=$SqlInstance;Database=$ScratchDatabase;Integrated Security=True;Encrypt=True;TrustServerCertificate=$(-not $live.ValidateServerCertificate);Application Name=TIDE restore drill"
+        $verifyConn = New-TideConnectionString -SqlInstance $SqlInstance -DbName $ScratchDatabase -ValidateServerCertificate:$live.ValidateServerCertificate -ApplicationName 'TIDE restore drill'
         $said = @(& dotnet $webDll --verify-database $verifyConn 2>&1 | ForEach-Object { "$_" })
         $verified = $LASTEXITCODE -eq 0
         Add-Check 'app' $verified $(if ($verified) { 'the installed build can run on the restored database' } else { ($said | Where-Object { $_ -like 'FAIL*' } | Select-Object -First 3) -join ' ' })

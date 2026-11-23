@@ -68,7 +68,7 @@ public static class DependencyInjection
         return services;
     }
 
-    private const string SqlServer = "SqlServer", Sqlite = "Sqlite";
+    internal const string SqlServer = "SqlServer", Sqlite = "Sqlite";
 
     /// <summary>
     /// <c>Database:Provider</c> as it's used: SqlServer, or Sqlite (blank, in development). Anything else stops start-up
