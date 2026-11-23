@@ -21,8 +21,9 @@ public static class Telemetry
     public static readonly string[] Meters = ["Microsoft.AspNetCore.Hosting", "Microsoft.AspNetCore.Server.Kestrel", "System.Runtime"];
 
     /// <summary>Adds the exporter when an endpoint is set; returns whether it did.</summary>
-    public static bool Add(IServiceCollection services, IConfiguration config, string version)
+    public static bool AddTideTelemetry(this IServiceCollection services, IConfiguration config)
     {
+        var version = Tide.Application.Operations.AppVersionInfo.Display;
         if (!Uri.TryCreate(config[EndpointKey], UriKind.Absolute, out var endpoint)) return false;
         var protocol = string.Equals(config["Telemetry:Protocol"], "http", StringComparison.OrdinalIgnoreCase) ? OtlpExportProtocol.HttpProtobuf : OtlpExportProtocol.Grpc;
         void Exporter(OtlpExporterOptions o)
@@ -43,18 +44,12 @@ public static class Telemetry
                 {
                     // The Blazor connection is one request for as long as a page is open: not a trace worth sending.
                     o.Filter = http => !http.Request.Path.StartsWithSegments("/_blazor") && !http.Request.Path.StartsWithSegments("/health");
-                    o.EnrichWithHttpRequest = (activity, _) => Scrub(activity);
+                    // The instrumentation already redacts query values; dropping the tag also hides the parameters' names, and
+                    // holds if its redaction is turned off by environment variable.
+                    o.EnrichWithHttpRequest = (activity, _) => activity.SetTag("url.query", null);
                 })
                 .AddOtlpExporter(Exporter));
         }
         return true;
-    }
-
-    /// <summary>Takes anything a person typed out of a request's span: the query string, in every attribute that carries it.</summary>
-    internal static void Scrub(System.Diagnostics.Activity activity)
-    {
-        activity.SetTag("url.query", null);
-        if (activity.GetTagItem("url.full") is string full && full.IndexOf('?') is var q and >= 0) activity.SetTag("url.full", full[..q]);
-        if (activity.GetTagItem("http.target") is string target && target.IndexOf('?') is var t and >= 0) activity.SetTag("http.target", target[..t]);
     }
 }
