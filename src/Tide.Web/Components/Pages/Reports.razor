@@ -1,7 +1,9 @@
 @page "/reports"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @using System.Globalization
+@using Tide.Application.Assist
 @inject ReportService ReportSvc
+@inject ProseAssistService Drafts
 @inject TrendsService TrendsSvc
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -15,7 +17,8 @@
    the outcomes, the opening metrics, the topics and techniques briefed most, and the actions by team, from the same
    counts as Trends and Metrics. Each section has the team's assessment, saved per period with its own TLP (a judgement
    may name the team's own gaps), so last quarter's can be looked up; it prints and exports with the report. A colleague's
-   save shows live, as the brief's opening note does. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month
+   save shows live, as the brief's opening note does. Whoever writes them can have one drafted (ProseDraftAssist, ADR
+   0004) into the box, unsaved. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month
    by default. *@
 
 <PageTitle>Reports · TIDE</PageTitle>
@@ -292,6 +295,14 @@ else
 
     internal void SetTlp(string section, TlpLevel tlp) => _tlps[section] = tlp;
 
+    /// <summary>A drafted assessment the person chose to use: it goes in the box, unsaved, marked at least as high as
+    /// what it was drafted from.</summary>
+    internal void UseDraft(string section, ProseDraft draft)
+    {
+        _notes[section] = draft.Text;
+        if (draft.InputTlp > _tlps.GetValueOrDefault(section, ReportService.NumbersTlp)) _tlps[section] = draft.InputTlp;
+    }
+
     /// <summary>Whether <paramref name="section"/>'s box differs from its saved assessment.</summary>
     internal bool Dirty(string section)
     {
@@ -403,6 +414,10 @@ else
                         <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Fill(section)">Cancel</button>
                     }
                 </div>
+                <ProseDraftAssist Label="Draft an assessment" Id="@($"draft-{section}")" Placeholder='{ "assessment": "…" }'
+                                  HasText="@(!string.IsNullOrWhiteSpace(_notes.GetValueOrDefault(section)))"
+                                  Prompt="() => Drafts.ReportPromptAsync(_period, section)" Draft="() => Drafts.DraftReportAsync(_period, section)"
+                                  Pasted="a => Drafts.ReportFromPastedAsync(_period, section, a)" OnUse="d => UseDraft(section, d)" />
             }
             else if (saved is not null)
             {

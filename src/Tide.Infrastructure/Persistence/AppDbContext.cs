@@ -343,6 +343,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.InputHash).HasMaxLength(64);
             e.Property(x => x.BasedOn).HasMaxLength(AiDraft.MaxBasedOn);
             e.Property(x => x.Suggestions).HasMaxLength(AiDraft.MaxSuggestions);
+            e.Property(x => x.Subject).HasMaxLength(AiDraft.MaxSubject);
         });
 
         b.Entity<ArticleTechnique>(e =>

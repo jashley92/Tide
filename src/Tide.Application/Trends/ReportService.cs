@@ -37,6 +37,10 @@ public sealed record PeriodReport(Period Period, bool Partial, IReadOnlyList<Rep
 {
     /// <summary>The lines that moved most (<see cref="TrendHighlights"/>), from the same trend report as the rest.</summary>
     public IReadOnlyList<TrendHighlight> Highlights { get; init; } = [];
+
+    /// <summary>The articles counted in the period ("Articles briefed"), by id: what a drafted assessment may read the
+    /// titles and bottom lines of, under the AI limit.</summary>
+    public IReadOnlyList<Guid> Counted { get; init; } = [];
 }
 
 public sealed class ReportService(TrendsService trends, MetricsService metrics, OrgClock clock, IAppDbContextFactory dbs, ICurrentUser user)
@@ -103,7 +107,7 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
 
         var partial = trends.IsPartial(period);
         return new PeriodReport(period, partial, headlines, outcomes, reportMetrics, topics, techniques, byTeam)
-            { Highlights = TrendHighlights.From(report, partial) };
+            { Highlights = TrendHighlights.From(report, partial), Counted = report.Find("articles:all")?.Ids[^1] ?? [] };
     }
 
     // --- assessments ------------------------------------------------------------------------------------------------

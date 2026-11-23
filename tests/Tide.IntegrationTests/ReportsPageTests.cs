@@ -68,6 +68,23 @@ public class ReportsPageTests(TideApp app) : IClassFixture<TideApp>
         november.Should().Contain("Monthly report · November 2026").And.NotContain("October was quiet");
     }
 
+    [Fact]
+    public async Task EachAssessment_OffersADraft_AndAUsedDraftFillsTheBoxUnsaved()
+    {
+        // No AI provider in the test app: copying a prompt is offered, and a used draft is an ordinary unsaved edit.
+        await using var r = await ComponentHarness.RenderAsync<Reports>(app, "/reports?p=2026-10");
+        System.Net.WebUtility.HtmlDecode(await r.Html()).Should().Contain("Draft an assessment: copy a prompt");
+
+        await r.Click(c =>
+        {
+            c.UseDraft("headlines", new Tide.Application.Assist.ProseDraft(Guid.NewGuid(), "A quiet October.", [], TlpLevel.Amber, "the Headlines numbers"));
+            return c.SetParametersAsync(Microsoft.AspNetCore.Components.ParameterView.Empty);
+        });
+
+        (await r.Html()).Should().Contain("A quiet October.");
+        r.Component.Dirty("headlines").Should().BeTrue("nothing is saved without the lead");
+    }
+
     private async Task SaveAs(string name, Period period, string section, string text, TlpLevel tlp)
     {
         await using var scope = ComponentHarness.SignedIn(app, new ComponentHarness.SignIn("dev:" + name.ToLowerInvariant(), name, "Analyst"));

@@ -270,6 +270,15 @@ the brief's opening note is, and clearing the text and saving removes it. Leavin
   page shows a colleague's assessment without a reload; a box with unsaved changes keeps them.
 - **Marking.** The report's title shows the highest marking it holds: AMBER for the numbers, raised by any assessment
   marked above that (`ReportService.Marking`).
+- **Drafting one** ([ADR 0004](../decisions/0004-opt-in-ai-with-tlp-ceiling.md)). *Draft an assessment* under each box
+  (`ProseAssistService`) drafts it with the AI provider from the section's numbers as shown (with the period before
+  and the change) and, for Headlines and Topics and techniques, the titles and bottom lines of the articles counted, cut
+  at the lower of `Ai:MaxTlp` and the team edition's ceiling. With no provider, *Copy a prompt* copies the instructions,
+  the answer's JSON schema and that material to run in an approved tool, and the JSON answer is pasted back. Either way
+  every number the answer states is checked against the material (`ReportDraftChecks.Numbers`), and any it didn't give
+  is named under the draft. *Use it* puts the draft in the box, unsaved, marked at least as high as the articles it read;
+  the lead edits and saves it as their own. Each draft is recorded in `AiDrafts` (`Kind` ReportAssessment). Only whoever
+  writes assessments can draft one.
 
 `GET /reports/export.csv?p=` downloads it as one CSV: a row per number, and after each section's numbers its assessment
 (the text in `text`, who edited it last in `name`). Every row has a `tlp` column, and the file's name carries the highest

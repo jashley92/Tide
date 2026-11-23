@@ -571,6 +571,11 @@ AI drafting help is opt-in and capped by TLP (ADR [0004](../decisions/0004-opt-i
   quotes. The analyst accepts or rejects each suggestion.
 - **Recorded.** Each draft is an `AiDraft` row with provider, model, prompt version, input hash and `InputTlp`; the
   source text isn't kept. Drafting is analysts only (`WriteArticles`).
+- **Report assessments and the title slide line** (`ProseAssistService`). Drafted only from titles, bottom lines and the
+  report's counts, with the articles cut at the lower of `Ai:MaxTlp` and the team edition's ceiling, so nothing above
+  either is read. Every number in the answer is checked against the material (`ReportDraftChecks.Numbers`). Only whoever
+  may write the text may draft it (`ReportService.CanAssess`; `WriteArticles` for the line), and the draft is saved only
+  when that person saves the box.
 
 ## The audit trail and secrets
 

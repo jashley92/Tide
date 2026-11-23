@@ -134,7 +134,8 @@ Beside the brief, in the context rail:
 - **Escalated**, when the escalation ladder has flagged any of their actions (theirs, their teams', or a part of one of
   theirs): each one's priority, team, holder and how late it is;
 - **reviews asked of you**;
-- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place; then,
+- **the meeting**: its time and who presents, with *Change presenter* and *Title slide line*, edited in place (the
+  line's form offers *Suggest a title slide line*, or *Copy a prompt* without an AI provider); then,
   once the meeting has ended, the **meeting recap**: the actions raised (by team and holder, as the wrap-up slide has
   them), the notes (open or done), the articles carried to a later brief, and who attended. On your own notes,
   *Raise as action* (the note as the title, on its article; then "Raised as A-14", which opens it) and *Mark done*
@@ -1029,7 +1030,9 @@ opening Trends on what it counted; the strip isn't printed or in the CSV.
 
 Each section has the team's assessment, saved with its period (**Save assessment**) with a TLP of its own and an
 "Edited by Pat, Nov 3" line under it; another period shows its own. Analysts and administrators write them; everyone else
-who reads the report reads them. A colleague's save shows live, and one to a box with unsaved changes is said above it
+who reads the report reads them. Under each box, *Draft an assessment* (with an AI provider) or *Copy a prompt* (without
+one, then paste the tool's JSON answer and *Check it*) shows a draft with any number not in the report flagged; *Use it*
+puts it in the box unsaved, and *Reject* drops it. A colleague's save shows live, and one to a box with unsaved changes is said above it
 rather than typed over. The title's marking is the highest the report holds. *Print* prints the report, assessments
 included, without the app's frame; *CSV* carries the assessments and is named with that marking. A period still under
 way is marked "(to date)".

@@ -1,0 +1,128 @@
+@* AI help with one piece of prose (ADR 0004): a report section's assessment, or a brief's title slide line. With a
+   provider, a button drafts it; with or without one, "Copy a prompt" gives the instructions, the answer's JSON schema and
+   the material to run in an approved tool, and the answer is pasted back. Either way TIDE checks it, numbers included,
+   and shows it here with any number the material didn't give flagged. "Use it" puts it in the box as an ordinary unsaved
+   edit for the person to change and save; nothing is saved from here. Never printed. *@
+@using Tide.Application.Assist
+@inject ProseAssistService Assist
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<div class="tide-noprint mt-2">
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        @if (_status.ProviderReady)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="DraftIt"><span class="bi bi-stars" aria-hidden="true"></span> @Label</button>
+        }
+        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="@($"Copy a prompt: {Label}")" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> @(_status.ProviderReady ? "Copy a prompt" : $"{Label}: copy a prompt")</button>
+    </div>
+    @if (_pasting)
+    {
+        <div data-submit-scope>
+            <label class="tide-field-label mt-2" for="@($"{Id}-answer")">The tool's answer (JSON)</label>
+            <textarea id="@($"{Id}-answer")" class="form-control form-control-sm tide-data tide-autogrow" rows="2" maxlength="@ArticleService.MaxPaste"
+                      placeholder="@Placeholder" @bind="_answer" @bind:event="oninput"></textarea>
+            <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" data-submit @onclick="CheckPasted">Check it</button>
+                <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => (_pasting, _answer) = (false, null)">Cancel</button>
+            </div>
+        </div>
+    }
+    @if (_draft is { } d)
+    {
+        <div class="tide-draft-item" aria-live="polite">
+            <div class="tide-field-label">Draft <TlpBadge Level="d.InputTlp" /></div>
+            <div class="tide-draft-text">@d.Text</div>
+            @if (d.UnknownNumbers.Count > 0)
+            {
+                <div class="tide-field-error small mt-1" role="note">
+                    @(d.UnknownNumbers.Count == 1 ? "This number isn't" : "These numbers aren't") in what it was drafted from: @string.Join(", ", d.UnknownNumbers). Check before using it.
+                </div>
+            }
+            <div class="tide-muted small mt-1">Based on: @d.BasedOn · @(string.IsNullOrEmpty(d.Model) ? "pasted answer" : d.Model)</div>
+            <div class="d-flex gap-2 mt-1">
+                <button type="button" class="btn @(d.UnknownNumbers.Count > 0 ? "btn-outline-secondary" : "btn-primary") btn-sm" @onclick="UseIt">@(HasText ? "Replace mine" : "Use it")</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Reject">Reject</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>What the button does: "Draft an assessment", "Suggest a title slide line".</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+
+    /// <summary>Makes the answer box's id unique on the page.</summary>
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+
+    /// <summary>The answer's shape, as a hint in the paste box.</summary>
+    [Parameter] public string Placeholder { get; set; } = "{ … }";
+
+    /// <summary>The whole prompt, for "Copy a prompt".</summary>
+    [Parameter, EditorRequired] public Func<Task<string>> Prompt { get; set; } = default!;
+
+    /// <summary>A draft from the provider.</summary>
+    [Parameter, EditorRequired] public Func<Task<ProseDraft>> Draft { get; set; } = default!;
+
+    /// <summary>A pasted answer, checked.</summary>
+    [Parameter, EditorRequired] public Func<string?, Task<ProseDraft>> Pasted { get; set; } = default!;
+
+    /// <summary>The box already has text: "Replace mine" rather than "Use it".</summary>
+    [Parameter] public bool HasText { get; set; }
+
+    /// <summary>The person used the draft: the page puts it in the box, unsaved.</summary>
+    [Parameter] public EventCallback<ProseDraft> OnUse { get; set; }
+
+    private ProseAssistStatus _status = new(false, null, TlpLevel.Green);
+    private ProseDraft? _draft;
+    private bool _busy, _pasting;
+    private string? _answer;
+
+    protected override void OnInitialized() => _status = Assist.Status();
+
+    private async Task DraftIt() => await Run(async () => _draft = await Draft());
+
+    private async Task CheckPasted() => await Run(async () =>
+    {
+        _draft = await Pasted(_answer);
+        (_pasting, _answer) = (false, null);
+    });
+
+    private async Task CopyPrompt() => await Run(async () =>
+    {
+        var prompt = await Prompt();
+        _pasting = true;
+        if (await JS.InvokeAsync<bool>("tideCopy", prompt)) Toasts.Show("Prompt copied. Run it in an approved AI tool and paste its answer here.");
+        else Toasts.Error("Couldn't copy the prompt. Check clipboard permissions.");
+    });
+
+    private async Task Run(Func<Task> work)
+    {
+        _busy = true;
+        try { await work(); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException or KeyNotFoundException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal async Task UseIt()
+    {
+        if (_draft is not { } d) return;
+        _draft = null;
+        await OnUse.InvokeAsync(d);
+        await Record(d, true);
+    }
+
+    internal async Task Reject()
+    {
+        if (_draft is not { } d) return;
+        _draft = null;
+        await Record(d, false);
+    }
+
+    private async Task Record(ProseDraft d, bool accepted)
+    {
+        try { await Assist.RecordAsync(d.DraftId, accepted); }
+        catch (ForbiddenException) { /* counted only for whoever may write the text, who are the only ones here */ }
+    }
+}
