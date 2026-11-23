@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddSingleton<IRoleDirectory, RoleDirectory>();
         services.AddSingleton<IUserDirectory, UserDirectory>();
         services.AddSingleton<IFileStore, DiskFileStore>();
+        services.AddScoped<IDataUsage, DataUsage>();
         services.AddSingleton<MetricDropFolder>();
         services.Configure<EmailOptions>(config.GetSection("Email"));
         // The relay password saved in the app, when the server's configuration has none.

@@ -1601,6 +1601,39 @@ every `SaveChanges` it:
    into the **same save**, so a change and its record commit or fail together. A modification that changed nothing
    recordable is skipped.
 
+
+### `SystemStats` (not audited)
+
+A day's snapshot of how big TIDE is, written once a day by the Daily statistics job (`SystemStats.TakeAsync`), for
+Diagnostics' Data & retention panel and its 30- and 90-day growth. Never pruned: a row a day.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Day` | date | no | The organization's day. Unique: two processes can't both write one. |
+| `TakenAtUtc` | datetimeoffset | no | |
+| `DatabaseBytes` | bigint | yes | SQL Server: `sys.database_files`; SQLite: page count × page size. |
+| `FilesBytes` | bigint | yes | Everything under `Files:RootPath`. |
+| `DiskFreeBytes`, `DiskTotalBytes` | bigint | yes | The data root's disk. |
+| `Tables` | nvarchar(20000) | no | JSON: each table's rows and bytes (`sys.dm_db_partition_stats` with VIEW DATABASE STATE; rows only from `sys.partitions` without it; rows only on SQLite). |
+| `Folders` | nvarchar(20000) | no | JSON: the data root's top-level folders and their bytes. |
+
+### `BackupRuns` (not audited)
+
+A run of `Backup-Tide.ps1`, which records it here itself (the backup account needs INSERT on the table:
+`deploy/sql/02-Grant-Backup.sql`). Diagnostics shows the newest; `/health/jobs` reads the newest successful full one when
+`Backup:StaleAfterHours` is set. A backup product records nothing.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Kind` | nvarchar(10) | no | `full` (a nightly set) or `log`. Indexed with `FinishedAtUtc`. |
+| `FinishedAtUtc` | datetimeoffset | no | |
+| `Succeeded` | bit | no | |
+| `Machine` | nvarchar(100) | no | |
+| `Path` | nvarchar(400) | yes | The set's folder or the log backup's file. |
+| `Bytes` | bigint | yes | A full set's database backup size. |
+| `Note` | nvarchar(500) | yes | Why a run failed. |
 ### `AuditLog` (append-only)
 
 The C# class is `AuditLogEntry`. The app never updates these rows, and deletes them only when `Audit:RetentionDays` is set (off by default, at least 365): the daily Archiving the audit log job first writes each whole month older than that to `audit-YYYY-MM-<stamp>.jsonl.gz` (one JSON object per row) with its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then deletes that month's rows (`AuditArchive`).

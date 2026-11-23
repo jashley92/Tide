@@ -28,6 +28,21 @@ public partial class DeployScriptTests
     internal static string ReadText(params string[] parts) => Read(parts);
 
     [Fact]
+    public void Backup_records_each_run_in_the_database_and_a_failure_to_record_never_fails_the_backup()
+    {
+        var script = Read("deploy", "Backup-Tide.ps1");
+        var record = script[script.IndexOf("function Write-TideBackupRun", StringComparison.Ordinal)..];
+        record = record[..record.IndexOf("\n}\n", StringComparison.Ordinal)];
+        record.Should().Contain("INSERT INTO dbo.BackupRuns").And.Contain("catch {", "a run that can't be recorded only warns");
+        foreach (var call in new[] { "-Kind 'log' -Succeeded $true", "-Kind 'log' -Succeeded $false", "-Kind 'full' -Succeeded $true", "-Kind 'full' -Succeeded $false" })
+            script.Should().Contain("Write-TideBackupRun " + call);
+        // Recorded only once a set is complete: after the line that says so.
+        script.IndexOf("Write-TideBackupRun -Kind 'full' -Succeeded $true", StringComparison.Ordinal)
+            .Should().BeGreaterThan(script.IndexOf("Backup set complete", StringComparison.Ordinal));
+        Read("deploy", "sql", "02-Grant-Backup.sql").Should().Contain("GRANT INSERT ON dbo.BackupRuns");
+    }
+
+    [Fact]
     public void The_deploy_scripts_are_plain_ascii()
     {
         // Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page, so a non-ASCII character (an em dash) turns

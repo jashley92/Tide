@@ -2,7 +2,9 @@
     TIDE: what the account that runs Backup-Tide.ps1 and Test-TideRestore.ps1 needs on SQL Server, and no more:
       - db_backupoperator in TIDE's database (BACKUP DATABASE and BACKUP LOG);
       - dbcreator on the server (RESTORE VERIFYONLY, which checks each set, and the restore drill need CREATE DATABASE);
-      - SELECT on msdb.dbo.backupset (the size of each set is read from it).
+      - SELECT on msdb.dbo.backupset (the size of each set is read from it);
+      - INSERT on dbo.BackupRuns in TIDE's database (each run is recorded for Diagnostics), once the app has made the
+        table: re-run this after TIDE's first start, and after upgrading to the release that added it.
     Run by Install-Database.ps1 -BackupAccount, or by hand with sqlcmd:
 
         sqlcmd -S SQLHOST -E -b -i 02-Grant-Backup.sql ^
@@ -41,6 +43,12 @@ BEGIN
 END
 ALTER ROLE db_backupoperator ADD MEMBER [$(BackupAccount)];
 PRINT 'Granted db_backupoperator in [$(DbName)] to [$(BackupAccount)].';
+-- Each run is recorded in TIDE's database, for Diagnostics and /health/jobs (Backup:StaleAfterHours).
+IF OBJECT_ID(N'dbo.BackupRuns') IS NOT NULL
+BEGIN
+    GRANT INSERT ON dbo.BackupRuns TO [$(BackupAccount)];
+    PRINT 'Granted INSERT on dbo.BackupRuns to [$(BackupAccount)].';
+END
 GO
 
 USE msdb;

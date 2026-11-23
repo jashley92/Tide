@@ -422,6 +422,8 @@
 .tide-diag-sql { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow-y: auto; }
 /* Diagnostics' Performance table: a route or page names itself as written, not in the header row's capitals. */
 .tide-perf tbody th { text-transform: none; letter-spacing: normal; }
+/* Diagnostics' Data & retention tables: a table or folder names itself as written, not in the header row's capitals. */
+.tide-data-sizes tbody th { text-transform: none; letter-spacing: normal; }
 @media (max-width: 899.98px) {
     .tide-diag-checks, .tide-diag-checks tbody { display: block; }
     .tide-diag-checks tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--tide-space-2); border-bottom: 1px solid var(--tide-border); }

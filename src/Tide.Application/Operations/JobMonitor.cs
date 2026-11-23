@@ -75,8 +75,10 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30), 7109);
     public static readonly JobDefinition SearchIndex = new("search-index", "Search index", "every 10 seconds, the articles edited since; after an upgrade, every article",
         TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10), 7110);
+    public static readonly JobDefinition Statistics = new("statistics", "Daily statistics", "every 5 minutes; a snapshot of the data's size once a day",
+        TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(30), 7111);
 
-    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex, FileSweep, AuditArchive];
+    public static readonly IReadOnlyList<JobDefinition> All = [FeedPoll, CveRefresh, Prune, Reminders, MetricDropFolder, UpdateCheck, Webhooks, UrlHashes, IndicatorKeys, SearchIndex, FileSweep, AuditArchive, Statistics];
 
     private readonly ConcurrentDictionary<string, JobState> _states = new(
         All.Select(j => KeyValuePair.Create(j.Key, new JobState(j, false, null, null, null, null, null, null, null, false))));

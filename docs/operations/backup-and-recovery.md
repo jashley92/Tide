@@ -251,6 +251,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7108 | Hashing stored addresses |
 | 7109 | Keying stored indicators |
 | 7110 | Search index |
+| 7111 | Daily statistics |
 | 7112 | Checking stored files |
 | 7113 | Archiving the audit log |
 
@@ -268,6 +269,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Archiving the audit log | `AuditArchiveHostedService` | Daily, from an hour after start-up | Only with `Audit:RetentionDays` set: whole months older go to `audit-archive` files, then out of the database |
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
 | Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
+| Daily statistics | `SystemStatsHostedService` | Every 5 minutes | Once a day: a snapshot of the tables', files' and disk's sizes (`SystemStats`) for Data & retention on Diagnostics. Every pass: reads the newest backup `Backup-Tide.ps1` recorded, and warns of a low disk (7203) or a stale backup (7205) |
 
 ### Timers and periodic work in the request path
 
@@ -327,7 +329,10 @@ page's connection and everyone's since start); and whether a newer release is ou
 | Watch | Where | Means |
 |---|---|---|
 | `/health` not `Healthy` | Your monitor | The database is down or slow, or the app isn't running. |
-| `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
+| `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing; or the data root's disk is under 10% free; or (with `Backup:StaleAfterHours` set) the newest full backup is too old. Diagnostics says which. |
+| "The data root's disk has … free", event id 7203 | Application log | Under 10% free on the disk holding `Files:RootPath`; logged once an hour while it lasts. |
+| "The newest full backup finished …", event id 7205 | Application log | Only with `Backup:StaleAfterHours` set: the nightly set hasn't run, or failed. |
+| Data & retention on Diagnostics | The page | The largest tables, files by folder, growth over 30 and 90 days, disk free, the last backups recorded, and what's pruned when. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
 | "A database command took …", event id 7201 | Application log | A command ran past `Diagnostics:SlowSqlMs`. A few are normal (a big export); many point at an index, statistics or a busy server. Diagnostics › Performance lists the last 20 with their SQL. |

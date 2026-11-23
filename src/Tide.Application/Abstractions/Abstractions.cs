@@ -92,6 +92,8 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<JobLease> JobLeases { get; }
     DbSet<JobProcess> JobProcesses { get; }
     DbSet<JobRun> JobRuns { get; }
+    DbSet<SystemStat> SystemStats { get; }
+    DbSet<BackupRun> BackupRuns { get; }
 
     /// <summary>The connection's transactions, for a claim that takes several rows or none (a group promote).</summary>
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
@@ -212,4 +214,7 @@ public interface IFileStore
 
     /// <summary>Every file the store holds: its id and when it was last written. For the weekly check of stored files.</summary>
     IEnumerable<(Guid Id, DateTimeOffset WrittenAtUtc)> List();
+
+    /// <summary>The folder the files are kept in, resolved as the store resolves Files:RootPath; null for a store with none.</summary>
+    string? Root => null;
 }
