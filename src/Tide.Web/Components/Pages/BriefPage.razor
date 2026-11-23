@@ -508,8 +508,7 @@ else
     }
 
     // Ctrl+K's verbs: on Today, Mark ready, while it's the brief's next step, through its own confirmation (AskReady). On
-    // any day's brief, Send both editions while the Send dialog's Send both could be pressed once its two ticks are
-    // (_sendBoth); it opens that dialog, whose ticks and button are still the only way to send.
+    // any day's brief, Send both editions (_sendBoth), which opens the Send dialog: its ticks and button still send.
     private IDisposable? _verbs;
 
     internal IEnumerable<PaletteCommand> Verbs()
@@ -523,8 +522,8 @@ else
                 AskSend, "bi-send-check");
     }
 
-    // Whether Send both is ready to press in the Send dialog, read with the send log (DistributePanel.BothCanGoAsync), for
-    // someone who may send once the meeting has been held.
+    // Whether the Send dialog's Send both could be pressed once its two ticks are (DistributePanel.BothCanGoAsync), as of
+    // the page's last read: a colleague's change that reloads the page reads it again.
     private bool _sendBoth;
 
     // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes
@@ -769,7 +768,7 @@ else
             _sends = await Sends.SendsAsync(_date);
             _nothingToSend = BriefSteps.NothingToSend(_brief, _teamMax, _publicMax);
             _sendBoth = CurrentUser.Has(Permission.PresentBriefs)
-                && await DistributePanel.BothCanGoAsync(Sends, Reviews, Clock, _date, BriefService.MeetingHeld(_brief));
+                && await DistributePanel.BothCanGoAsync(Sends, Distribution, Reviews, Clock, _brief, _sends, _teamMax, _publicMax);
             if (_tab == 1) await LoadNumbers();
             _asSent = _brief.Status == BriefStatus.Sent
                 ? _sends.Where(x => !x.IsTest && x.Status == SendStatus.Sent)

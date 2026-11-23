@@ -781,15 +781,18 @@ else
     internal IEnumerable<PaletteCommand> Verbs()
     {
         if (!_canWrite || _article is null || _form is null) yield break;
-        if (!_busy && !OnTodaysBrief)
-            yield return new("Add this article to today's brief", "brief running order", Permission.WriteArticles, "This article",
-                AddToTodaysBrief, "bi-journal-plus");
-        if (!_busy && _article.Status == ArticleStatus.Draft && ArticleChecks.NotReady(Checks().Checks) is null)
-            yield return new("Save and mark ready", "article ready status", Permission.WriteArticles, "This article",
-                MarkReady, "bi-check2");
+        if (!_busy)
+        {
+            if (!OnTodaysBrief)
+                yield return new("Add this article to today's brief", "brief running order", Permission.WriteArticles, "This article",
+                    AddToTodaysBrief, "bi-journal-plus");
+            if (_article.Status == ArticleStatus.Draft && ArticleChecks.NotReady(Checks().Checks) is null)
+                yield return new("Save and mark ready", "article ready status", Permission.WriteArticles, "This article",
+                    MarkReady, "bi-check2");
+        }
         if (CanHandOn)
             yield return new("Hand this draft to…", "hand off over writer colleague", Permission.WriteArticles, "This article",
-                () => _handTo.OpenAsync(), "bi-person-up");
+                _handTo.OpenAsync, "bi-person-up");
     }
 
     private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)

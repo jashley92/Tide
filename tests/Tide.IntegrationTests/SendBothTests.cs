@@ -13,8 +13,9 @@ internal static class SendBoth
 {
     public const string Button = "id=\"send-both\"";
 
-    // Today's sample brief, sendable now, with two addresses on the team list and one on the company-wide list.
-    public static async Task<DateOnly> DayAsync(TideApp app, ReviewRule? rule = null)
+    // Today's sample brief, sendable now (once its meeting is held, unless asked otherwise), with two addresses on the
+    // team list and one on the company-wide list.
+    public static async Task<DateOnly> DayAsync(TideApp app, ReviewRule? rule = null, bool held = true)
     {
         await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
         var settings = scope.ServiceProvider.GetRequiredService<Tide.Application.Settings.DistributionSettings>();
@@ -22,7 +23,7 @@ internal static class SendBoth
         await settings.SaveRecipientsAsync(Edition.Public, "everyone@example.org");
         var day = await Tide.IntegrationTests.Audit.WebSeed.SendableDayAsync(scope.ServiceProvider);
         var briefs = scope.ServiceProvider.GetRequiredService<Tide.Application.Briefs.BriefService>();
-        await briefs.MarkPresentedAsync((await briefs.GetOrStartAsync(day)).Id);   // the meeting was held
+        if (held) await briefs.MarkPresentedAsync((await briefs.GetOrStartAsync(day)).Id);   // the meeting was held
         if (rule is { } r) await scope.ServiceProvider.GetRequiredService<ReviewService>().SaveRuleAsync(r);
         return day;
     }

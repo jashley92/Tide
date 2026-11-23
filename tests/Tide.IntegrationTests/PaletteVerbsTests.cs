@@ -128,7 +128,7 @@ public class PaletteVerbsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     // The verbs offered now, read as the palette reads them (signed in as the page was).
-    private static Task<List<PaletteCommand>> Verbs<T>(Rendered<T> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
+    internal static Task<List<PaletteCommand>> Verbs<T>(Rendered<T> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
     {
         var sp = r.Scope.ServiceProvider;
         sp.GetRequiredService<IHttpContextAccessor>().HttpContext = r.Signedin;
@@ -434,13 +434,7 @@ public class PaletteTodayVerbTests(TideApp app) : IClassFixture<TideApp>
 /// <summary>The brief's Send both editions, in an app of its own so the day's sends are this test's.</summary>
 public class PaletteSendBothVerbTests(TideApp app) : IClassFixture<TideApp>
 {
-    // The verbs offered on a day's brief, read as the palette reads them (signed in as the page was).
-    internal static Task<List<PaletteCommand>> Verbs(Rendered<BriefPage> r) => r.Renderer.Dispatcher.InvokeAsync(() =>
-    {
-        var sp = r.Scope.ServiceProvider;
-        sp.GetRequiredService<IHttpContextAccessor>().HttpContext = r.Signedin;
-        return sp.GetRequiredService<PaletteCommands>().For(sp.GetRequiredService<ICurrentUser>()).ToList();
-    });
+    internal static Task<List<PaletteCommand>> Verbs(Rendered<BriefPage> r) => PaletteVerbsTests.Verbs(r);
 
     // The day's brief as it's opened: today's is Today, the start page.
     internal static Task<Rendered<BriefPage>> OpenBrief(TideApp app, DateOnly day) =>
@@ -490,14 +484,7 @@ public class PaletteSendBothBeforeMeetingTests(TideApp app) : IClassFixture<Tide
     [Fact]
     public async Task BeforeTheMeeting_SendBothEditionsIsNotOffered()
     {
-        DateOnly day;
-        await using (var scope = SignedIn(app, SignIn.Analyst))
-        {
-            var settings = scope.ServiceProvider.GetRequiredService<Tide.Application.Settings.DistributionSettings>();
-            await settings.SaveRecipientsAsync(Edition.Team, "cti@example.org");
-            await settings.SaveRecipientsAsync(Edition.Public, "everyone@example.org");
-            day = await Tide.IntegrationTests.Audit.WebSeed.SendableDayAsync(scope.ServiceProvider);
-        }
+        var day = await SendBoth.DayAsync(app, held: false);
         await using (var r = await PaletteSendBothVerbTests.OpenBrief(app, day))
             (await PaletteSendBothVerbTests.Verbs(r)).Should().NotContain(v => v.Label == "Send both editions");
 

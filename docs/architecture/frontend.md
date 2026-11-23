@@ -109,9 +109,9 @@ offers). `Run` is the page's own button method, and the page is redrawn after it
 its confirmation and the service's permission check still apply. The palette hides a verb whose `Permission` the
 person lacks, runs it once it has closed and given focus back, and lists only verbs after `>`
 (`PaletteEntries.Filter`). Registered today by `ArticleEditorPanel`, `BriefPage`, `Triage` and `ActionPage`. A verb is
-offered exactly when its button would be pressable: one whose button is disabled isn't listed. Where the button sits in
-a dialog (Send both, in the Send dialog), the page reads the same rule up front (`DistributePanel.BothCanGoAsync`) and
-the verb opens the dialog, leaving its ticks and button the only way through.
+offered when its button would be pressable, and not when it's disabled. Where the button sits in a dialog (Send both,
+in the Send dialog), the page reads the same rule as it loads (`DistributePanel.BothCanGoAsync`, the dialog's own
+checks without rendering the email) and the verb opens the dialog, leaving its ticks and button the only way through.
 
 - **Counts.** Triage shows the number of new items (`IntakeService.NewCountAsync`, for `WriteArticles`) and Actions the
   person's overdue actions (`ActionService.MyOverdueCountAsync`, for `WorkActions`, in red). They're read when the
