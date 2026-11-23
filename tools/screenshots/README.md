@@ -197,15 +197,19 @@ renamed class or a seed without the case can't pass it unseen. `hidden(selector)
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
 than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.
 
-## Accessibility scan (report only)
+## Accessibility scan
 
 `layout.mjs` also runs [axe-core](https://github.com/dequelabs/axe-core) (`axe.mjs`, the version locked in
 `package-lock.json`) on each page it checks, once, at the page's widest width, after that width's layout rules: the page
-as its setup and rules left it (a dialog open, a rail docked). It checks the WCAG 2.0 and 2.1 A and AA rules
-(`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`) in the top document.
+as its setup and rules left it (a dialog open, a rail docked). It checks the top document against:
 
-It only reports. What it finds never fails the run, and a scan that can't run says so and moves on. Each page prints a
-line such as `today at 1920x900: axe, 2 rules broken on 5 elements (report only)`, and the run writes
+- **WCAG 2.0, 2.1 and 2.2, A and AA** (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`): **a gate**. Each element
+  that breaks one of these rules is a problem like a broken layout rule, and fails the run:
+  `triage at 1920px: axe: aria-prohibited-attr (serious: ...) on .tide-reading-text`;
+- **best practice** (`best-practice`: landmarks, heading order, regions): reported only, until they're clean.
+
+A scan that can't run (it timed out) says so and moves on; it doesn't fail the run. Each page prints a line such as
+`today at 1920x900: axe, 2 rules broken on 5 elements, 1 failing, 1 best practice (report only)`, and the run writes
 `tools/screenshots/.axe/axe-<slice>.json` and `.md` (`axe-2-of-4`, or `axe-all` without `SHARD`; git-ignored):
 
 - The `.md` is a summary: each rule broken, its impact (`critical`, `serious`, `moderate`, `minor`), how many elements
@@ -219,8 +223,23 @@ In CI each slice at the default letter spacing scans (`AXE=1`; the `.12em` jobs 
 would find the same), adds its summary to the job's summary page, and uploads `.axe/` as the `axe-<n>-of-4` artifact,
 kept 14 days. `AXE=0` turns the scan off locally.
 
-The plan is to make it a gate once the findings are fixed: first fail on new `critical` and `serious` findings, then on
-any, with an allow-list for what's known and tracked.
+**The baseline**, `axe-baseline.json`, lists what's allowed to stay broken, each entry with why:
+
+```json
+[
+  { "rule": "target-size", "page": "today", "target": ".tide-chip-x", "reason": "the chip's own redesign, #NNN" }
+]
+```
+
+`page` is the layout check's page name, or `*` for the shell on every page; `target`, when given, must be part of the
+element's selector as axe reports it (in the `.json`), and without it the entry covers every element on that page. The
+aim is to fix rather than add. Today it holds only the WCAG 2.2 target-size findings the gate found when it added
+`wcag22aa`, each with the follow-up that fixes it.
+
+- **Fixed something in the baseline?** Delete its entry. The slice that scans that page prints a notice naming entries
+  that no longer occur.
+- **Adding one** needs a `reason`: `tools/ci/check-axe-baseline.sh` (a CI check) fails an entry new since the base
+  without one. Removing entries is always allowed.
 
 ## Before and after pictures
 
