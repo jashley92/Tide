@@ -74,6 +74,9 @@ public static class UserPreferences
     /// <summary>Swap or cover requests to the person, and approved, recorded or declined notices.</summary>
     public const string NotifyRotationRequests = "notify.rotationRequests";
 
+    /// <summary>An article a colleague handed the person to finish.</summary>
+    public const string NotifyArticleHandoffs = "notify.articleHandoffs";
+
     /// <summary>The personal digest: off (the default), daily or weekly.</summary>
     public const string NotifyDigest = "notify.digest";
 

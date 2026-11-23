@@ -889,6 +889,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HandoffNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -960,6 +964,17 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("WhyItMattersTlp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WriterId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WriterName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("WriterSinceUtc")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

@@ -80,16 +80,24 @@ else
                panel (asking, the comments) under the row when opened. *@
             <div class="tide-sub tide-head-byline">
                 <span>By @_article.AuthorName &middot; @Ui.When(Clock, _article.CreatedAtUtc)
+                    @if (_article.CurrentWriterId != _article.AuthorId) { <text> &middot; @(_article.CurrentWriterId == CurrentUser.UserId ? "you're" : _article.CurrentWriterName + " is") writing it now</text> }
                     @if (_article.ModifiedAtUtc is { } m) { <text> &middot; saved @Ui.When(Clock, m)</text> }
                 </span>
                 <ReviewCard Article="_article" CanWrite="_canWrite" />
             </div>
         </div>
+        @if (CanHandOn)
+        {
+            <button type="button" class="btn btn-outline-secondary" @onclick="() => _handTo.OpenAsync()">
+                <span class="bi bi-person-up" aria-hidden="true"></span> Hand to…
+            </button>
+        }
         @if (_article.Indicators.Count > 0 || _article.Cves.Count > 0)
         {
             <ExportIndicators Scope="ExportScope.Article" Key="@_article.Id.ToString()" />
         }
     </div>
+    <HandToDialog @ref="_handTo" Article="_article" Done="() => Reload(keepEdits: true)" />
 
     var (checks, why) = Checks();
     @if (Aside is not null && _canWrite)
@@ -662,6 +670,10 @@ else
     // In today's running order: the stepper shows, and the bar says so in place of "Add to today's brief".
     private bool OnTodaysBrief => _briefDates.Contains(Briefs.CurrentDate);
     private bool _notFound, _dirty, _busy, _uploading, _canWrite, _showPasteBullets;
+
+    // "Hand to…": whoever may edit the article may hand it on, while it's still being written (ADR 0031).
+    private HandToDialog _handTo = default!;
+    private bool CanHandOn => _canWrite && _article is { Status: ArticleStatus.Draft or ArticleStatus.Ready };
     private string? _pasteBullets;
     // The screenshot open in the dialog; it steps through the article's others, captioned if they have one.
     private ScreenshotDialog.Shot? _shot;

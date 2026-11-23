@@ -226,9 +226,26 @@ public static partial class EmailTemplateCatalog
         "{{Change}}{{DecisionNote}}",
         [Requester, Partner, Change, new("DecisionNote", "\" “the note”\" when they wrote one, else blank.")]);
 
+    // To one analyst, inside the organization; still marked with the article's TLP, and an article above the team
+    // edition's ceiling isn't named (ArticleHandoffService).
+    public static readonly EmailTemplate ArticleHandoff = new(
+        "article-handoff", "Article handed to you",
+        "Sent to the analyst an article is handed to, to finish it. Each may turn it off in My notifications.",
+        "TIDE: {{By}} handed you an article", "An article is yours to finish",
+        "{{By}} handed you “{{Article}}”, from {{Before}}.\n\n{{Note}}\n\nIt's on your Today page{{ArticleLink}}.",
+        [
+            new("Writer", "Who it was handed to."),
+            new("By", "Who handed it over."),
+            new("Before", "Who was writing it before."),
+            new("Article", "The article's title, or \"a draft marked TLP:RED\" for one above the team edition's ceiling."),
+            new("Note", "Their note, quoted. Blank when they wrote none.", Html: true),
+            new("ArticleLink", "\" (open it)\" linking to the article. Blank when this server's address isn't set.", Html: true),
+        ]);
+
+    // Appended, never reordered: a template is stored by its id.
     public static readonly IReadOnlyList<EmailTemplate> All =
         [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, Handoff, ExternalReminder, Escalation, BriefNotReady, Presenting, RotationRequest, RotationApproved,
-            RotationRecorded, RotationDeclined];
+            RotationRecorded, RotationDeclined, ArticleHandoff];
 
     public static EmailTemplate? ById(string? id) => All.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
 

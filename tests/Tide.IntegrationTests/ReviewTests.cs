@@ -53,6 +53,37 @@ public class ReviewTests : IDisposable
     }
 
     [Fact]
+    public async Task AHandedOnArticle_IsReviewedByAnyoneButItsWriter_AndTheWriterTakesTheAuthorsPart()
+    {
+        await People();
+        const string Ada = "S-1-5-21-ADA";
+        await using (var ctx = _db.Context())
+        {
+            ctx.Users.Add(new AppUser { Sid = Ada, DisplayName = "Ada", RolesCsv = "Admin" });
+            await ctx.SaveChangesAsync();
+        }
+        var article = await Article();
+        await using (var ctx = _db.Context())
+        {
+            var a = ctx.Articles.Single(x => x.Id == article);
+            (a.WriterId, a.WriterName) = (Sam, "Sam");   // handed to Sam (ADR 0031)
+            await ctx.SaveChangesAsync();
+        }
+
+        As(Ada, "Ada");
+        (await Reviews().ReviewersAsync(article)).Select(r => r.Name).Should().Equal(["Test Analyst"],
+            "the author who handed it on may review it; Sam, who is writing it, and Ada, asking, may not");
+        await FluentActions.Invoking(() => Reviews().AskAsync(article, Sam, null)).Should().ThrowAsync<ArgumentException>();
+        var review = await Reviews().AskAsync(article, Author, null);
+
+        As(Author, "Test Analyst");
+        (await Reviews().AskedOfMeAsync()).Single().ArticleId.Should().Be(article);
+        As(Sam, "Sam");
+        await Reviews().WithdrawAsync(review);   // the writer takes back a request someone else made, as the author did
+        (await Reviews().ForArticleAsync(article)).Review.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AnAdmin_CanBeAskedToReview_AndReviews_ButAnActionOwnerCant()
     {
         await People();

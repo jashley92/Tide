@@ -395,7 +395,8 @@ app's own bookkeeping.
 **Administration › Email templates** rewords the notification emails: due soon (`due-soon`), overdue (`overdue`), the
 weekly team digest (`digest`), the personal digest (`personal-digest`), outreach follow-up (`outreach-follow-up`), a hand-off
 (`handoff`), the external team reminder (`external-reminder`), the escalation contact's copy (`escalation`), brief not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
-declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`).
+declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`), and an article
+handed to you (`article-handoff`).
 `EmailTemplateCatalog` holds each one's default subject, heading and Markdown body and the `{{Name}}` values it fills.
 
 - A changed part is a `Settings` row `EmailTemplate:{id}:{Subject|Heading|Body}`. A part saved as its default has no

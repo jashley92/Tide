@@ -316,6 +316,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
             Tlp = Tlp.Checked(tlp),
             AuthorId = user.UserId,
             AuthorName = user.DisplayName,
+            WriterId = user.UserId,
+            WriterName = user.DisplayName,
+            WriterSinceUtc = DateTimeOffset.UtcNow,
         };
         await using var db = await dbs.CreateAsync(ct);
         db.Articles.Add(article);

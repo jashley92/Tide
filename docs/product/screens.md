@@ -111,11 +111,15 @@ The brief takes the page:
 - **the opening note**, read-only until **Edit**, marked *Not updated* while it's carried from the last brief, with
   *Still current*;
 - **My actions**;
-- **Not on a brief yet**: what hasn't been on any brief, Ready articles (anyone's) first, then your own drafts, newest
-  first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
+- **Not on a brief yet**: the Ready articles (anyone's) that haven't been on any brief, newest first, up to 8, each with *Add* while today's brief hasn't gone out (on a day with no brief, *Add* starts it; the
   rest are under *Add article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't
   write the brief sees **Recently presented** there instead: only articles that have been presented, so never a
   draft's title; every marking, as the brief beside it names them;
+- **Drafts in progress**, under it, for whoever writes the brief: the drafts of the last 14 days not on today's brief,
+  and the drafts in today's running order, marked *On today's brief*; yours first, then the team's, each most recently edited first, with who is writing it now and when it was last
+  edited, and its marking. A draft handed to you says *Handed to you*, with the note it came with, and a toast says so
+  while Today is open. Up to 6, then *All N drafts* on the Articles list. Someone who doesn't write the brief never
+  sees it;
 - **today's numbers**, each box with the value it's compared with.
 
 Beside the brief, in the context rail:
