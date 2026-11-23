@@ -125,7 +125,7 @@ public class QueryBudgetTests(ITestOutputHelper output)
         var trends = db.Trends();
         await Measure("Trends(6 months)", () => trends.ReportAsync(trends.DefaultEnd(PeriodKind.Month)));
         await Measure("Trends(24 months)", () => trends.ReportAsync(trends.DefaultEnd(PeriodKind.Month), span: 24));
-        await Measure("Reports(month)", () => new ReportService(db.Trends(), db.Metrics(), db.Clock).BuildAsync(trends.DefaultEnd(PeriodKind.Month)));
+        await Measure("Reports(month)", () => new ReportService(db.Trends(), db.Metrics(), db.Clock, db, db.User).BuildAsync(trends.DefaultEnd(PeriodKind.Month)));
 
         var reminders = db.Reminders();
         foreach (var kind in Enum.GetValues<ReminderKind>())
