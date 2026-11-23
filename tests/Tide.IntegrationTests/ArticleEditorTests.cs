@@ -58,7 +58,7 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
         const string Hint = "Internal context starts at AMBER; lower it if it's safe to share.";
 
         var html = await app.CreateClient().GetStringAsync($"/articles/{fresh}");
-        html.Should().Contain(Hint).And.Contain(">who changed what, and when<", "an analyst gets the History disclosure");
+        html.Should().Contain(Hint).And.Contain("tide-history-link", "an analyst gets History, at the end of the save bar");
         (await app.CreateClient().GetStringAsync($"/articles/{written}")).Should().NotContain(Hint);
     }
 

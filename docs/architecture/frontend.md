@@ -91,7 +91,7 @@ Three layouts, in `src/Tide.Web/Components/Layout`:
 
 | Layout | Used by | What it draws |
 |---|---|---|
-| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`); the top bar with the team name, `TopSearch` (team edition only), `CommandPalette`, the brief chip (`BriefChip`, for those who make the brief), `ShortcutsOverlay` and `ProfileMenu`; the live meeting banner (`LiveMeetingJoin`); the page inside `PageBoundary`; the page's context rail and its Context button, when it has one; `ToastHost`; Blazor's `#blazor-error-ui`. |
+| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`, in a `<nav>`); then a column (`.tide-main`) of the top bar (a `<header>`) with the team name, `TopSearch` (team edition only), `CommandPalette`, the brief chip (`BriefChip`, for those who make the brief), `ShortcutsOverlay` and `ProfileMenu`; the content (`<main id="main-content">`: the live meeting banner (`LiveMeetingJoin`) and the page inside `PageBoundary`); the page's context rail after `</main>`, and its Context button, when it has one; `ToastHost` (a region named Notifications); Blazor's `#blazor-error-ui` (`role="alert"`). Each is a landmark of its own, none nested in another ([Accessibility](#accessibility)). |
 | `AdminLayout` | Every page under `/admin` (`@layout AdminLayout`) | Nested in `MainLayout`. An "Administration" title (drawn as large as an `h1` but not a heading, so the page's own title is the `h1`), the groups as page-level tabs, a group's pages as sub-tabs (`TabBar`), then the page. "new" shows beside Updates when the update check found a release. |
 | `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons. |
 
@@ -152,7 +152,7 @@ anything.
   the rail's Close or `]` closes it, and the content takes the width back. Closed or open is remembered per browser
   (`localStorage` key `tide-rail`); `theme-init.js` applies a remembered close as `data-rail="closed"` on `<html>`
   before paint. The actions board, which otherwise takes the whole window, docks the rail too
-  (`main:has(.tide-board) > .tide-rail`), and `]` gives the board its full width back. Between 1500px and about
+  (`.tide-main:has(.tide-board) > .tide-rail`), and `]` gives the board its full width back. Between 1500px and about
   1760px some pages lay out more simply beside the docked rail: the Actions list's rows stack, and an adversary's
   profile drops to one column.
 - **An overlay.** Below 1500px the rail starts closed and opens over the content from the right, which keeps its
@@ -344,7 +344,7 @@ step for a control they can't.
   middle, with no arrow.
 - **Across pages.** **An analyst's day** (`WriteArticles`) walks the workflow in the order it's worked, with each page's
   own guide inline (Triage's, the editor's, Actions'; **Skip the details** on a section's first step goes past it):
-  Today's strip, triage, writing the newest draft, Save, Ask for review, Mark ready, Add to today's brief, the running
+  Today's strip, triage, writing the newest draft, Save, Ask for a review, Mark ready, Add to today's brief, the running
   order, a row's Set to AMBER, the edition check, Mark ready in the page head, Present, which opens present mode in
   rehearsal (`?rehearse=1&guide=day`) where Learn to present's steps run as the day's and come back to Today at Send
   (`Present.BackToTheDayFrom`; refused while the meeting is live, with a note), then Actions, an action, and Search on a
@@ -484,7 +484,8 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `ProfileMenu` | The account menu. Its theme and letter-shortcut switches are groups of `menuitemradio`s, as a menu may hold only menu items and groups of them. |
 | `TableScroll` | The box a wide table scrolls sideways in (`table-responsive`): it takes focus (`tabindex="0"`), so the keyboard can scroll it, and it's a `region` named by the heading it's under (`LabelledBy`) or in words (`Label`). Every report and admin table that scrolls sits in one. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
-| `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
+| `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). A card with its own button on a brief; `Compact` in the editor, where the save bar's last button (**History**) opens the list below the bar. |
+| `ReviewCard` | The article's review in the editor's head, as one line (`Review:` where it stands, and what to do next); its button opens a panel under the byline for asking and the comments. |
 | `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |
 | `Badge`, `TlpBadge`, `StatusBadge` | Badges, the TLP 2.0 label (black ground, as FIRST specifies), and status chips (`Badges.cs`). |
 | `EscalatedBadge` | "Escalated", filled red, given when it was escalated while it still is (`ActionItem.EscalatedSince`, `ActionRow.EscalatedSince`); nothing otherwise. On the list row (`ActionTable`), the board card (`ActionKanban`), the action's page, the meeting's open-actions slide and the edition's list (`Badges.cs`). |
@@ -861,11 +862,13 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | **Focus return** | Every dialog gives focus back to whatever opened it (`dialog.js`): confirmations, the leave dialog, the lightbox and screenshot dialog, the palette, the shortcuts overlay. After a board move focus goes to the card's Move button in its new column; after a running-order move it stays on the moved row's button, and after a warning's one-click fix there (the button goes with the warning) it moves to the row's title; after a comment's edit it returns to that comment's Edit button. |
 | **Focus after navigation** | `FocusOnNavigate` puts focus on the page's `h1`. A skip link goes to `#main-content`. |
 | **Focus inside dialogs** | Tab stays inside a modal; focus outside an open dialog goes into it, not behind it. |
-| **The context rail is a landmark** | An `<aside>` named by its title (a `complementary` region), after the content in reading order, so the skip link and the content come first. Its button says whether it's open (`aria-expanded`, `aria-controls`). Docked it's never a focus trap. Open over the page (below 1500px) it's a modal dialog: the page under it is `inert`, so Tab and a screen reader stay in the rail until it closes. Closing it with focus inside puts focus on the button. The presenter's rail in present mode follows the same rules. |
+| **Landmarks** | Everything on a page is in a landmark, and none is nested in another: the sidebar (`<nav class="sidebar" aria-label="Main">`: the brand, its collapse and menu buttons, and the links) is the main navigation, the top bar is the `<header>` (banner), the page is the one `<main>` (`#main-content`, where the skip link goes), the context rail is a complementary `<aside>` after it, the toasts are a region named Notifications, and Blazor's error bar, hidden until it's needed, is an alert. The top bar and the rail sit outside `<main>`, in a plain column (`.tide-main`) that the stylesheet lays out, so a screen reader's landmark list has each once. In present mode the slide is a named region between its own header and footer. |
+| **The context rail is a landmark** | An `<aside>` named by its title (a `complementary` region, top-level: after `</main>`, not in it), after the content in reading order, so the skip link and the content come first. Its button says whether it's open (`aria-expanded`, `aria-controls`). Docked it's never a focus trap. Open over the page (below 1500px) it's a modal dialog: the page under it is `inert`, so Tab and a screen reader stay in the rail until it closes. Closing it with focus inside puts focus on the button. The presenter's rail in present mode follows the same rules. |
 | **Not by colour alone** | Presence shows a pencil for "editing"; a metric past a threshold has an icon and words (`LevelMark`); action status shows a tick on the current option; a part in the lineage and the timeline says its state in words, and Tracking is dashed or striped as well as purple. |
 | **Forced colours** | Under Windows high contrast, badges and TLP chips get an outline, and the current sidebar link a `Highlight` outline. |
 | **Live regions** | Toasts are `role="status"` (polite) or `role="alert"` (errors). `LoadingBlock`, `ChangedElsewhere`, `PresenceNote` and triage's change line announce through status regions. |
 | **Contrast** | Token values carry their contrast ratio in comments; the focus ring is at least 4.6:1 on every background, chart series at least 3:1. |
+| **Checked by axe-core** | Every page the layout check opens is scanned by axe-core at its widest width, as its setup left it (a dialog open, a rail docked). A new WCAG 2.2 A or AA violation fails CI; best-practice findings are reported. Known exceptions go in `tools/screenshots/axe-baseline.json` with a reason. The server-side markup assertions in `AccessibilityTests` stay: axe catches what they can't (computed contrast, landmarks, focusability). |
 | **ARIA patterns** | Combobox with `aria-activedescendant` (`SearchCombobox`, the palette); tabs (`TabBar` + `tabs.js`); a menu button (`MenuButton`, the action page's More: `aria-haspopup`, `aria-expanded`, a `menu` of `menuitem`s with the arrow keys); `aria-sort` on table headings; `aria-current` on the current page, step and pager page; a roving tabindex and `aria-current="true"` on a list's selected row (Triage, Actions, the board, Our stack, Adversaries, the Library; see [a list with a selected row](#a-list-with-a-selected-row)); counts in the sidebar links' accessible names. |
 
 ## Phone layout

@@ -29,7 +29,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-savedview { display: inline-flex; align-items: center; }
 .tide-savedview > .tide-chip { margin: 0; white-space: nowrap; text-decoration: none; }
 .tide-savedview > .tide-chip:hover { border-color: var(--tide-accent); }
-.tide-savedview-menu { border: 0; background: none; padding: .1rem .2rem; color: var(--tide-text-muted); border-radius: var(--tide-radius-pill); line-height: 1; font-size: .8rem; }
+.tide-savedview-menu { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; border: 0; background: none; padding: .1rem .2rem;
+    color: var(--tide-text-muted); border-radius: var(--tide-radius-pill); line-height: 1; font-size: .8rem; }
 .tide-savedview-menu:hover, .tide-savedview-menu[aria-expanded="true"] { color: var(--tide-text); background: var(--tide-surface-2); }
 .tide-savedview-menu:focus-visible, .tide-savedview > .tide-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .tide-filter-item { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .55rem; border: 0; border-radius: var(--tide-radius-md);

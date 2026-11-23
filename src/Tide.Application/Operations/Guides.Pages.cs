@@ -108,7 +108,7 @@ public static partial class Guides
             Step("title", Write, ".tide-page-head-main input[aria-label=\"Title\"]", "Title",
                 "{walking}The title readers see first. Every field saves itself after a short pause."),
             Step("review", Write, "[data-guide=\"ask-review\"] || #review-who", "Asking for a review",
-                "Choose a colleague and what to look at; Ask for review sends them the request. Reviews asked of you wait on Today."),
+                "Ask for a review opens where you choose a colleague and what to look at; Send the request asks them. Reviews asked of you wait on Today."),
             Step("pills", Write, "nav.tide-section-pills", "Sections",
                 "Each section's pill says where it stands: needed, done, a count, or check TLP. Select one to jump to it."),
             Step("class", Write, "[data-guide=\"classification\"]", "Assessment",

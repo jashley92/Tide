@@ -415,7 +415,7 @@ story.
 **TLP everywhere.** The article, each bullet, each screenshot and "why it matters to us" carry a TLP 2.0 marking,
 and a part never counts lower than its article. On a threat, "why it matters to us" starts at AMBER, since it usually
 names our own systems. Analysts can see each article's and each brief's **History**: who changed which field, and
-when. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
+when. In the editor it's the **History** button at the end of the save bar, and the list opens below the bar. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
 
 Leaving the editor with unsaved changes asks whether to save, discard or stay. So does leaving other pages with
 something typed and not saved: an Email template's wording, copies or archive address; an action's comment, an edit
@@ -436,7 +436,12 @@ week's presenter is suggested). The reviewer gets it on Today and opens the revi
   the bottom line stands alone;
 - *Approve* or *Ask for changes*.
 
-The author sees the comments in the editor and resolves them. A change to what the article says after approval (a
+In the editor the review is one line at the end of the byline under the title: *Review: not asked (optional)* (or
+*required*, when an administrator's rule covers the article), *waiting for Sam*, *Sam asked for changes (2 open)*,
+*approved by Sam* or *changed since Sam approved it*, with when, and the one thing to do next. *Ask for a review*,
+*Ask again* or *Comments* opens a small panel under the row with the reviewer, a note and *Send the request*, and the
+comments, each with *Resolve*; *Open the review* (or *Review it*, for the reviewer) goes to the review page, and *Take the
+request back* withdraws a request still waiting. The author resolves the comments there. A change to what the article says after approval (a
 screenshot added or removed included) puts the review out of date; marking it Ready doesn't, and an approval is
 refused if the article changed while the reviewer was reading it. The Send dialog lists the brief's articles that
 haven't been reviewed. Review is optional; an administrator can require it (Access & distribution) for anything AMBER
@@ -455,7 +460,8 @@ that fits its kind.
   by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
   team) opens All open instead. Each tab (Mine, My teams, All open, Overdue, Recently closed) shows its count, and
   they stay on one row, scrolling sideways in themselves when they don't fit.
-- **The board.** Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
+- **The board.** Its header is New action alone: Workload, Board rules and External teams head the list (and its
+  rail's About this page). Its lanes are Open, In progress, Blocked and Tracking; they fill the window's height and each
   scrolls on its own. A card shows its title, the article's short title, a KEV flag, its checklist progress, a sweep's
   hunt state and how long it has been in its lane. A card is dragged to another lane, or moved from its Move menu by
   keyboard. Under the lanes a strip counts what closed as Done, Cancelled and Not applicable in the last 7 days. A card
@@ -669,8 +675,10 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
 
 *Actions that need review: why each is there, its last update, and one thing to do.*
 
-The footer names each slide ("1 · Edge VPN"). Screenshots zoom, articles are ticked off as discussed, and the editions
-can be switched on screen. A slide too tall for the screen shrinks a little, then scrolls inside itself.
+The footer names each slide ("1 · Edge VPN") and shows the time gone against the meeting's length ("4 of 30 min"; the
+length is an Organization setting, 30 minutes by default). Screenshots zoom, articles are ticked off as discussed, and
+the editions can be switched on screen with the Team / Company-wide switch in the top bar (held while a meeting runs). A
+slide too tall for the screen shrinks a little, then scrolls inside itself.
 
 **Start the meeting** and it's live for the team: a banner on every page, and a Join button on the brief. Invite
 everyone on the team edition in (or paste the copied link). People who join follow the presenter's slide, can browse

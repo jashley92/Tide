@@ -43,6 +43,15 @@
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
         </div>
         <div class="col-md-6">
+            <label class="tide-field-label" for="org-meeting-minutes">The meeting takes</label>
+            <div class="input-group input-group-sm tide-maxw-xs">
+                <input id="org-meeting-minutes" type="number" class="form-control" min="@OrgOptions.MinMeetingMinutes" max="@OrgOptions.MaxMeetingMinutes" step="1"
+                       @bind="MeetingMinutes" aria-describedby="org-meeting-minutes-help" />
+                <span class="input-group-text">minutes</span>
+            </div>
+            <div class="form-text" id="org-meeting-minutes-help">Present mode's footer shows the time gone against it, as "4 of 30 min". 5 to 180.</div>
+        </div>
+        <div class="col-md-6">
             <label class="tide-field-label" for="org-sent-by">The brief is due sent by</label>
             <TimeBox @ref="SentByBox" Id="org-sent-by" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_sentBy" Invalid="@(_sentByProblem is not null)"
                      DescribedBy="@(_sentByProblem is null ? "org-sent-by-help" : "org-sent-by-error org-sent-by-help")" />
@@ -193,6 +202,9 @@
 
     // The days a page's Show me around link shows (internal so a test can set it), as typed.
     internal string GuideLinkDays { get; set; } = "";
+
+    // How long the meeting is meant to take, in minutes (internal so a test can set it), as typed.
+    internal string MeetingMinutes { get; set; } = "";
     private bool _busy;
 
     // The holidays from this year on, how many are older, and the latest year to copy to the next (when that's empty).
@@ -274,6 +286,7 @@
         ActionBeside = Clock.ActionBesideSlide;
         (StaleOpen, StaleBlocked) = (Clock.StaleLimits.OpenDays.ToString(System.Globalization.CultureInfo.InvariantCulture), Clock.StaleLimits.BlockedDays.ToString(System.Globalization.CultureInfo.InvariantCulture));
         GuideLinkDays = Clock.GuideLinkDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        MeetingMinutes = Clock.MeetingMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _zones = OperationalSettings.TimeZoneChoices(Zone);
         // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
@@ -295,6 +308,7 @@
         [OperationalSettings.StaleOpenDays] = StaleOpen,
         [OperationalSettings.StaleBlockedDays] = StaleBlocked,
         [OperationalSettings.GuideLinkDays] = GuideLinkDays,
+        [OperationalSettings.MeetingMinutes] = MeetingMinutes,
     };
 
     // What's wrong with a time box: cleared or half typed, it would otherwise save the last whole time it held.

@@ -136,6 +136,25 @@ public class HistoryPanelTests(TideApp app) : IClassFixture<TideApp>
         html.Should().NotContain(new string('w', HistoryChange.ShortLength + 40), "long text is cut until it's asked for");
     }
 
+    // The editor's: no card or button of its own (the save bar has the button), the list under the id the button names,
+    // closed and not loaded until it's opened.
+    [Fact]
+    public async Task Compact_IsJustTheList_OpenedFromElsewhere()
+    {
+        var id = await NewArticle("Compact history");
+        await using var r = await RenderAsync<HistoryPanel>(app, "/articles/" + id, new() { ["Id"] = id, ["Compact"] = true, ["ListId"] = "history-list" });
+        var closed = await r.Html();
+        closed.Should().MatchRegex("<section id=\"history-list\"[^>]*hidden").And.NotContain("aria-expanded").And.NotContain("who changed what, and when")
+            .And.NotContain("Created", "it loads when it's opened");
+        r.Component.IsOpen.Should().BeFalse();
+
+        await r.Click(p => p.Toggle());
+
+        r.Component.IsOpen.Should().BeTrue();
+        var html = await r.Html();
+        html.Should().NotMatchRegex("<section id=\"history-list\"[^>]*hidden").And.Contain("Created").And.Contain("Title:");
+    }
+
     [Fact]
     public async Task AnActionOwner_GetsNothing()
     {

@@ -53,6 +53,11 @@ window.tideEditor = (function () {
             to.scrollIntoView({ block: field ? 'center' : 'start', behavior: smooth ? 'smooth' : 'auto' });
             to.focus({ preventScroll: true });
         },
+        // To a list just opened below the save bar (History), with the bar above it still in view; focus stays put.
+        reveal: function (id) {
+            const el = document.getElementById(id);
+            if (el && !el.hidden) el.scrollIntoView({ block: 'start', behavior: window.tideShortcuts.still() ? 'auto' : 'smooth' });
+        },
         // To the preview's first gap (its dashed placeholder), focused: the readiness line's Show.
         firstGap: function () {
             const gap = document.querySelector('#reader-panel .tide-placeholder');

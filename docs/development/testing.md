@@ -348,11 +348,14 @@ chain whole and in order after the pages that read the demo, and fails if not. R
 `node tools/screenshots/layout.mjs`; `PLAN=1` prints the slices, what each should take and the chains each runs, without
 starting anything (`tools/screenshots/README.md`, which says how to refresh the weights).
 
-The four slices at the default letter spacing also run axe-core's accessibility scan (WCAG 2.1 A and AA) on each page
-once, at its widest width. It's report only: it never fails a slice. Each slice adds a summary (the rules broken, by how
-many elements on how many pages) to its job's summary page and uploads the full report, every element's selector, as the
-`axe-<n>-of-4` artifact. `AXE=0` turns it off. Once its findings are fixed it's meant to become a gate
-(`tools/screenshots/README.md`, "Accessibility scan").
+The four slices at the default letter spacing also run axe-core's accessibility scan on each page once, at its widest
+width. It's a gate for WCAG 2.2 A and AA: an element that breaks one of those rules fails the slice, named like a layout
+rule (`today at 1920px: axe: color-contrast (serious: ...) on .tide-sub`), unless `tools/screenshots/axe-baseline.json`
+allows it. The baseline holds only two findings that come from where a check leaves the page scrolled, and `tools/ci/check-axe-baseline.sh` fails a change that adds an entry without a
+`reason`. Best-practice rules (landmarks, heading order) are reported only. Each slice adds a summary (the rules broken,
+by how many elements on how many pages) to its job's summary page and uploads the full report, every element's selector,
+as the `axe-<n>-of-4` artifact. To check one page locally: `ONLY=triage node tools/screenshots/layout.mjs`. `AXE=0`
+turns the scan, and its gate, off (`tools/screenshots/README.md`, "Accessibility scan").
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);
