@@ -1,0 +1,102 @@
+@inject MeetingService MeetingSvc
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+
+@* The meeting's notes, grouped by the article on screen when each was written (the meeting's own last). Notes are each
+   person's own: on mine, Raise as action (once; then "Raised as A-14", which opens it) and Mark done, or Reopen once
+   done. Everyone else's are read only. *@
+@foreach (var (title, notes) in NoteGroups())
+{
+    <div class="tide-meeting-notes-group">
+        <div class="tide-muted small">@title</div>
+        <ul class="tide-meeting-notes small">
+            @foreach (var n in notes)
+            {
+                var raised = Meeting.RaisedAs(n);
+                var done = n.DoneAtUtc is not null;
+                <li class="@(done ? "tide-note-done" : null)" data-note="@n.Id">
+                    @* The text keeps its line breaks (pre-wrap): the author, the time and the note on one line here. *@
+                    <div class="tide-meeting-note-text"><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</div>
+                    @if (done || raised is not null || Mine(n))
+                    {
+                        <div class="tide-meeting-note-tools">
+                            @if (done) { <span class="tide-note-done-badge">Done</span> }
+                            @if (raised is { } number) { <a href="@Ui.ActionUrl(number)">Raised as @Ui.ActionLabel(number)</a> }
+                            @if (Mine(n))
+                            {
+                                @if (raised is null && MeetingSvc.CanRaiseNotes)
+                                {
+                                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" aria-label="@($"Raise as action: {Short(n.Text)}")" @onclick="() => Raise(n)">Raise as action</button>
+                                }
+                                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" aria-label="@($"{(done ? "Reopen" : "Mark done")}: {Short(n.Text)}")"
+                                        @onclick="() => MarkDone(n, !done)">@(done ? "Reopen" : "Mark done")</button>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+}
+<OverLimitDialog @ref="_overLimit" />
+
+@code {
+    [Parameter, EditorRequired] public Brief Brief { get; set; } = default!;
+
+    /// <summary>The notes, and the actions they raised, as the meeting recorded them.</summary>
+    [Parameter, EditorRequired] public MeetingRecord Meeting { get; set; } = default!;
+
+    /// <summary>A note was raised or marked done (or reopened): the page reads the meeting, and its actions, again.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private OverLimitDialog _overLimit = default!;
+    private bool _busy;
+
+    // Only its author raises a note or marks it done, as the service holds.
+    private bool Mine(MeetingNote n) => n.AuthorId == CurrentUser.UserId && MeetingSvc.CanNote;
+
+    // A note's start, to tell its buttons apart for a screen reader.
+    private static string Short(string text) => text.Length <= 60 ? text : text[..57] + "…";
+
+    /// <summary>Raises my note as an action (asking why first when its team warns at its limit).</summary>
+    internal async Task Raise(MeetingNote n)
+    {
+        if (_busy) return;   // a second click while the first is saving is refused by the service anyway
+        _busy = true;
+        try
+        {
+            var added = default(ActionService.QuickAdded);
+            if (!await _overLimit.RunAsync(async reason => added = await MeetingSvc.RaiseFromNoteAsync(n.Id, reason))) return;
+            Toasts.Show($"{Ui.ActionLabel(added.Number)} raised from your note and "
+                + (added.Yours ? "assigned to you." : "left with its team to assign: you're not on it."));
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Marks my note done, or open again.</summary>
+    internal async Task MarkDone(MeetingNote n, bool done)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await MeetingSvc.MarkNoteDoneAsync(n.Id, done);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
+    private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()
+    {
+        var items = Brief.Items.ToDictionary(i => i.ArticleId);
+        return Meeting.Notes.GroupBy(n => n.ArticleId)
+            .Select(g => (Item: g.Key is { } id ? items.GetValueOrDefault(id) : null, Notes: g))
+            .OrderBy(g => g.Notes.Key is null ? int.MaxValue : g.Item?.SortOrder ?? int.MaxValue - 1)
+            .Select(g => (g.Notes.Key is null ? "The meeting" : g.Item?.Article?.Title ?? "An article since taken off", (IEnumerable<MeetingNote>)g.Notes));
+    }
+}

@@ -152,6 +152,8 @@ public static class HistoryFormatter
         nameof(AuditableEntity.CreatedAtUtc), nameof(AuditableEntity.CreatedBy), nameof(Article.AuthorId), nameof(Brief.AnalystId),
         nameof(ArticleTag.ArticleId), nameof(ArticleTag.TagId), nameof(ArticleTechnique.TechniqueId), nameof(ArticleCve.CveId),
         nameof(ActionComment.EditedByName),
+        // A hand-off reads as the entry's own line (Entry), from the writer's name: the id and the time are the row's.
+        nameof(Article.WriterId), nameof(Article.WriterSinceUtc),
         // A "Keep it" on "Why it matters" reads as the entry's own line (Entry): the row says who and when.
         nameof(Article.WhyItMattersKeptHash), nameof(Article.WhyItMattersKeptByName), nameof(Article.WhyItMattersKeptAtUtc),
     };
@@ -200,6 +202,8 @@ public static class HistoryFormatter
         [nameof(Article.Status)] = "Status",
         [nameof(Article.StoryId)] = "Story",
         [nameof(Article.AuthorName)] = "Author",
+        [nameof(Article.WriterName)] = "Writer",
+        [nameof(Article.HandoffNote)] = "Hand-off note",
         [nameof(Brief.BriefDate)] = "Date",
         [nameof(Brief.AnalystName)] = "Presenter",
         [nameof(Brief.PresentedByName)] = "Presented by",
@@ -255,6 +259,11 @@ public static class HistoryFormatter
         // "Keep it" changes nothing anyone wrote, so the entry says what it kept: "Kept “Why it matters” at TLP:CLEAR".
         if (row.Action == "Modified" && changes is [{ After: { } kept } only] && only.Field == Label(nameof(Article.WhyItMattersKeptTlp)))
             return new HistoryEntry(row.Id, row.AtUtc, row.UserName, $"Kept “Why it matters” at {kept}", []);
+        // A hand-off changes who is writing it, and the note it came with: "Handed from Pat to Sam", the note under it.
+        if (row.Action == "Modified" && changes.FirstOrDefault(c => c.Field == Label(nameof(Article.WriterName))) is { After: { } to } writer
+            && changes.All(c => c == writer || c.Field == Label(nameof(Article.HandoffNote))))
+            return new HistoryEntry(row.Id, row.AtUtc, row.UserName, writer.Before is { } from ? $"Handed from {from} to {to}" : $"Handed to {to}",
+                [.. changes.Where(c => c != writer && c.After is not null)]);
         var verb = row.Action switch { "Added" => "Created", "Deleted" => "Deleted", _ => "Changed" };
         return new HistoryEntry(row.Id, row.AtUtc, row.UserName, verb, row.Action == "Deleted" ? [] : changes);
     }

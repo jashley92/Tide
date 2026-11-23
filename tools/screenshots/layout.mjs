@@ -7,7 +7,7 @@
 //   REUSE=1 / BASE_URL=http://localhost:5112 node ...                    as capture.mjs
 //   SHARD=2/4 node tools/screenshots/layout.mjs                          one of four slices (PLAN=1: print them, start nothing)
 //   CHAIN="the live meeting" node tools/screenshots/layout.mjs           one chain of pages that change the demo, alone
-//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan (axe.mjs)
+//   AXE=0 node tools/screenshots/layout.mjs                              without the accessibility scan and its gate (axe.mjs)
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
@@ -1877,13 +1877,13 @@ const selectShowsOptions = selector => ({
 });
 
 /** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
- * beside it (from where <main> starts). */
+ * beside it (from where .tide-main, the column of top bar and content, starts). */
 const insidePage = selector => ({
   name: `inside the page: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => {
     const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
-    const from = Math.max(0, document.querySelector('main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
+    const from = Math.max(0, document.querySelector('.tide-main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
     return shown.filter(r => r.left < from - 0.5 || r.right > to + 0.5)
       .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the page (${Math.round(from)} to ${to}px)`);
   }, selector),
@@ -3703,6 +3703,22 @@ const autosaved = autosaveAfter(async page => {
 /** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
 const autosaveHeld = autosaveAfter(page => page.getByLabel('Article TLP', { exact: true }).selectOption('Green'));
 
+/** Setup: wider letters, then the review line's button pressed: its panel (asking, the comments) opens under the byline. */
+const openReview = async page => {
+  await wideFont(page);
+  await page.locator('.tide-review-toggle').click();
+  await page.locator('#review-panel').waitFor();
+  await idle(page);
+};
+
+/** Setup: wider letters, then the save bar's History pressed: the list loads below the bar. */
+const openHistory = async page => {
+  await wideFont(page);
+  await page.locator('.tide-sticky-save .tide-history-link').click();
+  await page.locator('.tide-history-compact .tide-history').waitFor();
+  await idle(page);
+};
+
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
   await wideFont(page);
@@ -4295,9 +4311,19 @@ const pages = [
   // The head's badges wrap under the people here rather than run off a phone's edge, for an analyst and a reviewer.
   ...['', '?roles=Viewer'].map(roles => ({ name: `editor-head-crowded${roles ? '-viewer' : ''}`, route: `/articles/{vpnArticle}${roles}`, setup: crowdedHead,
     widths: [390, 780], rules: [noSidewaysScroll, fits('.tide-page-head-main'), fits('.tide-page-head-main > .d-flex')] })),
-  // Someone who can't edit reads the preview as the page: one column with the Review card above it, not a narrow strip.
+  // Someone who can't edit reads the preview as the page, not a narrow strip, with the review as one line in the head.
   { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
-    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), sameColumn('.tide-review-card', '.tide-editor-side'), fits('.tide-editor-side')] },
+    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), visible('.tide-head-byline .tide-review-line'),
+      fits('.tide-head-byline'), fits('.tide-editor-side')] },
+  // The review is one line at the end of the byline, under the title ("Review: <state>" and what to do next); its button opens a
+  // panel under the row, the row's width, with asking (the reviewer and a note) and the comments.
+  { name: 'editor-review-open', route: '/articles/{vpnArticle}', setup: openReview, widths: [1920, 1440, 390],
+    rules: [noSidewaysScroll, visible('.tide-page-head-main .tide-review-line'), visible('#review-panel'), attr('.tide-review-toggle', 'aria-expanded', 'true'),
+      fits('.tide-head-byline'), fits('#review-panel'), fits('.tide-review-ask'), hidden('.tide-review-card')] },
+  // History is the save bar's last button; the list it opens is below the bar, not in it.
+  { name: 'editor-history-open', route: '/articles/{vpnArticle}', setup: openHistory, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-history-link'), attr('.tide-history-link', 'aria-expanded', 'true'),
+      visible('.tide-history-compact .tide-history'), hidden('.tide-sticky-save .tide-history'), fits('.tide-history-compact'), fits('.tide-sticky-save')] },
   // Autosave in the save bar, first in it: "Saved at" after a pause in typing, or why it held off; the bar one row on a
   // wide window, and wrapping within the window on a phone, its words whole.
   { name: 'editor-autosaved', route: '/articles/{vpnArticle}', setup: autosaved, widths: [1920, 390],
@@ -4466,7 +4492,7 @@ const pages = [
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
-      fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
+      fits('.tide-triage-flags'), [1400, visible('.tide-reading')], visible('.tide-seg-tool'), oneRow('.tide-seg-tool')] },
   // The Sources tab's head: what the tab is, and Pull all beside it where there's room (under it where there isn't),
   // the button whole on one line, nothing past the card.
   { name: 'triage-pull-all', route: '/triage?tab=sources', setup: wideFont, widths: [1920, 1440, 780],
@@ -4523,6 +4549,12 @@ const pages = [
   { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
     rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),
       visible('.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+  // The promote form (P), in the bar under the pane and, below 1400px, in the selected row: its three buttons (Promote
+  // and write, Promote and keep triaging, Cancel), the brief tick and the keys line fit, wrapping where there isn't room
+  // rather than spilling out. Opening it changes nothing.
+  { name: 'triage-promote-form', route: '/triage', setup: async page => { await page.keyboard.press('p'); await idle(page); }, widths: [[1366, 768], 780],
+    rules: [noSidewaysScroll, visible('form.tide-promote-form [data-promote-stay]'), visible('form.tide-promote-form #promote-brief'),
+      fits('form.tide-promote-form'), fits('.tide-triage-decide')] },
   // With the pane closed (by V, or below 1400px where it's hidden), the selected row stays a row: its excerpt a readable
   // measure of at most three lines, its why line and its buttons, Attach to… with them, one compact row, and its flags
   // on its meta line. Letters spaced wider. Each width signs in as its own person, as the pane's state is kept.
@@ -4802,7 +4834,8 @@ const pages = [
   // address. The chips wrap within the slide, and the slide still fits. Wider letters.
   ...[[0, 'two', 2], [1, 'none', 0], [2, 'dozen', 10]].map(([n, name, chips]) => (
     { name: `slide-iocs-${name}`, route: '/present/{today}', setup: articleSlide(n), widths: [1920, 1440, 1100, 900, 780],
-      rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'),
+      rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'), oneRow('.tide-present-tools .tide-seg'),
+        inWindow('.tide-present-tools .tide-seg'),
         ...(chips === 0 ? [hidden('.tide-slide-iocsec')] : [fits('.tide-slide-iocs'), shownCount('.tide-slide-iocs .tide-slide-ioc', chips)]),
         ...(chips === 10 ? [visible('.tide-slide-iocs .tide-slide-ioc-more'), fits('.tide-slide-cves'), slideLinksReadable] : [])] })),
   // The card a slide's "+N more" opened (the indicators', the CVEs') gives focus back to it as it closes, by Escape or
@@ -5249,7 +5282,8 @@ try {
 async function check(list, demo) {
   const browser = await chromium.launch();
   const problems = [];
-  // Report only: what axe finds is written and printed, never added to the problems.
+  // A WCAG rule axe finds broken, and the baseline doesn't allow, is a problem like a layout rule's; best practice is
+  // only reported (axe.mjs).
   const label = process.env.SHARD ? process.env.SHARD.replace('/', '-of-') : process.env.CHAIN ? 'chain' : 'all';
   const axe = axeOn ? new AxeReport(label) : null;
   try {
@@ -5281,7 +5315,8 @@ async function check(list, demo) {
           if (axe && size === widest(p.widths)) {
             const start = Date.now();
             try {
-              axe.add(p.name, p.route, width, height, await scan(page), (Date.now() - start) / 1000);
+              const violations = await scan(page);
+              problems.push(...axe.add(p.name, p.route, width, height, violations, (Date.now() - start) / 1000).map(f => `${p.name} at ${width}px: ${f}`));
             } catch (e) {
               axe.failed(p.name, width, height, String(e?.message ?? e).split('\n')[0]);
             }

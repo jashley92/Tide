@@ -5,7 +5,8 @@
 //   2. in a real <form>, its submit button, or requestSubmit() when it has none;
 //   3. in an open dialog, its one .btn-primary button (none, or more than one: nothing).
 // A <textarea> takes part anywhere; a single-line box only inside a [data-submit-scope] (in a form, Enter already
-// submits). A DOM click() is what Blazor's @onclick hears. A disabled button is never pressed.
+// submits). A DOM click() is what Blazor's @onclick hears. A disabled button is never pressed. Ctrl+Shift+Enter isn't
+// this key (the article editor's save, mark ready and go on, editor.js).
 (function () {
     var dialogs = '[role="dialog"]';
     var lineTypes = ['text', 'search', 'url', 'email', 'tel', 'number', 'date', 'time', 'datetime-local'];
@@ -42,7 +43,7 @@
     }
 
     document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing || e.repeat || e.defaultPrevented) return;
+        if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.isComposing || e.repeat || e.defaultPrevented) return;
         var box = e.target;
         if (!box || !(isArea(box) || isLine(box)) || box.readOnly || box.disabled) return;
         var to = find(box);

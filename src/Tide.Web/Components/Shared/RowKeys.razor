@@ -27,6 +27,10 @@
     [Parameter] public IReadOnlyDictionary<string, string>? Keys { get; set; }
     [Parameter] public EventCallback<string> OnKey { get; set; }
 
+    /// <summary>Keys held with Shift, as { letter: action }, in place of their own (the list's Shift+J, "extend-next");
+    /// <see cref="OnKey"/> is given the action.</summary>
+    [Parameter] public IReadOnlyDictionary<string, string>? ShiftKeys { get; set; }
+
     /// <summary>Of the list's own actions, those after which focus goes to the selected row, as after J and K (the
     /// board's left and right).</summary>
     [Parameter] public IReadOnlyList<string>? Follow { get; set; }
@@ -57,7 +61,7 @@
             {
                 _ref = DotNetObjectReference.Create(this);
                 _addressed = Selected;   // the address the page opened at says this row already
-                _started = await JS.InvokeAsync<int>("tideRows.start", _ref, new { row = RowClass, keys = Keys, follow = Follow, onRow = OnRow });
+                _started = await JS.InvokeAsync<int>("tideRows.start", _ref, new { row = RowClass, keys = Keys, shift = ShiftKeys, follow = Follow, onRow = OnRow });
             }
             // However the selection moved (a key, a click, the page itself), the address says it.
             else if (Address is not null && Selected != _addressed)

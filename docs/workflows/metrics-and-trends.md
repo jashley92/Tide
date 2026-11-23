@@ -224,6 +224,28 @@ shows the techniques it was counted for.
 
 Each article's `article_url` is built from `App:BaseUrl`; with that blank it's left empty, as the indicator CSV leaves it.
 
+### What moved
+
+A **What moved** strip at the top of Trends and Reports names the lines that changed most, so the reader doesn't have to
+find them in the table: "T1190 Exploit Public-Facing Application: 12, up from 4", "Overdue at month end: 9, the highest
+in 6 months", "Phishing tag: none this month, after 5". Each is a chip that opens Trends on its line and period, as every
+Trends number does; a line with nothing this period opens to the period it was compared with.
+
+`TrendHighlights.From(TrendReport, partial)` works them out from the report the page has already read, so the strip
+costs no further reads:
+
+| Rule | Detail |
+|---|---|
+| Compared with | The period before, and the same period a year back when the report reaches it (12 months, 4 quarters or 52 weeks back). With the default spans that's quarters only; the month and week spans would need 13 and 53 periods |
+| Minimum count | A line under 3 in both periods it compares is left out: 1 to 2 is +100% and means nothing |
+| Ranking | The change in count weighted by the change as a share of what it was, capped at tripling (a rise from none counts as tripling): 4 to 12 outranks 100 to 110, which outranks 3 to 4 |
+| Lines read | Articles, scorecard categories and tags, tactics and techniques, and actions raised (overall, by kind, by team), done, done late, overdue at period end and hunts with hits. Not "No scorecard tag", "No technique", or the other action lines |
+| How many | Up to 5, at most 2 from each of articles, tags, ATT&CK and actions, and none that counted exactly what one already shown did |
+| A period under way | Only rises: a month to date is always short of a whole one |
+| "The highest in N" | Said instead of "up from" when the count is above every earlier period in the report (of at least 3) |
+
+The strip isn't in the trend table's CSV, the report's CSV or the printed report.
+
 ![Trends](../screenshots/trends.png)
 
 ## Reports
@@ -232,7 +254,27 @@ Reports (`/reports`, `ReportService.BuildAsync`) is the report a team lead owes 
 assembled from what TIDE already counts: headline numbers against the period before, the outcomes, each opening
 metric over the period (last value, average, lowest, highest, days with no value, days past a threshold), the topics
 and techniques briefed most, and the actions raised by team. Every number comes from `TrendsService` or `MetricsService`,
-so it can't disagree with Trends or Metrics. `GET /reports/export.csv?p=` downloads it as one CSV, a row per number.
+so it can't disagree with Trends or Metrics. Above the report, the [What moved](#what-moved) strip names the lines that
+changed most (`PeriodReport.Highlights`); it isn't printed or exported.
+
+Each section has the team's **assessment**: what the numbers mean, in words. It's saved with its period and section
+(`ReportService.SaveAssessmentAsync`, the `ReportAssessments` table), so next quarter's report can look back at this
+one's, with a TLP of its own (a judgement may name the team's own gaps; AMBER unless changed) and an "Edited by Pat,
+Nov 3" line under it. Opening a period loads its assessments; each is saved with its own **Save assessment** button, as
+the brief's opening note is, and clearing the text and saving removes it. Leaving with an unsaved assessment asks first.
+
+- **Stale edits.** A save is checked against the assessment the box was filled from (`EditVersion`): if a colleague
+  saved or cleared it meanwhile, theirs stands, the save is refused, and the page keeps what was typed and says who
+  saved (`ChangedElsewhere`).
+- **Live.** Every save is published on the period's topic (`ChangeFeed.Report`, `report:2026-10`), so an open Reports
+  page shows a colleague's assessment without a reload; a box with unsaved changes keeps them.
+- **Marking.** The report's title shows the highest marking it holds: AMBER for the numbers, raised by any assessment
+  marked above that (`ReportService.Marking`).
+
+`GET /reports/export.csv?p=` downloads it as one CSV: a row per number, and after each section's numbers its assessment
+(the text in `text`, who edited it last in `name`). Every row has a `tlp` column, and the file's name carries the highest
+marking it holds ([ADR 0012](../decisions/0012-exports-carry-tlp-and-stable-ids.md)): `tide-report-2026-10-amber.csv`,
+or `-red.csv` once a TLP:RED assessment is in it.
 
 ### Team commitments
 
@@ -289,6 +331,7 @@ before this was kept start from the date they had at the upgrade, with no moves.
 |---|---|
 | Enter or clear the day's numbers | `EnterMetrics` (Analyst, Admin); on a sent day, `Administer` |
 | See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics only for those who write articles, and Reports for them and for managers; the pages stay open) |
+| Write the report's assessments | `EnterMetrics` or `WriteArticles` (Analyst, Admin; `ReportService.CanAssess`). A manager reads them |
 | Team commitments and its CSV | `ReadActions` (a tab of Reports, and linked from Workload) |
 | A team's commitments by person | `ReadActions` for one's own line; `ManagePeople` (Manager, Admin) for everyone's (`TeamScorecardService.PeopleAsync`) |
 | Brief timeliness and its CSV | `PresentBriefs` for one's own days, `ManagePeople` (Manager, Admin) for everyone's (`Policies.BriefTimeliness`, then `BriefTimelinessService`) |
@@ -321,9 +364,9 @@ before this was kept start from the date they had at the upgrade, with no moves.
 | Entry form progress, history columns and charts | `src/Tide.Application/Metrics/MetricEntryProgress.cs`, `MetricHistoryColumns.cs`, `MetricChartPicks.cs` (and `MetricBands`); `src/Tide.Web/Components/Shared/MetricChartPicker.razor` |
 | CSV and import | `src/Tide.Application/Metrics/MetricCsv.cs`, `MetricImportService.cs` (`MetricImportOptions`) |
 | Drop folder | `src/Tide.Infrastructure/Storage/MetricDropFolder.cs`, `src/Tide.Web/Services/MetricImportHostedService.cs` |
-| Trends | `src/Tide.Application/Trends/TrendsService.cs`, `Period.cs`, `TrendChart.cs` |
+| Trends | `src/Tide.Application/Trends/TrendsService.cs`, `Period.cs`, `TrendChart.cs`, `TrendHighlights.cs` |
 | Reports | `src/Tide.Application/Trends/ReportService.cs` |
 | Team commitments | `src/Tide.Application/Trends/TeamScorecardService.cs` (`BuildAsync`, `ToCsv`) |
 | Scorecard | `src/Tide.Application/Scorecard/ScorecardService.cs`, `ScorecardTagSearch.cs` |
-| Pages | `src/Tide.Web/Components/Shared/MetricEntry.razor`, `Pages/MetricsHistory.razor`, `Pages/Trends.razor`, `Pages/Reports.razor`, `Pages/TeamCommitments.razor`, `Pages/Admin/MetricsAdmin.razor`, `Pages/Admin/MetricImportsAdmin.razor`, `Pages/Admin/ScorecardAdmin.razor` |
+| Pages | `src/Tide.Web/Components/Shared/MetricEntry.razor`, `Pages/MetricsHistory.razor`, `Pages/Trends.razor`, `Pages/Reports.razor`, `Shared/TrendHighlightsStrip.razor`, `Pages/TeamCommitments.razor`, `Pages/Admin/MetricsAdmin.razor`, `Pages/Admin/MetricImportsAdmin.razor`, `Pages/Admin/ScorecardAdmin.razor` |
 | Export endpoints | `src/Tide.Web/Program.cs` (`/metrics/export.csv`, `/trends/export.csv`, `/trends/articles.csv`, `/reports/export.csv`, `/reports/teams/export.csv`) |

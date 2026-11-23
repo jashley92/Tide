@@ -135,6 +135,12 @@ public class MeetingNote : Entity
     public DateTimeOffset AtUtc { get; set; }
     public DateTimeOffset? EditedAtUtc { get; set; }
     public string Text { get; set; } = string.Empty;
+
+    /// <summary>The action its author raised from it ("Raised as A-14"), or null. A note raises one action at most.</summary>
+    public Guid? ActionId { get; set; }
+
+    /// <summary>When its author marked it done, or null while it's open.</summary>
+    public DateTimeOffset? DoneAtUtc { get; set; }
 }
 
 /// <summary>

@@ -19,6 +19,7 @@
 @inject ChangeOrigin Origin
 @inject LiveMeetings Meetings
 @inject PrerenderHandoff Handoff
+@inject PaletteCommands PaletteVerbs
 @using Tide.Web.Components.Today
 @implements IDisposable
 
@@ -290,7 +291,9 @@ else
     private ILookup<Guid, EditionAction>? _actions;
     private Brief? _brief;
     private MeetingRecord _meeting = MeetingRecord.None;
+    private IReadOnlyList<(Guid ArticleId, DateOnly To)> _carried = [];   // what the ended meeting carried on, for its recap
     private IReadOnlyList<BriefCandidate> _candidates = [];
+    private string _me = "";   // the signed-in person: their drafts lead Drafts in progress
     private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
     private IReadOnlyList<ArticleSummary> _recent = [];
 
@@ -401,6 +404,7 @@ else
             return;
         }
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        _me = CurrentUser.UserId;
         _past = BriefSvc.IsPast(_date);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page. It's read again below, quietly, only if something was saved in between: otherwise it's what a read gives.
@@ -499,6 +503,17 @@ else
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
+        _verbs = PaletteVerbs.Register(Verbs, StateHasChanged);
+    }
+
+    // Ctrl+K's verb on Today: Mark ready, while it's the brief's next step, through its own confirmation (AskReady).
+    private IDisposable? _verbs;
+
+    internal IEnumerable<PaletteCommand> Verbs()
+    {
+        if (!AsToday || !_canWrite || _busy || _brief is null) yield break;
+        if (BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired), EditionToGo is not null) == BriefNext.MarkReady)
+            yield return new("Mark the brief ready", "today meeting ready", Permission.WriteArticles, "Today", AskReady, "bi-check2-square");
     }
 
     // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes
@@ -556,7 +571,12 @@ else
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {
                 if (AsToday && !_canWrite) _recent = await RecentAsync();
-                if (_canWrite && (_brief is not null || AsToday)) _candidates = await BriefSvc.CandidatesAsync(_brief?.Id ?? Guid.Empty);
+                if (_canWrite && (_brief is not null || AsToday))
+                {
+                    var before = _candidates;
+                    _candidates = await BriefSvc.CandidatesAsync(_brief?.Id ?? Guid.Empty);
+                    if (AsToday) TellHandedToMe(before, changes);
+                }
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -687,6 +707,7 @@ else
         _around?.Dispose();
         _meetingLive?.Dispose();
         Meetings.Changed -= MeetingStartedOrEnded;
+        _verbs?.Dispose();
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
@@ -700,7 +721,7 @@ else
         (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
         (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
         (_readiness, _analystId, _intro, _introTlp, _teamNote) = (p._readiness, p._analystId, p._intro, p._introTlp, p._teamNote);
-        (_candidates, _shortlist, _actions, _meeting, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed, p._newOnKev);
+        (_candidates, _shortlist, _actions, _meeting, _carried, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._carried, p._newInFeed, p._newOnKev);
         (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
         _loading = false;
     }
@@ -729,6 +750,7 @@ else
             }
             _actions = await BriefSvc.EditionActionsAsync(_brief);
             _meeting = await MeetingSvc.GetAsync(_brief.Id);
+            _carried = BriefService.MeetingHeld(_brief) ? await BriefSvc.CarriedAsync(_brief.Id) : [];
             _newInFeed = _canWrite ? await Intake.NewCountAsync() : null;
             // Another day's brief keeps the feed's count, as it had; what is on KEV is today's work.
             _newOnKev = AsToday && _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
@@ -1133,11 +1155,32 @@ else
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
+        var recap = Recap;   // built once: it builds the team edition
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
                      @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" ShowAttendance="AttendanceShown" Busy="_busy" OnSave="SaveDetails"
-                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs" />
+                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs"
+                     Recapped="@(recap is not null)" OnNotesChanged="NotesChanged" />
+        @if (recap is not null)
+        {
+            <MeetingRecapCard Brief="_brief!" Recap="recap" Meeting="_meeting" OnChanged="NotesChanged" />
+        }
     };
+
+    /// <summary>
+    /// Once the meeting has ended, what came out of it (the meeting recap card under the meeting): built from the team
+    /// edition, as the wrap-up slide is, so it names nothing above that edition's ceiling. Null until it has ended.
+    /// </summary>
+    internal MeetingRecap? Recap => _brief is { } b && BriefService.MeetingHeld(b)
+        ? WrapUp.Recap(BriefEditions.Build(b, Edition.Team, _teamMax, _actions), _meeting, _carried) : null;
+
+    // A note raised as an action or marked done: the notes, and the actions the recap lists, read again.
+    private async Task NotesChanged()
+    {
+        if (_brief is null) return;
+        _actions = await BriefSvc.EditionActionsAsync(_brief);
+        _meeting = await MeetingSvc.GetAsync(_brief.Id);
+    }
 
     // Today for someone who works actions but can't write articles: their escalated actions and their teams' queue first,
     // then what's on today's brief (its state and headlines, read-only: the steps, the running order's controls and the
@@ -1222,7 +1265,30 @@ else
             }
             <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="CanAddFromCard" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
         </div>
+        @if (AsToday)
+        {
+            <DraftsInProgressCard Drafts="DraftsInProgress" Me="@_me" />
+        }
     };
+
+    /// <summary>
+    /// For whoever writes the brief, on Today: the drafts still being written, from the same candidates (the last
+    /// <see cref="BriefService.CandidateDays"/> days' drafts not on today's brief, so the read stays bounded), and the
+    /// drafts already in today's running order, marked as on it (read with the brief, so no query of their own). The
+    /// signed-in person's first (DraftsInProgressCard.Order).
+    /// </summary>
+    internal IReadOnlyList<BriefCandidate> DraftsInProgress => !_canWrite ? [] :
+        DraftsInProgressCard.Order(_candidates.Where(c => c.Status == ArticleStatus.Draft)
+            .Concat((_brief?.Items ?? []).Select(i => i.Article).OfType<Article>().Where(a => a.Status == ArticleStatus.Draft).Select(BriefCandidate.OnTheBrief)), _me);
+
+    // A draft newly handed to the signed-in person, heard while Today is open: they're told (the card says so too).
+    private void TellHandedToMe(IReadOnlyList<BriefCandidate> before, IReadOnlyList<Change> changes)
+    {
+        var had = before.Where(c => c.WriterId == _me).Select(c => c.Id).ToHashSet();
+        foreach (var c in _candidates.Where(c => c.Status == ArticleStatus.Draft && c.WriterId == _me && c.WriterId != c.AuthorId
+                     && !had.Contains(c.Id) && before.Any(b => b.Id == c.Id)))
+            Toasts.Tell($"{LiveChanges.Who(changes)} handed you “{c.Title}”.");
+    }
 
     /// <summary>
     /// For whoever writes the brief: the ready articles that haven't been on any brief yet, newest first (no drafts, and

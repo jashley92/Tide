@@ -148,6 +148,8 @@ builder.Services.AddSingleton<OnboardingGate>();
 builder.Services.AddScoped<TourRequests>();
 // Where a guide started from Help opens: a real article or action for those pages.
 builder.Services.AddScoped<GuideStarts>();
+// The verbs the page on screen offers the command palette (Ctrl+K), in the same circuit.
+builder.Services.AddScoped<PaletteCommands>();
 // Which circuit shows each person their tour, so a second tab doesn't start a second one.
 builder.Services.AddSingleton<TourClaims>();
 // The Library's one search, over the tabs the person may open.
@@ -423,11 +425,14 @@ app.MapGet("/trends/export.csv", async (string? p, bool? subs, int? n, TrendsSer
     return CsvFile(TrendsService.ToCsv(report), $"tide-trends-{end.Key}.csv");
 }).AsExport();
 
-// The report for period ?p= (Reports), one row per number, as CSV.
+// The report for period ?p= (Reports), one row per number and one per saved assessment, as CSV. Each row carries its TLP,
+// and the file's name the highest of them (ADR 0012): an assessment marked above the numbers raises the whole file.
 app.MapGet("/reports/export.csv", async (string? p, TrendsService trends, ReportService reports, CancellationToken ct) =>
 {
     var period = Period.Parse(p) ?? trends.DefaultEnd(PeriodKind.Month);
-    return CsvFile(ReportService.ToCsv(await reports.BuildAsync(period, ct)), $"tide-report-{period.Key}.csv");
+    var assessments = await reports.AssessmentsAsync(period, ct);
+    return CsvFile(ReportService.ToCsv(await reports.BuildAsync(period, ct), assessments),
+        $"tide-report-{period.Key}-{Tlp.Key(ReportService.Marking(assessments))}.csv");
 }).AsExport();
 
 // The team commitments scorecard (Reports > Team commitments) over the last ?days= (30, 90, 180 or 365; 90 otherwise),

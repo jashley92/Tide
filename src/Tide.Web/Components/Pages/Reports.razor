@@ -6,18 +6,24 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ToastService Toasts
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
 
 @* The report a team lead owes for a week, a month or a quarter (EP-22): the headline numbers against the period before,
    the outcomes, the opening metrics, the topics and techniques briefed most, and the actions by team, from the same
-   counts as Trends and Metrics. Each section has room for the lead's assessment, which prints with the report; it isn't
-   saved. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month by default. *@
+   counts as Trends and Metrics. Each section has the team's assessment, saved per period with its own TLP (a judgement
+   may name the team's own gaps), so last quarter's can be looked up; it prints and exports with the report. A colleague's
+   save shows live, as the brief's opening note does. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month
+   by default. *@
 
 <PageTitle>Reports · TIDE</PageTitle>
 
 <div class="tide-page-head">
     <div>
         <h1>Reports</h1>
-        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.</div>
+        <div class="tide-sub">Compared with the previous period. Each section's assessment is kept with its period, and prints and exports with the report.</div>
     </div>
     @if (_report is not null)
     {
@@ -54,7 +60,8 @@ else if (_report is not { } r)
 }
 else
 {
-    <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="TlpLevel.Amber" /></h2>
+    <TrendHighlightsStrip Highlights="@r.Highlights" Against="@r.Period.Previous.Label" Href="@(h => TrendsLink(h.Key, TrendHighlightsStrip.ViewOf(h.Key), h.At))" />
+    <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="@ReportService.Marking(_saved.Values)" /></h2>
 
     <section class="tide-card" aria-labelledby="rep-headlines">
         <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
@@ -115,28 +122,105 @@ else
     </section>
 }
 
+@* An assessment typed and not saved: leaving (another period included) asks first. *@
+<UnsavedGuard Dirty="Unsaved" Message="You've changed an assessment and not saved it." Save="SaveUnsaved" Discard="DiscardUnsaved" />
+
 @code {
     [SupplyParameterFromQuery(Name = "p")] public string? PeriodParam { get; set; }
 
     private Period _period;
     private PeriodReport? _report;
-    private bool _failed;
+    private bool _failed, _busy, _canAssess;
+
+    // Each section's assessment: as saved (absent when none is), as typed, its TLP as chosen, and the edit version the
+    // box was filled from, which its save is checked against (ReportService.SaveAssessmentAsync).
+    private readonly Dictionary<string, ReportAssessment> _saved = new();
     private readonly Dictionary<string, string> _notes = new();
+    private readonly Dictionary<string, TlpLevel> _tlps = new();
+    private readonly Dictionary<string, Guid?> _versions = new();
+
+    // A colleague who saved a section's assessment while this page had unsaved changes to it.
+    private readonly Dictionary<string, string> _changedBy = new();
+
+    // The period's topic, read on the publisher's thread by the live filter.
+    private volatile string _topic = "";
+    private LiveChanges? _live;
+
+    protected override void OnInitialized()
+    {
+        _canAssess = ReportSvc.CanAssess;
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
+    }
+
+    public void Dispose() => _live?.Dispose();
 
     protected override async Task OnParametersSetAsync()
     {
         var period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
         // Earlier, Later and the period buttons keep this same page and only change ?p=, so an assessment written for
-        // one period would otherwise stay in its box, and print, under the next. Each period starts with empty boxes.
-        if (period != _period) _notes.Clear();
+        // one period would otherwise stay in its box, and print, under the next. Each period starts from its own saved ones.
+        if (period != _period)
+        {
+            _saved.Clear();
+            _notes.Clear();
+            _tlps.Clear();
+            _versions.Clear();
+            _changedBy.Clear();
+        }
         _period = period;
+        _topic = ChangeFeed.Report(period.Key);
         (_report, _failed) = (null, false);
-        try { _report = await ReportSvc.BuildAsync(_period); }
+        try
+        {
+            _report = await ReportSvc.BuildAsync(_period);
+            Absorb(await ReportSvc.AssessmentsAsync(_period), who: null);
+        }
         catch (Exception ex)
         {
             _failed = true;
             Toasts.Error(UserFacingError.For(ex));
         }
+    }
+
+    // The period's assessments as now saved. A box with nothing unsaved takes the saved one; one with unsaved changes
+    // keeps them, and if a colleague (who) saved that section meanwhile, ChangedElsewhere says so and the box's save stays
+    // checked against the version it was filled from, so it's refused rather than replacing theirs.
+    private bool Absorb(IReadOnlyList<ReportAssessment> fresh, string? who)
+    {
+        var shown = false;
+        foreach (var (key, _) in ReportService.Sections)
+        {
+            var before = _saved.GetValueOrDefault(key);
+            var theirs = fresh.FirstOrDefault(a => a.Section == key);
+            var dirty = Dirty(key);
+            if (theirs is null) _saved.Remove(key);
+            else _saved[key] = theirs;
+            if (!dirty)
+            {
+                Fill(key);
+                shown |= before?.EditVersion != theirs?.EditVersion;
+            }
+            else if (who is not null && before?.EditVersion != theirs?.EditVersion) _changedBy[key] = who;
+        }
+        return shown;
+    }
+
+    // The box as saved.
+    private void Fill(string key)
+    {
+        var saved = _saved.GetValueOrDefault(key);
+        _notes[key] = saved?.Text ?? "";
+        _tlps[key] = saved?.Tlp ?? ReportService.NumbersTlp;
+        _versions[key] = saved?.EditVersion;
+        _changedBy.Remove(key);
+    }
+
+    private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    {
+        if (_busy || _report is null) return;   // this page's own save is under way, and reads theirs with it
+        var who = LiveChanges.Who(changes);
+        if (Absorb(await ReportSvc.AssessmentsAsync(_period), who)) Toasts.Tell($"{who} updated this report's assessments.");
+        StateHasChanged();
     }
 
     private void Go(Period p) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("p", p.Key));
@@ -164,7 +248,7 @@ else
     private static string Num(double? v, string unit) => v is not { } n ? "—" : unit == " days" ? Words.Days(n) : Words.Num(n) + unit;
 
     // A trend line's numbers open in Trends, on the line, for this period.
-    private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
+    private string TrendsLink(string line, string view, Period? at = null) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={(at ?? _period).Key}";
 
     private RenderFragment Figures(IReadOnlyList<ReportFigure> figures, string headingId) => __builder =>
     {
@@ -206,13 +290,128 @@ else
 
     internal void Note(string section, string? text) => _notes[section] = text ?? string.Empty;
 
+    internal void SetTlp(string section, TlpLevel tlp) => _tlps[section] = tlp;
+
+    /// <summary>Whether <paramref name="section"/>'s box differs from its saved assessment.</summary>
+    internal bool Dirty(string section)
+    {
+        var saved = _saved.GetValueOrDefault(section);
+        var typed = (_notes.GetValueOrDefault(section) ?? "").Trim();
+        if (typed.Length == 0) return saved is not null;
+        return typed != (saved?.Text ?? "").Trim() || _tlps.GetValueOrDefault(section, ReportService.NumbersTlp) != (saved?.Tlp ?? ReportService.NumbersTlp);
+    }
+
+    /// <summary>Whether leaving would lose an assessment as typed.</summary>
+    internal bool Unsaved => _canAssess && _report is not null && ReportService.Sections.Any(s => Dirty(s.Key));
+
+    /// <summary>Saves <paramref name="section"/>'s assessment as typed, checked against the one the box was filled from: a
+    /// colleague's newer save wins, and this page says so and keeps what was typed.</summary>
+    internal async Task Save(string section)
+    {
+        _busy = true;
+        try
+        {
+            await SaveOne(section);
+            Toasts.Show(_saved.ContainsKey(section) ? "Assessment saved." : "Assessment cleared.");
+        }
+        catch (Exception ex) { Refused(section, ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveOne(string section)
+    {
+        var saved = await ReportSvc.SaveAssessmentAsync(_period, section, _notes.GetValueOrDefault(section), _tlps.GetValueOrDefault(section, ReportService.NumbersTlp),
+            _versions.GetValueOrDefault(section));
+        if (saved is null) _saved.Remove(section);
+        else _saved[section] = saved;
+        Fill(section);
+    }
+
+    private void Refused(string section, Exception ex)
+    {
+        if (ex is StaleEditException) _changedBy.TryAdd(section, "Someone");
+        Toasts.Error(UserFacingError.For(ex));
+    }
+
+    // Save and leave: each changed section; a refusal says why and stays.
+    internal async Task<bool> SaveUnsaved()
+    {
+        foreach (var (key, _) in ReportService.Sections.Where(s => Dirty(s.Key)).ToList())
+        {
+            try { await SaveOne(key); }
+            catch (Exception ex)
+            {
+                Refused(key, ex);
+                return false;
+            }
+        }
+        Toasts.Show("Saved.");
+        return true;
+    }
+
+    private void DiscardUnsaved()
+    {
+        foreach (var (key, _) in ReportService.Sections) Fill(key);
+    }
+
+    // Reload in ChangedElsewhere: the colleague's assessment, in place of what was typed.
+    private async Task ReloadTheirs(string section)
+    {
+        try
+        {
+            var fresh = await ReportSvc.AssessmentsAsync(_period);
+            if (fresh.FirstOrDefault(a => a.Section == section) is { } theirs) _saved[section] = theirs;
+            else _saved.Remove(section);
+            Fill(section);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // "Edited by Pat, Nov 3".
+    private string EditedBy(ReportAssessment a) => $"Edited by {a.UpdatedByName}, {Words.MonthDay(Clock.DayOf(a.UpdatedAtUtc))}";
+
     // Keyed by period as well as section, so a new period's box is a new element rather than the last one's with its
-    // typed text still in it.
+    // typed text still in it. Whoever can't write assessments reads the saved one; it prints either way.
     private RenderFragment Assessment(string section) => __builder =>
     {
         var id = "assess-" + section;
-        <label class="tide-field-label mt-2" for="@id">Assessment</label>
-        <textarea id="@id" class="form-control form-control-sm tide-autogrow" rows="2" maxlength="4000" placeholder="What this means, in your words (prints with the report; not saved)"
-                  @key="@($"{_period.Key}:{section}")" value="@_notes.GetValueOrDefault(section)" @onchange="e => Note(section, e.Value?.ToString())"></textarea>
+        var saved = _saved.GetValueOrDefault(section);
+        <div class="tide-report-assess" @key="@($"{_period.Key}:{section}")">
+            <div class="tide-report-assess-head">
+                <label class="tide-field-label mb-0" for="@(_canAssess ? id : null)">Assessment</label>
+                @if (saved is not null)
+                {
+                    <TlpBadge Level="saved.Tlp" />
+                    <span class="small tide-muted">@EditedBy(saved)</span>
+                }
+            </div>
+            @if (_changedBy.GetValueOrDefault(section) is { } by)
+            {
+                <ChangedElsewhere By="@by" What="assessment" Consequence="Saving now would be refused." OnReload="() => ReloadTheirs(section)" />
+            }
+            @if (_canAssess)
+            {
+                var dirty = Dirty(section);
+                <textarea id="@id" class="form-control form-control-sm tide-autogrow" rows="2" maxlength="@ReportAssessment.MaxText"
+                          placeholder="What this means, in your words. Saved with this period; prints and exports with the report."
+                          value="@_notes.GetValueOrDefault(section)" @oninput="e => Note(section, e.Value?.ToString())"></textarea>
+                <div class="d-flex gap-2 align-items-center flex-wrap mt-2 tide-noprint">
+                    <TlpSelect Value="@_tlps.GetValueOrDefault(section, ReportService.NumbersTlp)" ValueChanged="v => SetTlp(section, v)" Label="The assessment's TLP" Class="w-auto" />
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !dirty)" @onclick="() => Save(section)">Save assessment</button>
+                    @if (dirty)
+                    {
+                        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Fill(section)">Cancel</button>
+                    }
+                </div>
+            }
+            else if (saved is not null)
+            {
+                <p class="tide-report-assess-text mb-0">@saved.Text</p>
+            }
+            else
+            {
+                <p class="small tide-muted mb-0">No assessment for @_period.Label.</p>
+            }
+        </div>
     };
 }

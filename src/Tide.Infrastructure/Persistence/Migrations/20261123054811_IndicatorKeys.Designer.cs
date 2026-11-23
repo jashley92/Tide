@@ -11,7 +11,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261122034903_IndicatorKeys")]
+    [Migration("20261123054811_IndicatorKeys")]
     partial class IndicatorKeys
     {
         /// <inheritdoc />
@@ -898,6 +898,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HandoffNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -969,6 +973,17 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("WhyItMattersTlp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WriterId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WriterName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("WriterSinceUtc")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
@@ -2181,6 +2196,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ArticleId")
                         .HasColumnType("TEXT");
 
@@ -2200,6 +2218,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("DoneAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("EditedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -2209,6 +2230,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
 
                     b.HasIndex("BriefId", "AtUtc");
 
@@ -2727,6 +2750,54 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasKey("Dialect", "Kind");
 
                     b.ToTable("QueryTemplates");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ReportAssessment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PeriodKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Section")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Tlp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PeriodKey", "Section")
+                        .IsUnique();
+
+                    b.ToTable("ReportAssessments");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ReviewComment", b =>
@@ -4068,6 +4139,11 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingNote", b =>
                 {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Tide.Domain.Entities.Brief", null)
                         .WithMany()
                         .HasForeignKey("BriefId")

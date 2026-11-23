@@ -107,6 +107,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ActionFile x => [ChangeFeed.Action(x.ActionId), ChangeFeed.Actions],
         MetricValue x => [ChangeFeed.MetricsDay(x.BriefDate)],
         MetricDefinition or MetricGroup => [ChangeFeed.Metrics],
+        ReportAssessment x => [ChangeFeed.Report(x.PeriodKey)],
         StackProduct => [ChangeFeed.Stack],
         Adversary => [ChangeFeed.Adversaries],
         Team or TeamMember => [ChangeFeed.Teams],

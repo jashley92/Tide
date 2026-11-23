@@ -183,7 +183,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         var rail = html.IndexOf("<aside id=\"tide-rail\"", StringComparison.Ordinal);
         var page = rail < 0 ? html : html[..rail];
         return Card().Matches(page).Select(m => m.Groups[1].Value)
-            .Where(h => !(writes ? h is "my-actions-h" or "recent-h" : h is "escalated-h" or "team-queue-h"));
+            .Where(h => !(writes ? h is "my-actions-h" or "recent-h" or "drafts-h" : h is "escalated-h" or "team-queue-h"));
     }
 
     // Where the element of this tag opening at <paramref name="at"/> ends, after its matching close.
@@ -198,7 +198,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         throw new InvalidOperationException($"No close for the {tag} at {at}.");
     }
 
-    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|teams-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
+    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|teams-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|recap-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h|drafts-h)""")]
     private static partial Regex Card();
 
     /// <summary>The markup with what differs from run to run, or with Blazor's own bookkeeping, taken out.</summary>

@@ -5,96 +5,125 @@
 @inject ICurrentUser Me
 @inject PrerenderHandoff Handoff
 
-@* EP-80: the article's review, in the editor. The author asks a colleague (this week's presenter is suggested), sees
-   where it stands, and resolves each comment; an edit after approval shows the approval is out of date. Optional
-   unless an administrator requires it; the Send dialog says which articles haven't been reviewed. *@
+@* EP-80: the article's review, in the editor's head as one line: "Review: <where it stands>" and the one thing to do
+   next. The author asks a colleague (this week's presenter is suggested), sees where it stands, and resolves each
+   comment; an edit after approval shows the approval is out of date. Optional unless an administrator requires it
+   (the line says which for this article); the Send dialog says which articles haven't been reviewed.
+   Asking (the reviewer and a note) and the comments (each with Resolve) are in a small panel the line's button opens
+   below the byline; the line says how many comments are open. It's drawn into the byline's wrapping row (under the title): the line
+   pushes right, and the panel takes the row's whole width under it. *@
 
 @if (_state is { } s)
 {
-    <section class="tide-card tide-review-card" aria-labelledby="review-h">
-        <div class="d-flex gap-2 align-items-center flex-wrap">
-            <h2 id="review-h" class="h6 mb-0"><span class="bi bi-person-check" aria-hidden="true"></span> Review</h2>
+    var asking = CanWrite && Asking(s);
+    var comments = s.Review?.Comments.Count ?? 0;
+    var disclosure = asking || comments > 0;
+    <span class="tide-review-line" data-review="@Key(s)">
+        <span class="tide-review-state" tabindex="-1" @ref="_stateNote">
+            <span class="tide-muted">Review:</span>
             @if (s.Review is not { } r)
             {
-                <span class="small tide-muted">Not reviewed@(_rule == ReviewRule.Off ? " (optional)" : "").</span>
+                var required = ReviewService.Requires(_rule, ReviewService.Marking(Article), Article.Classification);
+                if (required) { <Badge Tone="BadgeTone.Warn">not asked (required)</Badge> }
+                else { <span class="tide-muted">not asked (optional)</span> }
             }
             else
             {
                 <Badge Tone="@Tone(s)">@Status(s)</Badge>
-                <span class="small tide-muted">@(r.DecidedAtUtc is { } d ? Ui.When(Clock, d) : "asked " + Ui.When(Clock, r.RequestedAtUtc))</span>
-                <a class="small ms-auto" href="@($"articles/{Article.Id}/review")">@(r.ReviewerId == Me.UserId && r.Status == ReviewStatus.Asked ? "Review it" : "Open the review")</a>
+                <span class="tide-muted small">@(r.DecidedAtUtc is { } d ? Ui.When(Clock, d) : "asked " + Ui.When(Clock, r.RequestedAtUtc))</span>
+            }
+        </span>
+        @if (s.Review is { } open)
+        {
+            <a class="small" href="@($"articles/{Article.Id}/review")">@(open.ReviewerId == Me.UserId && open.Status == ReviewStatus.Asked ? "Review it" : "Open the review")</a>
+        }
+        @if (disclosure)
+        {
+            <button type="button" class="btn btn-link btn-sm tide-review-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId"
+                    data-guide="@(asking ? "ask-review" : null)" @onclick="Toggle">
+                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+                <span class="tide-link-words">@ToggleLabel(s, asking, comments)</span>
+            </button>
+        }
+        @if (CanWrite && s.Review is { Status: ReviewStatus.Asked } waiting && waiting.ReviewerId != Me.UserId)
+        {
+            <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Withdraw(waiting.Id)">Take the request back</button>
+        }
+    </span>
+
+    @if (disclosure)
+    {
+        <div id="@PanelId" class="tide-review-panel" role="group" aria-label="Review" hidden="@(!_open)">
+            @if (s.Review is { } withComments && withComments.Comments.Count > 0)
+            {
+                <ul class="tide-review-comments">
+                    @foreach (var c in withComments.Comments)
+                    {
+                        <li class="@(c.ResolvedAtUtc is null ? "" : "resolved")">
+                            <div class="small"><strong>@c.AuthorName</strong> on @ReviewService.FieldLabel(c.Field)@(c.Quote is { } q ? $": “{Ui.Clip(q, 80)}”" : "")</div>
+                            <div>@c.Text</div>
+                            @if (CanWrite)
+                            {
+                                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Resolve(c.Id, c.ResolvedAtUtc is null)">
+                                    @(c.ResolvedAtUtc is null ? "Resolve" : $"Resolved by {c.ResolvedByName}: reopen")</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (asking)
+            {
+                <div class="tide-review-ask">
+                    @if (_reviewers.Count == 0)
+                    {
+                        <span class="small tide-muted">There's no one else to ask yet.</span>
+                    }
+                    else
+                    {
+                        <label class="small" for="review-who">@(s.Review is null ? "Ask" : "Ask again:")</label>
+                        <select id="review-who" class="form-select form-select-sm w-auto" @bind="_reviewerId">
+                            @foreach (var who in _reviewers) { <option value="@who.Id">@who.Name@(who.Presenting ? " (presenting this week)" : "")</option> }
+                        </select>
+                        <input class="form-control form-control-sm tide-maxw-sm" maxlength="@ArticleReview.MaxNote" placeholder="What to look at (optional)" aria-label="Note for the reviewer" @bind="_note" />
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_reviewerId))" @onclick="Ask">Send the request</button>
+                    }
+                </div>
             }
         </div>
-
-        @if (s.Review is { } open && open.Comments.Count > 0)
-        {
-            <ul class="tide-review-comments">
-                @foreach (var c in open.Comments)
-                {
-                    <li class="@(c.ResolvedAtUtc is null ? "" : "resolved")">
-                        <div class="small"><strong>@c.AuthorName</strong> on @ReviewService.FieldLabel(c.Field)@(c.Quote is { } q ? $": “{Ui.Clip(q, 80)}”" : "")</div>
-                        <div>@c.Text</div>
-                        @if (CanWrite)
-                        {
-                            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Resolve(c.Id, c.ResolvedAtUtc is null)">
-                                @(c.ResolvedAtUtc is null ? "Resolve" : $"Resolved by {c.ResolvedByName}: reopen")</button>
-                        }
-                    </li>
-                }
-            </ul>
-        }
-
-        @if (CanWrite && Asking(s))
-        {
-            <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
-                @if (_reviewers.Count == 0)
-                {
-                    <span class="small tide-muted">There's no one else to ask yet.</span>
-                }
-                else
-                {
-                    <label class="small" for="review-who">@(s.Review is null ? "Ask" : "Ask again:")</label>
-                    <select id="review-who" class="form-select form-select-sm w-auto" @bind="_reviewerId">
-                        @foreach (var who in _reviewers) { <option value="@who.Id">@who.Name@(who.Presenting ? " (presenting this week)" : "")</option> }
-                    </select>
-                    <input class="form-control form-control-sm tide-maxw-sm" maxlength="@ArticleReview.MaxNote" placeholder="What to look at (optional)" aria-label="Note for the reviewer" @bind="_note" />
-                    <button type="button" class="btn btn-outline-primary btn-sm" data-guide="ask-review" disabled="@(_busy || string.IsNullOrEmpty(_reviewerId))" @onclick="Ask">Ask for review</button>
-                }
-            </div>
-        }
-        else if (CanWrite && s.Review is { Status: ReviewStatus.Asked } waiting && waiting.ReviewerId != Me.UserId)
-        {
-            <button type="button" class="btn btn-link btn-sm p-0 mt-1" disabled="@_busy" @onclick="() => Withdraw(waiting.Id)">Take the request back</button>
-        }
-    </section>
+    }
 }
 
 @code {
     [Parameter, EditorRequired] public Article Article { get; set; } = default!;
     [Parameter] public bool CanWrite { get; set; }
 
+    /// <summary>The id of the panel the line's button opens (one review line on a page).</summary>
+    public const string PanelId = "review-panel";
+
     private ReviewState? _state;
     private ReviewRule _rule;
     private IReadOnlyList<Reviewer> _reviewers = [];
     private string? _reviewerId, _note;
-    private bool _busy;
+    private bool _busy, _open, _focusState;
     private Guid _loadedFor;
     private Guid _loadedVersion, _loadedContent;
+    private ElementReference _stateNote;
 
     protected override async Task OnParametersSetAsync()
     {
         // Again when the article changes, or is saved or a screenshot comes or goes (which can put an approval out of date).
         var content = ReviewService.ContentVersion(Article);
-        // A reload draws the prerendered card at once, rather than no card until it's read; it's read again below if
-        // something was saved since (read for the same version, it's still the card).
+        // A reload draws the prerendered line at once, rather than no line until it's read; it's read again below if
+        // something was saved since (read for the same version, it's still the line).
         if (Handoff.Take<ReviewCard>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._loadedFor == Article.Id)
         {
             (_loadedFor, _state, _rule, _reviewers, _reviewerId) = (prerendered._loadedFor, prerendered._state, prerendered._rule, prerendered._reviewers, prerendered._reviewerId);
             if (current) (_loadedVersion, _loadedContent) = (prerendered._loadedVersion, prerendered._loadedContent);
         }
         if (_loadedFor == Article.Id && _loadedVersion == Article.EditVersion && _loadedContent == content) return;
-        // Another article: the reviewer chosen and the note written were for the last one.
-        if (_loadedFor != Article.Id) (_reviewerId, _note) = (null, null);
+        // Another article: the reviewer chosen, the note written and the open panel were for the last one.
+        if (_loadedFor != Article.Id) (_reviewerId, _note, _open) = (null, null, false);
         (_loadedFor, _loadedVersion, _loadedContent) = (Article.Id, Article.EditVersion, content);
         await Load();
         if (_state is not null) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
@@ -103,6 +132,16 @@
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
     [PersistentState]
     public string? PrerenderedState { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Asking or taking the request back removes the button that did it: focus goes to what the line now says.
+        if (!_focusState) return;
+        _focusState = false;
+        try { await _stateNote.FocusAsync(); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
 
     private async Task Load()
     {
@@ -119,21 +158,47 @@
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
+    /// <summary>Opens or closes the panel under the line.</summary>
+    internal void Toggle()
+    {
+        _open = !_open;
+        StateHasChanged();
+    }
+
     // Asking is offered with no review yet, after changes were asked, or when an approval went out of date.
     private static bool Asking(ReviewState s) => s.Review is null || s.Review.Status == ReviewStatus.ChangesAsked || s.OutOfDate;
 
+    private static string ToggleLabel(ReviewState s, bool asking, int comments) => (asking, comments > 0) switch
+    {
+        (true, _) when s.Review is null => "Ask for a review",
+        (true, true) => "Comments and ask again",
+        (true, false) => "Ask again",
+        _ => $"Comments ({comments})",
+    };
+
+    // What the line says, for tests and the layout checks: the state without the names.
+    private static string Key(ReviewState s) => s.Review switch
+    {
+        null => "none",
+        { Status: ReviewStatus.Asked } => "asked",
+        { Status: ReviewStatus.ChangesAsked } => "changes",
+        { Status: ReviewStatus.Approved } when s.OutOfDate => "out-of-date",
+        { Status: ReviewStatus.Approved } => "approved",
+        _ => "other",
+    };
+
     private static string Status(ReviewState s) => s.Review switch
     {
-        { Status: ReviewStatus.Asked } r => $"Waiting for {r.ReviewerName}",
+        { Status: ReviewStatus.Asked } r => $"waiting for {r.ReviewerName}",
         { Status: ReviewStatus.ChangesAsked } r => $"{r.ReviewerName} asked for changes" + (s.OpenComments > 0 ? $" ({s.OpenComments} open)" : ""),
-        { Status: ReviewStatus.Approved } r when s.OutOfDate => $"Changed since {r.ReviewerName} approved it",
-        { Status: ReviewStatus.Approved } r => $"Approved by {r.ReviewerName}",
-        _ => "Not reviewed",
+        { Status: ReviewStatus.Approved } r when s.OutOfDate => $"changed since {r.ReviewerName} approved it",
+        { Status: ReviewStatus.Approved } r => $"approved by {r.ReviewerName}",
+        _ => "not reviewed",
     };
 
     private static BadgeTone Tone(ReviewState s) => s.Approved ? BadgeTone.Ok : s.Review?.Status == ReviewStatus.Asked ? BadgeTone.Info : BadgeTone.Warn;
 
-    private async Task Run(Func<Task> work, string? done = null)
+    private async Task Run(Func<Task> work, string? done = null, bool settled = false)
     {
         if (_busy) return;
         _busy = true;
@@ -142,6 +207,7 @@
             await work();
             if (done is not null) Toasts.Show(done);
             await Load();
+            if (settled) (_open, _focusState) = (false, true);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -151,9 +217,9 @@
     {
         await Reviews.AskAsync(Article.Id, _reviewerId!, _note);
         _note = null;
-    }, $"Asked {_reviewers.FirstOrDefault(r => r.Id == _reviewerId)?.Name} to review it.");
+    }, $"Asked {_reviewers.FirstOrDefault(r => r.Id == _reviewerId)?.Name} to review it.", settled: true);
 
-    private Task Withdraw(Guid id) => Run(() => Reviews.WithdrawAsync(id), "The request was taken back.");
+    private Task Withdraw(Guid id) => Run(() => Reviews.WithdrawAsync(id), "The request was taken back.", settled: true);
 
     private Task Resolve(Guid id, bool resolved) => Run(() => Reviews.ResolveAsync(id, resolved));
 }

@@ -953,7 +953,7 @@ notifications** (`/notifications`, from the account menu). The choices are `User
 |---|---|---|
 | `notify.dueSoon`, `notify.overdue`, `notify.teamDigest` | `on` (default), `off` | `ReadActions` |
 | `notify.outreachFollowUp` | `on`, `off` | `WorkActions` |
-| `notify.rotationReminders`, `notify.rotationRequests` | `on`, `off` | `WriteArticles` |
+| `notify.rotationReminders`, `notify.rotationRequests`, `notify.articleHandoffs` | `on`, `off` | `WriteArticles` |
 | `notify.digest` | `off` (default), `daily`, `weekly` | `ReadActions` |
 
 `NotificationPreferenceService` reads and saves only the signed-in person's choices and refuses a change to a kind
@@ -1035,6 +1035,26 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   menu that moves it through `ActionMover` and `MoveAsync`, as the board does: checked, refused if stale, and in the
   history and audit log. When Mine is empty and the person's teams have actions nobody holds, one line says so, and
   *Show them* applies No owner.
+- **Several actions at once** (the list only, for whoever works actions: `WorkActions` or `WriteArticles`). Each row
+  has a checkbox; `Space` on a row chooses it or leaves it out, `Shift+J` and `Shift+K` (or `Shift` with the arrows)
+  choose the selected row and the next or previous one, and `Esc` clears the choice. While any are chosen a selection
+  bar over the list (`ActionSelectionBar`) takes the place of each row's *Take it* and Status menu: "N selected on this
+  page", then **Take**, **Assign to…** (the members of the chosen actions' teams, or nobody), **Move to** (any status
+  but Done), **Set due date**, **Hand off to team…**, **Record no hits and close** (when any chosen is a sweep or hunt)
+  and **Clear**. Only the page shown is chosen, and the bar says so: turning the page or changing the filters clears
+  it. `ActionService.ManyAsync(ids, op, editVersions)` makes the change to each action as the change to that one
+  alone is made (`TakeAsync`, `AssignAsync`, `MoveAsync` and `HandoffService`'s hand-off share their code with it): the
+  same permission, the same rules, its own history line and audit entry, and its own save. Each is refused when its
+  edit version has moved since the list was read. They're independent, so one refused leaves the rest done, and the
+  toast says which: "4 done, 1 refused: A-31 changed since you looked". Those refused stay chosen, read afresh, to try
+  again. What a change needs is asked once for all: the person, the date, the team and why, and for **Cancelled** or
+  **Not applicable** the reason, which each one's history keeps. Done says what came of each, so it isn't offered:
+  those are closed one at a time, except that **Record no hits and close** closes each sweep or hunt Done (No hits)
+  whose queries on record were all run and found nothing, as any other way of saying no hits requires (#243), and
+  names each one that isn't. A move or hand-off that would take a team over a limit that asks why is refused for that
+  action, to move on its own. At most a page (50) at once. Who may: exactly who may make that change to that one
+  action, so an action owner may take, move, close or hand off their own team's actions together, and is refused
+  another team's.
 - **Who holds it.** Wherever an action's holder is named (the list, the board, Today's Escalated card, the slides, the
   team email and reminders, search, Our stack), an external team's action that nobody in TIDE holds is named by its
   ticket (`ActionItem.TicketRef`, linked to `TicketUrl` when that's a web address; plain words in emails and for a

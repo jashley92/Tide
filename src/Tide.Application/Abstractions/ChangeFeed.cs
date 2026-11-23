@@ -83,6 +83,9 @@ public sealed class ChangeFeed
     /// <summary>A day's numbers: a value or its note was entered, changed or cleared.</summary>
     public static string MetricsDay(DateOnly day) => $"metrics-day:{day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
 
+    /// <summary>A period's report ("2026-10", "2026-Q4", "2026-W44"): an assessment was saved or cleared.</summary>
+    public static string Report(string periodKey) => $"report:{periodKey}";
+
     /// <summary>Whether <paramref name="change"/> is to the numbers shown for <paramref name="day"/>.</summary>
     public static bool IsMetricsOf(Change change, DateOnly day) =>
         change.Topic == Metrics || change.Topic == MetricsDay(day);

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Org;
 using Tide.Application.Security;
@@ -12,6 +13,12 @@ namespace Tide.Application.Briefs;
 public sealed record MeetingRecord(IReadOnlyList<MeetingAttendee> Attendees, IReadOnlyList<MeetingNote> Notes)
 {
     public static readonly MeetingRecord None = new([], []);
+
+    /// <summary>The number of each action a note raised, by the action's id: "Raised as A-14".</summary>
+    public IReadOnlyDictionary<Guid, int> Raised { get; init; } = new Dictionary<Guid, int>();
+
+    /// <summary>The number of the action <paramref name="note"/> raised, or null.</summary>
+    public int? RaisedAs(MeetingNote note) => note.ActionId is { } id && Raised.TryGetValue(id, out var n) ? n : null;
 }
 
 /// <summary>
@@ -19,7 +26,7 @@ public sealed record MeetingRecord(IReadOnlyList<MeetingAttendee> Attendees, IRe
 /// notes each person takes. What's live (who's on which slide, raised hands) is the web app's and isn't kept.
 /// </summary>
 public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time, IMeetingsInProgress? meetings = null,
-    OrgClock? clock = null)
+    OrgClock? clock = null, ActionService? actions = null)
 {
     /// <summary>The longest note.</summary>
     public const int MaxNote = 2000;
@@ -34,10 +41,13 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => a.BriefId == briefId)
             .Join(db.Briefs, a => a.BriefId, b => b.Id, (a, b) => new { Row = a, b.BriefDate }).ToListAsync(ct);
         var notes = visitor ? [] : await db.MeetingNotes.AsNoTracking().Where(n => n.BriefId == briefId).ToListAsync(ct);
+        var raisedIds = notes.Select(n => n.ActionId).OfType<Guid>().ToList();
+        var raised = raisedIds.Count == 0 ? new Dictionary<Guid, int>()
+            : await db.Actions.AsNoTracking().Where(a => raisedIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Number, ct);
         return new MeetingRecord(
             attendees.Where(a => !JoinedBefore(a.Row, a.BriefDate)).Select(a => a.Row)
                 .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
-            notes.OrderBy(n => n.AtUtc).ThenBy(n => n.Id).ToList());
+            notes.OrderBy(n => n.AtUtc).ThenBy(n => n.Id).ToList()) { Raised = raised };
     }
 
     /// <summary>
@@ -205,15 +215,84 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Raises my note as an action, as present mode's Raise does a recommended line: the note's text as its title,
+    /// on the article it was written against (none for a note on the meeting as a whole), a kind guessed from its wording,
+    /// and the team that last took that kind (else the first team). The note keeps a link to it, and raises no second one.
+    /// Only its author raises it, and only someone who may create actions (<see cref="CanRaiseNotes"/>).
+    /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns. Returns what was raised.
+    /// </summary>
+    public async Task<ActionService.QuickAdded> RaiseFromNoteAsync(Guid noteId, string? overLimitReason = null, CancellationToken ct = default)
+    {
+        RequireNote();
+        if (!CanRaiseNotes || actions is null) throw new ForbiddenException("Only analysts can raise a note as an action.");
+        const string notYours = "Only its author can raise a note as an action.";
+        Guid? articleId;
+        string title;
+        DateOnly briefDate;
+        List<Guid> teams;
+        await using (var db = await dbs.CreateAsync(ct))
+        {
+            var note = await Mine(db, noteId, ct, notYours);
+            if (note.ActionId is { } already)
+            {
+                var number = await db.Actions.AsNoTracking().Where(a => a.Id == already).Select(a => a.Number).FirstOrDefaultAsync(ct);
+                throw new InvalidOperationException($"That note was raised already, as A-{number}.");
+            }
+            (articleId, title) = (note.ArticleId, ActionTitle(note.Text));
+            briefDate = await db.Briefs.AsNoTracking().Where(b => b.Id == note.BriefId).Select(b => b.BriefDate).FirstAsync(ct);
+            // The teams present mode offers to raise for: internal ones still in use, in their set order.
+            teams = (await db.Teams.AsNoTracking().Where(t => !t.IsRetired && !t.IsExternal).ToListAsync(ct))
+                .InOrder(t => t.SortOrder, t => t.Name).Select(t => t.Id).ToList();
+        }
+        if (teams.Count == 0) throw new InvalidOperationException("There's no team to raise it for yet: an administrator adds teams under Teams.");
+        var kind = RecommendedActions.GuessKind(title);
+        var team = (await actions.TeamsByKindAsync(ct)).TryGetValue(kind, out var last) && teams.Contains(last) ? last : teams[0];
+        var added = await actions.QuickAddAsync(articleId, title, kind, team, null, RaisedFor(briefDate), overLimitReason, ct: ct);
+
+        await using var save = await dbs.CreateAsync(ct);
+        var mine = await Mine(save, noteId, ct, notYours);
+        mine.ActionId = await save.Actions.Where(a => a.Number == added.Number).Select(a => a.Id).FirstAsync(ct);
+        await save.SaveChangesAsync(ct);
+        return added;
+    }
+
+    // An action's title from a note: its text on one line, cut to the longest title an action takes.
+    internal static string ActionTitle(string text)
+    {
+        var line = ArticleService.Tidy(text);
+        return line.Length <= ActionItem.MaxTitle ? line : line[..(ActionItem.MaxTitle - 1)].TrimEnd() + "\u2026";
+    }
+
+    // The day an action raised from a note is raised for: the brief's, once its day has gone (as present mode raises a
+    // past day's), unless that's further back than an action can be raised for; otherwise today's.
+    private DateOnly? RaisedFor(DateOnly briefDate) =>
+        clock is not null && briefDate < clock.Today && briefDate >= clock.Today.AddYears(-1) ? briefDate : null;
+
+    /// <summary>Marks my note done, or (<paramref name="done"/> false) open again. Only its author does.</summary>
+    public async Task MarkNoteDoneAsync(Guid noteId, bool done = true, CancellationToken ct = default)
+    {
+        RequireNote();
+        await using var db = await dbs.CreateAsync(ct);
+        var note = await Mine(db, noteId, ct, "Only its author can mark a note done.");
+        if (done == note.DoneAtUtc is not null) return;
+        note.DoneAtUtc = done ? time.GetUtcNow() : null;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Whether I can raise my notes as actions: I take notes and may create actions (an analyst; not a Viewer or
+    /// an action owner, who take notes and mark them done).</summary>
+    public bool CanRaiseNotes => CanNote && user.Has(Permission.WriteArticles);
+
     private static async Task RequireBrief(IAppDbContext db, Guid briefId, CancellationToken ct)
     {
         if (!await db.Briefs.AnyAsync(b => b.Id == briefId, ct)) throw new KeyNotFoundException("That brief no longer exists.");
     }
 
-    private async Task<MeetingNote> Mine(IAppDbContext db, Guid noteId, CancellationToken ct)
+    private async Task<MeetingNote> Mine(IAppDbContext db, Guid noteId, CancellationToken ct, string refused = "Only its author can change a note.")
     {
         var note = await db.MeetingNotes.FirstOrDefaultAsync(n => n.Id == noteId, ct) ?? throw new KeyNotFoundException("That note no longer exists.");
-        if (note.AuthorId != user.UserId) throw new ForbiddenException("Only its author can change a note.");
+        if (note.AuthorId != user.UserId) throw new ForbiddenException(refused);
         return note;
     }
 

@@ -4,7 +4,7 @@
 .page { display: flex; min-height: 100vh; }
 .sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: var(--tide-width-side); flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; transition: width .15s ease; }
 html[data-nav="collapsed"] .sidebar { width: var(--tide-width-side-collapsed); }
-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tide-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
 /* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,
@@ -23,7 +23,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 .tide-brand-said { display: none; }
 /* The nav takes the sidebar's spare height and scrolls inside it, so on a very short screen the last links stay
    reachable, with a thin scrollbar in the sidebar's colours (no arrow buttons). */
-.sidebar > nav { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sidebar > .tide-side-links { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tide-nav { list-style: none; margin: 0; padding: .25rem .6rem; flex: 1; min-height: 0; overflow-y: auto;
     scrollbar-width: thin; scrollbar-color: var(--tide-side-section) transparent; }
 .tide-nav a { display: flex; align-items: center; gap: .7rem; padding: .48rem .65rem; border-radius: var(--tide-radius-md); color: var(--tide-side-text); text-decoration: none; font-size: .92rem; }
@@ -147,7 +147,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 /* Under a row's title, with an ATT&CK filter: the article's techniques it matched. */
 .tide-row-techniques { margin-top: var(--tide-space-1); }
 .tide-row-techniques .tide-chip { font-size: var(--tide-text-xs); margin-bottom: 0; border-radius: var(--tide-radius-sm); }
-.tide-chip-remove { display: inline-flex; padding: 0 var(--tide-space-1); margin-right: calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
+/* The ✕ is a 24px target (WCAG 2.2 target size), reaching into the chip's padding so the chip doesn't grow. */
+.tide-chip-remove { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding: 0;
+    margin: -.3rem -.5rem -.3rem -.45rem; color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 /* A table that scrolls inside its card. Positioned, so a visually hidden header label in it (absolutely placed) is
@@ -159,7 +161,11 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
         radial-gradient(farthest-side at 100% 50%, var(--tide-shadow), transparent) right center / .75rem 100% no-repeat scroll; }
 .tide-dt-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
 .tide-table th.tide-table-num { text-align: right; }
-.tide-sort { display: inline-flex; align-items: center; gap: var(--tide-space-1); padding: 0; border: 0; background: none;
+/* A link on a line of its own, among others stacked close (a list of small links): a 24px tall target (WCAG 2.2
+   target size), where small type's line would be 19px. */
+.tide-hit-line { display: inline-block; line-height: 1.5rem; }
+/* At least 24px tall, a whole target (WCAG 2.2 target size), even in a heading row of small type. */
+.tide-sort { display: inline-flex; align-items: center; gap: var(--tide-space-1); min-height: 1.5rem; padding: 0; border: 0; background: none;
     color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; }
 .tide-sort:hover { color: var(--tide-text); }
 .tide-sort:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-xs); }

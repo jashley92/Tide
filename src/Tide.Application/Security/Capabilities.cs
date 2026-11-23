@@ -56,6 +56,8 @@ public static class Capabilities
         new(Briefs, "Join and follow a live meeting", "Policies.JoinMeetings (Present)", [G(Permission.JoinMeetings)]),
         new(Briefs, "Raise a hand in a meeting", "Policies.JoinMeetings (a seat)", [G(Permission.JoinMeetings)]),
         new(Briefs, "Add meeting notes", "MeetingService.CanNote", [G(Permission.ReadTeamEdition, Permission.MeetingNotes)]),
+        new(Briefs, "Raise your own meeting note as an action", "MeetingService.CanRaiseNotes",
+            [G(Permission.ReadTeamEdition, Permission.MeetingNotes, Permission.WriteArticles)]),
         new(Briefs, "In a live meeting, add someone who was there, and take off whom you added", "MeetingService.CanAddAttendees",
             [G(Permission.ReadTeamEdition, Permission.JoinMeetings)]),
         new(Briefs, "With no meeting live, correct who attended (add, or take off anyone)", "MeetingService.CanAddAttendees",
@@ -112,6 +114,7 @@ public static class Capabilities
         new(Stack, "Edit Our stack and adversaries", "StackService.RequireWrite; AdversaryService.RequireWrite", [G(Permission.WriteArticles)]),
 
         new(Reports, "Reports, trends and exports", "Policies.ReadTeamEdition; ExportService", [G(Permission.ReadTeamEdition)]),
+        new(Reports, "Write the report's assessments", "ReportService.CanAssess", [G(Permission.EnterMetrics), G(Permission.WriteArticles)]),
         new(Reports, "Team commitments scorecard and its CSV", "Policies.ReadActions; TeamScorecardService.BuildAsync", [G(Permission.ReadActions)]),
         new(Reports, "Team commitments by person (who held each action on its due date)", "TeamScorecardService.PeopleAsync",
             [G(Permission.ReadActions, Permission.ManagePeople), Q("own line only", Permission.ReadActions)]),
