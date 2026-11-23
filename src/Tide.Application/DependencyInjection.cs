@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.Configure<Api.WebhookOptions>(config.GetSection("Webhooks"));
         services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
+        services.Configure<Tide.Application.History.AuditOptions>(config.GetSection("Audit"));
         services.AddSingleton<JobRunLog>();
         // One process runs the background jobs (the lease in the database); the others stand by.
         services.AddSingleton<BackgroundJobLease>();

@@ -1593,7 +1593,7 @@ every `SaveChanges` it:
 
 ### `AuditLog` (append-only)
 
-The C# class is `AuditLogEntry`. The app never updates or deletes these rows.
+The C# class is `AuditLogEntry`. The app never updates these rows, and deletes them only when `Audit:RetentionDays` is set (off by default, at least 365): the daily Archiving the audit log job first writes each whole month older than that to `audit-YYYY-MM-<stamp>.jsonl.gz` (one JSON object per row) with its SHA-256 and row count in `manifest.jsonl`, reads it back, and only then deletes that month's rows (`AuditArchive`).
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
