@@ -774,17 +774,25 @@ else
 
     // Ctrl+K's verbs on an article: the sticky bar's Add to today's brief and Save and mark ready, while the bar offers
     // them, running what its buttons run. Save and mark ready only while its button is enabled: a draft nothing blocks.
+    // Hand this draft to… whenever the head offers Hand to… (CanHandOn; a save under way doesn't hide it there either),
+    // opening the same dialog.
     private IDisposable? _verbs;
 
     internal IEnumerable<PaletteCommand> Verbs()
     {
-        if (!_canWrite || _busy || _article is null || _form is null) yield break;
-        if (!OnTodaysBrief)
-            yield return new("Add this article to today's brief", "brief running order", Permission.WriteArticles, "This article",
-                AddToTodaysBrief, "bi-journal-plus");
-        if (_article.Status == ArticleStatus.Draft && ArticleChecks.NotReady(Checks().Checks) is null)
-            yield return new("Save and mark ready", "article ready status", Permission.WriteArticles, "This article",
-                MarkReady, "bi-check2");
+        if (!_canWrite || _article is null || _form is null) yield break;
+        if (!_busy)
+        {
+            if (!OnTodaysBrief)
+                yield return new("Add this article to today's brief", "brief running order", Permission.WriteArticles, "This article",
+                    AddToTodaysBrief, "bi-journal-plus");
+            if (_article.Status == ArticleStatus.Draft && ArticleChecks.NotReady(Checks().Checks) is null)
+                yield return new("Save and mark ready", "article ready status", Permission.WriteArticles, "This article",
+                    MarkReady, "bi-check2");
+        }
+        if (CanHandOn)
+            yield return new("Hand this draft to…", "hand off over writer colleague", Permission.WriteArticles, "This article",
+                _handTo.OpenAsync, "bi-person-up");
     }
 
     private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)

@@ -113,7 +113,7 @@ that need the host, such as `ICurrentUser`) implements them. `src/Tide.Web/Progr
 | `Tide.Application` | Use-case services by feature folder, pure rule classes, the permission model, rendering of emails and editions, ports | Domain; EF Core abstractions, Markdig |
 | `Tide.Infrastructure` | `AppDbContext`, the interceptors, SQLite migrations, file store, email, outbound HTTP, directories, the AI provider | Application, Domain |
 | `Tide.Migrations.SqlServer` | Production migrations, chosen when `Database:Provider=SqlServer` | Infrastructure |
-| `Tide.Web` | Host and composition root, Razor UI, authentication, middleware, endpoints, the API, hosted services, in-memory collaboration state | everything above |
+| `Tide.Web` | Host and composition root, Razor UI, authentication, middleware, endpoints, the API, hosted services, in-memory collaboration state | everything above; OpenTelemetry (the opt-in OTLP exporter) |
 
 For a folder-by-folder guide, see the [codebase map](codebase-map.md).
 

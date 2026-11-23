@@ -298,7 +298,9 @@ else if (_canSend)
 
     // Whether a real send is with the relay, or went without its outcome known: until the log says, it can't be finished
     // as not sent (DistributionService.NotSentWhileSending).
-    private bool SendPending => _sends.Any(s => !s.IsTest && s.Status is SendStatus.Sending or SendStatus.Unknown);
+    private bool SendPending => Pending(_sends);
+
+    private static bool Pending(IEnumerable<BriefSend> sends) => sends.Any(s => !s.IsTest && s.Status is SendStatus.Sending or SendStatus.Unknown);
 
     /// <summary>The reason box, as typed (a test sets it directly).</summary>
     internal void NotSentReason(string? reason, bool wontGo = true) => (_notSentReason, _wontGo) = (reason, wontGo);
@@ -333,7 +335,9 @@ else if (_canSend)
     private Tide.Application.Actions.OpenActionsReview? _open;
     private TimeOnly _heldAt;
     private bool BeforeItsDay => Clock.Today < Date;
-    private bool MaySend => !BeforeItsDay && (MeetingHeld || WithoutMeeting);
+    private bool MaySend => MaySendOn(Clock, Date, MeetingHeld || WithoutMeeting);
+
+    private static bool MaySendOn(OrgClock clock, DateOnly date, bool meetingOver) => clock.Today >= date && meetingOver;
 
     // The meeting is running in present mode, so the brief can't go "without" one.
     private bool Live => !MeetingHeld && BriefId is { } id && Distribution.MeetingLive(id);
@@ -486,11 +490,42 @@ else if (_canSend)
 
     /// <summary>Whether Send both is offered: both editions can go now (email on, someone on each list, something in
     /// each) and neither has gone, or may have, or is going. Otherwise each edition is sent on its own.</summary>
-    internal bool BothDue =>
-        !SendPending && Editions.All(e => _plans.GetValueOrDefault(e) is { LastSentAtUtc: null } p && CanGo(p));
+    internal bool BothDue => Due(_plans, _sends);
+
+    private static bool Due(IReadOnlyDictionary<Edition, SendPlan> plans, IEnumerable<BriefSend> sends) =>
+        !Pending(sends) && Editions.All(e => plans.GetValueOrDefault(e) is { LastSentAtUtc: null } p && CanGo(p));
+
+    /// <summary>
+    /// Whether Send both's button would be enabled, its two ticks aside, when this dialog opens on <paramref name="brief"/>,
+    /// as the page has read it with its send log (<paramref name="sends"/>) and the editions' ceilings: both editions due,
+    /// the meeting held ("sent without a meeting" starts unticked), not before the brief's day, and neither edition held
+    /// for a required review. For the command palette's Send both editions, which opens this dialog rather than sending.
+    /// </summary>
+    internal static async Task<bool> BothCanGoAsync(DistributionService distribution, Tide.Application.Settings.DistributionSettings settings,
+        Tide.Application.Reviews.ReviewService reviews, OrgClock clock, Brief brief, IReadOnlyList<BriefSend> sends, TlpLevel teamMax, TlpLevel publicMax)
+    {
+        // What the page already has rules most days out without a read: before the day or the meeting, email off, or an
+        // edition gone, going or perhaps gone (each of which Due finds in a plan's last send, or as pending).
+        if (!MaySendOn(clock, brief.BriefDate, BriefService.MeetingHeld(brief)) || !distribution.EmailEnabled
+            || sends.Any(s => !s.IsTest && s.Status != SendStatus.Failed))
+            return false;
+        // Then a plan's other checks on each edition, cut as a plan cuts it but without rendering the email: someone on its
+        // list, something in it, and nothing in it held for review.
+        IReadOnlyList<Tide.Application.Reviews.ReviewGap>? gaps = null;
+        foreach (var e in Editions)
+        {
+            var cut = BriefEditions.Build(brief, e, e == Edition.Public ? publicMax : teamMax);
+            if (!CanGo(true, (await settings.GetRecipientsAsync(e)).Count, cut.Articles.Count)) return false;
+            gaps ??= await reviews.GapsAsync(brief.BriefDate);
+            if (Held(cut, gaps)) return false;
+        }
+        return true;
+    }
 
     // Email is on, someone is on the list and there's something to send.
-    private static bool CanGo(SendPlan p) => p.EmailEnabled && p.Recipients.Count > 0 && p.Articles > 0;
+    private static bool CanGo(SendPlan p) => CanGo(p.EmailEnabled, p.Recipients.Count, p.Articles);
+
+    private static bool CanGo(bool emailEnabled, int recipients, int articles) => emailEnabled && recipients > 0 && articles > 0;
 
     // Both editions, each as its own send of the plan shown (DistributionService.SendAsync checks each again as it goes),
     // the team edition first. One that doesn't go (refused, failed at the relay, or not known to have gone) stops there:
@@ -614,8 +649,10 @@ else if (_canSend)
     // EP-80: the brief's articles without a current approval, and whether an edition holds a required one.
     private IReadOnlyList<Tide.Application.Reviews.ReviewGap> _reviewGaps = [];
 
-    private bool HeldForReview(Edition e) =>
-        _cuts.TryGetValue(e, out var cut) && _reviewGaps.Any(g => g.Required && cut.Articles.Any(a => a.Article.Id == g.ArticleId));
+    private bool HeldForReview(Edition e) => _cuts.TryGetValue(e, out var cut) && Held(cut, _reviewGaps);
+
+    private static bool Held(BriefEdition cut, IReadOnlyList<Tide.Application.Reviews.ReviewGap> gaps) =>
+        gaps.Any(g => g.Required && cut.Articles.Any(a => a.Article.Id == g.ArticleId));
 
     private async Task LoadLog()
     {

@@ -46,6 +46,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<ArticleIndicator> ArticleIndicators { get; }
     DbSet<ArticleCve> ArticleCves { get; }
     DbSet<ArticleLink> ArticleLinks { get; }
+    DbSet<ArticleSearchRow> ArticleSearch { get; }
     DbSet<Brief> Briefs { get; }
     DbSet<BriefItem> BriefItems { get; }
     DbSet<BriefSend> BriefSends { get; }

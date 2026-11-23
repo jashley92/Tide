@@ -210,7 +210,7 @@ public static partial class DraftChecks
             : [];
 
     // Trimmed, Markdown links reduced to their text, cut to the field's limit; null when nothing's left.
-    private static string? Text(string? text, int max)
+    internal static string? Text(string? text, int max)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var clean = Content.MarkdownService.WithoutLinks(text.Replace("\r\n", "\n").Trim());
@@ -220,7 +220,7 @@ public static partial class DraftChecks
     private static string Bulleted(string text) => text.TrimStart('-', '*', '•', ' ', '\t');
 
     // A pasted answer may come wrapped in a Markdown code fence, or with a line of chat before it.
-    private static string Unwrapped(string json)
+    internal static string Unwrapped(string json)
     {
         var s = json.Trim();
         var start = s.IndexOf('{');

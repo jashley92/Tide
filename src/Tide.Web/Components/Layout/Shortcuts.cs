@@ -97,12 +97,17 @@ public static class Shortcuts
         new(["P"], "Promote to an article (opens the promote form)", Letter: true),
         new(["Enter"], "In the promote form: promote and write the article"),
         new(["Shift Enter"], "In the promote form: promote and keep triaging (the next item is selected)"),
-        new(["Esc"], "Close the promote form or the reading pane"),
+        new(["Esc"], "Close the promote form, clear the items chosen, or close the reading pane"),
         new(["O"], "Open the source in a new tab", Letter: true),
         new(["V"], "Read it here (fetched from its site only when nothing is kept); pressed again, close the reading pane", Letter: true),
         new(["R"], "Put back in New", Letter: true),
         new(["Enter", "→"], "On a group: open it"),
         new(["←"], "Close the group"),
+        new(["Space"], "On an item: choose it, or leave it out, to decide several at once (this page's only)"),
+        new(["Shift J"], "Choose the next item too", Letter: true),
+        new(["Shift K"], "Choose the previous item too", Letter: true),
+        new(["Shift ↓", "Shift ↑"], "Choose the next or previous item too"),
+        new(["S", "X", "P"], "With items chosen: shortlist, dismiss or promote them as one", Letter: true),
     ]);
 
     private static readonly ShortcutGroup Library = new("Library",
