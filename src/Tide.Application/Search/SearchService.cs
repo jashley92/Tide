@@ -215,8 +215,13 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, List<Guid> except, int skip, int take, CancellationToken ct)
     {
-        IQueryable<Article> q = db.Articles.AsNoTracking();
-        if (except.Count > 0) q = q.Where(a => !except.Contains(a.Id));
+        IQueryable<Article> all = db.Articles.AsNoTracking();
+        if (except.Count > 0) all = all.Where(a => !except.Contains(a.Id));
+        // Two queries, joined: the articles whose search text is current, matched by one LIKE on it; and the few whose
+        // text isn't (a save marked it, or it isn't built yet), matched part by part. Apart, SQL Server reads the parts only
+        // for the few; as one OR it read them for every article (it doesn't stop at the first branch as SQLite does).
+        var indexed = all.Where(ArticleSearchIndex.Current);
+        var scanned = all.Where(ArticleSearchIndex.Stale);
         var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
@@ -229,8 +234,11 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 .Where(AnyForm<Adversary>((x, p) => EF.Functions.Like(x.Name, p, SearchText.Escape) || EF.Functions.Like(x.Aliases!, p, SearchText.Escape), term))
                 .Select(x => x.Id).ToListAsync(ct);
             Expression<Func<Article, bool>>? profiled = profiles.Count == 0 ? null : a => adversaryTags.Any(t => t.ArticleId == a.Id && profiles.Contains(t.AdversaryId));
-            q = q.Where(ArticleMatch(term, tagged, profiled));
+            // A term holding the parts' separator could match across two parts in the text: matched part by part instead.
+            indexed = indexed.Where(term.Contains(ArticleSearchRow.Separator) ? AnyForm(PartsMatch, term, tagged, profiled) : AnyForm(TextMatch, term, tagged, profiled));
+            scanned = scanned.Where(AnyForm(PartsMatch, term, tagged, profiled));
         }
+        var q = indexed.Concat(scanned);
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
         // page neither repeats nor skips what an earlier one ranked differently. Only ids and titles: cheap at this size.
         // The match is a scan of every article, so it runs once: one more than MaxTake says there are more than the pages
@@ -445,25 +453,9 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
         || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape));
 
-    /// <summary>
-    /// Whether an article matches <paramref name="term"/> in any part, in any of its forms, or <paramref name="extras"/>:
-    /// by its search text where that's current (a LEFT JOIN to one row), and part by part where it isn't, so an edit is
-    /// found at once and a search is never wrong while the text is being built. The parts are apart in the text by a
-    /// character no term holds, so a term can't match across two.
-    /// </summary>
-    private static Expression<Func<Article, bool>> ArticleMatch(string term, params Expression<Func<Article, bool>>?[] extras)
-    {
-        if (term.Contains(ArticleSearchRow.Separator)) return AnyForm(PartsMatch, term, extras);
-        var parts = AnyForm(PartsMatch, term);
-        var text = AnyForm<Article>((a, p) => EF.Functions.Like(a.SearchRow!.Text, p, SearchText.Escape), term);
-        var a = parts.Parameters[0];
-        Expression In(Expression<Func<Article, bool>> e) => new Swap(e.Parameters[0], a).Visit(e.Body);
-        // Where the text is current one LIKE on it stands for every part's; elsewhere the parts are matched one by one.
-        var current = In(ArticleSearchIndex.Current);
-        Expression body = Expression.OrElse(Expression.AndAlso(current, In(text)), Expression.AndAlso(Expression.Not(current), parts.Body));
-        foreach (var extra in extras.OfType<Expression<Func<Article, bool>>>()) body = Expression.OrElse(body, In(extra));
-        return Expression.Lambda<Func<Article, bool>>(body, a);
-    }
+    // An article whose search text is current: one LIKE on it stands for every part's (the parts are apart in it by a
+    // character no term holds, so a term can't match across two).
+    private static readonly Expression<Func<Article, string, bool>> TextMatch = (a, p) => EF.Functions.Like(a.SearchRow!.Text, p, SearchText.Escape);
 
     /// <summary>
     /// <paramref name="match"/> (an entity and a LIKE pattern) for any of <paramref name="term"/>'s forms, or
