@@ -251,6 +251,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | 7108 | Hashing stored addresses |
 | 7109 | Keying stored indicators |
 | 7110 | Search index |
+| 7112 | Checking stored files |
 
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
@@ -262,6 +263,7 @@ in a row) …"), with an event id of its own per job, for an alert rule on one j
 | Update check | `UpdateCheckHostedService` | 2 minutes after start, then every `Updates:CheckIntervalHours`; re-reads the switch every 5 minutes | `Updates:CheckEnabled` |
 | Webhooks | `WebhookHostedService` | Every minute | A webhook is added |
 | Hashing stored addresses | `UrlHashFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older article and link has its address hash; then it stops |
+| Checking stored files | `FileSweepHostedService` | An hour after start-up, then weekly | Reports rows whose bytes are missing, files with no row (older than an hour), and a sample of 50 files whose SHA-256 no longer matches; a Warning (7112) when it finds any. Deletes and changes nothing |
 | Keying stored indicators | `IndicatorKeyFillHostedService` | Once the app is listening, a run a second apart | After an upgrade, until every older indicator has its lookup keys; then it stops |
 | Search index | `SearchIndexHostedService` | Every 10 seconds | Rebuilds the search text of articles edited since; after an upgrade, every article's, a run at a time. Its work is recorded as one run every 5 minutes |
 
@@ -331,6 +333,7 @@ page's connection and everyone's since start); and whether a newer release is ou
 | Performance on Diagnostics | The page | Requests, page events and database commands in the last hour and day (median, 95th percentile, slowest), memory and the thread pool. Open pages are under Connections. |
 | "Background job … failed", event ids 7101 to 7110 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
+| "The weekly check of stored files found problems", event id 7112 | Application log | A file the database names is missing (restore it from the newest set), a file has no row (left by a failed delete or an older database: harmless), or a file's bytes changed (disk fault or tampering: restore it and look into the disk). Nothing was changed. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
 How to read the log, and how to raise its level, is in [INSTALL.md](../INSTALL.md#logs).
