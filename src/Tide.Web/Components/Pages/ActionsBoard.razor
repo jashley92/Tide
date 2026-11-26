@@ -94,6 +94,18 @@
         {
             <span class="tide-chip @(active.Over ? "tide-chip-over" : "")" title="Open, in progress and blocked actions owned by @active.Team, against its limit">@active.Text</span>
         }
+        @if (_asBoard)
+        {
+            @* The lanes' order: the team's own (dragging a card puts it where it's dropped, for everyone), or by due date
+               or priority. Each person's choice, kept. *@
+            <div class="tide-seg tide-seg-tool" role="group" aria-label="Order the lanes">
+                @foreach (var (sort, label, title) in BoardSorts)
+                {
+                    <button type="button" class="tide-seg-opt @(_boardSort == sort ? "on" : "")" aria-pressed="@Ui.Aria(_boardSort == sort)" title="@title"
+                            @onclick="() => SetBoardSort(sort)">@label</button>
+                }
+            </div>
+        }
         @if (!_asBoard)
         {
             <div class="form-check form-switch ms-2 mb-0">
@@ -123,7 +135,7 @@
     else
     {
         var order = BoardOrder;
-        <ActionKanban @ref="_kanban" Board="@ShownBoard" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
+        <ActionKanban @ref="_kanban" Board="@ShownBoard" Sort="_boardSort" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
                       Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" ClosedLink="ClosedLink" SelectedId="@SelectedCard?.Id" OnSelect="SelectCard" />
         @* The board's selected card, as the list's row: J/K and the up and down arrows move it card by card, lane after
            lane; left and right (on a card) to the next lane with cards; T takes it on; Enter opens it. *@
@@ -414,10 +426,12 @@ else
         (_canHold, _me) = (CanHold, Me_);
         if (SavedLayout is null || SavedView is null)
         {
-            var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView]);
+            var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView, UserPreferences.BoardSort]);
             SavedLayout ??= saved[UserPreferences.ActionsLayout];
             SavedView ??= saved[UserPreferences.ActionsView];
+            _boardSort = BoardSortOf(saved[UserPreferences.BoardSort]);
         }
+        else _boardSort = BoardSortOf(await Prefs.GetAsync(UserPreferences.BoardSort));
     }
 
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
@@ -1211,6 +1225,36 @@ else
         _ => _view == ActionView.Closed ? ActionSort.Closed : ActionSort.Due,
     };
 
+    private ActionBoardSort _boardSort = ActionBoardSort.Manual;
+
+    private static readonly (ActionBoardSort Sort, string Label, string Title)[] BoardSorts =
+    [
+        (ActionBoardSort.Manual, "Manual", "The team's own order: drag a card to put it where it goes"),
+        (ActionBoardSort.Due, "Due date", "Soonest due first, then by priority"),
+        (ActionBoardSort.Priority, "Priority", "Highest priority first, then soonest due"),
+    ];
+
+    private static ActionBoardSort BoardSortOf(string value) => value switch
+    {
+        UserPreferences.SortDue => ActionBoardSort.Due,
+        UserPreferences.SortPriority => ActionBoardSort.Priority,
+        _ => ActionBoardSort.Manual,
+    };
+
+    // The lanes' order, chosen: kept for the person, and the board read again in it.
+    private async Task SetBoardSort(ActionBoardSort sort)
+    {
+        if (sort == _boardSort) return;
+        _boardSort = sort;
+        await Prefs.SetAsync(UserPreferences.BoardSort, sort switch
+        {
+            ActionBoardSort.Due => UserPreferences.SortDue,
+            ActionBoardSort.Priority => UserPreferences.SortPriority,
+            _ => UserPreferences.SortManual,
+        });
+        await Load();
+    }
+
     // Reads the board, or the list's page (with each rule filter's count).
     private async Task Fetch()
     {
@@ -1220,7 +1264,7 @@ else
         var counts = ActionSvc.ViewCountsAsync(filter, _rules.FirstOrDefault(r => r.Id == _ruleId), _asBoard ? _closedDays : null);
         if (_asBoard)
         {
-            var board = ActionSvc.BoardAsync(filter);
+            var board = ActionSvc.BoardAsync(filter, _boardSort);
             await Task.WhenAll(active, board, counts);
             (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
             _picked.Clear();   // the list's choice; the board has none

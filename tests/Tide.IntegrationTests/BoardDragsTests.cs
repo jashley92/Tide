@@ -119,6 +119,60 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
 
     private static readonly ActionViewCounts Closed = ActionViewCounts.None with { BoardDone = 4, BoardCancelled = 1, BoardNotApplicable = 0 };
 
+    // In the team's own order a drop puts the card where it was let go: in its lane, above the card the slot was over,
+    // and in another lane, there once it has moved. Sorted by due date, a drop in its own lane changes nothing.
+    [Fact]
+    public async Task InTheTeamsOwnOrder_ADropPutsTheCardWhereItWasLetGo_SortedItOnlyChangesLane()
+    {
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var sp = scope.ServiceProvider;
+        var team = await sp.GetRequiredService<Tide.Application.Actions.TeamService>().AddAsync($"Board order {Guid.NewGuid():N}", null, null);
+        var actions = sp.GetRequiredService<ActionService>();
+        async Task<Guid> Add(string title) => (await actions.GetAsync(await actions.CreateAsync(new ActionForm { Title = title, TeamId = team })))!.Action.Id;
+        var (first, second, third) = (await Add("Order first"), await Add("Order second"), await Add("Order third"));
+        var filter = new ActionFilter(ActionView.Open, TeamId: team);
+        async Task<Guid[]> Lane(ActionStatus s)
+        {
+            await using var read = SignedIn(app, SignIn.Analyst);
+            return [.. (await read.ServiceProvider.GetRequiredService<ActionService>().BoardAsync(filter)).Cards.Where(c => c.Status == s).Select(c => c.Id)];
+        }
+        async Task<ActionBoard> Board(ActionBoardSort sort)
+        {
+            await using var read = SignedIn(app, SignIn.Analyst);
+            return await read.ServiceProvider.GetRequiredService<ActionService>().BoardAsync(filter, sort);
+        }
+        var open = await Lane(ActionStatus.Open);
+
+        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
+        {
+            ["Board"] = await Board(ActionBoardSort.Due), ["Sort"] = ActionBoardSort.Due, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
+        }))
+        {
+            (await r.Html()).Should().Contain("data-sort=\"sorted\"");
+            await r.Click(k => k.OnCardDropped(open[2].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.Open), open[0].ToString()));
+        }
+        (await Lane(ActionStatus.Open)).Should().Equal(open, "sorted, a drop in the card's own lane is no reorder");
+
+        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
+        {
+            ["Board"] = await Board(ActionBoardSort.Manual), ["Sort"] = ActionBoardSort.Manual, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
+        }))
+        {
+            (await r.Html()).Should().Contain("data-sort=\"manual\"");
+            await r.Click(k => k.OnCardDropped(open[2].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.Open), open[0].ToString()));
+        }
+        (await Lane(ActionStatus.Open)).Should().Equal([open[2], open[0], open[1]]);
+
+        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
+        {
+            ["Board"] = await Board(ActionBoardSort.Manual), ["Sort"] = ActionBoardSort.Manual, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
+        }))
+            await r.Click(k => k.OnCardDropped(open[0].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.InProgress), null));
+        (await Lane(ActionStatus.InProgress)).Should().Equal([open[0]]);
+        (await Lane(ActionStatus.Open)).Should().Equal([open[2], open[1]]);
+        new[] { first, second, third }.Should().BeEquivalentTo(open);
+    }
+
     private Task<Rendered<ActionKanban>> Render(ActionBoard board, int closedDays = ActionService.BoardClosedDays) =>
         RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
         {

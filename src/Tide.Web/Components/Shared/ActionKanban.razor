@@ -27,7 +27,7 @@
 @inject OrgClock Clock
 
 @{ var drags = Drags.Others(CurrentUser.UserId); }
-<div class="tide-board" @ref="_root" data-tide-flip=".tide-kcard">
+<div class="tide-board" @ref="_root" data-tide-flip=".tide-kcard" data-sort="@(Sort == ActionBoardSort.Manual ? "manual" : "sorted")">
     <div class="tide-kanban" aria-label="Actions board">
         @foreach (var status in Lanes)
         {
@@ -76,10 +76,15 @@
     internal static readonly ActionStatus[] Lanes = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
     private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
 
-    /// <summary>Where a card sorts in its lane, as text that sorts the same way: board.js opens the slot a held card would
-    /// drop into at that place. The board's cards come in the database's Due order (ActionService.Ordered: due date, no
-    /// date last, then priority, then number), which this has to match.</summary>
-    internal static string LaneOrder(ActionRow r) => $"{(r.DueDate ?? DateOnly.MaxValue):yyyyMMdd}-{(int)r.Priority:D2}-{r.Number:D9}";
+    /// <summary>Where a card sorts in its lane by due date or priority, as text that sorts the same way: there board.js
+    /// opens the slot a held card would drop into at its place in that order (in the team's own order, the slot follows
+    /// the pointer). It matches the database's order (ActionService.BoardAsync): no due date last.</summary>
+    internal static string LaneOrder(ActionRow r, ActionBoardSort sort)
+    {
+        var due = $"{(r.DueDate ?? DateOnly.MaxValue):yyyyMMdd}";
+        var priority = $"{(int)r.Priority:D2}";
+        return sort == ActionBoardSort.Priority ? $"{priority}-{due}-{r.Number:D9}" : $"{due}-{priority}-{r.Number:D9}";
+    }
 
     // One working status's lane: its heading and count, who is carrying a card into it, its cards and a place to drop.
     private RenderFragment Column(ActionStatus status, IReadOnlyList<BoardDrag> drags) => __builder =>
@@ -104,7 +109,7 @@
                     var arrived = _arrived.TryGetValue(r.Id, out var a) ? a : ((string Name, int Ticket, bool Moved)?)null;
                     var selected = r.Id == SelectedId;
                     <article @key="r.Id" class="tide-kcard @RowSelection.Css(selected) @(matched.Count > 0 ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : "") @(held is not null ? "tide-kcard-held" : "") @(arrived is not null ? "tide-kcard-arrived" : "")"
-                             draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status" data-order="@LaneOrder(r)" aria-label="@($"{Ui.ActionLabel(r.Number)}: {r.Title}")"
+                             draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status" data-order="@LaneOrder(r, Sort)" aria-label="@($"{Ui.ActionLabel(r.Number)}: {r.Title}")"
                              aria-current="@RowSelection.Current(selected)" tabindex="@RowSelection.TabIndex(selected)" @onfocusin="() => Select(r)">
                         <div class="tide-kcard-head">
                             <PriorityBadge Priority="r.Priority" />
@@ -235,6 +240,10 @@
     }
 
     [Parameter, EditorRequired] public ActionBoard Board { get; set; } = default!;
+
+    /// <summary>How the lanes are ordered: the team's own order (a drop puts the card where it's let go), or by due date
+    /// or priority (a drop changes only its lane).</summary>
+    [Parameter] public ActionBoardSort Sort { get; set; } = ActionBoardSort.Manual;
     [Parameter, EditorRequired] public DateOnly Today { get; set; }
 
     /// <summary>How many of the board's view closed each way (the strip under the lanes), from the tabs' count.</summary>
@@ -433,7 +442,7 @@
     }
 
     [JSInvokable]
-    public async Task OnCardDropped(string id, string from, string to)
+    public async Task OnCardDropped(string id, string from, string to, string? before = null)
     {
         if (!Guid.TryParse(id, out var cardId) || !Enum.TryParse<ActionStatus>(to, out var status)) return;
         var card = Board.Cards.FirstOrDefault(c => c.Id == cardId);
@@ -446,7 +455,19 @@
             StateHasChanged();
             return;
         }
-        await Move(card, status);
+        // In the team's own order, the card goes where it was let go (before the card the slot was above): in its own
+        // lane that's all; in another, once it has moved there.
+        var place = Sort == ActionBoardSort.Manual && !ActionItem.IsClosedStatus(status);
+        if (status == card.Status ? place : await Move(card, status) && place)
+        {
+            try
+            {
+                Moving(card.Id);
+                await ActionSvc.PlaceAsync(card.Id, status, Guid.TryParse(before, out var b) ? b : null);
+                await OnChanged.InvokeAsync();
+            }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        }
         StateHasChanged();
     }
 
@@ -458,11 +479,11 @@
         _pinned.Add(card);
     }
 
-    private async Task Move(ActionRow card, ActionStatus to)
+    private async Task<bool> Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
         Moving(card.Id);
-        await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
+        return await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

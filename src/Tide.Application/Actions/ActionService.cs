@@ -304,6 +304,15 @@ public enum ActionSort
     Closed = 6,
 }
 
+/// <summary>The order of the cards in each board lane. <see cref="Manual"/> is the shared order people set by dragging
+/// (<see cref="ActionService.PlaceAsync"/>): placed cards first, then the rest by due date.</summary>
+public enum ActionBoardSort
+{
+    Manual = 0,
+    Due = 1,
+    Priority = 2,
+}
+
 /// <summary>What the actions list is grouped under, so each group's rows come together across its pages.</summary>
 public enum ActionGrouping
 {
@@ -769,17 +778,50 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// ones are counted under it, <see cref="ViewCountsAsync"/>). Its views are whose actions (mine, my teams', all);
     /// Overdue and Closed are list views, and show all.
     /// </summary>
-    public async Task<ActionBoard> BoardAsync(ActionFilter filter, CancellationToken ct = default)
+    public async Task<ActionBoard> BoardAsync(ActionFilter filter, ActionBoardSort sort = ActionBoardSort.Manual, CancellationToken ct = default)
     {
         RequireRead(user);
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         await using var db = await dbs.CreateAsync(ct);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpen();
-        // By due date then priority, in the database. The board shows every open card (its lanes and their counts), so it
+        // In the lane order chosen, in the database. The board shows every open card (its lanes and their counts), so it
         // reads them all; the KEV read takes the unordered query, as SQL Server allows no ORDER BY in a subquery.
-        var cards = await WithKevAsync(db, Readable(await RowsAsync(db, Ordered(q, ActionSort.Due), ct)), q, ct);
+        var cards = await WithKevAsync(db, Readable(await RowsAsync(db, BoardOrdered(q, sort), ct)), q, ct);
         var workers = await WorkersAsync(db, ct);
         return new ActionBoard(cards, workers.All, workers.Teams);
+    }
+
+    // The board's order within a lane. Manual: the cards placed by hand first, by their place, then the rest by due date
+    // as Due puts them. Priority: priority first, then due date. The number last, so the order is stable.
+    private static IQueryable<ActionItem> BoardOrdered(IQueryable<ActionItem> q, ActionBoardSort sort) => sort switch
+    {
+        ActionBoardSort.Due => Ordered(q, ActionSort.Due),
+        ActionBoardSort.Priority => q.OrderBy(a => a.Priority).ThenBy(a => a.DueDate == null).ThenBy(a => a.DueDate).ThenBy(a => a.Number),
+        _ => q.OrderBy(a => a.LaneRank == 0).ThenBy(a => a.LaneRank)
+            .ThenBy(a => a.DueDate == null).ThenBy(a => a.DueDate).ThenBy(a => a.Priority).ThenBy(a => a.Number),
+    };
+
+    /// <summary>
+    /// Puts an action at a place in its board lane's shared manual order: just before <paramref name="before"/>, or at the
+    /// end of the lane when that's null, or no longer an open action in the same lane. The lane is renumbered from 1 in
+    /// its manual order (<see cref="ActionBoardSort.Manual"/>), across every open action in it, not only the caller's
+    /// view. It's refused, as a move is, when the caller may not work the action or it's no longer at
+    /// <paramref name="status"/>. A place isn't a change to the action: it adds no history line.
+    /// </summary>
+    public async Task PlaceAsync(Guid id, ActionStatus status, Guid? before, CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(status) || ActionItem.IsClosedStatus(status))
+            throw new ArgumentException("Only a card in an open lane has a place in it: choose an open status.");
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await WorkableAsync(db, id, ct);
+        RequireAt(a, status);
+        // Tracked, so only the rows whose place changes are written. Deleted ones are left out by the query filter.
+        var lane = await BoardOrdered(db.Actions.Where(x => x.Status == status && x.Id != id), ActionBoardSort.Manual).ToListAsync(ct);
+        var at = before is { } b ? lane.FindIndex(x => x.Id == b) : -1;
+        lane.Insert(at < 0 ? lane.Count : at, a);
+        for (var i = 0; i < lane.Count; i++)
+            if (lane[i].LaneRank != i + 1) lane[i].LaneRank = i + 1;
+        await SaveEditAsync(db, ct);
     }
 
     // How far back the board's closed strip counts: the last closedDays days, a day to BoardOlderDays.

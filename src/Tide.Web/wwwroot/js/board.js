@@ -3,11 +3,12 @@
 // only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
 // The drag is by pointer events (mouse, pen and touch alike), not the browser's drag and drop, so the card can be lifted,
 // follow the pointer and settle where it lands: a mouse or pen starts it by moving a few pixels with the button down, a finger by
-// holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost). Over its own lane
-// the card itself stays as the dashed gap it left; over another lane it leaves its own (which closes up) and a dashed
-// slot opens where it would land, the cards there sliding aside to make room (flip.js moves them). Lanes are sorted
-// (ActionKanban.LaneOrder), so the slot opens at the card's place in that order, not under the pointer. Esc cancels; a
-// press that isn't a drag is a click.
+// holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost). Where it would
+// land, a dashed slot opens and the cards there slide aside to make room (flip.js moves them); the card leaves its own
+// place, which closes up. In the team's own order (the board's data-sort is "manual") the slot follows the pointer, up
+// and down a lane and into another, and the drop puts the card there (ActionService.PlaceAsync). Sorted by due date or
+// priority, the slot opens at the card's place in that order (ActionKanban.LaneOrder) in another lane, and over its own
+// lane the card is just the gap it left. Esc cancels; a press that isn't a drag is a click.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
 // few calls a drag, not the pointer's path), so everyone else's board can show who is moving it and where (BoardDrags).
 // A card that moves for any other reason (its Move menu, someone else's move) travels from where it was (flip.js).
@@ -18,6 +19,7 @@
 // same once its drop is done.
 window.tideBoard = (function () {
     let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null, slot = null;
+    let drop = null, home = null;   // where a drop would put the card ({ status, before }), and the card it was above at first
     const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
@@ -49,22 +51,41 @@ window.tideBoard = (function () {
         if (root) mark(null);
     }
 
-    // Over another lane, the slot opens there at the card's place in its order, and the card leaves its own lane; over its
-    // own lane, a closed chip or nothing, the slot goes and the card is back as the gap it left.
-    function makeRoom(col, card) {
+    function manual() { return !!root && root.dataset.sort === 'manual'; }
+
+    // The card a drop at pointer height y in this lane would go above (in the team's own order), or at its place by due
+    // date or priority; null at the end.
+    function above(cards, card, y) {
+        // Where each card is laid out, not where a glide making room has it this frame, so the slot doesn't flicker
+        // back and forth as the cards move.
+        if (manual()) return cards.find(function (c) {
+            const r = c.getBoundingClientRect(), t = getComputedStyle(c).transform, dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0;
+            return y < r.top - dy + r.height / 2;
+        }) || null;
+        const mine = card.dataset.order || '';
+        return cards.find(function (c) { return (c.dataset.order || '') > mine; }) || null;
+    }
+
+    // Opens the slot where a drop would put the card: in the lane under the pointer (its own lane too, in the team's own
+    // order), the card leaving its place. Over its own place, a closed chip or nothing, the slot goes and the card is
+    // back as the gap it left.
+    function makeRoom(col, card, y) {
         const lane = col && col.classList.contains('tide-kcol') ? col.querySelector('.tide-kcol-cards') : null;
-        if (!lane) { clearRoom(card); return; }
+        const own = !!col && col.dataset.status === card.dataset.status;
+        if (!lane || (own && !manual())) { clearRoom(card); drop = null; return; }
+        const cards = Array.prototype.filter.call(lane.querySelectorAll('.tide-kcard'), function (c) { return c !== card; });
+        const next = above(cards, card, y);
+        if (own && (next ? next.dataset.id : null) === home) { clearRoom(card); drop = null; return; }
         if (!slot) {
             slot = document.createElement('div');
             slot.className = 'tide-kslot';
             slot.setAttribute('aria-hidden', 'true');
             slot.style.height = card.offsetHeight + 'px';
         }
-        const mine = card.dataset.order || '';
-        const before = Array.prototype.find.call(lane.querySelectorAll('.tide-kcard'), function (c) { return c !== card && (c.dataset.order || '') > mine; })
-            || lane.querySelector('.tide-kcol-more, .tide-kcol-drop');
+        const before = next || lane.querySelector('.tide-kcol-more, .tide-kcol-drop');
         if (slot.parentNode !== lane || slot.nextElementSibling !== before) lane.insertBefore(slot, before);
         card.classList.add('tide-kcard-away');
+        drop = { status: col.dataset.status, before: next ? next.dataset.id : null };
     }
 
     function clearRoom(card) {
@@ -112,6 +133,10 @@ window.tideBoard = (function () {
         ghost.classList.remove('selected', 'tide-kcard-held');
         const sel = window.getSelection && window.getSelection();
         if (sel) sel.removeAllRanges();
+        let next = card.nextElementSibling;
+        while (next && !next.classList.contains('tide-kcard')) next = next.nextElementSibling;
+        home = next ? next.dataset.id : null;
+        drop = null;
         card.classList.add('dragging');
         card.classList.remove('tide-kcard-held');
         tell('OnDragging', card.dataset.id, null);
@@ -128,11 +153,12 @@ window.tideBoard = (function () {
         ghost.style.transform = 'translate(' + (e.clientX - press.x) + 'px, ' + (e.clientY - press.y) + 'px)';
         const under = document.elementFromPoint(e.clientX, e.clientY);
         const col = under && under.closest ? under.closest('.tide-kcol, .tide-kchip') : null;
-        const to = col && root.contains(col) && col.dataset.status !== dragging.dataset.status ? col : null;
+        const inside = col && root.contains(col) ? col : null;
+        const to = inside && inside.dataset.status !== dragging.dataset.status ? inside : null;
+        makeRoom(inside, dragging, e.clientY);
         if (to === marked) return;
         marked = to;
         mark(to);
-        makeRoom(to, dragging);
         report(to ? to.dataset.status : null);
     }
 
@@ -170,8 +196,9 @@ window.tideBoard = (function () {
     function onPointerUp(e) {
         if (!press || e.pointerId !== press.id) return;
         if (!dragging) { forget(); return; }
-        const card = dragging, id = card.dataset.id, from = card.dataset.status, to = over;
+        const card = dragging, id = card.dataset.id, from = card.dataset.status, at = drop, to = at ? at.status : over;
         const place = focusedAtPress === card ? beside(card) : null, g = ghost;
+        drop = null;
         swallowClick();
         forget();
         ghost = null;
@@ -187,7 +214,7 @@ window.tideBoard = (function () {
             requestAnimationFrame(function () { const c = current(); settle(g, c); });
         };
         setTimeout(land, ASKING);
-        ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
+        ref.invokeMethodAsync('OnCardDropped', id, from, to, at ? at.before : null).then(function () {
             land();
             requestAnimationFrame(function () { if (place) focusPlace(id, place.next, place.prev, place.heading); });
         }, land);
@@ -197,6 +224,7 @@ window.tideBoard = (function () {
     function cancel() {
         if (!dragging) { forget(); return; }
         const card = dragging, g = ghost;
+        drop = null;
         forget();
         ghost = null;
         end();

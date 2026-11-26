@@ -150,7 +150,8 @@ public class ActionItem : AuditableEntity
 
     /// <summary>Where it stands. Setting another status records when (<see cref="StatusChangedAtUtc"/>), whichever path
     /// moves it, by the wall clock: the service that moves it then dates it by the app's clock, and seeding sets it after.
-    /// Setting the one it has changes nothing.</summary>
+    /// It also leaves its old lane's order (<see cref="LaneRank"/>), so it goes to the end of the new one's. Setting the
+    /// one it has changes nothing.</summary>
     public ActionStatus Status
     {
         get => _status;
@@ -159,8 +160,16 @@ public class ActionItem : AuditableEntity
             if (value == _status) return;
             _status = value;
             StatusChangedAtUtc = DateTimeOffset.UtcNow;
+            LaneRank = 0;
         }
     }
+
+    /// <summary>
+    /// Its place in its board lane's manual order, 1 at the top, shared by everyone who sees the board; 0 when nobody has
+    /// placed it by hand since it came into the lane. Placed cards come first, then the rest by due date. Not a change of
+    /// the action itself, so placing it adds no history line and doesn't move <see cref="EditVersion"/>.
+    /// </summary>
+    public int LaneRank { get; set; }
 
     /// <summary>
     /// When it moved to the status it has (the board's "In column 3d"): when it was raised, until it moves. Derived, like
