@@ -233,11 +233,27 @@ window.tideRail = (function () {
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.
     function setOver(open) {
+        if (!open && over()) leave();
         if (open) root.setAttribute('data-rail-over', '');
         else root.removeAttribute('data-rail-over');
         sync();
         var to = open ? rail() : toggleBtn();
         if (to) to.focus();
+    }
+    // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does, as the rail
+    // itself is hidden at once (60-rail-and-pages.css). With reduced motion it fades where it is.
+    function leave() {
+        var r = rail(), ts = window.tideShortcuts;
+        if (!r || !document.body.animate) return;
+        var c = ts.copy(r);
+        c.classList.add('tide-leaving');
+        c.removeAttribute('role');
+        c.removeAttribute('aria-modal');
+        document.body.appendChild(c);
+        var w = r.offsetWidth;
+        c.animate([{ right: '0px', opacity: 1 }, { right: (ts.still() ? 0 : -w) + 'px', opacity: 0 }],
+            { duration: ts.ms('--tide-dur-panel') * .7, easing: ts.token('--tide-ease-in'), fill: 'forwards' })
+            .finished.then(function () { c.remove(); }, function () { c.remove(); });
     }
     function toggle() {
         var r = rail();

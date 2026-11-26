@@ -50,6 +50,7 @@
        which the switch zeroes; a fade or color change uses --tide-dur-* alone, so the change still shows. A keyframe
        animation that moves scales its distance by --tide-motion, or carries its own prefers-reduced-motion rule. */
     --tide-motion: 1;
+    --tide-dur-press: 90ms;        /* a button pressed in */
     --tide-dur-fast: 120ms;        /* hover, color, a chevron turning */
     --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
     --tide-stagger: 25ms;          /* between the items of a list arriving whole, the first 8 (flip.js) */
@@ -58,6 +59,7 @@
     --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
     --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */
     --tide-dur-loop: 1.3s;         /* one cycle of a repeating animation: the loading shimmer, the tip's ring */
+    --tide-move-press: calc(var(--tide-dur-press) * var(--tide-motion));
     --tide-move-fast: calc(var(--tide-dur-fast) * var(--tide-motion));
     --tide-move-base: calc(var(--tide-dur-base) * var(--tide-motion));
     --tide-move-panel: calc(var(--tide-dur-panel) * var(--tide-motion));
@@ -66,6 +68,7 @@
     --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
     --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
     --tide-ease-fade: cubic-bezier(0, 0, .58, 1);      /* a long fade dying away (CSS ease-out) */
+    --tide-ease-settle: linear(0, .5 12%, .92 26%, 1.02 36%, 1 48%, 1);   /* paper settling: a 2% overshoot (menus unfolding) */
 
     /* Stacking: the layers over the page, lowest first. Stacking inside one component (1 to 20) stays literal. */
     --tide-z-error: 1000;      /* Blazor's error bar */
@@ -288,21 +291,29 @@ a, .btn-link { color: var(--tide-accent-text); }
    places (menus, popovers, the attach and export panels) fades in while what's on it unfolds: popout.js measures the
    panel as it opens, and a transform on the panel itself would throw that off. Toasts drop in like a paper slip, and
    scrims and the chart's tip fade. A new floating surface joins one of these lists as well as the ones above. */
-.tide-modal, .tide-tip, .tide-atkm-panel, .tide-combo-pop, .tide-oi-suggest {
+.tide-modal, .tide-tip, .tide-atkm-panel {
     transform-origin: top center;
     transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
     @starting-style { opacity: 0; transform: perspective(50rem) rotateX(-40deg); } }
+.tide-combo-pop, .tide-oi-suggest {
+    transform-origin: top center;
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-settle);
+    @starting-style { opacity: 0; transform: perspective(600px) rotateX(-70deg); } }
 .tide-popover, .tide-attach-panel, .tide-export-panel {
     transition: opacity var(--tide-dur-base) var(--tide-ease-out);
     @starting-style { opacity: 0; } }
 :is(.tide-popover, .tide-attach-panel, .tide-export-panel) > * {
     transform-origin: top center;
-    transition: transform var(--tide-move-base) var(--tide-ease-out);
-    @starting-style { transform: perspective(50rem) rotateX(-30deg); } }
+    transition: transform var(--tide-move-base) var(--tide-ease-settle);
+    @starting-style { transform: perspective(600px) rotateX(-70deg); } }
 .tide-toast {
     transform-origin: bottom left;
-    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out);
-    @starting-style { opacity: 0; transform: translateY(1rem) rotate(-1.5deg); } }
+    transition: opacity var(--tide-dur-panel) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: translateY(16px) rotate(-2deg); } }
+/* A button pressed in. */
+.btn { transition: color var(--tide-dur-fast) var(--tide-ease-out), background-color var(--tide-dur-fast) var(--tide-ease-out),
+    border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out), transform var(--tide-move-press) var(--tide-ease-out); }
+.btn:active:not(:disabled) { transform: scale(calc(1 - .03 * var(--tide-motion))); }
 /* A toast that left (flip.js): a copy where it was, fading out as the others close up. */
 .tide-toast.tide-leaving { position: fixed; z-index: var(--tide-z-toast); margin: 0; pointer-events: none; }
 .tide-modal-scrim, .tide-tour-scrim, .tide-atkm-backdrop, .tide-chart-tip {
