@@ -101,8 +101,45 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-brief-chip-full { display: none; }
     .tide-brief-chip-short, .tide-brief-chip-said { display: inline; }
 }
-@media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
+/* There the team's name goes, and Go to and Context drop their keycaps (their titles still name the keys), so the chip,
+   the search box and the round buttons after it (Context, the bell, ?) all fit. */
+@media (min-width: 900px) and (max-width: 1099.98px) {
+    .top-row:has(.tide-brief-chip) > span:first-child, .top-row:has(.tide-brief-chip) .tide-palette-kbd { display: none; }
+}
 @media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
+
+/* ---- The For you bell (ForYouBell.razor): a round button as the shortcuts one is, its count in a red badge on its
+   corner, and a panel of notices under it (a .tide-popover, placed by popout.js), wider than the account menu. New ones
+   have a dot and a tinted row. On a phone the panel is the window's width (popout.js keeps it inside the page). ---- */
+.tide-bell { position: relative; display: inline-flex; flex: none; }
+/* The button itself is drawn as the shortcuts one is (palette.css); only its count and states are its own. */
+.tide-bell-btn { position: relative; }
+.tide-bell-btn[aria-expanded="true"] { background: var(--tide-surface-2); color: var(--tide-text); }
+.tide-bell-btn.has-new { color: var(--tide-text); }
+.tide-bell-count { position: absolute; top: -.2rem; right: -.3rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .3rem; display: grid; place-items: center;
+    border-radius: var(--tide-radius-pill); border: 2px solid var(--tide-surface); background: var(--tide-threat); color: var(--tide-on-threat);
+    font-family: var(--tide-font-data); font-size: .65rem; font-weight: var(--tide-weight-semibold); line-height: 1; }
+.tide-bell-count::after { content: attr(data-count); }
+.tide-bell-pop { width: min(25rem, calc(100vw - 1.5rem)); padding: 0; display: flex; flex-direction: column; }
+@media (max-width: 640.98px) { .tide-bell-pop { width: 100vw; } }
+.tide-bell-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); padding: .7rem .85rem .5rem; }
+.tide-bell-heading { font-weight: var(--tide-weight-semibold); }
+.tide-bell-new { margin-left: .35rem; font-size: var(--tide-text-sm); font-weight: normal; color: var(--tide-text-muted); }
+.tide-bell-list { list-style: none; margin: 0; padding: 0; }
+.tide-bell-item { display: flex; gap: .6rem; padding: .6rem .85rem; border-top: 1px solid var(--tide-border); }
+.tide-bell-item.is-new { background: var(--tide-accent-soft); }
+.tide-bell-dot { flex: none; width: .5rem; height: .5rem; margin-top: .4rem; border-radius: 50%; }
+.tide-bell-item.is-new .tide-bell-dot { background: var(--tide-accent); }
+.tide-bell-body { min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.tide-bell-line { font-size: var(--tide-text-sm); }
+.tide-bell-when, .tide-bell-gone { color: var(--tide-text-muted); }
+.tide-bell-gone { font-size: var(--tide-text-sm); }
+.tide-bell-subject { font-weight: var(--tide-weight-semibold); color: var(--tide-text); overflow-wrap: anywhere; }
+.tide-bell-detail { font-size: var(--tide-text-sm); color: var(--tide-text-muted); border-left: 2px solid var(--tide-border-strong); padding-left: .5rem;
+    overflow-wrap: anywhere; }
+.tide-bell-state { padding: 0 .85rem .6rem; }
+.tide-bell-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); padding: .55rem .85rem;
+    border-top: 1px solid var(--tide-border); font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 
 /* ---- Actions list and board (ActionsBoard.razor, ActionTable.razor, ActionKanban.razor). The board's four working
    lanes share the width (the grid itself is .tide-kanban's, above; the strip under them is at the end of this file). A

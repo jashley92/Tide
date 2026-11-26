@@ -55,6 +55,11 @@ Every route, its component and the permission it needs are in the [route table](
   link or a reload shows the same one. The context rail shows the selected row.
 - **Popouts** (Triage's Attach to…, the account menu, a brief's Export indicators) close on Escape anywhere, a click
   outside, or Tab out of them. Escape gives focus back to the button that opened it.
+- **The For you bell** (top right, by `?`) counts what colleagues handed you or asked of you: an article handed to
+  you, a review asked of you, an action assigned to you or handed to your team, a brief rotation request and its
+  answer. Its panel lists them, new ones marked, with any note that came with them. Clicking one opens it and marks it
+  seen; **Mark all seen** does all of them. Seen ones stay 30 days. A toast says when one arrives (turn it off on My
+  notifications). Readers and Visitors don't have it.
 - **The account menu** (the initials in the top right) says who you are and your roles, and holds your own settings:
   light, dark or system theme (system, the default, follows the operating system's as it changes), single-letter
   shortcuts on or off, **My notifications**, your brief days as a calendar file, **Help and what's new**, and About.
@@ -1273,7 +1278,8 @@ administrator also sets their active limits. Teams & SLA lists the internal team
 
 **Route:** `/notifications` (from the account menu) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
-Each person's own choices about TIDE's emails: where they go, a switch for each kind (due soon, overdue, the weekly
+Each person's own choices about what TIDE tells them. **In TIDE**: whether a For you notice that arrives shows a
+toast (on by default; the bell counts it either way). Then TIDE's emails: where they go, a switch for each kind (due soon, overdue, the weekly
 team digest, the outreach follow-up, rotation reminders and requests), and a personal digest of their own actions,
 daily or weekly, instead. Each switch saves as it's changed. An administrator still turns each kind on or off for
 everyone, and sees how many people opted out, and who; nobody changes another's choices. A kind that's off for

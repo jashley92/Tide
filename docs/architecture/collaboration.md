@@ -77,6 +77,7 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 | `OutreachTemplate` | `outreach-templates` |
 | `Playbook`, `PlaybookStep` | `playbooks` |
 | `TriageSplit` | `triage` |
+| `Notice` | `notices:{userId}` (`ChangeFeed.Notices`): only the person it's for; made, or marked seen |
 
 Two topics are also published by hand:
 
@@ -166,6 +167,7 @@ What pages do with it:
 | Adversaries list and profile (`AdversariesPage`) | `adversaries` | re-read; a profile's edit form keeps what's typed and shows `ChangedElsewhere` with Reload when a colleague changed that profile (only a change to the one shown is told) |
 | External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team a colleague changed shows `ChangedElsewhere` (its save is refused until Reload); an edit of a team that's gone closes, and says so |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
+| The top bar's For you bell (`ForYouBell`, on every page of the main layout) | `notices:{userId}`, the signed-in person's own | re-counts; a notice made since the tab last told one shows a toast (`NoticeService.NewSinceAsync`), unless the person turned that off. Like the brief chip it hears its own circuit's saves, so a notice marked seen in this tab or another moves the count |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
 the colleague in a toast; a page with unsaved edits keeps them and says so (`ChangedElsewhere.razor`), and the stale
