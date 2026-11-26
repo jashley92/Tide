@@ -2141,6 +2141,7 @@ else
             Announce();
             if (stay)
             {
+                await JS.BestEffortAsync("tideTriage.promoted");   // the rows go to the sidebar's Articles before the list drops them
                 (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
                 await Load();
                 _focus = "tideTriage.focusRow";
