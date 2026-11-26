@@ -7,9 +7,9 @@
      theme.js makes the page under it inert, and a backdrop over the rest of the window, which closes it on a click,
      says so.
    theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
-.tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
+.tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: var(--tide-z-rail); width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
+html[data-rail-over] .tide-rail { display: flex; z-index: var(--tide-z-rail-over); }
 /* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
    parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
    top bar above it (none on a phone, where the rail takes the whole height). */
@@ -35,7 +35,7 @@ html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
 @media (max-width: 640.98px) {
-    .tide-rail { top: 0; z-index: 1030; }
+    .tide-rail { top: 0; z-index: var(--tide-z-panel); }
     html[data-rail-over] .tide-rail::after { content: none; }
 }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }

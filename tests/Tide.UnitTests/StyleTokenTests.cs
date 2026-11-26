@@ -27,6 +27,41 @@ public partial class StyleTokenTests
         MarkdownRule().Match(css).Groups[1].Value.Should().MatchRegex(@"overflow-wrap:\s*anywhere");
     }
 
+    [Fact]
+    public void TransitionsAndAnimations_TakeTheirTimingFromTokens()
+    {
+        // Every duration and delay comes from a --tide-dur-* token, so the app keeps one rhythm and the reduced-motion
+        // switch (--tide-motion) can reach the movement. A literal ".15s" slips past both. 0s is fine: it means "at once".
+        var literals = MotionDeclaration().Matches(Stylesheets.ReadAll())
+            .Where(d => LiteralDuration().Matches(d.Groups[1].Value).Any(t => double.Parse(t.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) != 0))
+            .Select(d => d.Value.Trim());
+
+        literals.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LayersOverThePage_StackFromTokens()
+    {
+        // The layers over the page (the rail, popovers, toasts, the tour, dialogs) take their z-index from the --tide-z-*
+        // scale, so a new overlay is placed by name rather than by guessing a number between two others.
+        GlobalLayer().Matches(Stylesheets.ReadAll()).Select(m => m.Value).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ReducedMotion_TurnsTheMotionSwitchOff()
+    {
+        Stylesheets.ReadAll().Should().MatchRegex(@"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*:root\s*\{\s*--tide-motion:\s*0;");
+    }
+
+    [GeneratedRegex(@"(?:transition|animation)(?:-duration|-delay)?\s*:([^;}]*)")]
+    private static partial Regex MotionDeclaration();
+
+    [GeneratedRegex(@"(?<![\w.-])(\d*\.?\d+)m?s\b")]
+    private static partial Regex LiteralDuration();
+
+    [GeneratedRegex(@"z-index\s*:\s*\d{4,}")]
+    private static partial Regex GlobalLayer();
+
     [GeneratedRegex(@"(--tide-[a-z0-9-]+)\s*:")]
     private static partial Regex Defined();
 

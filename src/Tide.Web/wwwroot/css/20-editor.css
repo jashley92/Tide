@@ -70,7 +70,7 @@
 @supports (field-sizing: content) { .tide-autogrow { height: auto !important; } }
 .tide-bullet-row .tide-dot { padding-top: .45rem; color: var(--tide-text-muted); text-align: center; }
 .tide-bullet-row textarea { min-height: 2.4rem; }
-.tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background .1s, border-color .1s; }
+.tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background var(--tide-dur-fast), border-color var(--tide-dur-fast); }
 .tide-drop-zone.tide-dropping { background: var(--tide-drop); border-color: var(--tide-accent); }
 .tide-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; margin-top: .75rem; }
 .tide-shot { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface-2); }
@@ -90,8 +90,8 @@
 
 /* The ATT&CK matrix picker (AttackMatrixPicker): tactics as columns tinted by their colour (--tac),
    techniques beneath, sub-techniques folding under their parent; nearly full screen over the editor. */
-.tide-atkm-backdrop { position: fixed; inset: 0; background: var(--tide-overlay); z-index: 2500; }
-.tide-atkm-panel { position: fixed; inset: 3vh 2vw; z-index: 2501; display: flex; flex-direction: column;
+.tide-atkm-backdrop { position: fixed; inset: 0; background: var(--tide-overlay); z-index: var(--tide-z-picker); }
+.tide-atkm-panel { position: fixed; inset: 3vh 2vw; z-index: calc(var(--tide-z-picker) + 1); display: flex; flex-direction: column;
     background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
     box-shadow: 0 1rem 3rem var(--tide-shadow-strong); overflow: hidden; }
 .tide-atkm-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--tide-border); }
@@ -102,12 +102,13 @@
 /* Columns are spaced by margin, not gap, so a collapsed one takes no space at all. */
 .tide-atkm-grid { flex: 1 1 auto; display: flex; overflow: auto; padding: .75rem .25rem .75rem .75rem; align-items: flex-start; background: var(--tide-bg); scroll-behavior: smooth; }
 .tide-atkm-col { flex: 0 0 14rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface);
-    transition: flex-basis 180ms ease-out, margin-right 180ms ease-out, border-width 180ms ease-out, opacity 180ms ease-out; }
+    transition: flex-basis calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out), margin-right calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out),
+        border-width calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out); }
 /* A tactic with no match while filtering: fades and folds its width to nothing; its content keeps its own width meanwhile, clipped rather than squeezed. */
 .tide-atkm-col-hidden { flex-basis: 0; margin-right: 0; border-width: 0; opacity: 0; pointer-events: none; }
 .tide-atkm-col > .tide-atkm-colhead, .tide-atkm-col > .tide-atkm-cells { min-width: calc(14rem - 2px); }
 .tide-atkm-nomatch { flex: 1 0 100%; margin-right: .5rem; padding: 2rem 1rem; text-align: center; color: var(--tide-text-muted); }
-@media (prefers-reduced-motion: reduce) { .tide-atkm-col { transition: none; } .tide-atkm-grid { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .tide-atkm-grid { scroll-behavior: auto; } }
 .tide-atkm-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
     font-size: .78rem; font-weight: var(--tide-weight-semibold); background: color-mix(in srgb, var(--tac) 16%, var(--tide-surface)); border-bottom: 2px solid var(--tac); }
 .tide-atkm-colname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -182,13 +183,12 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-disclosure { display: flex; align-items: center; flex-wrap: wrap; gap: var(--tide-space-2); width: 100%; border: 0; background: none; padding: 0;
     color: inherit; font: inherit; text-align: left; }
 .tide-disclosure:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
-.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform .15s ease; }
+.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform calc(var(--tide-dur-fast) * var(--tide-motion)) var(--tide-ease-out); }
 .tide-disclosure[aria-expanded="true"] .tide-disclosure-chev { transform: rotate(90deg); }
 .tide-disclosure-sum { color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-regular); }
 .tide-disclosure-body { margin-top: var(--tide-space-3); }
 .tide-subhead { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-2); }
 .tide-disclosure-body > .tide-subhead:first-child { margin-top: 0; }
-@media (prefers-reduced-motion: reduce) { .tide-disclosure-chev { transition: none; } }
 
 /* ---- Brief builder ---- */
 .tide-run-num { font-weight: var(--tide-weight-bold); color: var(--tide-text-muted); text-align: center; font-variant-numeric: tabular-nums; }
