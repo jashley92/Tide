@@ -183,8 +183,8 @@
    + Filter. The placement says which edge it lines up with. */
 .tide-popover-backdrop { position: fixed; inset: 0; z-index: var(--tide-z-popover); }
 .tide-popover { position: absolute; top: calc(100% + .5rem); z-index: calc(var(--tide-z-popover) + 1); width: min(19rem, calc(100vw - 1.5rem));
-    background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
-    box-shadow: 0 8px 24px var(--tide-shadow); padding: .4rem; }
+    color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
+    padding: .4rem; }
 .tide-popover-end { right: 0; }
 .tide-popover-start { left: 0; }
 .tide-profile-id { display: flex; align-items: center; gap: .7rem; padding: .5rem .55rem .6rem; }
@@ -225,7 +225,7 @@
 .tide-tabbar-page { border-bottom: 1px solid var(--tide-border); }
 .tide-tabbar-page .tide-tabbar-item { padding: .5rem .8rem; font-size: .95rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tide-tabbar-page .tide-tabbar-item.active { color: var(--tide-text); font-weight: var(--tide-weight-semibold); border-bottom-color: var(--tide-accent); }
-.tide-tabbar-count { font-size: .75rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .45rem; border-radius: var(--tide-radius-pill); background: var(--tide-surface-2); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
+.tide-tabbar-count { font-size: .75rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .45rem; border-radius: var(--tide-radius-pill); background: var(--tide-surface-2); color: var(--tide-text-muted); }
 .tide-tabbar-item.active .tide-tabbar-count { background: var(--tide-accent-soft); color: var(--tide-accent-text); }
 .tide-tabbar-page { margin-bottom: 1rem; }
 .tide-tabbar-new { font-size: .68rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .4rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); text-transform: uppercase; letter-spacing: .04em; }
@@ -279,8 +279,8 @@
 /* A confirmation (ConfirmDialog): a scrim, a small card that says what will happen, Cancel and a button
    named for the action. */
 .tide-modal-scrim { position: fixed; inset: 0; z-index: var(--tide-z-modal); background: var(--tide-overlay); display: grid; place-items: center; padding: 1rem; }
-.tide-modal { width: min(30rem, 100%); background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border);
-    border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong); padding: 1.1rem 1.2rem 1rem;
+.tide-modal { width: min(30rem, 100%); color: var(--tide-text); border: 1px solid var(--tide-border);
+    border-radius: var(--tide-radius-xl); padding: 1.1rem 1.2rem 1rem;
     max-height: calc(100vh - 2rem); overflow-y: auto; }
 .tide-modal-wide { width: min(46rem, 100%); }
 /* A dialog takes focus itself when its text is clicked (tabindex="-1"), so its keys (Escape) still reach it; no ring. */
@@ -341,8 +341,8 @@
    top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
    it is inert. Under a dialog (--tide-z-modal), over the page and its rail. */
 .tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tip);
-    width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
-    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
+    width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); color: var(--tide-text);
+    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl);
     padding: var(--tide-space-3) var(--tide-space-4); }
 .tide-tip.is-placed, .tide-tour.is-placed { right: auto; bottom: auto; }
 .tide-tip-head { display: flex; align-items: center; gap: var(--tide-space-2); color: var(--tide-accent); }
@@ -366,7 +366,7 @@
 /* The card's arrow (tips.js): a square turned on its corner, centred on the card's edge facing its control
    (data-side: where the card is, from the control), in the card's own surface and border so it reads as part of it.
    Over a tip, or over a step (is-step). */
-.tide-tip-arrow { position: fixed; z-index: calc(var(--tide-z-tip) + 1); width: 14px; height: 14px; background: var(--tide-surface);
+.tide-tip-arrow { position: fixed; z-index: calc(var(--tide-z-tip) + 1); width: 14px; height: 14px; background: var(--tide-surface-raised);
     border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
 .tide-tip-arrow.is-step { z-index: var(--tide-z-tour-arrow); }
 .tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }

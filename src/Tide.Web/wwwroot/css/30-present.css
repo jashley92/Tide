@@ -74,7 +74,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 }
 @media (forced-colors: active) { .tide-scrollfade { -webkit-mask-image: none; mask-image: none; } }
 .tide-slide-kicker { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; color: var(--tide-slide-muted); font-size: .85em; margin-bottom: .6em; }
-.tide-slide h2 { font-size: 2.1em; font-weight: var(--tide-weight-bold); line-height: 1.2; margin: 0 0 .5em; }
+.tide-slide h2 { font-family: var(--tide-font-doc); font-size: 2.1em; font-weight: var(--tide-weight-bold); line-height: 1.2; margin: 0 0 .5em; }
 .tide-slide-bluf { font-size: 1.25em; line-height: 1.45; border-left: 4px solid var(--tide-slide-accent); padding: .2em 0 .2em .9em; margin-bottom: 1.1em; }
 .tide-slide-threat .tide-slide-bluf { border-left-color: var(--tide-slide-threat-line); }
 .tide-slide-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.2em; }

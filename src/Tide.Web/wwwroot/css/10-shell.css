@@ -80,7 +80,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); padding: 0 .1em; border-radius: var(--tide-radius-xs); }
 @media (max-width: 640.98px) { .tide-top-search { display: none; } }
 .tide-export { position: relative; }
-.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: var(--tide-z-panel); width: 290px; padding: .9rem; background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); box-shadow: 0 8px 24px var(--tide-shadow); }
+.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: var(--tide-z-panel); width: 290px; padding: .9rem; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); }
 .tide-avatar { width: 30px; height: 30px; border-radius: var(--tide-radius-round); background: var(--tide-accent-soft); color: var(--tide-accent-text); display: grid; place-items: center; font-weight: var(--tide-weight-semibold); font-size: .78rem; }
 
 /* ---- Page parts ---- */
@@ -88,6 +88,7 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 /* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
    widening the page. */
 .tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
+.tide-brief-head h1 { font-family: var(--tide-font-doc); }   /* the brief is a document: its title is set like one */
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
 /* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
