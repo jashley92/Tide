@@ -142,7 +142,7 @@ else
         }
     }
     @{ var ghosts = GhostsByLine(); }
-    <ol class="tide-triage">
+    <ol class="tide-triage" data-tide-flip=".tide-triage-row">
         @if (_older)
         {
             <li class="tide-triage-section">Older: new items untouched for @AgeText. KEV-listed ones, those with a high EPSS score and those naming a product on Our stack stay in New.
@@ -2141,10 +2141,17 @@ else
             Announce();
             if (stay)
             {
-                // The rows promoted go to the sidebar's Articles before the list drops them (when a draft was made).
-                if (outcome.Made) await JS.BestEffortAsync("tideTriage.promoted", (object)ids.Select(x => x.ToString()).ToArray());
+                // The form closes, and the rows promoted reshape into the Promoted tab's count (when a draft was made);
+                // then the list reloads, its rows closing the gap, and the tabs whose counts changed roll to the new ones.
                 (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
+                if (outcome.Made)
+                {
+                    StateHasChanged();
+                    await JS.BestEffortAsync("tideTriage.promoted", (object)ids.Select(x => x.ToString()).ToArray());
+                }
+                var countsWere = _counts;
                 await Load();
+                _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
                 _focus = "tideTriage.focusRow";
                 ToldStayed(done, n, title);
                 return;

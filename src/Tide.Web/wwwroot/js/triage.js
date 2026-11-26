@@ -117,32 +117,36 @@ window.tideTriage = (function () {
     }
 
     return {
-        // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves into the sidebar's
-        // Articles, where the draft went, as the list lets them go (called just before it reloads, while they're still on
-        // the page). Each is a copy (the row itself goes with the reload) that moves and shrinks onto the link, a
-        // transform, as what's on it fades; the link then locks on. Without motion, or with the sidebar out of sight, the
-        // link's lock-on alone says where.
+        // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and
+        // place, into the Promoted tab's count just above the list, which locks on. .NET waits for this (the promise)
+        // before it reloads the list, so the count then rolls to its new number and the rows below close the gap
+        // (flip.js). Each is a copy; the row itself fades at once. Without motion the rows fade and the count changes.
         promoted: function (ids) {
-            const MORPHS = 8, STAGGER = 40;   // at most so many rows fly, each this many ms after the one before
+            const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
             const want = new Set(ids || []), ts = window.tideShortcuts;
             const rows = Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
                 return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
             }).slice(0, MORPHS);
-            const link = document.querySelector('.tide-nav a[href="articles"]');
-            if (!link || !rows.length) return;
+            const tab = Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
+                const label = b.querySelector('span:not(.bi)');
+                return label && label.textContent.trim() === 'Promoted';
+            });
+            const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
+            if (!dest || !rows.length) return Promise.resolve();
             const land = function () {
-                link.classList.remove('tide-landed');
-                void link.offsetWidth;
-                link.classList.add('tide-landed');
-                link.addEventListener('animationend', function () { link.classList.remove('tide-landed'); }, { once: true });
+                tab.classList.remove('tide-landed');
+                void tab.offsetWidth;
+                tab.classList.add('tide-landed');
+                setTimeout(function () { tab.classList.remove('tide-landed'); }, ts.ms('--tide-dur-signature'));
             };
-            const t = link.getBoundingClientRect();
-            if (!t.width || ts.still() || !link.animate) { land(); return; }
-            const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any copy is added
-            const dur = ts.ms('--tide-dur-signature'), ease = ts.token('--tide-ease-out');
-            rows.forEach(function (row, i) {
+            const t = dest.getBoundingClientRect();
+            const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
+            rows.forEach(function (r) { r.classList.add('tide-promoting'); });
+            if (!t.width || ts.still() || !document.body.animate) { land(); return Promise.resolve(); }
+            const dur = ts.ms('--tide-dur-signature'), ease = ts.token('--tide-ease-out'), radius = getComputedStyle(dest).borderRadius;
+            return Promise.all(rows.map(function (row, i) {
                 const r = from[i];
-                if (!r.width || !r.height) return;
+                if (!r.width || !r.height) return null;
                 const g = ts.copy(row);
                 g.className = 'tide-morph';
                 g.style.left = r.left + 'px';
@@ -150,12 +154,12 @@ window.tideTriage = (function () {
                 g.style.width = r.width + 'px';
                 g.style.height = r.height + 'px';
                 document.body.appendChild(g);
-                Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .3, fill: 'forwards' }); });
-                g.animate([
-                    { transform: 'none', opacity: 1 },
-                    { transform: 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + (t.width / r.width) + ', ' + (t.height / r.height) + ')', opacity: .3 }
-                ], { duration: dur, delay: i * STAGGER, easing: ease, fill: 'both' }).finished.then(function () { g.remove(); if (i === 0) land(); }, function () { g.remove(); });
-            });
+                Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .4, fill: 'forwards' }); });
+                return g.animate([
+                    { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', opacity: 1 },
+                    { left: t.left + 'px', top: t.top + 'px', width: t.width + 'px', height: t.height + 'px', opacity: .15, borderRadius: radius }
+                ], { duration: dur, delay: i * STAGGER, easing: ease, fill: 'forwards' }).finished.then(function () { g.remove(); if (i === 0) land(); }, function () { g.remove(); });
+            })).then(function () { });
         },
         // The promote form opened: its title takes focus, selected, ready to retype.
         focusPromote: function () {

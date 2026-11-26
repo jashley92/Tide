@@ -302,6 +302,8 @@ a, .btn-link { color: var(--tide-accent-text); }
     transform-origin: bottom left;
     transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out);
     @starting-style { opacity: 0; transform: translateY(1rem) rotate(-1.5deg); } }
+/* A toast that left (flip.js): a copy where it was, fading out as the others close up. */
+.tide-toast.tide-leaving { position: fixed; z-index: var(--tide-z-toast); margin: 0; pointer-events: none; }
 .tide-modal-scrim, .tide-tour-scrim, .tide-atkm-backdrop, .tide-chart-tip {
     transition: opacity var(--tide-dur-base) var(--tide-ease-out);
     @starting-style { opacity: 0; } }

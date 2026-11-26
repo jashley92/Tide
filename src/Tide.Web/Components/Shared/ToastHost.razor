@@ -11,7 +11,7 @@
 }
 @* A region named Notifications, so the toasts are in a landmark (and found in a screen reader's list of them); its two
    live parts below announce as before. *@
-<section class="tide-toasts" aria-label="Notifications" @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
+<section class="tide-toasts" aria-label="Notifications" data-tide-flip=".tide-toast" data-tide-flip-exit @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
          @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
     <div role="status" aria-live="polite">
         @foreach (var t in toasts.Where(t => !t.IsError)) { @Toast(t) }

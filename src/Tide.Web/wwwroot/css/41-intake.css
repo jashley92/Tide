@@ -445,25 +445,24 @@
 .tide-evidence-thumb { max-width: 17.5rem; max-height: 10rem; }
 
 /* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four corners close
-   in on it. On a board card and a triage row. */
+   in on it. On a board card and a triage row; and on the Promoted tab as a promoted row lands in it. */
 /* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
-:where(.tide-kcard, .tide-triage-row) { position: relative; }
-:is(.tide-kcard, .tide-triage-row)::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+:where(.tide-kcard, .tide-triage-row, .tide-tabbar-item.tide-landed) { position: relative; }
+:is(.tide-kcard, .tide-triage-row, .tide-tabbar-item.tide-landed)::before { content: ""; position: absolute; inset: 0; pointer-events: none;
     border: 2px solid var(--tide-accent); --tide-bracket: .6rem;   /* each corner's arm */
     mask: conic-gradient(at var(--tide-bracket) var(--tide-bracket), #0000 75%, #000 0) 0 0 / calc(100% - var(--tide-bracket)) calc(100% - var(--tide-bracket));
     opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
 /* At rest they sit on the element's own edges, unscaled, so they never widen what's around them; they close in as they
    appear (a keyframe, so only while shown). */
 @media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); } }
-:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); }
+:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before, .tide-tabbar-item.tide-landed::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); }
 @keyframes tide-lock-on { from { transform: scale(calc(1 + .06 * var(--tide-motion))); } }
 
-/* Promote and keep triaging (triage.js): the promoted row, copied, reshapes itself into the sidebar's Articles, which
-   locks on as it lands. */
+/* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
+   into the Promoted tab's count, which locks on as it lands. */
+.tide-triage-row.tide-promoting { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
 .tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden; transform-origin: 0 0;
     background: var(--tide-surface-raised); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); box-shadow: var(--tide-elev-2); }
-.tide-nav a.tide-landed { animation: tide-landed var(--tide-dur-signature) var(--tide-ease-fade); }
-@keyframes tide-landed { from { background-color: color-mix(in srgb, var(--tide-side-accent) 35%, transparent); box-shadow: inset 0 0 0 2px var(--tide-side-accent); } }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
