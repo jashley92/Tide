@@ -111,7 +111,20 @@ window.tideShortcuts = (function () {
     // Read once; .matches follows a change to the system setting.
     var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     function still() { return !!(motion && motion.matches); }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still };
+    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration).
+    function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+    function ms(name) { return parseFloat(token(name)) || 0; }
+    // A copy of something to fly across the page (a card held, a row promoted): no ids to clash with the original's,
+    // hidden from assistive tech, and taking no clicks or focus.
+    function copy(el) {
+        var c = el.cloneNode(true);
+        c.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
+        c.removeAttribute('id');
+        c.setAttribute('aria-hidden', 'true');
+        c.inert = true;
+        return c;
+    }
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, token: token, ms: ms, copy: copy };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the

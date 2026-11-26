@@ -458,7 +458,7 @@
 
 /* Promote and keep triaging (triage.js): the promoted row, copied, reshapes itself into the sidebar's Articles, which
    locks on as it lands. */
-.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden;
+.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden; transform-origin: 0 0;
     background: var(--tide-surface-raised); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); box-shadow: var(--tide-elev-2); }
 .tide-nav a.tide-landed { animation: tide-landed var(--tide-dur-signature) var(--tide-ease-fade); }
 @keyframes tide-landed { from { background-color: color-mix(in srgb, var(--tide-side-accent) 35%, transparent); box-shadow: inset 0 0 0 2px var(--tide-side-accent); } }
