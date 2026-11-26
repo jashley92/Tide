@@ -55,6 +55,9 @@ public sealed partial class ReminderService
         // Actions closed since the last run's cutoff (every one, the first time): those before it were pruned then. One
         // reopened since has no closing time; closed again, it has a new one and comes round again.
         var pruned = await PrunePeriodsAsync(db, cutoff, ct) + await PruneClosedAsync(db, last?.AddDays(-MarkRetentionDays), cutoff, ct);
+        // The For you notices' retention rides on the same daily gate.
+        var notices = await Notices.NoticeService.PruneAsync(db, now, ct);
+        if (notices > 0) logger?.LogInformation("Pruned {Count} For you notices seen or waiting too long.", notices);
 
         // Saved only once it's all done: a run that failed partway does the same again at the next pass.
         if (await db.NotificationMarks.Where(m => m.Kind == PrunedMark && m.Key == PrunedKey)

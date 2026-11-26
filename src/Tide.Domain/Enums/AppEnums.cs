@@ -461,3 +461,25 @@ public enum AiDraftKind
     /// <summary>A brief's title slide line.</summary>
     TitleLine = 2,
 }
+
+/// <summary>What a <see cref="Entities.Notice"/> is about. Stored as a number: append, never renumber.</summary>
+public enum NoticeKind
+{
+    /// <summary>An article was handed to them to finish.</summary>
+    ArticleHandedToYou = 0,
+
+    /// <summary>They were asked to review an article.</summary>
+    ReviewAsked = 1,
+
+    /// <summary>An action was handed to a team they're on.</summary>
+    ActionHandedToTeam = 2,
+
+    /// <summary>An action was assigned to them by someone else.</summary>
+    ActionAssigned = 3,
+
+    /// <summary>A colleague asked them to cover or swap brief days.</summary>
+    RotationAsked = 4,
+
+    /// <summary>Their cover or swap request was approved or declined.</summary>
+    RotationDecided = 5,
+}

@@ -75,6 +75,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<OutreachTemplate> OutreachTemplates => Set<OutreachTemplate>();
     public DbSet<OutreachMessage> OutreachMessages => Set<OutreachMessage>();
     public DbSet<NotificationMark> NotificationMarks => Set<NotificationMark>();
+    public DbSet<Notice> Notices => Set<Notice>();
     public DbSet<Source> Sources => Set<Source>();
     public DbSet<FeedItem> FeedItems => Set<FeedItem>();
     public DbSet<FeedItemText> FeedItemTexts => Set<FeedItemText>();
@@ -731,6 +732,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Dialect).HasMaxLength(16);
             e.Property(x => x.Template).HasMaxLength(4000);
             e.Property(x => x.UpdatedBy).HasMaxLength(256);
+        });
+
+        b.Entity<Notice>(e =>
+        {
+            e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.ActorId).HasMaxLength(256);
+            e.Property(x => x.ActorName).HasMaxLength(256);
+            e.Property(x => x.Detail).HasMaxLength(Notice.MaxDetail);
+            // The panel lists one person's newest first, and the badge counts their unseen ones; the prune reads by age.
+            e.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.UserId, x.SeenAtUtc });
+            e.HasIndex(x => x.CreatedAtUtc);
         });
 
         b.Entity<NotificationMark>(e =>

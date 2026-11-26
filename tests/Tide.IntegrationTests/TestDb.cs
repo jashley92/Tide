@@ -297,7 +297,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         // Retrying, as production's SQL Server is (EnableRetryOnFailure): a transaction the code opens itself must then run
         // inside the execution strategy, and one that doesn't fails here as it would there.
         _options = Configure(new DbContextOptionsBuilder<AppDbContext>(), retrying)
-            .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new SearchDirtyInterceptor(), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
+            .AddInterceptors(new NoticeInterceptor(User, TimeProvider.System), new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new SearchDirtyInterceptor(), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
             .Options;
         if (_connection is not null)
         {
@@ -576,6 +576,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Settings(), Live);
 
     public ArticleService Articles() => new(this, User, Screenshots(), Clock, Settings());
+
+    public Tide.Application.Notices.NoticeService ForYou(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System);
 
     public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 

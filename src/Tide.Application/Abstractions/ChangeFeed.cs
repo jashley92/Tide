@@ -60,6 +60,9 @@ public sealed class ChangeFeed
 
     public static string Article(Guid id) => $"article:{id}";
 
+    /// <summary>One person's For you notices: one was written for them, or they saw some (in another tab, too).</summary>
+    public static string Notices(string userId) => $"notices:{userId}";
+
     /// <summary>An article's adversary and product tags, which the editor's We run and Threat actors pickers show. Apart from the article's
     /// own topic: a tag doesn't move the article's edit version, so its editor, brief and Present mode needn't hear it.</summary>
     public static string ArticleTags(Guid id) => $"article-tags:{id}";

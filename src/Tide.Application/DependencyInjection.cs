@@ -92,6 +92,7 @@ public static class DependencyInjection
 
         services.AddScoped<ArticleService>();
         services.AddScoped<ArticleHandoffService>();
+        services.AddScoped<Notices.NoticeService>();
         services.AddScoped<AssistService>();
         services.AddScoped<ProseAssistService>();
         services.AddScoped<HolidayService>();

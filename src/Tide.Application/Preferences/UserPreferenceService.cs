@@ -51,6 +51,9 @@ public static class UserPreferences
 
     public const string TourDue = "due", TourDone = "done";
 
+    /// <summary>Whether a For you notice that arrives shows a toast (on by default); the bell counts it either way.</summary>
+    public const string NoticeToasts = "notices.toasts";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -111,6 +114,7 @@ public static class UserPreferences
                 // Everyone who reads release highlights reads the team edition (RoleGroups.For).
                 Definition.Matching(WhatsNewSeen, "", Operations.ReleaseVersion.IsVersionOrNone, Permission.ReadTeamEdition),
                 new(TourState, ["", TourDue, TourDone], Permission.ReadTeamEdition),
+                new(NoticeToasts, [On, Off], Permission.ReadTeamEdition),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             // Each page's tip: the release whose tip the person dismissed there, for whoever can use the page.
