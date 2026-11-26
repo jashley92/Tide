@@ -745,6 +745,7 @@ else
     {
         _loading = true;
         (_changedBy, _noteChangedBy) = (null, null);
+        _justReady = false;   // a stamp is for marking it ready here (MarkReady), not for any status a reload brings
         _brief = await BriefSvc.GetAsync(_date);
         _follow = Followed();
         _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
@@ -847,8 +848,8 @@ else
     // changed by a correction.
     private bool CanFix => _canWrite && _brief is { Status: not BriefStatus.Sent };
 
-    // Set as the brief is marked ready here, so its status is stamped then, and only then (not on a page that opens on a
-    // brief already ready).
+    // Set as the brief is marked ready here, so its status is stamped then, and only then: every load clears it, so a
+    // page that opens on a brief already ready, or a reload that changes its status (the meeting, a colleague), isn't.
     private bool _justReady;
 
     private async Task MarkReady(bool ready)
