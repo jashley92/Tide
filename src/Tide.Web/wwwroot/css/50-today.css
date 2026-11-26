@@ -15,7 +15,15 @@
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .tide-step-now { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--tide-accent-text); }
 .tide-step.is-done .tide-step-ico { background: var(--tide-ok-soft); border-color: var(--tide-ok); color: var(--tide-ok); }
-.tide-step.is-current { background: var(--tide-accent-soft); box-shadow: inset 0 -3px 0 var(--tide-accent); }
+.tide-step.is-current { background: var(--tide-accent-soft); }
+/* Under each step, a segmented meter: half lit for the step that's on, full for one that's done. Lighting up, it steps
+   segment by segment like an instrument's. */
+.tide-step { position: relative; }
+.tide-step::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; pointer-events: none;
+    background: repeating-linear-gradient(90deg, var(--tide-meter, var(--tide-accent)) 0 6px, transparent 6px 9px);
+    clip-path: inset(0 100% 0 0); transition: clip-path var(--tide-move-signature) steps(8, end); }
+.tide-step.is-current::after { clip-path: inset(0 50% 0 0); }
+.tide-step.is-done::after { clip-path: inset(0); --tide-meter: var(--tide-ok); }
 .tide-step.is-current .tide-step-ico { border-color: var(--tide-accent); background: var(--tide-accent); color: var(--tide-surface); }
 .tide-step.is-attention .tide-step-ico { border-color: var(--tide-warn); color: var(--tide-warn); }
 /* Compact by the strip's own width, not the window's: beside an open sidebar it's narrow on a wide screen. */

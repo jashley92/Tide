@@ -89,7 +89,8 @@ else
         {
             <span class="tide-tabbar-count tide-tabbar-warn@(i.Ticked ? " tide-live-tick" : "")" @key="n"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>@n<span class="visually-hidden">@(" " + warning)</span></span>
         }
-        else if (i.Count is { } count) { <span class="tide-tabbar-count@(i.Ticked ? " tide-live-tick" : "")" @key="count">@count</span> }
+        else if (i.Count is { } ticked && i.Ticked) { <span class="tide-tabbar-count tide-live-tick" @key="ticked"><span class="tide-roll">@ticked</span></span> }
+        else if (i.Count is { } count) { <span class="tide-tabbar-count" @key="count">@count</span> }
         @if (i.Attention is { } note) { <span class="tide-tabbar-new">@note</span> }
     </text>;
 }

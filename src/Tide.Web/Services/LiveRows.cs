@@ -64,7 +64,7 @@ public sealed record LiveGhost<TKey>(TKey Key, string Text, bool AtEnd, TKey Bef
 
 /// <summary>
 /// The marks a live list wears for a moment, so a colleague's change is seen without moving anything: rows that arrived
-/// (tide-live-arrived: they slide in with a soft highlight), rows that changed (tide-live-changed: the highlight alone),
+/// (tide-live-arrived: they fade in under a scan pass), rows that changed (tide-live-changed: the scan pass alone),
 /// rows that left (a ghost line that fades and collapses), and arrivals not yet looked at (a "New" marker the page drops
 /// when the row is first selected). The highlight and the ghost clear themselves; the page re-renders when they do.
 /// Use on the page's circuit, as its state is; dispose with the page.

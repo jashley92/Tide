@@ -60,6 +60,7 @@
     --tide-move-fast: calc(var(--tide-dur-fast) * var(--tide-motion));
     --tide-move-base: calc(var(--tide-dur-base) * var(--tide-motion));
     --tide-move-panel: calc(var(--tide-dur-panel) * var(--tide-motion));
+    --tide-move-signature: calc(var(--tide-dur-signature) * var(--tide-motion));
     --tide-ease-out: cubic-bezier(.16, 1, .3, 1);      /* entering: quick, then lands (expo-out) */
     --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
     --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
