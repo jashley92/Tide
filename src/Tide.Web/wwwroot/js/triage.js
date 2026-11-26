@@ -117,39 +117,44 @@ window.tideTriage = (function () {
     }
 
     return {
-        // Promote and keep triaging: the promoted rows reshape themselves into the sidebar's Articles, where the drafts
-        // went, as the list lets them go (called just before it reloads, while they're still on the page). Each is a copy
-        // (the row itself goes with the reload) that takes the link's place and size as what's on it fades; the link then
-        // locks on for a moment. Without motion, or with the sidebar out of sight, the link's lock-on alone says where.
-        promoted: function () {
-            const rows = Array.prototype.slice.call(document.querySelectorAll('.tide-triage-row.selected, .tide-triage-row.tide-triage-picked'), 0, 8);
+        // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves into the sidebar's
+        // Articles, where the draft went, as the list lets them go (called just before it reloads, while they're still on
+        // the page). Each is a copy (the row itself goes with the reload) that moves and shrinks onto the link, a
+        // transform, as what's on it fades; the link then locks on. Without motion, or with the sidebar out of sight, the
+        // link's lock-on alone says where.
+        promoted: function (ids) {
+            const MORPHS = 8, STAGGER = 40;   // at most so many rows fly, each this many ms after the one before
+            const want = new Set(ids || []), ts = window.tideShortcuts;
+            const rows = Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
+                return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
+            }).slice(0, MORPHS);
             const link = document.querySelector('.tide-nav a[href="articles"]');
             if (!link || !rows.length) return;
             const land = function () {
                 link.classList.remove('tide-landed');
                 void link.offsetWidth;
                 link.classList.add('tide-landed');
-                setTimeout(function () { link.classList.remove('tide-landed'); }, 900);
+                link.addEventListener('animationend', function () { link.classList.remove('tide-landed'); }, { once: true });
             };
             const t = link.getBoundingClientRect();
-            if (!t.width || window.tideShortcuts.still() || !link.animate) { land(); return; }
-            const css = getComputedStyle(document.documentElement);
-            const dur = parseFloat(css.getPropertyValue('--tide-dur-signature')) || 600, ease = css.getPropertyValue('--tide-ease-out').trim() || 'ease-out';
+            if (!t.width || ts.still() || !link.animate) { land(); return; }
+            const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any copy is added
+            const dur = ts.ms('--tide-dur-signature'), ease = ts.token('--tide-ease-out');
             rows.forEach(function (row, i) {
-                const r = row.getBoundingClientRect();
-                if (!r.width) return;
-                const g = row.cloneNode(true);
-                g.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
-                g.removeAttribute('id');
-                g.setAttribute('aria-hidden', 'true');
-                g.inert = true;
+                const r = from[i];
+                if (!r.width || !r.height) return;
+                const g = ts.copy(row);
                 g.className = 'tide-morph';
+                g.style.left = r.left + 'px';
+                g.style.top = r.top + 'px';
+                g.style.width = r.width + 'px';
+                g.style.height = r.height + 'px';
                 document.body.appendChild(g);
-                Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .35, fill: 'forwards' }); });
+                Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .3, fill: 'forwards' }); });
                 g.animate([
-                    { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', opacity: 1 },
-                    { left: t.left + 'px', top: t.top + 'px', width: t.width + 'px', height: t.height + 'px', opacity: .3 }
-                ], { duration: dur, delay: i * 40, easing: ease, fill: 'both' }).finished.then(function () { g.remove(); if (i === 0) land(); }, function () { g.remove(); });
+                    { transform: 'none', opacity: 1 },
+                    { transform: 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + (t.width / r.width) + ', ' + (t.height / r.height) + ')', opacity: .3 }
+                ], { duration: dur, delay: i * STAGGER, easing: ease, fill: 'both' }).finished.then(function () { g.remove(); if (i === 0) land(); }, function () { g.remove(); });
             });
         },
         // The promote form opened: its title takes focus, selected, ready to retype.
