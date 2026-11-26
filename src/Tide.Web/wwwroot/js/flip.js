@@ -84,11 +84,23 @@ window.tideFlip = (function () {
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1; }); }
 
+    // A tab's count that rolls (tide-roll) is told the number it replaced, which rolls up and out as the new one comes in.
+    // (Blazor swaps the count element, keyed by its number, inside the same tab.)
+    function odometer(tab, added, gone) {
+        const was = gone.get(tab);
+        if (!was) return;
+        added.forEach(function (n) { const roll = n.querySelector('.tide-roll'); if (roll) roll.dataset.was = was; });
+    }
+
     function changed(records) {
-        const touched = new Set();
+        const touched = new Set(), gone = new Map();
+        records.forEach(function (m) {
+            elements(m.removedNodes).forEach(function (n) { if (n.classList.contains('tide-tabbar-count')) gone.set(m.target, n.textContent.trim()); });
+        });
         records.forEach(function (m) {
             const added = elements(m.addedNodes), removed = elements(m.removedNodes);
             if (!added.length && !removed.length) return;
+            if (added.length && gone.size) odometer(m.target, added, gone);
             // A list that just arrived, or one inside what arrived.
             added.forEach(function (n) {
                 if (n.matches(ROOTS)) touched.add(n);

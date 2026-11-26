@@ -39,12 +39,14 @@
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-live-tick { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
 @keyframes tide-live-tick { 30% { color: var(--tide-accent-text); } }
-/* A tab's count that changed flashes and rolls: the new number comes up from below, as on a counter. TabBar wraps it in
-   tide-roll only while it ticks, so the count at rest is just the number. */
+/* A tab's count that changed flashes and rolls like an odometer: the old number goes up and out (flip.js gives it,
+   data-was) as the new one comes up from below. TabBar wraps it in tide-roll only while it ticks, so the count at rest is
+   just the number. */
 .tide-tabbar-count.tide-live-tick { display: inline-block; overflow: hidden; vertical-align: middle; animation-name: tide-live-tick-count; }
 @keyframes tide-live-tick-count { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
-.tide-roll { display: inline-block; animation: tide-roll-in var(--tide-dur-base) var(--tide-ease-out); }
-@keyframes tide-roll-in { from { opacity: 0; transform: translateY(calc(110% * var(--tide-motion))); } }
+.tide-roll { display: inline-block; position: relative; animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out); }
+.tide-roll[data-was]::before { content: attr(data-was); position: absolute; left: 0; right: 0; bottom: 110%; text-align: center; }
+@keyframes tide-roll-in { from { transform: translateY(calc(110% * var(--tide-motion))); } }
 /* Changes held back while a form is open on the list: choosing it shows them. */
 .tide-live-pill { display: inline-flex; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) var(--tide-space-3); border: 1px solid var(--tide-accent);
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); font-size: var(--tide-text-sm);
@@ -444,25 +446,29 @@
 .tide-query-auto { min-height: 0; }
 .tide-evidence-thumb { max-width: 17.5rem; max-height: 10rem; }
 
-/* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four corners close
-   in on it. On a board card and a triage row; and on the Promoted tab as a promoted row lands in it. */
+/* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four thin corners
+   close in on it from just outside its edges. On a board card (5px out, in the gap between cards) and a triage row (on
+   its edges, as rows touch); and on the Promoted tab as a promoted row lands in it. */
 /* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
 :where(.tide-kcard, .tide-triage-row, .tide-tabbar-item.tide-landed) { position: relative; }
-:is(.tide-kcard, .tide-triage-row, .tide-tabbar-item.tide-landed)::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-    border: 2px solid var(--tide-accent); --tide-bracket: .6rem;   /* each corner's arm */
-    mask: conic-gradient(at var(--tide-bracket) var(--tide-bracket), #0000 75%, #000 0) 0 0 / calc(100% - var(--tide-bracket)) calc(100% - var(--tide-bracket));
-    opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
-/* At rest they sit on the element's own edges, unscaled, so they never widen what's around them; they close in as they
-   appear (a keyframe, so only while shown). */
-@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); } }
-:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before, .tide-tabbar-item.tide-landed::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); }
-@keyframes tide-lock-on { from { transform: scale(calc(1 + .06 * var(--tide-motion))); } }
+.tide-kcard, .tide-tabbar-item { --tide-bracket-out: 5px; }
+:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item.tide-landed::before {
+    content: ""; position: absolute; inset: calc(-1 * var(--tide-bracket-out, 0px)); pointer-events: none; --c: var(--tide-accent);
+    background:
+        linear-gradient(var(--c), var(--c)) top left / 9px 2px no-repeat, linear-gradient(var(--c), var(--c)) top left / 2px 9px no-repeat,
+        linear-gradient(var(--c), var(--c)) top right / 9px 2px no-repeat, linear-gradient(var(--c), var(--c)) top right / 2px 9px no-repeat,
+        linear-gradient(var(--c), var(--c)) bottom left / 9px 2px no-repeat, linear-gradient(var(--c), var(--c)) bottom left / 2px 9px no-repeat,
+        linear-gradient(var(--c), var(--c)) bottom right / 9px 2px no-repeat, linear-gradient(var(--c), var(--c)) bottom right / 2px 9px no-repeat;
+    opacity: 0; transform: scale(calc(1 + .06 * var(--tide-motion)));
+    transition: opacity var(--tide-dur-fast) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out); }
+@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; transform: none; } }
+:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before, .tide-tabbar-item.tide-landed::before { opacity: 1; transform: none; }
 
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. */
 .tide-triage-row.tide-promoting { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
-.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden;
-    background: var(--tide-surface-raised); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); box-shadow: var(--tide-elev-2); }
+.tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;
+    background: var(--tide-surface); box-shadow: var(--tide-elev-3); }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }

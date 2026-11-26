@@ -79,8 +79,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard.dragging > * { visibility: hidden; }
 .tide-kcard-away { display: none; }
 .tide-kslot { flex: none; }
+/* The ghost stays square (no lift or tilt: an instrument), outlined in the accent with its brackets locked on. */
 .tide-kcard-ghost { position: fixed; z-index: var(--tide-z-drop); margin: 0; pointer-events: none; cursor: grabbing;
-    box-shadow: var(--tide-elev-3); scale: 1.02; transition: scale var(--tide-move-fast) var(--tide-ease-out); @starting-style { scale: 1; } }
+    border-color: var(--tide-accent); box-shadow: var(--tide-elev-2); }
 /* .tide-kcard first: outranks the brackets at rest (41-intake, a later file), whatever the order. */
 .tide-kcard:is(.tide-kcard-ghost, .tide-kcard-held, .tide-kcard-locked)::before { opacity: 1; transform: none; }
 /* Someone else's drag (BoardDrags): the card they hold, the column it's over with their name, and a card they moved,

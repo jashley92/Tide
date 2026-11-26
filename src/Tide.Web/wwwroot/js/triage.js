@@ -148,8 +148,9 @@ window.tideTriage = (function () {
             return Promise.all(rows.map(function (row, i) {
                 const r = from[i];
                 if (!r.width || !r.height) return null;
-                const g = ts.copy(row, r);
-                g.className = 'tide-morph';
+                const g = ts.copy(row, r);   // the row itself, lifted, as it was before it faded
+                g.classList.remove('tide-promoting');
+                g.classList.add('tide-morph');
                 Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .4, fill: 'forwards' }); });
                 return g.animate([
                     { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', opacity: 1 },
