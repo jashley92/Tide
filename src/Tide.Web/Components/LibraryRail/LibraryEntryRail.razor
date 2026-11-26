@@ -111,7 +111,7 @@
         }
         else if (_uses.Total == 0)
         {
-            <p class="small tide-muted mb-0">No actions yet. They'll be listed here@(Kind == LibraryKind.Playbook ? "" : " with what each found").</p>
+            <SectionEmpty Icon="@Icons.Action">No actions yet. They'll be listed here@(Kind == LibraryKind.Playbook ? "" : " with what each found").</SectionEmpty>
         }
         else
         {

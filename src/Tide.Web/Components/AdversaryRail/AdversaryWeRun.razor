@@ -6,7 +6,7 @@
 <section class="tide-card" aria-labelledby="rail-werun-h">
     <h2 id="rail-werun-h">We run @if (Runs is not null) { <span class="tide-count">(@Runs.Count)</span> }</h2>
     @if (Runs is null) { <p class="small tide-muted mb-0">Loading…</p> }
-    else if (Runs.Count == 0) { <p class="small tide-muted mb-0">None of its articles is about a product on Our stack.</p> }
+    else if (Runs.Count == 0) { <SectionEmpty Icon="@Icons.Product">None of its articles is about a product on Our stack.</SectionEmpty> }
     else
     {
         <ul class="tide-rail-list">

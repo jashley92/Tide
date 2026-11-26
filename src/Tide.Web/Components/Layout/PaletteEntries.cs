@@ -113,9 +113,9 @@ public static class PaletteEntries
         var list = new List<PaletteEntry>();
         if (user.Has(Permission.ReadActions))
             list.AddRange(results.Actions.Items.Take(HitsPerKind).Select(a => new PaletteEntry(
-                $"{Ui.ActionLabel(a.Number)} {a.Title}", $"actions/{a.Number}", "bi-list-check", PaletteKind.Action, "Action · " + ActionService.StatusName(a.Status))));
+                $"{Ui.ActionLabel(a.Number)} {a.Title}", $"actions/{a.Number}", Icons.Action, PaletteKind.Action, "Action · " + ActionService.StatusName(a.Status))));
         list.AddRange(results.Articles.Items.Take(HitsPerKind).Select(a => new PaletteEntry(
-            a.Title, $"articles/{a.Id}", "bi-newspaper", PaletteKind.Article, "Article · " + a.Status)));
+            a.Title, $"articles/{a.Id}", Icons.Article, PaletteKind.Article, "Article · " + a.Status)));
         list.AddRange(results.Stories.Items.Take(HitsPerKind).Select(s => new PaletteEntry(
             s.Name, $"stories/{s.Id}", "bi-bezier2", PaletteKind.Story, "Story")));
         if (results.Query.Length > 0)

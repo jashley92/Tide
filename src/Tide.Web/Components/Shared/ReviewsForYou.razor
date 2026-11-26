@@ -8,7 +8,7 @@
     <h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2>
     @if (_asked.Count == 0)
     {
-        <p class="small tide-muted mb-0">None waiting.</p>
+        <SectionEmpty Icon="@Icons.Review">None waiting.</SectionEmpty>
     }
     else
     {
