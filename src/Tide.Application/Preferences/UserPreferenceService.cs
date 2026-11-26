@@ -23,6 +23,12 @@ public static class UserPreferences
 
     public const string Mine = "mine", MyTeams = "myteams", AllOpen = "open";
 
+    /// <summary>How the board's lanes are ordered: the team's own order, set by dragging (the default), or by due date or
+    /// priority.</summary>
+    public const string BoardSort = "actions.boardSort";
+
+    public const string SortManual = "manual", SortDue = "due", SortPriority = "priority";
+
     /// <summary>The query language a lookup's hunt query is written in on the Search page: the one the person chose
     /// there last (a dialect's key; the first dialect until they choose).</summary>
     public const string HuntDialect = "hunt.dialect";
@@ -104,6 +110,7 @@ public static class UserPreferences
         new Definition[]
             {
                 new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
+                new(BoardSort, [SortManual, SortDue, SortPriority], Permission.ReadActions),
                 new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
                 new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
                 new(TriagePromoteToBrief, [Off, On], Permission.WriteArticles),

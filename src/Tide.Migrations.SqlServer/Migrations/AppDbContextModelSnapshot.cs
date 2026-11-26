@@ -470,6 +470,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
+                    b.Property<int>("LaneRank")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
 
