@@ -243,7 +243,7 @@
     --tide-on-threat: #1a0a0b;   /* white on the dark theme's lighter red would be about 2.6:1 */
     --tide-shadow: rgba(0, 0, 0, .4);
     --tide-surface-raised: #263844;   /* a clear step above --tide-surface-2 and the chips' fill */
-    --tide-surface-raised-2: #30475a; /* hover inside it: lighter, where --tide-surface-2 would be a dip */
+    --tide-surface-raised-2: #2b3e4d; /* hover and fills inside it: lighter, where --tide-surface-2 would be a dip; muted text on it 4.7:1 */
     --tide-elev-2: 0 8px 24px var(--tide-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, .06);
     --tide-elev-3: 0 12px 32px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
     --bs-code-color: #c3cfdd;
