@@ -78,7 +78,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcol-incoming-by { font-size: .72rem; font-weight: var(--tide-weight-semibold); color: var(--tide-info); background: var(--tide-info-soft); border-radius: var(--tide-radius-pill); padding: .05rem .45rem; white-space: nowrap; }
 .tide-kcard-held { outline: 2px dashed var(--tide-info); outline-offset: 1px; opacity: .75; }
 .tide-kcard-note { display: flex; align-items: center; gap: .3rem; font-size: .76rem; font-weight: var(--tide-weight-semibold); color: var(--tide-info); }
-.tide-kcard-arrived { animation: tide-kcard-glow 2.4s ease-out 1; }
+.tide-kcard-arrived { animation: tide-kcard-glow var(--tide-dur-attention) var(--tide-ease-fade) 1; }
 @keyframes tide-kcard-glow { from { box-shadow: 0 0 0 3px var(--tide-info); } to { box-shadow: 0 0 0 3px transparent; } }
 @media (prefers-reduced-motion: reduce) { .tide-kcard-arrived { animation: none; box-shadow: 0 0 0 2px var(--tide-info); } }
 .tide-kcard-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
@@ -110,7 +110,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-comment-shots .tide-zoom, .tide-zoom-inline { width: auto; display: inline-block; }
 .tide-comment-shots img { max-width: 220px; max-height: 140px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
 .tide-comment-files { list-style: none; padding: 0; margin: .35rem 0 0; font-size: .86rem; display: flex; flex-direction: column; gap: .2rem; }
-.tide-comment-compose { border-radius: var(--tide-radius-lg); transition: background .1s; }
+.tide-comment-compose { border-radius: var(--tide-radius-lg); transition: background var(--tide-dur-fast); }
 .tide-comment-compose.tide-dropping { background: var(--tide-drop); outline: 2px dashed var(--tide-accent); outline-offset: 4px; }
 /* An action's Files: the add box, the list (newest first), each file's notes, hash and downloads, and the removed ones. */
 .tide-file-pick { padding: .5rem; border: 1px dashed var(--tide-border-strong); }
@@ -290,7 +290,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
    motion it goes at once instead. */
 .tide-oi-flash { position: absolute; z-index: 5; pointer-events: none; border-radius: var(--tide-radius-sm);
     background: color-mix(in srgb, var(--tide-accent) 22%, transparent); box-shadow: 0 0 0 2px var(--tide-focus-ring);
-    animation: tide-oi-flash 2s ease-out forwards; }
+    animation: tide-oi-flash var(--tide-dur-attention) var(--tide-ease-fade) forwards; }
 @keyframes tide-oi-flash { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .tide-oi-flash { animation-timing-function: steps(1, end); } }
 .tide-oi-check { min-height: 1.3rem; margin-top: .25rem; }

@@ -238,7 +238,7 @@
 .tide-files-head > h2 { margin: 0; min-width: 0; }
 .tide-files-head > .btn { flex: none; white-space: nowrap; }
 /* While files are dragged over the page (paste-drop.js sets html[data-file-drag]): where they go, over the whole window. */
-.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: 1040; pointer-events: none; align-items: center; justify-content: center;
+.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: var(--tide-z-drop); pointer-events: none; align-items: center; justify-content: center;
     gap: var(--tide-space-2); border: 2px dashed var(--tide-accent); border-radius: var(--tide-radius-xl); background: color-mix(in srgb, var(--tide-accent-soft) 85%, transparent);
     color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
 html[data-file-drag] .tide-page-drop { display: flex; }

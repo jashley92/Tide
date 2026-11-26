@@ -43,6 +43,44 @@
     --tide-width-side-collapsed: 64px; /* the sidebar folded to its icons */
     --tide-height-top: 3.25rem;  /* the top bar, and where what sticks or sits under it starts */
 
+    /* Motion. Every transition and animation takes its timing from these (StyleTokenTests fails a literal duration), so
+       the app keeps one rhythm. --tide-motion is the reduced-motion switch: 1 normally, 0 when the system asks for less
+       motion (below). A transition that moves something (a transform, a width, a margin) uses a --tide-move-* duration,
+       which the switch zeroes; a fade or color change uses --tide-dur-* alone, so the change still shows. Keyframe
+       animations still carry their own prefers-reduced-motion rules. */
+    --tide-motion: 1;
+    --tide-dur-fast: 120ms;        /* hover, color, a chevron turning */
+    --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
+    --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
+    --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
+    --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
+    --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */
+    --tide-dur-loop: 1.3s;         /* one cycle of a repeating animation: the loading shimmer, the tip's ring */
+    --tide-move-fast: calc(var(--tide-dur-fast) * var(--tide-motion));
+    --tide-move-base: calc(var(--tide-dur-base) * var(--tide-motion));
+    --tide-ease-out: cubic-bezier(.16, 1, .3, 1);      /* entering: quick, then lands (expo-out) */
+    --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
+    --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
+    --tide-ease-fade: cubic-bezier(0, 0, .58, 1);      /* a long fade dying away (CSS ease-out) */
+
+    /* Stacking: the layers over the page, lowest first. Stacking inside one component (1 to 20) stays literal. */
+    --tide-z-error: 1000;      /* Blazor's error bar */
+    --tide-z-rail: 1010;       /* the context rail docked beside the page */
+    --tide-z-top: 1020;        /* the top bar */
+    --tide-z-rail-over: 1025;  /* the rail over the page */
+    --tide-z-panel: 1030;      /* the export panel; the rail on a phone */
+    --tide-z-drop: 1040;       /* a file dragged over the page */
+    --tide-z-popover: 1090;    /* a popover's backdrop (the popover is one above) */
+    --tide-z-toast: 2000;      /* toasts, the skip link */
+    --tide-z-picker: 2500;     /* the ATT&CK picker's backdrop (its panel is one above) */
+    --tide-z-tip: 3000;        /* tips and the reconnect notice */
+    --tide-z-tour: 3390;       /* the tour's scrim */
+    --tide-z-tour-ring: 3395;  /* the ring around what a tour step points at */
+    --tide-z-tour-card: 3400;  /* the tour step's card */
+    --tide-z-tour-arrow: 3401; /* the arrow from the card to its target */
+    --tide-z-modal: 3500;      /* modal dialogs */
+    --tide-z-lightbox: 4000;   /* an image opened full screen */
+
     --tide-bg: #f5f7f9;
     --tide-surface: #ffffff;
     --tide-surface-2: #eef2f5;
@@ -211,6 +249,9 @@
     --tide-chart-11: #c9e3ff;
     --tide-chart-12: #3fb37a;
 }
+
+/* The reduced-motion switch: every --tide-move-* duration drops to 0 (see the motion tokens). */
+@media (prefers-reduced-motion: reduce) { :root { --tide-motion: 0; } }
 
 html, body { font-family: var(--tide-font-ui); background: var(--tide-bg); color: var(--tide-text); }
 html { scrollbar-gutter: stable; }

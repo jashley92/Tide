@@ -19,25 +19,25 @@
    that left is a ghost line saying who sent it where, which fades and collapses; a count that changed ticks. Each wash
    fades to the row's own background, so a selected row stays selected. With reduced motion nothing moves or collapses:
    the wash only fades its colour, and a ghost goes at once. */
-.tide-live-arrived { animation: tide-live-in .28s ease-out, tide-live-wash 2s ease-out; }
-.tide-live-changed { animation: tide-live-wash 2s ease-out; }
+.tide-live-arrived { animation: tide-live-in var(--tide-dur-panel) var(--tide-ease-out), tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
+.tide-live-changed { animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
 @keyframes tide-live-in { from { opacity: 0; transform: translateY(-.35rem); } }
 @keyframes tide-live-wash { from { background-color: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); } }
 .tide-live-ghost { display: flex; align-items: center; gap: var(--tide-space-2); max-height: 4rem; overflow: hidden; padding: var(--tide-space-2) .6rem;
     border-bottom: 1px solid var(--tide-border); color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-style: italic;
-    animation: tide-live-out .25s ease-in 1.3s forwards; }
+    animation: tide-live-out var(--tide-dur-base) var(--tide-ease-in) var(--tide-dur-linger) forwards; }
 @keyframes tide-live-out { to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0; } }
 /* An arrival not yet looked at; it goes when the row is first selected. */
 .tide-live-new { flex: none; align-self: center; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .4rem;
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); box-shadow: inset 0 0 0 1px var(--tide-accent); }
-.tide-live-tick { animation: tide-live-tick .6s ease-out; }
+.tide-live-tick { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
 .tide-tabbar-count.tide-live-tick { display: inline-block; animation-name: tide-live-tick-count; }
 @keyframes tide-live-tick { 30% { transform: scale(1.15); color: var(--tide-accent-text); } }
 @keyframes tide-live-tick-count { 30% { transform: scale(1.2); background-color: var(--tide-accent); color: var(--tide-surface); } }
 /* Changes held back while a form is open on the list: choosing it shows them. */
 .tide-live-pill { display: inline-flex; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) var(--tide-space-3); border: 1px solid var(--tide-accent);
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); font-size: var(--tide-text-sm);
-    font-weight: var(--tide-weight-semibold); animation: tide-live-in .28s ease-out; }
+    font-weight: var(--tide-weight-semibold); animation: tide-live-in var(--tide-dur-panel) var(--tide-ease-out); }
 .tide-live-pill:hover { background: var(--tide-surface); }
 .tide-live-pill:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-live-pill-dot { width: .5rem; height: .5rem; border-radius: var(--tide-radius-round); background: var(--tide-accent); }
@@ -45,9 +45,9 @@
 @keyframes tide-live-tick-colour { 30% { color: var(--tide-accent-text); } }
 @keyframes tide-live-tick-count-colour { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
 @media (prefers-reduced-motion: reduce) {
-    .tide-live-arrived, .tide-live-changed { animation: tide-live-wash 2s ease-out; }
-    .tide-live-ghost { animation: tide-live-gone 0s 1.3s forwards; }
-    .tide-live-tick { animation: tide-live-tick-colour .6s ease-out; }
+    .tide-live-arrived, .tide-live-changed { animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
+    .tide-live-ghost { animation: tide-live-gone 0s var(--tide-dur-linger) forwards; }
+    .tide-live-tick { animation: tide-live-tick-colour var(--tide-dur-signature) var(--tide-ease-out); }
     .tide-tabbar-count.tide-live-tick { animation-name: tide-live-tick-count-colour; }
     .tide-live-pill { animation: none; }
 }
@@ -181,8 +181,8 @@
 .tide-avatar-lg { width: 2.6rem; height: 2.6rem; font-size: .95rem; flex: 0 0 auto; }
 /* A popover panel under its button, over a backdrop that closes it on a click: the account menu and the filter bar's
    + Filter. The placement says which edge it lines up with. */
-.tide-popover-backdrop { position: fixed; inset: 0; z-index: 1090; }
-.tide-popover { position: absolute; top: calc(100% + .5rem); z-index: 1091; width: min(19rem, calc(100vw - 1.5rem));
+.tide-popover-backdrop { position: fixed; inset: 0; z-index: var(--tide-z-popover); }
+.tide-popover { position: absolute; top: calc(100% + .5rem); z-index: calc(var(--tide-z-popover) + 1); width: min(19rem, calc(100vw - 1.5rem));
     background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
     box-shadow: 0 8px 24px var(--tide-shadow); padding: .4rem; }
 .tide-popover-end { right: 0; }
@@ -278,7 +278,7 @@
 
 /* A confirmation (ConfirmDialog): a scrim, a small card that says what will happen, Cancel and a button
    named for the action. */
-.tide-modal-scrim { position: fixed; inset: 0; z-index: 3500; background: var(--tide-overlay); display: grid; place-items: center; padding: 1rem; }
+.tide-modal-scrim { position: fixed; inset: 0; z-index: var(--tide-z-modal); background: var(--tide-overlay); display: grid; place-items: center; padding: 1rem; }
 .tide-modal { width: min(30rem, 100%); background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border);
     border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong); padding: 1.1rem 1.2rem 1rem;
     max-height: calc(100vh - 2rem); overflow-y: auto; }
@@ -339,8 +339,8 @@
 .tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
 /* A page's tip (OnboardingHost): a small card beside the control it's about, once tips.js places it (is-placed, with
    top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
-   it is inert. Under a dialog (3500), over the page and its rail. */
-.tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3000;
+   it is inert. Under a dialog (--tide-z-modal), over the page and its rail. */
+.tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tip);
     width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
     padding: var(--tide-space-3) var(--tide-space-4); }
@@ -354,9 +354,9 @@
 /* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
    click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
    motion. */
-.tide-tip-ring { position: fixed; z-index: 3395; pointer-events: none; border: 2px solid var(--tide-focus-ring);
+.tide-tip-ring { position: fixed; z-index: var(--tide-z-tour-ring); pointer-events: none; border: 2px solid var(--tide-focus-ring);
     border-radius: var(--tide-radius-lg); box-shadow: 0 0 0 3px var(--tide-accent-soft);
-    animation: tide-ring-pulse 1.1s ease-out 2; }
+    animation: tide-ring-pulse var(--tide-dur-loop) var(--tide-ease-out) 2; }
 @keyframes tide-ring-pulse {
     0% { box-shadow: 0 0 0 0 var(--tide-focus-ring); }
     70% { box-shadow: 0 0 0 10px transparent; }
@@ -366,20 +366,20 @@
 /* The card's arrow (tips.js): a square turned on its corner, centred on the card's edge facing its control
    (data-side: where the card is, from the control), in the card's own surface and border so it reads as part of it.
    Over a tip, or over a step (is-step). */
-.tide-tip-arrow { position: fixed; z-index: 3001; width: 14px; height: 14px; background: var(--tide-surface);
+.tide-tip-arrow { position: fixed; z-index: calc(var(--tide-z-tip) + 1); width: 14px; height: 14px; background: var(--tide-surface);
     border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
-.tide-tip-arrow.is-step { z-index: 3401; }
+.tide-tip-arrow.is-step { z-index: var(--tide-z-tour-arrow); }
 .tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
 .tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
 /* A tour step (OnboardingHost): a dialog over a light scrim, so the control it's about shows; beside that control once
    tips.js places it (is-placed), as a tip is. */
-.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;
+.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tour-card);
     width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
 /* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.
    A click on it does nothing; Next, Back, Skip tour and Escape are the ways on. The ringed control shows through it. */
-.tide-tour-scrim { position: fixed; inset: 0; z-index: 3390; background: var(--tide-overlay); opacity: .4; }
+.tide-tour-scrim { position: fixed; inset: 0; z-index: var(--tide-z-tour); background: var(--tide-overlay); opacity: .4; }
 .tide-tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-3); }
 .tide-tour-head .tide-modal-title { display: flex; flex-direction: column; gap: var(--tide-space-1); margin: 0; }
 .tide-tour-count { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); }
@@ -443,7 +443,7 @@
 .tide-skel-row:last-child { border-bottom: 0; }
 .tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-md); background-color: var(--tide-surface-2);
     background-image: linear-gradient(90deg, transparent 0%, var(--tide-border) 50%, transparent 100%);
-    background-size: 200% 100%; background-repeat: no-repeat; animation: tide-shimmer 1.3s ease-in-out infinite; }
+    background-size: 200% 100%; background-repeat: no-repeat; animation: tide-shimmer var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
 @keyframes tide-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .tide-skel { animation: none; } }
 /* Varied widths read as text of different lengths rather than a grid. */

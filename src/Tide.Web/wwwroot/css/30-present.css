@@ -53,7 +53,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
     -webkit-mask-size: calc(100% - 12px) 100%, 12px 100%; mask-size: calc(100% - 12px) 100%, 12px 100%;
     -webkit-mask-position: 0 0, 100% 0; mask-position: 0 0, 100% 0;
     -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-    transition: --tide-fade-top .2s ease, --tide-fade-bottom .2s ease;
+    transition: --tide-fade-top var(--tide-dur-base) var(--tide-ease-out), --tide-fade-bottom var(--tide-dur-base) var(--tide-ease-out);
 }
 .tide-scrollfade.is-more-above { --tide-fade-top: 3em; }
 .tide-scrollfade.is-more-below { --tide-fade-bottom: 3.5em; }
@@ -70,7 +70,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-slide-back:hover { background: var(--tide-slide-accent-hover); }
 .tide-slide-dock > button:focus-visible { outline: 3px solid var(--tide-slide-accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
-    .tide-slide-body, .tide-scrollfade { scroll-behavior: auto; transition: none; }
+    .tide-slide-body, .tide-scrollfade { scroll-behavior: auto; }
 }
 @media (forced-colors: active) { .tide-scrollfade { -webkit-mask-image: none; mask-image: none; } }
 .tide-slide-kicker { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; color: var(--tide-slide-muted); font-size: .85em; margin-bottom: .6em; }
@@ -144,7 +144,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-follow.is-away { border-color: var(--tide-slide-accent); }
 .tide-follow.is-away .tide-follow-dot { background: var(--tide-slide-accent); }
 .tide-follow.is-reconnecting { color: var(--tide-slide-muted); }
-.tide-follow.is-reconnecting .tide-follow-dot { background: var(--tide-slide-warn); animation: tide-presence-pulse 2s ease-in-out infinite; }
+.tide-follow.is-reconnecting .tide-follow-dot { background: var(--tide-slide-warn); animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-in-out) infinite; }
 .tide-follow.is-dropped { border-color: var(--tide-slide-threat); }
 .tide-follow.is-dropped .tide-follow-dot { background: var(--tide-slide-threat); }
 @media (prefers-reduced-motion: reduce) { .tide-follow.is-reconnecting .tide-follow-dot { animation: none; } }
@@ -203,7 +203,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-note-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92em; line-height: 1.45; margin: .3em 0 0 2.1rem; }
 .tide-note-list textarea { margin-left: 2.1rem; width: calc(100% - 2.1rem); }
 .tide-notes-btn { position: relative; }
-.tide-notes-new { display: inline-block; min-width: 1.35em; margin-left: .3em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-warn); color: var(--tide-slide-bg); font-size: .78em; font-weight: var(--tide-weight-bold); line-height: 1.35em; text-align: center; animation: tide-presence-pulse 2s ease-in-out 3; }
+.tide-notes-new { display: inline-block; min-width: 1.35em; margin-left: .3em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-warn); color: var(--tide-slide-bg); font-size: .78em; font-weight: var(--tide-weight-bold); line-height: 1.35em; text-align: center; animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-in-out) 3; }
 @media (prefers-reduced-motion: reduce) { .tide-notes-new { animation: none; } }
 .tide-present-notes .tide-note-list textarea { min-height: 4em; }
 .tide-present-notes textarea.tide-autogrow { max-height: 30vh; }   /* the panel floats over the slide */
@@ -213,7 +213,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-alarm-banner { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .6rem; margin-bottom: 1rem; padding: .5rem .9rem; border: 1px solid var(--tide-threat); border-radius: var(--tide-radius-lg); background: var(--tide-threat-soft); color: var(--tide-text); }
 .tide-alarm-icon { color: var(--tide-threat); line-height: 1.5; }
 .tide-alarm-text { flex: 1 1 20rem; min-width: 0; }
-.tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse 2s ease-in-out infinite; }
+.tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-in-out) infinite; }
 @media (prefers-reduced-motion: reduce) { .tide-live-dot { animation: none; } }
 .tide-live-count { display: inline-block; min-width: 1.3em; margin-left: .2em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-accent-text); font-size: .8em; }
 .tide-meeting-notes-group + .tide-meeting-notes-group { margin-top: .5rem; }
