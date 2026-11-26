@@ -47,8 +47,8 @@
     /* Motion. Every transition and animation takes its timing from these (StyleTokenTests fails a literal duration), so
        the app keeps one rhythm. --tide-motion is the reduced-motion switch: 1 normally, 0 when the system asks for less
        motion (below). A transition that moves something (a transform, a width, a margin) uses a --tide-move-* duration,
-       which the switch zeroes; a fade or color change uses --tide-dur-* alone, so the change still shows. Keyframe
-       animations still carry their own prefers-reduced-motion rules. */
+       which the switch zeroes; a fade or color change uses --tide-dur-* alone, so the change still shows. A keyframe
+       animation that moves scales its distance by --tide-motion, or carries its own prefers-reduced-motion rule. */
     --tide-motion: 1;
     --tide-dur-fast: 120ms;        /* hover, color, a chevron turning */
     --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
@@ -281,16 +281,29 @@ a, .btn-link { color: var(--tide-accent-text); }
 .tide-modal, .tide-tip, .tide-atkm-panel {
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
 
-/* How they arrive. A menu, popover or dialog unfolds from its top edge like a folded note opened; a dialog's scrim
-   fades in under it. Leaving is instant: Blazor takes them out of the page. Under reduced motion only the fade is left. */
-.tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-modal {
+/* How they arrive. Leaving is instant: Blazor takes them out of the page. Under reduced motion only the fades are left.
+   Dialogs, tips and the dropdowns no script places unfold from their top edge like a folded note opened. What popout.js
+   places (menus, popovers, the attach and export panels) fades in while what's on it unfolds: popout.js measures the
+   panel as it opens, and a transform on the panel itself would throw that off. Toasts drop in like a paper slip, and
+   scrims and the chart's tip fade. A new floating surface joins one of these lists as well as the ones above. */
+.tide-modal, .tide-tip, .tide-atkm-panel, .tide-combo-pop, .tide-oi-suggest {
     transform-origin: top center;
-    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out); }
-.tide-modal-scrim { transition: opacity var(--tide-dur-base) var(--tide-ease-out); }
-@starting-style {
-    .tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-modal { opacity: 0; transform: perspective(50rem) rotateX(-40deg); }
-    .tide-modal-scrim { opacity: 0; }
-}
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: perspective(50rem) rotateX(-40deg); } }
+.tide-popover, .tide-attach-panel, .tide-export-panel {
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { opacity: 0; } }
+:is(.tide-popover, .tide-attach-panel, .tide-export-panel) > * {
+    transform-origin: top center;
+    transition: transform var(--tide-move-base) var(--tide-ease-out);
+    @starting-style { transform: perspective(50rem) rotateX(-30deg); } }
+.tide-toast {
+    transform-origin: bottom left;
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: translateY(1rem) rotate(-1.5deg); } }
+.tide-modal-scrim, .tide-tour-scrim, .tide-atkm-backdrop, .tide-chart-tip {
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { opacity: 0; } }
 .form-text { color: var(--tide-text-muted) !important; }
 
 .btn-primary {
