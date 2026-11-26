@@ -3,18 +3,21 @@
 // only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
 // The drag is by pointer events (mouse, pen and touch alike), not the browser's drag and drop, so the card can be lifted,
 // follow the pointer and settle where it lands: a mouse or pen starts it by moving a few pixels with the button down, a finger by
-// holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost); the card itself
-// stays in its lane as the dashed gap it left, until .NET moves it. Esc cancels; a press that isn't a drag is a click.
+// holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost). Over its own lane
+// the card itself stays as the dashed gap it left; over another lane it leaves its own (which closes up) and a dashed
+// slot opens where it would land, the cards there sliding aside to make room (flip.js moves them). Lanes are sorted
+// (ActionKanban.LaneOrder), so the slot opens at the card's place in that order, not under the pointer. Esc cancels; a
+// press that isn't a drag is a click.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
 // few calls a drag, not the pointer's path), so everyone else's board can show who is moving it and where (BoardDrags).
-// When someone else's move arrives, play() slides the card in from the column it left.
+// A card that moves for any other reason (its Move menu, someone else's move) travels from where it was (flip.js).
 // The Move menu, from the keyboard: opening it focuses its first option (focusMenu), the arrows and Home/End move
 // between its options, and Esc gives focus back to the Move button (.NET closes the menu). After a move from it, focus
 // goes to the card's Move button in its new lane, or when it has left the board (closed), to the card that was after it
 // in its lane, else the one before, else the lane's heading (focusPlace). A card dragged (pressing it gives it focus) does the
 // same once its drop is done.
 window.tideBoard = (function () {
-    let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null;
+    let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null, slot = null;
     const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
@@ -44,6 +47,29 @@ window.tideBoard = (function () {
         over = null;
         marked = null;
         if (root) mark(null);
+    }
+
+    // Over another lane, the slot opens there at the card's place in its order, and the card leaves its own lane; over its
+    // own lane, a closed chip or nothing, the slot goes and the card is back as the gap it left.
+    function makeRoom(col, card) {
+        const lane = col && col.classList.contains('tide-kcol') ? col.querySelector('.tide-kcol-cards') : null;
+        if (!lane) { clearRoom(card); return; }
+        if (!slot) {
+            slot = document.createElement('div');
+            slot.className = 'tide-kslot';
+            slot.setAttribute('aria-hidden', 'true');
+            slot.style.height = card.offsetHeight + 'px';
+        }
+        const mine = card.dataset.order || '';
+        const before = Array.prototype.find.call(lane.querySelectorAll('.tide-kcard'), function (c) { return c !== card && (c.dataset.order || '') > mine; })
+            || lane.querySelector('.tide-kcol-more, .tide-kcol-drop');
+        if (slot.parentNode !== lane || slot.nextElementSibling !== before) lane.insertBefore(slot, before);
+        card.classList.add('tide-kcard-away');
+    }
+
+    function clearRoom(card) {
+        if (slot) { slot.remove(); slot = null; }
+        if (card) card.classList.remove('tide-kcard-away');
     }
 
     // Pressed on a card it may move: it may become a drag. While it's pressed (only then), the page's pointer moves and
@@ -81,14 +107,9 @@ window.tideBoard = (function () {
         dragging = card;
         over = null;
         try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
-        ghost = window.tideShortcuts.copy(card);
+        ghost = window.tideShortcuts.copy(card, r);
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
-        ghost.style.left = r.left + 'px';
-        ghost.style.top = r.top + 'px';
-        ghost.style.width = r.width + 'px';
-        ghost.style.height = r.height + 'px';
-        document.body.appendChild(ghost);
         const sel = window.getSelection && window.getSelection();
         if (sel) sel.removeAllRanges();
         card.classList.add('dragging');
@@ -111,6 +132,7 @@ window.tideBoard = (function () {
         if (to === marked) return;
         marked = to;
         mark(to);
+        makeRoom(to, dragging);
         report(to ? to.dataset.status : null);
     }
 
@@ -121,15 +143,21 @@ window.tideBoard = (function () {
         setTimeout(function () { window.removeEventListener('click', stop, true); }, 0);
     }
 
-    // The ghost glides from where it was let go to where the card now is, and the card shows again as it arrives, its
-    // brackets locked on for a moment.
+    // Brackets locked onto a card for a moment: it has landed.
+    function lockOn(card) {
+        card.classList.add('tide-kcard-locked');
+        setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
+    }
+
+    // The slot goes and the ghost glides from where it was let go to where the card now is (where the slot was, once .NET
+    // has moved it there), and the card shows again as it arrives, its brackets locked on.
     function settle(g, card) {
+        clearRoom(card);
         const done = function () {
             g.remove();
             if (!card) return;
             card.style.visibility = '';
-            card.classList.add('tide-kcard-locked');
-            setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
+            lockOn(card);
         };
         if (!card || window.tideShortcuts.still() || !g.animate) { done(); return; }
         const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
@@ -137,16 +165,6 @@ window.tideBoard = (function () {
         g.animate([{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
             { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out'), fill: 'forwards' })
             .finished.then(done, done);
-    }
-
-    // A card .NET moved after its ghost had already settled back (it was asking first, or slow to answer) glides on from
-    // where it was to where it is.
-    function glide(card, was) {
-        if (!card || !was || window.tideShortcuts.still() || !card.animate) return;
-        const now = card.getBoundingClientRect(), dx = was.left - now.left, dy = was.top - now.top;
-        if (!dx && !dy) return;
-        card.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }],
-            { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
     }
 
     function onPointerUp(e) {
@@ -159,23 +177,19 @@ window.tideBoard = (function () {
         ghost = null;
         end();
         if (!to || !ref) { settle(g, card); return; }
-        // The ghost settles once .NET has moved the card; if it's still asking after a moment (a drop on the closed strip
-        // opens a dialog first) it settles back where the card is, and the card glides on if .NET then moves it.
+        // The ghost settles once .NET has moved the card (into the slot); if it's still asking after a moment (a drop on
+        // the closed strip opens a dialog first) it settles back where the card is, which travels on if .NET then moves it.
         const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
-        let landed = false, was = null;
+        let landed = false;
         const land = function () {
             if (landed) return;
             landed = true;
-            requestAnimationFrame(function () { const c = current(); was = c && c.getBoundingClientRect(); settle(g, c); });
+            requestAnimationFrame(function () { const c = current(); settle(g, c); });
         };
         setTimeout(land, ASKING);
         ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
-            const late = landed;
             land();
-            requestAnimationFrame(function () {
-                if (late) glide(current(), was);
-                if (place) focusPlace(id, place.next, place.prev, place.heading);
-            });
+            requestAnimationFrame(function () { if (place) focusPlace(id, place.next, place.prev, place.heading); });
         }, land);
     }
 
@@ -196,22 +210,6 @@ window.tideBoard = (function () {
     function onTouchMove(e) { if (press && press.ready) e.preventDefault(); }
     function onContextMenu(e) { if (press && press.touch) e.preventDefault(); }
     function onSelectStart(e) { if (press) e.preventDefault(); }
-
-    // Someone else moved these cards: each slides in from the column it left (the card's glow and "Moved by" are
-    // rendered by .NET). Without motion (the person's setting, or no Web Animations), the glow alone says it arrived.
-    function play(moves) {
-        if (!root || !moves) return;
-        const still = window.tideShortcuts.still();
-        moves.forEach(function (m) {
-            const card = root.querySelector('.tide-kcard[data-id="' + m.id + '"]');
-            if (!card) return;
-            const from = root.querySelector('.tide-kcol[data-status="' + m.from + '"] .tide-kcol-cards');
-            if (still || !from || !card.animate) return;
-            const dx = from.getBoundingClientRect().left - card.getBoundingClientRect().left;
-            card.animate([{ transform: 'translateX(' + dx + 'px)', opacity: .6 }, { transform: 'none', opacity: 1 }],
-                { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
-        });
-    }
 
     function card(id) { return root ? root.querySelector('.tide-kcard[data-id="' + id + '"]') : null; }
 
@@ -235,8 +233,11 @@ window.tideBoard = (function () {
         return !!el;
     }
 
+    // After a move (its Move menu, or a drop): the card, if still on the board, locks on where it landed; focus goes there.
     function focusPlace(id, next, prev, heading) {
-        if (focusCard(card(id)) || (next && focusCard(card(next))) || (prev && focusCard(card(prev)))) return;
+        const moved = card(id);
+        if (moved) lockOn(moved);
+        if (focusCard(moved) || (next && focusCard(card(next))) || (prev && focusCard(card(prev)))) return;
         const h = heading && document.getElementById(heading);
         if (h) h.focus();
     }
@@ -267,7 +268,6 @@ window.tideBoard = (function () {
     }
 
     return {
-        play: play,
         reveal: reveal,
         focusMenu: focusMenu,
         focusPlace: focusPlace,

@@ -115,13 +115,21 @@ window.tideShortcuts = (function () {
     function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
     function ms(name) { return parseFloat(token(name)) || 0; }
     // A copy of something to fly across the page (a card held, a row promoted): no ids to clash with the original's,
-    // hidden from assistive tech, and taking no clicks or focus.
-    function copy(el) {
+    // hidden from assistive tech, and taking no clicks or focus. Given a rect, it is laid over the page there (its class
+    // makes it fixed).
+    function copy(el, rect) {
         var c = el.cloneNode(true);
         c.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
         c.removeAttribute('id');
         c.setAttribute('aria-hidden', 'true');
         c.inert = true;
+        if (rect) {
+            c.style.left = rect.left + 'px';
+            c.style.top = rect.top + 'px';
+            c.style.width = rect.width + 'px';
+            c.style.height = rect.height + 'px';
+            document.body.appendChild(c);
+        }
         return c;
     }
     return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, token: token, ms: ms, copy: copy };
@@ -225,11 +233,27 @@ window.tideRail = (function () {
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.
     function setOver(open) {
+        if (!open && over()) leave();
         if (open) root.setAttribute('data-rail-over', '');
         else root.removeAttribute('data-rail-over');
         sync();
         var to = open ? rail() : toggleBtn();
         if (to) to.focus();
+    }
+    // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does, as the rail
+    // itself is hidden at once (60-rail-and-pages.css). With reduced motion it fades where it is.
+    function leave() {
+        var r = rail(), ts = window.tideShortcuts;
+        if (!r || !document.body.animate) return;
+        var c = ts.copy(r);
+        c.classList.add('tide-leaving');
+        c.removeAttribute('role');
+        c.removeAttribute('aria-modal');
+        document.body.appendChild(c);
+        var w = r.offsetWidth;
+        c.animate([{ right: '0px', opacity: 1 }, { right: (ts.still() ? 0 : -w) + 'px', opacity: 0 }],
+            { duration: ts.ms('--tide-dur-panel') * .7, easing: ts.token('--tide-ease-in'), fill: 'forwards' })
+            .finished.then(function () { c.remove(); }, function () { c.remove(); });
     }
     function toggle() {
         var r = rail();

@@ -56,14 +56,12 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
     transition: --tide-fade-top var(--tide-dur-base) var(--tide-ease-out), --tide-fade-bottom var(--tide-dur-base) var(--tide-ease-out);
 }
 .tide-scrollfade.is-more-above { --tide-fade-top: 3em; }
-/* A new slide turns in like a page laid over the last: it swings in from its left edge and settles flat. Each slide's
-   body is new (keyed by .NET), so this runs once per slide change, for the presenter and each follower alike;
-   present.js measures with clientHeight and scrollHeight, which the turn doesn't touch. */
-.tide-slide-body.tide-scrollfade {
-    transform-origin: left center;
-    transition: --tide-fade-top var(--tide-dur-base) var(--tide-ease-out), --tide-fade-bottom var(--tide-dur-base) var(--tide-ease-out),
-        opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-signature) var(--tide-ease-out);
-    @starting-style { opacity: 0; transform: perspective(150rem) rotateY(-16deg); } }
+/* A slide change turns the page (present.js): the old page, a copy, turns away from its left edge over the new one; going
+   back, the new page turns in over the old. Each is the slide's own color, so the other doesn't show through. */
+.tide-slide-body.tide-scrollfade { transform-origin: left center; }
+.tide-slide > .tide-slide-body { grid-area: 1 / 1; }
+.tide-slide > .tide-page-turning { z-index: 2; transform-origin: left center; pointer-events: none; overflow: hidden; background: var(--tide-slide-bg); }
+.tide-slide > .tide-slide-body.tide-page-over { position: relative; z-index: 3; background: var(--tide-slide-bg); }
 .tide-scrollfade.is-more-below { --tide-fade-bottom: 3.5em; }
 /* "More ↓": at the bottom of the slide while there's more below; and, for a follower who scrolled by hand, the way back
    to the presenter's place beside it. */

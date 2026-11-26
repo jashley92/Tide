@@ -126,7 +126,8 @@
 .content > .tide-board { flex: 1 1 0; min-height: 20rem; display: flex; flex-direction: column; gap: var(--tide-space-3); }
 .tide-board > .tide-kanban { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 .tide-board .tide-kcol { display: flex; flex-direction: column; min-height: 0; }
-.tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; }
+/* Room round the cards for their brackets, which sit 5px outside them, inside the lane's scroll. */
+.tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px; margin: -6px; }
 /* A narrow window (700px and less), where the head above takes much of the height: each row of lanes keeps room to read
    a card (12.5rem, about 9rem of cards under its head), and the board grows past the first screen, the page scrolling,
    rather than squeezing them. */

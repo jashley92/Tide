@@ -71,13 +71,17 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcol-more { align-self: center; }
 .tide-kcard { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .55rem .65rem; display: flex; flex-direction: column; gap: .3rem; }
 .tide-kcard[draggable="true"] { cursor: grab; -webkit-user-select: none; user-select: none; }
-/* Dragging (board.js): the card held is a copy, the ghost, lifted over the page with its brackets locked on; the card
-   itself stays in its lane as the dashed gap it left until .NET moves it, and is bracketed for a moment when it lands.
-   A finger's long press brackets the card to say it's held. */
-.tide-kcard.dragging { border-style: dashed; border-color: var(--tide-accent); background: transparent; box-shadow: none; }
+/* Dragging (board.js): the card held is a copy, the ghost, lifted over the page with its brackets locked on. Over its own
+   lane the card itself is the dashed gap it left; over another it leaves (away) and a dashed slot opens there where it
+   would land, the cards around sliding aside (flip.js). It is bracketed for a moment when it lands. A finger's long
+   press brackets the card to say it's held. */
+.tide-kcard.dragging, .tide-kslot { border: 1px dashed var(--tide-accent); border-radius: var(--tide-radius-lg); background: transparent; box-shadow: none; }
 .tide-kcard.dragging > * { visibility: hidden; }
+.tide-kcard-away { display: none; }
+.tide-kslot { flex: none; }
+/* The ghost stays square (no lift or tilt: an instrument), outlined in the accent with its brackets locked on. */
 .tide-kcard-ghost { position: fixed; z-index: var(--tide-z-drop); margin: 0; pointer-events: none; cursor: grabbing;
-    box-shadow: var(--tide-elev-3); scale: 1.02; transition: scale var(--tide-move-fast) var(--tide-ease-out); @starting-style { scale: 1; } }
+    border-color: var(--tide-accent); box-shadow: var(--tide-elev-2); }
 /* .tide-kcard first: outranks the brackets at rest (41-intake, a later file), whatever the order. */
 .tide-kcard:is(.tide-kcard-ghost, .tide-kcard-held, .tide-kcard-locked)::before { opacity: 1; transform: none; }
 /* Someone else's drag (BoardDrags): the card they hold, the column it's over with their name, and a card they moved,

@@ -179,6 +179,7 @@ window.tidePresent = (function () {
         const page = root || document.querySelector('.tide-present');
         const slide = root && root.querySelector(':scope > .tide-slide');
         const targets = [page && page.parentElement, root, slide].filter(Boolean);
+        if (slide && !turnedFrom) turnedFrom = slideNo(slide);
         if (children && !same(targets, watched)) {
             children.disconnect();
             for (const t of targets) children.observe(t, { childList: true });
@@ -209,6 +210,38 @@ window.tidePresent = (function () {
         cards = now;
     }
 
+    // The slide changed (its body is new, keyed by .NET): the page turns. Going on, the old page lifts from its left edge
+    // and turns away, darkening, uncovering the new one, which brightens as it settles. Going back, the new page turns
+    // in over the old the other way. For the presenter and each follower alike. With reduced motion, the old page fades
+    // out over the new. The old page is the copy settle() last took of the slide as it was drawn, since by the time the
+    // new body arrives .NET has emptied and taken away the old one.
+    let turnedFrom = 0, lastPage = null;
+    function slideNo(s) { const m = /Slide (\d+)/.exec(s.getAttribute('aria-label') || ''); return m ? +m[1] : 0; }
+    function turn() {
+        const slide = document.querySelector('#present-root > .tide-slide'), ts = window.tideShortcuts;
+        if (!slide) return;
+        const no = slideNo(slide), was = turnedFrom, last = lastPage, now = slideBody();
+        if (!was || no === was || !last || !now || !now.animate) return;
+        turnedFrom = no;
+        lastPage = null;
+        const back = no < was, still = ts.still(), dur = ts.ms('--tide-dur-signature') * .9;
+        const page = ts.copy(last.page);
+        page.classList.remove('tide-scrollfade');
+        page.classList.add('tide-page-turning');
+        slide.appendChild(page);
+        page.scrollTop = last.top;
+        const flat = { transform: 'perspective(1400px) rotateY(0deg)', filter: 'brightness(1)', opacity: 1 };
+        const away = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -100) + 'deg)', filter: 'brightness(.55)', opacity: still ? 0 : 1 };
+        const done = function () { page.remove(); now.classList.remove('tide-page-over'); };
+        if (back && !still) {
+            now.classList.add('tide-page-over');
+            now.animate([away, flat], { duration: dur, easing: ts.token('--tide-ease-out') }).finished.then(done, done);
+            return;
+        }
+        page.animate([flat, away], { duration: dur, easing: ts.token('--tide-ease-in'), fill: 'forwards' }).finished.then(done, done);
+        now.animate([{ filter: 'brightness(.7)' }, { filter: 'brightness(1)' }], { duration: dur / .9, easing: ts.token('--tide-ease-out') });
+    }
+
     function settle() {
         frame = 0;
         watch();
@@ -216,6 +249,7 @@ window.tidePresent = (function () {
         if (!el || sizeOf(el) === fittedFor) return;
         fit(el);
         fittedFor = sizeOf(el);
+        lastPage = { page: el.cloneNode(true), top: el.scrollTop };
     }
 
     function onCardSizes(entries) {
@@ -412,7 +446,7 @@ window.tidePresent = (function () {
                 sizes = new ResizeObserver(schedule);
                 cardSizes = new ResizeObserver(onCardSizes);
             }
-            children = new MutationObserver(schedule);
+            children = new MutationObserver(function () { turn(); schedule(); });
             if (document.fonts) document.fonts.ready.then(schedule, function () { /* fonts never settled: the next resize re-fits */ });
             schedule();
         },
