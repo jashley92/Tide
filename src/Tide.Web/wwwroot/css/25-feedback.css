@@ -10,8 +10,7 @@
 .tide-toast-error > .bi { color: var(--tide-threat); }
 .tide-toast-warn { border-left-color: var(--tide-warn); }
 .tide-toast-warn > .bi { color: var(--tide-warn); }
-@keyframes tide-toast-in { from { transform: translateY(.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .tide-toast { animation: none; } }
+@keyframes tide-toast-in { from { opacity: 0; transform: translateY(calc(1rem * var(--tide-motion))) rotate(calc(-1.5deg * var(--tide-motion))); } }
 .tide-toast button { background: none; border: 0; color: inherit; opacity: .75; margin-left: auto; padding: 0; }
 /* Dismiss: a target of at least 24x24 CSS px (WCAG 2.5.8), its glyph centred; the toast's own padding stays as it was. */
 .tide-toast .tide-toast-dismiss { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;

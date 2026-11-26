@@ -59,6 +59,7 @@
     --tide-dur-loop: 1.3s;         /* one cycle of a repeating animation: the loading shimmer, the tip's ring */
     --tide-move-fast: calc(var(--tide-dur-fast) * var(--tide-motion));
     --tide-move-base: calc(var(--tide-dur-base) * var(--tide-motion));
+    --tide-move-panel: calc(var(--tide-dur-panel) * var(--tide-motion));
     --tide-ease-out: cubic-bezier(.16, 1, .3, 1);      /* entering: quick, then lands (expo-out) */
     --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
     --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
@@ -279,6 +280,17 @@ a, .btn-link { color: var(--tide-accent-text); }
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); --tide-surface-2: var(--tide-surface-raised-2); }
 .tide-modal, .tide-tip, .tide-atkm-panel {
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
+
+/* How they arrive. A menu, popover or dialog unfolds from its top edge like a folded note opened; a dialog's scrim
+   fades in under it. Leaving is instant: Blazor takes them out of the page. Under reduced motion only the fade is left. */
+.tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-modal {
+    transform-origin: top center;
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-out); }
+.tide-modal-scrim { transition: opacity var(--tide-dur-base) var(--tide-ease-out); }
+@starting-style {
+    .tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-modal { opacity: 0; transform: perspective(50rem) rotateX(-40deg); }
+    .tide-modal-scrim { opacity: 0; }
+}
 .form-text { color: var(--tide-text-muted) !important; }
 
 .btn-primary {
