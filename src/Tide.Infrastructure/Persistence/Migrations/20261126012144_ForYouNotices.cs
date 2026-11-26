@@ -1,0 +1,56 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Tide.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class ForYouNotices : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "Notices",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    UserId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    Kind = table.Column<int>(type: "INTEGER", nullable: false),
+                    SubjectId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ActorId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    ActorName = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    Detail = table.Column<string>(type: "TEXT", maxLength: 500, nullable: true),
+                    CreatedAtUtc = table.Column<long>(type: "INTEGER", nullable: false),
+                    SeenAtUtc = table.Column<long>(type: "INTEGER", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Notices", x => x.Id);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notices_CreatedAtUtc",
+                table: "Notices",
+                column: "CreatedAtUtc");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notices_UserId_CreatedAtUtc",
+                table: "Notices",
+                columns: new[] { "UserId", "CreatedAtUtc" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notices_UserId_SeenAtUtc",
+                table: "Notices",
+                columns: new[] { "UserId", "SeenAtUtc" });
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "Notices");
+        }
+    }
+}

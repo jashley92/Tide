@@ -77,6 +77,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<OutreachTemplate> OutreachTemplates { get; }
     DbSet<OutreachMessage> OutreachMessages { get; }
     DbSet<NotificationMark> NotificationMarks { get; }
+    DbSet<Notice> Notices { get; }
     DbSet<Source> Sources { get; }
     DbSet<FeedItem> FeedItems { get; }
     DbSet<FeedItemText> FeedItemTexts { get; }

@@ -27,7 +27,7 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
     // processes' heartbeats and the job runs are the background jobs' own bookkeeping; an article's search text is its
     // parts again, which are audited themselves.
     private static readonly HashSet<Type> NotAudited =
-        [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(SavedActionView), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText),
+        [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(SavedActionView), typeof(NotificationMark), typeof(Notice), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText),
          typeof(JobLease), typeof(JobProcess), typeof(JobRun), typeof(ArticleSearchRow), typeof(SystemStat), typeof(BackupRun)];
 
     // Changing on every save, so recording them is noise; and an address's hash, which is the address recorded beside it.

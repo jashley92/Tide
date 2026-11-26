@@ -138,3 +138,37 @@ public class StoredFile : AuditableEntity
     /// every place that used it had removed it that long before. The row and its hash stay, for the record.</summary>
     public DateTimeOffset? BytesPurgedAtUtc { get; set; }
 }
+
+/// <summary>
+/// Something a colleague did that's addressed to one person: an article handed to them, a review asked of them, an
+/// action handed to their team or assigned to them, a brief rotation request of theirs or for them. Written in the same
+/// save as what it's about (<c>NoticeInterceptor</c>), so there's never a notice without the change, and shown in the
+/// top bar's For you panel. What it's about is read when it's shown, so a renamed article shows its new title and a
+/// deleted one shows as gone. Kept until a while after it's seen (<c>NoticeService.PruneAsync</c>). One person's, so not audited.
+/// </summary>
+public class Notice : Entity
+{
+    /// <summary>The longest <see cref="Detail"/>: the longest hand-off reason.</summary>
+    public const int MaxDetail = 500;
+
+    /// <summary>Whom it's for (<see cref="AppUser.Sid"/>).</summary>
+    public string UserId { get; set; } = string.Empty;
+
+    public Enums.NoticeKind Kind { get; set; }
+
+    /// <summary>What it's about: the article (handed on, or its review's), the action, or the rotation request.</summary>
+    public Guid SubjectId { get; set; }
+
+    /// <summary>Who did it.</summary>
+    public string ActorId { get; set; } = string.Empty;
+    public string ActorName { get; set; } = string.Empty;
+
+    /// <summary>What they said with it, if anything: the hand-off's note or reason, the review request's note, the
+    /// rotation request's note or decision note.</summary>
+    public string? Detail { get; set; }
+
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
+    /// <summary>When they clicked it, or marked everything seen; null while it's new.</summary>
+    public DateTimeOffset? SeenAtUtc { get; set; }
+}

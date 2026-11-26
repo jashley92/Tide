@@ -2,9 +2,11 @@
 @attribute [Authorize(Policy = Policies.ReadActions)]
 @using Tide.Application.Preferences
 @inject NotificationPreferenceService Prefs
+@inject UserPreferenceService Mine
 @inject ToastService Toasts
 
-@* My notifications (the account menu): the person's own choices about TIDE's emails. Each switch saves as it's changed.
+@* My notifications (the account menu): the person's own choices about what TIDE tells them: whether a For you notice
+   that arrives shows a toast (the bell in the top bar counts it either way), and TIDE's emails. Each switch saves as it's changed.
    An administrator still turns each kind on or off for everyone (Teams & SLA); one that's off shows so, disabled. *@
 
 <PageTitle>My notifications · TIDE</PageTitle>
@@ -12,7 +14,7 @@
 <div class="tide-page-head">
     <div>
         <h1>My notifications</h1>
-        <div class="tide-sub">Which of TIDE's emails you get. These are yours alone: no one else can change them.</div>
+        <div class="tide-sub">What TIDE tells you, in the app and by email. These are yours alone: no one else can change them.</div>
     </div>
 </div>
 
@@ -23,6 +25,17 @@
 else
 {
     <div class="tide-notify">
+        <section class="tide-card" aria-labelledby="notify-app">
+            <h2 id="notify-app">In TIDE</h2>
+            <p class="small tide-muted">The bell at the top counts what colleagues hand you or ask of you: articles, reviews, actions, and brief rotation requests and their answers. It's always there.</p>
+            <div class="form-check form-switch tide-notify-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="notify-notices-toasts" checked="@_toasts" disabled="@_busy"
+                       aria-describedby="notify-notices-toasts-about" @onchange="e => SetToasts(e.Value is true)" />
+                <label class="form-check-label" for="notify-notices-toasts">Pop-up when something arrives for you</label>
+                <div class="small tide-muted" id="notify-notices-toasts-about">A short message at the bottom of the page, with a link to it.</div>
+            </div>
+        </section>
+
         <section class="tide-card" aria-labelledby="notify-address">
             <h2 id="notify-address">Where they go</h2>
             @if (_mine.Address is { } address)
@@ -85,7 +98,7 @@ else
 
 @code {
     private MyNotificationChoices? _mine;
-    private bool _busy;
+    private bool _busy, _toasts = true;
 
     private static readonly (string Value, string Label, string Hint)[] Cadences =
     [
@@ -96,8 +109,31 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try { _mine = await Prefs.GetMineAsync(); }
+        try
+        {
+            _mine = await Prefs.GetMineAsync();
+            _toasts = await Mine.GetAsync(UserPreferences.NoticeToasts) == UserPreferences.On;
+        }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // A preference of the person's own, not an email kind: kept with their other preferences.
+    internal async Task SetToasts(bool on)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Mine.SetAsync(UserPreferences.NoticeToasts, on ? UserPreferences.On : UserPreferences.Off);
+            _toasts = on;
+            Toasts.Show(on ? "Pop-ups for what arrives for you on." : "Pop-ups for what arrives for you off. The bell still counts it.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
     }
 
     // The due-soon and overdue reminders list what a digest lists too.

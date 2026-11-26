@@ -114,6 +114,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         SavedQuery => [ChangeFeed.SavedQueries],
         OutreachTemplate => [ChangeFeed.OutreachTemplates],
         Playbook or PlaybookStep => [ChangeFeed.Playbooks],   // an edit replaces the steps, and its version moves with them
+        Notice x => [ChangeFeed.Notices(x.UserId)],
         TriageSplit => [ChangeFeed.Triage],   // a split or its undo regroups colleagues' inboxes; their triage is announced by the page
         _ => [],
     };

@@ -4606,6 +4606,11 @@ const pages = [
     widths: [1920, 1440, 1000, 800, 400], rules: [insidePage('.tide-attach-panel')] },
   { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
     rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
+  // The For you bell's panel the same way, and inside the page at every width (the window's width on a phone).
+  { name: 'for-you-popout', route: `/articles?as=a3${run}`, widths: [1440, 800],
+    rules: popoutCloses('the For you panel', { wrap: '.tide-bell', opener: '.tide-bell-btn', panel: '.tide-popover', inside: '.tide-popover a', bare: '.tide-bell-foot > span' }) },
+  { name: 'for-you-fits', route: '/articles', setup: openFirst('.tide-bell-btn', '.tide-bell .tide-popover'),
+    widths: [1920, 1440, 800, 400], rules: [insidePage('.tide-bell .tide-popover')] },
   { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
     rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a', bare: '.tide-export-panel .tide-field-label' }) },
   // The menu buttons and + Filter the same way: the Actions list's Status menu, + Filter there, and an action's More.

@@ -13,11 +13,11 @@
     border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md); background: var(--tide-surface-2);
     color: var(--tide-text-muted); font-size: var(--tide-text-sm); white-space: nowrap; }
 .tide-palette-btn:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
-.tide-palette-btn:focus-visible, .tide-shortcuts-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-palette-btn:focus-visible, .tide-shortcuts-btn:focus-visible, .tide-bell-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 
-.tide-shortcuts-btn { display: inline-grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: var(--tide-radius-round);
+.tide-shortcuts-btn, .tide-bell-btn { display: inline-grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: var(--tide-radius-round);
     background: transparent; color: var(--tide-text-muted); font-size: var(--tide-text-md); }
-.tide-shortcuts-btn:hover { background: var(--tide-surface-2); color: var(--tide-text); }
+.tide-shortcuts-btn:hover, .tide-bell-btn:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 
 /* Keys, drawn as keycaps. */
 .tide-palette-kbd, .tide-palette kbd, .tide-shortcuts kbd { display: inline-block; font-family: var(--tide-font-data); font-size: var(--tide-text-xs);
