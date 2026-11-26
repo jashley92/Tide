@@ -202,12 +202,12 @@ public class ForYouNoticeTests : IDisposable
         await forYou.SeenAsync(robins);
         (await NoticesFor(Robin)).Single().SeenAtUtc.Should().BeNull("nobody marks another's notice seen");
 
-        var newest = (await forYou.ListAsync()).First();
+        var newest = (await forYou.ListAsync())[0];
         await forYou.SeenAsync(newest.Id);
         (await forYou.UnseenCountAsync()).Should().Be(1);
         (await forYou.ListAsync()).Should().HaveCount(2, "a seen notice stays listed").And.ContainSingle(n => n.Seen);
 
-        var older = (await forYou.ListAsync()).Last();
+        var older = (await forYou.ListAsync())[^1];
         (await forYou.NewSinceAsync(older.AtUtc.AddTicks(-1))).Should().ContainSingle("the toast's: only new ones, made after the time given")
             .Which.Id.Should().Be(older.Id);
         (await forYou.NewSinceAsync(older.AtUtc)).Should().BeEmpty("the newer one was seen");
