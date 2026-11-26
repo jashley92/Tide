@@ -56,6 +56,14 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
     transition: --tide-fade-top var(--tide-dur-base) var(--tide-ease-out), --tide-fade-bottom var(--tide-dur-base) var(--tide-ease-out);
 }
 .tide-scrollfade.is-more-above { --tide-fade-top: 3em; }
+/* A new slide turns in like a page laid over the last: it swings in from its left edge and settles flat. Each slide's
+   body is new (keyed by .NET), so this runs once per slide change, for the presenter and each follower alike;
+   present.js measures with clientHeight and scrollHeight, which the turn doesn't touch. */
+.tide-slide-body.tide-scrollfade {
+    transform-origin: left center;
+    transition: --tide-fade-top var(--tide-dur-base) var(--tide-ease-out), --tide-fade-bottom var(--tide-dur-base) var(--tide-ease-out),
+        opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-signature) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: perspective(150rem) rotateY(-16deg); } }
 .tide-scrollfade.is-more-below { --tide-fade-bottom: 3.5em; }
 /* "More ↓": at the bottom of the slide while there's more below; and, for a follower who scrolled by hand, the way back
    to the presenter's place beside it. */

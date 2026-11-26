@@ -68,7 +68,8 @@ else
             <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
                 @if (_brief is not null)
                 {
-                    <StatusBadge Status="@StatusLabel" />
+                    @* Keyed by the status, so it's drawn anew when it changes; just marked ready, it's stamped (tide-stamped). *@
+                    <span class="tide-brief-status@(_justReady ? " tide-stamped" : null)" @key="StatusLabel"><StatusBadge Status="@StatusLabel" /></span>
                 }
                 @* One run of text, so a narrow page wraps it between words and a "·" never starts a line. *@
                 <span class="tide-sub-line">@string.Join(" · ", MeetingLine())</span>
@@ -846,8 +847,15 @@ else
     // changed by a correction.
     private bool CanFix => _canWrite && _brief is { Status: not BriefStatus.Sent };
 
-    private Task MarkReady(bool ready) =>
-        Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
+    // Set as the brief is marked ready here, so its status is stamped then, and only then (not on a page that opens on a
+    // brief already ready).
+    private bool _justReady;
+
+    private async Task MarkReady(bool ready)
+    {
+        await Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
+        _justReady = ready && _brief?.Status == BriefStatus.Ready;
+    }
 
     // The checks that don't block Ready (a missing tag, no recommended actions) still deserve a second look first.
     private int Warnings => _readiness.Values.Sum(v => v.Count(c => !c.Blocking));

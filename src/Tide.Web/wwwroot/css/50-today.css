@@ -16,6 +16,19 @@
 .tide-step-now { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--tide-accent-text); }
 .tide-step.is-done .tide-step-ico { background: var(--tide-ok-soft); border-color: var(--tide-ok); color: var(--tide-ok); }
 .tide-step.is-current { background: var(--tide-accent-soft); }
+/* The brief just marked ready: its status is stamped, landing hard and a little askew before it settles, and the
+   page's head takes the impact. */
+.tide-brief-status { display: inline-flex; }
+.tide-stamped { animation: tide-stamp var(--tide-dur-signature) var(--tide-ease-in) both; }
+@keyframes tide-stamp {
+    0% { opacity: 0; transform: scale(calc(1 + .9 * var(--tide-motion))) rotate(calc(-8deg * var(--tide-motion))); }
+    55% { opacity: 1; transform: scale(calc(1 - .06 * var(--tide-motion))) rotate(calc(-3deg * var(--tide-motion))); }
+    100% { opacity: 1; transform: none; } }
+.tide-brief-head:has(.tide-stamped) { animation: tide-impact var(--tide-dur-panel) linear calc(var(--tide-dur-signature) * .5); }
+@keyframes tide-impact {
+    25% { transform: translate(calc(1.5px * var(--tide-motion)), calc(1px * var(--tide-motion))); }
+    50% { transform: translate(calc(-1px * var(--tide-motion)), 0); }
+    75% { transform: translate(0, calc(-1px * var(--tide-motion))); } }
 /* Under each step, a segmented meter: half lit for the step that's on, full for one that's done. Lighting up, it steps
    segment by segment like an instrument's. */
 .tide-step { position: relative; }
