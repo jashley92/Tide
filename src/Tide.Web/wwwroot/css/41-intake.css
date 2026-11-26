@@ -450,11 +450,12 @@
 :is(.tide-kcard, .tide-triage-row)::before { content: ""; position: absolute; inset: 0; pointer-events: none;
     border: 2px solid var(--tide-accent); --tide-bracket: .6rem;   /* each corner's arm */
     mask: conic-gradient(at var(--tide-bracket) var(--tide-bracket), #0000 75%, #000 0) 0 0 / calc(100% - var(--tide-bracket)) calc(100% - var(--tide-bracket));
-    opacity: 0; transform: scale(1.04);
-    transition: opacity var(--tide-dur-fast) var(--tide-ease-out), transform var(--tide-move-fast) var(--tide-ease-out); }
-.tide-kcard::before { inset: -4px; }
-@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; transform: none; } }
-:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before { opacity: 1; transform: none; }
+    opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+/* At rest they sit on the element's own edges, unscaled, so they never widen what's around them; they close in as they
+   appear (a keyframe, so only while shown). */
+@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); } }
+:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); }
+@keyframes tide-lock-on { from { transform: scale(calc(1 + .06 * var(--tide-motion))); } }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
