@@ -177,6 +177,7 @@
        toasts at 2, dialogs at 3. In light the raised surface is the surface; in dark it's a step lighter with a faint
        top edge, since a shadow barely shows on a dark page. */
     --tide-surface-raised: var(--tide-surface);
+    --tide-surface-raised-2: #eef2f5;   /* hover inside a raised surface (light: --tide-surface-2) */
     --tide-elev-2: 0 8px 24px var(--tide-shadow);
     --tide-elev-3: 0 12px 32px var(--tide-shadow-strong);
     --bs-code-color: #3a4a5e;
@@ -241,9 +242,10 @@
     --tide-drop: rgba(79, 195, 209, .1);
     --tide-on-threat: #1a0a0b;   /* white on the dark theme's lighter red would be about 2.6:1 */
     --tide-shadow: rgba(0, 0, 0, .4);
-    --tide-surface-raised: #22333e;   /* a step above --tide-surface-2 */
-    --tide-elev-2: 0 8px 24px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .06);
-    --tide-elev-3: 0 12px 32px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .07);
+    --tide-surface-raised: #263844;   /* a clear step above --tide-surface-2 and the chips' fill */
+    --tide-surface-raised-2: #30475a; /* hover inside it: lighter, where --tide-surface-2 would be a dip */
+    --tide-elev-2: 0 8px 24px var(--tide-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, .06);
+    --tide-elev-3: 0 12px 32px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
     --bs-code-color: #c3cfdd;
     --bs-body-bg: var(--tide-bg);
     --tide-chart-1: #4fc3d1;
@@ -268,6 +270,15 @@ html { scrollbar-gutter: stable; }
 h1:focus { outline: none; }
 a, .btn-link { color: var(--tide-accent-text); }
 .tide-data { font-family: var(--tide-font-data); font-size: .92em; }
+/* Counts read as data: the nav's, the tab bar's, a table's, Present's live count. */
+.tide-nav-count, .tide-dt-count, .tide-tabbar-count, .tide-live-count { font-family: var(--tide-font-data); }
+
+/* What floats over the page. A new popover, menu, panel or dialog joins one of these lists. Inside, hover takes
+   --tide-surface-2 as usual: it's re-pointed here at the raised surface's own step. */
+.tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-toast, .tide-chart-tip, .tide-oi-suggest {
+    background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); --tide-surface-2: var(--tide-surface-raised-2); }
+.tide-modal, .tide-tip, .tide-atkm-panel {
+    background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
 .form-text { color: var(--tide-text-muted) !important; }
 
 .btn-primary {

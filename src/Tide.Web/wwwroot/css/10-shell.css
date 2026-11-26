@@ -32,7 +32,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 .tide-nav .bi { font-size: 1.05rem; width: 1.2rem; text-align: center; }
 .tide-nav a:focus-visible { outline: 2px solid var(--tide-side-accent); outline-offset: -2px; }
 /* A daily link's count (new in triage, my overdue actions); the link's aria-label says it in words. */
-.tide-nav-count { margin-left: auto; font-family: var(--tide-font-data); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-side-text); }
+.tide-nav-count { margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-side-text); }
 .tide-nav-count.is-alert { color: var(--tide-side-alert); }
 /* The groups: a small label (text, not a control) over each group's links. */
 .tide-nav ul { list-style: none; margin: 0; padding: 0; }
@@ -80,7 +80,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); padding: 0 .1em; border-radius: var(--tide-radius-xs); }
 @media (max-width: 640.98px) { .tide-top-search { display: none; } }
 .tide-export { position: relative; }
-.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: var(--tide-z-panel); width: 290px; padding: .9rem; background: var(--tide-surface-raised); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); box-shadow: var(--tide-elev-2); }
+.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: var(--tide-z-panel); width: 290px; padding: .9rem; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); }
 .tide-avatar { width: 30px; height: 30px; border-radius: var(--tide-radius-round); background: var(--tide-accent-soft); color: var(--tide-accent-text); display: grid; place-items: center; font-weight: var(--tide-weight-semibold); font-size: .78rem; }
 
 /* ---- Page parts ---- */
@@ -88,8 +88,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 /* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
    widening the page. */
 .tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
-/* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-brief-head h1 { font-family: var(--tide-font-doc); }   /* the brief is a document: its title is set like one */
+/* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
 /* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
 .tide-crumbs { margin: 0 0 .25rem; overflow-wrap: anywhere; }
@@ -144,7 +144,7 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
     border: 0; border-radius: var(--tide-radius-sm); background: none; color: var(--tide-text-muted); line-height: 1; }
 .tide-dt-clear:hover { color: var(--tide-text); background: var(--tide-surface-2); }
 .tide-dt-clear:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; }
-.tide-dt-count { margin-left: auto; font-family: var(--tide-font-data); color: var(--tide-text-muted); font-size: var(--tide-text-sm); }
+.tide-dt-count { margin-left: auto; color: var(--tide-text-muted); font-size: var(--tide-text-sm); }
 /* Under a row's title, with an ATT&CK filter: the article's techniques it matched. */
 .tide-row-techniques { margin-top: var(--tide-space-1); }
 .tide-row-techniques .tide-chip { font-size: var(--tide-text-xs); margin-bottom: 0; border-radius: var(--tide-radius-sm); }

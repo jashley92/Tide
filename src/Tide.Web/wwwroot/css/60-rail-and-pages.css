@@ -9,7 +9,7 @@
    theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: var(--tide-z-rail); width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-html[data-rail-over] .tide-rail { display: flex; z-index: var(--tide-z-rail-over); background: var(--tide-surface-raised); }
+html[data-rail-over] .tide-rail { display: flex; z-index: var(--tide-z-rail-over); background: var(--tide-surface-raised); --tide-surface-2: var(--tide-surface-raised-2); }
 /* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
    parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
    top bar above it (none on a phone, where the rail takes the whole height). */

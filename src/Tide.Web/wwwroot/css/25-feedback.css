@@ -2,8 +2,8 @@
 .tide-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: var(--tide-z-toast); display: grid; gap: .5rem; max-width: 420px; }
 .tide-toasts > div { display: grid; gap: .5rem; }
 /* A toast: a light card with a coloured edge and glyph, sliding in (still, with reduced motion). */
-.tide-toast { background: var(--tide-surface-raised); color: var(--tide-text); border: 1px solid var(--tide-border); border-left: 4px solid var(--tide-ok);
-    padding: .65rem .9rem; border-radius: var(--tide-radius-lg); box-shadow: var(--tide-elev-2); display: flex; gap: .7rem; align-items: start; font-size: .92rem;
+.tide-toast { color: var(--tide-text); border: 1px solid var(--tide-border); border-left: 4px solid var(--tide-ok);
+    padding: .65rem .9rem; border-radius: var(--tide-radius-lg); display: flex; gap: .7rem; align-items: start; font-size: .92rem;
     animation: tide-toast-in var(--tide-dur-base) var(--tide-ease-out); }
 .tide-toast > .bi { color: var(--tide-ok); margin-top: .1rem; }
 .tide-toast-error { border-left-color: var(--tide-threat); }
