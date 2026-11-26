@@ -2,7 +2,7 @@
 // external file, no inline handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync);
 // only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
 // The drag is by pointer events (mouse, pen and touch alike), not the browser's drag and drop, so the card can be lifted,
-// follow the pointer and settle where it lands: a mouse or pen starts it by moving 6px with the button down, a finger by
+// follow the pointer and settle where it lands: a mouse or pen starts it by moving a few pixels with the button down, a finger by
 // holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost); the card itself
 // stays in its lane as the dashed gap it left, until .NET moves it. Esc cancels; a press that isn't a drag is a click.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
@@ -14,8 +14,8 @@
 // in its lane, else the one before, else the lane's heading (focusPlace). A card dragged (pressing it gives it focus) does the
 // same once its drop is done.
 window.tideBoard = (function () {
-    let ref = null, root = null, dragging = null, over = null, focusedAtPress = null, press = null, ghost = null;
-    const SLOP = 6, HOLD = 280;
+    let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null;
+    const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
         if (!ref) return;
@@ -42,25 +42,29 @@ window.tideBoard = (function () {
         }
         dragging = null;
         over = null;
+        marked = null;
         if (root) mark(null);
     }
 
-    // The card pressed on: pressing a card gives it focus (each card is focusable, the selected one the tab stop), so a
-    // card dragged off the board after a click, or with focus already in it, leaves focus beside where it was.
-    function onPress(e) {
-        focusedAtPress = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
-    }
-
-    // A token's value in ms, or the easing it names (the stylesheet's motion tokens).
-    function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
+    // Pressed on a card it may move: it may become a drag. While it's pressed (only then), the page's pointer moves and
+    // letting go are heard. Pressing a card gives it focus (each card is focusable), so a card dragged off the board after
+    // a click, or with focus already in it, leaves focus beside where it was (focusedAtPress).
     function onPointerDown(e) {
-        onPress(e);
+        focusedAtPress = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
         if (e.button !== 0 || press || dragging) return;
         const card = e.target && e.target.closest ? e.target.closest('.tide-kcard[draggable="true"]') : null;
         if (!card || e.target.closest('button, input, select, textarea, [role="menu"]')) return;
         press = { card: card, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === 'touch', ready: e.pointerType !== 'touch', timer: 0 };
         if (press.touch) press.timer = setTimeout(function () { if (press && !dragging) { press.ready = true; card.classList.add('tide-kcard-held'); } }, HOLD);
+        hear(true);
+    }
+
+    function hear(on) {
+        const method = on ? 'addEventListener' : 'removeEventListener';
+        document[method]('pointermove', onPointerMove);
+        document[method]('pointerup', onPointerUp);
+        document[method]('pointercancel', cancel);
+        document[method]('selectstart', onSelectStart);
     }
 
     function forget() {
@@ -68,6 +72,7 @@ window.tideBoard = (function () {
         clearTimeout(press.timer);
         press.card.classList.remove('tide-kcard-held');
         press = null;
+        hear(false);
     }
 
     // The press became a drag: the ghost (a copy of the card, outside the board) follows the pointer from here.
@@ -76,11 +81,7 @@ window.tideBoard = (function () {
         dragging = card;
         over = null;
         try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
-        ghost = card.cloneNode(true);
-        ghost.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
-        ghost.removeAttribute('id');
-        ghost.setAttribute('aria-hidden', 'true');
-        ghost.inert = true;
+        ghost = window.tideShortcuts.copy(card);
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
         ghost.style.left = r.left + 'px';
@@ -107,6 +108,8 @@ window.tideBoard = (function () {
         const under = document.elementFromPoint(e.clientX, e.clientY);
         const col = under && under.closest ? under.closest('.tide-kcol, .tide-kchip') : null;
         const to = col && root.contains(col) && col.dataset.status !== dragging.dataset.status ? col : null;
+        if (to === marked) return;
+        marked = to;
         mark(to);
         report(to ? to.dataset.status : null);
     }
@@ -118,46 +121,61 @@ window.tideBoard = (function () {
         setTimeout(function () { window.removeEventListener('click', stop, true); }, 0);
     }
 
-    // The ghost glides from where it was let go to where the card now is, and the card shows again as it arrives.
+    // The ghost glides from where it was let go to where the card now is, and the card shows again as it arrives, its
+    // brackets locked on for a moment.
     function settle(g, card) {
         const done = function () {
             g.remove();
             if (!card) return;
             card.style.visibility = '';
             card.classList.add('tide-kcard-locked');
-            setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, 600);
+            setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
         };
         if (!card || window.tideShortcuts.still() || !g.animate) { done(); return; }
         const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
         card.style.visibility = 'hidden';
         g.animate([{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
-            { duration: parseFloat(token('--tide-dur-panel')) || 280, easing: token('--tide-ease-out') || 'ease-out', fill: 'forwards' })
+            { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out'), fill: 'forwards' })
             .finished.then(done, done);
+    }
+
+    // A card .NET moved after its ghost had already settled back (it was asking first, or slow to answer) glides on from
+    // where it was to where it is.
+    function glide(card, was) {
+        if (!card || !was || window.tideShortcuts.still() || !card.animate) return;
+        const now = card.getBoundingClientRect(), dx = was.left - now.left, dy = was.top - now.top;
+        if (!dx && !dy) return;
+        card.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }],
+            { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
     }
 
     function onPointerUp(e) {
         if (!press || e.pointerId !== press.id) return;
         if (!dragging) { forget(); return; }
-        const target = root.querySelector('.tide-kcol.over, .tide-kchip.over');
-        const card = dragging, id = card.dataset.id, from = card.dataset.status, to = target ? target.dataset.status : null;
+        const card = dragging, id = card.dataset.id, from = card.dataset.status, to = over;
         const place = focusedAtPress === card ? beside(card) : null, g = ghost;
         swallowClick();
         forget();
         ghost = null;
         end();
         if (!to || !ref) { settle(g, card); return; }
-        // The ghost settles once .NET has moved the card, or after a moment if it's still asking (a drop on the closed
-        // strip opens a dialog first): then it settles back where the card still is.
-        let settled = false;
+        // The ghost settles once .NET has moved the card; if it's still asking after a moment (a drop on the closed strip
+        // opens a dialog first) it settles back where the card is, and the card glides on if .NET then moves it.
+        const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
+        let landed = false, was = null;
         const land = function () {
-            if (settled) return;
-            settled = true;
-            requestAnimationFrame(function () { settle(g, card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]')); });
+            if (landed) return;
+            landed = true;
+            requestAnimationFrame(function () { const c = current(); was = c && c.getBoundingClientRect(); settle(g, c); });
         };
-        setTimeout(land, 400);
+        setTimeout(land, ASKING);
         ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
+            const late = landed;
             land();
-            if (place) requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
+            requestAnimationFrame(function () {
+                if (late) glide(current(), was);
+                if (place) focusPlace(id, place.next, place.prev, place.heading);
+            });
         }, land);
     }
 
@@ -171,13 +189,13 @@ window.tideBoard = (function () {
         settle(g, card);
     }
 
-    // The browser's own drag would take the pointer away; a finger that's holding a card doesn't scroll the page or
-    // open the long-press menu.
+    // The browser's own drag would take the pointer away (cards keep draggable="true", which says which may move); a
+    // finger that's holding a card doesn't scroll the page or open the long-press menu; a mouse dragging a card doesn't
+    // select the text it passes over.
     function onNativeDrag(e) { if (e.target && e.target.closest && e.target.closest('.tide-kcard')) e.preventDefault(); }
-    // Nor does a mouse dragging a card select the text it passes over.
-    function onSelectStart(e) { if (press) e.preventDefault(); }
     function onTouchMove(e) { if (press && press.ready) e.preventDefault(); }
     function onContextMenu(e) { if (press && press.touch) e.preventDefault(); }
+    function onSelectStart(e) { if (press) e.preventDefault(); }
 
     // Someone else moved these cards: each slides in from the column it left (the card's glow and "Moved by" are
     // rendered by .NET). Without motion (the person's setting, or no Web Animations), the glow alone says it arrived.
@@ -191,7 +209,7 @@ window.tideBoard = (function () {
             if (still || !from || !card.animate) return;
             const dx = from.getBoundingClientRect().left - card.getBoundingClientRect().left;
             card.animate([{ transform: 'translateX(' + dx + 'px)', opacity: .6 }, { transform: 'none', opacity: 1 }],
-                { duration: 450, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+                { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
         });
     }
 
@@ -260,11 +278,7 @@ window.tideBoard = (function () {
             root.addEventListener('dragstart', onNativeDrag);
             root.addEventListener('touchmove', onTouchMove, { passive: false });
             root.addEventListener('contextmenu', onContextMenu);
-            document.addEventListener('pointermove', onPointerMove);
-            document.addEventListener('pointerup', onPointerUp);
-            document.addEventListener('pointercancel', cancel);
             document.addEventListener('keydown', onKeyDown, true);
-            document.addEventListener('selectstart', onSelectStart);
         },
         stop: function () {
             if (dragging || press) cancel();
@@ -274,11 +288,7 @@ window.tideBoard = (function () {
                 root.removeEventListener('touchmove', onTouchMove, { passive: false });
                 root.removeEventListener('contextmenu', onContextMenu);
             }
-            document.removeEventListener('pointermove', onPointerMove);
-            document.removeEventListener('pointerup', onPointerUp);
-            document.removeEventListener('pointercancel', cancel);
             document.removeEventListener('keydown', onKeyDown, true);
-            document.removeEventListener('selectstart', onSelectStart);
             ref = null;
             root = null;
             dragging = null;
