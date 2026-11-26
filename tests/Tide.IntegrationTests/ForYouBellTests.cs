@@ -56,7 +56,7 @@ public class ForYouBellTests(TideApp app) : IClassFixture<TideApp>
         await using var bell = await RenderAsync<ForYouBell>(app, "/articles", @as: me);
         var html = await bell.Html();
         html.Should().Contain("aria-label=\"For you, 2 new\"", "the count is in the bell's name, for someone who doesn't see the badge")
-            .And.Contain("<span class=\"tide-bell-count\" aria-hidden=\"true\">2</span>")
+            .And.Contain("<span class=\"tide-bell-count\" aria-hidden=\"true\" data-count=\"2\"></span>")
             .And.Contain("aria-expanded=\"false\"").And.NotContain(ForYouBell.PanelId + "-title", "the panel is closed until the bell is pressed");
 
         await bell.Click(b => b.Toggle());

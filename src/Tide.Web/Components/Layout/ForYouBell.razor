@@ -22,13 +22,14 @@
 @if (_shown)
 {
     <div class="tide-bell" @ref="_holder">
-        @* The count is part of the bell's name ("For you, 3 new"); the badge itself is only seen. *@
+        @* The count is part of the bell's name ("For you, 3 new"); the badge is only seen, its figure drawn by the CSS
+           (data-count) so the button's text never differs from its name. *@
         <button type="button" class="tide-bell-btn @(_count > 0 ? "has-new" : "")" @ref="_button" @onclick="Toggle" title="For you"
                 aria-haspopup="dialog" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_open ? PanelId : null)" aria-label="@Name">
             <span class="bi bi-bell" aria-hidden="true"></span>
             @if (_count > 0)
             {
-                <span class="tide-bell-count" aria-hidden="true">@Badge(_count)</span>
+                <span class="tide-bell-count" aria-hidden="true" data-count="@Badge(_count)"></span>
             }
         </button>
 

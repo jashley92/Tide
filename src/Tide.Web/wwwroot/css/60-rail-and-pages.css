@@ -101,7 +101,11 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-brief-chip-full { display: none; }
     .tide-brief-chip-short, .tide-brief-chip-said { display: inline; }
 }
-@media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
+/* There the team's name goes, and Go to and Context drop their keycaps (their titles still name the keys), so the chip,
+   the search box and the round buttons after it (Context, the bell, ?) all fit. */
+@media (min-width: 900px) and (max-width: 1099.98px) {
+    .top-row:has(.tide-brief-chip) > span:first-child, .top-row:has(.tide-brief-chip) .tide-palette-kbd { display: none; }
+}
 @media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
 
 /* ---- The For you bell (ForYouBell.razor): a round button as the shortcuts one is, its count in a red badge on its
@@ -115,6 +119,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-bell-count { position: absolute; top: -.2rem; right: -.3rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .3rem; display: grid; place-items: center;
     border-radius: var(--tide-radius-pill); border: 2px solid var(--tide-surface); background: var(--tide-threat); color: var(--tide-on-threat);
     font-family: var(--tide-font-data); font-size: .65rem; font-weight: var(--tide-weight-semibold); line-height: 1; }
+.tide-bell-count::after { content: attr(data-count); }
 .tide-bell-pop { width: min(25rem, calc(100vw - 1.5rem)); padding: 0; display: flex; flex-direction: column; }
 @media (max-width: 640.98px) { .tide-bell-pop { width: 100vw; } }
 .tide-bell-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); padding: .7rem .85rem .5rem; }
