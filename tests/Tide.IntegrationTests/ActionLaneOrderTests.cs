@@ -10,8 +10,9 @@ namespace Tide.IntegrationTests;
 
 /// <summary>
 /// The board's lane order: the shared manual order people set by dragging (placed cards first, then the rest by due
-/// date), or by due date, or by priority, each sorted in the database. Placing a card renumbers its whole lane from 1; a
-/// move to another lane takes it out of the order, so it goes to the end of the new lane's.
+/// date), or by due date, or by priority, each sorted in the database. Placing a card writes only its own row, halfway
+/// between its neighbors, until the lane needs numbering again; a move to another lane takes it out of the order, so it
+/// goes to the end of the new lane's, unless the drop gave it a place.
 /// </summary>
 public class ActionLaneOrderTests : IDisposable
 {

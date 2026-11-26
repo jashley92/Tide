@@ -829,7 +829,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // by hand (they'd still sort after it), the lane is numbered again, LaneGap apart.
     private const int LaneGap = 1024;
 
-    private async Task PlaceOnAsync(IAppDbContext db, ActionItem a, LanePlace place, CancellationToken ct)
+    private static async Task PlaceOnAsync(IAppDbContext db, ActionItem a, LanePlace place, CancellationToken ct)
     {
         var others = db.Actions.Where(x => x.Status == a.Status && x.Id != a.Id);
         var lane = await Ordered(others, ActionSort.Due, lead: ByPlace).Select(x => new { x.Id, x.LaneRank }).ToListAsync(ct);
