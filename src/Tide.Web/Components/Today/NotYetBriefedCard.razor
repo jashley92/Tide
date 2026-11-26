@@ -9,7 +9,7 @@
         <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2>
     @if (Articles.Count == 0)
     {
-        <p class="small tide-muted mb-0">Everything ready is on a brief.</p>
+        <SectionEmpty Icon="bi-check2-circle">Everything ready is on a brief.</SectionEmpty>
     }
     <ul class="list-unstyled mb-0">
         @foreach (var c in Articles.Take(Shown))

@@ -207,7 +207,7 @@ else
             </div>
             @if (feed.Shown.Count == 0)
             {
-                <p class="small tide-muted mb-0">Nothing yet.</p>
+                <SectionEmpty Icon="bi-activity">Nothing yet.</SectionEmpty>
             }
             <ol class="tide-feed-list">
                 @foreach (var entry in feed.Shown)

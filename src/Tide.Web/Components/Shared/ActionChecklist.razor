@@ -13,7 +13,7 @@ else
 {
     @if (_items.Count == 0 && Compact)
     {
-        <div class="small tide-muted">Nothing on the checklist.</div>
+        <SectionEmpty Icon="bi-list-check">Nothing on the checklist.</SectionEmpty>
     }
     <ul class="tide-checklist @(Compact ? "tide-checklist-compact" : "")">
         @foreach (var i in _items)

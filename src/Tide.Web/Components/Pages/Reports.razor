@@ -276,7 +276,7 @@ else
         @if (title is not null) { <h3 class="tide-report-sub">@title</h3> }
         @if (tops.Count == 0)
         {
-            <div class="small tide-muted">Nothing counted in @_period.Label.</div>
+            <SectionEmpty Icon="bi-bar-chart">Nothing counted in @_period.Label.</SectionEmpty>
         }
         else
         {
@@ -423,7 +423,7 @@ else
             }
             else
             {
-                <p class="small tide-muted mb-0">No assessment for @_period.Label.</p>
+                <SectionEmpty Icon="bi-clipboard">No assessment for @_period.Label.</SectionEmpty>
             }
         </div>
     };

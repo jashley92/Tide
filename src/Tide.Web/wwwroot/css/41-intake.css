@@ -457,6 +457,9 @@
 .tide-empty-state-compact { padding: var(--tide-space-4) var(--tide-space-2); gap: var(--tide-space-1); }
 .tide-empty-state-compact .tide-empty-state-icon { font-size: var(--tide-text-lg); margin-bottom: 0; }
 .tide-empty-state-compact .tide-empty-state-title { font-weight: var(--tide-weight-medium); }
+/* SectionEmpty: a section with nothing in it yet, a small muted icon before the line. */
+.tide-section-empty { display: flex; align-items: baseline; gap: var(--tide-space-2); margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-section-empty > .bi { flex: none; opacity: .75; }
 
 /* A feed's tags to filter by (Sources): toggles that read as tags. */
 .tide-tag-pick { border: 1px solid var(--tide-border); background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-pill);

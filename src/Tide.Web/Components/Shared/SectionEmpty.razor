@@ -1,0 +1,10 @@
+@* A section with nothing in it yet: a small icon, then the line ("No articles yet."). It sits under the section's own
+   heading in a rail, a card or a detail page. A whole page or panel with nothing to show uses EmptyState instead. *@
+<p class="@(Class is null ? "tide-section-empty" : "tide-section-empty " + Class)"><span class="bi @Icon" aria-hidden="true"></span><span>@ChildContent</span></p>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "bi-inbox";
+    /// <summary>Spacing classes for where it sits (mb-2, mt-2); it has no margin of its own.</summary>
+    [Parameter] public string? Class { get; set; }
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+}

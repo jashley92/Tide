@@ -5,7 +5,7 @@
 
 @if (Rows.Count == 0)
 {
-    <p class="small tide-muted mb-2">No follow-up actions yet.</p>
+    <SectionEmpty Icon="bi-check2-square" Class="mb-2">No follow-up actions yet.</SectionEmpty>
 }
 @foreach (var r in Rows)
 {

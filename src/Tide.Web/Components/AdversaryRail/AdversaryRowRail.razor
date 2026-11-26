@@ -44,7 +44,7 @@
     else
     {
         var articles = _detail.Articles;
-        @if (articles.Count == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
+        @if (articles.Count == 0) { <SectionEmpty Icon="bi-newspaper">No articles yet.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in articles.Take(Shown))
             {
@@ -63,7 +63,7 @@
     @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        @if (open.Count == 0) { <SectionEmpty Icon="bi-check2-square">No open actions.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in open.Take(Shown))
             {

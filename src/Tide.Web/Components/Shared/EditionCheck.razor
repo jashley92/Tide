@@ -49,7 +49,7 @@
                 <span class="tide-ed-sub"><span class="tide-ed-word">@("Up to ")</span><TlpBadge Level="ceiling" /> <span class="tide-ed-count">&middot; @kept of @Ui.Plural(articles.Count, "article")</span></span></h3>
             @if (articles.Count == 0 && exceptions.Count == 0)
             {
-                <p class="small tide-muted mb-0">Nothing on it yet.</p>
+                <SectionEmpty Icon="bi-inbox">Nothing on it yet.</SectionEmpty>
             }
             @if (EditionChecks.Whole(rows) is { } whole)
             {
