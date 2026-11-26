@@ -1,6 +1,10 @@
 // Actions board: drag a card to another lane, or onto a chip on the closed strip, to move the action there. CSP-safe (an
 // external file, no inline handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync);
 // only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
+// The drag is by pointer events (mouse, pen and touch alike), not the browser's drag and drop, so the card can be lifted,
+// follow the pointer and settle where it lands: a mouse or pen starts it by moving 6px with the button down, a finger by
+// holding still a moment first (so a swipe still scrolls the page). The held card is a copy (the ghost); the card itself
+// stays in its lane as the dashed gap it left, until .NET moves it. Esc cancels; a press that isn't a drag is a click.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
 // few calls a drag, not the pointer's path), so everyone else's board can show who is moving it and where (BoardDrags).
 // When someone else's move arrives, play() slides the card in from the column it left.
@@ -10,7 +14,8 @@
 // in its lane, else the one before, else the lane's heading (focusPlace). A card dragged (pressing it gives it focus) does the
 // same once its drop is done.
 window.tideBoard = (function () {
-    let ref = null, root = null, dragging = null, over = null, focusedAtPress = null;
+    let ref = null, root = null, dragging = null, over = null, focusedAtPress = null, press = null, ghost = null;
+    const SLOP = 6, HOLD = 280;
 
     function tell(method) {
         if (!ref) return;
@@ -24,9 +29,6 @@ window.tideBoard = (function () {
         over = status;
         tell('OnDragging', dragging.dataset.id, status);
     }
-
-    // Where a card is over: a lane, or a chip on the closed strip (both carry the status a drop moves it to).
-    function column(e) { return e.target && e.target.closest ? e.target.closest('.tide-kcol, .tide-kchip') : null; }
 
     function mark(col) {
         root.querySelectorAll('.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
@@ -49,45 +51,133 @@ window.tideBoard = (function () {
         focusedAtPress = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
     }
 
-    function onDragStart(e) {
+    // A token's value in ms, or the easing it names (the stylesheet's motion tokens).
+    function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+    function onPointerDown(e) {
+        onPress(e);
+        if (e.button !== 0 || press || dragging) return;
         const card = e.target && e.target.closest ? e.target.closest('.tide-kcard[draggable="true"]') : null;
-        if (!card) return;
+        if (!card || e.target.closest('button, input, select, textarea, [role="menu"]')) return;
+        press = { card: card, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === 'touch', ready: e.pointerType !== 'touch', timer: 0 };
+        if (press.touch) press.timer = setTimeout(function () { if (press && !dragging) { press.ready = true; card.classList.add('tide-kcard-held'); } }, HOLD);
+    }
+
+    function forget() {
+        if (!press) return;
+        clearTimeout(press.timer);
+        press.card.classList.remove('tide-kcard-held');
+        press = null;
+    }
+
+    // The press became a drag: the ghost (a copy of the card, outside the board) follows the pointer from here.
+    function lift() {
+        const card = press.card, r = card.getBoundingClientRect();
         dragging = card;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', card.dataset.id);   // Firefox starts a drag only with data set
-        card.classList.add('dragging');
         over = null;
+        try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
+        ghost = card.cloneNode(true);
+        ghost.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
+        ghost.removeAttribute('id');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.inert = true;
+        ghost.classList.add('tide-kcard-ghost');
+        ghost.classList.remove('selected', 'tide-kcard-held');
+        ghost.style.left = r.left + 'px';
+        ghost.style.top = r.top + 'px';
+        ghost.style.width = r.width + 'px';
+        ghost.style.height = r.height + 'px';
+        document.body.appendChild(ghost);
+        const sel = window.getSelection && window.getSelection();
+        if (sel) sel.removeAllRanges();
+        card.classList.add('dragging');
+        card.classList.remove('tide-kcard-held');
         tell('OnDragging', card.dataset.id, null);
     }
 
-    function onDragOver(e) {
-        if (!dragging) return;
-        const col = column(e);
-        if (!col || col.dataset.status === dragging.dataset.status) { mark(null); report(null); return; }
+    function onPointerMove(e) {
+        if (!press || e.pointerId !== press.id) return;
+        if (!dragging) {
+            if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < SLOP) return;
+            if (!press.ready) { forget(); return; }   // a finger that moved before the hold: the page scrolls
+            lift();
+        }
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        mark(col);
-        report(col.dataset.status);
+        ghost.style.transform = 'translate(' + (e.clientX - press.x) + 'px, ' + (e.clientY - press.y) + 'px)';
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        const col = under && under.closest ? under.closest('.tide-kcol, .tide-kchip') : null;
+        const to = col && root.contains(col) && col.dataset.status !== dragging.dataset.status ? col : null;
+        mark(to);
+        report(to ? to.dataset.status : null);
     }
 
-    function onDragLeave(e) {
-        const col = column(e);
-        if (col && !col.contains(e.relatedTarget)) col.classList.remove('over');
+    // The click that follows letting go isn't one: it would open the card's link, or select a lane's card under it.
+    function swallowClick() {
+        const stop = function (e) { e.preventDefault(); e.stopPropagation(); };
+        window.addEventListener('click', stop, { capture: true, once: true });
+        setTimeout(function () { window.removeEventListener('click', stop, true); }, 0);
     }
 
-    function onDrop(e) {
-        if (!dragging) return;
-        const col = column(e);
-        if (!col) return;
-        e.preventDefault();
-        const id = dragging.dataset.id, from = dragging.dataset.status, to = col.dataset.status;
-        const place = focusedAtPress === dragging ? beside(dragging) : null;
+    // The ghost glides from where it was let go to where the card now is, and the card shows again as it arrives.
+    function settle(g, card) {
+        const done = function () {
+            g.remove();
+            if (!card) return;
+            card.style.visibility = '';
+            card.classList.add('tide-kcard-locked');
+            setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, 600);
+        };
+        if (!card || window.tideShortcuts.still() || !g.animate) { done(); return; }
+        const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
+        card.style.visibility = 'hidden';
+        g.animate([{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
+            { duration: parseFloat(token('--tide-dur-panel')) || 280, easing: token('--tide-ease-out') || 'ease-out', fill: 'forwards' })
+            .finished.then(done, done);
+    }
+
+    function onPointerUp(e) {
+        if (!press || e.pointerId !== press.id) return;
+        if (!dragging) { forget(); return; }
+        const target = root.querySelector('.tide-kcol.over, .tide-kchip.over');
+        const card = dragging, id = card.dataset.id, from = card.dataset.status, to = target ? target.dataset.status : null;
+        const place = focusedAtPress === card ? beside(card) : null, g = ghost;
+        swallowClick();
+        forget();
+        ghost = null;
         end();
-        if (from === to || !ref) return;
+        if (!to || !ref) { settle(g, card); return; }
+        // The ghost settles once .NET has moved the card, or after a moment if it's still asking (a drop on the closed
+        // strip opens a dialog first): then it settles back where the card still is.
+        let settled = false;
+        const land = function () {
+            if (settled) return;
+            settled = true;
+            requestAnimationFrame(function () { settle(g, card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]')); });
+        };
+        setTimeout(land, 400);
         ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
+            land();
             if (place) requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
-        }, function () { });
+        }, land);
     }
+
+    // Cancelled (Esc, or the browser took the pointer back): the card goes back where it was.
+    function cancel() {
+        if (!dragging) { forget(); return; }
+        const card = dragging, g = ghost;
+        forget();
+        ghost = null;
+        end();
+        settle(g, card);
+    }
+
+    // The browser's own drag would take the pointer away; a finger that's holding a card doesn't scroll the page or
+    // open the long-press menu.
+    function onNativeDrag(e) { if (e.target && e.target.closest && e.target.closest('.tide-kcard')) e.preventDefault(); }
+    // Nor does a mouse dragging a card select the text it passes over.
+    function onSelectStart(e) { if (press) e.preventDefault(); }
+    function onTouchMove(e) { if (press && press.ready) e.preventDefault(); }
+    function onContextMenu(e) { if (press && press.touch) e.preventDefault(); }
 
     // Someone else moved these cards: each slides in from the column it left (the card's glow and "Moved by" are
     // rendered by .NET). Without motion (the person's setting, or no Web Animations), the glow alone says it arrived.
@@ -134,6 +224,7 @@ window.tideBoard = (function () {
     }
 
     function onKeyDown(e) {
+        if (e.key === 'Escape' && dragging) { e.preventDefault(); e.stopPropagation(); cancel(); return; }
         const menu = e.target && e.target.closest ? e.target.closest('.tide-kcard-menu') : null;
         if (!menu || e.ctrlKey || e.metaKey || e.altKey) return;
         if (e.key === 'Escape') {
@@ -165,24 +256,29 @@ window.tideBoard = (function () {
         start: function (dotnetRef, el) {
             ref = dotnetRef;
             root = el;
-            root.addEventListener('mousedown', onPress, true);
-            root.addEventListener('dragstart', onDragStart);
-            root.addEventListener('dragover', onDragOver);
-            root.addEventListener('dragleave', onDragLeave);
-            root.addEventListener('drop', onDrop);
-            root.addEventListener('dragend', end);
-            root.addEventListener('keydown', onKeyDown);
+            root.addEventListener('pointerdown', onPointerDown, true);
+            root.addEventListener('dragstart', onNativeDrag);
+            root.addEventListener('touchmove', onTouchMove, { passive: false });
+            root.addEventListener('contextmenu', onContextMenu);
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerUp);
+            document.addEventListener('pointercancel', cancel);
+            document.addEventListener('keydown', onKeyDown, true);
+            document.addEventListener('selectstart', onSelectStart);
         },
         stop: function () {
+            if (dragging || press) cancel();
             if (root) {
-                root.removeEventListener('mousedown', onPress, true);
-                root.removeEventListener('dragstart', onDragStart);
-                root.removeEventListener('dragover', onDragOver);
-                root.removeEventListener('dragleave', onDragLeave);
-                root.removeEventListener('drop', onDrop);
-                root.removeEventListener('dragend', end);
-                root.removeEventListener('keydown', onKeyDown);
+                root.removeEventListener('pointerdown', onPointerDown, true);
+                root.removeEventListener('dragstart', onNativeDrag);
+                root.removeEventListener('touchmove', onTouchMove, { passive: false });
+                root.removeEventListener('contextmenu', onContextMenu);
             }
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+            document.removeEventListener('pointercancel', cancel);
+            document.removeEventListener('keydown', onKeyDown, true);
+            document.removeEventListener('selectstart', onSelectStart);
             ref = null;
             root = null;
             dragging = null;
