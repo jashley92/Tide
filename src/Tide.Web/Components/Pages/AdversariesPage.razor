@@ -131,7 +131,7 @@ else
         <div>
             <section class="tide-card" aria-labelledby="adv-timeline-h">
                 <h2 id="adv-timeline-h" tabindex="-1">Timeline <span class="tide-count">(@_detail.Articles.Count articles · @_detail.Actions.Count actions · @_detail.Indicators indicators)</span></h2>
-                @if (_detail.Articles.Count == 0) { <SectionEmpty Icon="bi-newspaper">No articles yet.</SectionEmpty> }
+                @if (_detail.Articles.Count == 0) { <SectionEmpty Icon="@Icons.Article">No articles yet.</SectionEmpty> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Articles)
                     {
@@ -147,7 +147,7 @@ else
             </section>
             <section class="tide-card" aria-labelledby="adv-actions-h">
                 <h2 id="adv-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
-                @if (_detail.Actions.Count == 0) { <SectionEmpty Icon="bi-check2-square">No actions.</SectionEmpty> }
+                @if (_detail.Actions.Count == 0) { <SectionEmpty Icon="@Icons.Action">No actions.</SectionEmpty> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Actions)
                     {
@@ -160,7 +160,7 @@ else
         <div>
             <section class="tide-card" aria-labelledby="adv-tech-h">
                 <h2 id="adv-tech-h">Techniques seen in our articles</h2>
-                @if (_detail.Techniques.Count == 0) { <div class="small tide-muted">None yet.</div> }
+                @if (_detail.Techniques.Count == 0) { <SectionEmpty Icon="@Icons.Technique">None yet.</SectionEmpty> }
                 else
                 {
                     @* Each technique says how many of our articles show it in words, not only in its shade: the shade alone
@@ -225,7 +225,7 @@ else
                 else
                 {
                     <dl class="tide-stack-facts"><dt>Other names</dt><dd>@(p.Aliases ?? "—")</dd></dl>
-                    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <SectionEmpty Icon="bi-journal-text">No notes yet.</SectionEmpty> }
+                    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <SectionEmpty Icon="@Icons.Notes">No notes yet.</SectionEmpty> }
                 }
             </section>
         </div>

@@ -156,9 +156,9 @@ public partial class TodayTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true },
             new ComponentHarness.SignIn("dev:layout-analyst", "Layout Analyst", "Analyst"));
         var html = await r.Html();
-        Section(html, "reviews-h").Should().Contain("Reviews asked of you").And.Contain("<p class=\"small tide-muted mb-0\">None waiting.</p>",
+        Section(html, "reviews-h").Should().Contain("Reviews asked of you").And.Contain("tide-section-empty").And.Contain("None waiting.",
             "the section is there when none are waiting");
-        Section(html, "my-actions-h").Should().Contain("<p class=\"tide-section-empty\"><span class=\"bi bi-check2-square\" aria-hidden=\"true\"></span><span>Nothing assigned to you.")
+        Section(html, "my-actions-h").Should().Contain("tide-section-empty").And.Contain("Nothing assigned to you.")
             .And.NotContain("tide-empty-state", "an empty card says so in a line");
         Section(html, "recent-h").Should().MatchRegex(@"(?s)<h2 id=""recent-h""[^>]*>Not on a brief yet.*href=""articles\?new=1"".*</h2>", "New article is in the heading");
         Section(html, "meeting-h").Should().Contain("<dl class=\"tide-facts tide-facts-side tide-meeting-facts\"><div class=\"tide-fact\"><dt>When</dt>")

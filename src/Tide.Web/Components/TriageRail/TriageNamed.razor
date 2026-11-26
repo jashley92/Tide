@@ -10,7 +10,7 @@
         @if (Watching is { } watched) { @WatchingChip(watched) }
         else { <Badge Class="tide-badge-off" Title="It names no watched adversary">Watched adversary</Badge> }
     </div>
-    @if (WeRun is null && Watching is null) { <SectionEmpty Icon="bi-crosshair" Class="mt-2">Nothing on Our stack or a watched adversary's profile is named.</SectionEmpty> }
+    @if (WeRun is null && Watching is null) { <SectionEmpty Icon="@Icons.Named" Class="mt-2">Nothing on Our stack or a watched adversary's profile is named.</SectionEmpty> }
     @if (WeRun is null && Add is not null)
     {
         @if (_adding)

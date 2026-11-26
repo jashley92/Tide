@@ -19,7 +19,7 @@
             </ul>
         </div>
     }
-    @if (raised == 0) { <SectionEmpty Icon="bi-check2-square" Class="mb-2">No actions raised on these articles.</SectionEmpty> }
+    @if (raised == 0) { <SectionEmpty Icon="@Icons.Action" Class="mb-2">No actions raised on these articles.</SectionEmpty> }
 
     <h3 class="tide-subhead">Meeting notes (@Recap.OpenNotes open, @(Recap.Notes.Count - Recap.OpenNotes) done)</h3>
     @if (Recap.Notes.Count > 0)
@@ -28,7 +28,7 @@
     }
     else
     {
-        <SectionEmpty Icon="bi-journal-text" Class="mb-2">No notes were taken.</SectionEmpty>
+        <SectionEmpty Icon="@Icons.Notes" Class="mb-2">No notes were taken.</SectionEmpty>
     }
 
     <h3 class="tide-subhead">Carried to a later brief (@Recap.Carried.Count)</h3>
@@ -43,7 +43,7 @@
     }
     else
     {
-        <p class="small tide-muted mb-2">None: every article was taken at this meeting.</p>
+        <SectionEmpty Icon="@Icons.Article" Class="mb-2">None: every article was taken at this meeting.</SectionEmpty>
     }
 
     <h3 class="tide-subhead">Attended (@Recap.Attendees.Count)</h3>
@@ -53,7 +53,7 @@
     }
     else
     {
-        <p class="small tide-muted mb-0">Nobody was recorded as attending.</p>
+        <SectionEmpty Icon="@Icons.People">Nobody was recorded as attending.</SectionEmpty>
     }
 </section>
 

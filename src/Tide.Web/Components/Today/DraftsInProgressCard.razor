@@ -10,7 +10,7 @@
     <h2 id="drafts-h">Drafts in progress <span class="tide-count">(@Drafts.Count)</span></h2>
     @if (Drafts.Count == 0)
     {
-        <SectionEmpty Icon="bi-pencil">No drafts in progress.</SectionEmpty>
+        <SectionEmpty Icon="@Icons.Draft">No drafts in progress.</SectionEmpty>
     }
     <ul class="list-unstyled mb-0">
         @foreach (var c in Drafts.Take(Shown))

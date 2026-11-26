@@ -433,7 +433,7 @@ else
                         }
                     </span>
                 }
-                @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
+                @if (_form.TechniqueIds.Count == 0) { <SectionEmpty Icon="@Icons.Technique" Class="mb-2">None tagged.</SectionEmpty> }
                 @if (_canWrite)
                 {
                     <div>

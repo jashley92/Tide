@@ -33,7 +33,7 @@
     }
     @if (Files.Live.Count == 0)
     {
-        <SectionEmpty Icon="bi-paperclip" Class="mt-2">No files yet.@(CanWork ? "" : " Files on its comments are listed here too.")</SectionEmpty>
+        <SectionEmpty Icon="@Icons.Files" Class="mt-2">No files yet.@(CanWork ? "" : " Files on its comments are listed here too.")</SectionEmpty>
     }
     else
     {

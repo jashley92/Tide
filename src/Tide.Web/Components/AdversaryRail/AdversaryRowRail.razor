@@ -44,7 +44,7 @@
     else
     {
         var articles = _detail.Articles;
-        @if (articles.Count == 0) { <SectionEmpty Icon="bi-newspaper">No articles yet.</SectionEmpty> }
+        @if (articles.Count == 0) { <SectionEmpty Icon="@Icons.Article">No articles yet.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in articles.Take(Shown))
             {
@@ -63,7 +63,7 @@
     @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (open.Count == 0) { <SectionEmpty Icon="bi-check2-square">No open actions.</SectionEmpty> }
+        @if (open.Count == 0) { <SectionEmpty Icon="@Icons.Action">No open actions.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in open.Take(Shown))
             {
@@ -78,7 +78,7 @@
 <section class="tide-card" aria-labelledby="rail-techniques-h">
     <h2 id="rail-techniques-h">Top techniques</h2>
     @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
-    else if (_detail.Techniques.Count == 0) { <p class="small tide-muted mb-0">None yet.</p> }
+    else if (_detail.Techniques.Count == 0) { <SectionEmpty Icon="@Icons.Technique">None yet.</SectionEmpty> }
     else
     {
         <ul class="tide-rail-list tide-adv-rail-techniques">
