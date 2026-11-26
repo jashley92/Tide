@@ -446,7 +446,8 @@
 
 /* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four corners close
    in on it. On a board card and a triage row. */
-.tide-kcard, .tide-triage-row { position: relative; }
+/* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
+:where(.tide-kcard, .tide-triage-row) { position: relative; }
 :is(.tide-kcard, .tide-triage-row)::before { content: ""; position: absolute; inset: 0; pointer-events: none;
     border: 2px solid var(--tide-accent); --tide-bracket: .6rem;   /* each corner's arm */
     mask: conic-gradient(at var(--tide-bracket) var(--tide-bracket), #0000 75%, #000 0) 0 0 / calc(100% - var(--tide-bracket)) calc(100% - var(--tide-bracket));
