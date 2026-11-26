@@ -339,7 +339,7 @@
 .tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
 /* A page's tip (OnboardingHost): a small card beside the control it's about, once tips.js places it (is-placed, with
    top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
-   it is inert. Under a dialog (3500), over the page and its rail. */
+   it is inert. Under a dialog (--tide-z-modal), over the page and its rail. */
 .tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tip);
     width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
     border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
@@ -354,7 +354,7 @@
 /* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
    click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
    motion. */
-.tide-tip-ring { position: fixed; z-index: calc(var(--tide-z-tour) + 5); pointer-events: none; border: 2px solid var(--tide-focus-ring);
+.tide-tip-ring { position: fixed; z-index: var(--tide-z-tour-ring); pointer-events: none; border: 2px solid var(--tide-focus-ring);
     border-radius: var(--tide-radius-lg); box-shadow: 0 0 0 3px var(--tide-accent-soft);
     animation: tide-ring-pulse var(--tide-dur-loop) var(--tide-ease-out) 2; }
 @keyframes tide-ring-pulse {
@@ -368,14 +368,14 @@
    Over a tip, or over a step (is-step). */
 .tide-tip-arrow { position: fixed; z-index: calc(var(--tide-z-tip) + 1); width: 14px; height: 14px; background: var(--tide-surface);
     border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
-.tide-tip-arrow.is-step { z-index: calc(var(--tide-z-tour) + 11); }
+.tide-tip-arrow.is-step { z-index: var(--tide-z-tour-arrow); }
 .tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
 .tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
 /* A tour step (OnboardingHost): a dialog over a light scrim, so the control it's about shows; beside that control once
    tips.js places it (is-placed), as a tip is. */
-.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: calc(var(--tide-z-tour) + 10);
+.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tour-card);
     width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
 /* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.
    A click on it does nothing; Next, Back, Skip tour and Escape are the ways on. The ringed control shows through it. */

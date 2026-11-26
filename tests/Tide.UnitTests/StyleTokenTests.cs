@@ -33,10 +33,23 @@ public partial class StyleTokenTests
         // Every duration and delay comes from a --tide-dur-* token, so the app keeps one rhythm and the reduced-motion
         // switch (--tide-motion) can reach the movement. A literal ".15s" slips past both. 0s is fine: it means "at once".
         var literals = MotionDeclaration().Matches(Stylesheets.ReadAll())
-            .Where(d => LiteralDuration().Matches(d.Groups[1].Value).Any(t => double.Parse(t.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) != 0))
+            .Where(d => LiteralDuration().Matches(d.Groups[1].Value).Any(t => t.Value is not ("0s" or "0ms")))
             .Select(d => d.Value.Trim());
 
         literals.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Movement_StopsUnderReducedMotion()
+    {
+        // A transition that moves something (a transform, a width, a margin) takes a --tide-move-* duration, which the
+        // reduced-motion switch zeroes. A fade or color change keeps its plain --tide-dur-*, so the change still shows.
+        var moving = TransitionDeclaration().Matches(Stylesheets.ReadAll())
+            .SelectMany(d => TopLevelComma().Split(d.Groups[1].Value))
+            .Select(t => t.Trim())
+            .Where(t => MovementProperty().IsMatch(t) && !t.Contains("--tide-move-", StringComparison.Ordinal));
+
+        moving.Should().BeEmpty();
     }
 
     [Fact]
@@ -56,8 +69,17 @@ public partial class StyleTokenTests
     [GeneratedRegex(@"(?:transition|animation)(?:-duration|-delay)?\s*:([^;}]*)")]
     private static partial Regex MotionDeclaration();
 
-    [GeneratedRegex(@"(?<![\w.-])(\d*\.?\d+)m?s\b")]
+    [GeneratedRegex(@"(?<![\w.-])\d*\.?\d+m?s\b")]
     private static partial Regex LiteralDuration();
+
+    [GeneratedRegex(@"transition\s*:([^;}]*)")]
+    private static partial Regex TransitionDeclaration();
+
+    [GeneratedRegex(@",(?![^(]*\))")]
+    private static partial Regex TopLevelComma();
+
+    [GeneratedRegex(@"^(?:transform|translate|rotate|scale|width|height|flex-basis|inset|top|right|bottom|left|margin(?:-[a-z]+)?|border-width)\b")]
+    private static partial Regex MovementProperty();
 
     [GeneratedRegex(@"z-index\s*:\s*\d{4,}")]
     private static partial Regex GlobalLayer();

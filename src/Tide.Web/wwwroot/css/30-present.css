@@ -70,7 +70,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-slide-back:hover { background: var(--tide-slide-accent-hover); }
 .tide-slide-dock > button:focus-visible { outline: 3px solid var(--tide-slide-accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
-    .tide-slide-body, .tide-scrollfade { scroll-behavior: auto; transition: none; }
+    .tide-slide-body, .tide-scrollfade { scroll-behavior: auto; }
 }
 @media (forced-colors: active) { .tide-scrollfade { -webkit-mask-image: none; mask-image: none; } }
 .tide-slide-kicker { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; color: var(--tide-slide-muted); font-size: .85em; margin-bottom: .6em; }

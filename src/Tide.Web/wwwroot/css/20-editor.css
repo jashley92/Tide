@@ -102,8 +102,8 @@
 /* Columns are spaced by margin, not gap, so a collapsed one takes no space at all. */
 .tide-atkm-grid { flex: 1 1 auto; display: flex; overflow: auto; padding: .75rem .25rem .75rem .75rem; align-items: flex-start; background: var(--tide-bg); scroll-behavior: smooth; }
 .tide-atkm-col { flex: 0 0 14rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface);
-    transition: flex-basis calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out), margin-right calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out),
-        border-width calc(var(--tide-dur-base) * var(--tide-motion)) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out); }
+    transition: flex-basis var(--tide-move-base) var(--tide-ease-out), margin-right var(--tide-move-base) var(--tide-ease-out),
+        border-width var(--tide-move-base) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out); }
 /* A tactic with no match while filtering: fades and folds its width to nothing; its content keeps its own width meanwhile, clipped rather than squeezed. */
 .tide-atkm-col-hidden { flex-basis: 0; margin-right: 0; border-width: 0; opacity: 0; pointer-events: none; }
 .tide-atkm-col > .tide-atkm-colhead, .tide-atkm-col > .tide-atkm-cells { min-width: calc(14rem - 2px); }
@@ -183,7 +183,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-disclosure { display: flex; align-items: center; flex-wrap: wrap; gap: var(--tide-space-2); width: 100%; border: 0; background: none; padding: 0;
     color: inherit; font: inherit; text-align: left; }
 .tide-disclosure:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
-.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform calc(var(--tide-dur-fast) * var(--tide-motion)) var(--tide-ease-out); }
+.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform var(--tide-move-fast) var(--tide-ease-out); }
 .tide-disclosure[aria-expanded="true"] .tide-disclosure-chev { transform: rotate(90deg); }
 .tide-disclosure-sum { color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-regular); }
 .tide-disclosure-body { margin-top: var(--tide-space-3); }
