@@ -166,7 +166,7 @@ else
                 var attachAll = AttachTo(line);
                 var groupPicked = IsPicked(line);
                 <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line) @(groupPicked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)"
-                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : "") + (groupPicked ? PickedNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
+                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : "") + (groupPicked ? PickedNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)" data-items="@string.Join(" ", group.Ids)"
                     @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                     <div class="tide-triage-head">
                         @PickBox(line, i, groupPicked, $"Choose the {line.Members.Count} reports")
@@ -201,7 +201,7 @@ else
             var unseen = _marks.IsUnseen(item.Id);
             var picked = IsPicked(line);
             <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id) @(picked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : "") + (picked ? PickedNote : ""))"
-                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" data-items="@item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
                     <div class="flex-grow-1 tide-triage-body">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
@@ -2141,6 +2141,8 @@ else
             Announce();
             if (stay)
             {
+                // The rows promoted go to the sidebar's Articles before the list drops them (when a draft was made).
+                if (outcome.Made) await JS.BestEffortAsync("tideTriage.promoted", (object)ids.Select(x => x.ToString()).ToArray());
                 (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
                 await Load();
                 _focus = "tideTriage.focusRow";
