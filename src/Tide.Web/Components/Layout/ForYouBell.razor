@@ -1,0 +1,252 @@
+@* The For you bell in the top bar: how many of the person's notices are new (NoticeService), and a panel of them, newest
+   first, opened under it. A notice is what a colleague handed them or asked of them: an article, a review, an action
+   (theirs or their team's), a brief rotation request or its answer. Opening the panel leaves each one new; clicking one,
+   or Mark all seen, marks it seen. Only for someone who can be sent a notice at all: Readers and Visitors see nothing.
+   The count follows the person's live topic (ChangeFeed.Notices): a colleague's save that makes a notice, and the
+   person's own seen marks in another tab. A notice that arrives also shows a toast, unless they turned that off on My
+   notifications. The panel is a popout, as the account menu is (Popout): Esc, a click outside or Tab out of it closes
+   it, Esc with focus back on the bell; on a phone it opens the window's width. *@
+@implements IAsyncDisposable
+@using Tide.Application.Intake
+@using Tide.Application.Notices
+@using Tide.Application.Preferences
+@inject NoticeService Notices
+@inject UserPreferenceService Prefs
+@inject ICurrentUser CurrentUser
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@inject ToastService Toasts
+@inject TimeProvider Time
+@inject IJSRuntime JS
+
+@if (_shown)
+{
+    <div class="tide-bell" @ref="_holder">
+        @* The count is part of the bell's name ("For you, 3 new"); the badge itself is only seen. *@
+        <button type="button" class="tide-bell-btn @(_count > 0 ? "has-new" : "")" @ref="_button" @onclick="Toggle" title="For you"
+                aria-haspopup="dialog" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_open ? PanelId : null)" aria-label="@Name">
+            <span class="bi bi-bell" aria-hidden="true"></span>
+            @if (_count > 0)
+            {
+                <span class="tide-bell-count" aria-hidden="true">@Badge(_count)</span>
+            }
+        </button>
+
+        @if (_open)
+        {
+            <div class="tide-popover-backdrop" @onclick="Close"></div>
+            <div class="tide-popover tide-popover-end tide-bell-pop" id="@PanelId" role="dialog" aria-labelledby="@(PanelId + "-title")" data-tab-through>
+                <div class="tide-bell-head">
+                    <div class="tide-bell-heading" id="@(PanelId + "-title")">
+                        For you @if (_count > 0) { <span class="tide-bell-new">@_count new</span> }
+                    </div>
+                    @if (_count > 0)
+                    {
+                        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="AllSeen">Mark all seen</button>
+                    }
+                </div>
+
+                @if (_list is null)
+                {
+                    <div class="tide-bell-state"><LoadingBlock Rows="2" Columns="1" /></div>
+                }
+                else if (_list.Count == 0)
+                {
+                    <div class="tide-bell-state">
+                        <EmptyState Icon="bi-bell-slash" Title="Nothing for you yet" Compact="true">
+                            When a colleague hands you something or asks you for something, it shows here.
+                        </EmptyState>
+                    </div>
+                }
+                else
+                {
+                    <ul class="tide-bell-list">
+                        @foreach (var n in _list)
+                        {
+                            <li class="tide-bell-item @(n.Seen ? "" : "is-new")" @key="n.Id">
+                                <span class="tide-bell-dot" aria-hidden="true"></span>
+                                <div class="tide-bell-body">
+                                    <div class="tide-bell-line">
+                                        @if (!n.Seen) { <span class="visually-hidden">New: </span> }
+                                        @n.Line <span class="tide-bell-when">· @Ago(n.AtUtc)</span>
+                                    </div>
+                                    @if (n.Link is { } link)
+                                    {
+                                        <a class="tide-bell-subject" href="@link" @onclick="() => Opened(n)">@n.Title</a>
+                                    }
+                                    else
+                                    {
+                                        @* What it was about has gone (deleted, or no longer theirs to open). *@
+                                        <div class="tide-bell-gone">
+                                            No longer there
+                                            @if (!n.Seen)
+                                            {
+                                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@_busy" @onclick="() => Opened(n)">Mark seen</button>
+                                            }
+                                        </div>
+                                    }
+                                    @if (n.Detail is { } detail)
+                                    {
+                                        <div class="tide-bell-detail">@detail</div>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <div class="tide-bell-foot">
+                    <span>Seen notices are kept @NoticeService.KeepSeenDays days.</span>
+                    <a href="notifications" @onclick="Close">My notifications</a>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>The panel's id, which the bell controls while it's open.</summary>
+    public const string PanelId = "for-you";
+
+    private bool _shown, _open, _busy;
+    private int _count;
+    private IReadOnlyList<ForYouNotice>? _list;
+    // The newest notice told so far: one made after it, heard live, is new to this tab and gets a toast.
+    private DateTimeOffset _since;
+    private ElementReference _holder, _button;
+    private Popout? _popout;
+    private LiveChanges? _changes;
+
+    /// <summary>What the panel lists (null until it's read), and whether it's open: for the tests.</summary>
+    internal IReadOnlyList<ForYouNotice>? Listed => _list;
+
+    internal bool IsOpen => _open;
+
+    private string Name => _count > 0 ? $"For you, {_count} new" : "For you";
+
+    /// <summary>The badge's figure: "9+" past nine, so it stays one small round mark.</summary>
+    public static string Badge(int count) => count > 9 ? "9+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private string Ago(DateTimeOffset at) => PullTimes.Ago(Time.GetUtcNow() - at);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Notices.CanReceive) return;
+        _shown = true;
+        _since = Time.GetUtcNow();
+        var topic = ChangeFeed.Notices(CurrentUser.UserId);
+        // The circuit's own origin: this tab's seen marks are already shown (Opened, AllSeen), so only other tabs' and
+        // colleagues' saves are heard.
+        _changes = new LiveChanges(Feed, Origin, c => c.Topic == topic, InvokeAsync, _ => Heard());
+        _count = await Quietly(() => Notices.UnseenCountAsync(), 0);
+    }
+
+    // The person's notices changed: one arrived, or some were marked seen (here or in another tab).
+    internal async Task Heard()
+    {
+        // Independent reads, each with a context of its own, so together.
+        var (freshRead, countRead) = (Quietly(() => Notices.NewSinceAsync(_since), []), Quietly(() => Notices.UnseenCountAsync(), _count));
+        var (fresh, count) = (await freshRead, await countRead);
+        if (fresh.Count > 0)
+        {
+            _since = fresh[^1].AtUtc;
+            await Announce(fresh);
+        }
+        _count = count;
+        if (_open) _list = await Quietly(() => Notices.ListAsync(), _list ?? []);
+        StateHasChanged();
+    }
+
+    // A toast for what just arrived, unless the person turned them off: the one, with a link to it, or how many.
+    private async Task Announce(IReadOnlyList<ForYouNotice> fresh)
+    {
+        var on = await Quietly(() => Prefs.GetAsync(UserPreferences.NoticeToasts), UserPreferences.On);
+        if (on != UserPreferences.On) return;
+        if (fresh is [var one])
+        {
+            var message = one.Title is { } title ? $"{one.Line}: {title}" : one.Line;
+            Toasts.Tell(message, one.Link is { } link ? new ToastService.ToastLink("/" + link, "Open") : null);
+        }
+        else Toasts.Tell($"{fresh.Count} new for you. They're under the bell at the top.");
+    }
+
+    internal async Task Toggle()
+    {
+        if (_open)
+        {
+            Close();
+            return;
+        }
+        _open = true;
+        _list = null;
+        StateHasChanged();
+        var (list, count) = (Quietly(() => Notices.ListAsync(), []), Quietly(() => Notices.UnseenCountAsync(), _count));
+        (_list, _count) = (await list, await count);
+        // Drawn now, not only when the click's handler ends: the live topic may have redrawn in between.
+        StateHasChanged();
+    }
+
+    private void Close() => _open = false;
+
+    private Task Dismissed()
+    {
+        Close();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // Clicked: marked seen, and the panel closes as its link opens the page.
+    internal async Task Opened(ForYouNotice n)
+    {
+        if (n.Link is not null) Close();
+        if (n.Seen) return;
+        // Shown seen at once; the live topic brings the count from the database after.
+        _list = _list?.Select(x => x.Id == n.Id ? x with { Seen = true } : x).ToList();
+        _count = Math.Max(0, _count - 1);
+        await Try(() => Notices.SeenAsync(n.Id));
+        StateHasChanged();
+    }
+
+    internal async Task AllSeen()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Try(() => Notices.AllSeenAsync());
+            _list = _list?.Select(x => x with { Seen = true }).ToList();
+            _count = 0;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // The bell sits outside the page's error boundary: a read that fails keeps what it had, and only what the person
+    // pressed says it failed (Try), so a database hiccup never ends the session.
+    private static async Task<T> Quietly<T>(Func<Task<T>> read, T fallback)
+    {
+        try { return await read(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return fallback;
+        }
+    }
+
+    private async Task Try(Func<Task> write)
+    {
+        try { await write(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        _shown ? (_popout ??= new Popout(JS, Dismissed)).FollowAsync(_open, _holder, _button) : Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        _changes?.Dispose();
+        if (_popout is not null) await _popout.DisposeAsync();
+    }
+}

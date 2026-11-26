@@ -220,6 +220,15 @@ no top bar, so none there.
   wording, rather than squeezing the search box or Go to; under 1100px the team's name gives way to it; under
   900px the chip is gone, so the search box and the Go to button keep their room (`css/60-rail-and-pages.css`, "Brief chip").
 
+**The For you bell.** `ForYouBell`, between the Context button and `?`, is drawn for anyone `NoticeService.CanReceive`
+(not Readers or Visitors). Its badge counts the person's new notices ("9+" past nine) and its name says it ("For you, 3
+new"). It opens a popout (`Popout`, as the account menu does; full width on a phone) listing their notices newest
+first (`NoticeService.ListAsync`: every new one, and seen ones from the last 30 days, at most 50). Opening the panel
+leaves them new; clicking one, or **Mark all seen**, marks it seen. A notice whose subject has gone says so, with its
+own Mark seen. It follows `notices:{userId}` live; what arrives also shows a toast with a link to it
+(`ToastService.Tell`), unless the person turned that off on My notifications (preference `notices.toasts`). A failed
+read keeps what it had; only a failed click says so.
+
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
 days as a calendar file (`/rotation/my.ics`), Help and what's new (`/help`), and About. These settings are per browser

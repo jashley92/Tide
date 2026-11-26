@@ -115,12 +115,15 @@ public sealed class NoticeService(IAppDbContextFactory dbs, ICurrentUser user, T
     private static async Task<IReadOnlyList<ForYouNotice>> ShownAsync(IAppDbContext db, List<Notice> rows, CancellationToken ct)
     {
         if (rows.Count == 0) return [];
-        var ids = rows.Select(n => n.SubjectId).Distinct().ToList();
-        var articles = await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Title, ct);
-        var actions = await db.Actions.AsNoTracking().Where(a => ids.Contains(a.Id))
-            .Select(a => new { a.Id, a.Number, a.Title, Team = a.Team!.Name }).ToDictionaryAsync(a => a.Id, ct);
-        var changes = await db.RotationChanges.AsNoTracking().Where(c => ids.Contains(c.Id))
-            .Select(c => new { c.Id, c.Kind, c.Status, c.GiveFrom, c.GiveTo }).ToDictionaryAsync(c => c.Id, ct);
+        // Each kind's subjects looked up where they live, and only the kinds there are: a lone hand-off is one query.
+        List<Guid> Of(params NoticeKind[] kinds) => [.. rows.Where(n => kinds.Contains(n.Kind)).Select(n => n.SubjectId).Distinct()];
+        var (articleIds, actionIds, changeIds) = (Of(NoticeKind.ArticleHandedToYou, NoticeKind.ReviewAsked),
+            Of(NoticeKind.ActionHandedToTeam, NoticeKind.ActionAssigned), Of(NoticeKind.RotationAsked, NoticeKind.RotationDecided));
+        var articles = articleIds.Count == 0 ? [] : await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Title, ct);
+        var actions = actionIds.Count == 0 ? [] : await db.Actions.AsNoTracking().Where(a => actionIds.Contains(a.Id))
+            .Select(a => new ShownAction(a.Id, a.Number, a.Title, a.Team!.Name)).ToDictionaryAsync(a => a.Id, ct);
+        var changes = changeIds.Count == 0 ? [] : await db.RotationChanges.AsNoTracking().Where(c => changeIds.Contains(c.Id))
+            .Select(c => new ShownChange(c.Id, c.Kind, c.Status, c.GiveFrom, c.GiveTo)).ToDictionaryAsync(c => c.Id, ct);
 
         return [.. rows.Select(n =>
         {
@@ -142,6 +145,10 @@ public sealed class NoticeService(IAppDbContextFactory dbs, ICurrentUser user, T
             return new ForYouNotice(n.Id, n.Kind, line, title, title is null ? null : link, n.Detail, n.CreatedAtUtc, n.SeenAtUtc is not null);
         })];
     }
+
+    private sealed record ShownAction(Guid Id, int Number, string Title, string Team);
+
+    private sealed record ShownChange(Guid Id, RotationChangeKind Kind, RotationChangeStatus Status, DateOnly GiveFrom, DateOnly GiveTo);
 
     // "Thu Nov 26", or "Mon Nov 23 to Fri Nov 27": the requester's days the partner takes on.
     private static string Days(DateOnly from, DateOnly to) =>

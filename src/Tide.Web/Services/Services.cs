@@ -110,9 +110,10 @@ public sealed class ToastService(TimeProvider? time = null)
         return undo();
     }
 
-    /// <summary>A notice of what someone else did, heard live. It isn't the outcome of this person's own attempt, so an
-    /// error from that attempt stays (often it's the reason the colleague's work is news: they got there first).</summary>
-    public void Tell(string message) => Add(message, false, clearsErrors: false);
+    /// <summary>A notice of what someone else did, heard live, with a link on to it when there is one. It isn't the
+    /// outcome of this person's own attempt, so an error from that attempt stays (often it's the reason the colleague's
+    /// work is news: they got there first).</summary>
+    public void Tell(string message, ToastLink? link = null) => Add(message, false, clearsErrors: false, link: link);
 
     public void Error(string message) => Add(message, true);
 
