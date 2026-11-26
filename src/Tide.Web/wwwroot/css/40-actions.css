@@ -284,7 +284,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* The list typing {{ opens: placed at the caret by js/placeholder-editor.js (these are where it starts). */
 .tide-oi-suggest { position: absolute; z-index: 20; left: calc(var(--bs-gutter-x, 0) * .5); width: min(36rem, calc(100% - var(--bs-gutter-x, 0))); max-height: 14rem; overflow-y: auto;
     margin: 0; padding: .2rem; list-style: none; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md);
-    background: var(--tide-surface); box-shadow: 0 4px 12px var(--tide-shadow); }
+    background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); }
 .tide-oi-suggest [role="option"] { cursor: pointer; }
 /* What the Insert menu just put in: a see-through mark over it that fades (js/placeholder-editor.js); with reduced
    motion it goes at once instead. */

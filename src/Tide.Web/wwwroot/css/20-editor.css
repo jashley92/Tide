@@ -92,8 +92,8 @@
    techniques beneath, sub-techniques folding under their parent; nearly full screen over the editor. */
 .tide-atkm-backdrop { position: fixed; inset: 0; background: var(--tide-overlay); z-index: var(--tide-z-picker); }
 .tide-atkm-panel { position: fixed; inset: 3vh 2vw; z-index: calc(var(--tide-z-picker) + 1); display: flex; flex-direction: column;
-    background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
-    box-shadow: 0 1rem 3rem var(--tide-shadow-strong); overflow: hidden; }
+    background: var(--tide-surface-raised); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
+    box-shadow: var(--tide-elev-3); overflow: hidden; }
 .tide-atkm-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--tide-border); }
 .tide-atkm-title { font-size: 1rem; font-weight: var(--tide-weight-semibold); margin: 0; }
 .tide-atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--tide-text-muted); flex: 0 1 22rem; min-width: 0; }

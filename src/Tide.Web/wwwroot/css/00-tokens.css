@@ -3,6 +3,7 @@
 :root {
     --tide-font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
     --tide-font-data: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    --tide-font-doc: "Iowan Old Style", "Charter", "Sitka Text", Cambria, Georgia, serif;  /* the brief's and slides' titles */
 
     /* Scales. Spacing in 4px steps; corner radii from badges (xs) to cards (xl); a type scale; the four weights. */
     --tide-space-1: .25rem;
@@ -172,6 +173,12 @@
     --tide-shadow-strong: rgba(0, 0, 0, .5);
     --tide-overlay: rgba(0, 0, 0, .45);
     --tide-overlay-strong: rgba(0, 0, 0, .85);
+    /* What floats over the page (popovers, toasts, dialogs, tips): a raised background and two elevations, menus and
+       toasts at 2, dialogs at 3. In light the raised surface is the surface; in dark it's a step lighter with a faint
+       top edge, since a shadow barely shows on a dark page. */
+    --tide-surface-raised: var(--tide-surface);
+    --tide-elev-2: 0 8px 24px var(--tide-shadow);
+    --tide-elev-3: 0 12px 32px var(--tide-shadow-strong);
     --bs-code-color: #3a4a5e;
 
     /* Chart series, in order: distinct in hue and lightness, each at least 3:1 on the surface (4.4:1 or better). From
@@ -234,6 +241,9 @@
     --tide-drop: rgba(79, 195, 209, .1);
     --tide-on-threat: #1a0a0b;   /* white on the dark theme's lighter red would be about 2.6:1 */
     --tide-shadow: rgba(0, 0, 0, .4);
+    --tide-surface-raised: #22333e;   /* a step above --tide-surface-2 */
+    --tide-elev-2: 0 8px 24px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .06);
+    --tide-elev-3: 0 12px 32px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .07);
     --bs-code-color: #c3cfdd;
     --bs-body-bg: var(--tide-bg);
     --tide-chart-1: #4fc3d1;
