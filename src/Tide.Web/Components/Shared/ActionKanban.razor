@@ -73,12 +73,13 @@
 @code {
     /// <summary>The working statuses, a lane each, left to right (the order the page's keys move through the cards); then
     /// the closed ones, a chip each on the strip under them.</summary>
-    /// <summary>Where a card sorts in its lane (by due date, then priority, then number, as the board lists them), as text
-    /// that sorts the same way: board.js opens the slot a held card would drop into at that place.</summary>
-    internal static string LaneOrder(ActionRow r) => $"{(r.DueDate ?? DateOnly.MaxValue):yyyyMMdd}-{(int)r.Priority:D2}-{r.Number:D9}";
-
     internal static readonly ActionStatus[] Lanes = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
     private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
+
+    /// <summary>Where a card sorts in its lane, as text that sorts the same way: board.js opens the slot a held card would
+    /// drop into at that place. The board's cards come in the database's Due order (ActionService.Ordered: due date, no
+    /// date last, then priority, then number), which this has to match.</summary>
+    internal static string LaneOrder(ActionRow r) => $"{(r.DueDate ?? DateOnly.MaxValue):yyyyMMdd}-{(int)r.Priority:D2}-{r.Number:D9}";
 
     // One working status's lane: its heading and count, who is carrying a card into it, its cards and a place to drop.
     private RenderFragment Column(ActionStatus status, IReadOnlyList<BoardDrag> drags) => __builder =>

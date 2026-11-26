@@ -52,6 +52,7 @@
     --tide-motion: 1;
     --tide-dur-fast: 120ms;        /* hover, color, a chevron turning */
     --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
+    --tide-stagger: 25ms;          /* between the items of a list arriving whole, the first 8 (flip.js) */
     --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
     --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
     --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */

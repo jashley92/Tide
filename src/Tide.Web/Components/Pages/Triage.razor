@@ -736,6 +736,10 @@ else
 
     internal enum TriageStep { Shortlist, Dismiss, Duplicate, Promote, Restore }
 
+    // The tabs whose counts changed since countsWere roll to their new ones.
+    private void MarkChangedTabs(IReadOnlyDictionary<FeedItemStatus, int> countsWere) =>
+        _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+
     private static readonly (FeedItemStatus, string)[] Tabs =
     [
         (FeedItemStatus.New, "New"), (FeedItemStatus.Shortlisted, "Shortlisted"), (FeedItemStatus.Promoted, "Promoted"),
@@ -1662,7 +1666,7 @@ else
         DateTimeOffset readWas, Guid? lostId)
     {
         var diff = LiveDiff.Of(was, _rows, r => r.Item.Id, TriageNews.Signature);
-        _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+        MarkChangedTabs(countsWere);
         if (diff.IsEmpty) return;
         var colleagues = LiveChanges.Who(heard.Where(c => c.ActorId != "system"));
         var now = diff.Left.Count == 0 ? new Dictionary<Guid, FeedItem>() : (await Intake.ItemsAsync(diff.Left)).ToDictionary(i => i.Id);
@@ -2147,11 +2151,11 @@ else
                 if (outcome.Made)
                 {
                     StateHasChanged();
-                    await JS.BestEffortAsync("tideTriage.promoted", (object)ids.Select(x => x.ToString()).ToArray());
+                    await JS.BestEffortAsync("tideTriage.promoted", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
                 }
                 var countsWere = _counts;
                 await Load();
-                _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+                MarkChangedTabs(countsWere);
                 _focus = "tideTriage.focusRow";
                 ToldStayed(done, n, title);
                 return;

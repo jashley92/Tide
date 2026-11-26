@@ -107,14 +107,9 @@ window.tideBoard = (function () {
         dragging = card;
         over = null;
         try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
-        ghost = window.tideShortcuts.copy(card);
+        ghost = window.tideShortcuts.copy(card, r);
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
-        ghost.style.left = r.left + 'px';
-        ghost.style.top = r.top + 'px';
-        ghost.style.width = r.width + 'px';
-        ghost.style.height = r.height + 'px';
-        document.body.appendChild(ghost);
         const sel = window.getSelection && window.getSelection();
         if (sel) sel.removeAllRanges();
         card.classList.add('dragging');
@@ -154,9 +149,10 @@ window.tideBoard = (function () {
         setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
     }
 
-    // The ghost glides from where it was let go to where the card now is (the slot, once .NET has moved it there), and
-    // the card shows again as it arrives, its brackets locked on.
+    // The slot goes and the ghost glides from where it was let go to where the card now is (where the slot was, once .NET
+    // has moved it there), and the card shows again as it arrives, its brackets locked on.
     function settle(g, card) {
+        clearRoom(card);
         const done = function () {
             g.remove();
             if (!card) return;
@@ -180,7 +176,7 @@ window.tideBoard = (function () {
         forget();
         ghost = null;
         end();
-        if (!to || !ref) { clearRoom(card); settle(g, card); return; }
+        if (!to || !ref) { settle(g, card); return; }
         // The ghost settles once .NET has moved the card (into the slot); if it's still asking after a moment (a drop on
         // the closed strip opens a dialog first) it settles back where the card is, which travels on if .NET then moves it.
         const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
@@ -188,7 +184,7 @@ window.tideBoard = (function () {
         const land = function () {
             if (landed) return;
             landed = true;
-            requestAnimationFrame(function () { const c = current(); clearRoom(c); settle(g, c); });
+            requestAnimationFrame(function () { const c = current(); settle(g, c); });
         };
         setTimeout(land, ASKING);
         ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
@@ -204,7 +200,6 @@ window.tideBoard = (function () {
         forget();
         ghost = null;
         end();
-        clearRoom(card);
         settle(g, card);
     }
 

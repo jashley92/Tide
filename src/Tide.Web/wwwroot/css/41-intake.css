@@ -461,7 +461,7 @@
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. */
 .tide-triage-row.tide-promoting { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
-.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden; transform-origin: 0 0;
+.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; padding: 0; list-style: none; pointer-events: none; overflow: hidden;
     background: var(--tide-surface-raised); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); box-shadow: var(--tide-elev-2); }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */

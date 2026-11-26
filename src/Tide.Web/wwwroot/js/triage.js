@@ -121,7 +121,8 @@ window.tideTriage = (function () {
         // place, into the Promoted tab's count just above the list, which locks on. .NET waits for this (the promise)
         // before it reloads the list, so the count then rolls to its new number and the rows below close the gap
         // (flip.js). Each is a copy; the row itself fades at once. Without motion the rows fade and the count changes.
-        promoted: function (ids) {
+        // tabLabel: the Promoted tab's label, from .NET (Triage.Tabs).
+        promoted: function (ids, tabLabel) {
             const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
             const want = new Set(ids || []), ts = window.tideShortcuts;
             const rows = Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
@@ -129,7 +130,7 @@ window.tideTriage = (function () {
             }).slice(0, MORPHS);
             const tab = Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
                 const label = b.querySelector('span:not(.bi)');
-                return label && label.textContent.trim() === 'Promoted';
+                return label && label.textContent.trim() === tabLabel;
             });
             const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
             if (!dest || !rows.length) return Promise.resolve();
@@ -147,13 +148,8 @@ window.tideTriage = (function () {
             return Promise.all(rows.map(function (row, i) {
                 const r = from[i];
                 if (!r.width || !r.height) return null;
-                const g = ts.copy(row);
+                const g = ts.copy(row, r);
                 g.className = 'tide-morph';
-                g.style.left = r.left + 'px';
-                g.style.top = r.top + 'px';
-                g.style.width = r.width + 'px';
-                g.style.height = r.height + 'px';
-                document.body.appendChild(g);
                 Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * .4, fill: 'forwards' }); });
                 return g.animate([
                     { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', opacity: 1 },
