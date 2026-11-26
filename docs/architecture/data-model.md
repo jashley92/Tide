@@ -578,6 +578,14 @@ erDiagram
         string Kind PK
         string Key PK
     }
+    Notices {
+        uuid Id PK
+        string UserId
+        int Kind
+        uuid SubjectId
+        datetimeoffset CreatedAtUtc
+        datetimeoffset SeenAtUtc
+    }
     JobLeases {
         string Name PK
         string Holder
@@ -1102,6 +1110,20 @@ the reminders and the file routes with it.
 | `ActionChecklistItems` | `Id` | `ActionId`, `SortOrder`, `AddedAtUtc`, `Text` nvarchar(300), `IsDone`, `DoneByName` null, `DoneAtUtc` null | Index `(ActionId, SortOrder)`. At most 50. Copied from a playbook or added by hand. Listed by `SortOrder`, then `AddedAtUtc`, then `Id` (`ActionService.InOrder`, in memory): two added at once share a place. `AddedAtUtc` came in `ChecklistItemAddedAt`; items from before it read as added at the minimum date and fall back to the id. |
 | `ActionIndicators` | `Id` | `ActionId` (indexed), `Type` int, `Value` nvarchar(2000), `Note` nvarchar(300), `AddedAtUtc`, `AddedByName`, `ValueKey` nvarchar(64) null (indexed, as on `ArticleIndicators`) | Only for an action with no article. On an action raised from an article, indicators go to `ArticleIndicators`. |
 | `DetectionGaps` | `TechniqueId` nvarchar(16) | `ActionId` (FK, cascade, indexed), `RaisedAtUtc` | A briefed technique with no enabled rule, raised as an action. The key means one gap per technique. Written by `DetectionService`. |
+
+### `Notices` (not audited)
+
+The For you notices: something a colleague did that's addressed to one person. Columns: `UserId` nvarchar(256) (whom
+it's for), `Kind` int (`NoticeKind`: an article handed to you, a review asked, an action handed to your team or assigned
+to you, a rotation request asked of you or decided), `SubjectId` (the article, action or `RotationChanges` row; no foreign
+key, so a notice outlives a deleted subject and shows it as gone), `ActorId`/`ActorName` nvarchar(256), `Detail`
+nvarchar(500) null (the note or reason that came with it), `CreatedAtUtc`, `SeenAtUtc` null. Indexes `(UserId,
+CreatedAtUtc)`, `(UserId, SeenAtUtc)` and `CreatedAtUtc`.
+
+Written only by `NoticeInterceptor` (`Persistence/NoticeInterceptor.cs`), in the save of the change it's about, never for
+whoever made it. Read, counted and marked seen by `NoticeService` (`Notices/NoticeService.cs`), each person only their
+own; the title and link are read from the subject when shown. Topic `notices:{userId}` (`ChangeFeed.Notices`). The reminder
+job's daily prune (`ReminderService.PruneMarksAsync`) removes those seen more than 30 days ago and those never seen after 90 (`NoticeService.PruneAsync`).
 
 ### `NotificationMarks` (not audited)
 

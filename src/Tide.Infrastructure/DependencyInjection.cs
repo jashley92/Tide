@@ -40,11 +40,13 @@ public static class DependencyInjection
                     sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly).EnableRetryOnFailure());
             else
                 options.UseSqlite(connectionString ?? "Data Source=App_Data/tide.db");
-            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(),
+            options.AddInterceptors(sp.GetRequiredService<NoticeInterceptor>(), sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>(),
                 sp.GetRequiredService<SlowCommandInterceptor>(), SearchDirty);
         }
 
         services.AddScoped<AuditInterceptor>();
+        // For you notices, written in the save they're about; before the change feed's, so they're heard live.
+        services.AddScoped<NoticeInterceptor>();
         // Times every command for Diagnostics and warns of a slow one (Diagnostics:SlowSqlMs).
         services.AddSingleton<SlowCommandInterceptor>();
         // What a save changed reaches colleagues' open pages (the feed is one per app; the origin one per circuit).

@@ -2555,6 +2555,53 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("MetricValues");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.Notice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("SeenAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("UserId", "CreatedAtUtc");
+
+                    b.HasIndex("UserId", "SeenAtUtc");
+
+                    b.ToTable("Notices");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.NotificationMark", b =>
                 {
                     b.Property<string>("Kind")
