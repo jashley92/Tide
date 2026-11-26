@@ -128,55 +128,38 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         var sp = scope.ServiceProvider;
         var team = await sp.GetRequiredService<Tide.Application.Actions.TeamService>().AddAsync($"Board order {Guid.NewGuid():N}", null, null);
         var actions = sp.GetRequiredService<ActionService>();
-        async Task<Guid> Add(string title) => (await actions.GetAsync(await actions.CreateAsync(new ActionForm { Title = title, TeamId = team })))!.Action.Id;
-        var (first, second, third) = (await Add("Order first"), await Add("Order second"), await Add("Order third"));
+        foreach (var title in new[] { "Order first", "Order second", "Order third" }) await actions.CreateAsync(new ActionForm { Title = title, TeamId = team });
         var filter = new ActionFilter(ActionView.Open, TeamId: team);
-        async Task<Guid[]> Lane(ActionStatus s)
-        {
-            await using var read = SignedIn(app, SignIn.Analyst);
-            return [.. (await read.ServiceProvider.GetRequiredService<ActionService>().BoardAsync(filter)).Cards.Where(c => c.Status == s).Select(c => c.Id)];
-        }
-        async Task<ActionBoard> Board(ActionBoardSort sort)
+        // Read in a scope of its own: a render's sign-in ends with it.
+        async Task<ActionBoard> Board(ActionBoardSort sort = ActionBoardSort.Manual)
         {
             await using var read = SignedIn(app, SignIn.Analyst);
             return await read.ServiceProvider.GetRequiredService<ActionService>().BoardAsync(filter, sort);
         }
+        async Task<Guid[]> Lane(ActionStatus s) => [.. (await Board()).In(s).Select(c => c.Id)];
+        async Task Drop(ActionBoardSort sort, Guid id, ActionStatus to, Guid? before)
+        {
+            await using var r = await Render(await Board(sort), sort: sort);
+            (await r.Html()).Should().Contain($"data-sort=\"{(sort == ActionBoardSort.Manual ? "manual" : "sorted")}\"");
+            await r.Click(k => k.OnCardDropped(id.ToString(), nameof(ActionStatus.Open), to.ToString(), before?.ToString()));
+        }
         var open = await Lane(ActionStatus.Open);
 
-        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
-        {
-            ["Board"] = await Board(ActionBoardSort.Due), ["Sort"] = ActionBoardSort.Due, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
-        }))
-        {
-            (await r.Html()).Should().Contain("data-sort=\"sorted\"");
-            await r.Click(k => k.OnCardDropped(open[2].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.Open), open[0].ToString()));
-        }
+        await Drop(ActionBoardSort.Due, open[2], ActionStatus.Open, open[0]);
         (await Lane(ActionStatus.Open)).Should().Equal(open, "sorted, a drop in the card's own lane is no reorder");
 
-        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
-        {
-            ["Board"] = await Board(ActionBoardSort.Manual), ["Sort"] = ActionBoardSort.Manual, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
-        }))
-        {
-            (await r.Html()).Should().Contain("data-sort=\"manual\"");
-            await r.Click(k => k.OnCardDropped(open[2].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.Open), open[0].ToString()));
-        }
+        await Drop(ActionBoardSort.Manual, open[2], ActionStatus.Open, open[0]);
         (await Lane(ActionStatus.Open)).Should().Equal([open[2], open[0], open[1]]);
 
-        await using (var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
-        {
-            ["Board"] = await Board(ActionBoardSort.Manual), ["Sort"] = ActionBoardSort.Manual, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed,
-        }))
-            await r.Click(k => k.OnCardDropped(open[0].ToString(), nameof(ActionStatus.Open), nameof(ActionStatus.InProgress), null));
+        await Drop(ActionBoardSort.Manual, open[0], ActionStatus.InProgress, null);
         (await Lane(ActionStatus.InProgress)).Should().Equal([open[0]]);
         (await Lane(ActionStatus.Open)).Should().Equal([open[2], open[1]]);
-        new[] { first, second, third }.Should().BeEquivalentTo(open);
     }
 
-    private Task<Rendered<ActionKanban>> Render(ActionBoard board, int closedDays = ActionService.BoardClosedDays) =>
+    private Task<Rendered<ActionKanban>> Render(ActionBoard board, int closedDays = ActionService.BoardClosedDays, ActionBoardSort sort = ActionBoardSort.Manual) =>
         RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
         {
-            ["Board"] = board, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed, ["ClosedDays"] = closedDays,
+            ["Board"] = board, ["Sort"] = sort, ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow), ["Counts"] = Closed, ["ClosedDays"] = closedDays,
         });
 
     [Fact]

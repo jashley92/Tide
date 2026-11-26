@@ -165,9 +165,10 @@ public class ActionItem : AuditableEntity
     }
 
     /// <summary>
-    /// Its place in its board lane's manual order, 1 at the top, shared by everyone who sees the board; 0 when nobody has
-    /// placed it by hand since it came into the lane. Placed cards come first, then the rest by due date. Not a change of
-    /// the action itself, so placing it adds no history line and doesn't move <see cref="EditVersion"/>.
+    /// Its place in its board lane's manual order, lower nearer the top (spaced, so a card put between two others takes
+    /// the place between them), shared by everyone who sees the board; 0 when nobody has placed it by hand since it came
+    /// into the lane. Placed cards come first, then the rest by due date. Not a change of the action itself, so placing it
+    /// adds no history line, doesn't move <see cref="EditVersion"/> and isn't audited.
     /// </summary>
     public int LaneRank { get; set; }
 

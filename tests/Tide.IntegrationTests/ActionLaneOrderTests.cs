@@ -81,19 +81,20 @@ public class ActionLaneOrderTests : IDisposable
     }
 
     [Fact]
-    public async Task Place_PutsTheCardBeforeAnother_OrAtTheEnd_AndRenumbersTheLane()
+    public async Task Place_PutsTheCardBeforeAnother_OrAtTheEnd_WritingOnlyItsRow_UntilTheLaneNeedsNumbering()
     {
         var made = await Seed();
         var svc = _db.Actions();
         (await Lane()).Should().Equal([4, 3, 5, 1, 2], "nothing placed yet: by due date");
 
-        await svc.PlaceAsync(made[2], ActionStatus.Open, made[4]);
+        // At the top, above unplaced cards: the card alone takes a place.
+        await svc.PlaceAsync(made[2], ActionStatus.Open, new LanePlace(made[4]));
         (await Lane()).Should().Equal([2, 4, 3, 5, 1]);
         var ranks = await Ranks();
-        new[] { 2, 4, 3, 5, 1 }.Select(n => ranks[n]).Should().Equal([1, 2, 3, 4, 5], "the whole lane is numbered from the top");
-        ranks[7].Should().Be(0, "another lane is left alone");
+        ranks[2].Should().Be(1024);
+        new[] { 4, 3, 5, 1, 7 }.Select(n => ranks[n]).Should().AllBeEquivalentTo(0, "no other row is written");
 
-        // A card raised since is unplaced: under the placed ones, whatever its due date.
+        // A card raised since is unplaced: under the placed ones, among the unplaced by its due date.
         await using (var ctx = _db.Context())
         {
             ctx.Actions.Add(new ActionItem
@@ -103,44 +104,59 @@ public class ActionLaneOrderTests : IDisposable
             });
             await ctx.SaveChangesAsync();
         }
-        (await Lane()).Should().Equal([2, 4, 3, 5, 1, 6]);
+        (await Lane()).Should().Equal([2, 6, 4, 3, 5, 1]);
         (await Lane(ActionBoardSort.Due)).Should().Equal([6, 4, 3, 5, 1, 2], "the other sorts ignore the places");
 
-        await svc.PlaceAsync(made[1], ActionStatus.Open, null);
-        (await Lane()).Should().Equal([2, 4, 3, 5, 6, 1], "null is the end of the lane");
+        // At the end, under unplaced cards: they'd sort after it, so the lane is numbered from the top.
+        await svc.PlaceAsync(made[1], ActionStatus.Open, new LanePlace(null));
+        (await Lane()).Should().Equal([2, 6, 4, 3, 5, 1], "null is the end of the lane");
         ranks = await Ranks();
-        new[] { 2, 4, 3, 5, 6, 1 }.Select(n => ranks[n]).Should().Equal([1, 2, 3, 4, 5, 6], "a second placement renumbers 1..n again");
+        new[] { 2, 6, 4, 3, 5, 1 }.Select(n => ranks[n]).Should().Equal([1024, 2048, 3072, 4096, 5120, 6144]);
 
-        await svc.PlaceAsync(made[3], ActionStatus.Open, made[7]);
-        (await Lane()).Should().Equal([2, 4, 5, 6, 1, 3], "a card that isn't in the lane is no place: the end");
-        await svc.PlaceAsync(made[3], ActionStatus.Open, made[3]);
-        (await Lane()).Should().Equal([2, 4, 5, 6, 1, 3], "nor is the card itself");
+        // Between two placed cards: halfway, its row alone.
+        await svc.PlaceAsync(made[1], ActionStatus.Open, new LanePlace(made[4]));
+        (await Lane()).Should().Equal([2, 6, 1, 4, 3, 5]);
+        ranks = await Ranks();
+        ranks[1].Should().Be(2560);
+        new[] { 2, 6, 4, 3, 5 }.Select(n => ranks[n]).Should().Equal([1024, 2048, 3072, 4096, 5120], "the others keep theirs");
+
+        await svc.PlaceAsync(made[3], ActionStatus.Open, new LanePlace(made[7]));
+        (await Lane()).Should().Equal([2, 6, 1, 4, 5, 3], "a card that isn't in the lane is no place: the end");
+        await svc.PlaceAsync(made[3], ActionStatus.Open, new LanePlace(made[3]));
+        (await Lane()).Should().Equal([2, 6, 1, 4, 5, 3], "nor is the card itself");
     }
 
     [Fact]
-    public async Task Place_AddsNoHistoryLine_AndLeavesTheEditVersion()
+    public async Task Place_AddsNoHistoryLine_LeavesTheEditVersion_AndIsntAudited()
     {
         var made = await Seed();
         Guid version;
-        int events;
+        int events, audited;
+        DateTimeOffset? modified;
         await using (var ctx = _db.Context())
-            (version, events) = (await ctx.Actions.Where(a => a.Id == made[2]).Select(a => a.EditVersion).SingleAsync(), await ctx.ActionEvents.CountAsync());
+        {
+            var row = await ctx.Actions.Where(a => a.Id == made[2]).Select(a => new { a.EditVersion, a.ModifiedAtUtc }).SingleAsync();
+            (version, modified, events, audited) = (row.EditVersion, row.ModifiedAtUtc, await ctx.ActionEvents.CountAsync(), await ctx.AuditLog.CountAsync());
+        }
 
-        await _db.Actions().PlaceAsync(made[2], ActionStatus.Open, made[4]);
+        await _db.Actions().PlaceAsync(made[2], ActionStatus.Open, new LanePlace(made[4]));
 
         await using var after = _db.Context();
-        (await after.Actions.Where(a => a.Id == made[2]).Select(a => a.EditVersion).SingleAsync()).Should().Be(version, "an edit form opened before still saves");
+        var now = await after.Actions.Where(a => a.Id == made[2]).Select(a => new { a.EditVersion, a.ModifiedAtUtc }).SingleAsync();
+        now.EditVersion.Should().Be(version, "an edit form opened before still saves");
+        now.ModifiedAtUtc.Should().Be(modified, "the board's arrangement isn't a change to the action");
         (await after.ActionEvents.CountAsync()).Should().Be(events, "a place isn't a change to the action");
+        (await after.AuditLog.CountAsync()).Should().Be(audited, "nor is it audited");
     }
 
     [Fact]
-    public async Task AMove_TakesTheCardOutOfTheOrder_ToTheEndOfItsNewLane()
+    public async Task AMove_TakesTheCardOutOfTheOrder_ToTheEndOfItsNewLane_OrToTheDropsPlace()
     {
         var made = await Seed();
         var svc = _db.Actions();
-        await svc.PlaceAsync(made[2], ActionStatus.Open, made[4]);
-        await svc.PlaceAsync(made[7], ActionStatus.InProgress, null);
-        (await Ranks())[7].Should().Be(1);
+        await svc.PlaceAsync(made[2], ActionStatus.Open, new LanePlace(made[4]));
+        await svc.PlaceAsync(made[7], ActionStatus.InProgress, new LanePlace(null));
+        (await Ranks())[7].Should().Be(1024);
 
         await svc.MoveAsync(made[2], ActionStatus.Open, ActionStatus.InProgress);
         (await Ranks())[2].Should().Be(0, "it left its place with its lane");
@@ -148,6 +164,10 @@ public class ActionLaneOrderTests : IDisposable
 
         await svc.MoveAsync(made[2], ActionStatus.InProgress, ActionStatus.Open);
         (await Lane()).Should().Equal([4, 3, 5, 1, 2], "back with the unplaced cards, by due date");
+
+        // Dropped at a place in the new lane: moved and placed in one save.
+        await svc.MoveAsync(made[2], ActionStatus.Open, ActionStatus.InProgress, place: new LanePlace(made[7]));
+        (await Lane(status: ActionStatus.InProgress)).Should().Equal([2, 7]);
     }
 
     [Fact]
@@ -156,11 +176,11 @@ public class ActionLaneOrderTests : IDisposable
         var made = await Seed();
         var svc = _db.Actions();
 
-        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.Done, null)).Should().ThrowAsync<ArgumentException>();
-        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.InProgress, null)).Should().ThrowAsync<StaleEditException>("it's in Open now");
+        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.Done, new LanePlace(null))).Should().ThrowAsync<ArgumentException>();
+        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.InProgress, new LanePlace(null))).Should().ThrowAsync<StaleEditException>("it's in Open now");
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
-        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.Open, null)).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Awaiting(() => svc.PlaceAsync(made[1], ActionStatus.Open, new LanePlace(null))).Should().ThrowAsync<ForbiddenException>();
         (await Ranks()).Values.Should().AllSatisfy(r => r.Should().Be(0), "nothing was placed");
     }
 }

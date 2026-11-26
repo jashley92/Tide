@@ -19,7 +19,7 @@
 // same once its drop is done.
 window.tideBoard = (function () {
     let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null, slot = null;
-    let drop = null, home = null;   // where a drop would put the card ({ status, before }), and the card it was above at first
+    let drop = null, home = null, lastInside = null;   // where a drop would put the card ({ status, before }), the card it was above at first, the lane last under it
     const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
@@ -48,6 +48,9 @@ window.tideBoard = (function () {
         dragging = null;
         over = null;
         marked = null;
+        drop = null;
+        home = null;
+        lastInside = null;
         if (root) mark(null);
     }
 
@@ -136,7 +139,6 @@ window.tideBoard = (function () {
         let next = card.nextElementSibling;
         while (next && !next.classList.contains('tide-kcard')) next = next.nextElementSibling;
         home = next ? next.dataset.id : null;
-        drop = null;
         card.classList.add('dragging');
         card.classList.remove('tide-kcard-held');
         tell('OnDragging', card.dataset.id, null);
@@ -155,7 +157,10 @@ window.tideBoard = (function () {
         const col = under && under.closest ? under.closest('.tide-kcol, .tide-kchip') : null;
         const inside = col && root.contains(col) ? col : null;
         const to = inside && inside.dataset.status !== dragging.dataset.status ? inside : null;
-        makeRoom(inside, dragging, e.clientY);
+        // In the team's own order the slot follows the pointer, so it's placed on each move; sorted, only the lane
+        // under it matters.
+        if (manual() || inside !== lastInside) makeRoom(inside, dragging, e.clientY);
+        lastInside = inside;
         if (to === marked) return;
         marked = to;
         mark(to);
@@ -198,7 +203,6 @@ window.tideBoard = (function () {
         if (!dragging) { forget(); return; }
         const card = dragging, id = card.dataset.id, from = card.dataset.status, at = drop, to = at ? at.status : over;
         const place = focusedAtPress === card ? beside(card) : null, g = ghost;
-        drop = null;
         swallowClick();
         forget();
         ghost = null;
@@ -224,7 +228,6 @@ window.tideBoard = (function () {
     function cancel() {
         if (!dragging) { forget(); return; }
         const card = dragging, g = ghost;
-        drop = null;
         forget();
         ghost = null;
         end();

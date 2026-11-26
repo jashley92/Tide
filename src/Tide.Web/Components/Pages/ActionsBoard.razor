@@ -99,14 +99,14 @@
             @* The lanes' order: the team's own (dragging a card puts it where it's dropped, for everyone), or by due date
                or priority. Each person's choice, kept. *@
             <div class="tide-seg tide-seg-tool" role="group" aria-label="Order the lanes">
-                @foreach (var (sort, label, title) in BoardSorts)
+                @foreach (var (sort, _, label, title) in BoardSorts)
                 {
                     <button type="button" class="tide-seg-opt @(_boardSort == sort ? "on" : "")" aria-pressed="@Ui.Aria(_boardSort == sort)" title="@title"
                             @onclick="() => SetBoardSort(sort)">@label</button>
                 }
             </div>
         }
-        @if (!_asBoard)
+        else
         {
             <div class="form-check form-switch ms-2 mb-0">
                 <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Regroup" />
@@ -424,14 +424,10 @@ else
         _holders = await ActionSvc.HoldersAsync();
         _rules = await RuleSvc.ListAsync();
         (_canHold, _me) = (CanHold, Me_);
-        if (SavedLayout is null || SavedView is null)
-        {
-            var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView, UserPreferences.BoardSort]);
-            SavedLayout ??= saved[UserPreferences.ActionsLayout];
-            SavedView ??= saved[UserPreferences.ActionsView];
-            _boardSort = BoardSortOf(saved[UserPreferences.BoardSort]);
-        }
-        else _boardSort = BoardSortOf(await Prefs.GetAsync(UserPreferences.BoardSort));
+        var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView, UserPreferences.BoardSort]);
+        SavedLayout ??= saved[UserPreferences.ActionsLayout];
+        SavedView ??= saved[UserPreferences.ActionsView];
+        _boardSort = BoardSorts.FirstOrDefault(o => o.Pref == saved[UserPreferences.BoardSort]).Sort;
     }
 
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
@@ -1227,31 +1223,21 @@ else
 
     private ActionBoardSort _boardSort = ActionBoardSort.Manual;
 
-    private static readonly (ActionBoardSort Sort, string Label, string Title)[] BoardSorts =
+    // The lanes' orders, each with the preference that keeps it (the first, Manual, is the default).
+    private static readonly (ActionBoardSort Sort, string Pref, string Label, string Title)[] BoardSorts =
     [
-        (ActionBoardSort.Manual, "Manual", "The team's own order: drag a card to put it where it goes"),
-        (ActionBoardSort.Due, "Due date", "Soonest due first, then by priority"),
-        (ActionBoardSort.Priority, "Priority", "Highest priority first, then soonest due"),
+        (ActionBoardSort.Manual, UserPreferences.SortManual, "Manual", "The team's own order: drag a card to put it where it goes"),
+        (ActionBoardSort.Due, UserPreferences.SortDue, "Due date", "Soonest due first, then by priority"),
+        (ActionBoardSort.Priority, UserPreferences.SortPriority, "Priority", "Highest priority first, then soonest due"),
     ];
-
-    private static ActionBoardSort BoardSortOf(string value) => value switch
-    {
-        UserPreferences.SortDue => ActionBoardSort.Due,
-        UserPreferences.SortPriority => ActionBoardSort.Priority,
-        _ => ActionBoardSort.Manual,
-    };
 
     // The lanes' order, chosen: kept for the person, and the board read again in it.
     private async Task SetBoardSort(ActionBoardSort sort)
     {
         if (sort == _boardSort) return;
         _boardSort = sort;
-        await Prefs.SetAsync(UserPreferences.BoardSort, sort switch
-        {
-            ActionBoardSort.Due => UserPreferences.SortDue,
-            ActionBoardSort.Priority => UserPreferences.SortPriority,
-            _ => UserPreferences.SortManual,
-        });
+        try { await Prefs.SetAsync(UserPreferences.BoardSort, BoardSorts.First(o => o.Sort == sort).Pref); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         await Load();
     }
 

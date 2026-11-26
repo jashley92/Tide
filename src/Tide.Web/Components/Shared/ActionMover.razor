@@ -40,9 +40,10 @@
     /// <summary>
     /// Moves <paramref name="card"/> from the status it was shown in to <paramref name="to"/>, asking first what a move
     /// there needs. True when it moved. <paramref name="refused"/> is called when it didn't (asked and cancelled, stale or
-    /// refused), before the caller reads again.
+    /// refused), before the caller reads again. With <paramref name="place"/> (a board drop in the team's own order), it
+    /// goes there in its new lane, in the same save.
     /// </summary>
-    public async Task<bool> MoveAsync(ActionRow card, ActionStatus to, Action? refused = null)
+    public async Task<bool> MoveAsync(ActionRow card, ActionStatus to, Action? refused = null, LanePlace? place = null)
     {
         if (ActionItem.IsClosedStatus(to))
         {
@@ -59,22 +60,39 @@
             if (!_moved) refused?.Invoke();
             return _moved;
         }
-        var moved = await Run(card, to, ActionOutcome.None, null, refused);
+        var moved = await Run(card, to, ActionOutcome.None, null, refused, place);
         if (!moved) refused?.Invoke();
         return moved;
+    }
+
+    /// <summary>Puts <paramref name="card"/> at a place in its own lane's shared order (a board drop in the team's own
+    /// order), refused as a move is when it changed meanwhile. True when it was placed.</summary>
+    public async Task<bool> PlaceAsync(ActionRow card, LanePlace place, Action? refused = null)
+    {
+        var placed = await Guard(async () => { await ActionSvc.PlaceAsync(card.Id, card.Status, place); return true; }, refused);
+        if (!placed) refused?.Invoke();
+        return placed;
     }
 
     // The dialog's button: true closes it (moved, or the action changed underneath and the caller read again).
     private async Task<bool> ConfirmClose() =>
         _closing is not { } p || (_moved = await Run(p.Card, p.To, _outcome, _note, p.Refused)) || _closing is null;
 
-    private async Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note, Action? refused)
+    private Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note, Action? refused, LanePlace? place = null) =>
+        Guard(async () =>
+        {
+            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason, place))) return false;
+            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
+            return true;
+        }, refused);
+
+    // A change made (then the caller reads again), or refused: as stale (said, and read again) or otherwise (said).
+    private async Task<bool> Guard(Func<Task<bool>> change, Action? refused)
     {
         Busy = true;
         try
         {
-            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason))) return false;
-            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
+            if (!await change()) return false;
             await OnChanged.InvokeAsync();
             return true;
         }
