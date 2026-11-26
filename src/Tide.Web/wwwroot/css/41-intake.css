@@ -19,9 +19,16 @@
    that left is a ghost line saying who sent it where, which fades and collapses; a count that changed ticks. Each wash
    fades to the row's own background, so a selected row stays selected. With reduced motion nothing moves or collapses:
    the wash only fades its colour, and a ghost goes at once. */
-.tide-live-arrived { animation: tide-live-in var(--tide-dur-panel) var(--tide-ease-out), tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
-.tide-live-changed { animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
-@keyframes tide-live-in { from { opacity: 0; transform: translateY(-.35rem); } }
+/* A row that arrives or changes gets one scan pass: a thin accent line crosses it once, left to right, like an
+   instrument registering it. It's drawn as the row's background, so nothing outside the row is touched; at rest the
+   line sits off the row's right end. */
+.tide-live-arrived, .tide-live-changed {
+    background-image: linear-gradient(90deg, transparent 0 85%, color-mix(in srgb, var(--tide-accent) 18%, transparent) 85% 88.6%, var(--tide-accent) 88.6% 89%, transparent 89%);
+    background-repeat: no-repeat; background-size: 250% 100%; background-position: 0 0; }
+.tide-live-arrived { animation: tide-live-in var(--tide-dur-base) var(--tide-ease-out), tide-live-scan var(--tide-dur-signature) var(--tide-ease-out); }
+.tide-live-changed { animation: tide-live-scan var(--tide-dur-signature) var(--tide-ease-out); }
+@keyframes tide-live-in { from { opacity: 0; } }
+@keyframes tide-live-scan { from { background-position: 148% 0; } to { background-position: 79% 0; } }
 @keyframes tide-live-wash { from { background-color: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); } }
 .tide-live-ghost { display: flex; align-items: center; gap: var(--tide-space-2); max-height: 4rem; overflow: hidden; padding: var(--tide-space-2) .6rem;
     border-bottom: 1px solid var(--tide-border); color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-style: italic;
@@ -33,7 +40,12 @@
 .tide-live-tick { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
 .tide-tabbar-count.tide-live-tick { display: inline-block; animation-name: tide-live-tick-count; }
 @keyframes tide-live-tick { 30% { transform: scale(1.15); color: var(--tide-accent-text); } }
-@keyframes tide-live-tick-count { 30% { transform: scale(1.2); background-color: var(--tide-accent); color: var(--tide-surface); } }
+@keyframes tide-live-tick-count { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
+/* A count that changed rolls: the new number comes up from below, as on a counter. TabBar wraps it in tide-roll only
+   while it ticks. */
+.tide-tabbar-count.tide-live-tick { overflow: hidden; vertical-align: middle; }
+.tide-roll { display: inline-block; animation: tide-roll-in var(--tide-dur-base) var(--tide-ease-out); }
+@keyframes tide-roll-in { from { opacity: 0; transform: translateY(calc(110% * var(--tide-motion))); } }
 /* Changes held back while a form is open on the list: choosing it shows them. */
 .tide-live-pill { display: inline-flex; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) var(--tide-space-3); border: 1px solid var(--tide-accent);
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); font-size: var(--tide-text-sm);
@@ -45,7 +57,7 @@
 @keyframes tide-live-tick-colour { 30% { color: var(--tide-accent-text); } }
 @keyframes tide-live-tick-count-colour { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
 @media (prefers-reduced-motion: reduce) {
-    .tide-live-arrived, .tide-live-changed { animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
+    .tide-live-arrived, .tide-live-changed { background-image: none; animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
     .tide-live-ghost { animation: tide-live-gone 0s var(--tide-dur-linger) forwards; }
     .tide-live-tick { animation: tide-live-tick-colour var(--tide-dur-signature) var(--tide-ease-out); }
     .tide-tabbar-count.tide-live-tick { animation-name: tide-live-tick-count-colour; }
@@ -438,14 +450,31 @@
 .tide-query-auto { min-height: 0; }
 .tide-evidence-thumb { max-width: 17.5rem; max-height: 10rem; }
 
+/* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four corners close
+   in on it. On a board card and a triage row. */
+.tide-kcard, .tide-triage-row { position: relative; }
+:is(.tide-kcard, .tide-triage-row)::before { content: ""; position: absolute; inset: 0; pointer-events: none; --tide-bracket: var(--tide-accent);
+    background:
+        linear-gradient(var(--tide-bracket), var(--tide-bracket)) top left / .6rem 2px no-repeat, linear-gradient(var(--tide-bracket), var(--tide-bracket)) top left / 2px .6rem no-repeat,
+        linear-gradient(var(--tide-bracket), var(--tide-bracket)) top right / .6rem 2px no-repeat, linear-gradient(var(--tide-bracket), var(--tide-bracket)) top right / 2px .6rem no-repeat,
+        linear-gradient(var(--tide-bracket), var(--tide-bracket)) bottom left / .6rem 2px no-repeat, linear-gradient(var(--tide-bracket), var(--tide-bracket)) bottom left / 2px .6rem no-repeat,
+        linear-gradient(var(--tide-bracket), var(--tide-bracket)) bottom right / .6rem 2px no-repeat, linear-gradient(var(--tide-bracket), var(--tide-bracket)) bottom right / 2px .6rem no-repeat;
+    opacity: 0; transform: scale(1.04);
+    transition: opacity var(--tide-dur-fast) var(--tide-ease-out), transform var(--tide-move-fast) var(--tide-ease-out); }
+.tide-kcard::before { inset: -4px; }
+@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; transform: none; } }
+:is(.tide-kcard, .tide-triage-row):is(:active, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-skel-row:last-child { border-bottom: 0; }
-.tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-md); background-color: var(--tide-surface-2);
-    background-image: linear-gradient(90deg, transparent 0%, var(--tide-border) 50%, transparent 100%);
-    background-size: 200% 100%; background-repeat: no-repeat; animation: tide-shimmer var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
-@keyframes tide-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .tide-skel { animation: none; } }
+/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. */
+.tide-loading { position: relative; overflow: hidden; }
+.tide-loading::before { content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent);
+    animation: tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
+@keyframes tide-scan-bar { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-sm); border: 1px dashed var(--tide-border-strong); }
+@media (prefers-reduced-motion: reduce) { .tide-loading::before { animation: none; opacity: 0; } }
 /* Varied widths read as text of different lengths rather than a grid. */
 .tide-skel-w0 { max-width: 70%; } .tide-skel-w1 { max-width: 90%; } .tide-skel-w2 { max-width: 55%; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }
