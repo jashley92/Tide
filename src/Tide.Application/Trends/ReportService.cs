@@ -199,9 +199,15 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
     /// The report as one CSV: a row per number, with its section, this period and the one before; after each section's
     /// numbers, its assessment, if one was written (its text in <c>text</c>, who last edited it in <c>name</c>). Every row
     /// carries its TLP: the numbers <see cref="NumbersTlp"/>, an assessment its own. The file as a whole is marked at the
-    /// highest (<see cref="Marking"/>), in its name.
+    /// highest (<see cref="Marking"/>), in its name. An assessment's day is the organization's (<paramref name="clock"/>),
+    /// the day the page shows.
     /// </summary>
-    public static string ToCsv(PeriodReport r, IReadOnlyList<ReportAssessment>? assessments = null)
+    public static string ToCsv(PeriodReport r, IReadOnlyList<ReportAssessment> assessments, OrgClock clock) => ToCsv(r, assessments, clock.DayOf);
+
+    /// <summary>The report's numbers as CSV, with no assessments.</summary>
+    public static string ToCsv(PeriodReport r) => ToCsv(r, [], _ => default);
+
+    private static string ToCsv(PeriodReport r, IReadOnlyList<ReportAssessment> assessments, Func<DateTimeOffset, DateOnly> dayOf)
     {
         var numbers = Tlp.Label(NumbersTlp);
         var sb = new StringBuilder("section,name,current,previous,tlp,text").Append('\n');
@@ -210,8 +216,8 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
                 .Append(Csv.NumberOrCell(Num(previous))).Append(',').Append(numbers).Append(",\n");
         void Assessment(string key)
         {
-            if (assessments?.FirstOrDefault(a => a.Section == key) is not { } a) return;
-            var by = $"Assessment (edited by {a.UpdatedByName}, {Words.MonthDayYear(DateOnly.FromDateTime(a.UpdatedAtUtc.UtcDateTime))})";
+            if (assessments.FirstOrDefault(a => a.Section == key) is not { } a) return;
+            var by = $"Assessment (edited by {a.UpdatedByName}, {Words.MonthDayYear(dayOf(a.UpdatedAtUtc))})";
             sb.Append(Csv.Cell(Sections[SectionIndex(key)].Name)).Append(',').Append(Csv.Cell(by)).Append(",,,").Append(Tlp.Label(a.Tlp)).Append(',')
                 .Append(Csv.Cell(a.Text)).Append('\n');
         }

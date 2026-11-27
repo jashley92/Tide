@@ -127,7 +127,7 @@ public class ReportAssessmentTests : IDisposable
 
         var amber = await _db.Reports().AssessmentsAsync(Oct);
         ReportService.Marking(amber).Should().Be(TlpLevel.Amber, "the numbers are AMBER, and a GREEN assessment doesn't lower that");
-        var csv = ReportService.ToCsv(report, amber);
+        var csv = ReportService.ToCsv(report, amber, _db.Clock);
         csv.Should().StartWith("section,name,current,previous,tlp,text\n")
             .And.Contain("Headlines,Articles briefed,0,0,TLP:AMBER,\n")
             .And.MatchRegex(@"Headlines,""Assessment \(edited by Test Analyst, \w+ \d+, \d{4}\)"",,,TLP:GREEN,""Quiet, """"mostly"""".""\n");
@@ -135,6 +135,18 @@ public class ReportAssessmentTests : IDisposable
         await _db.Reports().SaveAssessmentAsync(Oct, "teams", "We missed the patch window.", TlpLevel.Red, null);
         var red = await _db.Reports().AssessmentsAsync(Oct);
         ReportService.Marking(red).Should().Be(TlpLevel.Red);
-        ReportService.ToCsv(report, red).Should().EndWith(",,,TLP:RED,We missed the patch window.\n", "the teams' assessment follows their numbers, last");
+        ReportService.ToCsv(report, red, _db.Clock).Should().EndWith(",,,TLP:RED,We missed the patch window.\n", "the teams' assessment follows their numbers, last");
+    }
+
+    [Fact]
+    public void TheCsv_DatesAnAssessmentByTheOrganizationsDay_AsThePageDoes()
+    {
+        // Saved at 8 p.m. in New York on November 26, which is already the 27th in UTC.
+        var saved = new DateTimeOffset(2026, 11, 27, 1, 0, 0, TimeSpan.Zero);
+        var late = new ReportAssessment { PeriodKey = Oct.Key, Section = "headlines", Text = "Quiet.", UpdatedByName = "Pat", UpdatedAtUtc = saved };
+        var report = new PeriodReport(Oct, false, [], [], [], [], [], []);
+        _db.Clock.DayOf(saved).Should().Be(new DateOnly(2026, 11, 26), "the organization's day, which the page shows");
+
+        ReportService.ToCsv(report, [late], _db.Clock).Should().Contain("edited by Pat, Nov 26, 2026");
     }
 }
