@@ -75,9 +75,10 @@ window.tideFlip = (function () {
             if (quiet) return;
             // It grew (a row selected opens its decision, a card's Move menu opens): what's new unfolds from its old foot
             // as the items after it glide down, so they never slide across it. A clip, inset from the bottom by what it
-            // grew, opened over the same time (with room at the sides for its brackets).
+            // grew, opened over the same time to its own foot (not past it, into the gap the next is gliding over), with
+            // room at the other sides for its brackets.
             const grew = n.h - w.h;
-            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px)' }], { duration: ts.travel(grew), easing: ease });
+            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: ts.travel(grew), easing: ease });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
             if (!dx && !dy) return;
             const a = running.get(el);
