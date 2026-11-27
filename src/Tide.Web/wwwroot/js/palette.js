@@ -54,8 +54,32 @@ window.tidePalette = (function () {
             if (!window.tideShortcuts.on()) return;
             e.preventDefault();
             overlay.invokeMethodAsync('Open').catch(function () { });
+            return;
+        }
+        // "/" goes to the page's own search box (Triage's, the Actions filter, a list's filter, Search's), or to the top
+        // bar's on a page without one, its words selected so typing replaces them. A single character, so it's off with
+        // the letter shortcuts too.
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (typing(e.target) || dialogOpen() || window.tideShortcuts.inMenu(e.target) || !window.tideShortcuts.on()) return;
+            const box = findBox();
+            if (!box) return;
+            e.preventDefault();
+            box.focus();
+            box.select();
         }
     });
+
+    // The search box "/" goes to: the first one showing in the page's content (not in the context rail or a dialog),
+    // else the top bar's.
+    function findBox() {
+        const shown = function (el) { return !el.disabled && el.getClientRects().length > 0; };
+        const own = Array.prototype.find.call(document.querySelectorAll('#main-content [data-find]'), function (el) {
+            return shown(el) && !el.closest('#tide-rail, [role="dialog"], [role="alertdialog"]');
+        });
+        if (own) return own;
+        const top = document.querySelector('[data-find-top]');
+        return top && shown(top) ? top : null;
+    }
 
     // The palette is open: focus its box (remembering what had focus, to give it back), with anything typed early.
     function focus(input) {

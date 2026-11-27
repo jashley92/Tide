@@ -86,7 +86,7 @@
 <FilterBar Pills="PillsCounted" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
            Count="@(_asBoard ? Ui.Plural(Count, "action") : null)">
     <Search>
-        <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
+        <input type="search" data-find class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
                @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
     </Search>
     <ChildContent>

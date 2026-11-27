@@ -711,7 +711,8 @@ for, and each runs that button, asking what the button would ask:
 
 Typing `>` first lists only the commands. Each says how it went where its button does (a toast, mostly). In present
 mode `Ctrl+K` goes to places only: no commands over the slides. `?`
-lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
+lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. `/` goes to the page's
+search or filter box (Triage's, the Actions filter, a list's filter, Search's), or the top bar's. In a text box,
 `Ctrl+Enter` (`⌘ Enter` on a Mac) does its form's main action: posts the comment or note, saves the template or
 settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.
 

@@ -16,7 +16,7 @@
             <div class="tide-dt-filter" role="search">
                 <span class="bi bi-search" aria-hidden="true"></span>
                 <label class="visually-hidden" for="@_id">@FilterLabel</label>
-                <input id="@_id" type="search" class="form-control form-control-sm" maxlength="200" autocomplete="off"
+                <input id="@_id" type="search" data-find class="form-control form-control-sm" maxlength="200" autocomplete="off"
                        placeholder="@FilterPlaceholder" @bind:get="_typed" @bind:set="Typed" @bind:event="oninput" @onkeydown="FilterKey" />
                 @if (_typed.Length > 0)
                 {

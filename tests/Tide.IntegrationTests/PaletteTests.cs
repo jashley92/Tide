@@ -268,6 +268,35 @@ public class PaletteRenderTests(TideApp app) : IClassFixture<TideApp>
         html.Should().NotContain("data-palette-input", "the dialog isn't drawn until it opens");
     }
 
+    [Theory]
+    [InlineData("/triage")]
+    [InlineData("/actions")]
+    [InlineData("/articles")]
+    [InlineData("/search")]
+    [InlineData("/library")]
+    [InlineData("/published")]
+    public async Task ThePagesOwnSearchBox_IsTheOneSlashGoesTo_AndTheTopBarsIsThere(string path)
+    {
+        var html = await app.CreateClient().GetStringAsync(path);
+        html.Should().MatchRegex("<input[^>]* data-find[ >]", "\"/\" goes to the page's own search or filter box");
+        html.Should().Contain("data-find-top", "a page without its own box gets the top bar's");
+    }
+
+    [Fact]
+    public void Slash_IsListedEverywhere_AsALetterShortcut_AndPaletteJsHandlesIt()
+    {
+        var slash = Shortcuts.Everywhere.Keys.Single(k => k.Keys.Contains("/"));
+        slash.Letter.Should().BeTrue("a single character is off with the letter shortcuts (WCAG 2.1.4)");
+        Shortcuts.For("triage", rail: true).Single(g => g.Title == "Everywhere").Keys.Select(k => k.Keys[0])
+            .Should().StartWith(["Ctrl K", "?", "/", "]"], "the single keys come first, the rail's after them");
+
+        var dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;
+        var js = File.ReadAllText(Path.Combine(dir, "src", "Tide.Web", "wwwroot", "js", "palette.js"));
+        js.Should().Contain("e.key === '/'").And.Contain("[data-find]").And.Contain("[data-find-top]")
+            .And.Contain("window.tideShortcuts.on()", "the letter switch turns it off");
+    }
+
     [Fact]
     public async Task ThePalettesNewArticle_OpensTheForm()
     {

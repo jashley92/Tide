@@ -20,6 +20,7 @@ public static class Shortcuts
     [
         new(["Ctrl K", "⌘ K"], "Go to a page, article or action"),
         new(["?"], "This list of shortcuts", Letter: true),
+        new(["/"], "Go to the page's search or filter box, or the top bar's", Letter: true),
         new(["Ctrl Enter", "⌘ Enter"], "Post or save the text box you're in"),
         new(["Esc"], "Close a dialog or menu"),
         new(["Alt Z", "⌥ Z"], "Undo, while a toast offers it (the newest)"),
@@ -80,8 +81,8 @@ public static class Shortcuts
                 groups.Add(Charts);
                 break;
         }
-        // After "?", as the two single keys that work on every page that has what they act on.
-        groups.Add(rail ? Everywhere with { Keys = [.. Everywhere.Keys.Take(2), RailKey, .. Everywhere.Keys.Skip(2)] } : Everywhere);
+        // After "?" and "/", as the single keys that work on every page that has what they act on.
+        groups.Add(rail ? Everywhere with { Keys = [.. Everywhere.Keys.Take(3), RailKey, .. Everywhere.Keys.Skip(3)] } : Everywhere);
         groups.Add(Palette);
         return groups;
     }
