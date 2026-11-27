@@ -94,7 +94,7 @@
         var incoming = drags.Where(d => d.Over == status).ToList();
         <section class="@(incoming.Count > 0 ? "tide-kcol tide-kcol-incoming" : "tide-kcol")" data-status="@status" aria-labelledby="kcol-@status">
             <h2 class="tide-kcol-head" id="kcol-@status" tabindex="-1">
-                <ActionStatusBadge Status="status" /> <span class="tide-count tide-muted fw-normal">@cards.Count</span>
+                <ActionStatusBadge Status="status" /> <span class="tide-count tide-muted fw-normal"><Odometer Value="@cards.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)" /></span>
                 @foreach (var d in incoming)
                 {
                     <span class="tide-kcol-incoming-by" title="@d.Name is moving a card here"><span class="bi bi-arrow-down-circle" aria-hidden="true"></span> @d.Name</span>
@@ -225,7 +225,7 @@
     // A closed chip's badge and count.
     private static RenderFragment ChipBody(ActionStatus status, int n) => __builder =>
     {
-        <ActionStatusBadge Status="status" /> <span class="tide-count" aria-hidden="true">@n</span>
+        <ActionStatusBadge Status="status" /> <span class="tide-count" aria-hidden="true"><Odometer Value="@n.ToString(System.Globalization.CultureInfo.InvariantCulture)" /></span>
     };
 
     // How long an open card has been in its column, from when it moved there (the organization's day), and that day;

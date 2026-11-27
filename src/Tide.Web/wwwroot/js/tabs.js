@@ -62,3 +62,58 @@ window.tideTabs = (function () {
         next.click();
     });
 })();
+
+// The current tab's mark slides to the tab chosen, rather than jumping: a page tab row's underline, and a switch's
+// (tide-seg) outline, which locks onto the option chosen as its fill fades in. Blazor moves the current tab by changing
+// two tabs' classes in one render; the mark is a line or an outline laid over the page from the old one, moved and
+// stretched by transform to the new (the new one's own underline hidden meanwhile). Without motion it just changes.
+(function () {
+    const SLIDES = [
+        { bar: '.tide-tabbar-page', item: '.tide-tabbar-item', on: 'active', kind: 'is-line' },
+        { bar: '.tide-seg', item: '.tide-seg-opt', on: 'on', kind: 'is-box' },
+    ];
+
+    function slide(s, from, to) {
+        const ts = window.tideShortcuts;
+        if (ts.quiet()) return;
+        const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+        if (!a.width || !b.width) return;
+        const line = s.kind === 'is-line', m = document.createElement('div');
+        m.className = 'tide-tab-slider ' + s.kind;
+        m.setAttribute('aria-hidden', 'true');
+        m.setAttribute('data-tide-copy', '');
+        m.style.left = a.left + 'px';
+        m.style.top = (line ? a.bottom - 2 : a.top) + 'px';
+        m.style.width = a.width + 'px';
+        m.style.height = (line ? 2 : a.height) + 'px';
+        document.body.appendChild(m);
+        to.setAttribute('data-tide-sliding', '');
+        const dx = b.left - a.left;
+        ts.drift(m, [{ transform: 'none' }, { transform: 'translateX(' + dx + 'px) scaleX(' + b.width / a.width + ')' }],
+            { duration: ts.travel(Math.abs(dx)), easing: ts.token('--tide-ease-out') })
+            .finished.catch(function () { }).then(function () { to.removeAttribute('data-tide-sliding'); });
+    }
+
+    function changed(records) {
+        const moves = new Map();
+        records.forEach(function (m) {
+            const el = m.target;
+            SLIDES.forEach(function (s) {
+                if (!el.matches || !el.matches(s.item)) return;
+                const bar = el.closest(s.bar);
+                if (!bar) return;
+                const was = (' ' + (m.oldValue || '') + ' ').indexOf(' ' + s.on + ' ') >= 0, is = el.classList.contains(s.on);
+                if (was === is) return;
+                const move = moves.get(bar) || { s: s };
+                if (is) move.to = el; else move.from = el;
+                moves.set(bar, move);
+            });
+        });
+        moves.forEach(function (move) { if (move.from && move.to && move.from.isConnected) slide(move.s, move.from, move.to); });
+    }
+
+    function start() {
+        if (window.MutationObserver) new MutationObserver(changed).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    }
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();

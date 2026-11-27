@@ -517,7 +517,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         var html = WebUtility.HtmlDecode(await r.Html());
         var open = Column(html, ActionStatus.Open);
         Cards(open).Should().Be(20);
-        open.Should().Contain("<span class=\"tide-count tide-muted fw-normal\">45</span>", "the heading counts the whole column");
+        open.Should().Contain("<span class=\"tide-count tide-muted fw-normal\"><span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>45</span></span></span>", "the heading counts the whole column");
         open.Should().Contain("aria-label=\"Show 20 more in Open\">Show 20 more</button>");
         Column(html, ActionStatus.InProgress).Should().Contain("Show 5 more");
 

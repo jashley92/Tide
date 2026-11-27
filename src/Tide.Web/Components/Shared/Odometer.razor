@@ -1,0 +1,8 @@
+@* A count that rolls like an odometer when it changes: the old number goes out and the new one comes in, up when it grew,
+   down when it fell, flashing once (flip.js and 41-intake.css). At rest, and when first shown, it's just the number. Keyed
+   by its value, so a change is a new element in the same place. *@
+<span class="tide-odo"><span class="tide-roll" data-tide-tick @key="Value">@Value</span></span>
+
+@code {
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+}

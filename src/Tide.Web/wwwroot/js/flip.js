@@ -4,8 +4,10 @@
 // lane slide aside for the slot a held card would drop into. An item is known by its data-id where it has one, so a
 // board card that .NET draws afresh in another lane (its Move menu, someone else's move, a drop) is the same card: it
 // flies there from where it was, over the page, as lanes clip what's outside them. A list that arrives with several
-// items at once (a page or a filter loaded) shows them in quick order. With data-tide-flip-exit, an item that leaves
-// fades out where it was (toasts). With reduced motion, or in a tab nobody is looking at, nothing moves: new items still
+// items at once (a page loaded) shows them in quick order, the first time it's seen only: a tab or filter changed on a
+// list already there just shows what's in it, as someone working all day doesn't want it played again each time; a few
+// new items among the rest (a group opened) fade in. With data-tide-flip-exit, an item that leaves fades out where it
+// was (toasts). With reduced motion, or in a tab nobody is looking at, nothing moves: new items still
 // fade in, and leaving ones fade out.
 //
 // Each change is measured first and then played, so the page is laid out once for all the items, not once per item.
@@ -82,12 +84,16 @@ window.tideFlip = (function () {
             }
             running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: ts.travel(Math.hypot(dx, dy)), easing: ease }));
         });
-        // A list arriving whole (or a page of it) comes in in quick order; one or two new items have their own entrance.
-        if ((!s.was || fresh.length > 2) && fresh.length && !document.hidden && document.body.animate) {
+        // A list arriving whole comes in in quick order. In a list already there, a few new items among the rest (a group
+        // opened) fade in; a list mostly new (another tab, a filter) just shows.
+        if (!fresh.length || document.hidden || !document.body.animate) return;
+        if (!s.was) {
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
+        } else if (fresh.length * 2 < s.list.length) {
+            fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, easing: ease }); });
         }
     }
 
@@ -103,24 +109,26 @@ window.tideFlip = (function () {
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
 
-    // A tab's count that rolls (tide-roll) is told the number it replaced, which rolls out as the new one comes in: up
-    // when the count grew, down when it fell (data-dir). (Blazor swaps the count element, keyed by its number, inside
-    // the same tab.)
-    function odometer(tab, added, gone) {
-        const was = gone.get(tab);
-        if (!was) return;
+    // A count that changed is told what it replaced (data-was), so it rolls like an odometer (tide-roll: the old number
+    // goes out as the new one comes in, up when it grew, down when it fell, data-dir) or ticks (a short text). Blazor
+    // swaps the element, keyed by its value, in the same place: a tab's count (TabBar), or anything marked data-tide-tick
+    // (the Odometer component; Today's step details).
+    const TICKS = '.tide-tabbar-count, [data-tide-tick]';
+    function odometer(at, added, gone) {
+        const was = gone.get(at);
+        if (was === undefined) return;
         added.forEach(function (n) {
-            const roll = n.querySelector('.tide-roll');
-            if (!roll) return;
-            roll.dataset.was = was;
-            if (parseFloat(roll.textContent) < parseFloat(was)) roll.dataset.dir = 'down';
+            const el = n.matches('[data-tide-tick]') ? n : n.querySelector('.tide-roll');
+            if (!el || el.textContent.trim() === was) return;
+            el.dataset.was = was;
+            if (parseFloat(el.textContent) < parseFloat(was)) el.dataset.dir = 'down';
         });
     }
 
     function changed(records) {
         const touched = new Set(), gone = new Map();
         records.forEach(function (m) {
-            elements(m.removedNodes).forEach(function (n) { if (n.classList.contains('tide-tabbar-count')) gone.set(m.target, n.textContent.trim()); });
+            elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); });
         });
         records.forEach(function (m) {
             if (m.target.closest && m.target.closest(COPY)) return;   // a copy flying or leaving is no list's
@@ -134,8 +142,9 @@ window.tideFlip = (function () {
             });
             const root = m.target.closest(ROOTS);
             if (!root) return;
-            // Inside one of its items (a menu opening, a row's text): nothing moves now, but where the items are may have.
-            if (m.target.closest(root.dataset.tideFlip)) { later(root); return; }
+            // Inside one of its items (a card's Move menu opening, a row's text): the item may have grown, so the ones
+            // after it glide to where they are now rather than jump.
+            if (m.target.closest(root.dataset.tideFlip)) { touched.add(root); return; }
             touched.add(root);
             if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) { if (n.matches(root.dataset.tideFlip)) leave(root, n); });
         });

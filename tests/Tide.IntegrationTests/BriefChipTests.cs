@@ -163,7 +163,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
         sent.Should().NotContain(Meets).And.NotContain("step");
         // Today's strip, for the same brief: its last step, done, says the same word.
         var today = await app.CreateClient().GetStringAsync("/");
-        today.Should().Contain("<span class=\"tide-step-detail\" id=\"step-send-detail\" title=\"Sent\">Sent</span>");
+        today.Should().Contain("<span class=\"tide-step-detail\" id=\"step-send-detail\" title=\"Sent\" data-tide-tick>Sent</span>");
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public partial class BriefChipTests(WeekdayApp app) : IClassFixture<WeekdayApp>
 
             var today = await app.CreateClient().GetStringAsync("/");
             BriefChipPage.In(today).Should().Contain(BriefChipPage.Full("Brief · 1 of 2 sent"));
-            today.Should().Contain("<span class=\"tide-step-detail\" id=\"step-send-detail\" title=\"1 of 2 sent\">1 of 2 sent</span>", "the strip says it");
+            today.Should().Contain("<span class=\"tide-step-detail\" id=\"step-send-detail\" title=\"1 of 2 sent\" data-tide-tick>1 of 2 sent</span>", "the strip says it");
             today.Should().MatchRegex("<span class=\"tide-badge[^\"]*\">1 of 2 sent</span>", "the header's status says it");
             today.Should().NotMatchRegex("<span class=\"tide-badge[^\"]*\">Sent</span>")
                 .And.NotContain("This brief has been sent.")

@@ -109,7 +109,7 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/articles");
         nav.Html.Should().MatchRegex($"href=\"triage\"[^>]*aria-label=\"{Regex.Escape(NavMenu.CountTitle("Triage", newItems, "new"))}\"");
         nav.Html.Should().MatchRegex("href=\"actions\"[^>]*aria-label=\"Actions 1 overdue for you\"");
-        nav.Html.Should().Contain("<span class=\"tide-nav-count is-alert\" aria-hidden=\"true\">1</span>");
+        nav.Html.Should().Contain("<span class=\"tide-nav-count is-alert\" aria-hidden=\"true\"><span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>1</span></span></span>");
     }
 
     [Fact]

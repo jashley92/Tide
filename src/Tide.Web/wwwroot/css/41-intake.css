@@ -47,6 +47,14 @@
 .tide-roll { display: inline-block; position: relative; animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out); }
 .tide-roll[data-was]::before { content: attr(data-was); position: absolute; left: 0; right: 0; bottom: 110%; text-align: center; }
 @keyframes tide-roll-in { from { transform: translateY(calc(110% * var(--tide-motion))); } }
+/* A count drawn by the Odometer component (nav, lane and closed counts): in a window that clips it, rolling only when it
+   changed (flip.js gives the new one data-was), and flashing as a tab's does; at rest it's just the number. A short text
+   marked data-tide-tick (a step's detail) just flashes. */
+.tide-odo { display: inline-block; overflow: clip; vertical-align: top; }
+.tide-odo > .tide-roll { animation: none; }
+.tide-odo > .tide-roll[data-was] { animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out), tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
+.tide-odo > .tide-roll[data-was][data-dir="down"] { animation-name: tide-roll-down, tide-live-tick; }
+[data-tide-tick]:not(.tide-roll)[data-was] { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
 /* A count that fell rolls the other way: the old number goes down and out, the new one comes from above. */
 .tide-roll[data-dir="down"] { animation-name: tide-roll-down; }
 .tide-roll[data-dir="down"][data-was]::before { bottom: auto; top: 110%; }
@@ -224,6 +232,12 @@
 .tide-seg-opt + .tide-seg-opt { border-left: 1px solid var(--tide-border); }
 .tide-seg-opt:hover { background: var(--tide-surface-2); }
 .tide-seg-opt.on { background: var(--tide-accent-soft); color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); }
+.tide-seg-opt { transition: background-color var(--tide-dur-fast) var(--tide-ease-out), color var(--tide-dur-fast) var(--tide-ease-out); }
+/* The current tab's mark sliding to the one chosen (tabs.js): a line under a page tab, an outline on a switch's option. */
+.tide-tab-slider { position: fixed; z-index: var(--tide-z-drop); pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.tide-tab-slider.is-line { background: var(--tide-accent); }
+.tide-tab-slider.is-box { box-shadow: inset 0 0 0 1px var(--tide-accent); border-radius: var(--tide-radius-md); }
+.tide-tabbar-page .tide-tabbar-item.active[data-tide-sliding] { border-bottom-color: transparent; }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-seg-opt:disabled { cursor: default; opacity: .6; }
 /* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
@@ -482,14 +496,18 @@
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
 .tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+/* A row this person decided (shortlisted, dismissed...) lifts out where it was, a copy over the page (triage.js). */
+.tide-triage-row.tide-decided { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; background: var(--tide-surface); }
 .tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;
     background: var(--tide-surface); box-shadow: var(--tide-elev-3); transform-origin: 0 0; will-change: transform; }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-skel-row:last-child { border-bottom: 0; }
-/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. */
-.tide-loading { position: relative; overflow: hidden; }
+/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. They come in only after
+   --tide-dur-hold, so a quick load never flashes them. */
+.tide-loading { position: relative; overflow: hidden; opacity: 0; animation: tide-appear var(--tide-dur-fast) var(--tide-ease-out) var(--tide-dur-hold) forwards; }
+@keyframes tide-appear { to { opacity: 1; } }
 .tide-loading::before { content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent);
     animation: tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
 /* From just off the left to just off the right: the bar is 30% wide, so 340% of itself is 102% of the block. */

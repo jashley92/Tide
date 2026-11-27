@@ -216,7 +216,8 @@ window.tidePresent = (function () {
     // frame rather than painting the slide again, and the turn is a modest one (60 degrees): an audience watches it. The
     // page moves the moment the key is pressed (an easing that starts at once, the lift early), and a shade turns with it,
     // deepest as the page lifts, so it reads as paper; the shade is its own layer, only its opacity changing. A
-    // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. With reduced
+    // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. A jump of
+    // more than one slide (End, Home, the meeting ending) isn't one page turning: the old fades out over the new. With reduced
     // motion, the old page fades out over the new, quickly. The old page is the copy settle() last took of the slide as it
     // was drawn (scrolled where it was last seen), since by the time the new body arrives .NET has emptied and taken away
     // the old one.
@@ -231,7 +232,7 @@ window.tidePresent = (function () {
         lastPage = null;
         if (turning) turning.finish();
         if (document.hidden) return;
-        const back = no < was, still = ts.still(), dur = ts.ms(still ? '--tide-dur-fast' : '--tide-dur-turn');
+        const back = no < was, still = ts.still() || Math.abs(no - was) > 1, dur = ts.ms(ts.still() ? '--tide-dur-fast' : still ? '--tide-dur-base' : '--tide-dur-turn');
         const page = ts.copy(last.page);
         page.classList.remove('tide-scrollfade');
         page.classList.add('tide-page-turning');

@@ -147,7 +147,7 @@
     }
 
     private static RenderFragment? Count(int count, bool alert) => count > 0
-        ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true">@(count > 99 ? "99+" : count)</span>
+        ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true"><Odometer Value="@(count > 99 ? "99+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture))" /></span>
         : null;
 
     public void Dispose()
