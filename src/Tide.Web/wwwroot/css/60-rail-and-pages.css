@@ -9,19 +9,20 @@
    theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: var(--tide-z-rail); width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving) { display: flex; z-index: var(--tide-z-rail-over); background: var(--tide-surface-raised); --tide-surface-2: var(--tide-surface-raised-2); }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving) { display: flex; z-index: var(--tide-z-rail-over); background: var(--tide-surface-raised); --tide-surface-2: var(--tide-surface-raised-2);
+    translate: 0 0; }
 /* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
    parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
-   top bar above it (none on a phone, where the rail takes the whole height). */
-:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { content: ""; position: fixed; background: var(--tide-scrim); }
+   top bar above it (none on a phone, where the rail takes the whole height). They're placed from the rail (its translate
+   makes it their box): the left part a window wide, so as the sheet slides it still covers all the window beside it. */
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { content: ""; position: absolute; background: var(--tide-scrim); }
 /* It's laid on like a sheet: it slides in from the window's right edge as the backdrop fades in, and closing, a copy of
-   it slides back out (theme.js). It moves by its right edge, not a transform, which would carry the backdrop (fixed,
-   inside it) along. */
-html[data-rail-over] .tide-rail { transition: right var(--tide-move-panel) var(--tide-ease-out), opacity var(--tide-dur-fast) var(--tide-ease-out);
-    @starting-style { right: calc(-1 * min(var(--tide-width-rail), 100%)); opacity: 0; } }
+   it slides back out (theme.js). It moves by translate, which the browser only has to composite, frame by frame. */
+html[data-rail-over] .tide-rail { transition: translate var(--tide-move-panel) var(--tide-ease-out), opacity var(--tide-dur-fast) var(--tide-ease-out);
+    @starting-style { translate: 100% 0; opacity: 0; } }
 .tide-rail.tide-leaving { pointer-events: none; }
-:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before { inset: 0 min(var(--tide-width-rail), 100%) 0 0; }
-:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { top: 0; right: 0; width: min(var(--tide-width-rail), 100%); height: var(--tide-height-top); }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before { top: calc(-1 * var(--tide-height-top)); bottom: 0; right: 100%; width: 100vw; }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { bottom: 100%; left: 0; right: 0; height: var(--tide-height-top); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }

@@ -111,17 +111,24 @@ window.tideShortcuts = (function () {
     // Read once; .matches follows a change to the system setting.
     var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     function still() { return !!(motion && motion.matches); }
-    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration).
-    function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration). Read once each
+    // (they're the same in both themes), so a loop asking for one doesn't make the browser work out the page's style; an
+    // easing that isn't there (the stylesheet didn't load) is the browser's own, so an animation using it still plays.
+    var tokens = {};
+    function token(name) {
+        if (!tokens[name]) tokens[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return tokens[name] || (name.indexOf('--tide-ease') === 0 ? 'ease-out' : '');
+    }
     function ms(name) { return parseFloat(token(name)) || 0; }
     // A copy of something to fly across the page (a card held, a row promoted): no ids to clash with the original's,
     // hidden from assistive tech, and taking no clicks or focus. Given a rect, it is laid over the page there (its class
-    // makes it fixed).
+    // makes it fixed). Marked data-tide-copy, so flip.js never takes a list inside it for one of the page's.
     function copy(el, rect) {
         var c = el.cloneNode(true);
         c.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
         c.removeAttribute('id');
         c.setAttribute('aria-hidden', 'true');
+        c.setAttribute('data-tide-copy', '');
         c.inert = true;
         if (rect) {
             c.style.left = rect.left + 'px';
@@ -233,6 +240,7 @@ window.tideRail = (function () {
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.
     function setOver(open) {
+        if (leaving) leaving.finish();   // opened again before the last one was off: that one goes at once, one backdrop
         if (!open && over()) leave();
         if (open) root.setAttribute('data-rail-over', '');
         else root.removeAttribute('data-rail-over');
@@ -242,18 +250,19 @@ window.tideRail = (function () {
     }
     // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does, as the rail
     // itself is hidden at once (60-rail-and-pages.css). With reduced motion it fades where it is.
+    var leaving = null;
     function leave() {
         var r = rail(), ts = window.tideShortcuts;
-        if (!r || !document.body.animate) return;
+        if (!r || !document.body.animate || document.hidden) return;
         var c = ts.copy(r);
         c.classList.add('tide-leaving');
         c.removeAttribute('role');
         c.removeAttribute('aria-modal');
         document.body.appendChild(c);
-        var w = r.offsetWidth;
-        c.animate([{ right: '0px', opacity: 1 }, { right: (ts.still() ? 0 : -w) + 'px', opacity: 0 }],
-            { duration: ts.ms('--tide-dur-panel') * .7, easing: ts.token('--tide-ease-in'), fill: 'forwards' })
-            .finished.then(function () { c.remove(); }, function () { c.remove(); });
+        var a = leaving = c.animate([{ translate: '0 0', opacity: 1 }, { translate: (ts.still() ? '0' : '100%') + ' 0', opacity: 0 }],
+            { duration: ts.ms('--tide-dur-panel-exit'), easing: ts.token('--tide-ease-in'), fill: 'forwards' });
+        var gone = function () { c.remove(); if (leaving === a) leaving = null; };
+        a.finished.then(gone, gone);
     }
     function toggle() {
         var r = rail();
