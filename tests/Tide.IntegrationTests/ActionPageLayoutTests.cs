@@ -104,7 +104,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         badges.IndexOf("tide-status-badge", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf("Priority P2", StringComparison.Ordinal),
             "status, then priority, then the due date, then escalated");
         badges.IndexOf("overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
-        head.Should().Contain("<span>Layout header team</span> · <span>Unassigned</span>");
+        head.Should().Contain("<span>Layout header team</span> · <span data-tide-tick>Unassigned</span>");
 
         head.Should().Contain("btn btn-primary", Exactly.Once(), "one primary button");
         head.Should().Contain("data-primary=\"TakeIt\"").And.Contain("Take it</button>");

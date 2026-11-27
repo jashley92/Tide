@@ -124,8 +124,10 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-checklist li { display: flex; align-items: flex-start; gap: .5rem; padding: .3rem 0; border-bottom: 1px solid var(--tide-border); font-size: .9rem; }
 .tide-checklist li:last-child { border-bottom: 0; }
 .tide-checklist li .form-check-input { margin-top: .2rem; flex: 0 0 auto; }
-.tide-checklist li label { flex: 1 1 auto; }
-.tide-checklist li.done label { color: var(--tide-text-muted); text-decoration: line-through; }
+/* Ticked, an item's text dims and is struck through as it goes (the line is always there, only coloured in when done). */
+.tide-checklist li label { flex: 1 1 auto; text-decoration: line-through; text-decoration-color: transparent;
+    transition: color var(--tide-dur-base) var(--tide-ease-out), text-decoration-color var(--tide-dur-base) var(--tide-ease-out); }
+.tide-checklist li.done label { color: var(--tide-text-muted); text-decoration-color: currentColor; }
 .tide-checklist-compact li { font-size: .8rem; padding: .15rem 0; border-bottom: 0; }
 .tide-playbook-preview { margin: .35rem 0 0; padding-left: 1.2rem; color: var(--tide-text-muted); }
 .tide-comment-shots { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
@@ -470,7 +472,15 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
    change under it while some it refused stay chosen. */
 .tide-row-pick { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--tide-space-2); align-items: start; }
 .tide-row-pick > .form-check-input { margin: .2em 0 0; }
-.tide-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3);
-    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); background: var(--tide-accent-soft); }
+/* It floats at the foot of the window rather than taking room above the table: choosing a row moved the whole table
+   down under the pointer. It rises into view, and fades out as the choice is cleared (flip.js); the card keeps room at
+   its foot so the last rows can be scrolled clear of it. */
+.tide-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3);
+    position: fixed; z-index: var(--tide-z-panel); bottom: var(--tide-space-4); left: 50%; translate: -50% 0; width: min(60rem, calc(100vw - 2rem));
+    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md);
+    background: color-mix(in srgb, var(--tide-accent) 12%, var(--tide-surface-raised)); box-shadow: var(--tide-elev-2);
+    transition: translate var(--tide-move-panel) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { translate: -50% 12px; opacity: 0; } }
+.tide-card:has(> .tide-selbar) { padding-bottom: 7rem; }
 .tide-selbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); }
 .tide-selbar-note, .tide-selbar-result { flex: 1 0 100%; }

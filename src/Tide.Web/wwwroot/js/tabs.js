@@ -73,6 +73,7 @@ window.tideTabs = (function () {
     const SLIDES = [
         { bar: '.tide-tabbar-page', item: '.tide-tabbar-item', on: 'active', kind: 'is-line' },
         { bar: '.tide-seg', item: '.tide-seg-opt', on: 'on', kind: 'is-box' },
+        { bar: '.tide-tabbar-sub', item: '.tide-tabbar-item', on: 'active', kind: 'is-box' },
     ];
 
     // The mark from one tab to another; it stays where it lands until done() takes it away. Null without motion.

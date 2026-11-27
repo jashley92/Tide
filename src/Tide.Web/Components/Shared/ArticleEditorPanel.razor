@@ -112,7 +112,8 @@ else
     @* Someone who can't write (an action owner) reads the article as an edition carries it, with its actions, rather
        than a form of greyed-out fields: the fields are hidden and the preview takes the page (app.css). *@
     <div class="tide-editor" data-pane="@(!_canWrite && Aside is not null ? PreviewPane : _pane)" data-readonly="@(!_canWrite && Aside is not null ? "true" : null)">
-        <div class="tide-editor-main">
+        @* Its sections glide when one above grows or shrinks (a bullet added or taken away), flip.js. *@
+        <div class="tide-editor-main" data-tide-flip=".tide-section">
             <EditorSectionIndex Items="IndexItems(checks, why)" OnJump="FocusAsync" />
 
             @* One column, in the order the sent brief reads (BriefRenderer): what it is, the bottom line (with the draft from the
@@ -242,7 +243,7 @@ else
                 }
             </section>
 
-            <section class="tide-card tide-section" aria-labelledby="sec-bullets" data-tide-flip=".tide-bullet-row" data-tide-flip-carry>
+            <section class="tide-card tide-section" aria-labelledby="sec-bullets" data-tide-flip=".tide-bullet-row" data-tide-flip-carry data-tide-flip-exit>
                 <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
                 @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
                 {
@@ -335,10 +336,11 @@ else
                 }
                 @if (_form.Screenshots.Count > 0)
                 {
-                    <div class="tide-shots">
+                    @* Screenshots glide when one is moved (it carried over the other) and fade out when taken off (flip.js). *@
+                    <div class="tide-shots" data-tide-flip=".tide-shot" data-tide-flip-carry data-tide-flip-exit>
                         @foreach (var (s, i) in _form.Screenshots.Select((s, i) => (s, i)).ToList())
                         {
-                            <div class="tide-shot" @key="s.Id">
+                            <div class="tide-shot" @key="s.Id" data-id="@s.Id">
                                 <button type="button" class="tide-zoom" aria-label="Open screenshot @(i + 1)" @onclick="() => OpenShot(s)"><img src="@Ui.ImageUrl(s.FileId)" alt="@(s.Caption ?? "Screenshot " + (i + 1))" /></button>
                                 <div class="tide-shot-body">
                                     <input id="f-caption-@i" class="form-control form-control-sm" placeholder="Caption" maxlength="500" aria-label="Caption for screenshot @(i + 1)"

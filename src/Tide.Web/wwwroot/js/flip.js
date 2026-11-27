@@ -138,7 +138,7 @@ window.tideFlip = (function () {
     // A floating surface (a menu, a popover, the palette, a dialog's scrim) that .NET takes away as it closes fades out
     // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
     // opened, and again if the page scrolls under it.
-    const SURFACES = '.tide-popover, .tide-modal-scrim', surfaceAt = new WeakMap(), open = new Set();
+    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar', surfaceAt = new WeakMap(), open = new Set();
     function note(el) { if (el.isConnected) surfaceAt.set(el, el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
@@ -198,6 +198,11 @@ window.tideFlip = (function () {
                 if (n.matches(root.dataset.tideFlip)) leave(root, n);
                 else n.querySelectorAll(root.dataset.tideFlip).forEach(function (i) { leave(root, i); });   // in a keyed slot
             });
+        });
+        // A list inside another's item (the bullets, inside the editor's sections): the outer list plays too, so what's
+        // after the item that grew or shrank glides rather than jumps.
+        touched.forEach(function (root) {
+            for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) touched.add(up);
         });
         touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root); } });
     }
