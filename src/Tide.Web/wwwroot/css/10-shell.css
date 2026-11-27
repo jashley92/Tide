@@ -246,3 +246,11 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-chip-pick.selected { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 .tide-ioc { font-family: var(--tide-font-data); font-size: .86rem; word-break: break-all; }
 
+/* A page slow to come (tideNavCue, theme.js): a thin bar scans along the top bar's foot until it has rendered. It is a
+   .tide-loading block (41-intake.css), so it scans as a loading list does and breathes in place with less motion. */
+.top-row > .tide-nav-cue { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; display: none; pointer-events: none; }
+[data-tide-waiting] .top-row > .tide-nav-cue { display: block; animation: none; }   /* tideNavCue has waited already: no second delay */
+
+/* The theme chosen from the account menu crossfades in (tideTheme.apply, a view transition of the whole page). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--tide-dur-base); }
+@media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }

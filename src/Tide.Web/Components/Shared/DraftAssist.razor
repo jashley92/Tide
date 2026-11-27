@@ -18,6 +18,7 @@
             <span class="tide-disclosure-sum">@Summary()</span>
         </button>
     </h2>
+    <BusyStatus Text="@_busyText" />
     <div id="sec-draft-body" class="tide-disclosure-body" hidden="@(!_open)">
         @if (_status is null)
         {
@@ -62,7 +63,7 @@
                         }
                         else if (_status.Fetch != Tide.Domain.Enums.ArticleFetch.Never)
                         {
-                            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => FetchOther(o)">Fetch it</button>
+                            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" data-busy="@(_busyOn == o.Url)" @onclick="() => FetchOther(o)">Fetch it</button>
                         }
                     </div>
                 }
@@ -70,10 +71,10 @@
                     <label class="visually-hidden" for="draft-add-link">Another report's address</label>
                     <input id="draft-add-link" class="form-control form-control-sm tide-maxw-sm" type="url" maxlength="2000" placeholder="Add another report: https://…"
                            @bind="_newLink" @bind:event="oninput" />
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_newLink))" @onclick="AddLink">Add and fetch</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_newLink))" data-busy="@(_busyOn == "add")" @onclick="AddLink">Add and fetch</button>
                     @if (_others.Any(o => o.Text is null && o.Problem is null))
                     {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="FetchAll">Fetch all</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" data-busy="@(_busyOn == "all")" @onclick="FetchAll">Fetch all</button>
                     }
                 </div>
                 <div class="form-text">Each source with text is numbered in the draft, and every claim says which it came from.</div>
@@ -81,15 +82,15 @@
             <div class="d-flex gap-2 mt-2 flex-wrap">
                 @if (_status.Fetch != Tide.Domain.Enums.ArticleFetch.Never)
                 {
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !HasLink)" title="@(HasLink ? null : "The article has no link")" @onclick="Fetch">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !HasLink)" title="@(HasLink ? null : "The article has no link")" data-busy="@(_busyOn == "article")" @onclick="Fetch">
                         <span class="bi bi-cloud-download" aria-hidden="true"></span> Fetch the article
                     </button>
                 }
                 @if (_status.ProviderReady)
                 {
-                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Draft"><span class="bi bi-stars" aria-hidden="true"></span> Draft from the sources</button>
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" data-busy="@(_busyOn == "draft")" @onclick="Draft"><span class="bi bi-stars" aria-hidden="true"></span> Draft from the sources</button>
                 }
-                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy a prompt</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" data-busy="@(_busyOn == "prompt")" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy a prompt</button>
             </div>
             <div class="form-text">
                 @if (_status.ProviderReady)
@@ -107,7 +108,7 @@
                     <label class="tide-field-label mt-2" for="draft-answer">The tool's answer (JSON)</label>
                     <textarea id="draft-answer" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" maxlength="@ArticleService.MaxPaste" rows="4" placeholder='{ "bottomLine": "…", "bullets": [ … ] }'
                               @bind="_answer" @bind:event="oninput"></textarea>
-                    <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" data-submit @onclick="CheckPasted">Check and show suggestions</button>
+                    <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" data-busy="@(_busyOn == "check")" data-submit @onclick="CheckPasted">Check and show suggestions</button>
                 </div>
             }
 
@@ -211,6 +212,9 @@
 
     private AssistStatus? _status;
     private bool _open, _busy, _pasting;
+    // Which button's action is under way ("article", "add", "all", a report's address, "draft", "prompt", "check"), and
+    // what it's doing, for a screen reader (BusyStatus).
+    private string? _busyOn, _busyText;
     private string? _sourceText, _origin, _fetchProblem, _answer;
     private Result? _result;
     private readonly HashSet<string> _done = [];
@@ -243,17 +247,23 @@
         return sources;
     }
 
-    private async Task FetchOther(Other o)
+    // One report fetched, from its own Fetch it (or, as "add", from Add and fetch).
+    private async Task FetchOther(Other o, string? from = null)
     {
-        _busy = true;
+        Start(from ?? o.Url, $"Fetching {o.Name}…");
         try { await Fetched(o); }
-        finally { _busy = false; }
+        finally { Done(); }
     }
+
+    // One action at a time: every button waits while it runs, and the one it ran from shows it's busy (data-busy).
+    private void Start(string on, string text) => (_busy, _busyOn, _busyText) = (true, on, text);
+
+    private void Done() => (_busy, _busyOn, _busyText) = (false, null, null);
 
     // One at a time, politely: each report's page is fetched in turn.
     internal async Task FetchAll()
     {
-        _busy = true;
+        Start("all", "Fetching the other reports…");
         try
         {
             foreach (var o in _others.Where(o => o.Text is null && o.Problem is null).ToList())
@@ -262,7 +272,7 @@
                 StateHasChanged();
             }
         }
-        finally { _busy = false; }
+        finally { Done(); }
     }
 
     private async Task Fetched(Other o)
@@ -286,7 +296,7 @@
         var o = new Other(url, u.Host, null, null);
         _others.Add(o);
         _newLink = null;
-        await FetchOther(o);
+        await FetchOther(o, "add");
     }
     private Tide.Domain.Enums.TlpLevel? _statusTlp;
 
@@ -359,7 +369,7 @@
 
     internal async Task Fetch()
     {
-        _busy = true;
+        Start("article", "Fetching the article…");
         _fetchProblem = null;
         try
         {
@@ -368,24 +378,24 @@
             else (_sourceText, _origin) = (got.Text, got.Origin);
         }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { _fetchProblem = UserFacingError.For(ex); }
-        finally { _busy = false; }
+        finally { Done(); }
     }
 
     internal async Task Draft()
     {
-        _busy = true;
+        Start("draft", "Drafting from the sources…");
         try
         {
             var r = await Assist.DraftAsync(ArticleId, Form, Sources());
             Show(r, $"{(_status?.Provider == AiOptions.AzureOpenAI ? "Azure OpenAI" : _status?.Provider)} · {r.Model}");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { Done(); }
     }
 
     internal async Task CopyPrompt()
     {
-        _busy = true;
+        Start("prompt", "Making the prompt…");
         try
         {
             var prompt = await Assist.PromptAsync(ArticleId, Form, Sources());
@@ -395,12 +405,12 @@
         }
         catch (JSDisconnectedException) { /* the tab has gone */ }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { Done(); }
     }
 
     internal async Task CheckPasted()
     {
-        _busy = true;
+        Start("check", "Checking the answer…");
         try
         {
             var r = await Assist.FromPastedAsync(ArticleId, Form, Sources(), _answer);
@@ -408,7 +418,7 @@
             _answer = null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { Done(); }
     }
 
     private void Show(DraftResult r, string provider)

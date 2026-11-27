@@ -9,7 +9,7 @@
 {
     <EmptyState Icon="bi-list-ol" Title="No articles yet." Compact="true" />
 }
-<ol class="tide-order" @ref="_root">
+<ol class="tide-order" @ref="_root" data-tide-flip=".tide-order-row">
     @foreach (var (item, i) in Items.Select((x, i) => (x, i)))
     {
         var a = item.Article!;

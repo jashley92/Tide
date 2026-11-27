@@ -62,3 +62,49 @@ window.tideTabs = (function () {
         next.click();
     });
 })();
+
+// The current tab's mark slides to the tab chosen, rather than jumping: a page tab row's underline, and a switch's
+// (tide-seg) outline, which locks onto the option chosen as its fill fades in. A click on a tab (the arrow keys click
+// too) notes the bar's current one and watches that bar alone until .NET moves the current tab, by changing two tabs'
+// classes; the mark is a line or an outline laid over the page from the old one, moved and stretched by transform to
+// the new (the new one's own underline hidden meanwhile). Without motion it just changes.
+(function () {
+    const SLIDES = [
+        { bar: '.tide-tabbar-page', item: '.tide-tabbar-item', on: 'active', kind: 'is-line' },
+        { bar: '.tide-seg', item: '.tide-seg-opt', on: 'on', kind: 'is-box' },
+    ];
+
+    function slide(s, from, to) {
+        const ts = window.tideShortcuts;
+        if (ts.quiet()) return;
+        const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+        if (!a.width || !b.width) return;
+        const line = s.kind === 'is-line';
+        const m = ts.overlay('tide-tab-slider ' + s.kind, { left: a.left, top: line ? a.bottom - 2 : a.top, width: a.width, height: line ? 2 : a.height });
+        to.setAttribute('data-tide-sliding', '');
+        const dx = b.left - a.left;
+        ts.drift(m, [{ transform: 'none' }, { transform: 'translateX(' + dx + 'px) scaleX(' + b.width / a.width + ')' }],
+            { duration: ts.travel(Math.abs(dx)), easing: ts.token('--tide-ease-out') })
+            .finished.catch(function () { }).then(function () { to.removeAttribute('data-tide-sliding'); });
+    }
+
+    // A tab clicked: the bar is watched until its current tab moves (or a moment passes: the click changed nothing).
+    function onClick(e) {
+        if (!e.target || !e.target.closest || !window.MutationObserver) return;
+        SLIDES.forEach(function (s) {
+            const item = e.target.closest(s.item), bar = item && item.closest(s.bar);
+            const from = bar && bar.querySelector(s.item + '.' + s.on);
+            if (!from || from === item) return;
+            const watch = new MutationObserver(function () {
+                const to = bar.querySelector(s.item + '.' + s.on);
+                if (to === from) return;
+                stop();
+                if (to && from.isConnected) slide(s, from, to);
+            });
+            const stop = function () { watch.disconnect(); clearTimeout(timer); };
+            const timer = setTimeout(stop, window.tideShortcuts.ms('--tide-dur-blip'));
+            watch.observe(bar, { subtree: true, attributes: true, attributeFilter: ['class'] });
+        });
+    }
+    document.addEventListener('click', onClick, true);
+})();

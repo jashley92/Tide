@@ -14,14 +14,18 @@ window.tideTheme = (function () {
         try { t = localStorage.getItem('tide-theme') || t; } catch (e) { /* private mode */ }
         return t === 'light' || t === 'dark' ? t : 'system';
     }
-    function show(t) {
-        document.documentElement.setAttribute('data-bs-theme', t === 'system' ? (systemDark() ? 'dark' : 'light') : t);
-    }
+    function resolve(t) { return t === 'system' ? (systemDark() ? 'dark' : 'light') : t; }
+    function show(t) { document.documentElement.setAttribute('data-bs-theme', resolve(t)); }
+    // Chosen from the account menu, the page crossfades into the new theme (a view transition, timed in 10-shell.css)
+    // rather than cutting to it; at once with less motion asked for, in a browser without view transitions, or when
+    // the theme in force doesn't change (System chosen while the system's is the one showing).
     function apply(t) {
         if (t !== 'light' && t !== 'dark') t = 'system';
         picked = t;
         try { localStorage.setItem('tide-theme', t); } catch (e) { /* private mode: in force until the page reloads */ }
-        show(t);
+        var ts = window.tideShortcuts;
+        if (document.startViewTransition && ts && !ts.quiet() && resolve(t) !== current()) document.startViewTransition(function () { show(t); });
+        else show(t);
     }
     function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
     if (media) {
@@ -113,7 +117,7 @@ window.tideShortcuts = (function () {
     function still() { return !!(motion && motion.matches); }
     // Nothing should move: less motion asked for, a tab nobody is looking at, or a browser that can't animate.
     function quiet() { return still() || document.hidden || !document.body.animate; }
-    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration). Read once each
+    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration, one in seconds too). Read once each
     // (they're the same in both themes), so a loop asking for one doesn't make the browser work out the page's style; an
     // easing that isn't there (the stylesheet didn't load) is the browser's own, so an animation using it still plays.
     var tokens = {};
@@ -121,7 +125,7 @@ window.tideShortcuts = (function () {
         if (!(name in tokens)) tokens[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         return tokens[name] || (name.indexOf('--tide-ease') === 0 ? 'ease-out' : '');
     }
-    function ms(name) { return parseFloat(token(name)) || 0; }
+    function ms(name) { var t = token(name); return (parseFloat(t) || 0) * (/\ds$/.test(t) ? 1000 : 1); }
     // A copy of something to fly across the page (a card held, a row promoted): no ids to clash with the original's,
     // hidden from assistive tech, and taking no clicks or focus. Given a rect, it is laid over the page there (its class
     // makes it fixed). Marked data-tide-copy, so flip.js never takes a list inside it for one of the page's.
@@ -140,6 +144,21 @@ window.tideShortcuts = (function () {
             document.body.appendChild(c);
         }
         return c;
+    }
+    // An empty element laid over the page at a rect (fixed by its class), hidden from assistive tech and taking no
+    // clicks: a mark that moves (a tab's underline sliding, brackets locking on).
+    function overlay(className, rect) {
+        var o = document.createElement('div');
+        o.className = className;
+        o.setAttribute('aria-hidden', 'true');
+        o.setAttribute('data-tide-copy', '');
+        o.inert = true;
+        o.style.left = rect.left + 'px';
+        o.style.top = rect.top + 'px';
+        o.style.width = rect.width + 'px';
+        o.style.height = rect.height + 'px';
+        document.body.appendChild(o);
+        return o;
     }
     // Plays frames on a copy laid over the page, which goes when they're done (or cancelled). The animation is returned.
     function drift(c, frames, opts) {
@@ -187,7 +206,104 @@ window.tideShortcuts = (function () {
         clearTimeout(pulses.get(el));
         pulses.set(el, setTimeout(function () { el.removeAttribute(attr); }, ms('--tide-dur-signature')));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, drift: drift, fly: fly, pulse: pulse };
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, overlay: overlay, drift: drift, fly: fly, pulse: pulse };
+})();
+
+// A save refused for a field (a title left empty): .NET says which, after the toast that says why. The page scrolls it to
+// the middle of the window and focuses it, and once it's there threat-colored brackets close in on it, hold, and fade
+// over --tide-dur-attention. The field is marked aria-invalid until it's next changed, unless it says so itself. With less
+// motion asked for, it jumps there and the brackets show where they end, then fade. Whether the field was found.
+window.tideInvalid = (function () {
+    var ts = window.tideShortcuts;
+    function lockOn(el) {
+        var r = el.getBoundingClientRect();
+        if (!document.body.animate || !r.width) return;
+        var b = ts.overlay('tide-invalid-lock', r);
+        // It's fixed over the field, so it follows if the page scrolls meanwhile (once a frame).
+        var queued = 0;
+        var place = function () {
+            if (queued) return;
+            queued = requestAnimationFrame(function () {
+                queued = 0;
+                var at = el.getBoundingClientRect();
+                b.style.left = at.left + 'px'; b.style.top = at.top + 'px';
+            });
+        };
+        document.addEventListener('scroll', place, true);
+        var shut = ts.ms('--tide-dur-base') / ts.ms('--tide-dur-attention');
+        var frames = ts.still()
+            ? [{ opacity: 1 }, { opacity: 1, offset: .6 }, { opacity: 0 }]
+            : [{ opacity: 0, transform: 'scale(1.06)' }, { opacity: 1, transform: 'none', offset: shut }, { opacity: 1, offset: .6 }, { opacity: 0 }];
+        var a = ts.drift(b, frames, { duration: ts.ms('--tide-dur-attention'), easing: ts.token('--tide-ease-out') });
+        var off = function () { document.removeEventListener('scroll', place, true); cancelAnimationFrame(queued); };
+        a.finished.then(off, off);
+    }
+    function show(target) {
+        var el = typeof target === 'string' ? document.querySelector(target) : target;
+        if (!el) return false;
+        if (!el.hasAttribute('aria-invalid')) {
+            el.setAttribute('aria-invalid', 'true');
+            var fixed = function () { el.removeAttribute('aria-invalid'); el.removeEventListener('input', fixed); el.removeEventListener('change', fixed); };
+            el.addEventListener('input', fixed);
+            el.addEventListener('change', fixed);
+        }
+        // The brackets close in once the page has stopped moving: at once when it didn't need to (or jumped), else when
+        // its smooth scroll ends (or after the longest a move takes, for a browser without scrollend).
+        var moved = false, started = false;
+        var go = function () {
+            if (started) return;
+            started = true;
+            document.removeEventListener('scroll', seen, true);
+            document.removeEventListener('scrollend', go, true);
+            lockOn(el);
+        };
+        var seen = function () { moved = true; };
+        document.addEventListener('scroll', seen, true);
+        document.addEventListener('scrollend', go, true);
+        el.scrollIntoView({ block: 'center', behavior: ts.still() ? 'auto' : 'smooth' });
+        el.focus({ preventScroll: true });
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                if (!moved || ts.still()) go();
+                else setTimeout(go, ts.ms('--tide-dur-travel'));
+            });
+        });
+        return true;
+    }
+    return { show: show };
+})();
+
+// A page that's slow to come (the server still rendering it): after --tide-dur-patience a thin bar scans under the top bar
+// (.tide-nav-cue, in MainLayout), until .NET says the new page has rendered (MainLayout, done()). Nothing shows for a
+// page that comes sooner. Navigation here is the interactive router's, so it starts when the address changes: a link
+// followed (history.pushState) or Back and Forward (popstate). The state is on <html>, which Blazor never re-renders.
+window.tideNavCue = (function () {
+    var timer = 0;
+    function done() {
+        clearTimeout(timer);
+        timer = 0;
+        document.documentElement.removeAttribute('data-tide-waiting');
+    }
+    function start() {
+        done();
+        timer = setTimeout(function () { document.documentElement.setAttribute('data-tide-waiting', ''); }, window.tideShortcuts.ms('--tide-dur-patience'));
+    }
+    // The same address again (its own link clicked), or one that differs only after # (a link within the page), renders
+    // nothing new, so there's nothing to wait for.
+    function page(href) { return href.split('#')[0]; }
+    var at = page(location.href);
+    function moved() {
+        var now = page(location.href);
+        if (now !== at) { at = now; start(); }
+    }
+    var push = history.pushState;
+    history.pushState = function () {
+        var r = push.apply(this, arguments);
+        moved();
+        return r;
+    };
+    window.addEventListener('popstate', moved);
+    return { done: done };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the

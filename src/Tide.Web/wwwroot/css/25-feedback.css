@@ -17,6 +17,12 @@
 .tide-toast .tide-toast-dismiss:focus-visible { opacity: 1; outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .reconnect-modal { display: none; }
 .reconnect-modal.components-reconnect-show, .reconnect-modal.components-reconnect-failed, .reconnect-modal.components-reconnect-rejected { display: grid; position: fixed; inset: 0; background: var(--tide-overlay); z-index: var(--tide-z-tip); place-items: center; }
+/* Reconnecting: for a blip, only a line scanning across the top of the window (the page is held meanwhile); after
+   --tide-dur-blip the page dims and the dialog comes in. Failed or refused, it shows at once. */
+.reconnect-modal.components-reconnect-show { background: transparent; animation: tide-reconnect-dim var(--tide-dur-base) var(--tide-ease-out) var(--tide-dur-blip) forwards; }
+@keyframes tide-reconnect-dim { to { background: var(--tide-overlay); } }
+.reconnect-modal.components-reconnect-show .reconnect-card { animation: tide-live-in var(--tide-dur-base) var(--tide-ease-out) var(--tide-dur-blip) backwards; }
+/* (Its line, ::before, is the shared scan bar: 41-intake.) */
 .reconnect-card { background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-xl); padding: 1.5rem 1.75rem; max-width: 420px; text-align: center; }
 .reconnect-body { display: none; }
 .components-reconnect-show .reconnect-when-show, .components-reconnect-failed .reconnect-when-failed, .components-reconnect-rejected .reconnect-when-rejected { display: block; }

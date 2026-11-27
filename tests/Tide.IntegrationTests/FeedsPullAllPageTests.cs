@@ -219,7 +219,7 @@ public class FeedsPullAllPageTests(FeedsApp app) : IClassFixture<FeedsApp>
         {
             var html = await HtmlWhen(tab, h => h.Contains("Watched feed", StringComparison.Ordinal));
             html.Should().Contain("Pulling every source…");
-            RowOf(html, "Watched feed").Should().Contain("Pulling…");
+            RowOf(html, "Watched feed").Should().Contain("data-busy").And.Contain("aria-label=\"Pulling Watched feed…\"").And.NotContain("spinner-border");
             System.Net.WebUtility.HtmlDecode(await today.Html()).Should().Contain("Pulling every source…");
         }
         finally

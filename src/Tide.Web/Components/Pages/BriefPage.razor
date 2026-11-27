@@ -501,7 +501,7 @@ else
     {
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
-        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || FeedPolled(c),
+        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || TriageChanged(c),
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
@@ -555,9 +555,9 @@ else
         StateHasChanged();
     }
 
-    // A poll or a pull brought new items (the system's change to triage; this page's own Pull all among them): Today's
-    // Triage step counts them again, for those it counts them for.
-    private bool FeedPolled(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage && c.ActorId == "system";
+    // Triage changed: a poll or a pull brought new items (this page's own Pull all among them), or a colleague triaged
+    // some. Today's Triage step counts them again, live, for those it counts them for (its detail flashes as it changes).
+    private bool TriageChanged(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage;
 
     private async Task OnAroundChanged(IReadOnlyList<Change> changes)
     {
@@ -574,7 +574,7 @@ else
                 var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
                 if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Tell(news);
             }
-            if (changes.Any(FeedPolled))
+            if (changes.Any(TriageChanged))
             {
                 _newInFeed = await Intake.NewCountAsync();
                 _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
@@ -813,11 +813,15 @@ else
                 }));
     }
 
+    // A move is said, not toasted: the rows glide to their new places, and the status beside the running order tells a
+    // screen reader where it went.
+    private string? _moved;
+
     private Task Move(Guid itemId, int by) => Run(() => BriefSvc.MoveItemAsync(_brief!.Id, itemId, by), null,
-        () => Toasts.Show(MovedTo(_brief!, itemId)));
+        () => _moved = MovedTo(_brief!, itemId));
 
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
-        () => Toasts.Show(MovedTo(_brief!, drop.Moved)));
+        () => _moved = MovedTo(_brief!, drop.Moved));
 
     // A warning's one-click answer, from the running order: the article as this page showed it (its edit version), so a
     // colleague's save in between is refused, not written over. "Set to AMBER" raises the paragraph's marking; "Keep it"
@@ -1068,6 +1072,8 @@ else
                                   PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                   CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
                                   OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
+                    @* Where a moved article went, for a screen reader: on screen the rows glide there (flip.js), so no toast. *@
+                    <div class="visually-hidden" role="status" aria-live="polite">@_moved</div>
                     <div class="tide-order-foot">
                         @if (_canWrite && _brief.Status != BriefStatus.Sent)
                         {

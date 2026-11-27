@@ -116,7 +116,40 @@ window.tideTriage = (function () {
         to.focus();
     }
 
+    // The rows showing any of these item ids (a row, or a group's line), at most so many.
+    function rowsFor(ids, most) {
+        const want = new Set(ids || []);
+        return Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
+            return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
+        }).slice(0, most);
+    }
+    // The tab with this label (Triage.Tabs).
+    function tabFor(label) {
+        return Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
+            const l = b.querySelector('span:not(.bi)');
+            return l && l.textContent.trim() === label;
+        });
+    }
+
     return {
+        // Shortlisted, dismissed, marked a duplicate or put back, by this person: the rows lift up and out from where they
+        // were, towards the tabs, and the brackets lock onto the tab they went to; .NET then reloads, so the rows below
+        // close the gap (flip.js) and both tabs' counts roll. As a colleague's change shows, but quicker: they did it.
+        // Without motion only the tab locks on (its counts still roll, without moving).
+        decided: function (ids, tabLabel) {
+            const ts = window.tideShortcuts, tab = tabFor(tabLabel);
+            if (tab) ts.pulse(tab, 'data-tide-landed');
+            if (ts.quiet()) return;
+            const rows = rowsFor(ids, 8), at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
+            rows.forEach(function (row, i) {
+                const r = at[i];
+                if (!r.width || !r.height) return;
+                const g = ts.copy(row, r);
+                g.classList.add('tide-decided');
+                ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }],
+                    { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+            });
+        },
         // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and
         // place, into the Promoted tab's count just above the list, which locks on. Each is a copy, moved and scaled by
         // transform (the browser composites it, no layout each frame), its text fading first so the stretch doesn't show;
@@ -129,14 +162,7 @@ window.tideTriage = (function () {
         // (Triage.Tabs).
         promoted: function (ids, tabLabel) {
             const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
-            const want = new Set(ids || []), ts = window.tideShortcuts;
-            const rows = Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
-                return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
-            }).slice(0, MORPHS);
-            const tab = Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
-                const label = b.querySelector('span:not(.bi)');
-                return label && label.textContent.trim() === tabLabel;
-            });
+            const ts = window.tideShortcuts, rows = rowsFor(ids, MORPHS), tab = tabFor(tabLabel);
             const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
             if (!dest || !rows.length) return Promise.resolve();
             let landed = false, first = null;

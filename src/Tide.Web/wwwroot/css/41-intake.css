@@ -47,6 +47,14 @@
 .tide-roll { display: inline-block; position: relative; animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out); }
 .tide-roll[data-was]::before { content: attr(data-was); position: absolute; left: 0; right: 0; bottom: 110%; text-align: center; }
 @keyframes tide-roll-in { from { transform: translateY(calc(110% * var(--tide-motion))); } }
+/* A count drawn by the Odometer component (nav, lane and closed counts): in a window that clips it, rolling only when it
+   changed (flip.js gives the new one data-was), and flashing as a tab's does; at rest it's just the number. A short text
+   marked data-tide-tick (a step's detail) just flashes. */
+.tide-odo { display: inline-block; overflow: clip; vertical-align: top; }
+.tide-odo > .tide-roll { animation: none; }
+.tide-odo > .tide-roll[data-was] { animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out), tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
+.tide-odo > .tide-roll[data-was][data-dir="down"] { animation-name: tide-roll-down, tide-live-tick; }
+[data-tide-tick]:not(.tide-roll)[data-was] { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
 /* A count that fell rolls the other way: the old number goes down and out, the new one comes from above. */
 .tide-roll[data-dir="down"] { animation-name: tide-roll-down; }
 .tide-roll[data-dir="down"][data-was]::before { bottom: auto; top: 110%; }
@@ -224,6 +232,12 @@
 .tide-seg-opt + .tide-seg-opt { border-left: 1px solid var(--tide-border); }
 .tide-seg-opt:hover { background: var(--tide-surface-2); }
 .tide-seg-opt.on { background: var(--tide-accent-soft); color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); }
+.tide-seg-opt { transition: background-color var(--tide-dur-fast) var(--tide-ease-out), color var(--tide-dur-fast) var(--tide-ease-out); }
+/* The current tab's mark sliding to the one chosen (tabs.js): a line under a page tab, an outline on a switch's option. */
+.tide-tab-slider { position: fixed; z-index: var(--tide-z-drop); pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.tide-tab-slider.is-line { background: var(--tide-accent); }
+.tide-tab-slider.is-box { box-shadow: inset 0 0 0 1px var(--tide-accent); border-radius: var(--tide-radius-md); }
+.tide-tabbar-page .tide-tabbar-item.active[data-tide-sliding] { border-bottom-color: transparent; }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-seg-opt:disabled { cursor: default; opacity: .6; }
 /* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
@@ -456,7 +470,7 @@
    its edges, as rows touch); and on the Promoted tab as a promoted row lands in it. */
 /* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
 :where(.tide-kcard, .tide-triage-row, .tide-tabbar-item[data-tide-landed]) { position: relative; }
-:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before {
+:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock, [data-copied]::after {
     /* An outline cut down to its four corners: an outline is drawn outside the box without making it any wider (so
        nothing scrolls or overflows for it), and the mask (no-clip, so it reaches past the box) keeps only the corners. */
     --tide-bracket-arm: 11px; --o: calc(-1 * var(--tide-bracket-out, 0px));
@@ -476,28 +490,60 @@
 @keyframes tide-lock-land { from { opacity: 0; transform: scale(calc(1 + .14 * var(--tide-motion))); } 60% { opacity: 1; } }
 /* After the hover and focus rule above, so it wins on a card that has focus as it lands. */
 .tide-tabbar-item[data-tide-landed]::before, .tide-kcard:is([data-tide-locked], .tide-kcard-ghost)::before { animation-name: tide-lock-land; }
+/* A field a save was refused for (tideInvalid, theme.js): the brackets in the threat color, laid over it (fixed, placed
+   and played by the script), 5px out as on a card. */
+.tide-invalid-lock { --tide-bracket-out: 5px; position: fixed; inset: auto; z-index: var(--tide-z-rail); outline-color: var(--tide-threat); }
 /* More contrast asked for: the brackets are thicker. */
-@media (prefers-contrast: more) { :is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before { outline-width: 3px; } }
+@media (prefers-contrast: more) { :is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock, [data-copied]::after { outline-width: 3px; } }
 
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
 .tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+/* A row this person decided (shortlisted, dismissed...) lifts out where it was, a copy over the page (triage.js). */
+.tide-triage-row.tide-decided { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; background: var(--tide-surface); }
 .tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;
     background: var(--tide-surface); box-shadow: var(--tide-elev-3); transform-origin: 0 0; will-change: transform; }
 
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-skel-row:last-child { border-bottom: 0; }
-/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. */
-.tide-loading { position: relative; overflow: hidden; }
-.tide-loading::before { content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent);
+/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. They come in only after
+   --tide-dur-patience, so a quick load never flashes them. */
+.tide-loading { position: relative; overflow: hidden; animation: tide-live-in var(--tide-dur-fast) var(--tide-ease-out) var(--tide-dur-patience) backwards; }
+/* The scan bar, wherever something is on its way: a loading block, a busy action (below), a lost connection (25-feedback). */
+.tide-loading::before, [data-busy]::after, .reconnect-modal.components-reconnect-show::before {
+    content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent); pointer-events: none;
     animation: tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
+.reconnect-modal.components-reconnect-show::before { position: fixed; }
 /* From just off the left to just off the right: the bar is 30% wide, so 340% of itself is 102% of the block. */
 @keyframes tide-scan-bar { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 .tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-sm); border: 1px dashed var(--tide-border-strong); }
-/* With reduced motion the bar stays where it is and breathes, so the block still says it's loading. */
-@media (prefers-reduced-motion: reduce) { .tide-loading::before { width: 100%; animation: tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) infinite alternate; } }
+/* With reduced motion the bar stays where it is and breathes, so it still says something is on its way. */
+@media (prefers-reduced-motion: reduce) {
+    .tide-loading::before, .reconnect-modal.components-reconnect-show::before { width: 100%; animation: tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) infinite alternate; }
+}
 @keyframes tide-breathe { from { opacity: .25; } to { opacity: .8; } }
+/* Busy (data-busy): a slow server action under way, a fetch, a check or a pull. The button keeps its words and its size
+   and is disabled; only once the action has taken longer than --tide-dur-patience does the scan bar above run, along the
+   button's foot (or a card's top edge, for what the whole card waits on), so a quick action shows nothing. A
+   BusyStatus beside it says what's under way to a screen reader. */
+:where([data-busy]) { position: relative; }
+.btn[data-busy] { overflow: hidden; }
+.tide-card[data-busy] { overflow: clip; }
+[data-busy]::after { top: auto; bottom: 0; opacity: 0;
+    animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite; }
+.tide-card[data-busy]::after { top: 0; bottom: auto; }
+@keyframes tide-busy-shown { to { opacity: 1; } }
+/* A Copy button that copied (clipboard.js sets data-copied for --tide-dur-signature): its icon is a check, and brackets
+   close in around it once and fade, as a board card's lock on. With reduced motion, only the check. */
+[data-copied] .bi::before { content: "\f272"; }   /* bi-check2's glyph, as Bootstrap Icons draws it */
+:where([data-copied]) { position: relative; }
+[data-copied]::after { --tide-bracket-arm: 6px; --tide-bracket-out: 4px; animation: tide-copied var(--tide-dur-signature) var(--tide-ease-out); }   /* the brackets above */
+@keyframes tide-copied { from { opacity: 0; transform: scale(calc(1 + .18 * var(--tide-motion))); } 35% { opacity: 1; transform: none; } 70% { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-copied]::after { display: none; }
+    [data-busy]::after { width: 100%; animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite alternate; }
+}
 /* Varied widths read as text of different lengths rather than a grid. */
 .tide-skel-w0 { max-width: 70%; } .tide-skel-w1 { max-width: 90%; } .tide-skel-w2 { max-width: 55%; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }

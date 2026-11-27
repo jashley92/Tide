@@ -10,7 +10,6 @@
     @if (Day is null)
     {
         <div class="tide-live-banner" role="status">
-            <span class="tide-live-dot" aria-hidden="true"></span>
             <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(live.PresenterId)" title="@live.PresenterName" aria-hidden="true">@MainLayout.Initials(live.PresenterName)</span>
             <span><strong>Brief meeting is live</strong> &middot; @live.PresenterName presenting &middot; @live.People.Count in it</span>
             <a class="btn btn-sm btn-primary ms-auto" href="@Ui.PresentUrl(live.Day)">Join</a>

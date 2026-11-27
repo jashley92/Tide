@@ -14,9 +14,10 @@
         <h1 class="tide-admin-title">Diagnostics</h1>
         @if (_report is { } r) { <div class="tide-sub">Checked @Ui.When(Clock, r.CheckedAtUtc).</div> }
     </div>
-    <button type="button" class="btn btn-outline-secondary" @onclick="Refresh" disabled="@_busy">
-        <span class="bi bi-arrow-clockwise" aria-hidden="true"></span> @(_busy ? "Checking…" : "Check again")
+    <button type="button" class="btn btn-outline-secondary" @onclick="Refresh" disabled="@_busy" data-busy="@_busy">
+        <span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Check again
     </button>
+    <BusyStatus Text="@(_busy ? "Checking…" : null)" />
 </div>
 
 @if (_report is null && !_busy)

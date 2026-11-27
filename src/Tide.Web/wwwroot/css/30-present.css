@@ -222,7 +222,9 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-alarm-banner { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .6rem; margin-bottom: 1rem; padding: .5rem .9rem; border: 1px solid var(--tide-threat); border-radius: var(--tide-radius-lg); background: var(--tide-threat-soft); color: var(--tide-text); }
 .tide-alarm-icon { color: var(--tide-threat); line-height: 1.5; }
 .tide-alarm-text { flex: 1 1 20rem; min-width: 0; }
-.tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-in-out) infinite; }
+/* The live dot (the brief chip in the top bar) pulses three times as the meeting goes live, then holds steady: on every
+   page for the whole meeting, a pulse that never stopped would pull at the eye all day. */
+.tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-in-out) 3; }
 @media (prefers-reduced-motion: reduce) { .tide-live-dot { animation: none; } }
 .tide-live-count { display: inline-block; min-width: 1.3em; margin-left: .2em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-accent-text); font-size: .8em; }
 .tide-meeting-notes-group + .tide-meeting-notes-group { margin-top: .5rem; }

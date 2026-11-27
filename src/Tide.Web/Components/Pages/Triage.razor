@@ -1979,7 +1979,10 @@ else
             Announce();
             Toasts.Show(done == 0 ? $"Nothing changed: a colleague got to those {noun}s first."
                 : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, noun)}.");
+            var countsWere = _counts;
+            if (done > 0) await ShowDecided(ids, dismiss ? TriageStep.Dismiss : TriageStep.Shortlist);
             await Load();
+            MarkChangedTabs(countsWere);
             _focus = "tideTriage.focusRow";
             return true;
         }
@@ -2034,7 +2037,10 @@ else
                 case TriageStep.Restore: await Intake.RestoreAsync(item.Id); break;
             }
             Announce();
+            var countsWere = _counts;
+            await ShowDecided([item.Id], what);
             await Load();
+            MarkChangedTabs(countsWere);
             // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
             // now belongs to the next item) or the page.
             _focus = "tideTriage.focusRow";
@@ -2054,6 +2060,23 @@ else
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
+    }
+
+    // A decision this person made shows where it went: the rows lift out towards the tabs and the tab they went to locks
+    // on (triage.js), before the list reloads and both tabs' counts roll (MarkChangedTabs). Only when they leave the list
+    // shown.
+    private async Task ShowDecided(IReadOnlyList<Guid> ids, TriageStep what)
+    {
+        FeedItemStatus? to = what switch
+        {
+            TriageStep.Shortlist => FeedItemStatus.Shortlisted,
+            TriageStep.Dismiss => FeedItemStatus.Dismissed,
+            TriageStep.Duplicate => FeedItemStatus.Duplicate,
+            TriageStep.Restore => FeedItemStatus.New,
+            _ => null,
+        };
+        if (to is not { } status || status == _status) return;
+        await JS.BestEffortAsync("tideTriage.decided", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == status).Item2);
     }
 
     // Undo of a single shortlist or dismissal, from its toast: back in New, unless a colleague has decided it since. The

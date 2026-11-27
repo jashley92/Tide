@@ -14,6 +14,7 @@
 @using Tide.Application.Settings
 
 <PageTitle>Sources · TIDE</PageTitle>
+<BusyStatus Text="@_busyText" />
 
 <div class="tide-page-head">
     <div>
@@ -167,7 +168,7 @@
                     <label class="tide-field-label" for="s-test-url">Test with an article's address</label>
                     <div class="input-group input-group-sm">
                         <input id="s-test-url" class="form-control tide-data" maxlength="2000" @bind="_testUrl" @bind:event="oninput" placeholder="https://…" />
-                        <button type="button" class="btn btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_testUrl))" @onclick="TestFetch">Test</button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_testUrl))" data-busy="@(_busyOn == "test")" @onclick="TestFetch">Test</button>
                     </div>
                     @if (_tested is { } t)
                     {
@@ -239,7 +240,7 @@
                             }
                         </td>
                         <td class="text-end text-nowrap">
-                            @if (s.Kind != SourceKind.Api) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Poll(s)">Poll now</button> }
+                            @if (s.Kind != SourceKind.Api) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" data-busy="@(_busyOn == s.Id.ToString())" @onclick="() => Poll(s)">Poll now</button> }
                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => Form = SourceForm.From(s)">Edit</button>
                             <button class="btn btn-outline-secondary btn-sm" title="A source with no items is deleted; otherwise it's retired" aria-label="@(s.IsRetired ? "Bring back" : "Retire") @s.Name" @onclick="() => Retire(s.Name, s.IsRetired, () => Intake.SetSourceRetiredAsync(s.Id, !s.IsRetired))">@(s.IsRetired ? "Bring back" : "Retire")</button>
                         </td>
@@ -453,7 +454,7 @@
     {
         <p class="small">Last run @Ui.When(Clock, run.AtUtc): @run.Kev on KEV, @run.Epss EPSS scores, @run.Nvd from NVD.@if (run.Error is not null) { @(" ")<span class="text-danger">@run.Error</span> }</p>
     }
-    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="Refresh"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Refresh now</button>
+    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" data-busy="@(_busyOn == "refresh")" @onclick="Refresh"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Refresh now</button>
 </section>
 
 <ConfirmDialog @ref="_confirm" />
@@ -676,6 +677,9 @@
     });
     private SourceForm? _form;
     private bool _showRetired, _busy;
+    // Which slow action's button shows it's busy (a source's id for its poll, "test", "refresh"), and what it's doing,
+    // for a screen reader (BusyStatus).
+    private string? _busyOn, _busyText;
     private string? _changedBy;
     // Edit or Add a source: the form opens above the list, so it takes focus (and with it the view) once it's drawn.
     internal SourceForm? Form { get => _form; set => (_form, _changedBy, _focusForm, _sourceAgentProblem) = (value, null, value is not null, null); }
@@ -764,10 +768,10 @@
     internal async Task TestFetch()
     {
         if (_form is null) return;
-        _busy = true;
+        (_busy, _busyOn, _busyText) = (true, "test", "Fetching the article to test…");
         try { _tested = await Assist.TestFetchAsync(_testUrl, _form.ArticleBodySelector, _form.ArticleRemoveSelector, UserAgents.Choose(_form.UserAgent, _form.CustomUserAgent)); }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { (_busy, _busyOn, _busyText) = (false, null, null); }
     }
 
     protected override Task OnInitializedAsync()
@@ -837,7 +841,7 @@
 
     private async Task Poll(Source s)
     {
-        _busy = true;
+        (_busy, _busyOn, _busyText) = (true, s.Id.ToString(), $"Polling {s.Name}…");
         try
         {
             var result = await Intake.PollNowAsync(s.Id);
@@ -846,12 +850,12 @@
             await Load();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { (_busy, _busyOn, _busyText) = (false, null, null); }
     }
 
     private async Task Refresh()
     {
-        _busy = true;
+        (_busy, _busyOn, _busyText) = (true, "refresh", "Refreshing the CVE data…");
         try
         {
             var run = await Cves.EnrichNowAsync();
@@ -860,7 +864,7 @@
             else Toasts.Error(run.Error);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        finally { (_busy, _busyOn, _busyText) = (false, null, null); }
     }
 
     private async Task Retire(string name, bool isRetired, Func<Task> action)

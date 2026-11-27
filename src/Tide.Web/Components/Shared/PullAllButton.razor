@@ -12,10 +12,8 @@
 
 <span class="tide-pull-all">
     <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(IsRunning || Disabled || Intake.PullAllRunning || Intake.StandingBy is not null)" @onclick="RunAsync"
-            title="Pull every source not pulled in the last @PullTimes.Wait(Intake.PullWindow), one at a time">
-        @if (IsRunning) { <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> }
-        else { <span class="bi bi-arrow-repeat" aria-hidden="true"></span> }
-        Pull all</button>
+            data-busy="@IsRunning" title="Pull every source not pulled in the last @PullTimes.Wait(Intake.PullWindow), one at a time">
+        <span class="bi bi-arrow-repeat" aria-hidden="true"></span> Pull all</button>
     <span class="tide-pull-all-status" role="status">@Status</span>
 </span>
 
