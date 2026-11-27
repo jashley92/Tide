@@ -91,8 +91,9 @@ public static partial class FeedParser
     public const int MaxDepth = 256;
 
     /// <summary>Parses a feed document. Throws <see cref="FormatException"/> when it isn't RSS or Atom, or is nested
-    /// deeper than <see cref="MaxDepth"/>.</summary>
-    public static IReadOnlyList<ParsedItem> ParseFeed(Stream content)
+    /// deeper than <see cref="MaxDepth"/>. An item's relative link ("/posts/1", which Atom allows) is resolved against the
+    /// feed's own xml:base, else <paramref name="address"/>, where the feed was fetched from.</summary>
+    public static IReadOnlyList<ParsedItem> ParseFeed(Stream content, string? address = null)
     {
         XDocument doc;
         try
@@ -129,7 +130,28 @@ public static partial class FeedParser
             "RDF" when root.Name.Namespace == Rdf => root.Elements(Rss1 + "item").Select(Rss10),
             _ => throw new FormatException("That isn't an RSS or Atom feed."),
         };
-        return items.OfType<ParsedItem>().Take(MaxItems).ToList();
+        var from = BaseOf(root, address);
+        return items.OfType<ParsedItem>().Take(MaxItems).Select(i => i with { Url = Absolute(i.Url, from) }).ToList();
+    }
+
+    private static bool IsWeb(Uri u) => u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps;
+
+    // What a relative link in the feed is relative to: the root's xml:base (itself perhaps relative to the feed's address),
+    // else the feed's address; null when neither is a web address.
+    private static Uri? BaseOf(XElement root, string? address)
+    {
+        var fetched = Uri.TryCreate(address, UriKind.Absolute, out var a) && IsWeb(a) ? a : null;
+        if ((string?)root.Attribute(XNamespace.Xml + "base") is not { Length: > 0 } declared) return fetched;
+        if (Uri.TryCreate(declared, UriKind.Absolute, out var b) && IsWeb(b)) return b;
+        return fetched is not null && Uri.TryCreate(fetched, declared, out var joined) && IsWeb(joined) ? joined : fetched;
+    }
+
+    // A link as a web address: itself when it is one, resolved against the feed's base when it's relative, and unchanged
+    // (to be dropped where items are stored) when it's neither.
+    private static string Absolute(string link, Uri? from)
+    {
+        if (Uri.TryCreate(link, UriKind.Absolute, out var own) && IsWeb(own)) return link;
+        return from is not null && Uri.TryCreate(from, link, out var joined) && IsWeb(joined) ? joined.AbsoluteUri : link;
     }
 
     // The feed as a copy the reader can go through twice, each control byte XML forbids (all below 0x20 but tab, line
@@ -155,7 +177,9 @@ public static partial class FeedParser
 
     private static ParsedItem? Rss2(XElement e)
     {
-        var link = (string?)e.Element("link") ?? ((string?)e.Element("guid") is { } g && g.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? g : null);
+        // An empty <link/> is no link, as a missing one is: the guid stands in when it's an address.
+        var link = (string?)e.Element("link") is { } own && !string.IsNullOrWhiteSpace(own) ? own
+            : (string?)e.Element("guid") is { } g && g.TrimStart().StartsWith("http", StringComparison.OrdinalIgnoreCase) ? g : null;
         var summary = (string?)e.Element(Content + "encoded") is { Length: > 0 } full && ((string?)e.Element("description") ?? "").Length < 40
             ? full : (string?)e.Element("description");
         return Item((string?)e.Element("title"), link, Date((string?)e.Element("pubDate") ?? (string?)e.Element(Dc + "date")), summary,

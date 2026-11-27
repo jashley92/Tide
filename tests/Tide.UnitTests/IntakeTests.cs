@@ -112,6 +112,44 @@ public class FeedParserTests
         i.PublishedAtUtc.Should().Be(new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero));
     }
 
+    [Theory]
+    [InlineData("", "/posts/1", "https://example.com/posts/1")]
+    [InlineData("", "posts/1", "https://example.com/blog/posts/1")]
+    [InlineData("", "//cdn.example.net/posts/1", "https://cdn.example.net/posts/1")]
+    [InlineData(" xml:base=\"https://other.example.org/news/\"", "posts/1", "https://other.example.org/news/posts/1")]
+    [InlineData(" xml:base=\"/en/\"", "posts/1", "https://example.com/en/posts/1")]
+    [InlineData("", "https://elsewhere.example.org/x", "https://elsewhere.example.org/x")]
+    public void ARelativeLink_IsResolvedAgainstTheFeedsBase_ElseItsAddress(string xmlBase, string href, string expected)
+    {
+        var atom = $"""
+            <feed xmlns="http://www.w3.org/2005/Atom"{xmlBase}><title>t</title>
+              <entry><title>Advisory</title><link href="{href}"/><updated>2026-10-25T12:00:00Z</updated></entry>
+            </feed>
+            """;
+
+        FeedParser.ParseFeed(Text(atom), "https://example.com/blog/feed.xml").Single().Url.Should().Be(expected);
+    }
+
+    [Fact]
+    public void ARelativeLink_InRss_IsResolvedToo_AndStaysAsItIsWithNoAddressToResolveAgainst()
+    {
+        const string rss = """<rss version="2.0"><channel><item><title>T</title><link>/a</link></item></channel></rss>""";
+
+        FeedParser.ParseFeed(Text(rss), "https://example.com/feed").Single().Url.Should().Be("https://example.com/a");
+        FeedParser.ParseFeed(Text(rss)).Single().Url.Should().Be("/a", "with nothing to resolve it against it's left, and dropped where items are stored");
+    }
+
+    [Theory]
+    [InlineData("<link/>")]
+    [InlineData("<link>  </link>")]
+    [InlineData("")]
+    public void Rss2_WithNoLinkOrAnEmptyOne_TakesTheGuid_WhenItIsAnAddress(string link)
+    {
+        var rss = $"""<rss version="2.0"><channel><item><title>T</title>{link}<guid>https://example.com/a</guid></item></channel></rss>""";
+
+        FeedParser.ParseFeed(Text(rss)).Single().Url.Should().Be("https://example.com/a");
+    }
+
     [Fact]
     public void Rss10_IsRead()
     {
