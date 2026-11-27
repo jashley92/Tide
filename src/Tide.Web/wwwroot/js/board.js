@@ -216,11 +216,12 @@ window.tideBoard = (function () {
     function settle(g, card) {
         clearRoom(card);
         const done = function () {
-            g.remove();
-            if (!card) return;
+            if (!card) { g.remove(); return; }
             landing.delete(card.dataset.id);
             card.removeAttribute('data-tide-landing');
             lockOn(card);
+            // The ghost gives way once the card's brackets are on (two frames), so they never blink out between the two.
+            requestAnimationFrame(function () { requestAnimationFrame(function () { g.remove(); }); });
         };
         let aim = card && card.getBoundingClientRect(), a = card && glide(g, aim);
         if (!a) { done(); return; }
@@ -228,9 +229,16 @@ window.tideBoard = (function () {
         card.getAnimations().forEach(function (an) { an.cancel(); });   // its own (a fade drawn in): the ghost is the card
         // The card may still be on its way (its lane scrolling it into view): the ghost keeps aiming at where it is, and
         // lands when it gets there, so there's never a ghost in one place and the card in another.
+        // As it lands, the ghost shows only what the card's lane will show (a card taller than a short lane), so nothing of
+        // it disappears in a frame as the card takes over.
+        const lane = card.closest('.tide-kcol-cards');
         (function follow() {
             const r = card.isConnected ? card.getBoundingClientRect() : aim;
             if (Math.abs(r.left - aim.left) > 1 || Math.abs(r.top - aim.top) > 1) { aim = r; a = glide(g, r) || a; }
+            if (lane && lane.isConnected) {
+                const l = lane.getBoundingClientRect(), gr = g.getBoundingClientRect();
+                g.style.clipPath = 'inset(' + Math.max(0, l.top - gr.top) + 'px 0 ' + Math.max(0, gr.bottom - l.bottom) + 'px 0)';
+            }
             if (a.playState === 'finished' || !card.isConnected) done(); else requestAnimationFrame(follow);
         })();
     }

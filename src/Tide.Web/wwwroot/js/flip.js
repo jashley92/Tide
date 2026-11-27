@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
+    const goneFrom = new WeakMap(), flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     // The part of the app a page is in (/library, /briefs): lists come in afresh on going to another part, not on a tab
     // or a day within one (/library/outreach to /library/playbooks).
     function part() { return '/' + location.pathname.split('/')[1]; }
@@ -362,7 +362,13 @@ window.tideFlip = (function () {
         // order (an entry moved) glides.
         const fk = root.getAttribute('data-tide-flip-key'), rekeyed = fk !== null && flipKeys.has(root) && flipKeys.get(root) !== fk;
         if (fk !== null) flipKeys.set(root, fk);
-        const renewed = rekeyed || (!!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size && (born > 1 || s.was.size > 0))), still = quiet || renewed;
+        // Items that already left on their own (data-tide-gone: rows this person decided, lifting out) don't make the list a
+        // different one: the rest still glide to close the gap.
+        const gone = goneFrom.get(root);
+        goneFrom.delete(root);
+        let had = s.was ? s.was.size : 0;
+        if (gone && s.was) s.was.forEach(function (v, k) { if (gone.has(k)) had--; });
+        const renewed = rekeyed || (!!s.was && ((had > 1 && kept * 2 < had) || born * 2 > s.now.size && (born > 1 || had > 0))), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
         // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
         // than half a pixel is no move.
@@ -524,10 +530,10 @@ window.tideFlip = (function () {
     // A floating surface (a menu, a popover, the palette, a dialog's scrim) that .NET takes away as it closes fades out
     // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
     // opened, and again if the page scrolls under it.
-    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-triage-selbar, .tide-hands-pop', surfaceAt = new WeakMap(), open = new Set();
+    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-triage-selbar, .tide-hands-pop, .tide-reading', surfaceAt = new WeakMap(), open = new Set();
     // An in-flow surface (Triage's chosen-items bar on a narrow window, in the row) leaves no copy: what takes its place is
     // there at once, and a copy would be drawn over it.
-    function note(el) { if (el.isConnected) surfaceAt.set(el, getComputedStyle(el).position === 'static' ? null : el.getBoundingClientRect()); else open.delete(el); }
+    function note(el) { if (el.isConnected) surfaceAt.set(el, el.matches('.tide-triage-selbar') && getComputedStyle(el).position === 'static' ? null : el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
         found.forEach(function (el) { open.add(el); requestAnimationFrame(function () { requestAnimationFrame(function () { note(el); }); }); });
@@ -605,7 +611,8 @@ window.tideFlip = (function () {
             removed.forEach(function (n) {
                 const its = n.matches(root.dataset.tideFlip) ? [n] : exits ? Array.prototype.slice.call(n.querySelectorAll(root.dataset.tideFlip)) : [];   // (in a keyed slot)
                 its.forEach(function (i) {
-                    if ((!exits && !i.hasAttribute('data-tide-exit')) || i.hasAttribute('data-tide-gone')) return;
+                    if (i.hasAttribute('data-tide-gone')) { (goneFrom.get(root) || goneFrom.set(root, new Set()).get(root)).add(key(i)); return; }
+                    if (!exits && !i.hasAttribute('data-tide-exit')) return;
                     if (i.isConnected) return;   // taken out and put back in the same change (moved up or down): it glides, at once
                     exited.add(root);
                     leave(root, i);
@@ -658,6 +665,7 @@ window.tideFlip = (function () {
         document.addEventListener('transitionend', ended, true);
         document.addEventListener('animationend', ended, true);
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
+        opened(document.body);   // surfaces already open as the page loads (the reading pane, remembered open)
     }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
     // Something about to put the window somewhere itself (the reading pane brought into view) ends an ease under way.

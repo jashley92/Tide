@@ -2206,6 +2206,8 @@ else
                     StateHasChanged();
                     await JS.BestEffortAsync("tideTriage.promoted", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
                 }
+                // Already promoted by a colleague: the rows lift out towards the Promoted tab, where they went, as a decision's do.
+                else await JS.BestEffortAsync("tideTriage.decided", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
                 var countsWere = _counts;
                 await Load();
                 MarkChangedTabs(countsWere);
