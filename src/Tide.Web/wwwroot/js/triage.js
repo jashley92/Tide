@@ -148,7 +148,7 @@ window.tideTriage = (function () {
                 g.classList.add('tide-decided');
                 // Gone by half way, before the rows below close up into its place (they'd show through it).
                 ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-4px)', offset: .5 }, { opacity: 0, transform: 'translateY(-6px)' }],
-                    { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+                    { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-out') });   // out: it's fading from the first frame
             });
         },
         // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and

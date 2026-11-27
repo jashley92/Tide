@@ -342,6 +342,7 @@ a, .btn-link { color: var(--tide-accent-text); }
 }
 .btn-check:checked + .btn-outline-secondary { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 .btn:focus-visible, .form-control:focus, .form-select:focus, .form-check-input:focus { box-shadow: 0 0 0 2px var(--tide-focus-ring); border-color: var(--tide-accent); }
-.form-control, .form-select { background-color: var(--tide-surface); border-color: var(--tide-border-strong); color: var(--tide-text); }
+.form-control, .form-select { background-color: var(--tide-surface); border-color: var(--tide-border-strong); color: var(--tide-text);
+    transition: border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out); }   /* not Bootstrap's 150ms */
 .form-check-input:checked { background-color: var(--tide-accent); border-color: var(--tide-accent); }
 

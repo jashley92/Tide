@@ -63,6 +63,8 @@
 @media (max-width: 1099.98px) { .tide-today-grid { grid-template-columns: minmax(0, 1fr); } }
 
 .tide-order { list-style: none; margin: 0; padding: 0; }
+/* The row moved, carried over the one it swaps with as it goes (flip.js). */
+[data-tide-carried] { position: relative; z-index: 2; background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); }
 .tide-order-row { display: grid; grid-template-columns: auto 2rem minmax(0, 1fr) auto; gap: var(--tide-space-2) var(--tide-space-3); align-items: center;
     padding: var(--tide-space-3) var(--tide-space-1); border-bottom: 1px solid var(--tide-border); }
 .tide-order-row:not([draggable]) { grid-template-columns: 2rem minmax(0, 1fr) auto; }

@@ -209,10 +209,10 @@ window.tideShortcuts = (function () {
     return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, overlay: overlay, drift: drift, fly: fly, pulse: pulse };
 })();
 
-// A save refused for a field (a title left empty): .NET says which, after the toast that says why. The page scrolls it to
-// the middle of the window and focuses it, and once it's there threat-colored brackets close in on it, hold, and fade
-// over --tide-dur-attention. The field is marked aria-invalid until it's next changed, unless it says so itself. With less
-// motion asked for, it jumps there and the brackets show where they end, then fade. Whether the field was found.
+// A save refused for a field (a title left empty): .NET says which, after the toast that says why. The page jumps it to
+// the middle of the window and focuses it, and threat-colored brackets close in on it, hold, and fade over
+// --tide-dur-attention. The field is marked aria-invalid until it's next changed, unless it says so itself. With less
+// motion asked for, the brackets show where they end, then fade. Whether the field was found.
 window.tideInvalid = (function () {
     var ts = window.tideShortcuts;
     function lockOn(el) {
@@ -247,27 +247,11 @@ window.tideInvalid = (function () {
             el.addEventListener('input', fixed);
             el.addEventListener('change', fixed);
         }
-        // The brackets close in once the page has stopped moving: at once when it didn't need to (or jumped), else when
-        // its smooth scroll ends (or after the longest a move takes, for a browser without scrollend).
-        var moved = false, started = false;
-        var go = function () {
-            if (started) return;
-            started = true;
-            document.removeEventListener('scroll', seen, true);
-            document.removeEventListener('scrollend', go, true);
-            lockOn(el);
-        };
-        var seen = function () { moved = true; };
-        document.addEventListener('scroll', seen, true);
-        document.addEventListener('scrollend', go, true);
-        el.scrollIntoView({ block: 'center', behavior: ts.still() ? 'auto' : 'smooth' });
+        // The page goes straight to it (a smooth scroll down a long form took the browser most of a second, and the
+        // brackets came before the field), and the brackets close in on it on the next frame: it's there, and that's it.
+        el.scrollIntoView({ block: 'center', behavior: 'instant' });
         el.focus({ preventScroll: true });
-        requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-                if (!moved || ts.still()) go();
-                else setTimeout(go, ts.ms('--tide-dur-travel'));
-            });
-        });
+        requestAnimationFrame(function () { lockOn(el); });
         return true;
     }
     return { show: show };

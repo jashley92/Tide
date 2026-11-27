@@ -51,24 +51,28 @@ else
     var overdue = _report.Find("actions:overdue-at-end")!;
     var hunted = _report.Find("actions:hunted")!;
     var hits = _report.Find("actions:hits")!;
+    @* The tiles glide when the strip above them takes more or less room (another period), and their figures roll to the
+       new period's (Odometer), as the instrument's numbers do elsewhere. *@
+    <div class="tide-trend-head" data-tide-flip=".tide-trend-tiles, .tide-trend-outcomes-h">
     <TrendHighlightsStrip Highlights="@_highlights" Against="@_end.Previous.Label" Href="@(h => Href(view: TrendHighlightsStrip.ViewOf(h.Key), line: h.Key, at: h.At))" />
     @* Each tile opens what it counts (the drill-down below), and says how it compares with the period before. *@
-    <div class="tide-load-nums tide-trend-tiles">
-        <a href="@Href(line: articles.Key, at: _end)" title="The articles counted in @_end.Label"><strong>@articles.Current</strong><span>Articles</span><small><TrendChange Row="articles" /></small></a>
-        <a href="@Href(line: threats.Key, at: _end)" title="The threats counted in @_end.Label"><strong>@threats.Current</strong><span>Threats</span><small><TrendChange Row="threats" /></small></a>
-        <a href="@Href(view: "actions", line: raised.Key, at: _end)" title="The actions raised in @_end.Label"><strong>@raised.Current</strong><span>Actions raised</span><small><TrendChange Row="raised" /></small></a>
+    <div class="tide-load-nums tide-trend-tiles" data-id="tiles-made">
+        <a href="@Href(line: articles.Key, at: _end)" title="The articles counted in @_end.Label"><strong><Odometer Value="@N(articles.Current)" /></strong><span>Articles</span><small><TrendChange Row="articles" /></small></a>
+        <a href="@Href(line: threats.Key, at: _end)" title="The threats counted in @_end.Label"><strong><Odometer Value="@N(threats.Current)" /></strong><span>Threats</span><small><TrendChange Row="threats" /></small></a>
+        <a href="@Href(view: "actions", line: raised.Key, at: _end)" title="The actions raised in @_end.Label"><strong><Odometer Value="@N(raised.Current)" /></strong><span>Actions raised</span><small><TrendChange Row="raised" /></small></a>
         <a href="@Href(view: "actions", line: TrendsOnTimeKey, at: _end)" title="Done on time out of done with a due date; an action with no due date is neither">
-            <strong>@Percent(_report.OnTimeRatio)</strong><span>Done on time</span>
+            <strong><Odometer Value="@Percent(_report.OnTimeRatio)" /></strong><span>Done on time</span>
             <small class="tide-muted">@(_report.Find("actions:done")!.Current) done &middot; @Percent(_report.PreviousOnTimeRatio) in @_end.Previous.Label</small></a>
     </div>
-    <h2 class="tide-trend-outcomes-h">Outcomes</h2>
-    <div class="tide-load-nums tide-trend-tiles">
-        <a href="@Href(view: "actions", line: overdue.Key, at: _end)" class="@(overdue.Current > 0 ? "bad" : "")" title="Open and past due when @_end.Label ended (or today)"><strong>@overdue.Current</strong><span>Overdue at period end</span><small><TrendChange Row="overdue" /></small></a>
+    <h2 class="tide-trend-outcomes-h" data-id="outcomes-h">Outcomes</h2>
+    <div class="tide-load-nums tide-trend-tiles" data-id="tiles-outcomes">
+        <a href="@Href(view: "actions", line: overdue.Key, at: _end)" class="@(overdue.Current > 0 ? "bad" : "")" title="Open and past due when @_end.Label ended (or today)"><strong><Odometer Value="@N(overdue.Current)" /></strong><span>Overdue at period end</span><small><TrendChange Row="overdue" /></small></a>
         @foreach (var o in _report.Outcomes)
         {
             <div title="From raised to done, for actions done in @_end.Label"><strong>@Days(o.Current)</strong><span>@o.Name</span><small class="tide-muted">@Days(o.Previous) in @_end.Previous.Label</small></div>
         }
         <a href="@Href(view: "actions", line: hits.Key, at: _end)" title="Actions whose hunt found something, of those hunted in @_end.Label"><strong>@hits.Current of @hunted.Current</strong><span>Hunts with hits</span><small class="tide-muted">@hunted.Previous hunted in @_end.Previous.Label</small></a>
+    </div>
     </div>
 
     @* Each view is its own address (Go), so these are links, not tabs. *@
@@ -448,4 +452,6 @@ else
 
     // With the page's way of counting sub-techniques, so a technique line's file lists the articles its drill-down does.
     private string ArticlesCsvUrl(string line, Period at) => $"trends/articles.csv?p={at.Key}&line={Uri.EscapeDataString(line)}{SubsQuery}";
+
+    private static string N(int n) => n.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }

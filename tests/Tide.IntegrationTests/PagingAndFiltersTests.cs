@@ -486,6 +486,22 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
             .Should().Be("triage?tab=new&cve=kev&named=true&older=true&page=3");
     }
 
+    [Fact]
+    public async Task Triage_ATabThatSwitchesToEverythingElseTwice_DrawsEachHeading_WithoutTakingThePageDown()
+    {
+        // Dismissed is in time order, not what we run first: lines we run and others alternate, and "Everything else"
+        // heads each run of others. Each heading is keyed by its line (glides with the rows), so two never share a key.
+        await using (var setup = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await setup.ServiceProvider.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Quuxtron" });
+        string[] titles = ["Quuxtron flaw e", "Other story e", "Quuxtron patch e", "Another story e"];
+        var (source, _) = await Seed("e", 4, _ => null, n => titles[n]);
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=dismissed&source={source}");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce("items"));
+        html.Should().Contain("Other story e").And.Contain("Another story e");
+        (html.Split(">Everything else<").Length - 1).Should().Be(2, "it heads each run of other lines");
+        html.Split("data-id=\"sec-else-").Skip(1).Select(s => s[..s.IndexOf('"', StringComparison.Ordinal)]).Should().HaveCount(2).And.OnlyHaveUniqueItems();
+    }
+
     // A board of 45 open cards and 25 in progress, none of them this person's to move.
     private static ActionBoard Board()
     {

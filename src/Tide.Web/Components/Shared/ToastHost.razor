@@ -13,11 +13,14 @@
    live parts below announce as before. *@
 <section class="tide-toasts" aria-label="Notifications" data-tide-flip=".tide-toast" data-tide-flip-exit @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
          @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
+    @* Each toast keyed in the loop itself (a key inside Toast's fragment is in a region of its own, so the toasts would
+       be matched by place: dismissing the top one rewrote each below it and took the last away). The slot takes no
+       box (tide-toast-slot), so the toasts stack as before. *@
     <div role="status" aria-live="polite">
-        @foreach (var t in toasts.Where(t => !t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => !t.IsError)) { <div class="tide-toast-slot" @key="t.Id">@Toast(t)</div> }
     </div>
     <div role="alert" aria-live="assertive">
-        @foreach (var t in toasts.Where(t => t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => t.IsError)) { <div class="tide-toast-slot" @key="t.Id">@Toast(t)</div> }
     </div>
 </section>
 
@@ -28,7 +31,7 @@
     private RenderFragment Toast(ToastService.Toast t) => __builder =>
     {
         var newest = t.Id == _newestUndo;
-        <div class="tide-toast @(t.IsError ? "tide-toast-error" : t.IsWarning ? "tide-toast-warn" : "")" @key="t.Id">
+        <div class="tide-toast @(t.IsError ? "tide-toast-error" : t.IsWarning ? "tide-toast-warn" : "")" data-id="@t.Id">
             <span class="bi @(t.IsError ? "bi-exclamation-octagon" : t.IsWarning ? "bi-exclamation-triangle" : "bi-check2-circle")" aria-hidden="true"></span>
             <span>
                 @t.Message
