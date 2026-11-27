@@ -106,3 +106,133 @@
         show(plot, all[next]);
     });
 })();
+
+// A chart's motion. The first time a chart's plot comes into view on a page, it sweeps in from the left over
+// --tide-dur-signature, a thin scan edge travelling with it (an instrument tracing its reading). Once per chart per page
+// view: a plot in the same place on the same page (a re-render, or Blazor building it again for a new range) has
+// already been seen, so it never sweeps again. When the lines change under a plot (weekly to quarterly, 30 days to a
+// year, a line taken off), the old reading fades out over the new one fading in, over --tide-dur-fast: opacity only, no
+// sweep. With less motion asked for there is no sweep, only that fade.
+(function () {
+    const t = window.tideShortcuts;
+    if (!t || !window.IntersectionObserver || !window.MutationObserver) return;
+    const plots = document.getElementsByClassName('tide-chart-plot');
+    const places = new WeakMap();   // a plot: its place on the page (the how-manyth chart)
+    let path = location.pathname, readings = new Map();   // a place on this page: its chart's last reading
+
+    // A copy of the plot as it reads now, to fade out over its next reading: no tooltip, no point marked.
+    function snap(plot) {
+        const c = plot.cloneNode(true);
+        c.querySelector('.tide-chart-tip')?.remove();
+        c.querySelectorAll('.active').forEach(function (n) { n.classList.remove('active'); });
+        c.classList.add('tide-chart-ghost');
+        c.removeAttribute('data-tide-sweep');
+        c.removeAttribute('data-chart');
+        c.removeAttribute('tabindex');
+        return c;
+    }
+
+    // Uncovers the plot from the left, clipped a little outside it so the dots on its edges show whole; the clip goes
+    // when it's done. The scan edge is the frame's (::after), not the plot's, so the clip never cuts it off: it moves
+    // over the plot on the line between shown and not yet. Started `from` so far in when it carries on a sweep the plot
+    // it replaced was making.
+    function sweep(plot, from) {
+        const frame = plot.parentElement;
+        frame.setAttribute('data-tide-scan', '');   // first: it makes the frame the plot's offset parent
+        const x = plot.offsetLeft, w = plot.offsetWidth;
+        frame.style.setProperty('--tide-scan-height', plot.offsetHeight + 'px');
+        const opts = { duration: t.ms('--tide-dur-signature'), easing: t.token('--tide-ease-grab'), fill: 'forwards' };
+        const a = plot.animate([{ clipPath: 'inset(-8px calc(100% + 8px) -8px -8px)' }, { clipPath: 'inset(-8px)' }], opts);
+        let edge = null;
+        try {
+            edge = frame.animate([{ transform: 'translateX(' + (x - 9) + 'px)', opacity: 1 }, { opacity: 1, offset: .85 }, { transform: 'translateX(' + (x + w + 7) + 'px)', opacity: 0 }],
+                Object.assign({ pseudoElement: '::after' }, opts));
+        } catch { /* a browser that can't animate a pseudo-element: the plot sweeps without its edge */ }
+        if (from) { a.currentTime = from; if (edge) edge.currentTime = from; }
+        const done = function () {
+            plot.removeAttribute('data-tide-sweep');
+            frame.removeAttribute('data-tide-scan');
+            frame.style.removeProperty('--tide-scan-height');
+            a.cancel();
+            edge?.cancel();
+        };
+        a.finished.then(done, done);
+        return a;
+    }
+
+    // Watched through the plot's frame (its axis and dates around it), as the browser counts a plot clipped away to
+    // nothing as out of view.
+    const framed = new WeakMap();   // a frame: the plot in it waiting to sweep
+    const view = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+            const plot = framed.get(e.target);
+            if (!e.isIntersecting || !plot) return;
+            view.unobserve(e.target);
+            framed.delete(e.target);
+            const r = readings.get(places.get(plot)) ?? {};
+            r.waiting = false;
+            if (t.quiet()) plot.removeAttribute('data-tide-sweep');
+            else r.sweep = sweep(plot);
+        });
+    }, { threshold: .25 });
+    function hold(plot) {
+        plot.setAttribute('data-tide-sweep', '');
+        const frame = plot.parentElement;
+        framed.set(frame, plot);
+        view.unobserve(frame);
+        view.observe(frame);
+    }
+
+    // What the plot reads now: a copy to fade out later, and its lines and bands, to tell a new reading from the same one
+    // drawn again (as Blazor does, taking over the prerendered page).
+    function reading(plot) {
+        const lines = Array.from(plot.querySelectorAll('svg polyline, svg rect'), function (n) {
+            return [n.getAttribute('class'), n.getAttribute('points'), n.getAttribute('y'), n.getAttribute('height')].join(' ');
+        }).join('|');
+        return { snap: snap(plot), lines: lines };
+    }
+
+    // The plot may read differently: if so, the last reading fades out over this one fading in (when it's on screen).
+    function changed(plot) {
+        const at = places.get(plot), old = readings.get(at), now = reading(plot);
+        if (old && old.lines === now.lines) return;
+        now.waiting = plot.hasAttribute('data-tide-sweep');
+        readings.set(at, now);
+        if (!old || document.hidden || !document.body.animate || plot.hasAttribute('data-tide-sweep')) return;
+        const r = plot.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > innerHeight) return;
+        const opts = { duration: t.ms('--tide-dur-fast'), easing: t.token('--tide-ease-fade') };
+        t.drift(t.copy(old.snap, r), [{ opacity: 1 }, { opacity: 0 }], opts);
+        plot.animate([{ opacity: 0 }, { opacity: 1 }], opts);
+    }
+
+    function meet(plot) {
+        const at = Array.prototype.indexOf.call(plots, plot), old = readings.get(at);
+        places.set(plot, at);
+        const svg = plot.querySelector('svg');
+        if (svg) new MutationObserver(function () { changed(plot); })
+            .observe(svg, { subtree: true, childList: true, attributes: true, attributeFilter: ['points', 'class', 'y', 'height'] });
+        // Built again where a chart already showed (Blazor taking over the prerendered page, or drawing it again for a
+        // new range): a change, not a debut, unless the one it replaces was still waiting to sweep, which this one does,
+        // or sweeping, which this one carries on from where it got to.
+        if (old?.sweep?.playState === 'running') {
+            plot.setAttribute('data-tide-sweep', '');
+            readings.set(at, Object.assign(reading(plot), { sweep: sweep(plot, old.sweep.currentTime) }));
+            return;
+        }
+        if (old && !old.waiting) { changed(plot); return; }
+        readings.set(at, Object.assign(reading(plot), { waiting: !t.still() }));
+        if (!t.still()) hold(plot);
+    }
+
+    // New plots are met once a frame at most (before they're first painted), however much else Blazor changes.
+    let queued = false;
+    function scan() {
+        queued = false;
+        if (location.pathname !== path) { path = location.pathname; readings = new Map(); }
+        for (const plot of plots) if (!places.has(plot) && !plot.hasAttribute('data-tide-copy')) meet(plot);
+    }
+    scan();
+    new MutationObserver(function () { if (!queued) { queued = true; requestAnimationFrame(scan); } })
+        .observe(document.body, { childList: true, subtree: true });
+})();
