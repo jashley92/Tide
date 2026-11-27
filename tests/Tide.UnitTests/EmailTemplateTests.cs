@@ -69,6 +69,25 @@ public class EmailTemplateTests
     }
 
     [Fact]
+    public void AValue_IsFilledInOnce_SoANameTypedIntoATitleStaysText()
+    {
+        // An action's title is encoded into TIDE's own table, but braces aren't HTML: a title naming a value must not be
+        // filled in when the table is put in the body, wherever the table goes (its own paragraph, or inside a line).
+        var t = EmailTemplateCatalog.Overdue;
+        var table = "<table><tr><td><a href=\"https://tickets.example/{{ActionList}}\">{{ActionList}} {{OverdueActions}}</a></td></tr></table>";
+        var values = new Dictionary<string, string> { ["ActionList"] = table, ["OverdueActions"] = "FILLED-IN" };
+
+        foreach (var body in new[] { "Overdue:\n\n{{ActionList}}", "Overdue: {{ActionList}}" })
+        {
+            var html = EmailTemplateRenderer.Render(t, "s", "h", body, values, appUrl: null).BodyHtml;
+            System.Text.RegularExpressions.Regex.Matches(html, "<table>").Should().ContainSingle("the list goes in once: " + body);
+            html.Should().NotContain("FILLED-IN", "a name in a title isn't filled in");
+            System.Net.WebUtility.HtmlDecode(html).Should().Contain("href=\"https://tickets.example/{{ActionList}}\">{{ActionList}} {{OverdueActions}}</a>",
+                "the title and link read as they were typed");
+        }
+    }
+
+    [Fact]
     public void TheStore_UsesTheDefaults_UntilOneIsSaved()
     {
         var store = new EmailTemplateStore(null);

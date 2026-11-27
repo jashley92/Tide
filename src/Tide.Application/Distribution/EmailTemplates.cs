@@ -324,9 +324,13 @@ public static partial class EmailTemplateRenderer
         string Line(string text) => SingleLine(EmailTemplateCatalog.TokenRegex().Replace(text, m =>
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: false } ? v : ""));
 
-        // An HTML value alone in its paragraph (a table) replaces the paragraph, so a table isn't put inside a <p>.
+        // An HTML value alone in its paragraph (a table) replaces the paragraph, so a table isn't put inside a <p>. The
+        // pass below reads the result again, so "{{" inside the value (an action titled "{{ActionList}}") is written as
+        // character references: it reads as typed, and nothing in a value is filled in a second time.
         var html = BlockToken().Replace(Md.ToHtml(body, LinkRoot.Email(appUrl)), m =>
-            t.Token(m.Groups[1].Value) is { Html: true } ? Value(m.Groups[1].Value, out _) : m.Value);
+            t.Token(m.Groups[1].Value) is { Html: true }
+                ? Value(m.Groups[1].Value, out _).Replace("{{", "&#123;&#123;", StringComparison.Ordinal)
+                : m.Value);
         html = EmailTemplateCatalog.TokenRegex().Replace(Style(html), m =>
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: true } ? v : Esc(v));
         return new RenderedTemplate(Line(subject), Line(heading), html, Line(t.Footer)) { TemplateId = t.Id };
