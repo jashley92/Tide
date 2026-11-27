@@ -233,12 +233,17 @@ window.tideFlip = (function () {
     // Where the window is, as the reader left it. A pull back because the page ended higher is not the reader's: the
     // window's place before it is kept. A hold still on follows the reader up (it is only a least height, so it never
     // stops them going down, and it isn't measured here: that would scroll the window again).
+    // A hold left on after the reader took the window (wheel, touch, a page key mid-rewind) goes once they stop: the
+    // window eases on from where they left it, a moment after their own scroll, as one settle rather than a second move
+    // much later.
+    let resume = 0;
     function scrolledWindow() {
         if (rewind) return;
         const y = scrollY;
         if (y < lastY && y >= document.documentElement.scrollHeight - innerHeight - 1) return;
         lastY = y;
         if (pin && y + innerHeight < pin) hold(y + innerHeight);
+        if (pin) { clearTimeout(resume); resume = setTimeout(function () { resume = 0; if (pin && !rewind) { if (idle) { clearTimeout(idle); idle = 0; } settle(true); } }, 150); }
     }
 
     // What was last pressed (a Move button), for a list where people move items themselves: a button that went disabled
@@ -368,7 +373,11 @@ window.tideFlip = (function () {
         });
         const together = ts.travel(far);
         // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
-        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
+        // A card flying out to another lane (board): the ones closing up behind it wait a beat, so the one rising into its
+        // place doesn't pass under it as it sets off.
+        const left = new Set();   // the lanes a card flew out of
+        if (s.was && !still) s.list.forEach(function (el) { const n = s.now.get(key(el)), w = s.was.get(key(el)); if (n && w && w.parent !== n.parent) left.add(w.parent); });
+        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0, behind = ts.ms('--tide-dur-fast');
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
         if (!still && s.was && !pinned.get(root)) {
             resized(tall, o.height, root, together, wait);
@@ -434,7 +443,7 @@ window.tideFlip = (function () {
             }
             const t = together;
             longest = t;
-            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, delay: wait, easing: ease, fill: 'backwards' });
+            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, delay: left.has(n.parent) ? Math.max(wait, behind) : wait, easing: ease, fill: 'backwards' });
             running.set(el, glide);
             // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
             // moved (it has focus, on its Move button) is carried over the one it swaps with, not through it.
