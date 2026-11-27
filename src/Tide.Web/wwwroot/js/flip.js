@@ -19,7 +19,8 @@
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
     const at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
-    let frame = 0;
+    let frame = 0, page = location.pathname;
+    const entered = new Set();   // the lists that came in on this page
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
     }) : null;
@@ -128,7 +129,7 @@ window.tideFlip = (function () {
             if (s.was.get(key(el))) kept++;
             else if (!el.hasAttribute('data-tide-exit')) born++;
         });
-        const renewed = !!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size), still = quiet || renewed;
+        const renewed = !!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size && (born > 1 || s.was.size > 0)), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
         // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
         // than half a pixel is no move.
@@ -193,6 +194,11 @@ window.tideFlip = (function () {
             const late = longest ? wait + longest * .6 : ts.ms('--tide-dur-handover');
             fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: late, easing: ease, fill: 'backwards' }); });
         } else if (!s.was) {
+            // Once per list per page: one drawn again on the same page (a table back from "no results") just shows.
+            if (location.pathname !== page) { entered.clear(); page = location.pathname; }
+            const id = root.dataset.tideFlip;
+            if (entered.has(id)) return;
+            entered.add(id);
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
@@ -209,9 +215,11 @@ window.tideFlip = (function () {
         const o = pinned.get(root) ? { left: 0, top: 0 } : root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
         Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
-        // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box.
-        ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
-            { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+        // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box: the
+        // easing is the keyframes' own, so the fade does end at two thirds of the time (on the whole effect, it would
+        // stretch the first stretch to nine tenths).
+        ts.drift(g, [{ opacity: 1, transform: 'none', easing: ts.token('--tide-ease-in') }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
+            { duration: ts.ms('--tide-dur-exit') });
     }
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
