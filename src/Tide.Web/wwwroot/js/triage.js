@@ -141,6 +141,7 @@ window.tideTriage = (function () {
             if (tab) ts.pulse(tab, 'data-tide-landed');
             if (ts.quiet()) return;
             const rows = rowsFor(ids, 8), at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
+            rows.forEach(function (row) { row.setAttribute('data-tide-gone', ''); });   // they leave here, not again in flip.js
             rows.forEach(function (row, i) {
                 const r = at[i];
                 if (!r.width || !r.height) return;

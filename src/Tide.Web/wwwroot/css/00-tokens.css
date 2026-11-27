@@ -57,6 +57,7 @@
     --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
     --tide-dur-patience: 300ms;    /* how long a wait goes unshown: a busy action (data-busy) or a loading block; a quicker one shows nothing */
     --tide-dur-exit: 133ms;        /* something small leaving (a toast, a row): quicker than it came, as it's done */
+    --tide-dur-handover: 90ms;     /* one arriving where one leaves waits this long (two thirds of the exit): never two in one box */
     --tide-dur-panel-exit: 196ms;  /* a panel leaving: the rail */
     --tide-dur-turn: 420ms;        /* a Present slide turning */
     --tide-dur-travel: 420ms;      /* the longest something carried across the page takes (tideShortcuts.travel), and .NET waits on it */

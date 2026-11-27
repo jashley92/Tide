@@ -17,9 +17,10 @@
 // line closes up (a row that left, live) the list's size changes each frame: it's measured once that's done. A glide
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
-    const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const at = new WeakMap(), running = new WeakMap(), due = new Map();
-    let frame = 0;
+    const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
+    const at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
+    let frame = 0, page = location.pathname;
+    const entered = new Set();   // the lists that came in on this page
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
     }) : null;
@@ -45,7 +46,12 @@ window.tideFlip = (function () {
 
     // Measures the list's items and keeps where each is, giving back where they were before (null the first time).
     function snapshot(root) {
-        const was = at.get(root) || null, origin = root.getBoundingClientRect(), list = items(root), now = new Map();
+        const was = at.get(root) || null, box = root.getBoundingClientRect(), list = items(root), now = new Map();
+        // Kept relative to the list, as the window scrolling moves both together; but a list fixed to the window (the
+        // toasts, pinned at its foot) grows from its foot, so its items are kept as the window sees them.
+        if (!pinned.has(root)) pinned.set(root, getComputedStyle(root).position === 'fixed');
+        const origin = pinned.get(root) ? { left: 0, top: 0, height: box.height } : box;
+        heights.set(root, box.height);
         list.forEach(function (el) { const p = measure(el, origin); if (p) now.set(key(el), p); });
         at.set(root, now);
         return { was: was, list: list, now: now, origin: origin };
@@ -63,32 +69,95 @@ window.tideFlip = (function () {
         });
     }
 
-    function play(root) {
+    // What follows a list that grew or shrank (the rest of its card, the cards after it) glides from where it was by
+    // the same amount, rather than jumping; out as far as an item of an enclosing list, as what follows that glides
+    // with its list (which plays too).
+    function inList(el) {
+        for (let r = el.parentElement && el.parentElement.closest(ROOTS); r; r = r.parentElement && r.parentElement.closest(ROOTS)) {
+            if (items(r).indexOf(el) >= 0) return true;
+        }
+        return false;
+    }
+    // Only what is laid out below it (not a pane beside it, in a row or a grid), drawn, and seen at some point of the
+    // glide: one off the screen throughout has nothing to show, and a transform would only unstick a bar inside it.
+    function below(s, box, by) {
+        if (s.matches(COPY) || /fixed|absolute|sticky/.test(getComputedStyle(s).position)) return false;
+        const r = s.getBoundingClientRect();
+        if (Math.abs(by) > innerHeight || !r.width || !r.height || r.top < box.bottom - 1 || r.right <= box.left || r.left >= box.right) return false;
+        return Math.min(r.top, r.top + by) < innerHeight && Math.max(r.bottom, r.bottom + by) > 0;
+    }
+    function slide(root, by, ms, wait) {
+        const ease = window.tideShortcuts.token('--tide-ease-out');
+        for (let n = root; n && n !== document.body && !inList(n); n = n.parentElement) {
+            const box = n.getBoundingClientRect();
+            for (let s = n.nextElementSibling; s; s = s.nextElementSibling) {
+                if (!below(s, box, by)) continue;
+                s.animate([{ transform: 'translateY(' + by + 'px)' }, { transform: 'none' }], { duration: ms, delay: wait, easing: ease, fill: 'backwards' });
+            }
+        }
+    }
+
+    // A list that got shorter while the window is scrolled to its foot would cut the window short at once and jump: it
+    // keeps its height while its items glide up, the window scrolls back smoothly, and then what follows glides up.
+    // Anywhere else, what follows glides with the change.
+    function resized(root, was, now, ms, wait) {
+        const by = was - now;
+        if (!(Math.abs(by) > 1)) return;
+        if (by > 0 && scrollY > 0 && scrollY >= document.documentElement.scrollHeight - innerHeight - 1) {
+            root.style.minHeight = was + 'px';
+            setTimeout(function () {
+                const max = document.documentElement.scrollHeight - by - innerHeight;
+                const go = function () { root.style.minHeight = ''; slide(root, by, ms, 0); };
+                if (scrollY > max) { window.scrollTo({ top: Math.max(0, max), behavior: 'smooth' }); setTimeout(go, ms); }
+                else go();
+            }, ms + wait);
+        } else slide(root, by, ms, wait);
+    }
+
+    function play(root, afterExit) {
+        const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
         let flights = 0, longest = 0;   // longest: the longest glide this change starts
+        // A list mostly replaced (another tab, a filter, a page: most of what was there has gone, or most of what is there
+        // is new) just shows: nothing glides, arrives or pushes what follows. A group's members opening out (they fold
+        // back with data-tide-exit) are an unfolding, however many.
+        let kept = 0, born = 0;
+        if (s.was) s.list.forEach(function (el) {
+            if (!s.now.get(key(el))) return;
+            if (s.was.get(key(el))) kept++;
+            else if (!el.hasAttribute('data-tide-exit')) born++;
+        });
+        const renewed = !!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size && (born > 1 || s.was.size > 0)), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
-        // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding).
+        // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
+        // than half a pixel is no move.
         let far = 0;
-        if (s.was && !quiet) s.list.forEach(function (el) {
+        if (s.was && !still) s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was.get(key(el));
-            if (n && w && w.parent === n.parent) far = Math.max(far, Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy), n.h - w.h);
+            if (!n || !w || w.parent !== n.parent) return;
+            const d = Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy);
+            far = Math.max(far, d < MOVED ? 0 : d, n.h - w.h > 1 ? n.h - w.h : 0);
         });
         const together = ts.travel(far);
+        // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
+        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
+        // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
+        if (!still && s.was && !pinned.get(root)) resized(root, tall, o.height, together, wait);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
             if (!w) { fresh.push(el); return; }
-            if (quiet) return;
+            if (still) return;
             // It grew (a row selected opens its decision, a card's Move menu opens): what's new unfolds from its old foot
             // as the items after it glide down, so they never slide across it. A clip, inset from the bottom by what it
             // grew, opened over the same time to its own foot (not past it, into the gap the next is gliding over), with
             // room at the other sides for its brackets.
             const grew = n.h - w.h;
-            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, easing: ease });
+            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, delay: wait, easing: ease, fill: 'backwards' });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
-            if (!dx && !dy) return;
+            if (Math.abs(dx) < MOVED && Math.abs(dy) < MOVED) return;
             const a = running.get(el);
             if (a) a.cancel();
             // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
@@ -105,7 +174,7 @@ window.tideFlip = (function () {
             }
             const t = together;
             longest = t;
-            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, easing: ease });
+            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, delay: wait, easing: ease, fill: 'backwards' });
             running.set(el, glide);
             // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
             // moved (it has focus, on its Move button) is carried over the one it swaps with, not through it.
@@ -115,17 +184,26 @@ window.tideFlip = (function () {
                 glide.finished.then(down, down);
             }
         });
-        // A list arriving whole comes in in quick order. In a list already there, a few new items among the rest (a group
-        // opened) fade in once the items gliding past them have mostly gone by, so none slides across them; a list mostly
-        // new (another tab, a filter) just shows.
+        // A list arriving whole comes in in quick order. In a list already there, new items (a group opened, a first
+        // saved query above the preview) fade in once the items gliding past them have mostly gone by, so none slides
+        // across them; a list mostly new with nothing gliding (another tab, a filter) just shows.
         if (!fresh.length || document.hidden || !document.body.animate) return;
-        if (!s.was) {
+        if (afterExit && !quiet) {
+            // One arriving where one is leaving (a toast after its Undo): it comes in as the other has mostly gone, so
+            // the two never share a box; or, where the rest glide over after the exit, once they have mostly gone by.
+            const late = longest ? wait + longest * .6 : ts.ms('--tide-dur-handover');
+            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: late, easing: ease, fill: 'backwards' }); });
+        } else if (!s.was) {
+            // Once per list per page: one drawn again on the same page (a table back from "no results") just shows.
+            const id = root.dataset.tideFlip;
+            if (entered.has(id)) return;
+            entered.add(id);
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
-        } else if (fresh.length * 2 < s.list.length) {
-            fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
+        } else if (!renewed) {
+            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
         }
     }
 
@@ -133,12 +211,14 @@ window.tideFlip = (function () {
     function leave(root, el) {
         const ts = window.tideShortcuts, kept = at.get(root), p = kept && kept.get(key(el));
         if (!p || !document.body.animate || document.hidden) return;
-        const o = root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
+        const o = pinned.get(root) ? { left: 0, top: 0 } : root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
         Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
-        // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box.
-        ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
-            { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+        // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box: the
+        // easing is the keyframes' own, so the fade does end at two thirds of the time (on the whole effect, it would
+        // stretch the first stretch to nine tenths).
+        ts.drift(g, [{ opacity: 1, transform: 'none', easing: ts.token('--tide-ease-in') }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
+            { duration: ts.ms('--tide-dur-exit') });
     }
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
@@ -181,12 +261,20 @@ window.tideFlip = (function () {
     }
 
     function changed(records) {
-        const touched = new Set(), gone = new Map();
+        // Another page (whether or not the one between had lists): its lists come in afresh.
+        if (location.pathname !== page) { entered.clear(); page = location.pathname; }
+        const touched = new Set(), gone = new Map(), exited = new Set();
         records.forEach(function (m) {
             elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); closed(n); });
             elements(m.addedNodes).forEach(opened);
         });
         records.forEach(function (m) {
+            // Text changed in place (a range's label re-wrapping): what it pushed glides, as for a change inside an item.
+            if (m.type === 'characterData') {
+                const at = m.target.parentElement, r = at && !at.closest(COPY) && at.closest(ROOTS);
+                if (r) later(r, true);
+                return;
+            }
             if (m.target.closest && m.target.closest(COPY)) return;   // a copy flying or leaving is no list's
             const added = elements(m.addedNodes), removed = elements(m.removedNodes);
             if (!added.length && !removed.length) return;
@@ -202,17 +290,30 @@ window.tideFlip = (function () {
             // after it glide to where they are now rather than jump, played on the next frame with any others.
             if (m.target.closest(root.dataset.tideFlip)) { later(root, true); return; }
             touched.add(root);
-            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) {
-                if (n.matches(root.dataset.tideFlip)) leave(root, n);
-                else n.querySelectorAll(root.dataset.tideFlip).forEach(function (i) { leave(root, i); });   // in a keyed slot
+            // Items that leave fade out where they were: every one in a list marked data-tide-flip-exit, or one that asks
+            // itself (data-tide-exit: a group's reports folding away), unless something else already took it out
+            // (data-tide-gone: a row this person decided lifts out on its own).
+            const exits = root.hasAttribute('data-tide-flip-exit');
+            removed.forEach(function (n) {
+                const its = n.matches(root.dataset.tideFlip) ? [n] : exits ? Array.prototype.slice.call(n.querySelectorAll(root.dataset.tideFlip)) : [];   // (in a keyed slot)
+                its.forEach(function (i) {
+                    if ((!exits && !i.hasAttribute('data-tide-exit')) || i.hasAttribute('data-tide-gone')) return;
+                    exited.add(root);
+                    leave(root, i);
+                });
             });
         });
         // A list inside another's item (the bullets, inside the editor's sections): the outer list plays too, so what's
         // after the item that grew or shrank glides rather than jumps.
+        // It waits for an exit inside it, as the inner one does.
         touched.forEach(function (root) {
-            for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) touched.add(up);
+            const out = exited.has(root);
+            for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) {
+                touched.add(up);
+                if (out) exited.add(up);
+            }
         });
-        touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root); } });
+        touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root, exited.has(root)); } });
     }
 
     // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list
@@ -231,7 +332,7 @@ window.tideFlip = (function () {
 
     function start() {
         if (!window.MutationObserver) return;
-        new MutationObserver(changed).observe(document.body, { childList: true, subtree: true });
+        new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
         document.addEventListener('transitionend', ended, true);
         document.addEventListener('animationend', ended, true);
