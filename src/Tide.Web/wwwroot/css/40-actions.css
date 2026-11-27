@@ -86,7 +86,13 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 /* .tide-kcard first: outranks the brackets at rest (41-intake, a later file), whatever the order. */
 .tide-kcard:is(.tide-kcard-ghost, .tide-kcard-held, [data-tide-pressed], [data-tide-locked])::before { opacity: 1; transform: none; }
 /* Picked up: the ghost's shadow comes up as it lifts (its brackets snap on: 41-intake). */
-.tide-kcard-ghost { animation: tide-lift var(--tide-dur-fast) var(--tide-ease-out); }
+.tide-kcard-ghost { animation: tide-lift var(--tide-dur-fast) var(--tide-ease-out);
+    transition: scale var(--tide-move-fast) var(--tide-ease-out), translate var(--tide-move-fast) var(--tide-ease-out); }
+/* Over a closed chip, small and above the pointer, so the chip shows (board.js). */
+.tide-kcard-ghost[data-tide-small] { scale: .45; translate: 0 -48px; }
+/* A card closed into a chip: the chip locks on as it takes it. */
+.tide-kchip[data-tide-landed] { animation: tide-chip-land var(--tide-dur-signature) var(--tide-ease-out); }
+@keyframes tide-chip-land { from { box-shadow: 0 0 0 3px var(--tide-accent); } }
 @keyframes tide-lift { from { box-shadow: none; } }
 /* A card .NET drew in another lane flies there over the page (flip.js), lifted like the ghost; the card itself waits
    transparent where it lands (still focusable, and the copy shows the focus ring meanwhile). */

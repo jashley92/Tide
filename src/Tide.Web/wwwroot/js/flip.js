@@ -68,6 +68,14 @@ window.tideFlip = (function () {
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
         let flights = 0, longest = 0;   // longest: the longest glide this change starts
+        // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
+        // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding).
+        let far = 0;
+        if (s.was && !quiet) s.list.forEach(function (el) {
+            const n = s.now.get(key(el)), w = s.was.get(key(el));
+            if (n && w && w.parent === n.parent) far = Math.max(far, Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy), n.h - w.h);
+        });
+        const together = ts.travel(far);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -78,7 +86,7 @@ window.tideFlip = (function () {
             // grew, opened over the same time to its own foot (not past it, into the gap the next is gliding over), with
             // room at the other sides for its brackets.
             const grew = n.h - w.h;
-            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: ts.travel(grew), easing: ease });
+            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, easing: ease });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
             if (!dx && !dy) return;
             const a = running.get(el);
@@ -95,8 +103,8 @@ window.tideFlip = (function () {
                 }
                 return;
             }
-            const t = ts.travel(Math.hypot(dx, dy));
-            longest = Math.max(longest, t);
+            const t = together;
+            longest = t;
             const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, easing: ease });
             running.set(el, glide);
             // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
@@ -138,7 +146,7 @@ window.tideFlip = (function () {
     // A floating surface (a menu, a popover, the palette, a dialog's scrim) that .NET takes away as it closes fades out
     // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
     // opened, and again if the page scrolls under it.
-    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar', surfaceAt = new WeakMap(), open = new Set();
+    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-hands-pop', surfaceAt = new WeakMap(), open = new Set();
     function note(el) { if (el.isConnected) surfaceAt.set(el, el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));

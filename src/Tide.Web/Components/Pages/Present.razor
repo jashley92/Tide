@@ -94,7 +94,9 @@ else
     var notRaised = _slide == last && TeamEdition ? edition.Articles.Select(x => (x.Article, Lines: Unraised(x))).Where(x => x.Lines.Count > 0).ToList() : null;
     List<BriefItem> undiscussed = _slide == last && !Presented ? Undiscussed(edition) : [];
     <div id="present-root" class="tide-present @(RailDocked ? "has-rail" : "") @(ActionBeside ? "has-beside" : "")">
-        <header class="tide-present-top" inert="@RailOver">
+        @* Who's here and the hands come and go live: the dots glide aside for one arriving (and one leaving fades out), and
+           the header's groups glide as the hands button comes and goes, rather than the controls jumping under the pointer. *@
+        <header class="tide-present-top" inert="@RailOver" data-tide-flip=".tide-present-title, .tide-present-people, .tide-present-tools">
             <div class="tide-present-title">
                 <span class="tide-brand-mark" aria-hidden="true">T</span>
                 <span>@Clock.TeamName daily brief <small>&middot; @Ui.Day(_date)</small></span>
@@ -105,19 +107,19 @@ else
                region of their own, so a follower moving slides doesn't have the roster read again), how many are here, the hands as their count and then as
                many whole names as fit, in the order they went up (a button: the list, where the presenter lowers one or
                all). A follower's own Raise hand comes before the hands, which take the room that's left. With no meeting, who else has the brief open. *@
-            <div class="tide-present-people">
+            <div class="tide-present-people" data-tide-flip=":scope > *">
                 <span class="visually-hidden" role="status">@_presenceSaid</span>
                 @if (_view is { } meeting)
                 {
                     var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
                     var beyond = meeting.People.Skip(TopBarDots).ToList();
                     var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
-                    <span class="tide-presence tide-presence-sm">
+                    <span class="tide-presence tide-presence-sm" data-tide-flip=".tide-presence-dot" data-tide-flip-exit>
                         @foreach (var p in meeting.People.Take(TopBarDots))
                         {
                             var away = meeting.Away(p);
                             var up = raised.Contains(p.UserId);
-                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "") @(up ? "has-hand" : meeting.IsPresenter(p.UserId) ? "is-presenting" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
+                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "") @(up ? "has-hand" : meeting.IsPresenter(p.UserId) ? "is-presenting" : "")" @key="p.UserId" data-id="@p.UserId" title="@Says(meeting, p)" aria-hidden="true">
                                 @MainLayout.Initials(p.Name)
                                 @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
                                 else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
@@ -143,7 +145,7 @@ else
                         <div class="tide-hands-box" @ref="_handsHolder">
                             <button type="button" class="tide-hands-btn" @ref="_handsButton" aria-expanded="@Ui.Aria(listOpen)" aria-controls="present-hands"
                                     aria-label="@($"{Ui.Plural(meeting.Hands.Count, "hand")} up: {names}")" title="@names" @onclick="ToggleHandsList">
-                                <span class="tide-hands-count"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span><span class="tide-hands-n">@meeting.Hands.Count</span></span>
+                                <span class="tide-hands-count"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span><span class="tide-hands-n"><Odometer Value="@meeting.Hands.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)" /></span></span>
                                 <span class="tide-hands-names" aria-hidden="true"><i></i>@foreach (var h in meeting.Hands) { <span @key="h.UserId">@h.Name</span> }</span>
                             </button>
                             @if (listOpen)

@@ -293,7 +293,8 @@ a, .btn-link { color: var(--tide-accent-text); }
 .tide-modal, .tide-tip, .tide-atkm-panel {
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
 
-/* How they arrive. Leaving is instant: Blazor takes them out of the page. Under reduced motion only the fades are left.
+/* How they arrive. Leaving, flip.js fades a still copy out where it was (Blazor takes them out of the page). Under
+   reduced motion only the fades are left.
    Dialogs, tips and the dropdowns no script places unfold from their top edge like a folded note opened. What popout.js
    places (menus, popovers, the attach and export panels) fades in while what's on it unfolds: popout.js measures the
    panel as it opens, and a transform on the panel itself would throw that off. Toasts drop in like a paper slip, and
@@ -302,7 +303,7 @@ a, .btn-link { color: var(--tide-accent-text); }
     transform-origin: top center;
     transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
     @starting-style { opacity: 0; transform: perspective(50rem) rotateX(-40deg); } }
-.tide-combo-pop, .tide-oi-suggest {
+.tide-combo-pop, .tide-oi-suggest, .tide-hands-pop {
     transform-origin: top center;
     transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-settle);
     @starting-style { opacity: 0; transform: perspective(600px) rotateX(-70deg); } }

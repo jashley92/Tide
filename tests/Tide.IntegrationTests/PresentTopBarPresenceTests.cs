@@ -17,7 +17,7 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
 
     /// <summary>The top bar's markup.</summary>
-    private static string Top(string html) => Between(html, "<header class=\"tide-present-top\">", "</header>");
+    private static string Top(string html) => Between(html, "<header class=\"tide-present-top\"", "</header>");
 
     /// <summary>The footer's markup.</summary>
     private static string Footer(string html) => Between(html, "<footer class=\"tide-present-bottom\"", "</footer>");
@@ -75,7 +75,7 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         // Said briefly, in a status region of its own; the roster is read when reached, not again at every change.
         people.Should().Contain("role=\"status\">Robin Analyst raised a hand.</span>")
             .And.NotContain("tide-presence-sm\" role=\"status\"");
-        people.Should().Contain("aria-label=\"2 hands up: Olive Owner, Robin Analyst\"").And.Contain("<span class=\"tide-hands-n\">2</span>")
+        people.Should().Contain("aria-label=\"2 hands up: Olive Owner, Robin Analyst\"").And.Contain("<span class=\"tide-hands-n\"><span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>2</span></span></span>")
             .And.Contain("Olive Owner, hand raised").And.Contain("Robin Analyst, hand raised").And.Contain("aria-expanded=\"false\"")
             .And.NotContain("present-hands\" class", "the list is shut until asked for").And.NotContain("Clear all");
         people.IndexOf("<span>Olive Owner</span>", StringComparison.Ordinal).Should().BeLessThan(people.IndexOf("<span>Robin Analyst</span>", StringComparison.Ordinal), "first up, first shown");
