@@ -551,12 +551,15 @@ else
     // toast that says why: scrolled to, focused and bracketed (tideInvalid, theme.js).
     private async Task Run(string nameBox, Func<Task> save)
     {
-        var refused = false;
-        await Run(async () =>
+        if (_busy) return;
+        _busy = true;
+        try { await save(); }
+        catch (ArgumentException ex) when (string.IsNullOrWhiteSpace(_name))
         {
-            try { await save(); }
-            catch (ArgumentException) { refused = true; throw; }
-        });
-        if (refused && string.IsNullOrWhiteSpace(_name)) await JS.BestEffortAsync("tideInvalid.show", nameBox);
+            Toasts.Error(UserFacingError.For(ex));
+            await JS.BestEffortAsync("tideInvalid.show", nameBox);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
     }
 }
