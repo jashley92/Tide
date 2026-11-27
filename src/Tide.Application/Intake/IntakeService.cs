@@ -1711,10 +1711,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (title.Length is 0 or > 500) throw new ArgumentException("A proposed item needs a title of at most 500 characters.");
         var address = ArticleService.CheckUrl(url, "The item's address") ?? throw new ArgumentException("A proposed item needs its http or https address.");
         summary = string.IsNullOrWhiteSpace(summary) ? null : summary.Trim() is var t && t.Length > FeedItem.MaxExcerpt ? t[..FeedItem.MaxExcerpt] : summary.Trim();
+        // An address can pass the length check as typed and still have no canonical form: each non-ASCII character is
+        // several once encoded. Refused here, before the caller's source is made for an item that can't be stored.
+        var canonical = UrlCanonicalizer.Canonicalize(address)
+            ?? throw new ArgumentException("The item's address is too long once its characters are encoded (2,000 at most).");
         var sourceId = await ApiSourceAsync(caller, ct);
         var now = time.GetUtcNow();
         var parsed = new ParsedItem(title, address, now, summary, FeedParser.CvesIn(title + " " + summary));
-        var hash = UrlCanonicalizer.Hash(UrlCanonicalizer.Canonicalize(address)!);
+        var hash = UrlCanonicalizer.Hash(canonical);
         await using (var db = await dbs.CreateAsync(ct))
         {
             var added = await StoreAsync(db, sourceId, [parsed], now, RetentionCutoff(now), ct);
