@@ -55,13 +55,12 @@
     --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
     --tide-stagger: 25ms;          /* between the items of a list arriving whole, the first 8 (flip.js) */
     --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
-    --tide-dur-patience: 300ms;    /* how long a slow action runs before it shows it's busy (data-busy): a quick one shows nothing */
+    --tide-dur-patience: 300ms;    /* how long a wait goes unshown: a busy action (data-busy) or a loading block; a quicker one shows nothing */
     --tide-dur-exit: 133ms;        /* something small leaving (a toast, a row): quicker than it came, as it's done */
     --tide-dur-panel-exit: 196ms;  /* a panel leaving: the rail */
     --tide-dur-turn: 420ms;        /* a Present slide turning */
     --tide-dur-travel: 420ms;      /* the longest something carried across the page takes (tideShortcuts.travel), and .NET waits on it */
     --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
-    --tide-dur-hold: 250ms;        /* how long a wait goes unshown: a quicker one never flashes a loading block */
     --tide-dur-blip: 1.5s;         /* how long a lost connection is only a line across the top, before the dialog says so */
     --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
     --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */

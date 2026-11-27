@@ -505,8 +505,8 @@
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-skel-row:last-child { border-bottom: 0; }
 /* Placeholder rows are outlines, and a thin bar scans across the top while it loads. They come in only after
-   --tide-dur-hold, so a quick load never flashes them. */
-.tide-loading { position: relative; overflow: hidden; opacity: 0; animation: tide-appear var(--tide-dur-fast) var(--tide-ease-out) var(--tide-dur-hold) forwards; }
+   --tide-dur-patience, so a quick load never flashes them. */
+.tide-loading { position: relative; overflow: hidden; opacity: 0; animation: tide-appear var(--tide-dur-fast) var(--tide-ease-out) var(--tide-dur-patience) forwards; }
 @keyframes tide-appear { to { opacity: 1; } }
 .tide-loading::before { content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent);
     animation: tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
