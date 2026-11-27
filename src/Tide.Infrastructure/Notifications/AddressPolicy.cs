@@ -54,8 +54,9 @@ public static class AddressPolicy
         return "an address that isn't IPv4 or IPv6";
     }
 
-    private static readonly IPAddress AwsMetadataV6 = IPAddress.Parse("fd00:ec2::254");
-    private static readonly IPAddress GoogleMetadataV6 = IPAddress.Parse("fd20:ce::254");
+    // Built from their bytes, as the IPv4 checks above are, rather than parsed from text.
+    private static readonly IPAddress AwsMetadataV6 = new([0xfd, 0x00, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54]);      // fd00:ec2::254
+    private static readonly IPAddress GoogleMetadataV6 = new([0xfd, 0x20, 0x00, 0xce, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54]);   // fd20:ce::254
 
     // The IPv4 address inside an IPv6 one, else null: 2002::/16 (6to4, bytes 2-5); 2001::/32 (Teredo: the client's
     // address in the last four bytes, each bit flipped); and in the last four bytes,
