@@ -142,6 +142,7 @@ window.tideBoard = (function () {
         over = null;
         try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
         ghost = window.tideShortcuts.copy(card, r);
+        ghost.style.transformOrigin = (press.x - r.left) + 'px ' + (press.y - r.top) + 'px';   // it shrinks about the pointer
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
         ghost.removeAttribute('data-tide-pressed');
@@ -172,6 +173,8 @@ window.tideBoard = (function () {
         // under it matters.
         if (manual() || inside !== lastInside) makeRoom(inside, dragging, e.clientY);
         lastInside = inside;
+        // Over a closed chip the ghost shrinks above the pointer, so the chip it would close the card into shows.
+        ghost.toggleAttribute('data-tide-small', !!(to && to.classList.contains('tide-kchip')));
         if (to === marked) return;
         marked = to;
         mark(to);
@@ -221,7 +224,7 @@ window.tideBoard = (function () {
         if (!press || e.pointerId !== press.id) return;
         if (!dragging) { forget(); return; }
         const card = dragging, id = card.dataset.id, from = card.dataset.status, at = drop, to = at ? at.status : over;
-        const place = beside(card), g = ghost;
+        const place = beside(card), g = ghost, chip = marked && marked.classList.contains('tide-kchip') ? marked : null;
         swallowClick();
         forget();
         ghost = null;
@@ -231,19 +234,36 @@ window.tideBoard = (function () {
         // the ghost gives way to it). Over the closed strip there's no slot: the ghost waits a moment, and if .NET is
         // still asking then (a drop on Cancelled opens a dialog first) it settles back where the card is, which travels on
         // if .NET then moves it.
+        // Let go over a closed chip: the ghost stays parked over it, small, while .NET asks (a drop on Cancelled opens a
+        // dialog); closed, it shrinks into the chip, which locks on; kept (Cancel, or refused), it glides home once the
+        // dialog has gone.
         const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
         if (slot) glide(g, slot.getBoundingClientRect());
-        else setTimeout(function () { land(); }, ASKING);
+        else if (!chip) setTimeout(function () { land(); }, ASKING);
         let landed = false;
         const land = function () {
             if (landed) return;
             landed = true;
-            requestAnimationFrame(function () { const c = current(); settle(g, c); });
+            requestAnimationFrame(function () {
+                const c = current();
+                if (chip && !c) { into(g, chip); return; }
+                const back = function () { g.removeAttribute('data-tide-small'); settle(g, c); };
+                if (chip) setTimeout(back, window.tideShortcuts.ms('--tide-dur-exit'));   // once the dialog has gone
+                else back();
+            });
         };
         ref.invokeMethodAsync('OnCardDropped', id, from, to, at ? at.before : null).then(function () {
             land();
             requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
         }, land);
+    }
+
+    // Closed into a chip: the ghost shrinks away into it, and the chip locks on.
+    function into(g, chip) {
+        const ts = window.tideShortcuts;
+        ts.pulse(chip, 'data-tide-landed');
+        if (ts.quiet()) { g.remove(); return; }
+        ts.drift(g, [{ scale: .45, opacity: 1 }, { scale: .1, opacity: 0 }], { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
     }
 
     // Cancelled (Esc, or the browser took the pointer back): the card goes back where it was.
@@ -282,10 +302,13 @@ window.tideBoard = (function () {
     }
 
     // Focus to a card's Move button (or its title, on a card the person can't move).
+    // Its lane is scrolled to it smoothly where it's out of view, not jumped there by focus.
     function focusCard(c) {
         const el = c && (c.querySelector('.tide-kcard-move') || c.querySelector('.tide-action-ref'));
-        if (el) el.focus();
-        return !!el;
+        if (!el) return false;
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: window.tideShortcuts.still() ? 'instant' : 'smooth' });
+        return true;
     }
 
     // After a move (its Move menu, or a drop): the card, if still on the board, locks on where it landed; focus goes there.
