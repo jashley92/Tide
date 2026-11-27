@@ -58,7 +58,7 @@
     {
         <div class="tide-dt-scroll" tabindex="0" role="region" aria-labelledby="@(_id)-cap">
             @* Rows glide to their new places when the table is sorted or filtered (flip.js), so the eye can follow them. *@
-            <table class="tide-table" role="@Role("table")" data-tide-flip="tbody > tr:not(.tide-dt-group)">
+            <table class="tide-table" role="@Role("table")" data-tide-flip="tbody > tr">
                 <caption id="@(_id)-cap" class="visually-hidden">@Caption@SortedText</caption>
                 <thead role="@Role("rowgroup")">
                     <tr role="@Role("row")">

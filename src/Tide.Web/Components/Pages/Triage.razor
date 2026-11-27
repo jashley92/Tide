@@ -142,7 +142,8 @@ else
         }
     }
     @{ var ghosts = GhostsByLine(); }
-    <ol class="tide-triage" data-tide-flip=".tide-triage-row">
+    @* The rows and the section headings glide together (flip.js): a heading keeps its place among the rows moving. *@
+    <ol class="tide-triage" data-tide-flip=".tide-triage-row, .tide-triage-section">
         @if (_older)
         {
             <li class="tide-triage-section">Older: new items untouched for @AgeText. KEV-listed ones, those with a high EPSS score and those naming a product on Our stack stay in New.
@@ -150,10 +151,15 @@ else
         }
         @foreach (var (line, i) in _lines.Select((l, i) => (l, i)))
         {
-            foreach (var g in ghosts.GetValueOrDefault(i) ?? []) { @Ghost(g) }
-            @* What names a product on Our stack comes first, under its own heading. *@
-            @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true">Matches what we run</li> }
-            @if (AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null) { <li class="tide-triage-section" aria-hidden="true">Everything else</li> }
+            @* What names a product on Our stack comes first, under its own heading. A ghost line (a row a colleague took
+               away) stands in the section its row was in: at the boundary, one that named a product on Our stack above
+               "Everything else", any other below it. *@
+            var lineGhosts = ghosts.GetValueOrDefault(i) ?? [];
+            var elseHeading = AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
+            @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun">Matches what we run</li> }
+            foreach (var g in lineGhosts.Where(g => !elseHeading || _ranWeRun.Contains(g.Key))) { @Ghost(g) }
+            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else">Everything else</li> }
+            foreach (var g in lineGhosts.Where(g => elseHeading && !_ranWeRun.Contains(g.Key))) { @Ghost(g) }
             var selected = i == _selected;
             if (line.Row is null && line.Group is { } group)
             {
@@ -1666,6 +1672,7 @@ else
         DateTimeOffset readWas, Guid? lostId)
     {
         var diff = LiveDiff.Of(was, _rows, r => r.Item.Id, TriageNews.Signature);
+        foreach (var r in was) if (r.WeRun is not null) _ranWeRun.Add(r.Item.Id);
         MarkChangedTabs(countsWere);
         if (diff.IsEmpty) return;
         var colleagues = LiveChanges.Who(heard.Where(c => c.ActorId != "system"));
@@ -1699,6 +1706,9 @@ else
     private static string Items(int n) => Ui.Plural(n, "item");
 
     // The ghosts of rows that left, by the line they stand before (the list's length: at the end).
+    // The items seen naming a product on Our stack, so a ghost line left by one stands in that section (above "Everything else").
+    private readonly HashSet<Guid> _ranWeRun = [];
+
     private Dictionary<int, List<LiveGhost<Guid>>> GhostsByLine()
     {
         var at = new Dictionary<int, List<LiveGhost<Guid>>>();

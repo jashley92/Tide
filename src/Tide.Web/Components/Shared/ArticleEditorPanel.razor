@@ -242,7 +242,7 @@ else
                 }
             </section>
 
-            <section class="tide-card tide-section" aria-labelledby="sec-bullets" data-tide-flip=".tide-bullet-row">
+            <section class="tide-card tide-section" aria-labelledby="sec-bullets" data-tide-flip=".tide-bullet-row" data-tide-flip-carry>
                 <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
                 @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
                 {

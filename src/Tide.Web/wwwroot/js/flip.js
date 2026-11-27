@@ -67,7 +67,7 @@ window.tideFlip = (function () {
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
-        let flights = 0;
+        let flights = 0, longest = 0;   // longest: the longest glide this change starts
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -86,13 +86,30 @@ window.tideFlip = (function () {
             // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
             // the rest of a whole board redrawn are just there.
             if (w.parent !== n.parent) {
-                if (flights++ < FLIGHTS) ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, { left: o.left + n.x, top: o.top + n.y });
+                if (flights++ < FLIGHTS) {
+                    // A lane that scrolls (a short window) is brought to where the card lands first, so it's seen to land.
+                    const lane = el.parentElement, lr = lane.getBoundingClientRect(), cr = { top: o.top + n.y, bottom: o.top + n.y + n.h };
+                    const inView = cr.top >= lr.top && cr.bottom <= lr.bottom;
+                    if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+                    ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, inView ? { left: o.left + n.x, top: o.top + n.y } : undefined);
+                }
                 return;
             }
-            running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: ts.travel(Math.hypot(dx, dy)), easing: ease }));
+            const t = ts.travel(Math.hypot(dx, dy));
+            longest = Math.max(longest, t);
+            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, easing: ease });
+            running.set(el, glide);
+            // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
+            // moved (it has focus, on its Move button) is carried over the one it swaps with, not through it.
+            if (root.hasAttribute('data-tide-flip-carry') && el.contains(document.activeElement)) {
+                el.setAttribute('data-tide-carried', '');
+                const down = function () { if (running.get(el) === glide) el.removeAttribute('data-tide-carried'); };
+                glide.finished.then(down, down);
+            }
         });
         // A list arriving whole comes in in quick order. In a list already there, a few new items among the rest (a group
-        // opened) fade in; a list mostly new (another tab, a filter) just shows.
+        // opened) fade in once the items gliding past them have mostly gone by, so none slides across them; a list mostly
+        // new (another tab, a filter) just shows.
         if (!fresh.length || document.hidden || !document.body.animate) return;
         if (!s.was) {
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
@@ -100,7 +117,7 @@ window.tideFlip = (function () {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
         } else if (fresh.length * 2 < s.list.length) {
-            fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, easing: ease }); });
+            fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
         }
     }
 
@@ -110,11 +127,34 @@ window.tideFlip = (function () {
         if (!p || !document.body.animate || document.hidden) return;
         const o = root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
-        ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
+        Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
+        // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box.
+        ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
             { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
     }
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
+
+    // A floating surface (a menu, a popover, the palette, a dialog's scrim) that .NET takes away as it closes fades out
+    // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
+    // opened, and again if the page scrolls under it.
+    const SURFACES = '.tide-popover, .tide-modal-scrim', surfaceAt = new WeakMap(), open = new Set();
+    function note(el) { if (el.isConnected) surfaceAt.set(el, el.getBoundingClientRect()); else open.delete(el); }
+    function opened(n) {
+        const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
+        found.forEach(function (el) { open.add(el); requestAnimationFrame(function () { requestAnimationFrame(function () { note(el); }); }); });
+    }
+    function closed(n) {
+        const ts = window.tideShortcuts, found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
+        found.forEach(function (el) {
+            open.delete(el);
+            const r = surfaceAt.get(el);
+            if (!r || !r.width || document.hidden || !document.body.animate) return;
+            const g = ts.copy(el, r);
+            g.classList.add('tide-surface-leaving');
+            ts.drift(g, [{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+        });
+    }
 
     // A count that changed is told what it replaced (data-was), so it rolls like an odometer (tide-roll: the old number
     // goes out as the new one comes in, up when it grew, down when it fell, data-dir) or ticks (a short text). Blazor
@@ -135,7 +175,8 @@ window.tideFlip = (function () {
     function changed(records) {
         const touched = new Set(), gone = new Map();
         records.forEach(function (m) {
-            elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); });
+            elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); closed(n); });
+            elements(m.addedNodes).forEach(opened);
         });
         records.forEach(function (m) {
             if (m.target.closest && m.target.closest(COPY)) return;   // a copy flying or leaving is no list's
@@ -153,7 +194,10 @@ window.tideFlip = (function () {
             // after it glide to where they are now rather than jump, played on the next frame with any others.
             if (m.target.closest(root.dataset.tideFlip)) { later(root, true); return; }
             touched.add(root);
-            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) { if (n.matches(root.dataset.tideFlip)) leave(root, n); });
+            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) {
+                if (n.matches(root.dataset.tideFlip)) leave(root, n);
+                else n.querySelectorAll(root.dataset.tideFlip).forEach(function (i) { leave(root, i); });   // in a keyed slot
+            });
         });
         touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root); } });
     }
@@ -161,6 +205,7 @@ window.tideFlip = (function () {
     // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list
     // and its items together, which changes nothing.)
     function scrolled(e) {
+        open.forEach(note);
         const root = e.target !== document && e.target.closest ? e.target.closest(ROOTS) : null;
         if (root && root !== e.target) later(root);
     }
