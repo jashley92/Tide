@@ -682,7 +682,7 @@ polled twice or found in two feeds is one row. Written by `IntakeService` (poll,
 | `Title` | nvarchar(500) | no | |
 | `TitleKey` | nvarchar(500) | no | The title reduced to its words (`TitleMatch.Key`), used to spot the same story at another address. |
 | `PublishedAtUtc` | datetimeoffset | yes | As the feed says. |
-| `FetchedAtUtc` | datetimeoffset | no | Indexed, and indexed with `Status`. Retention counts from here. |
+| `FetchedAtUtc` | datetimeoffset | no | Indexed, and indexed with `Status` and `SourceId` (`Status`, `FetchedAtUtc`, `SourceId`), so the new-item count and Triage's tab tally are read from the index alone. Retention counts from here. |
 | `Excerpt` | nvarchar(2000) | yes | The summary as plain text. Feed HTML is never rendered. |
 | `Cves` | nvarchar(1000) | yes | CVE ids found in the title and summary, comma-separated. |
 | `Status` | int | no | `FeedItemStatus`. |
@@ -1074,7 +1074,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `Status` | int | no | `ActionStatus`. |
 | `Outcome` | int | no | `ActionOutcome`. |
 | `OutcomeNote` | nvarchar(2000) | yes | |
-| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. `ClosedAtUtc` is indexed, closed ones only, for the daily prune of reminder marks. |
+| `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. `ClosedAtUtc` is indexed, closed ones only, for the daily prune of reminder marks; `ClosedDate` is too, for Workload and the team digest (open, or closed this week). |
 | `TicketRef`, `TicketUrl` | nvarchar(100), nvarchar(2000) | yes | A ticket in an ITSM tool that tracks the same work. |
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |

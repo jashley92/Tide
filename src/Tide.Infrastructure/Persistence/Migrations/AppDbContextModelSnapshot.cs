@@ -539,6 +539,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("ClosedAtUtc")
                         .HasFilter("[ClosedAtUtc] IS NOT NULL");
 
+                    b.HasIndex("ClosedDate")
+                        .HasFilter("[ClosedDate] IS NOT NULL");
+
                     b.HasIndex("CreatedAtUtc");
 
                     b.HasIndex("EscalatedForDue")
@@ -2021,7 +2024,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("UrlHash")
                         .IsUnique();
 
-                    b.HasIndex("Status", "FetchedAtUtc");
+                    b.HasIndex("Status", "FetchedAtUtc", "SourceId");
 
                     b.ToTable("FeedItems");
                 });

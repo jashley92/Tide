@@ -572,6 +572,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
             // The daily prune of reminder marks reads the actions closed in a day's window, oldest first: only closed ones.
             e.HasIndex(x => x.ClosedAtUtc).HasFilter("[ClosedAtUtc] IS NOT NULL");
+            // Workload and the team digest read the open actions or those closed this week (WhereOpenOrClosedSince): with
+            // this beside (Status, DueDate), each side of the OR is a seek, where it was a scan of every action ever raised.
+            e.HasIndex(x => x.ClosedDate).HasFilter("[ClosedDate] IS NOT NULL");
             Person(e, x => x.DeletedById, x => x.DeletedByName);
             e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
         });
@@ -848,7 +851,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.StatusByName).HasMaxLength(FeedItem.MaxName);
             e.Property(x => x.DismissKeptByName).HasMaxLength(FeedItem.MaxName);
             e.HasOne<Article>().WithMany().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.SetNull);
-            e.HasIndex(x => new { x.Status, x.FetchedAtUtc });
+            // The source rides in the status index so the new-item count (the sidebar's Triage badge, on every navigation)
+            // and Triage's tab tally are read from the index alone, never from the rows, whose excerpts make them wide.
+            e.HasIndex(x => new { x.Status, x.FetchedAtUtc, x.SourceId });
             e.HasIndex(x => x.FetchedAtUtc);
             e.HasIndex(x => x.SourceId);
             e.HasIndex(x => x.ArticleId);
