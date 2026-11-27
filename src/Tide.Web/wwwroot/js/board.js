@@ -219,10 +219,16 @@ window.tideBoard = (function () {
             card.removeAttribute('data-tide-landing');
             lockOn(card);
         };
-        const a = card && glide(g, card.getBoundingClientRect());
+        let aim = card && card.getBoundingClientRect(), a = card && glide(g, aim);
         if (!a) { done(); return; }
         card.setAttribute('data-tide-landing', '');
-        a.finished.then(done, done);
+        // The card may still be on its way (its lane scrolling it into view): the ghost keeps aiming at where it is, and
+        // lands when it gets there, so there's never a ghost in one place and the card in another.
+        (function follow() {
+            const r = card.isConnected ? card.getBoundingClientRect() : aim;
+            if (Math.abs(r.left - aim.left) > 1 || Math.abs(r.top - aim.top) > 1) { aim = r; a = glide(g, r) || a; }
+            if (a.playState === 'finished' || !card.isConnected) done(); else requestAnimationFrame(follow);
+        })();
     }
 
     function onPointerUp(e) {
@@ -235,6 +241,9 @@ window.tideBoard = (function () {
         ghost = null;
         end();
         if (!to || !ref) { settle(g, card); focusCard(card); return; }
+        // The ghost is the card until it lands: the card .NET draws in its new place waits unseen, and doesn't fly there too
+        // (flip.js leaves a landing card be).
+        card.setAttribute('data-tide-landing', '');
         // The chip counts the card when it arrives, not while .NET draws the new count under the dialog: its roll waits
         // (data-tide-hold pauses it on the old number) until the card lands, or is let go if the card goes home.
         if (chip) chip.setAttribute('data-tide-hold', '');

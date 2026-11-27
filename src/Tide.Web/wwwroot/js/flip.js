@@ -55,6 +55,7 @@ window.tideFlip = (function () {
         if (!pinned.has(root)) pinned.set(root, getComputedStyle(root).position === 'fixed');
         const origin = pinned.get(root) ? { left: 0, top: 0, height: box.height } : box;
         heights.set(root, box.height);
+        boxOf(root);
         list.forEach(function (el) { const p = measure(el, origin); if (p) now.set(key(el), p); });
         at.set(root, now);
         places.set(root, { left: box.left + scrollX, top: box.top + scrollY, w: box.width, h: box.height });   // where the list was, on the page
@@ -253,6 +254,50 @@ window.tideFlip = (function () {
         if (other) other.focus({ preventScroll: true });
     }
 
+    // A list that scrolls within a box of its own (triage's list beside its pane): rows going while the box is scrolled
+    // down would cut it short and the browser would pull it back in a frame. As for the page's foot: the list keeps its
+    // height as the change comes in (before anything measures it), and once it's played, the box scrolls back in step
+    // with the glide before the list lets go. The box and how far it's scrolled are known from before (no reading).
+    const boxes = new WeakMap(), tops = new WeakMap(), heldIn = new Map();
+    function boxOf(root) {
+        if (boxes.has(root)) return boxes.get(root);
+        let b = null;
+        for (let n = root.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            const y = getComputedStyle(n).overflowY;
+            if (y === 'auto' || y === 'scroll') { b = n; tops.set(n, n.scrollTop); break; }
+        }
+        boxes.set(root, b);
+        return b;
+    }
+    function holdIn(root) {
+        const b = boxes.get(root), top = b ? tops.get(b) || 0 : 0, h = heights.get(root);
+        if (!b || top <= 0 || !h || heldIn.has(root)) return;
+        root.style.minHeight = h + 'px';
+        const held = { box: b, top: top };
+        heldIn.set(root, held);
+        // A change that doesn't play the list (only measured again) lets go a frame later, without moving the box.
+        requestAnimationFrame(function () { requestAnimationFrame(function () { if (heldIn.get(root) === held) unhold(root, true, 0, 0); }); });
+    }
+    function unhold(root, still, ms, wait) {
+        const held = heldIn.get(root);
+        if (!held) return;
+        heldIn.delete(root);
+        const b = held.box, h = root.style.minHeight;
+        root.style.minHeight = '';
+        const max = b.scrollHeight - b.clientHeight;
+        if (!(held.top > max + 1) || still || !window.KeyframeEffect) { b.scrollTop = Math.min(held.top, max); tops.set(b, b.scrollTop); return; }
+        root.style.minHeight = h;
+        b.scrollTop = held.top;
+        const ts = window.tideShortcuts, timing = new Animation(new KeyframeEffect(null, [], { duration: ms, delay: wait, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
+        timing.play();
+        (function step() {
+            const p = timing.effect.getComputedTiming().progress || 0;
+            b.scrollTop = Math.round(held.top + (max - held.top) * p);
+            if (timing.playState === 'finished') { root.style.minHeight = ''; b.scrollTop = max; tops.set(b, max); return; }
+            requestAnimationFrame(step);
+        })();
+    }
+
     function play(root, afterExit) {
         const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
@@ -296,6 +341,7 @@ window.tideFlip = (function () {
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
+            if (el.hasAttribute('data-tide-landing')) return;   // a ghost is bringing it (board.js): it doesn't move by itself
             if (!w) { fresh.push(el); return; }
             if (still) return;
             // It grew (a row selected opens its decision, a card's Move menu opens): what's new unfolds from its old foot
@@ -345,6 +391,7 @@ window.tideFlip = (function () {
         // A list arriving whole comes in in quick order. In a list already there, new items (a group opened, a first
         // saved query above the preview) fade in once the items gliding past them have mostly gone by, so none slides
         // across them; a list mostly new with nothing gliding (another tab, a filter) just shows.
+        unhold(root, still, together, wait);
         if (!fresh.length || document.hidden || !document.body.animate) return;
         if (afterExit && !quiet) {
             // One arriving where one is leaving (a toast after its Undo): it comes in as the other has mostly gone, so
@@ -400,7 +447,7 @@ window.tideFlip = (function () {
     // A floating surface (a menu, a popover, the palette, a dialog's scrim) that .NET takes away as it closes fades out
     // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
     // opened, and again if the page scrolls under it.
-    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-hands-pop', surfaceAt = new WeakMap(), open = new Set();
+    const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-triage-selbar, .tide-hands-pop', surfaceAt = new WeakMap(), open = new Set();
     function note(el) { if (el.isConnected) surfaceAt.set(el, el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
@@ -436,6 +483,7 @@ window.tideFlip = (function () {
 
     function changed(records) {
         guard();
+        records.forEach(function (m) { const r = m.target.closest && m.target.closest(ROOTS); if (r) holdIn(r); });
         // Blazor puts focus back on a moved node without preventScroll, and the window jumps to it mid-glide: it's put
         // back where the reader had it (the carry brings the item into view smoothly, above).
         const f = document.activeElement;
@@ -501,6 +549,7 @@ window.tideFlip = (function () {
     // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list
     // and its items together, which changes nothing.)
     function scrolled(e) {
+        if (e.target && e.target.nodeType === 1) tops.set(e.target, e.target.scrollTop);
         open.forEach(note);
         const root = e.target !== document && e.target.closest ? e.target.closest(ROOTS) : null;
         if (root && root !== e.target) later(root);
