@@ -195,7 +195,6 @@ window.tideFlip = (function () {
             fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: late, easing: ease, fill: 'backwards' }); });
         } else if (!s.was) {
             // Once per list per page: one drawn again on the same page (a table back from "no results") just shows.
-            if (location.pathname !== page) { entered.clear(); page = location.pathname; }
             const id = root.dataset.tideFlip;
             if (entered.has(id)) return;
             entered.add(id);
@@ -262,6 +261,8 @@ window.tideFlip = (function () {
     }
 
     function changed(records) {
+        // Another page (whether or not the one between had lists): its lists come in afresh.
+        if (location.pathname !== page) { entered.clear(); page = location.pathname; }
         const touched = new Set(), gone = new Map(), exited = new Set();
         records.forEach(function (m) {
             elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); closed(n); });

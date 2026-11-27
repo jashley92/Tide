@@ -149,20 +149,19 @@ else
             <li class="tide-triage-section">Older: new items untouched for @AgeText. KEV-listed ones, those with a high EPSS score and those naming a product on Our stack stay in New.
                 <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => ShowOlder(false)">Back to New</button></li>
         }
-        @{ var elses = 0; }
+        @{ var sections = AnyWeRun && WeRunFirst(); }
         @foreach (var (line, i) in _lines.Select((l, i) => (l, i)))
         {
             @* What names a product on Our stack comes first, under its own heading. A ghost line (a row a colleague took
                away) stands in the section its row was in: at the boundary, one that named a product on Our stack above
                "Everything else", any other below it. *@
             var lineGhosts = ghosts.GetValueOrDefault(i) ?? [];
-            var elseHeading = AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
-            @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun">Matches what we run</li> }
+            var elseHeading = sections && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
+            @if (sections && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun">Matches what we run</li> }
             foreach (var g in lineGhosts.Where(g => !elseHeading || _ranWeRun.Contains(g.Key))) { @Ghost(g) }
-            @* Keyed by which one it is: a tab not ordered by what we run (Dismissed) can switch to "Everything else" more
-               than once, and two siblings with one key take the page down; and not by the line under it, which a decision
-               takes away from under a heading that stays. *@
-            @if (elseHeading) { var sec = "sec-else-" + elses++; <li class="tide-triage-section" aria-hidden="true" @key="sec" data-id="@sec">Everything else</li> }
+            @* One at most (sections are drawn only where what we run comes first), so keyed as itself: not by the line
+               under it, which a decision takes away from under a heading that stays. *@
+            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else">Everything else</li> }
             foreach (var g in lineGhosts.Where(g => elseHeading && !_ranWeRun.Contains(g.Key))) { @Ghost(g) }
             var selected = i == _selected;
             if (line.Row is null && line.Group is { } group)
@@ -961,6 +960,19 @@ else
     // The product from Our stack that a line names: its own, or (a group's line) any of its reports'.
     private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
     private bool AnyWeRun => !_older && _rows.Any(r => r.WeRun is not null);
+
+    /// <summary>Whether the lines run what we run first (New): only then do "Matches what we run" and "Everything else"
+    /// head true sections. A tab in time order (Dismissed) mixes them, and the headings would label rows not theirs.</summary>
+    private bool WeRunFirst()
+    {
+        var other = false;
+        foreach (var l in _lines)
+        {
+            if (WeRunOf(l) is null) other = true;
+            else if (other) return false;
+        }
+        return true;
+    }
 
     // "Add to what we run…" in the rail: the product's name, added to Our stack (or found there), and the list read again.
     // True when it was added.

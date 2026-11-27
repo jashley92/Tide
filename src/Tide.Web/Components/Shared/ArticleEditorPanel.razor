@@ -243,8 +243,10 @@ else
                 }
             </section>
 
-            <section class="tide-card tide-section" aria-labelledby="sec-bullets" data-tide-flip=".tide-bullet-row" data-tide-flip-carry data-tide-flip-exit>
+            <section class="tide-card tide-section" aria-labelledby="sec-bullets">
                 <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
+                @* The rows alone are the list, so the controls after them glide with what it gained or lost. *@
+                <div class="tide-bullet-rows" data-tide-flip=".tide-bullet-row" data-tide-flip-carry data-tide-flip-exit>
                 @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
                 {
                     <div class="tide-bullet-row" @key="b">
@@ -261,6 +263,7 @@ else
                         }
                     </div>
                 }
+                </div>
                 @if (_canWrite)
                 {
                     <div class="d-flex gap-2 mt-2 flex-wrap">
