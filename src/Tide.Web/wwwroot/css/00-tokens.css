@@ -59,6 +59,7 @@
     --tide-dur-panel-exit: 196ms;  /* a panel leaving: the rail */
     --tide-dur-turn: 420ms;        /* a Present slide turning */
     --tide-dur-travel: 420ms;      /* the longest something carried across the page takes (tideShortcuts.travel), and .NET waits on it */
+    --tide-dur-wait: 300ms;        /* how long a page may take to come before the top bar says it's on its way (tideNavCue) */
     --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
     --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
     --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */

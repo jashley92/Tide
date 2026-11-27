@@ -922,7 +922,7 @@ else
 
     internal List<FilePicker.PendingFile> NewFiles => _newFiles;
 
-    internal Task Create() => Run(async () =>
+    internal Task Create() => Run(_form, async () =>
     {
         if (_created) return;
         var uploads = _newFiles.Select(f => f.ToUpload()).ToList();
@@ -953,7 +953,7 @@ else
         Nav.NavigateTo(Ui.ActionUrl(number));
     });
 
-    private Task SaveEdit() => Run(async () =>
+    private Task SaveEdit() => Run(_editing!, async () =>
     {
         var editing = _editing!;
         if (!await _overLimit.RunAsync(reason =>
@@ -1186,5 +1186,19 @@ else
         try { await action(); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
+    }
+
+    // A save of the action form (ActionEditor): refused for its title left empty or no team chosen, that field is pointed
+    // at too, after the toast that says why: scrolled to, focused and bracketed (tideInvalid, theme.js).
+    private async Task Run(ActionForm form, Func<Task> save)
+    {
+        var refused = false;
+        await Run(async () =>
+        {
+            try { await save(); }
+            catch (ArgumentException) { refused = true; throw; }
+        });
+        var field = !refused ? null : string.IsNullOrWhiteSpace(form.Title) ? "#a-title" : form.TeamId == Guid.Empty ? "#a-team" : null;
+        if (field is not null) await JS.BestEffortAsync("tideInvalid.show", field);
     }
 }
