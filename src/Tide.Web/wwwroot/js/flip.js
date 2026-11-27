@@ -68,17 +68,40 @@ window.tideFlip = (function () {
         });
     }
 
-    // A list that got shorter keeps its height while its items glide up (the window, scrolled near its foot, would be
-    // cut short at once and jump); then, where it must, the window scrolls back smoothly before the height is let go.
-    function hold(root, was, now, ms) {
-        if (!(was > now + 1)) return;
-        root.style.minHeight = was + 'px';
-        setTimeout(function () {
-            const cut = was - now, max = document.documentElement.scrollHeight - cut - innerHeight;
-            const go = function () { root.style.minHeight = ''; };
-            if (cut > 0 && scrollY > max) { window.scrollTo({ top: Math.max(0, max), behavior: 'smooth' }); setTimeout(go, ms); }
-            else go();
-        }, ms);
+    // What follows a list that grew or shrank (the rest of its card, the cards after it) glides from where it was by
+    // the same amount, rather than jumping; out as far as an item of an enclosing list, as what follows that glides
+    // with its list (which plays too).
+    function inList(el) {
+        for (let r = el.parentElement && el.parentElement.closest(ROOTS); r; r = r.parentElement && r.parentElement.closest(ROOTS)) {
+            if (items(r).indexOf(el) >= 0) return true;
+        }
+        return false;
+    }
+    function slide(root, by, ms, wait) {
+        const ease = window.tideShortcuts.token('--tide-ease-out');
+        for (let n = root; n && n !== document.body && !inList(n); n = n.parentElement) {
+            for (let s = n.nextElementSibling; s; s = s.nextElementSibling) {
+                if (s.matches(COPY) || /fixed|absolute|sticky/.test(getComputedStyle(s).position)) continue;
+                s.animate([{ transform: 'translateY(' + by + 'px)' }, { transform: 'none' }], { duration: ms, delay: wait, easing: ease, fill: 'backwards' });
+            }
+        }
+    }
+
+    // A list that got shorter while the window is scrolled to its foot would cut the window short at once and jump: it
+    // keeps its height while its items glide up, the window scrolls back smoothly, and then what follows glides up.
+    // Anywhere else, what follows glides with the change.
+    function resized(root, was, now, ms, wait) {
+        const by = was - now;
+        if (!(Math.abs(by) > 1)) return;
+        if (by > 0 && scrollY > 0 && scrollY >= document.documentElement.scrollHeight - innerHeight - 1) {
+            root.style.minHeight = was + 'px';
+            setTimeout(function () {
+                const max = document.documentElement.scrollHeight - by - innerHeight;
+                const go = function () { root.style.minHeight = ''; slide(root, by, ms, 0); };
+                if (scrollY > max) { window.scrollTo({ top: Math.max(0, max), behavior: 'smooth' }); setTimeout(go, ms); }
+                else go();
+            }, ms + wait);
+        } else slide(root, by, ms, wait);
     }
 
     function play(root, afterExit) {
@@ -98,7 +121,7 @@ window.tideFlip = (function () {
         // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
         const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
-        if (!quiet && s.was && !pinned.get(root)) hold(root, tall, o.height, together + wait);
+        if (!quiet && s.was && !pinned.get(root)) resized(root, tall, o.height, together, wait);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -144,8 +167,9 @@ window.tideFlip = (function () {
         if (!fresh.length || document.hidden || !document.body.animate) return;
         if (afterExit && !quiet) {
             // One arriving where one is leaving (a toast after its Undo): it comes in as the other has mostly gone, so
-            // the two never share a box.
-            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: ts.ms('--tide-dur-handover'), easing: ease, fill: 'backwards' }); });
+            // the two never share a box; or, where the rest glide over after the exit, once they have mostly gone by.
+            const late = longest ? wait + longest * .6 : ts.ms('--tide-dur-handover');
+            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: late, easing: ease, fill: 'backwards' }); });
         } else if (!s.was) {
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
@@ -244,8 +268,13 @@ window.tideFlip = (function () {
         });
         // A list inside another's item (the bullets, inside the editor's sections): the outer list plays too, so what's
         // after the item that grew or shrank glides rather than jumps.
+        // It waits for an exit inside it, as the inner one does.
         touched.forEach(function (root) {
-            for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) touched.add(up);
+            const out = exited.has(root);
+            for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) {
+                touched.add(up);
+                if (out) exited.add(up);
+            }
         });
         touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root, exited.has(root)); } });
     }
