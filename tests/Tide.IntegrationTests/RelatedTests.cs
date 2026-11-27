@@ -113,6 +113,54 @@ public class RelatedServiceTests : IDisposable
         RelatedService.MentionText(late).Should().Be($"A-{open} (open)", "never how late: that would go stale in a sent brief");
     }
 
+    // The link's articles and reports, as FindsTheSameCve_TheSameLink_AndTheSameStory_NewestFirst makes them.
+    private async Task<(Guid Me, Guid ByLink, Guid ByOtherReport)> SameLinkAsync()
+    {
+        var me = await Article("GlobalProtect zero-day", "https://vendor.example/advisory?utm_source=rss");
+        var byLink = await Article("Vendor advisory", "https://vendor.example/advisory", daysAgo: 3);
+        var byOtherReport = await Article("Roundup", daysAgo: 2);
+        await Article("Elsewhere", "https://vendor.example/other");
+        await using var ctx = _db.Context();
+        ctx.ArticleLinks.Add(new ArticleLink { ArticleId = byOtherReport, Url = "https://vendor.example/advisory", Title = "Advisory", AddedByName = "X" });
+        await ctx.SaveChangesAsync();
+        return (me, byLink, byOtherReport);
+    }
+
+    [Fact]
+    public async Task TheSameLink_IsFoundByTheIndexedHash_NotAReadOfEveryArticle()
+    {
+        var (me, byLink, byOtherReport) = await SameLinkAsync();
+        _db.Commands.Record = true;
+        _db.Commands.Reset();
+
+        var work = await _db.Related().ForArticleAsync(me);
+
+        work.Articles.Select(a => a.Id).Should().BeEquivalentTo([byLink, byOtherReport]);
+        var sql = _db.Commands.Sql;
+        sql.Should().Contain(s => s.Contains("FROM \"Articles\"", StringComparison.Ordinal) && s.Contains("\"a\".\"SourceUrlHash\" =", StringComparison.Ordinal),
+            "the articles at the address are sought by the hash, which is indexed");
+        sql.Should().Contain(s => s.Contains("FROM \"ArticleLinks\"", StringComparison.Ordinal) && s.Contains("\"a\".\"UrlHash\" =", StringComparison.Ordinal),
+            "and so are the other reports");
+    }
+
+    [Fact]
+    public async Task TheSameLink_IsStillFound_WhileTheAddressHashesAreBeingFilled()
+    {
+        var (me, byLink, byOtherReport) = await SameLinkAsync();
+        // As an upgrade leaves it until the background job has run: no hashes, and the setting saying so.
+        await using (var ctx = _db.PlainContext())
+        {
+            ctx.Settings.Add(new AppSetting { Key = Tide.Application.Intake.UrlHashFill.PendingKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+            await ctx.SaveChangesAsync();
+            await ctx.Articles.ExecuteUpdateAsync(s => s.SetProperty(a => a.SourceUrlHash, (string?)null));
+            await ctx.ArticleLinks.ExecuteUpdateAsync(s => s.SetProperty(l => l.UrlHash, (string?)null));
+        }
+
+        var work = await _db.Related().ForArticleAsync(me);
+
+        work.Articles.Select(a => a.Id).Should().BeEquivalentTo([byLink, byOtherReport]);
+    }
+
     [Fact]
     public async Task NothingRelated_IsEmpty_AndReadersAreRefused()
     {
