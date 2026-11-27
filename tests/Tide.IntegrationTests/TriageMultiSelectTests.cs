@@ -177,7 +177,7 @@ public class TriageMultiSelectTests(StayApp app) : IClassFixture<StayApp>
         await r.Click(t => t.OnTriageKey("select-next"));
         r.Component.PickedIds.Should().BeEquivalentTo(ids[..2]);
         var bar = Bar(await r.Html());
-        bar.Should().Contain("<strong>2 selected</strong> on this page").And.Contain("turning the page or changing the tab or filters clears the choice")
+        bar.Should().Contain("<strong><span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>2</span></span> selected</strong> on this page").And.Contain("turning the page or changing the tab or filters clears the choice")
             .And.Contain("Promote as one").And.Contain("Shortlist").And.Contain("Dismiss");
         (await r.Html()).Should().Contain("aria-label=\"" + TitleOf("s", 1) + " (chosen)\"");
 

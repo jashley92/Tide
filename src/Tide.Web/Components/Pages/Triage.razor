@@ -1930,7 +1930,7 @@ else
             }
             else
             {
-            <p class="tide-triage-why"><strong>@n selected</strong> on this page. Only this page's items are chosen: turning the page or changing the tab or filters clears the choice.</p>
+            <p class="tide-triage-why"><strong><Odometer Value="@n.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> selected</strong> on this page. Only this page's items are chosen: turning the page or changing the tab or filters clears the choice.</p>
             <div class="tide-triage-acts">
                 <span class="tide-triage-main">
                     <button type="button" class="btn btn-primary btn-sm tide-triage-promote" disabled="@(_busy || n is < 2 or > TriageGroups.MaxSize)" aria-keyshortcuts="P"

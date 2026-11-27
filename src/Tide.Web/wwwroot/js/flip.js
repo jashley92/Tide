@@ -19,7 +19,10 @@
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
     const flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
-    let frame = 0, page = location.pathname;
+    // The part of the app a page is in (/library, /briefs): lists come in afresh on going to another part, not on a tab
+    // or a day within one (/library/outreach to /library/playbooks).
+    function part() { return '/' + location.pathname.split('/')[1]; }
+    let frame = 0, page = part();
     const entered = new Set();   // the lists that came in on this page
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
@@ -240,6 +243,16 @@ window.tideFlip = (function () {
         if (other) other.focus({ preventScroll: true });
     }
 
+    // Focus on a button that a change has just disabled (a Move button whose item reached the end, by this person or a
+    // colleague) would drop to the page: it goes to the item's other enabled button.
+    let focusedLast = null;   // what last had focus (the browser takes it off a button as it's disabled)
+    function rescue() {
+        const a = document.activeElement, f = a && a.disabled ? a : (!a || a === document.body) ? focusedLast : null;
+        if (!f || !f.isConnected || !f.disabled || !f.closest || !f.closest('[data-tide-flip-carry]')) return;
+        const other = f.parentElement && f.parentElement.querySelector('button:not([disabled])');
+        if (other) other.focus({ preventScroll: true });
+    }
+
     function play(root, afterExit) {
         const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
@@ -316,6 +329,12 @@ window.tideFlip = (function () {
             if (root.hasAttribute('data-tide-flip-carry') && (el.contains(document.activeElement) || (pressed && performance.now() - pressedAt < 2000 && el.contains(pressed)))) {
                 keep(el);
                 el.setAttribute('data-tide-carried', '');
+                // Carried out of the window (moved past its edge), the window eases after it rather than losing it.
+                if (!pinned.get(root)) {
+                    const head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0, top = o.top + n.y, bottom = top + n.h;
+                    const by = top < head ? top - head : bottom > innerHeight ? Math.min(bottom - innerHeight, top - head) : 0;
+                    if (Math.abs(by) > 1) bring(by);
+                }
                 const down = function () { if (running.get(el) === glide) el.removeAttribute('data-tide-carried'); };
                 glide.finished.then(down, down);
             }
@@ -414,8 +433,13 @@ window.tideFlip = (function () {
 
     function changed(records) {
         guard();
+        // Blazor puts focus back on a moved node without preventScroll, and the window jumps to it mid-glide: it's put
+        // back where the reader had it (the carry brings the item into view smoothly, above).
+        const f = document.activeElement;
+        if (!rewind && f && f.tagName === 'BUTTON' && f.closest('[data-tide-flip-carry]') && Math.abs(scrollY - lastY) > 1)   // a Move button, not a field typed in
+            window.scrollTo({ top: lastY, behavior: 'instant' });
         // Another page (whether or not the one between had lists): its lists come in afresh.
-        if (location.pathname !== page) { entered.clear(); page = location.pathname; }
+        if (part() !== page) { entered.clear(); page = part(); }
         const touched = new Set(), gone = new Map(), exited = new Set();
         records.forEach(function (m) {
             elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); closed(n); });
@@ -468,6 +492,7 @@ window.tideFlip = (function () {
             }
         });
         touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root, exited.has(root)); } });
+        rescue();
     }
 
     // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list
@@ -489,6 +514,7 @@ window.tideFlip = (function () {
         new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
         document.addEventListener('pointerdown', noted, true);
+        document.addEventListener('focusin', function (e) { focusedLast = e.target; }, true);
         document.addEventListener('keydown', noted, true);
         lastY = scrollY;
         if (window.KeyframeEffect) addEventListener('scroll', scrolledWindow, { passive: true });
