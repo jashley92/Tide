@@ -337,10 +337,9 @@ else
                         <InputFile id="shot-input" class="d-none" multiple accept="image/png,image/jpeg,image/gif,image/webp" OnChange="OnFiles" />
                     </div>
                 }
-                @if (_form.Screenshots.Count > 0)
-                {
-                    @* Screenshots glide when one is moved (it carried over the other) and fade out when taken off (flip.js). *@
-                    <div class="tide-shots" data-tide-flip=".tide-shot" data-tide-flip-carry data-tide-flip-exit>
+                @* Screenshots glide when one is moved (it carried over the other) and fade out when taken off (flip.js). Drawn even
+                   with none (it takes no room then: 20-editor.css), so the last one taken off fades and what's below glides up. *@
+                <div class="tide-shots" data-tide-flip=".tide-shot" data-tide-flip-carry data-tide-flip-exit>
                         @foreach (var (s, i) in _form.Screenshots.Select((s, i) => (s, i)).ToList())
                         {
                             <div class="tide-shot" @key="s.Id" data-id="@s.Id">
@@ -359,8 +358,7 @@ else
                                 </div>
                             </div>
                         }
-                    </div>
-                }
+                </div>
             </section>
 
             <section class="tide-card tide-section" aria-labelledby="sec-ind">

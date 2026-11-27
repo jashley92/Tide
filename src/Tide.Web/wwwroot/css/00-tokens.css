@@ -280,7 +280,13 @@
 @media (prefers-reduced-motion: reduce) { :root { --tide-motion: 0; } }
 
 html, body { font-family: var(--tide-font-ui); background: var(--tide-bg); color: var(--tide-text); }
+/* A new page opens at its top at once (Bootstrap would smooth-scroll the window there); an in-page jump that should
+   glide asks for it (behavior: 'smooth'). */
 html { scrollbar-gutter: stable; }
+:root { scroll-behavior: auto; }   /* :root, as Bootstrap's own rule is */
+/* The browser doesn't move the window to keep what's in view in place when something above changes: flip.js glides
+   what moved from where it was painted, and the window adjusting too would add a jump of its own. */
+:root, body { overflow-anchor: none; }   /* both: Chrome reads the body's for the page */
 h1:focus { outline: none; }
 a, .btn-link { color: var(--tide-accent-text); }
 .tide-data { font-family: var(--tide-font-data); font-size: .92em; }

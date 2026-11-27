@@ -10,7 +10,7 @@
 @inject ToastService Toasts
 
 <div class="tide-selbar" role="region" aria-label="Chosen actions">
-    <span class="tide-selbar-count" role="status"><strong>@Picked.Count selected</strong> <span class="tide-muted">on this page</span></span>
+    <span class="tide-selbar-count" role="status"><strong><Odometer Value="@Picked.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> selected</strong> <span class="tide-muted">on this page</span></span>
     <div class="tide-selbar-actions">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="many-take" disabled="@_busy" @onclick="Take">Take</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="many-assign" disabled="@_busy" @onclick="AskAssign">Assign to…</button>

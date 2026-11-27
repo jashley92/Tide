@@ -1,6 +1,6 @@
 /* ---- Toasts, reconnect ---- */
 .tide-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: var(--tide-z-toast); display: grid; gap: .5rem; max-width: 420px; }
-.tide-toasts > div { display: grid; gap: .5rem; }
+.tide-toasts > div:not(.tide-toast) { display: grid; gap: .5rem; }   /* not a toast's exit copy (flip.js) */
 /* A toast: a light card with a coloured edge and glyph, sliding in (still, with reduced motion). */
 /* Each toast's keyed slot (ToastHost) takes no box of its own. */
 .tide-toast-slot { display: contents; }

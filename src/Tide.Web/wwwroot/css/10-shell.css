@@ -7,6 +7,8 @@
 .sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: var(--tide-width-side); flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; }
 html[data-nav="collapsed"] .sidebar { width: var(--tide-width-side-collapsed); }
 .tide-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* What's brought into view (a row by J or K, a field, an anchor) stops below the sticky top bar, not under it. */
+html { scroll-padding-top: var(--tide-height-top); }
 .top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: var(--tide-z-top); }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
 /* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,

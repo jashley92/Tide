@@ -17,7 +17,7 @@
 // selection bar stands where the decision bar was, and S, X and P act on all of them (.NET decides).
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0, room = null, tellRoom = null;
+    let started = 0, room = null, tellRoom = null, panes = null;
 
     // While the promote form is open, only Esc is the page's, and Shift+Enter is the form's second way out: Promote and
     // keep triaging, its button pressed (plain Enter submits the form, Promote and write, as it always has). Not on a
@@ -82,8 +82,10 @@ window.tideTriage = (function () {
     function showPane(actions) {
         if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
         const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
-        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1) {
+            if (window.tideFlip && window.tideFlip.stop) window.tideFlip.stop();   // the row's own ease would carry on past it
             pane.scrollIntoView({ block: 'start', behavior: 'instant' });
+        }
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
@@ -173,8 +175,19 @@ window.tideTriage = (function () {
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
             const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
+            // Shown again only if still on the page once the reload has had its moment (a second at most): taken away by
+            // it, a row shown again first would flash back for a frame.
+            const release = function () {
+                const until = performance.now() + 1000;
+                (function look() {
+                    if (rows.every(function (r) { return !r.isConnected; })) return;
+                    if (performance.now() < until) requestAnimationFrame(look); else shown();
+                })();
+            };
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
             if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
+            // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
+            if (t.bottom < 0 || t.top > innerHeight) { land(); release(); return Promise.resolve(); }
             const ease = ts.token('--tide-ease-out');
             const waited = Promise.race([hit, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-travel')); })]);
             Promise.all(rows.map(function (row, i) {
@@ -187,7 +200,7 @@ window.tideTriage = (function () {
                 const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
                 return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
                     { duration: ts.travel(Math.hypot(t.left - r.left, t.top - r.top)), delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
-            })).then(shown, shown);
+            })).then(release, release);
             return waited;
         },
         // The promote form opened: its title takes focus, selected, ready to retype.
@@ -218,6 +231,17 @@ window.tideTriage = (function () {
             room.addEventListener('change', tellRoom);
             tellRoom();
             document.addEventListener('keydown', hop);
+            // The pane drawn (V, or Read it here) is brought into view on the frame it first shows, before .NET has
+            // answered the key: a moment showing only the pane's foot would explain nothing.
+            panes = new MutationObserver(function (records) {
+                const came = records.some(function (m) {
+                    return Array.prototype.some.call(m.addedNodes, function (n) {
+                        return n.nodeType === 1 && (n.matches('.tide-reading') || !!n.querySelector('.tide-reading'));
+                    });
+                });
+                if (came) showPane(['read']);   // before it's painted
+            });
+            panes.observe(document.body, { childList: true, subtree: true });
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read', ' ': 'select-toggle' },
@@ -230,6 +254,7 @@ window.tideTriage = (function () {
             if (room) room.removeEventListener('change', tellRoom);
             room = tellRoom = null;
             document.removeEventListener('keydown', hop);
+            if (panes) { panes.disconnect(); panes = null; }
             rows.stop(started);
         }
     };

@@ -9,8 +9,10 @@
 <p class="small tide-muted mb-2" role="status">@Count</p>
 <div class="tide-library">
     <div class="tide-library-side">
-        <ul class="tide-library-list" aria-label="@Label">
-            @{ var shown = Shown; }
+        @* An entry moved up or down (Playbooks) glides to its place (flip.js); a filter or a page, which changes which
+           entries are shown (the key), just shows. *@
+        @{ var shown = Shown; }
+        <ul class="tide-library-list" aria-label="@Label" data-tide-flip=":scope > .tide-library-row" data-tide-flip-carry data-tide-flip-key="@ShownKey(shown)">
             @for (var i = 0; i < shown; i++)
             {
                 var e = Entries[i];
@@ -41,6 +43,10 @@
          OnOpen="_ => _detail.TryFocusAsync()" Page="Page" Pages="Pages" OnPage="OnPage" />
 
 @code {
+    // Which entries are shown, in any order: a reorder keeps it, a filter or a page changes it (flip.js).
+    private string ShownKey(int shown) =>
+        string.Join(',', Entries.Take(shown).Select(e => e.Id.ToString()).Order(StringComparer.Ordinal)).GetHashCode().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>What the list holds, said above it ("1–20 of 34 playbooks").</summary>
     [Parameter, EditorRequired] public string Count { get; set; } = "";
 
