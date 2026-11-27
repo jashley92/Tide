@@ -152,7 +152,24 @@ else if (_results is { Terms.Count: > 0 } r)
 
     @if (r.Empty)
     {
-        <div class="tide-card"><EmptyState Icon="bi-search" Title="@($"Nothing matches {r.Query}")" /></div>
+        @* What to try next: fewer words (every one must match), and Triage's inbox, which isn't searched here until an item
+           is promoted; counted for someone who triages (SearchResults.InTriage), and linked when it has some. *@
+        <div class="tide-card" id="search-nothing">
+            <EmptyState Icon="bi-search" Title="@($"Nothing matches {r.Query}")" Actions="@(r.InTriage > 0 ? InTriageLink(r.Query) : null)">
+                @if (r.Terms.Count > 1)
+                {
+                    <p class="mb-1">Every word must match: try fewer, or other words.</p>
+                }
+                @if (r.InTriage is > 0 and var inTriage)
+                {
+                    <p class="mb-0">@(inTriage == 1 ? "1 new item in Triage has" : $"{N(inTriage)}{(inTriage >= SearchService.MaxSightings ? "+" : "")} new items in Triage have") it in the title or CVEs. Feed items are searched here once they're promoted.</p>
+                }
+                else if (r.InTriage == 0)
+                {
+                    <p class="mb-0">Nothing new in Triage has it either. Feed items are searched here once they're promoted.</p>
+                }
+            </EmptyState>
+        </div>
     }
 
     @if (r.Articles.Items.Count > 0)
@@ -437,6 +454,10 @@ else if (_results is { Terms.Count: > 0 } r)
             }
         }
     </p>;
+
+    // Nothing matched, and Triage's search box finds new items for the words: there, with them in its box.
+    private static RenderFragment InTriageLink(string words) =>
+        @<a id="search-in-triage" class="btn btn-outline-secondary btn-sm" href="@("triage?q=" + Uri.EscapeDataString(words))"><span class="bi bi-inbox" aria-hidden="true"></span> Look in Triage</a>;
 
     // "2 actions open"; of more actions than are listed, the open ones among those listed are a least count.
     private static string ActionsSaid(LookupSummary s, bool more) =>

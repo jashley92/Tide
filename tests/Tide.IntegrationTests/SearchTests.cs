@@ -385,6 +385,35 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task NothingMatching_CountsTheNewTriageItems_TriagesOwnSearchWouldFind_ForSomeoneWhoTriages()
+    {
+        await Article("Quarterly roundup");
+        await using (var db = _db.Context())
+        {
+            var feed = new Source { Name = "Words feed", Url = "https://words.example.net/rss" };
+            var retired = new Source { Name = "Old feed", Url = "https://old.example.net/rss", IsRetired = true };
+            var now = DateTimeOffset.UtcNow;
+            FeedItem Item(Source s, string title, FeedItemStatus status) => new()
+            {
+                Source = s, Title = title, Url = $"https://{Guid.NewGuid():N}.example.net/", UrlHash = Guid.NewGuid().ToString("N"),
+                Status = status, PublishedAtUtc = now, FetchedAtUtc = now,
+            };
+            db.FeedItems.AddRange(Item(feed, "Loader hides in signed drivers", FeedItemStatus.New),
+                Item(feed, "Signed drivers abused again", FeedItemStatus.New),
+                Item(feed, "Loader hides in signed drivers, dismissed", FeedItemStatus.Dismissed),
+                Item(retired, "Loader hides in signed drivers, old feed", FeedItemStatus.New));
+            await db.SaveChangesAsync();
+        }
+
+        (await Search().SearchAsync("hides in signed")).InTriage.Should().Be(1, "the whole words, as Triage's box matches them, in new items of a source still read");
+        (await Search().SearchAsync("nothing like this")).InTriage.Should().Be(0);
+        (await Search().SearchAsync("roundup")).InTriage.Should().BeNull("something matched, so Triage isn't counted");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
+        (await Search().SearchAsync("hides in signed")).InTriage.Should().BeNull("a Viewer doesn't triage, and is told nothing of it");
+    }
+
+    [Fact]
     public async Task Lookup_Cve_ListsItsArticles_AndSaysWhoIsOnIt()
     {
         var a = await Article("Firewall bug", cves: ["CVE-2026-12345"]);
@@ -816,6 +845,41 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 
         // A viewer doesn't see Triage: nothing of it is named, and nothing is called unseen that someone might have.
         Summary(await Page(cve, Person("Viewer"))).Should().Be("Not on any article yet · no action raised");
+    }
+
+    [Fact]
+    public async Task NothingMatching_SaysWhatToTryNext_AndLinksTriage_WhenItHasTheWords()
+    {
+        var words = Unique("zebrafish");
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            var feed = new Source { Name = Unique("Words feed"), Url = $"https://{Unique("feed")}.example.net/rss" };
+            var now = DateTimeOffset.UtcNow;
+            db.FeedItems.Add(new FeedItem
+            {
+                Source = feed, Title = $"Campaign {words} returns", Url = $"https://{Unique("item")}.example.net/", UrlHash = Unique("hash"),
+                Status = FeedItemStatus.New, PublishedAtUtc = now, FetchedAtUtc = now,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var analyst = Nothing(await Page(words));
+        analyst.Should().Contain("1 new item in Triage has it in the title or CVEs")
+            .And.Contain($"href=\"triage?q={Uri.EscapeDataString(words)}\"").And.NotContain("Every word must match", "one word");
+        var two = Nothing(await Page(words + " qqqq"));
+        two.Should().Contain("Every word must match").And.Contain("Nothing new in Triage has it either").And.NotContain("search-in-triage");
+
+        var viewer = Nothing(await Page(words, Person("Viewer")));
+        viewer.Should().NotContain("Triage", "a Viewer doesn't triage");
+    }
+
+    // The "Nothing matches" card and what follows it, as it reads.
+    private static string Nothing(string html)
+    {
+        var at = html.IndexOf("id=\"search-nothing\"", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(-1, "the page says nothing matches");
+        return WebUtility.HtmlDecode(html[at..]);
     }
 
     [Fact]
