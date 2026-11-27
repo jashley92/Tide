@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const at = new WeakMap(), running = new WeakMap(), due = new Map();
+    const at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     let frame = 0;
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
@@ -45,7 +45,12 @@ window.tideFlip = (function () {
 
     // Measures the list's items and keeps where each is, giving back where they were before (null the first time).
     function snapshot(root) {
-        const was = at.get(root) || null, origin = root.getBoundingClientRect(), list = items(root), now = new Map();
+        const was = at.get(root) || null, box = root.getBoundingClientRect(), list = items(root), now = new Map();
+        // Kept relative to the list, as the window scrolling moves both together; but a list fixed to the window (the
+        // toasts, pinned at its foot) grows from its foot, so its items are kept as the window sees them.
+        if (!pinned.has(root)) pinned.set(root, getComputedStyle(root).position === 'fixed');
+        const origin = pinned.get(root) ? { left: 0, top: 0, height: box.height } : box;
+        heights.set(root, box.height);
         list.forEach(function (el) { const p = measure(el, origin); if (p) now.set(key(el), p); });
         at.set(root, now);
         return { was: was, list: list, now: now, origin: origin };
@@ -63,7 +68,21 @@ window.tideFlip = (function () {
         });
     }
 
-    function play(root) {
+    // A list that got shorter keeps its height while its items glide up (the window, scrolled near its foot, would be
+    // cut short at once and jump); then, where it must, the window scrolls back smoothly before the height is let go.
+    function hold(root, was, now, ms) {
+        if (!(was > now + 1)) return;
+        root.style.minHeight = was + 'px';
+        setTimeout(function () {
+            const cut = was - now, max = document.documentElement.scrollHeight - cut - innerHeight;
+            const go = function () { root.style.minHeight = ''; };
+            if (cut > 0 && scrollY > max) { window.scrollTo({ top: Math.max(0, max), behavior: 'smooth' }); setTimeout(go, ms); }
+            else go();
+        }, ms);
+    }
+
+    function play(root, afterExit) {
+        const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
@@ -76,6 +95,7 @@ window.tideFlip = (function () {
             if (n && w && w.parent === n.parent) far = Math.max(far, Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy), n.h - w.h);
         });
         const together = ts.travel(far);
+        if (!quiet && s.was) hold(root, tall, o.height, together);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -119,7 +139,11 @@ window.tideFlip = (function () {
         // opened) fade in once the items gliding past them have mostly gone by, so none slides across them; a list mostly
         // new (another tab, a filter) just shows.
         if (!fresh.length || document.hidden || !document.body.animate) return;
-        if (!s.was) {
+        if (afterExit && !quiet) {
+            // One arriving where one is leaving (a toast after its Undo): it comes in as the other has mostly gone, so
+            // the two never share a box.
+            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: ts.ms('--tide-dur-handover'), easing: ease, fill: 'backwards' }); });
+        } else if (!s.was) {
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
@@ -181,7 +205,7 @@ window.tideFlip = (function () {
     }
 
     function changed(records) {
-        const touched = new Set(), gone = new Map();
+        const touched = new Set(), gone = new Map(), exited = new Set();
         records.forEach(function (m) {
             elements(m.removedNodes).forEach(function (n) { if (n.matches(TICKS)) gone.set(m.target, n.textContent.trim()); closed(n); });
             elements(m.addedNodes).forEach(opened);
@@ -202,9 +226,17 @@ window.tideFlip = (function () {
             // after it glide to where they are now rather than jump, played on the next frame with any others.
             if (m.target.closest(root.dataset.tideFlip)) { later(root, true); return; }
             touched.add(root);
-            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) {
-                if (n.matches(root.dataset.tideFlip)) leave(root, n);
-                else n.querySelectorAll(root.dataset.tideFlip).forEach(function (i) { leave(root, i); });   // in a keyed slot
+            // Items that leave fade out where they were: every one in a list marked data-tide-flip-exit, or one that asks
+            // itself (data-tide-exit: a group's reports folding away), unless something else already took it out
+            // (data-tide-gone: a row this person decided lifts out on its own).
+            const exits = root.hasAttribute('data-tide-flip-exit');
+            removed.forEach(function (n) {
+                const its = n.matches(root.dataset.tideFlip) ? [n] : exits ? Array.prototype.slice.call(n.querySelectorAll(root.dataset.tideFlip)) : [];   // (in a keyed slot)
+                its.forEach(function (i) {
+                    if ((!exits && !i.hasAttribute('data-tide-exit')) || i.hasAttribute('data-tide-gone')) return;
+                    exited.add(root);
+                    leave(root, i);
+                });
             });
         });
         // A list inside another's item (the bullets, inside the editor's sections): the outer list plays too, so what's
@@ -212,7 +244,7 @@ window.tideFlip = (function () {
         touched.forEach(function (root) {
             for (let up = root.parentElement && root.parentElement.closest(ROOTS); up; up = up.parentElement && up.parentElement.closest(ROOTS)) touched.add(up);
         });
-        touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root); } });
+        touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root, exited.has(root)); } });
     }
 
     // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list

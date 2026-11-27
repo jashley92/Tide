@@ -258,12 +258,22 @@ window.tideBoard = (function () {
         }, land);
     }
 
-    // Closed into a chip: the ghost shrinks away into it, and the chip locks on.
+    // Closed into a chip: the card goes into it, travelling to its middle as it shrinks away, and the chip locks on as it
+    // arrives. A plain copy takes over from the parked ghost where it is seen (centred, at its size), so the way to the
+    // chip is a straight one, whatever the ghost's own offsets.
     function into(g, chip) {
         const ts = window.tideShortcuts;
-        ts.pulse(chip, 'data-tide-landed');
-        if (ts.quiet()) { g.remove(); return; }
-        ts.drift(g, [{ scale: .45, opacity: 1 }, { scale: .1, opacity: 0 }], { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
+        if (ts.quiet()) { g.remove(); ts.pulse(chip, 'data-tide-landed'); return; }
+        const seen = g.getBoundingClientRect(), w = g.offsetWidth, h = g.offsetHeight, c = chip.getBoundingClientRect();
+        const from = { x: seen.left + seen.width / 2, y: seen.top + seen.height / 2 }, to = { x: c.left + c.width / 2, y: c.top + c.height / 2 };
+        const k = ts.copy(g, { left: from.x - w / 2, top: from.y - h / 2, width: w, height: h });
+        k.removeAttribute('data-tide-small');
+        Object.assign(k.style, { transform: 'none', translate: 'none', transformOrigin: '50% 50%', animation: 'none' });
+        g.remove();
+        const s0 = seen.width / w;
+        ts.drift(k, [{ transform: 'scale(' + s0 + ')', opacity: 1 }, { transform: 'translate(' + (to.x - from.x) + 'px, ' + (to.y - from.y) + 'px) scale(.08)', opacity: 0 }],
+            { duration: ts.travel(Math.hypot(to.x - from.x, to.y - from.y)), easing: ts.token('--tide-ease-in') })
+            .finished.then(function () { ts.pulse(chip, 'data-tide-landed'); }, function () { });
     }
 
     // Cancelled (Esc, or the browser took the pointer back): the card goes back where it was.

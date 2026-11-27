@@ -208,8 +208,9 @@ else
                by Tab or a click, selects it. A report in an open group is indented under it, its excerpt always shown. *@
             var unseen = _marks.IsUnseen(item.Id);
             var picked = IsPicked(line);
+            @* A group's report fades out where it was as the group folds away (data-tide-exit, flip.js). *@
             <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id) @(picked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : "") + (picked ? PickedNote : ""))"
-                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" data-items="@item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" data-items="@item.Id" data-tide-exit="@(line.Group is not null)" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
                     <div class="flex-grow-1 tide-triage-body">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
