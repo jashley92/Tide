@@ -158,7 +158,9 @@ else
             var elseHeading = AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
             @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun">Matches what we run</li> }
             foreach (var g in lineGhosts.Where(g => !elseHeading || _ranWeRun.Contains(g.Key))) { @Ghost(g) }
-            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else">Everything else</li> }
+            @* Keyed by the line it heads: a tab not ordered by what we run (Dismissed) can switch to "Everything else" more
+               than once, and two siblings with one key take the page down. *@
+            @if (elseHeading) { var sec = "sec-else-" + KeyOf(line).Id; <li class="tide-triage-section" aria-hidden="true" @key="sec" data-id="@sec">Everything else</li> }
             foreach (var g in lineGhosts.Where(g => elseHeading && !_ranWeRun.Contains(g.Key))) { @Ghost(g) }
             var selected = i == _selected;
             if (line.Row is null && line.Group is { } group)
