@@ -237,7 +237,7 @@
 .tide-tab-slider { position: fixed; z-index: var(--tide-z-drop); pointer-events: none; transform-origin: 0 0; will-change: transform; }
 .tide-tab-slider.is-line { background: var(--tide-accent); }
 .tide-tab-slider.is-box { box-shadow: inset 0 0 0 1px var(--tide-accent); border-radius: var(--tide-radius-md); }
-.tide-tabbar-page .tide-tabbar-item.active[data-tide-sliding] { border-bottom-color: transparent; }
+.tide-tabbar-page .tide-tabbar-item[data-tide-sliding] { border-bottom-color: transparent; }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-seg-opt:disabled { cursor: default; opacity: .6; }
 /* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
