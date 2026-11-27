@@ -310,6 +310,20 @@ window.tideFlip = (function () {
         })();
     }
 
+    // A box scrolled by so much over a time, eased as a flight is (so a card flying into a lane that scrolls lands as it
+    // stops); at once without motion.
+    function scrollIn(box, by, ms) {
+        const ts = window.tideShortcuts, from = box.scrollTop;
+        if (ts.still() || !window.KeyframeEffect) { box.scrollTop = from + by; return; }
+        const timing = new Animation(new KeyframeEffect(null, [], { duration: ms, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
+        timing.play();
+        box.setAttribute('data-tide-scrolling', '');   // board.js leaves it be meanwhile
+        (function step() {
+            box.scrollTop = Math.round(from + by * (timing.effect.getComputedTiming().progress || 0));
+            if (timing.playState !== 'finished') requestAnimationFrame(step); else box.removeAttribute('data-tide-scrolling');
+        })();
+    }
+
     function play(root, afterExit) {
         const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
@@ -382,13 +396,17 @@ window.tideFlip = (function () {
                     // A lane that scrolls (a short window) is brought to where the card lands first, so it's seen to land.
                     const lane = el.parentElement, lr = lane.getBoundingClientRect(), cr = { top: o.top + n.y, bottom: o.top + n.y + n.h };
                     const inView = cr.top >= lr.top && cr.bottom <= lr.bottom;
+                    const from = { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h };
+                    let by = 0;
                     if (!inView) {
                         // As board.js shows a card (inside the lane's padding; from its top when it's taller than the lane),
-                        // so the copy lands where the card stays.
+                        // so the copy lands where the card stays; the lane scrolls there in step with the flight, not at once.
                         const pad = parseFloat(getComputedStyle(lane).paddingTop) || 0, top = cr.top - lr.top - pad, foot = cr.bottom - lr.bottom + pad;
-                        lane.scrollTop += top < 0 || n.h > lr.height - 2 * pad ? top : foot;
+                        by = Math.round(top < 0 || n.h > lr.height - 2 * pad ? top : foot);
                     }
-                    ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, inView ? { left: o.left + n.x, top: o.top + n.y } : undefined);
+                    const to = { left: o.left + n.x, top: o.top + n.y - by };
+                    if (by) scrollIn(lane, by, ts.travel(Math.hypot(to.left - from.left, to.top - from.top)));
+                    ts.fly(el, from, to);
                 }
                 return;
             }

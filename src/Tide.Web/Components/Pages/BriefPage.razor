@@ -109,7 +109,7 @@ else
                 <LiveMeetingJoin Day="_date">
                     @if (canPresent && _brief.Items.Count > 0)
                     {
-                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)" data-guide="brief-present"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
+                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)" data-guide="brief-present" @key="@(next == BriefNext.Present ? "present-primary" : "present-outline")"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
                     }
                 </LiveMeetingJoin>
                 @if (canPresent && _brief.Status == BriefStatus.Presented)

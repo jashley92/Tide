@@ -356,7 +356,7 @@ window.tideBoard = (function () {
     // A card taller than a short lane (a narrow window) keeps its top in view, not its foot where the focused button is.
     function show(c) {
         const how = window.tideShortcuts.still() ? 'instant' : 'smooth', lane = c.closest('.tide-kcol-cards');
-        if (lane && lane.scrollHeight > lane.clientHeight + 1) {
+        if (lane && lane.scrollHeight > lane.clientHeight + 1 && !lane.hasAttribute('data-tide-scrolling')) {   // (a flight scrolling it: flip.js)
             const l = lane.getBoundingClientRect(), r = laid(c), pad = parseFloat(getComputedStyle(lane).paddingTop) || 0;
             const top = r.top - l.top - pad, foot = r.bottom - l.bottom + pad;
             // Above the lane's view: its top comes in. Below: a card that fits shows whole; a taller one shows from its top,
