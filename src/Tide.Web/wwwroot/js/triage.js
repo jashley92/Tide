@@ -145,7 +145,7 @@ window.tideTriage = (function () {
             const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
             const waited = new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-wait')); });
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
-            if (!t.width || ts.quiet()) { land(); waited.then(shown); return waited; }
+            if (!t.width || ts.quiet()) { land(); waited.then(shown, shown); return waited; }
             const dur = ts.ms('--tide-dur-travel'), ease = ts.token('--tide-ease-out');
             Promise.all(rows.map(function (row, i) {
                 const r = from[i];
@@ -157,7 +157,7 @@ window.tideTriage = (function () {
                 const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
                 return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
                     { duration: dur, delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
-            })).then(shown);
+            })).then(shown, shown);
             return waited;
         },
         // The promote form opened: its title takes focus, selected, ready to retype.
