@@ -1360,6 +1360,22 @@ public class ReminderTests : IDisposable
     }
 
     [Fact]
+    public async Task TheDigest_SaysACancelledActionWasCancelled_NotClosedWithTheOutcomeNone()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, "defense@example.org");
+        var svc = _db.Actions();
+        foreach (var (title, status) in new[] { ("Dropped", ActionStatus.Cancelled), ("Not ours", ActionStatus.NotApplicable) })
+        {
+            var n = await svc.CreateAsync(new ActionForm { Title = title, Kind = ActionKind.PatchRemediate, TeamId = team, DueDate = _db.Clock.Today.AddDays(30) });
+            await svc.SetStatusAsync((await svc.GetAsync(n))!.Action.Id, status, ActionOutcome.None, null);
+        }
+
+        (await _db.Reminders().RunAsync(ReminderKind.Digest)).Should().Be(1);
+
+        _db.Email.Sent.Single().Html.Should().Contain("(Cancelled)").And.Contain("(Not applicable)").And.NotContain("(None)");
+    }
+
+    [Fact]
     public async Task BriefNotReady_NudgesTheAnalyst_OrTheFallback_AndNotOnceReady()
     {
         // 09:30 local on a Monday, before the 10:30 meeting.
