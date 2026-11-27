@@ -146,7 +146,8 @@ window.tideTriage = (function () {
                 if (!r.width || !r.height) return;
                 const g = ts.copy(row, r);
                 g.classList.add('tide-decided');
-                ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }],
+                // Gone by half way, before the rows below close up into its place (they'd show through it).
+                ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-4px)', offset: .5 }, { opacity: 0, transform: 'translateY(-6px)' }],
                     { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
             });
         },

@@ -213,7 +213,7 @@ window.tidePresent = (function () {
     // The slide changed (its body is new, keyed by .NET): the page turns. Going on, the old page lifts from its left edge
     // and turns away, fading as it goes, uncovering the new one. Going back, the new page turns in over the old the other
     // way. For the presenter and each follower alike. Only transform and opacity move, so the browser composites each
-    // frame rather than painting the slide again, and the turn is a modest one (60 degrees): an audience watches it. The
+    // frame rather than painting the slide again, and the turn is a modest one (42 degrees, seen from far enough that the edge lifting towards the room grows by half at most, not threefold): an audience watches it. The
     // page moves the moment the key is pressed (an easing that starts at once, the lift early), and a shade turns with it,
     // deepest as the page lifts, so it reads as paper; the shade is its own layer, only its opacity changing. A
     // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. A jump of
@@ -238,9 +238,14 @@ window.tidePresent = (function () {
         page.classList.add('tide-page-turning');
         slide.appendChild(page);
         if (last.top) page.scrollTop = last.top;   // (setting it lays the page out at once: only when it's needed)
-        const at = function (deg) { return 'perspective(1400px) rotateY(' + (still ? 0 : deg) + 'deg)'; };
-        const lift = back ? .75 : .25;
-        const flat = { transform: at(0), opacity: 1 }, lifting = { transform: at(-24), opacity: 1, offset: lift }, away = { transform: at(-60), opacity: 0 };
+        const at = function (deg) { return 'perspective(2600px) rotateY(' + (still ? 0 : deg) + 'deg)'; };
+        // The page is solid paper while it turns, uncovering the next one by turning, and only fades as it goes (the
+        // last quarter): fading from the start read as one slide dissolving into the other.
+        // The new page turning in over the old (back) plays these the other way round, so its offsets are mirrored; a
+        // back jump that fades (reduced motion, or more than one slide) plays them forwards like any fade.
+        const inward = back && !still, lift = inward ? .75 : .25, gone = inward ? .25 : .75;
+        const flat = { transform: at(0), opacity: 1 }, lifting = { transform: at(-14), opacity: 1, offset: lift };
+        const turned = { transform: at(-32), opacity: 1, offset: gone }, away = { transform: at(-42), opacity: 0 };
         const shade = still ? null : document.createElement('div');
         const done = function () { page.remove(); if (shade) shade.remove(); now.classList.remove('tide-page-over'); };
         const play = function (el, frames, ease) {
@@ -250,14 +255,14 @@ window.tidePresent = (function () {
             if (!shade) return;
             shade.className = 'tide-page-shade';
             slide.appendChild(shade);
-            shade.animate(frames.map(function (f) { return Object.assign({}, f, { opacity: f === lifting ? .5 : 0 }); }), opts);
+            shade.animate(frames.map(function (f) { return Object.assign({}, f, { opacity: f === lifting ? .5 : f === turned ? .3 : 0 }); }), opts);
         };
-        if (back && !still) {
+        if (inward) {
             now.classList.add('tide-page-over');
-            play(now, [away, lifting, flat], '--tide-ease-out');
+            play(now, [away, turned, lifting, flat], '--tide-ease-out');
             return;
         }
-        play(page, [flat, lifting, away], '--tide-ease-grab');
+        play(page, [flat, lifting, turned, away], '--tide-ease-grab');
     }
 
     function settle() {
