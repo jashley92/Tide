@@ -278,17 +278,29 @@ window.tideFlip = (function () {
         // A change that doesn't play the list (only measured again) lets go a frame later, without moving the box.
         requestAnimationFrame(function () { requestAnimationFrame(function () { if (heldIn.get(root) === held) unhold(root, true, 0, 0); }); });
     }
+    // Where the box's end is once the list lets go: read before the glides go on (their transforms add to its scroll height).
+    function heldEnd(root) {
+        const held = heldIn.get(root);
+        if (!held) return;
+        const h = root.style.minHeight;
+        root.style.minHeight = '';
+        held.max = held.box.scrollHeight - held.box.clientHeight;
+        root.style.minHeight = h;
+        held.box.scrollTop = held.top;
+    }
     function unhold(root, still, ms, wait) {
         const held = heldIn.get(root);
         if (!held) return;
         heldIn.delete(root);
-        const b = held.box, h = root.style.minHeight;
+        const b = held.box, h = root.style.minHeight, ts = window.tideShortcuts;
         root.style.minHeight = '';
-        const max = b.scrollHeight - b.clientHeight;
+        const max = held.max !== undefined ? held.max : b.scrollHeight - b.clientHeight;
+        // In step with the glide, or, with nothing gliding, as long as its own way back needs.
+        ms = Math.max(ms || 0, ts ? ts.travel(held.top - max) : 0);
         if (!(held.top > max + 1) || still || !window.KeyframeEffect) { b.scrollTop = Math.min(held.top, max); tops.set(b, b.scrollTop); return; }
         root.style.minHeight = h;
         b.scrollTop = held.top;
-        const ts = window.tideShortcuts, timing = new Animation(new KeyframeEffect(null, [], { duration: ms, delay: wait, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
+        const timing = new Animation(new KeyframeEffect(null, [], { duration: ms, delay: wait, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
         timing.play();
         (function step() {
             const p = timing.effect.getComputedTiming().progress || 0;
@@ -301,6 +313,7 @@ window.tideFlip = (function () {
     function play(root, afterExit) {
         const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
+        heldEnd(root);
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
         let flights = 0, longest = 0;   // longest: the longest glide this change starts
@@ -351,7 +364,13 @@ window.tideFlip = (function () {
             const grew = n.h - w.h;
             if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, delay: wait, easing: ease, fill: 'backwards' });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
-            if (Math.abs(dx) < MOVED && Math.abs(dy) < MOVED) return;
+            if (Math.abs(dx) < MOVED && Math.abs(dy) < MOVED) {
+                // Already where it's painted (a glide under way brought it there as the change came): the glide's offset
+                // no longer applies (it would hop it away and back), so it stops, and the item stays where it's seen.
+                const r = running.get(el);
+                if (r && (Math.abs(n.dx) >= MOVED || Math.abs(n.dy) >= MOVED)) { r.cancel(); running.delete(el); }
+                return;
+            }
             const a = running.get(el);
             if (a) a.cancel();
             // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
@@ -448,7 +467,9 @@ window.tideFlip = (function () {
     // where it was, quicker than it came, rather than vanishing in a frame. Where each open one is is noted once it has
     // opened, and again if the page scrolls under it.
     const SURFACES = '.tide-popover, .tide-modal-scrim, .tide-selbar, .tide-triage-selbar, .tide-hands-pop', surfaceAt = new WeakMap(), open = new Set();
-    function note(el) { if (el.isConnected) surfaceAt.set(el, el.getBoundingClientRect()); else open.delete(el); }
+    // An in-flow surface (Triage's chosen-items bar on a narrow window, in the row) leaves no copy: what takes its place is
+    // there at once, and a copy would be drawn over it.
+    function note(el) { if (el.isConnected) surfaceAt.set(el, getComputedStyle(el).position === 'static' ? null : el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
         found.forEach(function (el) { open.add(el); requestAnimationFrame(function () { requestAnimationFrame(function () { note(el); }); }); });

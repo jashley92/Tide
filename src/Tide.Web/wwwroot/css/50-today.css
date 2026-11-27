@@ -23,7 +23,8 @@
 /* The stamp coming down over the status it replaces, until it lands (BriefPage): it takes no room of its own yet. */
 .tide-brief-status.is-over { position: absolute; left: 0; top: 0; z-index: 1; }
 /* Back to draft: the status going (a stamp, still askew) fades where it is before the draft pill takes its place. */
-.tide-brief-status.is-leaving { animation: tide-status-leave var(--tide-dur-fast) var(--tide-ease-out) forwards; }
+.tide-brief-status.is-held { animation: none; }   /* held where it was (a stamp keeps its look, still) */
+.tide-brief-status.is-held.is-leaving { animation: tide-status-leave var(--tide-dur-fast) var(--tide-ease-out) forwards; }
 @keyframes tide-status-leave { to { opacity: 0; } }
 /* Stamped, it stays a stamp: outlined in green, in capitals, a little askew. */
 /* One thing at a time: the stamp comes down once the confirmation has gone (--tide-dur-exit), the head takes the impact

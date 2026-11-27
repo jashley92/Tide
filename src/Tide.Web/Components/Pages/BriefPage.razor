@@ -75,7 +75,7 @@ else
                         @if (_statusHeld is { } held && held != StatusLabel)
                         {
                             @* Back to draft: the status it had (the stamp, if it was stamped here) fades where it is first. *@
-                            <span class="@("tide-brief-status" + (_unstamping is { } was ? (was ? " tide-stamped" : "") + " is-leaving" : ""))" @key="held"><StatusBadge Status="@held" /></span>
+                            <span class="@("tide-brief-status is-held" + (_heldStamped ? " tide-stamped" : "") + (_leaving ? " is-leaving" : ""))" @key="@("held-" + held)"><StatusBadge Status="@held" /></span>
                         }
                         @* While a status is held, the new one shows only as the stamp coming down over it. *@
                         @if (_statusHeld is null || _justReady)
@@ -879,8 +879,8 @@ else
     // The status as it was, kept under the stamp until it lands.
     private string? _statusHeld;
 
-    // Going back to draft: whether the status leaving was stamped here (null otherwise), while it fades.
-    private bool? _unstamping;
+    // The status held: whether it was stamped here (it keeps that look, still), and whether it's fading (back to draft).
+    private bool _heldStamped, _leaving;
 
     /// <summary>How long the status takes to fade on going back to draft (--tide-dur-fast).</summary>
     internal const int Unstamps = 120;
@@ -889,7 +889,7 @@ else
     {
         _stepsHeld = _brief is not null ? Steps : null;
         _statusHeld = _brief is not null ? StatusLabel : null;
-        var wasStamped = _justReady;
+        _heldStamped = _justReady;
         await Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
         _justReady = ready && _brief?.Status == BriefStatus.Ready;
         if (_justReady && _stepsHeld is not null)
@@ -900,13 +900,13 @@ else
         else if (!ready && _statusHeld is not null && _brief?.Status == BriefStatus.Draft && _statusHeld != StatusLabel)
         {
             // The stamp fades where it is, then the draft pill and the strip change together: the line reflows once.
-            _unstamping = wasStamped;
+            _leaving = true;
             StateHasChanged();
             await Task.Delay(Unstamps);
         }
         _stepsHeld = null;
         _statusHeld = null;
-        _unstamping = null;
+        _heldStamped = _leaving = false;
     }
 
     // The checks that don't block Ready (a missing tag, no recommended actions) still deserve a second look first.
