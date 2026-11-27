@@ -143,6 +143,9 @@ window.tideBoard = (function () {
         try { card.setPointerCapture(press.id); } catch (_) { /* a pointer already let go */ }
         ghost = window.tideShortcuts.copy(card, r);
         ghost.style.transformOrigin = (press.x - r.left) + 'px ' + (press.y - r.top) + 'px';   // it shrinks about the pointer
+        // Shrunk over a chip, it's lifted until its foot is 8px above the pointer, wherever it was held, so the chip shows
+        // (the lift is inside the .45 scale: 40-actions.css).
+        ghost.style.setProperty('--tide-ghost-lift', ((r.bottom - press.y) + 8 / .45) + 'px');
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
         ghost.removeAttribute('data-tide-pressed');

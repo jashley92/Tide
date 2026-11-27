@@ -239,7 +239,6 @@
 .tide-tab-slider { position: fixed; z-index: var(--tide-z-drop); pointer-events: none; transform-origin: 0 0; will-change: transform; }
 .tide-tab-slider.is-line { background: var(--tide-accent); }
 .tide-tab-slider.is-box { box-shadow: inset 0 0 0 1px var(--tide-accent); border-radius: var(--tide-radius-md); }
-.tide-tabbar-page .tide-tabbar-item[data-tide-sliding] { border-bottom-color: transparent; }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-seg-opt:disabled { cursor: default; opacity: .6; }
 /* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
@@ -256,6 +255,8 @@
 /* The current tab reads heavier by a hairline stroke, not a bolder face: a bolder face is wider, and the tabs beside it
    shifted a few pixels as the underline slid across (tabs.js). */
 .tide-tabbar-page .tide-tabbar-item.active { color: var(--tide-text); -webkit-text-stroke: .03em currentColor; border-bottom-color: var(--tide-accent); }
+/* While the mark slides to it (tabs.js), the tab's own line waits: after .active, which would otherwise draw it at once. */
+.tide-tabbar-page .tide-tabbar-item[data-tide-sliding] { border-bottom-color: transparent; }
 .tide-tabbar-count { font-size: .75rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .45rem; border-radius: var(--tide-radius-pill); background: var(--tide-surface-2); color: var(--tide-text-muted); }
 .tide-tabbar-item.active .tide-tabbar-count { background: var(--tide-accent-soft); color: var(--tide-accent-text); }
 .tide-tabbar-page { margin-bottom: 1rem; }
@@ -338,7 +339,7 @@
 .tide-whatsnew .tide-md ul, .tide-help .tide-md ul { padding-left: 1.25rem; margin-bottom: var(--tide-space-2); }
 .tide-whatsnew .tide-md li, .tide-help .tide-md li { margin-bottom: var(--tide-space-1); }
 .tide-help { max-width: var(--tide-width-form); display: flex; flex-direction: column; gap: var(--tide-space-4); }
-.tide-help-release { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); scroll-margin-top: 4rem; }
+.tide-help-release { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); scroll-margin-top: calc(4rem - var(--tide-height-top)); }
 .tide-help-release:first-of-type { border-top: 0; padding-top: 0; }
 .tide-help-release-title { display: flex; align-items: center; gap: var(--tide-space-2); font-size: var(--tide-text-md);
     font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
@@ -381,7 +382,7 @@
 .tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
 /* The control a tip or step is about: scrolled into view clear of the sticky top bar, with room under it for the card. */
-.tide-tip-target { scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
+.tide-tip-target { scroll-margin: var(--tide-space-4) var(--tide-space-4) 14rem; }   /* the top bar: html's scroll-padding-top */
 /* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
    click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
    motion. */

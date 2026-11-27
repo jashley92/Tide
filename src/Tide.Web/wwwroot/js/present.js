@@ -234,6 +234,13 @@ window.tidePresent = (function () {
         // where it has got to, rather than finishing (a frame of the next slide bare) and starting over from edge on.
         const live = turning && turning.playState === 'running' && turned && turned.from === no && turned.to === was;
         const tilt = live ? new DOMMatrixReadOnly(getComputedStyle(turned.el).transform).m11 : 1;   // cos of its angle now
+        // On again the same way while a page is still turning (the key pressed quickly, or held): the page in the air
+        // carries on and uncovers the latest slide, rather than each slide between showing bare for a few frames.
+        if (!live && turning && turning.playState === 'running' && turned && turned.el.isConnected && Math.abs(no - was) === 1
+            && (no > was) === (turned.to > turned.from)) {
+            turned.to = no;
+            return;
+        }
         if (turning) turning.finish();
         if (document.hidden) return;
         const back = no < was, still = ts.still() || Math.abs(no - was) > 1, dur = ts.ms(ts.still() ? '--tide-dur-fast' : still ? '--tide-dur-base' : '--tide-dur-turn');

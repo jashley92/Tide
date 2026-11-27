@@ -342,7 +342,7 @@ a.tide-werun-chip:hover { text-decoration: underline; }
 @media (max-width: 1000.98px) {
   .tide-triage-layout.reading { grid-template-columns: minmax(0, 1fr); }
   /* Above the list. Brought into view after V (triage.js), it stops below the top bar, which sticks. */
-  .tide-reading { position: static; max-height: none; order: -1; scroll-margin-top: calc(var(--tide-height-top) + var(--tide-space-3)); }
+  .tide-reading { position: static; max-height: none; order: -1; scroll-margin-top: var(--tide-space-3); }   /* below the top bar: html's scroll-padding-top */
   /* The pane is the list's width: its title takes a line of its own, Read again and Open the site under it. */
   .tide-reading-head { flex-wrap: wrap; }
 }
@@ -490,7 +490,7 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-mentry-group-count.is-done { color: var(--tide-ok); }
 .tide-mentry-folded { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-4); font-size: var(--tide-text-sm); }
 .tide-mentry-folded-name { color: var(--tide-text-muted); }
-.tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: 12rem; }   /* clear of the header, the bar and the group heading */
+.tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: calc(12rem - var(--tide-height-top)); }   /* clear of the header, the bar and the group heading */
 @media (forced-colors: active) { .tide-mentry-chip.is-current, .tide-mentry-group.is-current { outline: 2px solid Highlight; } }
 
 /* The metric history's charts: what to chart (MetricChartPicker), and a grid of a small chart per metric. */

@@ -88,9 +88,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 /* Picked up: the ghost's shadow comes up as it lifts (its brackets snap on: 41-intake). */
 .tide-kcard-ghost { animation: tide-lift var(--tide-dur-fast) var(--tide-ease-out);
     transition: scale var(--tide-move-fast) var(--tide-ease-out), transform var(--tide-move-fast) var(--tide-ease-out); }
-/* Over a closed chip, small and 48px above the pointer, so the chip shows (board.js moves the ghost by translate; the
-   lift is in transform, inside the scale, so 48 / .45). */
-.tide-kcard-ghost[data-tide-small] { scale: .45; transform: translateY(-106.67px); }
+/* Over a closed chip, small and lifted until its foot clears the pointer, so the chip shows (board.js moves the ghost by
+   translate, and sets the lift for where it was held; the lift is in transform, inside the scale). */
+.tide-kcard-ghost[data-tide-small] { scale: .45; transform: translateY(calc(-1 * var(--tide-ghost-lift, 106.67px))); }
 /* A card closed into a chip: the chip locks on as it takes it. */
 .tide-kchip[data-tide-landed] { animation: tide-chip-land var(--tide-dur-signature) var(--tide-ease-out); }
 @keyframes tide-chip-land { from { box-shadow: 0 0 0 3px var(--tide-accent); } }

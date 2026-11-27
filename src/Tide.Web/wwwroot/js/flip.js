@@ -427,6 +427,7 @@ window.tideFlip = (function () {
                 const its = n.matches(root.dataset.tideFlip) ? [n] : exits ? Array.prototype.slice.call(n.querySelectorAll(root.dataset.tideFlip)) : [];   // (in a keyed slot)
                 its.forEach(function (i) {
                     if ((!exits && !i.hasAttribute('data-tide-exit')) || i.hasAttribute('data-tide-gone')) return;
+                    if (i.isConnected) return;   // taken out and put back in the same change (moved up or down): it glides, at once
                     exited.add(root);
                     leave(root, i);
                 });
