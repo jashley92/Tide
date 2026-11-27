@@ -23,7 +23,7 @@ public sealed class FilePurgeHostedService(IServiceScopeFactory scopes, IFileSto
         {
             var now = time.GetUtcNow();
             var last = jobs.Get(JobMonitor.FilePurge).LastStartedUtc;
-            var on = RemovedFilePurge.Days(files.CurrentValue.PurgeRemovedAfterDays) is not null;
+            var on = On();
             if (now - started >= FirstAfter && (last is null || now - last >= JobMonitor.FilePurge.Interval))
                 await jobs.PassAsync(JobMonitor.FilePurge, lease, JobMonitor.FilePurge.Interval, () => Task.FromResult(on), () => RunAsync(stoppingToken), log,
                     "Purging removed files' bytes failed; it's tried again at its next daily run.", stoppingToken);
@@ -31,6 +31,18 @@ public sealed class FilePurgeHostedService(IServiceScopeFactory scopes, IFileSto
                 jobs.Scheduled(JobMonitor.FilePurge, on, on ? (last is { } l ? l + JobMonitor.FilePurge.Interval : started + FirstAfter) : null);
             try { await Task.Delay(Poll, time, stoppingToken); }
             catch (OperationCanceledException) { return; }
+        }
+    }
+
+    // Whether it's on, read afresh; off while the server's file has a Files value that won't bind (hand-edited while TIDE
+    // runs): logged, and read again at the next poll, rather than stopping the app.
+    private bool On()
+    {
+        try { return RemovedFilePurge.Days(files.CurrentValue.PurgeRemovedAfterDays) is not null; }
+        catch (InvalidOperationException ex)
+        {
+            log.LogError(ex, "A Files setting can't be read (check appsettings); the removed-file purge waits until it can.");
+            return false;
         }
     }
 

@@ -24,7 +24,7 @@ public sealed class AuditArchiveHostedService(IServiceScopeFactory scopes, IOpti
         {
             var now = time.GetUtcNow();
             var last = jobs.Get(JobMonitor.AuditArchive).LastStartedUtc;
-            var on = AuditArchive.Days(audit.CurrentValue) is not null;
+            var on = On();
             if (now - started >= FirstAfter && (last is null || now - last >= JobMonitor.AuditArchive.Interval))
                 await jobs.PassAsync(JobMonitor.AuditArchive, lease, JobMonitor.AuditArchive.Interval, () => Task.FromResult(on), () => RunAsync(stoppingToken), log,
                     "Archiving the audit log failed; nothing was removed that wasn't archived, and it's tried again at its next daily run.", stoppingToken);
@@ -33,6 +33,18 @@ public sealed class AuditArchiveHostedService(IServiceScopeFactory scopes, IOpti
                 jobs.Scheduled(JobMonitor.AuditArchive, on, on ? (last is { } l ? l + JobMonitor.AuditArchive.Interval : started + FirstAfter) : null);
             try { await Task.Delay(Poll, time, stoppingToken); }
             catch (OperationCanceledException) { return; }
+        }
+    }
+
+    // Whether it's on, read afresh; off while the server's file has an Audit value that won't bind (hand-edited while TIDE
+    // runs): logged, and read again at the next poll, rather than stopping the app.
+    private bool On()
+    {
+        try { return AuditArchive.Days(audit.CurrentValue) is not null; }
+        catch (InvalidOperationException ex)
+        {
+            log.LogError(ex, "An Audit setting can't be read (check appsettings); the audit log's archive waits until it can.");
+            return false;
         }
     }
 

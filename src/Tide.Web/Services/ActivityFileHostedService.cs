@@ -52,7 +52,9 @@ public sealed class ActivityFileHostedService(TransportCounts pages, LiveMeeting
             File.WriteAllText(temp, body);
             File.Move(temp, path, overwrite: true);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        // InvalidOperationException: the server's file has a Files value that won't bind (hand-edited while TIDE runs).
+        // Skipped like a root that can't be written, and read again next time, rather than stopping the app.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             log.LogDebug(ex, "Couldn't write {File} to the data root.", FileName);
         }
