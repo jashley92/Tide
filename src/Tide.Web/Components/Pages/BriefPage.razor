@@ -501,7 +501,7 @@ else
     {
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
-        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || FeedPolled(c),
+        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || TriageChanged(c),
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
@@ -555,9 +555,9 @@ else
         StateHasChanged();
     }
 
-    // A poll or a pull brought new items (the system's change to triage; this page's own Pull all among them): Today's
-    // Triage step counts them again, for those it counts them for.
-    private bool FeedPolled(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage && c.ActorId == "system";
+    // Triage changed: a poll or a pull brought new items (this page's own Pull all among them), or a colleague triaged
+    // some. Today's Triage step counts them again, live, for those it counts them for (its detail flashes as it changes).
+    private bool TriageChanged(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage;
 
     private async Task OnAroundChanged(IReadOnlyList<Change> changes)
     {
@@ -574,7 +574,7 @@ else
                 var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
                 if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Tell(news);
             }
-            if (changes.Any(FeedPolled))
+            if (changes.Any(TriageChanged))
             {
                 _newInFeed = await Intake.NewCountAsync();
                 _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;

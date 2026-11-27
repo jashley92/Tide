@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
 using Tide.Application.Briefs;
 using Tide.Application.Intake;
 using Tide.Application.Preferences;
@@ -148,6 +149,27 @@ public class TriagePromoteAndStayTests(StayApp app) : IClassFixture<StayApp>
         (await Item(ids[1])).Status.Should().Be(FeedItemStatus.Promoted);
         Selected(await r.Html()).Should().Contain(TitleOf("next", 3));
         Went(r).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TheSidebarsTriageCount_FollowsAColleaguesTriage_Live()
+    {
+        var ids = await Seed("colleague", 2);
+        await using var r = await RenderAsync<Triage>(app, "/triage?q=stay-colleague");
+        await r.HtmlOnce(TitleOf("colleague", 1));
+        await using var menu = await RenderBesideAsync<NavMenu, Triage>(r);
+        int before;
+        await using (var scope = SignedIn(app, SignIn.Analyst)) before = await scope.ServiceProvider.GetRequiredService<IntakeService>().NewCountAsync();
+        (await menu.Html()).Should().Contain(NavMenu.CountTitle("Triage", before, "new"));
+
+        // A colleague, in a session of their own, shortlists one: it leaves everyone's New.
+        await using (var scope = SignedIn(app, new SignIn("dev:stay-colleague", "Casey Colleague", "Analyst")))
+        {
+            await scope.ServiceProvider.GetRequiredService<IntakeService>().ShortlistAsync(ids[0]);
+            scope.ServiceProvider.GetRequiredService<ChangeFeed>().Publish(new Change(ChangeFeed.Triage, "dev:stay-colleague", "Casey Colleague", Guid.NewGuid()));
+        }
+        var after = NavMenu.CountTitle("Triage", before - 1, "new");
+        (await menu.HtmlOnce(after)).Should().Contain(after, "the sidebar counts it out as the colleague does it, not at the next page");
     }
 
     [Fact]
