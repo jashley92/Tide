@@ -76,6 +76,9 @@ Every route, its component and the permission it needs are in the [route table](
   the context rail and `]`, then Triage, Articles, Actions, Search, presenting or the meeting, and Administration, as
   they apply to you. **Skip tour** or Escape ends it at any step; Help's **Take the tour** starts it again. Someone who
   already used TIDE gets *What's new* instead.
+- **Keyboard shortcuts.** `?` lists the keys of the page you're on. Help's **Keyboard shortcuts** lists every page's,
+  a group to a line that opens to its table, for the pages your role can open (linked from the `?` overlay as
+  *Every page's shortcuts*).
 - **A live meeting** shows as a banner across every page ("Brief meeting is live · Join"), with the presenter and how
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables
