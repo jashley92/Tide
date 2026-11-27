@@ -28,7 +28,7 @@
     55% { opacity: 1; transform: scale(calc(1 - .05 * var(--tide-motion))) rotate(-3deg); }
     70% { transform: rotate(-3deg); }
     100% { opacity: 1; transform: rotate(-3deg); } }
-.tide-brief-head:has(.tide-stamped) { animation: tide-impact var(--tide-dur-panel) linear calc(var(--tide-dur-signature) * .5); }
+.tide-brief-head:has(.tide-stamped) { animation: tide-impact var(--tide-dur-panel) linear calc(var(--tide-dur-signature) * .55); }   /* as the stamp lands (55%) */
 @keyframes tide-impact {
     25% { transform: translate(calc(1.5px * var(--tide-motion)), calc(1px * var(--tide-motion))); }
     50% { transform: translate(calc(-1px * var(--tide-motion)), 0); }
