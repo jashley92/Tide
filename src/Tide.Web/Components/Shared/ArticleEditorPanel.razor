@@ -74,7 +74,7 @@ else
             @if (_canWrite)
             {
                 <h1 class="visually-hidden">Edit article: @_form.Title</h1>
-                <input class="form-control form-control-lg fw-semibold" aria-label="Title" maxlength="300" @bind="_form.Title" @bind:event="oninput" @bind:after="Touch" />
+                <input id="f-title" class="form-control form-control-lg fw-semibold" aria-label="Title" maxlength="300" @bind="_form.Title" @bind:event="oninput" @bind:after="Touch" />
             }
             else
             {
@@ -899,6 +899,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_jumpTo is not null) await JumpAsync();
+        if (_invalidField is { } field)
+        {
+            _invalidField = null;
+            await JS.BestEffortAsync("tideInvalid.show", "#" + field);
+        }
         if (_revealHistory)
         {
             _revealHistory = false;
@@ -1387,9 +1392,35 @@ else
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
+            if (ex is ArgumentException) PointAt(RefusedField());
             return false;
         }
         finally { _busy = false; }
+    }
+
+    // The field a refused save is about, read off the form as the service checks it: the title left empty, or a source
+    // link that isn't a web address. Null for anything else (the toast alone says it).
+    private string? RefusedField()
+    {
+        if (string.IsNullOrWhiteSpace(_form!.Title)) return "f-title";
+        var url = _form.SourceUrl?.Trim() ?? "";
+        return url.Length > 0 && (url.Length > 2000 || !Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https"))
+            ? "url" : null;
+    }
+
+    private string? _invalidField;
+
+    /// <summary>For tests: the field the next draw points at (a save refused for it), until it has.</summary>
+    internal string? PointingAt => _invalidField;
+
+    // After the toast that says why, the field is scrolled to, focused and bracketed (tideInvalid, theme.js), once the
+    // editor is drawn: on a narrow screen showing the preview, the fields are shown first.
+    private void PointAt(string? field)
+    {
+        if (field is null) return;
+        _pane = EditPane;
+        _invalidField = field;
+        StateHasChanged();
     }
 
     private readonly string _notReadyId = Ui.NewId("not-ready");
@@ -1413,9 +1444,11 @@ else
     private async Task<bool> MarkReadyAsync(string done)
     {
         // Checked on what's on screen before saving, so a refusal isn't "Saved." followed by "It isn't ready yet".
-        if (ArticleChecks.NotReady(Checks().Checks) is { } notReady)
+        var checks = Checks().Checks;
+        if (ArticleChecks.NotReady(checks) is { } notReady)
         {
             Toasts.Error(notReady);
+            PointAt(FieldId(checks.First(c => c.Blocking).Part));
             return false;
         }
         if (_dirty && !await Save()) return false;

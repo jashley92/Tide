@@ -46,6 +46,8 @@ public class RailOverlayTests
         global.window = global;
         global.addEventListener = (t, f) => { (listeners[t] || (listeners[t] = [])).push(f); };
         global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+        global.location = { href: 'https://tide.test/' };
+        global.history = { pushState() {} };
         global.requestAnimationFrame = f => f();   // the page goes inert a frame after the rail opens: here, at once
         global.getComputedStyle = e => ({ getPropertyValue: name => e !== rail ? '' : name === '--tide-rail-docks' ? (where.docks ? '1' : '') : '' });
         global.MutationObserver = function (f) { this.observe = () => { observers.push(f); }; this.disconnect = () => { observers.splice(observers.indexOf(f), 1); }; };

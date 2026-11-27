@@ -470,7 +470,7 @@
    its edges, as rows touch); and on the Promoted tab as a promoted row lands in it. */
 /* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
 :where(.tide-kcard, .tide-triage-row, .tide-tabbar-item[data-tide-landed]) { position: relative; }
-:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before {
+:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock {
     /* An outline cut down to its four corners: an outline is drawn outside the box without making it any wider (so
        nothing scrolls or overflows for it), and the mask (no-clip, so it reaches past the box) keeps only the corners. */
     --tide-bracket-arm: 11px; --o: calc(-1 * var(--tide-bracket-out, 0px));
@@ -490,8 +490,11 @@
 @keyframes tide-lock-land { from { opacity: 0; transform: scale(calc(1 + .14 * var(--tide-motion))); } 60% { opacity: 1; } }
 /* After the hover and focus rule above, so it wins on a card that has focus as it lands. */
 .tide-tabbar-item[data-tide-landed]::before, .tide-kcard:is([data-tide-locked], .tide-kcard-ghost)::before { animation-name: tide-lock-land; }
+/* A field a save was refused for (tideInvalid, theme.js): the brackets in the threat color, laid over it (fixed, placed
+   and played by the script), 5px out as on a card. */
+.tide-invalid-lock { --tide-bracket-out: 5px; position: fixed; inset: auto; z-index: var(--tide-z-rail); outline-color: var(--tide-threat); }
 /* More contrast asked for: the brackets are thicker. */
-@media (prefers-contrast: more) { :is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before { outline-width: 3px; } }
+@media (prefers-contrast: more) { :is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock { outline-width: 3px; } }
 
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
