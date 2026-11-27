@@ -1,0 +1,9 @@
+@* What a slow action under way is doing ("Fetching the article…"), for a screen reader: the button it runs from keeps
+   its words and shows it's busy with data-busy (a scan bar along its foot once it has taken a moment). The region is
+   always there, empty when nothing runs, so what's put in it is announced. *@
+<span class="visually-hidden" role="status">@Text</span>
+
+@code {
+    /// <summary>What's under way, or null when nothing is.</summary>
+    [Parameter] public string? Text { get; set; }
+}
