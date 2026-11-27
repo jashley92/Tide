@@ -516,6 +516,34 @@
 /* With reduced motion the bar stays where it is and breathes, so the block still says it's loading. */
 @media (prefers-reduced-motion: reduce) { .tide-loading::before { width: 100%; animation: tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) infinite alternate; } }
 @keyframes tide-breathe { from { opacity: .25; } to { opacity: .8; } }
+/* Busy (data-busy): a slow server action under way, a fetch, a check or a pull. The button keeps its words and its size
+   and is disabled; only once the action has taken longer than --tide-dur-patience does the scan bar above run, along the
+   button's foot (or a card's top edge, for what the whole card waits on), so a quick action shows nothing. A
+   BusyStatus beside it says what's under way to a screen reader. */
+:where([data-busy]) { position: relative; }
+.btn[data-busy] { overflow: hidden; }
+.tide-card[data-busy] { overflow: clip; }
+[data-busy]::after { content: ""; position: absolute; left: 0; bottom: 0; width: 30%; height: 2px; background: var(--tide-accent); pointer-events: none; opacity: 0;
+    animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite; }
+.tide-card[data-busy]::after { top: 0; bottom: auto; }
+@keyframes tide-busy-shown { to { opacity: 1; } }
+/* A Copy button that copied (clipboard.js sets data-copied for --tide-dur-signature): its icon is a check, and brackets
+   close in around it once and fade, as a board card's lock on. With reduced motion, only the check. */
+[data-copied] .bi::before { content: "\f272"; }   /* bi-check2's glyph, as Bootstrap Icons draws it */
+:where([data-copied]) { position: relative; }
+[data-copied]::after {
+    --tide-bracket-arm: 6px; --o: -4px;
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    outline: 2px solid var(--tide-accent); outline-offset: 2px;
+    mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-size: var(--tide-bracket-arm) var(--tide-bracket-arm); mask-repeat: no-repeat; mask-clip: no-clip;
+    mask-position: left var(--o) top var(--o), right var(--o) top var(--o), left var(--o) bottom var(--o), right var(--o) bottom var(--o);
+    opacity: 0; animation: tide-copied var(--tide-dur-signature) var(--tide-ease-out); }
+@keyframes tide-copied { from { opacity: 0; transform: scale(calc(1 + .18 * var(--tide-motion))); } 35% { opacity: 1; transform: none; } 70% { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-copied]::after { display: none; }
+    [data-busy]::after { width: 100%; animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite alternate; }
+}
 /* Varied widths read as text of different lengths rather than a grid. */
 .tide-skel-w0 { max-width: 70%; } .tide-skel-w1 { max-width: 90%; } .tide-skel-w2 { max-width: 55%; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }

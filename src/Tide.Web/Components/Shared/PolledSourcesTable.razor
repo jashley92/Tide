@@ -49,7 +49,8 @@ else
                     <td role="cell" class="text-end text-nowrap">
                         @if (s.Pulling || Pulling == s.Id)
                         {
-                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Pulling…</button>
+                            @* The same button as Pull now, busy: it keeps its size, and its name says what's under way. *@
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled data-busy aria-label="@($"Pulling {s.Name}…")"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Pull now</button>
                         }
                         else if (!s.Pullable(Now) && s.PullableAtUtc is { } pullable)
                         {
