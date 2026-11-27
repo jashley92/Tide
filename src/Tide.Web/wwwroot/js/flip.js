@@ -17,7 +17,7 @@
 // line closes up (a row that left, live) the list's size changes each frame: it's measured once that's done. A glide
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
-    const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
+    const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
     const at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     let frame = 0;
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
@@ -82,7 +82,7 @@ window.tideFlip = (function () {
     function below(s, box, by) {
         if (s.matches(COPY) || /fixed|absolute|sticky/.test(getComputedStyle(s).position)) return false;
         const r = s.getBoundingClientRect();
-        if (!r.width || !r.height || r.top < box.bottom - 1 || r.right <= box.left || r.left >= box.right) return false;
+        if (Math.abs(by) > innerHeight || !r.width || !r.height || r.top < box.bottom - 1 || r.right <= box.left || r.left >= box.right) return false;
         return Math.min(r.top, r.top + by) < innerHeight && Math.max(r.bottom, r.bottom + by) > 0;
     }
     function slide(root, by, ms, wait) {
@@ -119,23 +119,36 @@ window.tideFlip = (function () {
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
         let flights = 0, longest = 0;   // longest: the longest glide this change starts
+        // A list mostly replaced (another tab, a filter, a page: most of what was there has gone, or most of what is there
+        // is new) just shows: nothing glides, arrives or pushes what follows. A group's members opening out (they fold
+        // back with data-tide-exit) are an unfolding, however many.
+        let kept = 0, born = 0;
+        if (s.was) s.list.forEach(function (el) {
+            if (!s.now.get(key(el))) return;
+            if (s.was.get(key(el))) kept++;
+            else if (!el.hasAttribute('data-tide-exit')) born++;
+        });
+        const renewed = !!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
-        // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding).
+        // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
+        // than half a pixel is no move.
         let far = 0;
-        if (s.was && !quiet) s.list.forEach(function (el) {
+        if (s.was && !still) s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was.get(key(el));
-            if (n && w && w.parent === n.parent) far = Math.max(far, Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy), n.h - w.h);
+            if (!n || !w || w.parent !== n.parent) return;
+            const d = Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy);
+            far = Math.max(far, d < MOVED ? 0 : d, n.h - w.h > 1 ? n.h - w.h : 0);
         });
         const together = ts.travel(far);
         // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
         const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
-        if (!quiet && s.was && !pinned.get(root)) resized(root, tall, o.height, together, wait);
+        if (!still && s.was && !pinned.get(root)) resized(root, tall, o.height, together, wait);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
             if (!w) { fresh.push(el); return; }
-            if (quiet) return;
+            if (still) return;
             // It grew (a row selected opens its decision, a card's Move menu opens): what's new unfolds from its old foot
             // as the items after it glide down, so they never slide across it. A clip, inset from the bottom by what it
             // grew, opened over the same time to its own foot (not past it, into the gap the next is gliding over), with
@@ -143,7 +156,7 @@ window.tideFlip = (function () {
             const grew = n.h - w.h;
             if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, delay: wait, easing: ease, fill: 'backwards' });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
-            if (!dx && !dy) return;
+            if (Math.abs(dx) < MOVED && Math.abs(dy) < MOVED) return;
             const a = running.get(el);
             if (a) a.cancel();
             // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
@@ -184,8 +197,8 @@ window.tideFlip = (function () {
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
-        } else if (longest || fresh.length * 2 < s.list.length) {
-            fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
+        } else if (!renewed) {
+            fresh.forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
         }
     }
 
