@@ -959,10 +959,11 @@ else
 
     // The product from Our stack that a line names: its own, or (a group's line) any of its reports'.
     private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
-    private bool AnyWeRun => !_older && _rows.Any(r => r.WeRun is not null);
+    private bool AnyWeRun => !_older && _status == FeedItemStatus.New && _rows.Any(r => r.WeRun is not null);
 
-    /// <summary>Whether the lines run what we run first (New): only then do "Matches what we run" and "Everything else"
-    /// head true sections. A tab in time order (Dismissed) mixes them, and the headings would label rows not theirs.</summary>
+    /// <summary>Whether the lines run what we run first: only then do "Matches what we run" and "Everything else" head true
+    /// sections. Only New is in that order; a tab in time order (Dismissed) gets no sections even when its rows happen to
+    /// fall that way, or the headings would come and go with each decision.</summary>
     private bool WeRunFirst()
     {
         var other = false;

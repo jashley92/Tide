@@ -502,6 +502,19 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         html.Should().NotContain(">Everything else<").And.NotContain(">Matches what we run<");
     }
 
+    [Fact]
+    public async Task Triage_DismissedRowsThatHappenToRunWhatWeRunFirst_StillDrawNoSectionHeadings()
+    {
+        // Time order can put what we run first by chance; the headings would then come and go with each decision.
+        await using (var setup = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await setup.ServiceProvider.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Zorbatron" });
+        string[] titles = ["Zorbatron flaw f", "Zorbatron patch f", "Zorbatron advisory f"];
+        var (source, _) = await Seed("f", 3, _ => null, n => titles[n]);
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=dismissed&source={source}");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce("items"));
+        html.Should().Contain("Zorbatron flaw f").And.NotContain(">Matches what we run<").And.NotContain(">Everything else<");
+    }
+
     // A board of 45 open cards and 25 in progress, none of them this person's to move.
     private static ActionBoard Board()
     {

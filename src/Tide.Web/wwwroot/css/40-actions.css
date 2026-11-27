@@ -126,7 +126,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-progress:hover { color: var(--tide-text); }
 .tide-kcard-bar { flex: 1 1 auto; height: 4px; border-radius: var(--tide-radius-xs); background: var(--tide-surface-2); overflow: hidden; }
 .tide-kcard-bar > span { display: block; height: 100%; background: var(--tide-ok); }
-.tide-checklist { list-style: none; padding: 0; margin: 0; }
+/* flow-root: an empty list doesn't let the margins around it collapse through it, so the first item or the last one
+   moves what follows by just its own height (what flip.js slides it by). */
+.tide-checklist { display: flow-root; list-style: none; padding: 0; margin: 0; }
 .tide-checklist li { display: flex; align-items: flex-start; gap: .5rem; padding: .3rem 0; border-bottom: 1px solid var(--tide-border); font-size: .9rem; }
 .tide-checklist li:last-child { border-bottom: 0; }
 .tide-checklist li .form-check-input { margin-top: .2rem; flex: 0 0 auto; }

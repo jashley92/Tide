@@ -97,21 +97,65 @@ window.tideFlip = (function () {
         }
     }
 
-    // A list that got shorter while the window is scrolled to its foot would cut the window short at once and jump: it
-    // keeps its height while its items glide up, the window scrolls back smoothly, and then what follows glides up.
-    // Anywhere else, what follows glides with the change.
-    function resized(root, was, now, ms, wait) {
+    // What follows a list that changed height glides with it.
+    function resized(was, now, root, ms, wait) {
         const by = was - now;
-        if (!(Math.abs(by) > 1)) return;
-        if (by > 0 && scrollY > 0 && scrollY >= document.documentElement.scrollHeight - innerHeight - 1) {
-            root.style.minHeight = was + 'px';
-            setTimeout(function () {
-                const max = document.documentElement.scrollHeight - by - innerHeight;
-                const go = function () { root.style.minHeight = ''; slide(root, by, ms, 0); };
-                if (scrollY > max) { window.scrollTo({ top: Math.max(0, max), behavior: 'smooth' }); setTimeout(go, ms); }
-                else go();
-            }, ms + wait);
-        } else slide(root, by, ms, wait);
+        if (Math.abs(by) > 1) slide(root, by, ms, wait);
+    }
+
+    // The page's foot. Something getting shorter while the window is scrolled to the foot (a decided row, the reading
+    // pane under the list settling a frame later) cuts the page short, and the browser would pull the window back in a
+    // frame. Seen before it paints, a spacer at the end of the page's content gives the window the room it needs, and
+    // the window scrolls back smoothly to where the page now ends (followed frame by frame, as the page may settle
+    // shorter still). Not on going to another page; scrolling by hand (wheel, touch, the scrollbar) ends it there.
+    let lastY = 0, rewind = null, footPath = location.pathname;
+    const HANDS = ['wheel', 'touchstart', 'mousedown'];   // the reader taking the scroll
+    function footed() {
+        const ts = window.tideShortcuts, page = document.documentElement, went = footPath !== location.pathname;
+        footPath = location.pathname;
+        if (went || rewind || !(lastY > page.scrollHeight - innerHeight + 1) || document.hidden || !ts || ts.still()) return;
+        const from = lastY, spacer = document.createElement('div');
+        spacer.setAttribute('data-tide-copy', '');
+        spacer.setAttribute('aria-hidden', 'true');
+        Object.assign(spacer.style, { pointerEvents: 'none', flex: '0 0 auto' });
+        // At the end of the page's column (a flex column: no margins collapse through it, so it adds just its height),
+        // inside the page, so the sidebar beside it stays where it is.
+        (document.querySelector('.tide-main') || document.body).appendChild(spacer);
+        // Sizes the spacer so the window can sit at top, and returns where the page ends without it. The page's height may
+        // be another column's, so the spacer is topped up until there is room.
+        const room = function (top) {
+            spacer.style.height = '0';
+            const natural = page.scrollHeight;
+            for (let h = 0, i = 0; i < 3; i++) {
+                const short = top + innerHeight - page.scrollHeight;
+                if (short <= .5) break;
+                h += short;
+                spacer.style.height = h + 'px';
+            }
+            return Math.max(0, natural - innerHeight);
+        };
+        const foot = room(from), timing = new Animation(new KeyframeEffect(null, [], {
+            duration: ts.travel(from - foot), easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
+        let prev = 0, frame = 0;
+        window.scrollTo({ top: from, behavior: 'instant' });
+        const done = function () {
+            cancelAnimationFrame(frame); timing.cancel(); spacer.remove(); rewind = null; lastY = scrollY;
+            HANDS.forEach(function (t) { removeEventListener(t, done, true); });
+        };
+        // Each frame covers its share of what is left from wherever the window is: the browser keeping what is in view in
+        // place, or a selected row brought into view, moves it too.
+        const step = function () {
+            const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev), at = scrollY;
+            prev = p;
+            const set = Math.round(at + (room(at) - at) * k);
+            room(set);
+            window.scrollTo({ top: set, behavior: 'instant' });
+            if (timing.playState === 'finished') done(); else frame = requestAnimationFrame(step);
+        };
+        HANDS.forEach(function (t) { addEventListener(t, done, { capture: true, passive: true }); });
+        rewind = done;
+        timing.play();
+        frame = requestAnimationFrame(step);
     }
 
     function play(root, afterExit) {
@@ -144,7 +188,7 @@ window.tideFlip = (function () {
         // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
         const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
-        if (!still && s.was && !pinned.get(root)) resized(root, tall, o.height, together, wait);
+        if (!still && s.was && !pinned.get(root)) resized(tall, o.height, root, together, wait);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -214,11 +258,23 @@ window.tideFlip = (function () {
         const o = pinned.get(root) ? { left: 0, top: 0 } : root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
         Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
+        // The copy keeps the look its list gave it (`.tide-checklist li`): it goes in a stand-in for the list, of no size
+        // and drawing nothing itself, and not as the last item, so a rule for the last one doesn't take its border.
+        const holder = document.createElement(root.tagName), after = document.createElement(el.tagName);
+        holder.className = root.className;
+        holder.setAttribute('data-tide-copy', '');
+        holder.setAttribute('aria-hidden', 'true');
+        Object.assign(holder.style, { position: 'fixed', left: '0', top: '0', width: '0', height: '0', margin: '0', padding: '0', border: '0',
+            background: 'none', boxShadow: 'none', overflow: 'visible', display: 'block', pointerEvents: 'none', animation: 'none', transform: 'none' });
+        after.style.display = 'none';
+        holder.append(g, after);
+        document.body.appendChild(holder);
         // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box: the
         // easing is the keyframes' own, so the fade does end at two thirds of the time (on the whole effect, it would
         // stretch the first stretch to nine tenths).
+        const gone = function () { holder.remove(); };
         ts.drift(g, [{ opacity: 1, transform: 'none', easing: ts.token('--tide-ease-in') }, { opacity: 0, offset: .66 }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
-            { duration: ts.ms('--tide-dur-exit') });
+            { duration: ts.ms('--tide-dur-exit') }).finished.then(gone, gone);
     }
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
@@ -334,6 +390,9 @@ window.tideFlip = (function () {
         if (!window.MutationObserver) return;
         new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
+        lastY = scrollY;
+        addEventListener('scroll', function () { if (!rewind) lastY = scrollY; }, { passive: true });
+        if (window.ResizeObserver && window.KeyframeEffect) new ResizeObserver(footed).observe(document.body);
         document.addEventListener('transitionend', ended, true);
         document.addEventListener('animationend', ended, true);
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
