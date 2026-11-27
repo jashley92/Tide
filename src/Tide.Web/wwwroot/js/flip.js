@@ -170,9 +170,9 @@ window.tideFlip = (function () {
                 glide.finished.then(down, down);
             }
         });
-        // A list arriving whole comes in in quick order. In a list already there, a few new items among the rest (a group
-        // opened) fade in once the items gliding past them have mostly gone by, so none slides across them; a list mostly
-        // new (another tab, a filter) just shows.
+        // A list arriving whole comes in in quick order. In a list already there, new items (a group opened, a first
+        // saved query above the preview) fade in once the items gliding past them have mostly gone by, so none slides
+        // across them; a list mostly new with nothing gliding (another tab, a filter) just shows.
         if (!fresh.length || document.hidden || !document.body.animate) return;
         if (afterExit && !quiet) {
             // One arriving where one is leaving (a toast after its Undo): it comes in as the other has mostly gone, so
@@ -184,7 +184,7 @@ window.tideFlip = (function () {
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
                 el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
-        } else if (fresh.length * 2 < s.list.length) {
+        } else if (longest || fresh.length * 2 < s.list.length) {
             fresh.slice(0, STAGGERED).forEach(function (el) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: longest * .6, easing: ease, fill: 'backwards' }); });
         }
     }
@@ -247,6 +247,12 @@ window.tideFlip = (function () {
             elements(m.addedNodes).forEach(opened);
         });
         records.forEach(function (m) {
+            // Text changed in place (a range's label re-wrapping): what it pushed glides, as for a change inside an item.
+            if (m.type === 'characterData') {
+                const at = m.target.parentElement, r = at && !at.closest(COPY) && at.closest(ROOTS);
+                if (r) later(r, true);
+                return;
+            }
             if (m.target.closest && m.target.closest(COPY)) return;   // a copy flying or leaving is no list's
             const added = elements(m.addedNodes), removed = elements(m.removedNodes);
             if (!added.length && !removed.length) return;
@@ -304,7 +310,7 @@ window.tideFlip = (function () {
 
     function start() {
         if (!window.MutationObserver) return;
-        new MutationObserver(changed).observe(document.body, { childList: true, subtree: true });
+        new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
         document.addEventListener('transitionend', ended, true);
         document.addEventListener('animationend', ended, true);

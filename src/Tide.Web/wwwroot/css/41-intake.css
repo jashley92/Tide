@@ -58,6 +58,8 @@
 /* A count that fell rolls the other way: the old number goes down and out, the new one comes from above. */
 .tide-roll[data-dir="down"] { animation-name: tide-roll-down; }
 .tide-roll[data-dir="down"][data-was]::before { bottom: auto; top: 110%; }
+/* Held (a board chip while the card closing into it is on its way): the roll waits on the old number until let go. */
+[data-tide-hold] .tide-roll, [data-tide-hold] .tide-odo > .tide-roll[data-was] { animation-play-state: paused; }
 @keyframes tide-roll-down { from { transform: translateY(calc(-110% * var(--tide-motion))); } }
 /* Changes held back while a form is open on the list: choosing it shows them. */
 .tide-live-pill { display: inline-flex; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) var(--tide-space-3); border: 1px solid var(--tide-accent);

@@ -30,6 +30,8 @@
     55% { opacity: 1; transform: scale(calc(1 - .05 * var(--tide-motion))) rotate(-3deg); }
     70% { transform: rotate(-3deg); }
     100% { opacity: 1; transform: rotate(-3deg); } }
+/* Without motion it doesn't come down: it just shows, as quickly as anything fades. */
+@media (prefers-reduced-motion: reduce) { .tide-stamped { animation-duration: var(--tide-dur-fast); } }
 .tide-brief-head:has(.tide-stamped) { animation: tide-impact var(--tide-dur-panel) linear calc(var(--tide-dur-exit) + var(--tide-dur-signature) * .55); }   /* as the stamp lands (55%) */
 body:has(.tide-stamped) .tide-step::after { transition-delay: calc(var(--tide-dur-exit) + var(--tide-dur-signature) * .55); }
 @keyframes tide-impact {
