@@ -187,7 +187,9 @@ window.tideShortcuts = (function () {
     // flight already under way for el is taken over from where its copy is, so a card moved again mid-flight turns
     // towards its new place rather than jumping or showing twice. A promise of the landing.
     var flights = new WeakMap();
-    function fly(el, from, to) {
+    // clip (optional): how much of the copy was hidden where it set off (top, bottom px: a card partly scrolled out of its
+    // lane), so it starts as it was seen and opens out as it flies.
+    function fly(el, from, to, clip) {
         to = to || el.getBoundingClientRect();
         var prev = flights.get(el);
         if (prev) {
@@ -201,6 +203,9 @@ window.tideShortcuts = (function () {
         el.setAttribute('data-tide-landing', '');
         var a = drift(c, [{ transform: 'none' }, { transform: 'translate(' + dx + 'px, ' + dy + 'px)' }],
             { duration: travel(Math.hypot(dx, dy)), easing: token('--tide-ease-out') });
+        if (clip && (clip.top > 0 || clip.bottom > 0))
+            c.animate([{ clipPath: 'inset(' + clip.top + 'px 0 ' + clip.bottom + 'px 0)' }, { clipPath: 'inset(0)' }],
+                { duration: travel(Math.hypot(dx, dy)), easing: token('--tide-ease-out') });
         flights.set(el, { copy: c, anim: a });
         return a.finished.catch(function () { }).then(function () {
             if (flights.get(el) && flights.get(el).anim !== a) return false;   // taken over by a later flight

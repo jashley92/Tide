@@ -246,7 +246,7 @@ window.tideFlip = (function () {
 
     // Focus on a button that a change has just disabled (a Move button whose item reached the end, by this person or a
     // colleague) would drop to the page: it goes to the item's other enabled button.
-    let focusedLast = null;   // what last had focus (the browser takes it off a button as it's disabled)
+    let focusedLast = null, handAt = 0;   // handAt: when the reader last scrolled or pressed a key   // what last had focus (the browser takes it off a button as it's disabled)
     function rescue() {
         const a = document.activeElement, f = a && a.disabled ? a : (!a || a === document.body) ? focusedLast : null;
         if (!f || !f.isConnected || !f.disabled || !f.closest || !f.closest('[data-tide-flip-carry]')) return;
@@ -404,9 +404,18 @@ window.tideFlip = (function () {
                         const pad = parseFloat(getComputedStyle(lane).paddingTop) || 0, top = cr.top - lr.top - pad, foot = cr.bottom - lr.bottom + pad;
                         by = Math.round(top < 0 || n.h > lr.height - 2 * pad ? top : foot);
                     }
-                    const to = { left: o.left + n.x, top: o.top + n.y - by };
-                    if (by) scrollIn(lane, by, ts.travel(Math.hypot(to.left - from.left, to.top - from.top)));
-                    ts.fly(el, from, to);
+                    const to = { left: o.left + n.x, top: o.top + n.y - by }, ms = ts.travel(Math.hypot(to.left - from.left, to.top - from.top));
+                    if (by) scrollIn(lane, by, ms);
+                    // Where it set off: the part of it its lane had scrolled out of view starts hidden; and the lane it left,
+                    // scrolled down, brings the card now at its top in from its own top.
+                    const old = w.parent && w.parent.isConnected && w.parent !== lane ? w.parent : null, ol = old && old.getBoundingClientRect();
+                    const clip = ol ? { top: Math.max(0, ol.top - from.top), bottom: Math.max(0, from.top + from.height - ol.bottom) } : null;
+                    if (old && old.scrollTop > 0) {
+                        const pad = parseFloat(getComputedStyle(old).paddingTop) || 0;
+                        const first = Array.prototype.find.call(old.querySelectorAll(root.dataset.tideFlip), function (c) { const r = c.getBoundingClientRect(); return r.height && r.bottom > ol.top + pad; });
+                        if (first) { const ft = first.getBoundingClientRect().top - ol.top - pad; if (ft < -1) scrollIn(old, ft, ms); }
+                    }
+                    ts.fly(el, from, to, clip);
                 }
                 return;
             }
@@ -530,10 +539,11 @@ window.tideFlip = (function () {
     function changed(records) {
         guard();
         records.forEach(function (m) { const r = m.target.closest && m.target.closest(ROOTS); if (r) holdIn(r); });
-        // Blazor puts focus back on a moved node without preventScroll, and the window jumps to it mid-glide: it's put
-        // back where the reader had it (the carry brings the item into view smoothly, above).
-        const f = document.activeElement;
-        if (!rewind && f && f.tagName === 'BUTTON' && f.closest('[data-tide-flip-carry]') && Math.abs(scrollY - lastY) > 1)   // a Move button, not a field typed in
+        // Blazor puts focus back on a button it moved or redrew (a Move button, the promote form's button as the form goes)
+        // without preventScroll, and the window jumps to it mid-change: it's put back where the reader had it (what
+        // follows brings anything into view smoothly). A button only: a field typed in scrolls the window itself.
+        const a = document.activeElement, f = a && a !== document.body ? a : focusedLast;   // (focused, then taken away with its form)
+        if (!rewind && f && f.tagName === 'BUTTON' && Math.abs(scrollY - lastY) > 1 && performance.now() - handAt > 300)   // not the reader's own scroll
             window.scrollTo({ top: lastY, behavior: 'instant' });
         // Another page (whether or not the one between had lists): its lists come in afresh.
         if (part() !== page) { entered.clear(); page = part(); }
@@ -613,6 +623,10 @@ window.tideFlip = (function () {
         new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
         document.addEventListener('pointerdown', noted, true);
+        ['wheel', 'touchmove'].forEach(function (t) { addEventListener(t, function () { handAt = performance.now(); }, { capture: true, passive: true }); });
+        addEventListener('keydown', function (e) {   // a key that scrolls the page itself (not one a list or a form takes)
+            if (/^(PageUp|PageDown|Home|End| |ArrowUp|ArrowDown)$/.test(e.key) && (e.target === document.body || e.target === document.documentElement)) handAt = performance.now();
+        }, { capture: true, passive: true });
         document.addEventListener('focusin', function (e) { focusedLast = e.target; }, true);
         document.addEventListener('keydown', noted, true);
         lastY = scrollY;
