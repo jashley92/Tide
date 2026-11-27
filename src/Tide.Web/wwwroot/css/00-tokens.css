@@ -280,7 +280,10 @@
 @media (prefers-reduced-motion: reduce) { :root { --tide-motion: 0; } }
 
 html, body { font-family: var(--tide-font-ui); background: var(--tide-bg); color: var(--tide-text); }
+/* A new page opens at its top at once (Bootstrap would smooth-scroll the window there); an in-page jump that should
+   glide asks for it (behavior: 'smooth'). */
 html { scrollbar-gutter: stable; }
+:root { scroll-behavior: auto; }   /* :root, as Bootstrap's own rule is */
 h1:focus { outline: none; }
 a, .btn-link { color: var(--tide-accent-text); }
 .tide-data { font-family: var(--tide-font-data); font-size: .92em; }

@@ -103,59 +103,89 @@ window.tideFlip = (function () {
         if (Math.abs(by) > 1) slide(root, by, ms, wait);
     }
 
-    // The page's foot. Something getting shorter while the window is scrolled to the foot (a decided row, the reading
-    // pane under the list settling a frame later) cuts the page short, and the browser would pull the window back in a
-    // frame. Seen before it paints, a spacer at the end of the page's content gives the window the room it needs, and
-    // the window scrolls back smoothly to where the page now ends (followed frame by frame, as the page may settle
-    // shorter still). Not on going to another page; scrolling by hand (wheel, touch, the scrollbar) ends it there.
-    let lastY = 0, rewind = null, footPath = location.pathname;
-    const HANDS = ['wheel', 'touchstart', 'mousedown'];   // the reader taking the scroll
-    function footed() {
-        const ts = window.tideShortcuts, page = document.documentElement, went = footPath !== location.pathname;
+    // The page's foot. Something getting shorter while the window is scrolled to the foot (a decided row, a group folded,
+    // a filter, the reading pane settling a frame later) would cut the page short, and the browser would pull the window
+    // back in a frame and push the sticky sidebar up. So on every change, before anything measures it, the page keeps
+    // the height the window needs; a frame later, if the page did end higher, the window scrolls back smoothly to where
+    // it now ends (followed frame by frame, as it may settle shorter still) and the page lets go as it arrives. The
+    // reader scrolling meanwhile takes over from where the window is, the hold following them up. Not on going to
+    // another page (it opens at its top), nor with reduced motion.
+    let lastY = 0, pin = 0, rewind = null, footFrame = 0, footPath = location.pathname;
+    let footMs = 0, footWait = 0;   // the glide this change started (play), which the window keeps time with
+    const HANDS = ['wheel', 'touchstart', 'mousedown', 'keydown'];   // the reader taking the scroll
+    function frameOf() { return document.querySelector('.page') || document.body; }
+    function hold(h) { pin = h; frameOf().style.minHeight = h ? h + 'px' : ''; }
+    // Holds just enough for the window to sit at top (the page's height may be decided by another column, so it is
+    // topped up until there is room), keeps the window there, and returns where the page ends without the hold.
+    function room(top) {
+        const doc = document.documentElement, need = top + innerHeight;
+        hold(0);
+        const natural = doc.scrollHeight;
+        let h = need > natural + .5 ? need : 0;
+        hold(h);
+        for (let i = 0; h && i < 2; i++) {
+            const short = need - doc.scrollHeight;
+            if (short <= .5) break;
+            hold(h += short);
+        }
+        if (Math.abs(scrollY - top) > .5) window.scrollTo({ top: top, behavior: 'instant' });
+        return Math.max(0, natural - innerHeight);
+    }
+    // A change is coming in: keep the room before anything is measured, and look a frame later.
+    function guard() {
+        const went = footPath !== location.pathname;
         footPath = location.pathname;
-        if (went || rewind || !(lastY > page.scrollHeight - innerHeight + 1) || document.hidden || !ts || ts.still()) return;
-        const from = lastY, spacer = document.createElement('div');
-        spacer.setAttribute('data-tide-copy', '');
-        spacer.setAttribute('aria-hidden', 'true');
-        Object.assign(spacer.style, { pointerEvents: 'none', flex: '0 0 auto' });
-        // At the end of the page's column (a flex column: no margins collapse through it, so it adds just its height),
-        // inside the page, so the sidebar beside it stays where it is.
-        (document.querySelector('.tide-main') || document.body).appendChild(spacer);
-        // Sizes the spacer so the window can sit at top, and returns where the page ends without it. The page's height may
-        // be another column's, so the spacer is topped up until there is room.
-        const room = function (top) {
-            spacer.style.height = '0';
-            const natural = page.scrollHeight;
-            for (let h = 0, i = 0; i < 3; i++) {
-                const short = top + innerHeight - page.scrollHeight;
-                if (short <= .5) break;
-                h += short;
-                spacer.style.height = h + 'px';
-            }
-            return Math.max(0, natural - innerHeight);
+        if (went) { if (rewind) rewind(); if (pin) hold(0); return; }
+        if (!window.KeyframeEffect) return;
+        if (rewind || !(lastY > 0)) return;
+        if (pin < lastY + innerHeight) hold(lastY + innerHeight);
+        if (!footFrame) { footMs = footWait = 0; footFrame = requestAnimationFrame(settle); }
+    }
+    function settle() {
+        footFrame = 0;
+        const glide = footMs, wait = footWait;
+        footMs = footWait = 0;
+        if (rewind) return;
+        const ts = window.tideShortcuts, from = lastY, foot = room(from);
+        if (!(from > foot + 1)) return;
+        if (!ts || ts.still() || document.hidden) { hold(0); lastY = scrollY; return; }
+        // One ease, in step with the lists' glide (its time and its wait for an exit), so the rows and the window make one
+        // move; restarted from where the window is if the page settles a good deal shorter meanwhile (the reading pane a
+        // moment after a group folds), so the rest isn't rushed at the ease's tail.
+        const ease = function (ms, delay) {
+            return new Animation(new KeyframeEffect(null, [], { duration: ms, delay: delay, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
         };
-        const foot = room(from), timing = new Animation(new KeyframeEffect(null, [], {
-            duration: ts.travel(from - foot), easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
-        let prev = 0, frame = 0;
-        window.scrollTo({ top: from, behavior: 'instant' });
+        let timing = ease(glide || ts.travel(from - foot), wait), goal = foot, prev = 0, frame = 0;
         const done = function () {
-            cancelAnimationFrame(frame); timing.cancel(); spacer.remove(); rewind = null; lastY = scrollY;
+            cancelAnimationFrame(frame); timing.cancel(); rewind = null;
             HANDS.forEach(function (t) { removeEventListener(t, done, true); });
+            room(lastY = scrollY);
         };
-        // Each frame covers its share of what is left from wherever the window is: the browser keeping what is in view in
-        // place, or a selected row brought into view, moves it too.
+        // Each frame covers its share of what is left from wherever the window is (a selected row brought into view
+        // moves it too).
         const step = function () {
-            const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev), at = scrollY;
+            const at = scrollY, to = room(at);
+            if (goal - to > 8) { timing.cancel(); timing = ease(ts.travel(at - to), 0); timing.play(); prev = 0; }
+            goal = to;
+            const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev);
             prev = p;
-            const set = Math.round(at + (room(at) - at) * k);
-            room(set);
-            window.scrollTo({ top: set, behavior: 'instant' });
+            room(Math.round(at + (to - at) * k));
             if (timing.playState === 'finished') done(); else frame = requestAnimationFrame(step);
         };
         HANDS.forEach(function (t) { addEventListener(t, done, { capture: true, passive: true }); });
         rewind = done;
         timing.play();
         frame = requestAnimationFrame(step);
+    }
+    // Where the window is, as the reader left it. A pull back because the page ended higher is not the reader's: the
+    // window's place before it is kept. A hold still on follows the reader up (it is only a least height, so it never
+    // stops them going down, and it isn't measured here: that would scroll the window again).
+    function scrolledWindow() {
+        if (rewind) return;
+        const y = scrollY;
+        if (y < lastY && y >= document.documentElement.scrollHeight - innerHeight - 1) return;
+        lastY = y;
+        if (pin && y + innerHeight < pin) hold(y + innerHeight);
     }
 
     function play(root, afterExit) {
@@ -188,7 +218,10 @@ window.tideFlip = (function () {
         // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
         const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
-        if (!still && s.was && !pinned.get(root)) resized(tall, o.height, root, together, wait);
+        if (!still && s.was && !pinned.get(root)) {
+            resized(tall, o.height, root, together, wait);
+            if (far) { footMs = Math.max(footMs, together); footWait = Math.max(footWait, wait); }
+        }
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -317,6 +350,7 @@ window.tideFlip = (function () {
     }
 
     function changed(records) {
+        guard();
         // Another page (whether or not the one between had lists): its lists come in afresh.
         if (location.pathname !== page) { entered.clear(); page = location.pathname; }
         const touched = new Set(), gone = new Map(), exited = new Set();
@@ -391,8 +425,7 @@ window.tideFlip = (function () {
         new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
         lastY = scrollY;
-        addEventListener('scroll', function () { if (!rewind) lastY = scrollY; }, { passive: true });
-        if (window.ResizeObserver && window.KeyframeEffect) new ResizeObserver(footed).observe(document.body);
+        if (window.KeyframeEffect) addEventListener('scroll', scrolledWindow, { passive: true });
         document.addEventListener('transitionend', ended, true);
         document.addEventListener('animationend', ended, true);
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
