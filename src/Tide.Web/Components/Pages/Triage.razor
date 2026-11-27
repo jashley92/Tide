@@ -134,7 +134,20 @@ else
     {
         @if (_loaded)
         {
-            <EmptyState Icon="@(_status == FeedItemStatus.New ? "bi-check2-circle" : "bi-inbox")" Title="@EmptyText" />
+            @* Filtered to nothing isn't an empty tab: say so, how many the filters hide, and offer Clear. *@
+            @if (Narrowed && _counts.GetValueOrDefault(_status) is > 0 and var hidden)
+            {
+                <div id="triage-filtered-empty">
+                    <EmptyState Icon="bi-funnel" Title="Nothing matches these filters">
+                        <ChildContent>@Words.Plural(hidden, "item") in @TabName(_status) @(hidden == 1 ? "is" : "are") hidden by them.</ChildContent>
+                        <Actions><button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ClearFilters">Clear the filters</button></Actions>
+                    </EmptyState>
+                </div>
+            }
+            else
+            {
+                <EmptyState Icon="@(_status == FeedItemStatus.New ? "bi-check2-circle" : "bi-inbox")" Title="@EmptyText" />
+            }
         }
         else
         {
@@ -743,6 +756,9 @@ else
     ];
 
     private FeedItemStatus _status = FeedItemStatus.New;
+
+    // A tab's name as its tab says it ("Duplicates").
+    private static string TabName(FeedItemStatus s) => Tabs.First(t => t.Item1 == s).Item2;
 
     // The Sources tab (?tab=sources): the polled sources in place of an inbox, last of the tabs and set apart from them.
     internal const string SourcesKey = "Sources";
