@@ -112,6 +112,7 @@ window.tideFlip = (function () {
     // another page (it opens at its top), nor with reduced motion.
     let lastY = 0, pin = 0, rewind = null, footFrame = 0, footPath = location.pathname;
     let footMs = 0, footWait = 0;   // the glide this change started (play), which the window keeps time with
+    let idle = 0;   // a look once the changes have gone quiet
     const HANDS = ['wheel', 'touchstart', 'mousedown', 'keydown'];   // the reader taking the scroll
     function frameOf() { return document.querySelector('.page') || document.body; }
     function hold(h) { pin = h; frameOf().style.minHeight = h ? h + 'px' : ''; }
@@ -135,19 +136,28 @@ window.tideFlip = (function () {
     function guard() {
         const went = footPath !== location.pathname;
         footPath = location.pathname;
+        if (idle) { clearTimeout(idle); idle = 0; }
         if (went) { if (rewind) rewind(); if (pin) hold(0); return; }
         if (!window.KeyframeEffect) return;
         if (rewind || !(lastY > 0)) return;
         if (pin < lastY + innerHeight) hold(lastY + innerHeight);
         if (!footFrame) { footMs = footWait = 0; footFrame = requestAnimationFrame(settle); }
     }
-    function settle() {
+    // A change can come in parts (the next row drawn taller a render before the decided one goes): while the page hasn't
+    // ended higher, the hold stays on until the changes have been quiet a moment, then one more look lets it go.
+    function settle(final) {
         footFrame = 0;
         const glide = footMs, wait = footWait;
         footMs = footWait = 0;
         if (rewind) return;
         const ts = window.tideShortcuts, from = lastY, foot = room(from);
-        if (!(from > foot + 1)) return;
+        if (!(from > foot + 1)) {
+            if (final !== true && !document.hidden) {
+                hold(from + innerHeight);
+                idle = setTimeout(function () { idle = 0; settle(true); }, 300);
+            }
+            return;
+        }
         if (!ts || ts.still() || document.hidden) { hold(0); lastY = scrollY; return; }
         // One ease, in step with the lists' glide (its time and its wait for an exit), so the rows and the window make one
         // move; restarted from where the window is if the page settles a good deal shorter meanwhile (the reading pane a
@@ -220,7 +230,8 @@ window.tideFlip = (function () {
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
         if (!still && s.was && !pinned.get(root)) {
             resized(tall, o.height, root, together, wait);
-            if (far) { footMs = Math.max(footMs, together); footWait = Math.max(footWait, wait); }
+            // The window keeps time with a list that changed height (what shortens the page), not with one that only moved.
+            if (far && Math.abs(tall - o.height) > 1) { footMs = Math.max(footMs, together); footWait = Math.max(footWait, wait); }
         }
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
