@@ -746,6 +746,20 @@ public class CircuitOriginAuditTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Theory]
+    [InlineData("https://localhost", true)]
+    [InlineData("http://localhost", false)]   // development's own address: nothing there asks for a Secure cookie
+    public async Task TheAntiforgeryCookie_IsSecureOverHttps_AndAlwaysHttpOnlyAndSameSiteStrict(string address, bool secure)
+    {
+        var client = app.CreateClient(new() { BaseAddress = new Uri(address), AllowAutoRedirect = false, HandleCookies = false });
+        var res = await client.GetAsync("/");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cookie = res.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(".AspNetCore.Antiforgery", StringComparison.Ordinal))
+            .ToLowerInvariant().Split(';', StringSplitOptions.TrimEntries);
+        cookie.Should().Contain("httponly").And.Contain("samesite=strict");
+        cookie.Contains("secure").Should().Be(secure);
+    }
+
+    [Theory]
     [InlineData("https://evil.example")]
     [InlineData("http://localhost.evil.example")]
     [InlineData("http://localhost:9999")]
