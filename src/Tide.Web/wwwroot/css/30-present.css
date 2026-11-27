@@ -60,7 +60,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
    back, the new page turns in over the old. Each is the slide's own color, so the other doesn't show through. */
 .tide-slide-body.tide-scrollfade { transform-origin: left center; }
 .tide-slide > .tide-slide-body { grid-area: 1 / 1; }
-.tide-slide > .tide-page-turning { z-index: 2; transform-origin: left center; pointer-events: none; overflow: hidden; background: var(--tide-slide-bg); }
+.tide-slide > .tide-page-turning { z-index: 2; transform-origin: left center; pointer-events: none; overflow: hidden; background: var(--tide-slide-bg); will-change: transform, opacity; }
 .tide-slide > .tide-slide-body.tide-page-over { position: relative; z-index: 3; background: var(--tide-slide-bg); }
 .tide-scrollfade.is-more-below { --tide-fade-bottom: 3.5em; }
 /* "More ↓": at the bottom of the slide while there's more below; and, for a follower who scrolled by hand, the way back

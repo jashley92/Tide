@@ -55,6 +55,11 @@
     --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
     --tide-stagger: 25ms;          /* between the items of a list arriving whole, the first 8 (flip.js) */
     --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
+    --tide-dur-exit: 133ms;        /* something small leaving (a toast, a row): quicker than it came, as it's done */
+    --tide-dur-panel-exit: 196ms;  /* a panel leaving: the rail */
+    --tide-dur-wait: 300ms;        /* the longest .NET waits on motion before it carries on (a promote's reload) */
+    --tide-dur-turn: 420ms;        /* a Present slide turning */
+    --tide-dur-travel: 420ms;      /* something carried across the page: a promoted row into its tab */
     --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
     --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
     --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */
@@ -68,7 +73,7 @@
     --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
     --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
     --tide-ease-fade: cubic-bezier(0, 0, .58, 1);      /* a long fade dying away (CSS ease-out) */
-    --tide-ease-settle: linear(0, .5 12%, .92 26%, 1.02 36%, 1 48%, 1);   /* paper settling: a 2% overshoot (menus unfolding) */
+    --tide-ease-settle: linear(0, .5 12%, .92 26%, 1.03 38%, 1 55%, 1);   /* paper settling: a 3% overshoot (menus unfolding, over --tide-move-panel so it shows) */
 
     /* Stacking: the layers over the page, lowest first. Stacking inside one component (1 to 20) stays literal. */
     --tide-z-error: 1000;      /* Blazor's error bar */
@@ -297,14 +302,14 @@ a, .btn-link { color: var(--tide-accent-text); }
     @starting-style { opacity: 0; transform: perspective(50rem) rotateX(-40deg); } }
 .tide-combo-pop, .tide-oi-suggest {
     transform-origin: top center;
-    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-base) var(--tide-ease-settle);
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-settle);
     @starting-style { opacity: 0; transform: perspective(600px) rotateX(-70deg); } }
 .tide-popover, .tide-attach-panel, .tide-export-panel {
     transition: opacity var(--tide-dur-base) var(--tide-ease-out);
     @starting-style { opacity: 0; } }
 :is(.tide-popover, .tide-attach-panel, .tide-export-panel) > * {
     transform-origin: top center;
-    transition: transform var(--tide-move-base) var(--tide-ease-settle);
+    transition: transform var(--tide-move-panel) var(--tide-ease-settle);
     @starting-style { transform: perspective(600px) rotateX(-70deg); } }
 .tide-toast {
     transform-origin: bottom left;

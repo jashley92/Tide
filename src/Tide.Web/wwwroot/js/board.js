@@ -15,11 +15,14 @@
 // The Move menu, from the keyboard: opening it focuses its first option (focusMenu), the arrows and Home/End move
 // between its options, and Esc gives focus back to the Move button (.NET closes the menu). After a move from it, focus
 // goes to the card's Move button in its new lane, or when it has left the board (closed), to the card that was after it
-// in its lane, else the one before, else the lane's heading (focusPlace). A card dragged (pressing it gives it focus) does the
-// same once its drop is done.
+// in its lane, else the one before, else the lane's heading (focusPlace). A card dragged does the same once its drop is
+// done, and one put back (Esc, or let go where it was) gets focus where it is, so J and K carry on from it.
+// The drag's state is kept in data-tide-* attributes on the card, which .NET never draws: a card drawn again mid-drag
+// (someone else changed it) keeps them.
 window.tideBoard = (function () {
-    let ref = null, root = null, dragging = null, over = null, marked = null, focusedAtPress = null, press = null, ghost = null, slot = null;
+    let ref = null, root = null, dragging = null, over = null, marked = null, press = null, ghost = null, slot = null;
     let drop = null, home = null, lastInside = null;   // where a drop would put the card ({ status, before }), the card it was above at first, the lane last under it
+    let mids = null;   // the lane under the pointer's cards and where each one's middle is laid out, until a slot moves or a lane scrolls
     const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
@@ -36,13 +39,13 @@ window.tideBoard = (function () {
     }
 
     function mark(col) {
-        root.querySelectorAll('.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
-        if (col) col.classList.add('over');
+        root.querySelectorAll('[data-tide-over]').forEach(function (c) { if (c !== col) c.removeAttribute('data-tide-over'); });
+        if (col) col.setAttribute('data-tide-over', '');
     }
 
     function end() {
         if (dragging) {
-            dragging.classList.remove('dragging');
+            dragging.removeAttribute('data-tide-drag');
             tell('OnDragEnded');
         }
         dragging = null;
@@ -51,6 +54,7 @@ window.tideBoard = (function () {
         drop = null;
         home = null;
         lastInside = null;
+        mids = null;
         if (root) mark(null);
     }
 
@@ -58,13 +62,20 @@ window.tideBoard = (function () {
 
     // The card a drop at pointer height y in this lane would go above (in the team's own order), or at its place by due
     // date or priority; null at the end.
-    function above(cards, card, y) {
+    function above(lane, cards, card, y) {
         // Where each card is laid out, not where a glide making room has it this frame, so the slot doesn't flicker
-        // back and forth as the cards move.
-        if (manual()) return cards.find(function (c) {
-            const r = c.getBoundingClientRect(), t = getComputedStyle(c).transform, dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0;
-            return y < r.top - dy + r.height / 2;
-        }) || null;
+        // back and forth as the cards move. Measured once until the slot moves (which lays the lane out again) or
+        // something scrolls, not on every move of the pointer.
+        if (manual()) {
+            if (!mids || mids.lane !== lane) mids = {
+                lane: lane, at: cards.map(function (c) {
+                    const r = c.getBoundingClientRect(), t = getComputedStyle(c).transform, dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0;
+                    return { card: c, mid: r.top - dy + r.height / 2 };
+                })
+            };
+            const hit = mids.at.find(function (m) { return y < m.mid; });
+            return hit ? hit.card : null;
+        }
         const mine = card.dataset.order || '';
         return cards.find(function (c) { return (c.dataset.order || '') > mine; }) || null;
     }
@@ -77,7 +88,7 @@ window.tideBoard = (function () {
         const own = !!col && col.dataset.status === card.dataset.status;
         if (!lane || (own && !manual())) { clearRoom(card); drop = null; return; }
         const cards = Array.prototype.filter.call(lane.querySelectorAll('.tide-kcard'), function (c) { return c !== card; });
-        const next = above(cards, card, y);
+        const next = above(lane, cards, card, y);
         if (own && (next ? next.dataset.id : null) === home) { clearRoom(card); drop = null; return; }
         if (!slot) {
             slot = document.createElement('div');
@@ -86,26 +97,24 @@ window.tideBoard = (function () {
             slot.style.height = card.offsetHeight + 'px';
         }
         const before = next || lane.querySelector('.tide-kcol-more, .tide-kcol-drop');
-        if (slot.parentNode !== lane || slot.nextElementSibling !== before) lane.insertBefore(slot, before);
-        card.classList.add('tide-kcard-away');
+        if (slot.parentNode !== lane || slot.nextElementSibling !== before) { lane.insertBefore(slot, before); mids = null; }
+        card.setAttribute('data-tide-away', '');
         drop = { status: col.dataset.status, before: next ? next.dataset.id : null };
     }
 
     function clearRoom(card) {
-        if (slot) { slot.remove(); slot = null; }
-        if (card) card.classList.remove('tide-kcard-away');
+        if (slot) { slot.remove(); slot = null; mids = null; }
+        if (card) card.removeAttribute('data-tide-away');
     }
 
     // Pressed on a card it may move: it may become a drag. While it's pressed (only then), the page's pointer moves and
-    // letting go are heard. Pressing a card gives it focus (each card is focusable), so a card dragged off the board after
-    // a click, or with focus already in it, leaves focus beside where it was (focusedAtPress).
+    // letting go are heard.
     function onPointerDown(e) {
-        focusedAtPress = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
         if (e.button !== 0 || press || dragging) return;
         const card = e.target && e.target.closest ? e.target.closest('.tide-kcard[draggable="true"]') : null;
         if (!card || e.target.closest('button, input, select, textarea, [role="menu"]')) return;
         press = { card: card, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === 'touch', ready: e.pointerType !== 'touch', timer: 0 };
-        if (press.touch) press.timer = setTimeout(function () { if (press && !dragging) { press.ready = true; card.classList.add('tide-kcard-held'); } }, HOLD);
+        if (press.touch) press.timer = setTimeout(function () { if (press && !dragging) { press.ready = true; card.setAttribute('data-tide-pressed', ''); } }, HOLD);
         hear(true);
     }
 
@@ -115,12 +124,13 @@ window.tideBoard = (function () {
         document[method]('pointerup', onPointerUp);
         document[method]('pointercancel', cancel);
         document[method]('selectstart', onSelectStart);
+        document[method]('scroll', onScroll, { capture: true, passive: true });
     }
 
     function forget() {
         if (!press) return;
         clearTimeout(press.timer);
-        press.card.classList.remove('tide-kcard-held');
+        press.card.removeAttribute('data-tide-pressed');
         press = null;
         hear(false);
     }
@@ -134,13 +144,14 @@ window.tideBoard = (function () {
         ghost = window.tideShortcuts.copy(card, r);
         ghost.classList.add('tide-kcard-ghost');
         ghost.classList.remove('selected', 'tide-kcard-held');
+        ghost.removeAttribute('data-tide-pressed');
         const sel = window.getSelection && window.getSelection();
         if (sel) sel.removeAllRanges();
         let next = card.nextElementSibling;
         while (next && !next.classList.contains('tide-kcard')) next = next.nextElementSibling;
         home = next ? next.dataset.id : null;
-        card.classList.add('dragging');
-        card.classList.remove('tide-kcard-held');
+        card.setAttribute('data-tide-drag', '');
+        card.removeAttribute('data-tide-pressed');
         tell('OnDragging', card.dataset.id, null);
     }
 
@@ -175,39 +186,37 @@ window.tideBoard = (function () {
     }
 
     // Brackets locked onto a card for a moment: it has landed.
-    function lockOn(card) {
-        card.classList.add('tide-kcard-locked');
-        setTimeout(function () { card.classList.remove('tide-kcard-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
-    }
+    function lockOn(card) { window.tideShortcuts.pulse(card, 'data-tide-locked'); }
 
     // The slot goes and the ghost glides from where it was let go to where the card now is (where the slot was, once .NET
-    // has moved it there), and the card shows again as it arrives, its brackets locked on.
+    // has moved it there), and the card shows again as it arrives, its brackets locked on. Meanwhile the card waits
+    // transparent (data-tide-landing), not hidden: focus goes to it once the drop is done.
     function settle(g, card) {
+        const ts = window.tideShortcuts;
         clearRoom(card);
         const done = function () {
             g.remove();
             if (!card) return;
-            card.style.visibility = '';
+            card.removeAttribute('data-tide-landing');
             lockOn(card);
         };
-        if (!card || window.tideShortcuts.still() || !g.animate) { done(); return; }
+        if (!card || ts.quiet()) { done(); return; }
         const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
-        card.style.visibility = 'hidden';
-        g.animate([{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
-            { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out'), fill: 'forwards' })
-            .finished.then(done, done);
+        card.setAttribute('data-tide-landing', '');
+        ts.drift(g, [{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
+            { duration: ts.ms('--tide-dur-panel'), easing: ts.token('--tide-ease-out') }).finished.then(done, done);
     }
 
     function onPointerUp(e) {
         if (!press || e.pointerId !== press.id) return;
         if (!dragging) { forget(); return; }
         const card = dragging, id = card.dataset.id, from = card.dataset.status, at = drop, to = at ? at.status : over;
-        const place = focusedAtPress === card ? beside(card) : null, g = ghost;
+        const place = beside(card), g = ghost;
         swallowClick();
         forget();
         ghost = null;
         end();
-        if (!to || !ref) { settle(g, card); return; }
+        if (!to || !ref) { settle(g, card); focusCard(card); return; }
         // The ghost settles once .NET has moved the card (into the slot); if it's still asking after a moment (a drop on
         // the closed strip opens a dialog first) it settles back where the card is, which travels on if .NET then moves it.
         const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
@@ -220,7 +229,7 @@ window.tideBoard = (function () {
         setTimeout(land, ASKING);
         ref.invokeMethodAsync('OnCardDropped', id, from, to, at ? at.before : null).then(function () {
             land();
-            requestAnimationFrame(function () { if (place) focusPlace(id, place.next, place.prev, place.heading); });
+            requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
         }, land);
     }
 
@@ -232,6 +241,7 @@ window.tideBoard = (function () {
         ghost = null;
         end();
         settle(g, card);
+        focusCard(card);
     }
 
     // The browser's own drag would take the pointer away (cards keep draggable="true", which says which may move); a
@@ -241,6 +251,7 @@ window.tideBoard = (function () {
     function onTouchMove(e) { if (press && press.ready) e.preventDefault(); }
     function onContextMenu(e) { if (press && press.touch) e.preventDefault(); }
     function onSelectStart(e) { if (press) e.preventDefault(); }
+    function onScroll() { mids = null; }
 
     function card(id) { return root ? root.querySelector('.tide-kcard[data-id="' + id + '"]') : null; }
 
@@ -324,7 +335,6 @@ window.tideBoard = (function () {
             root = null;
             dragging = null;
             over = null;
-            focusedAtPress = null;
         }
     };
 })();

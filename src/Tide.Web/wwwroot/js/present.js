@@ -211,11 +211,14 @@ window.tidePresent = (function () {
     }
 
     // The slide changed (its body is new, keyed by .NET): the page turns. Going on, the old page lifts from its left edge
-    // and turns away, darkening, uncovering the new one, which brightens as it settles. Going back, the new page turns
-    // in over the old the other way. For the presenter and each follower alike. With reduced motion, the old page fades
-    // out over the new. The old page is the copy settle() last took of the slide as it was drawn, since by the time the
-    // new body arrives .NET has emptied and taken away the old one.
-    let turnedFrom = 0, lastPage = null;
+    // and turns away, fading as it goes, uncovering the new one. Going back, the new page turns in over the old the other
+    // way. For the presenter and each follower alike. Only transform and opacity move, so the browser composites each
+    // frame rather than painting the slide again, and the turn is a modest one (60 degrees): an audience watches it. A
+    // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. With reduced
+    // motion, the old page fades out over the new, quickly. The old page is the copy settle() last took of the slide as it
+    // was drawn (scrolled where it was last seen), since by the time the new body arrives .NET has emptied and taken away
+    // the old one.
+    let turnedFrom = 0, lastPage = null, turning = null;
     function slideNo(s) { const m = /Slide (\d+)/.exec(s.getAttribute('aria-label') || ''); return m ? +m[1] : 0; }
     function turn() {
         const slide = document.querySelector('#present-root > .tide-slide'), ts = window.tideShortcuts;
@@ -224,22 +227,25 @@ window.tidePresent = (function () {
         if (!was || no === was || !last || !now || !now.animate) return;
         turnedFrom = no;
         lastPage = null;
-        const back = no < was, still = ts.still(), dur = ts.ms('--tide-dur-signature') * .9;
+        if (turning) turning.finish();
+        if (document.hidden) return;
+        const back = no < was, still = ts.still(), dur = ts.ms(still ? '--tide-dur-fast' : '--tide-dur-turn');
         const page = ts.copy(last.page);
         page.classList.remove('tide-scrollfade');
         page.classList.add('tide-page-turning');
         slide.appendChild(page);
         page.scrollTop = last.top;
-        const flat = { transform: 'perspective(1400px) rotateY(0deg)', filter: 'brightness(1)', opacity: 1 };
-        const away = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -100) + 'deg)', filter: 'brightness(.55)', opacity: still ? 0 : 1 };
+        const flat = { transform: 'perspective(1400px) rotateY(0deg)', opacity: 1 };
+        const lifting = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -24) + 'deg)', opacity: 1, offset: .4 };
+        const away = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -60) + 'deg)', opacity: 0 };
         const done = function () { page.remove(); now.classList.remove('tide-page-over'); };
+        const play = function (el, frames, ease) { turning = el.animate(frames, { duration: dur, easing: ts.token(ease), fill: 'backwards' }); turning.finished.then(done, done); };
         if (back && !still) {
             now.classList.add('tide-page-over');
-            now.animate([away, flat], { duration: dur, easing: ts.token('--tide-ease-out') }).finished.then(done, done);
+            play(now, [away, lifting, flat], '--tide-ease-out');
             return;
         }
-        page.animate([flat, away], { duration: dur, easing: ts.token('--tide-ease-in'), fill: 'forwards' }).finished.then(done, done);
-        now.animate([{ filter: 'brightness(.7)' }, { filter: 'brightness(1)' }], { duration: dur / .9, easing: ts.token('--tide-ease-out') });
+        play(page, [flat, lifting, away], '--tide-ease-in');
     }
 
     function settle() {
@@ -275,6 +281,7 @@ window.tidePresent = (function () {
         const el = e.target;
         if (!(el instanceof Element) || !el.classList.contains('tide-scrollfade')) return;
         edges(el);
+        if (el === shown && lastPage) lastPage.top = el.scrollTop;   // where the page turns from, when it turns
         if (el.classList.contains('tide-slide-body') && performance.now() - intentAt < INTENT) report(el);
     }
 
