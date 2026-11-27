@@ -537,7 +537,10 @@ one client, `IOutboundHttp` (`src/Tide.Infrastructure/Notifications/OutboundHttp
 - **`AddressPolicy.Refusal`** always refuses loopback, link-local (cloud metadata at 169.254.169.254 among them),
   unspecified, multicast, broadcast and reserved addresses. Private ranges (RFC 1918, carrier-grade NAT, IPv6
   unique-local and site-local) are refused unless `Intake:AllowPrivateNetworks` is set. IPv4-mapped IPv6 and IPv6
-  forms that carry an IPv4 address (6to4, NAT64, SIIT, IPv4-compatible, ISATAP) are judged as that IPv4 address too.
+  forms that carry an IPv4 address (6to4, NAT64, SIIT, IPv4-compatible, ISATAP, Teredo) are judged as that IPv4 address too.
+  A cloud platform's metadata or host service outside the link-local range (168.63.129.16, 100.100.100.200,
+  192.0.0.192, `fd00:ec2::254`, `fd20:ce::254`) is always refused as well, private networks allowed or not, and
+  198.18.0.0/15 counts as private.
 - **Redirects are followed by TIDE, not the handler** (`AllowAutoRedirect = false`): at most five, only to http or
   https, never from https to http, each hop's host resolved and checked first.
 - **Every connection is checked again** on the address it actually connects to (`ConnectCallback`), so DNS that

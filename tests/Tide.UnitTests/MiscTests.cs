@@ -244,6 +244,19 @@ public class AddressPolicyTests
     [InlineData("100.64.0.1", false, "private")]
     [InlineData("fd00::1", false, "private")]
     [InlineData("::ffff:10.0.0.1", false, "private")]
+    // A cloud platform's metadata or host service outside 169.254/16 is refused even with private networks allowed.
+    [InlineData("168.63.129.16", true, "cloud metadata")]
+    [InlineData("100.100.100.200", true, "cloud metadata")]
+    [InlineData("::ffff:168.63.129.16", true, "cloud metadata")]
+    [InlineData("fd00:ec2::254", true, "cloud metadata")]
+    [InlineData("fd20:ce::254", true, "cloud metadata")]
+    [InlineData("192.0.0.192", true, "reserved")]
+    [InlineData("192.88.99.1", true, "reserved")]
+    [InlineData("198.18.0.1", false, "private")]
+    [InlineData("198.19.255.255", false, "private")]
+    // Teredo carries the client's IPv4 address with every bit flipped: these are 127.0.0.1 and 169.254.169.254.
+    [InlineData("2001:0:4136:e378:8000:63bf:80ff:fffe", true, "loopback")]
+    [InlineData("2001:0:4136:e378:8000:63bf:5601:5601", true, "link-local")]
     public void Refusal_RefusesWhatNoFeedLivesOn(string address, bool allowPrivate, string why) =>
         Tide.Infrastructure.Notifications.AddressPolicy.Refusal(System.Net.IPAddress.Parse(address), allowPrivate).Should().Contain(why);
 
@@ -254,6 +267,13 @@ public class AddressPolicyTests
     [InlineData("10.1.2.3", true)]
     [InlineData("192.168.1.1", true)]
     [InlineData("fd00::1", true)]
+    [InlineData("168.63.129.17", false)]
+    [InlineData("192.0.2.1", false)]
+    [InlineData("198.17.0.1", false)]
+    [InlineData("198.20.0.1", false)]
+    [InlineData("198.18.0.1", true)]
+    [InlineData("100.100.100.201", true)]
+    [InlineData("2001:0:4136:e378:8000:63bf:f7f7:f7f7", false)]   // Teredo for 8.8.8.8
     public void Refusal_AllowsPublicAddresses_AndPrivateOnesWhenAllowed(string address, bool allowPrivate) =>
         Tide.Infrastructure.Notifications.AddressPolicy.Refusal(System.Net.IPAddress.Parse(address), allowPrivate).Should().BeNull();
 }
