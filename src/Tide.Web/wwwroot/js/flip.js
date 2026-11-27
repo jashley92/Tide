@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const at = new WeakMap(), running = new WeakMap(), due = new Set();
+    const at = new WeakMap(), running = new WeakMap(), due = new Map();
     let frame = 0;
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
@@ -51,13 +51,14 @@ window.tideFlip = (function () {
         return { was: was, list: list, now: now, origin: origin };
     }
 
-    // Measured again on the next frame (a change inside an item, a resize, a scroll): one measure for many changes.
-    function later(root) {
-        due.add(root);
+    // Measured again on the next frame (a resize, a scroll), or played then (a change inside an item, which may have
+    // grown): one measure for many changes, still before the change is painted.
+    function later(root, moves) {
+        due.set(root, due.get(root) || !!moves);
         if (frame) return;
         frame = requestAnimationFrame(function () {
             frame = 0;
-            due.forEach(function (r) { if (r.isConnected) snapshot(r); });
+            due.forEach(function (moving, r) { if (r.isConnected) { if (moving) play(r); else snapshot(r); } });
             due.clear();
         });
     }
@@ -143,8 +144,8 @@ window.tideFlip = (function () {
             const root = m.target.closest(ROOTS);
             if (!root) return;
             // Inside one of its items (a card's Move menu opening, a row's text): the item may have grown, so the ones
-            // after it glide to where they are now rather than jump.
-            if (m.target.closest(root.dataset.tideFlip)) { touched.add(root); return; }
+            // after it glide to where they are now rather than jump, played on the next frame with any others.
+            if (m.target.closest(root.dataset.tideFlip)) { later(root, true); return; }
             touched.add(root);
             if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) { if (n.matches(root.dataset.tideFlip)) leave(root, n); });
         });

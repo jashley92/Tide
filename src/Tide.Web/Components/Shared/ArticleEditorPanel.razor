@@ -1410,9 +1410,6 @@ else
 
     private string? _invalidField;
 
-    /// <summary>For tests: the field the next draw points at (a save refused for it), until it has.</summary>
-    internal string? PointingAt => _invalidField;
-
     // After the toast that says why, the field is scrolled to, focused and bracketed (tideInvalid, theme.js), once the
     // editor is drawn: on a narrow screen showing the preview, the fields are shown first.
     private void PointAt(string? field)

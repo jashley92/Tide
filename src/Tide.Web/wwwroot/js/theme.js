@@ -145,6 +145,21 @@ window.tideShortcuts = (function () {
         }
         return c;
     }
+    // An empty element laid over the page at a rect (fixed by its class), hidden from assistive tech and taking no
+    // clicks: a mark that moves (a tab's underline sliding, brackets locking on).
+    function overlay(className, rect) {
+        var o = document.createElement('div');
+        o.className = className;
+        o.setAttribute('aria-hidden', 'true');
+        o.setAttribute('data-tide-copy', '');
+        o.inert = true;
+        o.style.left = rect.left + 'px';
+        o.style.top = rect.top + 'px';
+        o.style.width = rect.width + 'px';
+        o.style.height = rect.height + 'px';
+        document.body.appendChild(o);
+        return o;
+    }
     // Plays frames on a copy laid over the page, which goes when they're done (or cancelled). The animation is returned.
     function drift(c, frames, opts) {
         var a = c.animate(frames, Object.assign({ fill: 'forwards' }, opts));
@@ -191,7 +206,7 @@ window.tideShortcuts = (function () {
         clearTimeout(pulses.get(el));
         pulses.set(el, setTimeout(function () { el.removeAttribute(attr); }, ms('--tide-dur-signature')));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, drift: drift, fly: fly, pulse: pulse };
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, overlay: overlay, drift: drift, fly: fly, pulse: pulse };
 })();
 
 // A save refused for a field (a title left empty): .NET says which, after the toast that says why. The page scrolls it to
@@ -203,27 +218,26 @@ window.tideInvalid = (function () {
     function lockOn(el) {
         var r = el.getBoundingClientRect();
         if (!document.body.animate || !r.width) return;
-        var b = document.createElement('div');
-        b.className = 'tide-invalid-lock';
-        b.setAttribute('aria-hidden', 'true');
+        var b = ts.overlay('tide-invalid-lock', r);
+        // It's fixed over the field, so it follows if the page scrolls meanwhile (once a frame).
+        var queued = 0;
         var place = function () {
-            var at = el.getBoundingClientRect();
-            b.style.left = at.left + 'px'; b.style.top = at.top + 'px'; b.style.width = at.width + 'px'; b.style.height = at.height + 'px';
+            if (queued) return;
+            queued = requestAnimationFrame(function () {
+                queued = 0;
+                var at = el.getBoundingClientRect();
+                b.style.left = at.left + 'px'; b.style.top = at.top + 'px';
+            });
         };
-        place();
-        document.body.appendChild(b);
-        // It's fixed over the field, so it follows if the page scrolls meanwhile.
         document.addEventListener('scroll', place, true);
-        var shut = ms('--tide-dur-base') / ms('--tide-dur-attention');
+        var shut = ts.ms('--tide-dur-base') / ts.ms('--tide-dur-attention');
         var frames = ts.still()
             ? [{ opacity: 1 }, { opacity: 1, offset: .6 }, { opacity: 0 }]
             : [{ opacity: 0, transform: 'scale(1.06)' }, { opacity: 1, transform: 'none', offset: shut }, { opacity: 1, offset: .6 }, { opacity: 0 }];
-        var a = ts.drift(b, frames, { duration: ms('--tide-dur-attention'), easing: token('--tide-ease-out') });
-        var off = function () { document.removeEventListener('scroll', place, true); };
+        var a = ts.drift(b, frames, { duration: ts.ms('--tide-dur-attention'), easing: ts.token('--tide-ease-out') });
+        var off = function () { document.removeEventListener('scroll', place, true); cancelAnimationFrame(queued); };
         a.finished.then(off, off);
     }
-    function ms(name) { return ts.ms(name); }
-    function token(name) { return ts.token(name); }
     function show(target) {
         var el = typeof target === 'string' ? document.querySelector(target) : target;
         if (!el) return false;
@@ -251,7 +265,7 @@ window.tideInvalid = (function () {
         requestAnimationFrame(function () {
             requestAnimationFrame(function () {
                 if (!moved || ts.still()) go();
-                else setTimeout(go, ms('--tide-dur-travel'));
+                else setTimeout(go, ts.ms('--tide-dur-travel'));
             });
         });
         return true;

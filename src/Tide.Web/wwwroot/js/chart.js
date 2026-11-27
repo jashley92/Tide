@@ -185,17 +185,18 @@
 
     // What the plot reads now: a copy to fade out later, and its lines and bands, to tell a new reading from the same one
     // drawn again (as Blazor does, taking over the prerendered page).
-    function reading(plot) {
-        const lines = Array.from(plot.querySelectorAll('svg polyline, svg rect'), function (n) {
+    function lines(plot) {
+        return Array.from(plot.querySelectorAll('svg polyline, svg rect'), function (n) {
             return [n.getAttribute('class'), n.getAttribute('points'), n.getAttribute('y'), n.getAttribute('height')].join(' ');
         }).join('|');
-        return { snap: snap(plot), lines: lines };
     }
+    function reading(plot, now) { return { snap: snap(plot), lines: now === undefined ? lines(plot) : now }; }
 
     // The plot may read differently: if so, the last reading fades out over this one fading in (when it's on screen).
     function changed(plot) {
-        const at = places.get(plot), old = readings.get(at), now = reading(plot);
-        if (old && old.lines === now.lines) return;
+        const at = places.get(plot), old = readings.get(at), drawn = lines(plot);
+        if (old && old.lines === drawn) return;   // the same reading drawn again: nothing to copy
+        const now = reading(plot, drawn);
         now.waiting = plot.hasAttribute('data-tide-sweep');
         readings.set(at, now);
         if (!old || document.hidden || !document.body.animate || plot.hasAttribute('data-tide-sweep')) return;

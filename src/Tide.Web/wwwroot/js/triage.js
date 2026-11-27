@@ -140,8 +140,9 @@ window.tideTriage = (function () {
             const ts = window.tideShortcuts, tab = tabFor(tabLabel);
             if (tab) ts.pulse(tab, 'data-tide-landed');
             if (ts.quiet()) return;
-            rowsFor(ids, 8).forEach(function (row) {
-                const r = row.getBoundingClientRect();
+            const rows = rowsFor(ids, 8), at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
+            rows.forEach(function (row, i) {
+                const r = at[i];
                 if (!r.width || !r.height) return;
                 const g = ts.copy(row, r);
                 g.classList.add('tide-decided');

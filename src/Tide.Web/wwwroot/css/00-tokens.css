@@ -290,8 +290,6 @@ a, .btn-link { color: var(--tide-accent-text); }
    --tide-surface-2 as usual: it's re-pointed here at the raised surface's own step. */
 .tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-toast, .tide-chart-tip, .tide-oi-suggest {
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); --tide-surface-2: var(--tide-surface-raised-2); }
-/* Bootstrap's fields take the app's timing, not their own 150ms. */
-.form-control, .form-select { transition: border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out); }
 .tide-modal, .tide-tip, .tide-atkm-panel {
     background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
 
@@ -300,8 +298,6 @@ a, .btn-link { color: var(--tide-accent-text); }
    places (menus, popovers, the attach and export panels) fades in while what's on it unfolds: popout.js measures the
    panel as it opens, and a transform on the panel itself would throw that off. Toasts drop in like a paper slip, and
    scrims and the chart's tip fade. A new floating surface joins one of these lists as well as the ones above. */
-/* Bootstrap's fields take the app's timing, not their own 150ms. */
-.form-control, .form-select { transition: border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out); }
 .tide-modal, .tide-tip, .tide-atkm-panel {
     transform-origin: top center;
     transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
