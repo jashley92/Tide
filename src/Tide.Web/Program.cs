@@ -144,6 +144,9 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
 });
 builder.Services.AddCascadingAuthenticationState();
+// The antiforgery cookie is HttpOnly and SameSite=Strict by default, but never Secure. Over HTTPS (production) it's now
+// marked Secure too, so a browser never sends it in the clear; over http://localhost (development) it stays as it was.
+builder.Services.AddAntiforgery(o => o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest);
 // Re-derive an open session's roles and permissions from the current mappings every couple of minutes, so removing an
 // AD mapping reaches signed-in users without them reconnecting.
 builder.Services.AddSingleton(sp => new SessionPermissionRefresher(() => sp.GetRequiredService<IRoleDirectory>(), useWindows));
