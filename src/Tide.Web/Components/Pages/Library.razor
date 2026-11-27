@@ -45,7 +45,7 @@ else
     <div class="tide-library-tabrow">
         <TabBar Items="Items" Active="@_tab.Key" Label="Library" />
         <form class="tide-library-find" role="search" @onsubmit:preventDefault="true">
-            <input id="library-find" type="search" class="form-control form-control-sm" maxlength="100" autocomplete="off"
+            <input id="library-find" type="search" data-find class="form-control form-control-sm" maxlength="100" autocomplete="off"
                    placeholder="Search the whole library" aria-label="Search the whole library"
                    value="@_text" @oninput="e => Find(e.Value as string)" />
         </form>

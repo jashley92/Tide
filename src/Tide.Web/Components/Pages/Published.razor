@@ -21,7 +21,7 @@
     @* Headlines and the filter come from each frozen send, as it went out: never the articles as they are now. *@
     <div class="tide-card">
         <form class="d-flex gap-2 flex-wrap" role="search" @onsubmit="Go" @onsubmit:preventDefault="true">
-            <input class="tide-maxw-2xl form-control" type="search" maxlength="200" aria-label="Filter the published briefs"
+            <input class="tide-maxw-2xl form-control" type="search" data-find maxlength="200" aria-label="Filter the published briefs"
                    placeholder="A word or a name from a headline or a story" @bind="_text" />
             <button class="btn btn-primary" type="submit"><span class="bi bi-search" aria-hidden="true"></span> Filter</button>
             @if (!string.IsNullOrWhiteSpace(Q))
