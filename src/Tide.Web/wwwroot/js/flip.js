@@ -536,7 +536,14 @@ window.tideFlip = (function () {
     function note(el) { if (el.isConnected) surfaceAt.set(el, el.matches('.tide-triage-selbar') && getComputedStyle(el).position === 'static' ? null : el.getBoundingClientRect()); else open.delete(el); }
     function opened(n) {
         const found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
-        found.forEach(function (el) { open.add(el); requestAnimationFrame(function () { requestAnimationFrame(function () { note(el); }); }); });
+        found.forEach(function (el) {
+            open.add(el);
+            requestAnimationFrame(function () { requestAnimationFrame(function () {
+                note(el);
+                // And again once it has come in (its slide or unfold done), so its copy goes from where it rests.
+                if (el.getAnimations) Promise.all(el.getAnimations().map(function (a) { return a.finished; })).then(function () { note(el); }, function () { });
+            }); });
+        });
     }
     function closed(n) {
         const ts = window.tideShortcuts, found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
