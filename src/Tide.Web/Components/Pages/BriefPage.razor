@@ -856,10 +856,24 @@ else
     // page that opens on a brief already ready, or a reload that changes its status (the meeting, a colleague), isn't.
     private bool _justReady;
 
+    // The steps as they stood, shown until the stamp lands, so the strip moves on after it, not before.
+    private IReadOnlyList<BriefStep>? _stepsHeld;
+
+    /// <summary>When the stamp lands (milliseconds): it waits for the confirmation to go (--tide-dur-exit, 133ms) and
+    /// lands at 55% of --tide-dur-signature (600ms).</summary>
+    internal const int StampLands = 133 + 330;
+
     private async Task MarkReady(bool ready)
     {
+        _stepsHeld = ready && _brief is not null ? Steps : null;
         await Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
         _justReady = ready && _brief?.Status == BriefStatus.Ready;
+        if (_justReady && _stepsHeld is not null)
+        {
+            StateHasChanged();
+            await Task.Delay(StampLands);
+        }
+        _stepsHeld = null;
     }
 
     // The checks that don't block Ready (a missing tag, no recommended actions) still deserve a second look first.
@@ -1060,7 +1074,7 @@ else
                    brief sees its running order and numbers, not work they can't do. *@
                 @if (_canWrite)
                 {
-                    <StepStrip Steps="Steps" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
+                    <StepStrip Steps="@(_stepsHeld ?? Steps)" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
                                CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
                                OnSend="AskSend" />
                     @if (AsToday) { <FeedsNudge @ref="Freshness" /> }

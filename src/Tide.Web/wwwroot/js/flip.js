@@ -114,12 +114,13 @@ window.tideFlip = (function () {
     let footMs = 0, footWait = 0;   // the glide this change started (play), which the window keeps time with
     let idle = 0;   // a look once the changes have gone quiet
     const HANDS = ['wheel', 'touchstart', 'mousedown', 'keydown'];   // the reader taking the scroll
-    // Keys that scroll the page take it; the list's own keys (J, K, the arrows on a row) only move a selection, which
-    // the ease then follows.
-    const SCROLL_KEYS = /^(PageUp|PageDown|Home|End| |Spacebar)$/;
+    // Keys that scroll the page take it (Space only outside a field or a row, where it types or picks); the list's own
+    // keys (J, K, the arrows on a row) only move a selection, which the ease then follows.
+    const PAGE_KEYS = /^(PageUp|PageDown|Home|End)$/, SPACE = /^( |Spacebar)$/;
     function handed(done) {
         return function (e) {
-            if (e.type === 'keydown' && (!SCROLL_KEYS.test(e.key) || (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable], [role="option"], [role="row"], li[tabindex]')))) return;
+            if (e.type === 'keydown' && !PAGE_KEYS.test(e.key) && !(SPACE.test(e.key) && !(e.target && e.target.closest &&
+                e.target.closest('input, textarea, select, button, [contenteditable], [role="option"], [role="row"], li[tabindex]')))) return;
             done();
         };
     }

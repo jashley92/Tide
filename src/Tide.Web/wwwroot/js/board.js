@@ -164,7 +164,9 @@ window.tideBoard = (function () {
             lift();
         }
         e.preventDefault();
-        ghost.style.transform = 'translate(' + (e.clientX - press.x) + 'px, ' + (e.clientY - press.y) + 'px)';
+        // Moved by the translate property, which applies outside its scale: shrunk over a chip, it still follows the pointer
+        // one for one (in transform, the shrink would scale the way it had come too).
+        ghost.style.translate = (e.clientX - press.x) + 'px ' + (e.clientY - press.y) + 'px';
         const under = document.elementFromPoint(e.clientX, e.clientY);
         const col = under && under.closest ? under.closest('.tide-kcol, .tide-kchip') : null;
         const inside = col && root.contains(col) ? col : null;
@@ -197,9 +199,9 @@ window.tideBoard = (function () {
         const ts = window.tideShortcuts;
         if (ts.quiet()) return null;
         const left = parseFloat(g.style.left), top = parseFloat(g.style.top), now = g.getBoundingClientRect();
-        const was = g.getAnimations().length ? 'translate(' + (now.left - left) + 'px, ' + (now.top - top) + 'px)' : (g.style.transform || 'none');
+        const was = g.getAnimations().length ? (now.left - left) + 'px ' + (now.top - top) + 'px' : (g.style.translate || '0px 0px');
         g.getAnimations().forEach(function (a) { a.cancel(); });
-        return g.animate([{ transform: was }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
+        return g.animate([{ translate: was }, { translate: (to.left - left) + 'px ' + (to.top - top) + 'px' }],
             { duration: ts.travel(Math.hypot(to.left - now.left, to.top - now.top)), easing: ts.token('--tide-ease-out'), fill: 'forwards' });
     }
 

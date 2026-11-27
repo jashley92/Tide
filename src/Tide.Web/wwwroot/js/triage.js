@@ -17,7 +17,7 @@
 // selection bar stands where the decision bar was, and S, X and P act on all of them (.NET decides).
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0, room = null, tellRoom = null;
+    let started = 0, room = null, tellRoom = null, panes = null;
 
     // While the promote form is open, only Esc is the page's, and Shift+Enter is the form's second way out: Promote and
     // keep triaging, its button pressed (plain Enter submits the form, Promote and write, as it always has). Not on a
@@ -220,6 +220,17 @@ window.tideTriage = (function () {
             room.addEventListener('change', tellRoom);
             tellRoom();
             document.addEventListener('keydown', hop);
+            // The pane drawn (V, or Read it here) is brought into view on the frame it first shows, before .NET has
+            // answered the key: a moment showing only the pane's foot would explain nothing.
+            panes = new MutationObserver(function (records) {
+                const came = records.some(function (m) {
+                    return Array.prototype.some.call(m.addedNodes, function (n) {
+                        return n.nodeType === 1 && (n.matches('.tide-reading') || !!n.querySelector('.tide-reading'));
+                    });
+                });
+                if (came) showPane(['read']);   // before it's painted
+            });
+            panes.observe(document.body, { childList: true, subtree: true });
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read', ' ': 'select-toggle' },
@@ -232,6 +243,7 @@ window.tideTriage = (function () {
             if (room) room.removeEventListener('change', tellRoom);
             room = tellRoom = null;
             document.removeEventListener('keydown', hop);
+            if (panes) { panes.disconnect(); panes = null; }
             rows.stop(started);
         }
     };
