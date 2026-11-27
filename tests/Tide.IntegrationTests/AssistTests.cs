@@ -268,6 +268,21 @@ public class AzureOpenAiAssistantTests
         new(new StaticOptionsMonitor<AiOptions>(options ?? Options), NullLogger<AzureOpenAiAssistant>.Instance, handler);
 
     [Fact]
+    public async Task ARedirect_IsNeverFollowed_SoTheKeyGoesOnlyToTheConfiguredEndpoint()
+    {
+        // The handler the app uses: a redirect would carry the api-key header on to the host it names.
+        using (var real = AzureOpenAiAssistant.Handler(proxy: null))
+            real.AllowAutoRedirect.Should().BeFalse();
+
+        var handler = new Answering(HttpStatusCode.Found, "");
+        var answer = await Assistant(handler).AnswerAsync(new AssistRequest("Do it.", "Material.", "tide_article_draft", DraftPrompt.Schema));
+
+        answer.Json.Should().BeNull();
+        answer.Error.Should().Contain("HTTP 302");
+        handler.Sent.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task ADraft_IsOneStrictSchemaRequest_WithNoTools_AndNothingStored()
     {
         var handler = new Answering(HttpStatusCode.OK, """

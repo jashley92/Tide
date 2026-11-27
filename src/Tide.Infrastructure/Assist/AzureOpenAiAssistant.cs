@@ -37,9 +37,16 @@ public sealed class AzureOpenAiAssistant : IThreatIntelAssistant, IDisposable
         _client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
-    private static SocketsHttpHandler Handler(string? proxy)
+    // Redirects aren't followed: the request carries the key in a header of its own (api-key), which a redirect would
+    // carry on to whatever host the answer named. The provider's API doesn't redirect, so one is reported like any
+    // other answer that isn't a success.
+    internal static SocketsHttpHandler Handler(string? proxy)
     {
-        var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5), AutomaticDecompression = DecompressionMethods.All };
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5), AutomaticDecompression = DecompressionMethods.All,
+            AllowAutoRedirect = false,
+        };
         if (OutboundHttp.Proxy(proxy) is { } p)
         {
             handler.Proxy = p;
