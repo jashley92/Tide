@@ -139,7 +139,9 @@ public sealed class NoticeService(IAppDbContextFactory dbs, ICurrentUser user, T
                 NoticeKind.ActionHandedToTeam => ($"{by} handed {number} to {action?.Team ?? "your team"}", action is null ? null : $"{number} {action.Title}", $"actions/{action?.Number}"),
                 NoticeKind.ActionAssigned => ($"{by} assigned {number} to you", action is null ? null : $"{number} {action.Title}", $"actions/{action?.Number}"),
                 NoticeKind.RotationAsked => ($"{by} asked you to {what} brief days", change is null ? null : Days(change.GiveFrom, change.GiveTo), "rotation"),
-                _ => ($"{by} {(change?.Status == RotationChangeStatus.Approved ? "approved" : "declined")} your {what} request",
+                // A decided change that's Cancelled now was approved and then undone by an administrator: the answer it
+                // tells of was still a yes.
+                _ => ($"{by} {(change?.Status is RotationChangeStatus.Approved or RotationChangeStatus.Cancelled ? "approved" : "declined")} your {what} request",
                     change is null ? null : Days(change.GiveFrom, change.GiveTo), "rotation"),
             };
             return new ForYouNotice(n.Id, n.Kind, line, title, title is null ? null : link, n.Detail, n.CreatedAtUtc, n.SeenAtUtc is not null);

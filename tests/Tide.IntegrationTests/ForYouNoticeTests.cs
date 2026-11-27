@@ -186,6 +186,28 @@ public class ForYouNoticeTests : IDisposable
     }
 
     [Fact]
+    public async Task AnApprovedRotationRequest_StillReadsApproved_AfterAnAdministratorUndoesIt()
+    {
+        await People();
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var rotation = _db.Rotation();
+        await rotation.AddMemberAsync(Me, "Test Analyst");
+        await rotation.AddMemberAsync(Robin, "Robin");
+        var week = RotationService.WeekStart(_db.Clock.Today).AddDays(7);
+        await rotation.SetWeekAsync(week, Me);
+        var change = await rotation.RequestAsync(new RotationRequest { PartnerId = Robin, GiveFrom = week, GiveTo = week });
+
+        As(Robin, "Robin");
+        await _db.Rotation().ApproveAsync(change.Id);
+        As(Me, "Test Analyst");
+        (await _db.ForYou().ListAsync()).Single().Line.Should().Be("Robin approved your cover request");
+
+        await _db.Rotation().CancelAsync(change.Id);   // an administrator undoes the approved change
+
+        (await _db.ForYou().ListAsync()).Single().Line.Should().Be("Robin approved your cover request", "Robin said yes; undoing it later doesn't turn that into a no");
+    }
+
+    [Fact]
     public async Task SeenIsEachPersonsOwn_OneByOneOrAll_AndTheCountFollows()
     {
         await People();
