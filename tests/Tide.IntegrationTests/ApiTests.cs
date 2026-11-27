@@ -104,6 +104,20 @@ public class ApiServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AProposedAddress_TooLongOnceEncoded_IsRefusedInWords_BeforeTheCallersSourceIsMade()
+    {
+        // About 420 characters as sent, which the length check passes; each "é" is six once percent-encoded.
+        var address = "https://siem.example.org/" + new string('é', 400);
+
+        var refused = await FluentActions.Invoking(() => _db.Api().ProposeAsync(new ApiProposal("Alert", address, null))).Should().ThrowAsync<ArgumentException>();
+
+        refused.Which.Should().NotBeOfType<ArgumentNullException>("the caller is told what's wrong, not that a value was null");
+        refused.Which.Message.Should().Contain("too long");
+        await using var ctx = _db.Context();
+        (await ctx.Sources.CountAsync(s => s.Kind == SourceKind.Api)).Should().Be(0, "no source is made for an item that can't be stored");
+    }
+
+    [Fact]
     public async Task Webhooks_PostWhatHappened_Signed_AndTryAgainAfterAFailure()
     {
         var added = await _db.Webhooks().AddAsync("https://xsoar.example.org/hooks/tide", [WebhookService.ActionRaised, WebhookService.BriefSent]);
