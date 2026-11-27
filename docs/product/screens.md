@@ -672,6 +672,9 @@ One box at the top of every page.
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
   ATT&CK techniques by name and captions, with the matches marked. Each kind's heading says how many matched, 50 to a
   page and up to 1,000 deep; past that the articles read "1,000+" and the page asks for another word.
+- **Nothing matches.** The page says what to try: fewer words when there were several (every one must match), and,
+  for someone who triages, how many new items in Triage have the words in their title or CVEs, with **Look in
+  Triage** (its search box filled) when there are some. Feed items are searched here only once they're promoted.
 - **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not. The lookup opens with
   one line that says whether the team knows it and whether anyone is on it ("On 1 article · briefed Mon Nov 9 ·
   2 actions open · no hunt result yet", "Not on any article yet · no action raised · 1 new in triage" for a CVE in

@@ -149,10 +149,13 @@ public sealed record CveLookup(
     public IReadOnlyList<ActionHit> Sweeps => Actions.Items.Where(a => a.Hunts || a.Hunted is not null).ToList();
 }
 
-/// <summary>The answer to a search: an indicator or CVE lookup when the query is one, and the text hits.</summary>
+/// <summary>The answer to a search: an indicator or CVE lookup when the query is one, and the text hits. When nothing
+/// matches, <see cref="InTriage"/> is how many new items in Triage's inbox Triage's own search box would find for the
+/// words (up to <see cref="SearchService.MaxSightings"/>), for someone who triages: feed items aren't searched here until
+/// they're promoted. Null otherwise.</summary>
 public sealed record SearchResults(
     string Query, IReadOnlyList<string> Terms, IndicatorLookup? Indicator, CveLookup? Cve,
-    HitList<ArticleHit> Articles, HitList<ActionHit> Actions, HitList<StoryHit> Stories)
+    HitList<ArticleHit> Articles, HitList<ActionHit> Actions, HitList<StoryHit> Stories, int? InTriage = null)
 {
     public bool Empty => Indicator is null && Cve is null && Articles.Items.Count == 0 && Actions.Items.Count == 0 && Stories.Items.Count == 0;
 }
@@ -200,10 +203,25 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var numberOnly = terms is [{ Length: 1 }];
         List<Guid> listed = !pages.LookupOnce ? []
             : (indicator?.Sightings.Items.Select(s => s.ArticleId) ?? cve?.Articles.Items.Select(a => a.Id) ?? []).Distinct().ToList();
-        return new SearchResults(q, terms, indicator, cve,
+        var results = new SearchResults(q, terms, indicator, cve,
             numberOnly ? HitList<ArticleHit>.None : await ArticlesAsync(db, terms, listed, Skip(pages.Articles, pages.Size), Size(pages.Size), ct),
             await ActionsAsync(db, terms, Skip(pages.Actions, pages.Size), Size(pages.Size), ct),
             numberOnly ? HitList<StoryHit>.None : await StoriesAsync(db, terms, Skip(pages.Stories, pages.Size), Size(pages.Size), ct));
+        // Nothing here: the words may be on an item not yet promoted. Counted only then, and only for someone who triages.
+        return results.Empty && !numberOnly && user.Has(Permission.WriteArticles)
+            ? results with { InTriage = await InTriageAsync(db, q, ct) }
+            : results;
+    }
+
+    // The new items in Triage's inbox (of a source still read) that Triage's search box finds for the same words: the
+    // whole text in the title or the CVEs (IntakeService.InboxPageAsync), so its link to Triage shows the same items.
+    private static Task<int> InTriageAsync(IAppDbContext db, string words, CancellationToken ct)
+    {
+        var p = SearchText.Contains(words);
+        return db.FeedItems.AsNoTracking()
+            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired
+                        && (EF.Functions.Like(i.Title, p, SearchText.Escape) || EF.Functions.Like(i.Cves!, p, SearchText.Escape)))
+            .OrderBy(i => i.Id).Take(MaxSightings).CountAsync(ct);
     }
 
     private static int Size(int size) => Math.Clamp(size, 1, MaxHits);
