@@ -183,9 +183,9 @@ Defined in `AppDbContext.OnModelCreating` (`src/Tide.Infrastructure/Persistence/
 | `BriefItems` | `(BriefId, ArticleId)` unique; `ArticleId`; `CarriedFromBriefId` | A brief's running order; "first briefed" for trends; carry-over. |
 | `Briefs` | `BriefDate` unique | Every day-based lookup. |
 | `BriefSends` | `(BriefId, SentAtUtc)`; `(Edition, IsTest, Status, BriefDate)` | Send history; the published archive. |
-| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId`; `ClosedAtUtc` (closed only) | The board and lists, overdue and due-soon scans, Workload, "my actions"; the daily prune of reminder marks. |
+| `Actions` | `Number` unique; `(Status, DueDate)`; `TeamId`; `AssigneeId`; `ArticleId`; `ParentId`; `ClosedAtUtc` (closed only); `ClosedDate` (closed only) | The board and lists, overdue and due-soon scans, Workload, "my actions"; the daily prune of reminder marks. Workload and the team digest read open actions or those closed this week: `(Status, DueDate)` and `ClosedDate` make each side of that OR a seek. |
 | `ActionComments`, `ActionEvents` | `(ActionId, AtUtc)` | An action's timeline. |
-| `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. |
+| `FeedItems` | `UrlHash` unique; `(Status, FetchedAtUtc, SourceId)`; `FetchedAtUtc`; `SourceId`; `ArticleId` | One item per address; the inbox tabs; pruning; source health. The source in the status index lets the sidebar's new-item count (every navigation) and Triage's tab tally read the index alone, never the wide rows: on SQLite with 48,000 items (12,000 new), the count went from about 95 to 1.2 ms and the tally from 470 to 14 ms. |
 | `MetricValues` | `(DefinitionId, BriefDate)` unique; `BriefDate` | A day's numbers; history. |
 | `ArticleIndicators`, `ArticleCves`, `ArticleTechniques`, `ArticleTags` | `ArticleId`; `CveId`; `TechniqueId`; `TagId` | An article's parts; CVE and trend lookups. |
 | `ArticleIndicators`, `ActionIndicators` | `ValueKey`; `HostRev` (articles') | An indicator lookup: the indicator itself by the hash of its value, and its host's other indicators by the host reversed by label, a range (`IndicatorKey`). The prose scan of a text search still reads every value. |
