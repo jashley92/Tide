@@ -1,0 +1,31 @@
+@* One group of keyboard shortcuts (Shortcuts) as a table under its title: the "?" overlay's, and Help's list of every
+   page's. With the letter shortcuts off, a letter's row is grayed and says so. *@
+
+<table class="tide-shortcuts-table">
+    <caption class="@(HideCaption ? "visually-hidden" : null)">@Group.Title</caption>
+    <tbody>
+        @foreach (var s in Group.Keys)
+        {
+            <tr class="@(s.Letter && !Letters ? "is-off" : null)">
+                <th scope="row">
+                    @for (var i = 0; i < s.Keys.Count; i++)
+                    {
+                        if (i > 0) { <span class="tide-shortcuts-or"> or </span> }
+                        <kbd>@s.Keys[i]</kbd>
+                    }
+                </th>
+                <td>@s.What@(s.Letter && !Letters ? " (off)" : "")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public ShortcutGroup Group { get; set; } = default!;
+
+    /// <summary>Whether the single-letter shortcuts are on in this browser.</summary>
+    [Parameter] public bool Letters { get; set; } = true;
+
+    /// <summary>The title is said by what holds the table (Help's summary line), so the caption is for screen readers.</summary>
+    [Parameter] public bool HideCaption { get; set; }
+}

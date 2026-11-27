@@ -40,29 +40,12 @@
             <div class="tide-shortcuts-body">
                 @foreach (var group in _groups)
                 {
-                    <table class="tide-shortcuts-table">
-                        <caption>@group.Title</caption>
-                        <tbody>
-                            @foreach (var s in group.Keys)
-                            {
-                                <tr class="@(s.Letter && !_letters ? "is-off" : null)">
-                                    <th scope="row">
-                                        @for (var i = 0; i < s.Keys.Count; i++)
-                                        {
-                                            if (i > 0) { <span class="tide-shortcuts-or"> or </span> }
-                                            <kbd>@s.Keys[i]</kbd>
-                                        }
-                                    </th>
-                                    <td>@s.What@(s.Letter && !_letters ? " (off)" : "")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                    <ShortcutTable Group="group" Letters="_letters" />
                 }
             </div>
             @if (ShowButton && CurrentUser.Has(Permission.ReadTeamEdition))
             {
-                <p class="tide-shortcuts-help"><a href="help" @onclick="Close">Help and what's new</a></p>
+                <p class="tide-shortcuts-help"><a href="help#help-keys" @onclick="Close">Every page's shortcuts</a> &middot; <a href="help" @onclick="Close">Help and what's new</a></p>
             }
     </ChildContent>
 </ModalShell>

@@ -1,3 +1,5 @@
+using Tide.Domain.Enums;
+
 namespace Tide.Web.Components.Layout;
 
 /// <summary>
@@ -83,6 +85,33 @@ public static class Shortcuts
         // After "?", as the two single keys that work on every page that has what they act on.
         groups.Add(rail ? Everywhere with { Keys = [.. Everywhere.Keys.Take(2), RailKey, .. Everywhere.Keys.Skip(2)] } : Everywhere);
         groups.Add(Palette);
+        return groups;
+    }
+
+    /// <summary>
+    /// Every page's shortcuts at once, for Help: those that work everywhere (with the rail's "]") and in the Go to box
+    /// first, then each page's, for the pages the person <paramref name="has"/> the permission to open. The Actions keys
+    /// leave out T and choosing several for someone who can't take actions, and the editor's keys are listed only for
+    /// someone who can edit articles, as <see cref="For"/> does.
+    /// </summary>
+    public static IReadOnlyList<ShortcutGroup> All(Func<Permission, bool> has)
+    {
+        var write = has(Permission.WriteArticles);
+        var canTake = has(Permission.WorkActions) || write;
+        ShortcutGroup Takes(ShortcutGroup g) => canTake ? g : g with { Keys = [.. g.Keys.Where(k => k != TakeKey && !SelectKeys.Contains(k))] };
+        // "]" after the single keys, as on a page with a rail; here it says where it works.
+        var singles = Everywhere.Keys.TakeWhile(k => k.Letter || k.Keys[0] == "Ctrl K").Count();
+        var groups = new List<ShortcutGroup>
+        {
+            Everywhere with { Keys = [.. Everywhere.Keys.Take(singles), RailKey with { What = "Show or hide the context rail, on a page that has one" }, .. Everywhere.Keys.Skip(singles)] },
+            Palette,
+        };
+        if (write) groups.Add(Triage);
+        groups.Add(ArticlePage);
+        if (write) groups.Add(ArticleEditing);
+        if (has(Permission.ReadActions)) groups.AddRange([Takes(Board), Takes(ActionsList), Library]);
+        groups.AddRange([Screenshots, Stack, Adversaries, Charts]);
+        if (has(Permission.JoinMeetings)) groups.Add(Present);
         return groups;
     }
 

@@ -13,9 +13,10 @@
 @inject LiveMeetings Meetings
 @inject OrgClock Clock
 @inject GuideLinkService GuideLinks
+@inject IJSRuntime JS
 
 @* Help (the account menu, and the "?" overlay): what's new in each release, for the person's role groups, Show tips
-   again, Take the tour, and the guides (Guides) the person can use. An administrator also gets every release's full notes, as its GitHub page has them:
+   again, Take the tour, the guides (Guides) the person can use, and every page's keyboard shortcuts (Shortcuts.All). An administrator also gets every release's full notes, as its GitHub page has them:
    they're the operators' (upgrade steps, migrations, settings). ?release=1.13.0 opens that release's full notes
    ("See all changes"). *@
 
@@ -24,7 +25,7 @@
 <div class="tide-page-head">
     <div>
         <h1>Help</h1>
-        <div class="tide-sub">What's new in each release. Press <kbd>?</kbd> on any page for its keyboard shortcuts.</div>
+        <div class="tide-sub">What's new in each release, and <a href="help#help-keys">every page's keyboard shortcuts</a>. Press <kbd>?</kbd> on any page for its own.</div>
     </div>
 </div>
 
@@ -81,6 +82,20 @@
             </ul>
         </section>
     }
+    @* Every page's keys at once, to learn them or print them; "?" on a page lists only that page's. *@
+    <section class="tide-card" id="help-keys" aria-labelledby="help-keys-title">
+        <h2 id="help-keys-title">Keyboard shortcuts</h2>
+        <p>Every page's keys. <kbd>?</kbd> on a page lists just that page's, with the switch that turns single-letter shortcuts off@(_letters ? "" : " (they're off in this browser)").</p>
+        <div class="tide-help-keys">
+            @foreach (var (group, i) in Shortcuts.All(CurrentUser.Has).Select((g, i) => (g, i)))
+            {
+                <details open="@(i == 0)">
+                    <summary>@group.Title <span class="tide-count tide-muted">(@group.Keys.Count)</span></summary>
+                    <ShortcutTable Group="group" Letters="_letters" HideCaption="true" />
+                </details>
+            }
+        </div>
+    </section>
     <section class="tide-card" aria-labelledby="help-whatsnew">
         <h2 id="help-whatsnew">What's new</h2>
         @if (!Listed.Any())
@@ -140,6 +155,20 @@
 
     private MarkupString NotesHtml(ReleaseVersion version, string notes) =>
         Rendered.GetOrAdd((Nav.BaseUri, version), key => new MarkupString(Markdown.ToHtml(notes, LinkRoot.FromBaseUri(key.BaseUri))));
+
+    // Whether this browser has the single-letter shortcuts on (theme.js), read once the page is live.
+    private bool _letters = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("tideShortcuts.on")) { _letters = false; StateHasChanged(); }
+        }
+        catch (JSException) { /* on, as drawn */ }
+        catch (JSDisconnectedException) { }
+    }
 
     // Help's "Show page guide links" (GuideLinkService).
     private bool _guideLinks = true;

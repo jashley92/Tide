@@ -4921,6 +4921,13 @@ const pages = [
   // Help's Guides: each guide's name, what it shows and Start, within its row.
   { name: 'help-guides', route: '/help', setup: wideFont, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, visible('#help-guides'), fits('.tide-help-guides > li'), fits('.tide-help-guide-text'), visible('#help-guide-present')] },
+  // Help's keyboard shortcuts: a group to a line, Everywhere open, every group opened here, its keys and what they do
+  // within the card.
+  { name: 'help-keys', route: '/help#help-keys', setup: async page => {
+      await wideFont(page);
+      await page.$$eval('.tide-help-keys > details', ds => ds.forEach(d => { d.open = true; }));
+    }, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('#help-keys'), fits('#help-keys'), fits('.tide-help-keys .tide-shortcuts-table')] },
   // Learn to present, in rehearsal (it changes nothing): the title slide's step beside the slides' bar; the rail's step
   // on the rail docked, or on Rail where it's shut; raising, pointed at on the rail's Raise (disabled) and kept off the
   // rail; ending, on End the meeting (disabled); Escape ends the guide and focus is on the page's heading.

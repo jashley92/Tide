@@ -20,7 +20,7 @@
 .tide-shortcuts-btn:hover, .tide-bell-btn:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 
 /* Keys, drawn as keycaps. */
-.tide-palette-kbd, .tide-palette kbd, .tide-shortcuts kbd { display: inline-block; font-family: var(--tide-font-data); font-size: var(--tide-text-xs);
+.tide-palette-kbd, .tide-palette kbd, .tide-shortcuts kbd, .tide-help-keys kbd { display: inline-block; font-family: var(--tide-font-data); font-size: var(--tide-text-xs);
     font-weight: var(--tide-weight-medium); line-height: 1.3; padding: 0 var(--tide-space-1); border: 1px solid var(--tide-border-strong);
     border-bottom-width: 2px; border-radius: var(--tide-radius-sm); background: var(--tide-surface); color: var(--tide-text-muted); box-shadow: none; }
 

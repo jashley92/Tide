@@ -319,6 +319,13 @@
     padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
 .tide-help-guides > li:first-child { border-top: 0; }
 .tide-help-guide-text { display: flex; flex-direction: column; flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
+/* Help's keyboard shortcuts: a group to a line that opens to its table (the "?" overlay's). */
+.tide-help-keys > details { border-top: 1px solid var(--tide-border); padding: var(--tide-space-2) 0; }
+.tide-help-keys > details:first-child { border-top: 0; padding-top: 0; }
+.tide-help-keys > details > summary { cursor: pointer; font-weight: var(--tide-weight-medium); }
+.tide-help-keys > details[open] > summary { margin-bottom: var(--tide-space-1); }
+.tide-help-keys .tide-shortcuts-table { margin-bottom: 0; }
+.tide-help-keys .tide-shortcuts-table th { width: 30%; }
 /* A page's Show me around, in its header: a quiet link-styled button that starts the page's guide. */
 .tide-guide-link { padding: 0 var(--tide-space-1); white-space: nowrap; }
 /* Its ×, which puts the link away on this page (GuideLink). */
