@@ -133,14 +133,21 @@ window.tideFlip = (function () {
     function hold(h) { pin = h; frameOf().style.minHeight = h ? h + 'px' : ''; }
     // Holds just enough for the window to sit at top (the page's height may be decided by another column, so it is
     // topped up until there is room), keeps the window there, and returns where the page ends without the hold.
+    // How far the page reaches: its own laid-out box (the page's frame), not the document's scroll height, which counts
+    // rows still gliding up from below (their transforms) and would put the foot too low, letting the frame shrink under
+    // the sticky sidebar.
+    function reach() {
+        const f = frameOf();
+        return f === document.body ? document.documentElement.scrollHeight : f.getBoundingClientRect().bottom + scrollY;
+    }
     function room(top) {
-        const doc = document.documentElement, need = top + innerHeight;
+        const need = top + innerHeight;
         hold(0);
-        const natural = doc.scrollHeight;
+        const natural = reach();
         let h = need > natural + .5 ? need : 0;
         hold(h);
         for (let i = 0; h && i < 2; i++) {
-            const short = need - doc.scrollHeight;
+            const short = need - reach();
             if (short <= .5) break;
             hold(h += short);
         }
@@ -166,6 +173,9 @@ window.tideFlip = (function () {
         const glide = footMs, wait = footWait;
         footMs = footWait = 0;
         if (rewind) return;
+        // The reader scrolled meanwhile (wheel, touch, a page key): where they are now is where the window is, not where
+        // it was before, so a later look never takes them back.
+        if (performance.now() - handAt < 1500) lastY = scrollY;
         const ts = window.tideShortcuts, from = lastY, foot = room(from);
         if (!(from > foot + 1)) {
             if (final !== true && !document.hidden) {
@@ -396,7 +406,8 @@ window.tideFlip = (function () {
                     // A lane that scrolls (a short window) is brought to where the card lands first, so it's seen to land.
                     const lane = el.parentElement, lr = lane.getBoundingClientRect(), cr = { top: o.top + n.y, bottom: o.top + n.y + n.h };
                     const inView = cr.top >= lr.top && cr.bottom <= lr.bottom;
-                    const from = { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h };
+                    // As tall as the card is now (its Move menu, open as it was measured, is gone).
+                    const from = { left: o.left + w.x, top: o.top + w.y, width: w.w, height: n.h };
                     let by = 0;
                     if (!inView) {
                         // As board.js shows a card (inside the lane's padding; from its top when it's taller than the lane),
@@ -415,7 +426,9 @@ window.tideFlip = (function () {
                         const first = Array.prototype.find.call(old.querySelectorAll(root.dataset.tideFlip), function (c) { const r = c.getBoundingClientRect(); return r.height && r.bottom > ol.top + pad; });
                         if (first) { const ft = first.getBoundingClientRect().top - ol.top - pad; if (ft < -1) scrollIn(old, ft, ms); }
                     }
-                    ts.fly(el, from, to, clip);
+                    // And where it lands, the part its lane won't show (a card taller than a short lane) is hidden as it arrives.
+                    const clipTo = { top: Math.max(0, lr.top - to.top), bottom: Math.max(0, to.top + n.h - lr.bottom) };
+                    ts.fly(el, from, to, clip, clipTo.top || clipTo.bottom ? clipTo : null);
                 }
                 return;
             }
