@@ -39,17 +39,36 @@ window.tideRows = (function () {
         return opt ? document.getElementsByClassName(opt.row + ' selected')[0] || null : null;
     }
 
+    // The box that scrolls the row: a list scrolled within itself (triage's list beside its reading pane, on a wide
+    // window), or else the window.
+    function scroller(el) {
+        for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            const y = getComputedStyle(n).overflowY;
+            if ((y === 'auto' || y === 'scroll') && n.scrollHeight > n.clientHeight + 1) return n;
+        }
+        return null;
+    }
+
     // Brought into view where it's laid out, not where a glide has it this frame (flip.js): a row still gliding up to
-    // its place measured below the window, and the page scrolled away for nothing.
+    // its place measured below the window, and the page scrolled away for nothing. Within a list that scrolls itself,
+    // that list scrolls (smoothly, unless motion is reduced); the window eases with the rows' glide (flip.js), or steps
+    // without it.
     function reveal() {
         const row = selected();
         if (!row) return;
         const r = row.getBoundingClientRect(), t = getComputedStyle(row).transform;
-        const dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0, top = r.top - dy, bottom = r.bottom - dy;
+        const dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0;
+        let top = r.top - dy, bottom = r.bottom - dy;
+        const box = scroller(row);
+        if (box) {
+            const b = box.getBoundingClientRect(), by = top < b.top ? top - b.top : bottom > b.bottom ? Math.min(bottom - b.bottom, top - b.top) : 0;
+            const still = window.tideShortcuts && window.tideShortcuts.still();
+            if (by) box.scrollTo({ top: box.scrollTop + by, behavior: still ? 'instant' : 'smooth' });
+            top -= by; bottom -= by;
+        }
         const head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
         const by = top < head ? top - head : bottom > innerHeight ? Math.min(bottom - innerHeight, top - head) : 0;
         if (!by) return;
-        // The window eases there with the rows' glide (flip.js); without it, it steps.
         if (window.tideFlip && window.tideFlip.bring) window.tideFlip.bring(by); else window.scrollBy({ top: by });
     }
 

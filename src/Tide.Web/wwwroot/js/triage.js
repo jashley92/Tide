@@ -82,8 +82,10 @@ window.tideTriage = (function () {
     function showPane(actions) {
         if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
         const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
-        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1) {
+            if (window.tideFlip && window.tideFlip.stop) window.tideFlip.stop();   // the row's own ease would carry on past it
             pane.scrollIntoView({ block: 'start', behavior: 'instant' });
+        }
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other

@@ -114,6 +114,15 @@ window.tideFlip = (function () {
     let footMs = 0, footWait = 0;   // the glide this change started (play), which the window keeps time with
     let idle = 0;   // a look once the changes have gone quiet
     const HANDS = ['wheel', 'touchstart', 'mousedown', 'keydown'];   // the reader taking the scroll
+    // Keys that scroll the page take it; the list's own keys (J, K, the arrows on a row) only move a selection, which
+    // the ease then follows.
+    const SCROLL_KEYS = /^(PageUp|PageDown|Home|End| |Spacebar)$/;
+    function handed(done) {
+        return function (e) {
+            if (e.type === 'keydown' && (!SCROLL_KEYS.test(e.key) || (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable], [role="option"], [role="row"], li[tabindex]')))) return;
+            done();
+        };
+    }
     function frameOf() { return document.querySelector('.page') || document.body; }
     function hold(h) { pin = h; frameOf().style.minHeight = h ? h + 'px' : ''; }
     // Holds just enough for the window to sit at top (the page's height may be decided by another column, so it is
@@ -177,9 +186,9 @@ window.tideFlip = (function () {
         let timing = ease(ms, delay), goal = to0, prev = 0, frame = 0;
         const done = function () {
             cancelAnimationFrame(frame); timing.cancel(); rewind = null; aim = null;
-            HANDS.forEach(function (t) { removeEventListener(t, done, true); });
+            HANDS.forEach(function (t) { removeEventListener(t, hand, true); });
             room(lastY = scrollY);
-        };
+        }, hand = handed(done);
         const step = function () {
             const at = scrollY, to = target(at);
             if (to - goal > 8 && aim === null) { done(); return; }
@@ -190,7 +199,7 @@ window.tideFlip = (function () {
             room(lastY = Math.round(at + (to - at) * k));   // the window's own place, meanwhile
             if (timing.playState === 'finished') done(); else frame = requestAnimationFrame(step);
         };
-        HANDS.forEach(function (t) { addEventListener(t, done, { capture: true, passive: true }); });
+        HANDS.forEach(function (t) { addEventListener(t, hand, { capture: true, passive: true }); });
         rewind = done;
         timing.play();
         frame = requestAnimationFrame(step);
@@ -201,7 +210,7 @@ window.tideFlip = (function () {
         const ts = window.tideShortcuts;
         if (!dy) return;
         if (!ts || ts.still() || !window.KeyframeEffect || document.hidden) { window.scrollBy({ top: dy, behavior: 'instant' }); lastY = scrollY; return; }
-        aim = Math.max(0, (aim === null ? scrollY : aim) + dy);
+        aim = Math.max(0, scrollY + dy);   // measured from where the window is now (asked twice, it's the same place)
         if (rewind) return;
         glideWindow(scrollY, aim, ts.travel(Math.abs(dy)), 0);
     }
@@ -460,5 +469,7 @@ window.tideFlip = (function () {
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
     }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
-    return { bring: bring };
+    // Something about to put the window somewhere itself (the reading pane brought into view) ends an ease under way.
+    function stop() { if (rewind) rewind(); }
+    return { bring: bring, stop: stop };
 })();
