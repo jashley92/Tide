@@ -87,7 +87,8 @@ else
                 }
                 else
                 {
-                    <ActionStatusBadge Status="a.Status" />
+                    @* Keyed by the status, so a change (someone else's) draws it afresh and it flashes as live data does. *@
+                    <span data-tide-tick @key="a.Status"><ActionStatusBadge Status="a.Status" /></span>
                 }
                 <PriorityBadge Priority="a.Priority" />
                 @* The marking of the article it was raised from, AMBER and above, so the header says so without the rail. *@
@@ -105,7 +106,7 @@ else
                 <GuideLink />
             </div>
             <div class="tide-sub tide-action-who">
-                <span>@a.Team?.Name</span> &middot; <span><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
+                <span>@a.Team?.Name</span> &middot; <span data-tide-tick @key="@HolderLabel.Of(a, "Unassigned")"><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
                 @if (_detail.HandedFrom is { } handedFrom)
                 {
                     <span class="tide-handoff">&middot; <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span>

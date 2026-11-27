@@ -15,11 +15,12 @@ else
     {
         <SectionEmpty Icon="@Icons.Checklist">Nothing on the checklist.</SectionEmpty>
     }
-    <ul class="tide-checklist @(Compact ? "tide-checklist-compact" : "")">
+    @* Items glide as one is added or taken off, and one taken off fades out where it was (flip.js). *@
+    <ul class="tide-checklist @(Compact ? "tide-checklist-compact" : "")" data-tide-flip="li" data-tide-flip-exit>
         @foreach (var i in _items)
         {
             var id = $"chk-{i.Id:N}";
-            <li @key="i.Id" class="@(i.IsDone ? "done" : "")">
+            <li @key="i.Id" class="@(i.IsDone ? "done" : "")" data-id="@i.Id">
                 <input type="checkbox" class="form-check-input" id="@id" checked="@i.IsDone" disabled="@(!Works || _busy)"
                        @onchange="e => Tick(i, e.Value is true)" />
                 <label for="@id">@i.Text</label>
