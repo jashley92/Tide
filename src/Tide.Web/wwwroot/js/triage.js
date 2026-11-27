@@ -174,7 +174,10 @@ window.tideTriage = (function () {
             const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } first(); };
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
-            const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
+            const shown = function () {
+                rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); });
+                if (bar && bar.isConnected) { bar.removeAttribute('data-tide-gone'); bar.getAnimations().forEach(function (a) { a.cancel(); }); }   // they stayed
+            };
             // Shown again only if still on the page once the reload has had its moment (a second at most): taken away by
             // it, a row shown again first would flash back for a frame.
             const release = function () {
@@ -185,6 +188,9 @@ window.tideTriage = (function () {
                 })();
             };
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
+            // The bar for the chosen items goes with them: it fades as they lift, not after the reload (and leaves no copy).
+            const bar = document.querySelector('.tide-triage-selbar');
+            if (bar && !ts.quiet()) { bar.setAttribute('data-tide-gone', ''); bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' }); }
             if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
             // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
             if (t.bottom < 0 || t.top > innerHeight) { land(); release(); return Promise.resolve(); }

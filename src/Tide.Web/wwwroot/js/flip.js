@@ -124,6 +124,8 @@ window.tideFlip = (function () {
     const PAGE_KEYS = /^(PageUp|PageDown|Home|End)$/, SPACE = /^( |Spacebar)$/;
     function handed(done) {
         return function (e) {
+            // A wheel the window can't go with (down at the foot, up at the top) moves nothing: the ease carries on.
+            if (e.type === 'wheel' && ((e.deltaY > 0 && scrollY >= document.documentElement.scrollHeight - innerHeight - 1) || (e.deltaY < 0 && scrollY <= 0))) return;
             if (e.type === 'keydown' && !PAGE_KEYS.test(e.key) && !(SPACE.test(e.key) && !(e.target && e.target.closest &&
                 e.target.closest('input, textarea, select, button, [contenteditable], [role="option"], [role="row"], li[tabindex]')))) return;
             done();
@@ -534,7 +536,7 @@ window.tideFlip = (function () {
         const ts = window.tideShortcuts, found = n.matches(SURFACES) ? [n] : Array.prototype.slice.call(n.querySelectorAll(SURFACES));
         found.forEach(function (el) {
             open.delete(el);
-            const r = surfaceAt.get(el);
+            const r = el.hasAttribute('data-tide-gone') ? null : surfaceAt.get(el);   // gone already (faded as its items left)
             if (!r || !r.width || document.hidden || !document.body.animate) return;
             const g = ts.copy(el, r);
             g.classList.add('tide-surface-leaving');

@@ -62,6 +62,8 @@ else if (Shown.Count == 0)
     <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No playbook matches these filters." />
     </div>
+    @* The rail stays (empty), so the top bar's Context button doesn't come and go as a search finds nothing and then something. *@
+    <ContextRail Title="About this playbook"><section class="tide-card"><SectionEmpty Icon="@Icons.Checklist">Nothing is selected: no playbook matches.</SectionEmpty></section></ContextRail>
 }
 else
 {
