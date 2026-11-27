@@ -95,7 +95,10 @@ window.tideFlip = (function () {
             if (n && w && w.parent === n.parent) far = Math.max(far, Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy), n.h - w.h);
         });
         const together = ts.travel(far);
-        if (!quiet && s.was) hold(root, tall, o.height, together);
+        // After an exit (a toast closed, a group folded), the rest wait until what left has faded, so none glides under it.
+        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0;
+        // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
+        if (!quiet && s.was && !pinned.get(root)) hold(root, tall, o.height, together + wait);
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
@@ -106,7 +109,7 @@ window.tideFlip = (function () {
             // grew, opened over the same time to its own foot (not past it, into the gap the next is gliding over), with
             // room at the other sides for its brackets.
             const grew = n.h - w.h;
-            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, easing: ease });
+            if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, delay: wait, easing: ease, fill: 'backwards' });
             const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
             if (!dx && !dy) return;
             const a = running.get(el);
@@ -125,7 +128,7 @@ window.tideFlip = (function () {
             }
             const t = together;
             longest = t;
-            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, easing: ease });
+            const glide = el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: t, delay: wait, easing: ease, fill: 'backwards' });
             running.set(el, glide);
             // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
             // moved (it has focus, on its Move button) is carried over the one it swaps with, not through it.
@@ -157,7 +160,7 @@ window.tideFlip = (function () {
     function leave(root, el) {
         const ts = window.tideShortcuts, kept = at.get(root), p = kept && kept.get(key(el));
         if (!p || !document.body.animate || document.hidden) return;
-        const o = root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
+        const o = pinned.get(root) ? { left: 0, top: 0 } : root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
         Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
         // Clear by two thirds of the way, so one coming in where it was (a toast after its undo) doesn't share its box.

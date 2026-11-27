@@ -136,6 +136,15 @@ window.tideShortcuts = (function () {
         c.setAttribute('aria-hidden', 'true');
         c.setAttribute('data-tide-copy', '');
         c.inert = true;
+        // A clone keeps the markup's values, not what was chosen or typed since: those are carried over, so a dialog
+        // fading out still shows the answer just given.
+        var from = el.querySelectorAll('input, select, textarea'), to = c.querySelectorAll('input, select, textarea');
+        for (var i = 0; i < from.length; i++) {
+            to[i].removeAttribute('name');   // nor joins the original's radio group, taking its choice
+            if (from[i].tagName === 'SELECT') to[i].selectedIndex = from[i].selectedIndex;
+            else if (from[i].type === 'checkbox' || from[i].type === 'radio') to[i].checked = from[i].checked;
+            else if (from[i].type !== 'file') to[i].value = from[i].value;
+        }
         if (rect) {
             c.style.left = rect.left + 'px';
             c.style.top = rect.top + 'px';
