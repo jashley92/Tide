@@ -259,7 +259,7 @@ window.tideInvalid = (function () {
     return { show: show };
 })();
 
-// A page that's slow to come (the server still rendering it): after --tide-dur-wait a thin bar scans under the top bar
+// A page that's slow to come (the server still rendering it): after --tide-dur-patience a thin bar scans under the top bar
 // (.tide-nav-cue, in MainLayout), until .NET says the new page has rendered (MainLayout, done()). Nothing shows for a
 // page that comes sooner. Navigation here is the interactive router's, so it starts when the address changes: a link
 // followed (history.pushState) or Back and Forward (popstate). The state is on <html>, which Blazor never re-renders.
@@ -272,7 +272,7 @@ window.tideNavCue = (function () {
     }
     function start() {
         done();
-        timer = setTimeout(function () { document.documentElement.setAttribute('data-tide-waiting', ''); }, window.tideShortcuts.ms('--tide-dur-wait'));
+        timer = setTimeout(function () { document.documentElement.setAttribute('data-tide-waiting', ''); }, window.tideShortcuts.ms('--tide-dur-patience'));
     }
     // The same address again (its own link clicked), or one that differs only after # (a link within the page), renders
     // nothing new, so there's nothing to wait for.
