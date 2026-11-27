@@ -33,6 +33,15 @@ public class IocExtractorTests
     }
 
     [Theory]
+    [InlineData("CVE-\uFF12\uFF10\uFF12\uFF16-\uFF11\uFF12\uFF13\uFF14")]   // fullwidth digits
+    [InlineData("CVE-\u0662\u0660\u0662\u0666-\u0661\u0662\u0663\u0664")]   // Arabic-Indic digits
+    public void ACveId_IsWrittenInAsciiDigits_SoOneInOtherDigitsIsNotTakenForOne(string id)
+    {
+        IocExtractor.Extract($"Vendor patches {id} this week.").Cves.Should().BeEmpty();
+        IocExtractor.NormalizeCve(id).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("Built on ASP.NET with Node.js on the U.S. east coast, e.g. in Q3.")]
     [InlineData("See section 4.2 and version 1.2 of the report.")]
     public void Extract_LeavesProseAlone(string text)

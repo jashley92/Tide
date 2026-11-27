@@ -128,7 +128,9 @@ public static partial class IocExtractor
     }
 
     /// <summary>A CVE id anywhere in text: the one pattern the extractor, the feeds and the reading pane share.</summary>
-    [GeneratedRegex(@"\bCVE-\d{4}-\d{4,7}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    // [0-9], not \d: \d takes any Unicode digit (fullwidth "２０２６", Arabic-Indic), and an id written so isn't one NVD
+    // or the KEV catalog knows: stored, it would match no record and never be enriched.
+    [GeneratedRegex(@"\bCVE-[0-9]{4}-[0-9]{4,7}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     internal static partial Regex Cve();
 
     /// <summary>The CVE ids in <paramref name="text"/>, upper-cased, in order, once each.</summary>
