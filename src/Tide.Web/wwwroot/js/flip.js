@@ -9,11 +9,12 @@
 // fade in, and leaving ones fade out.
 //
 // Each change is measured first and then played, so the page is laid out once for all the items, not once per item.
-// Where each item was is kept as the window sees it without any glide playing on it, after each change, after a change
-// inside an item (a row that grew), when the list changes size, and when it or a lane in it scrolls.
+// Where each item was is kept relative to its list (so scrolling the window changes nothing) and without any glide
+// playing on it: after each change, after a change inside an item (a row that grew), when the list changes size, and
+// when a lane inside it scrolls.
 window.tideFlip = (function () {
-    const ROOTS = '[data-tide-flip]', STAGGERED = 8, COPY = '[data-tide-copy]';
-    const at = new WeakMap(), rects = new WeakMap(), running = new WeakMap(), known = new WeakSet(), due = new Set();
+    const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
+    const at = new WeakMap(), running = new WeakMap(), due = new Set();
     let frame = 0;
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
         es.forEach(function (e) { if (e.target.isConnected) later(e.target); else sized.unobserve(e.target); });
@@ -21,24 +22,24 @@ window.tideFlip = (function () {
 
     function items(root) { return Array.prototype.slice.call(root.querySelectorAll(root.dataset.tideFlip)); }
     function key(el) { return el.dataset.id || el; }
-    function positions(root) { let m = at.get(root); if (!m) { m = new Map(); at.set(root, m); } return m; }
 
-    // Where the window shows it, less any glide playing on it (that's motion, not its place), and the list it's in;
-    // null while it isn't shown.
-    function measure(el) {
+    // Where it is in its list, less any glide playing on it (that's motion, not its place), the container it's in, and
+    // the glide's offset now; null while it isn't shown.
+    function measure(el, origin) {
         const r = el.getBoundingClientRect();
         if (!r.width && !r.height) return null;
         let dx = 0, dy = 0;
         const a = running.get(el);
         if (a && a.playState === 'running') { const m = new DOMMatrixReadOnly(getComputedStyle(el).transform); dx = m.m41; dy = m.m42; }
-        return { x: r.left - dx, y: r.top - dy, w: r.width, h: r.height, seen: { x: dx, y: dy }, el: el, parent: el.parentElement };
+        return { x: r.left - dx - origin.left, y: r.top - dy - origin.top, w: r.width, h: r.height, dx: dx, dy: dy, parent: el.parentElement };
     }
 
-    function remember(root) {
-        const m = positions(root), list = items(root), now = list.map(measure);
-        m.clear();
-        list.forEach(function (el, i) { if (now[i]) m.set(key(el), now[i]); });
-        if (root.hasAttribute('data-tide-flip-exit')) list.forEach(function (el) { rects.set(el, el.getBoundingClientRect()); });
+    // Measures the list's items and keeps where each is, giving back where they were before (null the first time).
+    function snapshot(root) {
+        const was = at.get(root) || null, origin = root.getBoundingClientRect(), list = items(root), now = new Map();
+        list.forEach(function (el) { const p = measure(el, origin); if (p) now.set(key(el), p); });
+        at.set(root, now);
+        return { was: was, list: list, now: now, origin: origin };
     }
 
     // Measured again on the next frame (a change inside an item, a resize, a scroll): one measure for many changes.
@@ -47,66 +48,50 @@ window.tideFlip = (function () {
         if (frame) return;
         frame = requestAnimationFrame(function () {
             frame = 0;
-            due.forEach(function (r) { if (r.isConnected) remember(r); });
+            due.forEach(function (r) { if (r.isConnected) snapshot(r); });
             due.clear();
         });
     }
 
-    // A card .NET drew in another lane flies there on a copy laid over the page, the card itself shown as it lands (it's
-    // only transparent meanwhile, so focus can go to it: the Move menu sends focus there at once).
-    function fly(el, was, now, opts) {
-        const ts = window.tideShortcuts;
-        const g = ts.copy(el, { left: was.x, top: was.y, width: was.w, height: was.h });
-        g.classList.add('tide-flying');
-        el.style.opacity = '0';
-        const done = function () { g.remove(); el.style.opacity = ''; };
-        g.animate([{ transform: 'none' }, { transform: 'translate(' + (now.x - was.x) + 'px, ' + (now.y - was.y) + 'px)' }],
-            { duration: opts.far, easing: opts.ease, fill: 'forwards' }).finished.then(done, done);
-    }
-
     function play(root) {
-        const ts = window.tideShortcuts, first = !known.has(root), quiet = ts.still() || document.hidden || !document.body.animate;
-        const opts = { dur: ts.ms('--tide-dur-base'), far: ts.ms('--tide-dur-panel'), ease: ts.token('--tide-ease-out') };
-        if (first) { known.add(root); if (sized) sized.observe(root); }
-        // Read everything, then write: one layout for the whole list.
-        const m = positions(root), list = items(root), now = list.map(measure);
-        const was = new Map(m), fresh = [];
-        m.clear();
-        list.forEach(function (el, i) { if (now[i]) m.set(key(el), now[i]); });
-        list.forEach(function (el, i) {
-            const n = now[i];
+        const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
+        if (!s.was && sized) sized.observe(root);
+        const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];
+        let flights = 0;
+        s.list.forEach(function (el) {
+            const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
-            const w = was.get(key(el));
             if (!w) { fresh.push(el); return; }
             if (quiet) return;
-            const dx = w.x - n.x + n.seen.x, dy = w.y - n.y + n.seen.y;
+            const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
             if (!dx && !dy) return;
             const a = running.get(el);
             if (a) a.cancel();
-            // A new element for a known card, in another container: it flies, as a glide would be clipped by its lane.
-            if (w.el !== el && w.parent !== n.parent) { fly(el, w, n, opts); return; }
-            running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: opts.dur, easing: opts.ease }));
+            // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
+            // the rest of a whole board redrawn are just there.
+            if (w.parent !== n.parent) {
+                if (flights++ < FLIGHTS) ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, ts.ms('--tide-dur-panel'), { left: o.left + n.x, top: o.top + n.y });
+                return;
+            }
+            running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: dur, easing: ease }));
         });
         // A list arriving whole (or a page of it) comes in in quick order; one or two new items have their own entrance.
-        if ((first || fresh.length > 2) && fresh.length && !document.hidden && document.body.animate) {
+        if ((!s.was || fresh.length > 2) && fresh.length && !document.hidden && document.body.animate) {
             const stagger = ts.ms('--tide-stagger'), still = ts.still();
             fresh.slice(0, STAGGERED).forEach(function (el, i) {
-                el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: opts.dur, delay: still ? 0 : i * stagger, easing: opts.ease, fill: 'backwards' });
+                el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, delay: still ? 0 : i * stagger, easing: ease, fill: 'backwards' });
             });
         }
-        if (root.hasAttribute('data-tide-flip-exit')) list.forEach(function (el) { rects.set(el, el.getBoundingClientRect()); });
     }
 
-    // An item that left fades out where it was, on a copy (the item itself is gone).
-    function leave(el) {
-        const r = rects.get(el), ts = window.tideShortcuts;
-        if (!r || !r.width || !document.body.animate || document.hidden) return;
-        const g = ts.copy(el, r);
+    // An item that left fades out where it was last measured, on a copy (the item itself is gone).
+    function leave(root, el) {
+        const ts = window.tideShortcuts, kept = at.get(root), p = kept && kept.get(key(el));
+        if (!p || !document.body.animate || document.hidden) return;
+        const o = root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
-        const drop = ts.still() ? 0 : 8;
-        g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(' + drop + 'px)' }],
-            { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in'), fill: 'forwards' })
-            .finished.then(function () { g.remove(); }, function () { g.remove(); });
+        ts.drift(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(' + (ts.still() ? 0 : 8) + 'px)' }],
+            { duration: ts.ms('--tide-dur-exit'), easing: ts.token('--tide-ease-in') });
     }
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
@@ -139,23 +124,23 @@ window.tideFlip = (function () {
             // Inside one of its items (a menu opening, a row's text): nothing moves now, but where the items are may have.
             if (m.target.closest(root.dataset.tideFlip)) { later(root); return; }
             touched.add(root);
-            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) { if (n.matches(root.dataset.tideFlip)) leave(n); });
+            if (root.hasAttribute('data-tide-flip-exit')) removed.forEach(function (n) { if (n.matches(root.dataset.tideFlip)) leave(root, n); });
         });
         touched.forEach(function (root) { if (root.isConnected) { due.delete(root); play(root); } });
     }
 
-    // The window, or a lane in a list, scrolled: its items are somewhere else in the window now.
+    // A lane inside a list scrolled: its items are somewhere else in the list now. (The window scrolling moves a list
+    // and its items together, which changes nothing.)
     function scrolled(e) {
-        const root = e.target === document ? null : e.target.closest && e.target.closest(ROOTS);
-        if (root) later(root);
-        else if (e.target === document) document.querySelectorAll(ROOTS).forEach(later);
+        const root = e.target !== document && e.target.closest ? e.target.closest(ROOTS) : null;
+        if (root && root !== e.target) later(root);
     }
 
     function start() {
         if (!window.MutationObserver) return;
         new MutationObserver(changed).observe(document.body, { childList: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
-        document.querySelectorAll(ROOTS).forEach(function (root) { known.add(root); remember(root); if (sized) sized.observe(root); });
+        document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
     }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 })();

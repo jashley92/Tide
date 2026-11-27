@@ -85,7 +85,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
     border-color: var(--tide-accent); box-shadow: var(--tide-elev-2); }
 /* .tide-kcard first: outranks the brackets at rest (41-intake, a later file), whatever the order. */
 .tide-kcard:is(.tide-kcard-ghost, .tide-kcard-held, [data-tide-pressed], [data-tide-locked])::before { opacity: 1; transform: none; }
-/* A card .NET drew in another lane flies there over the page (flip.js), lifted like the ghost. */
+/* A card .NET drew in another lane flies there over the page (flip.js), lifted like the ghost; the card itself waits
+   transparent where it lands (still focusable). */
+.tide-kcard[data-tide-landing] { opacity: 0; }
 .tide-kcard.tide-flying { position: fixed; z-index: var(--tide-z-drop); margin: 0; pointer-events: none; border-color: var(--tide-accent);
     box-shadow: var(--tide-elev-2); will-change: transform; }
 /* Someone else's drag (BoardDrags): the card they hold, the column it's over with their name, and a card they moved,

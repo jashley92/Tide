@@ -120,12 +120,12 @@ window.tideTriage = (function () {
         // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and
         // place, into the Promoted tab's count just above the list, which locks on. Each is a copy, moved and scaled by
         // transform (the browser composites it, no layout each frame), its text fading first so the stretch doesn't show;
-        // the row itself fades at once. .NET waits for this (the promise) before it reloads the list, so the count then
-        // rolls to its new number and the rows below close the gap (flip.js), but never longer than --tide-dur-wait: the
-        // copies finish on their own, and the person isn't kept waiting on motion. Without motion, or in a tab nobody is
-        // looking at, the rows fade and the count changes. The rows' state is a data attribute .NET never draws, taken off
-        // again whatever happens, so a row that stays on the page can't stay hidden. tabLabel: the Promoted tab's label,
-        // from .NET (Triage.Tabs).
+        // the row itself fades at once. .NET waits --tide-dur-wait (the promise) before it reloads the list, so the rows
+        // are on their way when the count rolls to its new number and the rows below close the gap (flip.js); the copies
+        // fly on by themselves. Without motion, or in a tab nobody is looking at, the rows fade and the count changes. The
+        // rows' faded state is a data attribute .NET never draws, taken off once the copies are done (or at once without
+        // them), so a row that stays on the page can't stay hidden. tabLabel: the Promoted tab's label, from .NET
+        // (Triage.Tabs).
         promoted: function (ids, tabLabel) {
             const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
             const want = new Set(ids || []), ts = window.tideShortcuts;
@@ -139,22 +139,15 @@ window.tideTriage = (function () {
             const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
             if (!dest || !rows.length) return Promise.resolve();
             let landed = false;
-            const land = function () {
-                if (landed) return;
-                landed = true;
-                tab.removeAttribute('data-tide-landed');
-                void tab.offsetWidth;
-                tab.setAttribute('data-tide-landed', '');
-                setTimeout(function () { tab.removeAttribute('data-tide-landed'); }, ts.ms('--tide-dur-signature'));
-            };
+            const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } };
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
             const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
+            const waited = new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-wait')); });
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
-            setTimeout(shown, ts.ms('--tide-dur-travel') + STAGGER * MORPHS + ts.ms('--tide-dur-signature'));
-            if (!t.width || ts.still() || document.hidden || !document.body.animate) { land(); return Promise.resolve(); }
+            if (!t.width || ts.quiet()) { land(); waited.then(shown); return waited; }
             const dur = ts.ms('--tide-dur-travel'), ease = ts.token('--tide-ease-out');
-            const all = Promise.all(rows.map(function (row, i) {
+            Promise.all(rows.map(function (row, i) {
                 const r = from[i];
                 if (!r.width || !r.height) return null;
                 const g = ts.copy(row, r);   // the row itself, lifted, as it was before it faded
@@ -162,10 +155,10 @@ window.tideTriage = (function () {
                 g.classList.add('tide-morph');
                 Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), fill: 'forwards' }); });
                 const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
-                return g.animate([{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
-                    { duration: dur, delay: i * STAGGER, easing: ease, fill: 'forwards' }).finished.then(function () { g.remove(); land(); }, function () { g.remove(); });
-            }));
-            return Promise.race([all, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-wait')); })]).then(function () { });
+                return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
+                    { duration: dur, delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
+            })).then(shown);
+            return waited;
         },
         // The promote form opened: its title takes focus, selected, ready to retype.
         focusPromote: function () {

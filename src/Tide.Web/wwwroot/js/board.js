@@ -186,27 +186,25 @@ window.tideBoard = (function () {
     }
 
     // Brackets locked onto a card for a moment: it has landed.
-    function lockOn(card) {
-        card.setAttribute('data-tide-locked', '');
-        setTimeout(function () { card.removeAttribute('data-tide-locked'); }, window.tideShortcuts.ms('--tide-dur-signature'));
-    }
+    function lockOn(card) { window.tideShortcuts.pulse(card, 'data-tide-locked'); }
 
     // The slot goes and the ghost glides from where it was let go to where the card now is (where the slot was, once .NET
-    // has moved it there), and the card shows again as it arrives, its brackets locked on.
+    // has moved it there), and the card shows again as it arrives, its brackets locked on. Meanwhile the card waits
+    // transparent (data-tide-landing), not hidden: focus goes to it once the drop is done.
     function settle(g, card) {
+        const ts = window.tideShortcuts;
         clearRoom(card);
         const done = function () {
             g.remove();
             if (!card) return;
-            card.style.opacity = '';
+            card.removeAttribute('data-tide-landing');
             lockOn(card);
         };
-        if (!card || window.tideShortcuts.still() || !g.animate) { done(); return; }
+        if (!card || ts.quiet()) { done(); return; }
         const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
-        card.style.opacity = '0';   // not hidden: focus goes to it once the drop is done
-        g.animate([{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
-            { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out'), fill: 'forwards' })
-            .finished.then(done, done);
+        card.setAttribute('data-tide-landing', '');
+        ts.drift(g, [{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
+            { duration: ts.ms('--tide-dur-panel'), easing: ts.token('--tide-ease-out') }).finished.then(done, done);
     }
 
     function onPointerUp(e) {

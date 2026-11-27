@@ -218,8 +218,7 @@ window.tidePresent = (function () {
     // motion, the old page fades out over the new, quickly. The old page is the copy settle() last took of the slide as it
     // was drawn (scrolled where it was last seen), since by the time the new body arrives .NET has emptied and taken away
     // the old one.
-    let turnedFrom = 0, lastPage = null, turning = [];
-    const heard = new WeakSet();
+    let turnedFrom = 0, lastPage = null, turning = null;
     function slideNo(s) { const m = /Slide (\d+)/.exec(s.getAttribute('aria-label') || ''); return m ? +m[1] : 0; }
     function turn() {
         const slide = document.querySelector('#present-root > .tide-slide'), ts = window.tideShortcuts;
@@ -228,8 +227,8 @@ window.tidePresent = (function () {
         if (!was || no === was || !last || !now || !now.animate) return;
         turnedFrom = no;
         lastPage = null;
-        turning.forEach(function (a) { a.finish(); });
-        if (document.hidden) { turning = []; return; }
+        if (turning) turning.finish();
+        if (document.hidden) return;
         const back = no < was, still = ts.still(), dur = ts.ms(still ? '--tide-dur-fast' : '--tide-dur-turn');
         const page = ts.copy(last.page);
         page.classList.remove('tide-scrollfade');
@@ -240,8 +239,7 @@ window.tidePresent = (function () {
         const lifting = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -24) + 'deg)', opacity: 1, offset: .4 };
         const away = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -60) + 'deg)', opacity: 0 };
         const done = function () { page.remove(); now.classList.remove('tide-page-over'); };
-        const play = function (el, frames, ease) { const a = el.animate(frames, { duration: dur, easing: ts.token(ease), fill: 'backwards' }); turning.push(a); a.finished.then(done, done); };
-        turning = [];
+        const play = function (el, frames, ease) { turning = el.animate(frames, { duration: dur, easing: ts.token(ease), fill: 'backwards' }); turning.finished.then(done, done); };
         if (back && !still) {
             now.classList.add('tide-page-over');
             play(now, [away, lifting, flat], '--tide-ease-out');
@@ -257,9 +255,7 @@ window.tidePresent = (function () {
         if (!el || sizeOf(el) === fittedFor) return;
         fit(el);
         fittedFor = sizeOf(el);
-        lastPage = { page: el.cloneNode(true), top: el.scrollTop, from: el };
-        // Where the presenter scrolled it to is where it turns from.
-        if (!heard.has(el)) { heard.add(el); el.addEventListener('scroll', function () { if (lastPage && lastPage.from === el) lastPage.top = el.scrollTop; }, { passive: true }); }
+        lastPage = { page: el.cloneNode(true), top: el.scrollTop };
     }
 
     function onCardSizes(entries) {
@@ -285,6 +281,7 @@ window.tidePresent = (function () {
         const el = e.target;
         if (!(el instanceof Element) || !el.classList.contains('tide-scrollfade')) return;
         edges(el);
+        if (el === shown && lastPage) lastPage.top = el.scrollTop;   // where the page turns from, when it turns
         if (el.classList.contains('tide-slide-body') && performance.now() - intentAt < INTENT) report(el);
     }
 
