@@ -380,7 +380,7 @@ window.tideFlip = (function () {
                     // A lane that scrolls (a short window) is brought to where the card lands first, so it's seen to land.
                     const lane = el.parentElement, lr = lane.getBoundingClientRect(), cr = { top: o.top + n.y, bottom: o.top + n.y + n.h };
                     const inView = cr.top >= lr.top && cr.bottom <= lr.bottom;
-                    if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+                    if (!inView) el.scrollIntoView({ block: el.offsetHeight > lane.clientHeight ? 'start' : 'nearest', inline: 'nearest', behavior: 'instant' });   // from its top, when it's taller than the lane
                     ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, inView ? { left: o.left + n.x, top: o.top + n.y } : undefined);
                 }
                 return;

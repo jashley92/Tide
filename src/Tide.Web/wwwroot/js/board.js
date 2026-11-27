@@ -335,8 +335,26 @@ window.tideBoard = (function () {
         const el = c && (c.querySelector('.tide-kcard-move') || c.querySelector('.tide-action-ref'));
         if (!el) return false;
         el.focus({ preventScroll: true });
-        el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: window.tideShortcuts.still() ? 'instant' : 'smooth' });
+        show(c);
         return true;
+    }
+
+    // The card brought into view in its lane, then the lane in the window: from its top, its title and priority first.
+    // A card taller than a short lane (a narrow window) keeps its top in view, not its foot where the focused button is.
+    function show(c) {
+        const how = window.tideShortcuts.still() ? 'instant' : 'smooth', lane = c.closest('.tide-kcol-cards');
+        if (lane && lane.scrollHeight > lane.clientHeight + 1) {
+            const l = lane.getBoundingClientRect(), r = c.getBoundingClientRect(), pad = parseFloat(getComputedStyle(lane).paddingTop) || 0;
+            const top = r.top - l.top - pad, foot = r.bottom - l.bottom + pad;
+            // Above the lane's view: its top comes in. Below: a card that fits shows whole; a taller one shows from its top,
+            // left where it is if its top is already near the lane's top.
+            const fits = r.height <= l.height - 2 * pad;
+            const by = top < 0 ? top : foot > 0 ? (fits ? foot : top > l.height / 4 ? top : 0) : 0;
+            if (Math.abs(by) > 1) lane.scrollBy({ top: by, behavior: how });
+        }
+        const r = c.getBoundingClientRect(), head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+        const wy = r.top < head ? r.top - head : r.bottom > innerHeight ? Math.min(r.bottom - innerHeight, r.top - head) : 0;
+        if (Math.abs(wy) > 1) window.scrollBy({ top: wy, behavior: how });
     }
 
     // After a move (its Move menu, or a drop): the card, if still on the board, locks on where it landed; focus goes there.
