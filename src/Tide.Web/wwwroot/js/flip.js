@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
+    const flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     let frame = 0, page = location.pathname;
     const entered = new Set();   // the lists that came in on this page
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
@@ -227,6 +227,19 @@ window.tideFlip = (function () {
         if (pin && y + innerHeight < pin) hold(y + innerHeight);
     }
 
+    // What was last pressed (a Move button), for a list where people move items themselves: a button that went disabled
+    // as its item reached the end has lost focus, so the item is still known to be the one moved, and focus goes on to
+    // the item's other enabled button rather than the page.
+    let pressed = null, pressedAt = 0;
+    function noted(e) { pressed = e.target && e.target.closest ? e.target.closest('button, a, [tabindex]') : null; pressedAt = performance.now(); }
+    function keep(el) {
+        const a = document.activeElement;
+        if (!pressed || !pressed.isConnected || !el.contains(pressed) || (a && a !== document.body)) return;
+        if (!pressed.disabled) { pressed.focus({ preventScroll: true }); return; }
+        const other = pressed.parentElement && pressed.parentElement.querySelector('button:not([disabled])');
+        if (other) other.focus({ preventScroll: true });
+    }
+
     function play(root, afterExit) {
         const tall = heights.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
@@ -242,7 +255,12 @@ window.tideFlip = (function () {
             if (s.was.get(key(el))) kept++;
             else if (!el.hasAttribute('data-tide-exit')) born++;
         });
-        const renewed = !!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size && (born > 1 || s.was.size > 0)), still = quiet || renewed;
+        // A list may say what it shows (data-tide-flip-key: the set of entries, as a filter or a page decides it): when that
+        // changed, it's a different list, however many of the same items it has, and it just shows; the same set in a new
+        // order (an entry moved) glides.
+        const fk = root.getAttribute('data-tide-flip-key'), rekeyed = fk !== null && flipKeys.has(root) && flipKeys.get(root) !== fk;
+        if (fk !== null) flipKeys.set(root, fk);
+        const renewed = rekeyed || (!!s.was && ((s.was.size > 1 && kept * 2 < s.was.size) || born * 2 > s.now.size && (born > 1 || s.was.size > 0))), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
         // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
         // than half a pixel is no move.
@@ -295,7 +313,8 @@ window.tideFlip = (function () {
             running.set(el, glide);
             // In a list where people move items themselves (data-tide-flip-carry: the running order, bullets), the one they
             // moved (it has focus, on its Move button) is carried over the one it swaps with, not through it.
-            if (root.hasAttribute('data-tide-flip-carry') && el.contains(document.activeElement)) {
+            if (root.hasAttribute('data-tide-flip-carry') && (el.contains(document.activeElement) || (pressed && performance.now() - pressedAt < 2000 && el.contains(pressed)))) {
+                keep(el);
                 el.setAttribute('data-tide-carried', '');
                 const down = function () { if (running.get(el) === glide) el.removeAttribute('data-tide-carried'); };
                 glide.finished.then(down, down);
@@ -469,6 +488,8 @@ window.tideFlip = (function () {
         if (!window.MutationObserver) return;
         new MutationObserver(changed).observe(document.body, { childList: true, characterData: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
+        document.addEventListener('pointerdown', noted, true);
+        document.addEventListener('keydown', noted, true);
         lastY = scrollY;
         if (window.KeyframeEffect) addEventListener('scroll', scrolledWindow, { passive: true });
         document.addEventListener('transitionend', ended, true);

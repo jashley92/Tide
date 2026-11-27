@@ -244,11 +244,25 @@ window.tidePresent = (function () {
         // Back again while the page coming in is still turning (its body was drawn afresh, so that turn can't carry on):
         // the next page comes in from the same point of its turn, not from edge on again.
         const carry = onward && no < was ? turning.currentTime || 0 : 0;
+        // Any other turn still in the air (keys mixed quickly) fades where it is, quickly, rather than vanishing in a frame.
+        if (!live && !onward && turning && turning.playState === 'running' && turned && turned.el.isConnected && !ts.still()) {
+            const el = turned.el, cs = getComputedStyle(el), ghost = el.cloneNode(true);
+            ghost.setAttribute('aria-hidden', 'true');
+            ghost.setAttribute('data-tide-copy', '');
+            ghost.inert = true;
+            ghost.classList.remove('tide-page-over', 'tide-scrollfade');
+            ghost.classList.add('tide-page-turning');
+            ghost.style.transform = cs.transform;
+            el.parentElement.appendChild(ghost);
+            const gone = function () { ghost.remove(); };
+            ghost.animate([{ opacity: +cs.opacity }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' })
+                .finished.then(gone, gone);
+        }
         if (turning) turning.finish();
         if (document.hidden) return;
         const back = no < was, still = ts.still() || Math.abs(no - was) > 1, dur = ts.ms(ts.still() ? '--tide-dur-fast' : still ? '--tide-dur-base' : '--tide-dur-turn');
         const page = ts.copy(last.page);
-        page.classList.remove('tide-scrollfade');
+        page.classList.remove('tide-scrollfade', 'tide-page-over');   // a copy taken mid-turn would sit over the page turning in
         page.classList.add('tide-page-turning');
         slide.appendChild(page);
         if (last.top) page.scrollTop = last.top;   // (setting it lays the page out at once: only when it's needed)
