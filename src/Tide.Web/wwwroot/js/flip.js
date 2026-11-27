@@ -354,7 +354,9 @@ window.tideFlip = (function () {
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
             if (!n) return;
-            if (el.hasAttribute('data-tide-landing')) return;   // a ghost is bringing it (board.js): it doesn't move by itself
+            // A ghost is bringing it (board.js): it doesn't move or fade in by itself. .NET may draw it afresh in its new
+            // lane before the ghost marks it, so the ghost's card is known by its id too (tideLanding).
+            if (el.hasAttribute('data-tide-landing') || (window.tideLanding && el.dataset.id && window.tideLanding.has(el.dataset.id))) return;
             if (!w) { fresh.push(el); return; }
             if (still) return;
             // It grew (a row selected opens its decision, a card's Move menu opens): what's new unfolds from its old foot
@@ -380,7 +382,12 @@ window.tideFlip = (function () {
                     // A lane that scrolls (a short window) is brought to where the card lands first, so it's seen to land.
                     const lane = el.parentElement, lr = lane.getBoundingClientRect(), cr = { top: o.top + n.y, bottom: o.top + n.y + n.h };
                     const inView = cr.top >= lr.top && cr.bottom <= lr.bottom;
-                    if (!inView) el.scrollIntoView({ block: el.offsetHeight > lane.clientHeight ? 'start' : 'nearest', inline: 'nearest', behavior: 'instant' });   // from its top, when it's taller than the lane
+                    if (!inView) {
+                        // As board.js shows a card (inside the lane's padding; from its top when it's taller than the lane),
+                        // so the copy lands where the card stays.
+                        const pad = parseFloat(getComputedStyle(lane).paddingTop) || 0, top = cr.top - lr.top - pad, foot = cr.bottom - lr.bottom + pad;
+                        lane.scrollTop += top < 0 || n.h > lr.height - 2 * pad ? top : foot;
+                    }
                     ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, inView ? { left: o.left + n.x, top: o.top + n.y } : undefined);
                 }
                 return;
