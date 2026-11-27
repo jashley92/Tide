@@ -80,7 +80,7 @@ public class EmailTemplateTests
         foreach (var body in new[] { "Overdue:\n\n{{ActionList}}", "Overdue: {{ActionList}}" })
         {
             var html = EmailTemplateRenderer.Render(t, "s", "h", body, values, appUrl: null).BodyHtml;
-            System.Text.RegularExpressions.Regex.Matches(html, "<table>").Should().ContainSingle("the list goes in once: " + body);
+            html.Split("<table>").Should().HaveCount(2, "the list goes in once: " + body);
             html.Should().NotContain("FILLED-IN", "a name in a title isn't filled in");
             System.Net.WebUtility.HtmlDecode(html).Should().Contain("href=\"https://tickets.example/{{ActionList}}\">{{ActionList}} {{OverdueActions}}</a>",
                 "the title and link read as they were typed");
