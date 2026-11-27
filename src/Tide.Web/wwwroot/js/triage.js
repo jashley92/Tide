@@ -193,7 +193,10 @@ window.tideTriage = (function () {
             if (bar && !ts.quiet()) { bar.setAttribute('data-tide-gone', ''); bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' }); }
             if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
             // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
-            if (t.bottom < 0 || t.top > innerHeight) { land(); release(); return Promise.resolve(); }
+            if (t.bottom < 0 || t.top > innerHeight) {
+                land(); release();
+                return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); });   // their fade plays before the reload
+            }
             const ease = ts.token('--tide-ease-out');
             const waited = Promise.race([hit, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-travel')); })]);
             Promise.all(rows.map(function (row, i) {

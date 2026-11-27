@@ -2201,6 +2201,8 @@ else
                 (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
                 if (outcome.Made)
                 {
+                    // The chosen items are on their way: the form closes to nothing, not back to the bar offering them.
+                    _picked.Clear();
                     StateHasChanged();
                     await JS.BestEffortAsync("tideTriage.promoted", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
                 }
