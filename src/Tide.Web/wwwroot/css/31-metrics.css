@@ -80,6 +80,14 @@
 .tide-chart-plot polyline.tide-chart-d1 { stroke-dasharray: 8 4; }
 .tide-chart-plot polyline.tide-chart-d2 { stroke-dasharray: 2 3; }
 .tide-chart-plot polyline.tide-chart-d3 { stroke-dasharray: 9 3 2 3; }
+/* The plot's first sweep into view (js/chart.js): hidden until it comes into view, then uncovered from the left over
+   --tide-dur-signature, a 2px scan edge in the accent (the frame's, over the plot) travelling on the line between shown
+   and not yet. js/chart.js never sets data-tide-sweep when less motion is asked for, so the chart just shows. */
+.tide-chart-plot[data-tide-sweep] { clip-path: inset(-8px calc(100% + 8px) -8px -8px); }
+.tide-chart-frame[data-tide-scan] { position: relative; --tide-scan-height: 100%; }   /* js/chart.js sets the plot's height */
+.tide-chart-frame[data-tide-scan]::after { content: ""; position: absolute; z-index: 3; top: 0; left: 0; width: 2px; height: var(--tide-scan-height); background: var(--tide-accent); opacity: 0; pointer-events: none; }
+/* The last reading, laid over the plot while it fades out and the new one fades in. */
+.tide-chart-plot.tide-chart-ghost { position: fixed; margin: 0; pointer-events: none; }
 .tide-table-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Present mode's metric slides, one per group on the always-dark slide: the numbers as large tiles across the top, the
