@@ -85,11 +85,22 @@ public sealed class RelatedService(IAppDbContextFactory dbs, ICurrentUser user, 
         var urls = mine.Concat(mine.Select(UrlCanonicalizer.Canonicalize).OfType<string>()).Distinct().ToList();
         if (urls.Count > 0)
         {
-            foreach (var id in await db.Articles.AsNoTracking().Where(a => a.Id != articleId && a.SourceUrl != null && urls.Contains(a.SourceUrl))
-                         .Select(a => a.Id).ToListAsync(ct))
+            // An address stored as one of these has the hash of its canonical form, which is indexed, where the address
+            // itself isn't: once every stored address has its hash (UrlHashFill), the rows are found by it, and still
+            // matched as stored. Otherwise (a fill still under way, or an address with no canonical form) every address
+            // is compared, as before.
+            var hashes = urls.Select(UrlCanonicalizer.HashOf).Distinct().ToList();
+            var bySeek = !hashes.Contains(null) && await UrlHashFill.DoneAsync(db, ct);
+            var atAddress = db.Articles.AsNoTracking().Where(a => a.Id != articleId && a.SourceUrl != null);
+            var links = db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId != articleId);
+            if (bySeek)
+            {
+                atAddress = atAddress.Where(a => hashes.Contains(a.SourceUrlHash));
+                links = links.Where(l => hashes.Contains(l.UrlHash));
+            }
+            foreach (var id in await atAddress.Where(a => urls.Contains(a.SourceUrl!)).Select(a => a.Id).ToListAsync(ct))
                 Add(id, SameLink);
-            foreach (var id in await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId != articleId && urls.Contains(l.Url))
-                         .Select(l => l.ArticleId).ToListAsync(ct))
+            foreach (var id in await links.Where(l => urls.Contains(l.Url)).Select(l => l.ArticleId).ToListAsync(ct))
                 Add(id, SameLink);
         }
 
