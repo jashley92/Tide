@@ -77,11 +77,20 @@ window.tideFlip = (function () {
         }
         return false;
     }
+    // Only what is laid out below it (not a pane beside it, in a row or a grid), drawn, and seen at some point of the
+    // glide: one off the screen throughout has nothing to show, and a transform would only unstick a bar inside it.
+    function below(s, box, by) {
+        if (s.matches(COPY) || /fixed|absolute|sticky/.test(getComputedStyle(s).position)) return false;
+        const r = s.getBoundingClientRect();
+        if (!r.width || !r.height || r.top < box.bottom - 1 || r.right <= box.left || r.left >= box.right) return false;
+        return Math.min(r.top, r.top + by) < innerHeight && Math.max(r.bottom, r.bottom + by) > 0;
+    }
     function slide(root, by, ms, wait) {
         const ease = window.tideShortcuts.token('--tide-ease-out');
         for (let n = root; n && n !== document.body && !inList(n); n = n.parentElement) {
+            const box = n.getBoundingClientRect();
             for (let s = n.nextElementSibling; s; s = s.nextElementSibling) {
-                if (s.matches(COPY) || /fixed|absolute|sticky/.test(getComputedStyle(s).position)) continue;
+                if (!below(s, box, by)) continue;
                 s.animate([{ transform: 'translateY(' + by + 'px)' }, { transform: 'none' }], { duration: ms, delay: wait, easing: ease, fill: 'backwards' });
             }
         }
