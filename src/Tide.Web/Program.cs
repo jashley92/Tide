@@ -455,11 +455,11 @@ app.MapGet("/trends/export.csv", async (string? p, bool? subs, int? n, TrendsSer
 
 // The report for period ?p= (Reports), one row per number and one per saved assessment, as CSV. Each row carries its TLP,
 // and the file's name the highest of them (ADR 0012): an assessment marked above the numbers raises the whole file.
-app.MapGet("/reports/export.csv", async (string? p, TrendsService trends, ReportService reports, CancellationToken ct) =>
+app.MapGet("/reports/export.csv", async (string? p, TrendsService trends, ReportService reports, OrgClock clock, CancellationToken ct) =>
 {
     var period = Period.Parse(p) ?? trends.DefaultEnd(PeriodKind.Month);
     var assessments = await reports.AssessmentsAsync(period, ct);
-    return CsvFile(ReportService.ToCsv(await reports.BuildAsync(period, ct), assessments),
+    return CsvFile(ReportService.ToCsv(await reports.BuildAsync(period, ct), assessments, clock),
         $"tide-report-{period.Key}-{Tlp.Key(ReportService.Marking(assessments))}.csv");
 }).AsExport();
 
