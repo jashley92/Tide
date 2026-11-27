@@ -136,6 +136,9 @@ window.tideShortcuts = (function () {
         c.setAttribute('aria-hidden', 'true');
         c.setAttribute('data-tide-copy', '');
         c.inert = true;
+        // A count in it is still, at the number it shows: a clone would roll its last change again as it goes.
+        c.querySelectorAll('[data-was], [data-dir]').forEach(function (n) { n.removeAttribute('data-was'); n.removeAttribute('data-dir'); });
+        c.querySelectorAll('.tide-roll').forEach(function (n) { n.style.animation = 'none'; });
         // A clone keeps the markup's values, not what was chosen or typed since: those are carried over, so a dialog
         // fading out still shows the answer just given.
         var from = el.querySelectorAll('input, select, textarea'), to = c.querySelectorAll('input, select, textarea');

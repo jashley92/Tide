@@ -175,8 +175,19 @@ window.tideTriage = (function () {
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
             const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
+            // Shown again only if still on the page once the reload has had its moment (a second at most): taken away by
+            // it, a row shown again first would flash back for a frame.
+            const release = function () {
+                const until = performance.now() + 1000;
+                (function look() {
+                    if (rows.every(function (r) { return !r.isConnected; })) return;
+                    if (performance.now() < until) requestAnimationFrame(look); else shown();
+                })();
+            };
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
             if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
+            // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
+            if (t.bottom < 0 || t.top > innerHeight) { land(); release(); return Promise.resolve(); }
             const ease = ts.token('--tide-ease-out');
             const waited = Promise.race([hit, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-travel')); })]);
             Promise.all(rows.map(function (row, i) {
@@ -189,7 +200,7 @@ window.tideTriage = (function () {
                 const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
                 return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
                     { duration: ts.travel(Math.hypot(t.left - r.left, t.top - r.top)), delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
-            })).then(shown, shown);
+            })).then(release, release);
             return waited;
         },
         // The promote form opened: its title takes focus, selected, ready to retype.

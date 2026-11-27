@@ -233,8 +233,8 @@ window.tideFlip = (function () {
     // What was last pressed (a Move button), for a list where people move items themselves: a button that went disabled
     // as its item reached the end has lost focus, so the item is still known to be the one moved, and focus goes on to
     // the item's other enabled button rather than the page.
-    let pressed = null, pressedAt = 0;
-    function noted(e) { pressed = e.target && e.target.closest ? e.target.closest('button, a, [tabindex]') : null; pressedAt = performance.now(); }
+    let pressed = null, pressedAt = 0, pointed = false;
+    function noted(e) { pressed = e.target && e.target.closest ? e.target.closest('button, a, [tabindex]') : null; pressedAt = performance.now(); pointed = e.type === 'pointerdown'; }
     function keep(el) {
         const a = document.activeElement;
         if (!pressed || !pressed.isConnected || !el.contains(pressed) || (a && a !== document.body)) return;
@@ -332,7 +332,10 @@ window.tideFlip = (function () {
                 // Carried out of the window (moved past its edge), the window eases after it rather than losing it.
                 if (!pinned.get(root)) {
                     const head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0, top = o.top + n.y, bottom = top + n.h;
-                    const by = top < head ? top - head : bottom > innerHeight ? Math.min(bottom - innerHeight, top - head) : 0;
+                    let by = top < head ? top - head : bottom > innerHeight ? Math.min(bottom - innerHeight, top - head) : 0;
+                    // Moved with the mouse, the window goes by as far as the item went, so the button pressed stays under
+                    // the pointer for the next press; by keyboard, it shows the item whole.
+                    if (by && pointed && pressed && el.contains(pressed) && w) by = n.y - w.y;
                     if (Math.abs(by) > 1) bring(by);
                 }
                 const down = function () { if (running.get(el) === glide) el.removeAttribute('data-tide-carried'); };
@@ -505,6 +508,7 @@ window.tideFlip = (function () {
     // An item's own motion ended (a toast's entrance), or a ghost line closed up: measured where it rests.
     function ended(e) {
         if (e.type === 'transitionend' && !/^(transform|translate|rotate|scale)$/.test(e.propertyName)) return;   // a hover's color
+        if (open.has(e.target)) note(e.target);   // a surface that rose in is where it rests now (its copy goes from there)
         const t = e.target, root = t.closest ? t.closest(ROOTS) : null;
         if (root && root !== t && (t.matches(root.dataset.tideFlip) || t.classList.contains('tide-live-ghost'))) later(root);
     }

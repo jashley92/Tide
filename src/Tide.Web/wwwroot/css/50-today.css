@@ -19,6 +19,9 @@
 /* The brief just marked ready: its status is stamped, landing hard and a little askew before it settles, and the
    page's head takes the impact. */
 .tide-brief-status { display: inline-flex; }
+.tide-brief-slot { position: relative; display: inline-flex; }
+/* The stamp coming down over the status it replaces, until it lands (BriefPage): it takes no room of its own yet. */
+.tide-brief-status.is-over { position: absolute; left: 0; top: 0; z-index: 1; }
 /* Stamped, it stays a stamp: outlined in green, in capitals, a little askew. */
 /* One thing at a time: the stamp comes down once the confirmation has gone (--tide-dur-exit), the head takes the impact
    as it lands, and the step strip moves on after that (BriefPage holds its steps until then). */
