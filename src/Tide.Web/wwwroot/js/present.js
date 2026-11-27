@@ -241,7 +241,9 @@ window.tidePresent = (function () {
         const at = function (deg) { return 'perspective(2600px) rotateY(' + (still ? 0 : deg) + 'deg)'; };
         // The page is solid paper while it turns, uncovering the next one by turning, and only fades as it goes (the
         // last quarter): fading from the start read as one slide dissolving into the other.
-        const lift = back ? .75 : .25, gone = back ? .25 : .75;
+        // The new page turning in over the old (back) plays these the other way round, so its offsets are mirrored; a
+        // back jump that fades (reduced motion, or more than one slide) plays them forwards like any fade.
+        const inward = back && !still, lift = inward ? .75 : .25, gone = inward ? .25 : .75;
         const flat = { transform: at(0), opacity: 1 }, lifting = { transform: at(-14), opacity: 1, offset: lift };
         const turned = { transform: at(-32), opacity: 1, offset: gone }, away = { transform: at(-42), opacity: 0 };
         const shade = still ? null : document.createElement('div');
@@ -255,7 +257,7 @@ window.tidePresent = (function () {
             slide.appendChild(shade);
             shade.animate(frames.map(function (f) { return Object.assign({}, f, { opacity: f === lifting ? .5 : f === turned ? .3 : 0 }); }), opts);
         };
-        if (back && !still) {
+        if (inward) {
             now.classList.add('tide-page-over');
             play(now, [away, turned, lifting, flat], '--tide-ease-out');
             return;
