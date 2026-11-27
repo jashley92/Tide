@@ -343,7 +343,19 @@ window.tideFlip = (function () {
 
     function play(root, afterExit) {
         const tall = heights.get(root);
+        const before = places.get(root);
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
+        // The list itself moved on the page as the change came (a bar above it re-wrapping): its items glide from where
+        // they were painted, not from where they were in the list, unless the list is being carried itself (a follower
+        // slide on it or around it).
+        let sx = 0, sy = 0;
+        const after = places.get(root);
+        if (before && after && !pinned.get(root) && (Math.abs(before.top - after.top) > MOVED || Math.abs(before.left - after.left) > MOVED)) {
+            let carried = false;
+            for (let a = root; a && a !== document.body && !carried; a = a.parentElement)
+                carried = a.getAnimations().some(function (x) { return x.playState === 'running' && x.effect && x.effect.getKeyframes().some(function (k) { return k.transform && k.transform !== 'none'; }); });
+            if (!carried) { sx = before.left - after.left; sy = before.top - after.top; }
+        }
         heldEnd(root);
         if (!s.was && sized) sized.observe(root);
         const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
@@ -376,7 +388,7 @@ window.tideFlip = (function () {
         if (s.was && !still) s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was.get(key(el));
             if (!n || !w || w.parent !== n.parent) return;
-            const d = Math.hypot(w.x - n.x + n.dx, w.y - n.y + n.dy);
+            const d = Math.hypot(w.x - n.x + n.dx + sx, w.y - n.y + n.dy + sy);
             far = Math.max(far, d < MOVED ? 0 : d, n.h - w.h > 1 ? n.h - w.h : 0);
         });
         const together = ts.travel(far);
@@ -385,7 +397,9 @@ window.tideFlip = (function () {
         // place doesn't pass under it as it sets off.
         const left = new Set();   // the lanes a card flew out of
         if (s.was && !still) s.list.forEach(function (el) { const n = s.now.get(key(el)), w = s.was.get(key(el)); if (n && w && w.parent !== n.parent) left.add(w.parent); });
-        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : 0, behind = ts.ms('--tide-dur-fast');
+        // Rows this person decided lift out over the first half of the exit: the rest close up once they've faded (the
+        // handover: one arriving where one leaves waits this long).
+        const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : gone && gone.size && !quiet ? ts.ms('--tide-dur-handover') : 0, behind = ts.ms('--tide-dur-fast');
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
         if (!still && s.was && !pinned.get(root)) {
             resized(tall, o.height, root, together, wait);
@@ -406,7 +420,7 @@ window.tideFlip = (function () {
             // room at the other sides for its brackets.
             const grew = n.h - w.h;
             if (grew > 1) el.animate([{ clipPath: 'inset(-16px -16px ' + grew + 'px -16px)' }, { clipPath: 'inset(-16px -16px 0px -16px)' }], { duration: together, delay: wait, easing: ease, fill: 'backwards' });
-            const dx = w.x - n.x + n.dx, dy = w.y - n.y + n.dy;
+            const dx = w.x - n.x + n.dx + sx, dy = w.y - n.y + n.dy + sy;
             if (Math.abs(dx) < MOVED && Math.abs(dy) < MOVED) {
                 // Already where it's painted (a glide under way brought it there as the change came): the glide's offset
                 // no longer applies (it would hop it away and back), so it stops, and the item stays where it's seen.
@@ -647,6 +661,8 @@ window.tideFlip = (function () {
         open.forEach(note);
         const root = e.target !== document && e.target.closest ? e.target.closest(ROOTS) : null;
         if (root && root !== e.target) later(root);
+        // Lists inside a box that scrolled (Triage's list in its own scroller) are somewhere else on the page now.
+        if (e.target !== document && e.target.querySelectorAll) e.target.querySelectorAll(ROOTS).forEach(function (r) { later(r); });
     }
     // An item's own motion ended (a toast's entrance), or a ghost line closed up: measured where it rests.
     function ended(e) {

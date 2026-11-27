@@ -157,11 +157,11 @@ else
                "Everything else", any other below it. *@
             var lineGhosts = ghosts.GetValueOrDefault(i) ?? [];
             var elseHeading = sections && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
-            @if (sections && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun">Matches what we run</li> }
+            @if (sections && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun" data-tide-exit>Matches what we run</li> }
             foreach (var g in lineGhosts.Where(g => !elseHeading || _ranWeRun.Contains(g.Key))) { @Ghost(g) }
             @* One at most (sections are drawn only where what we run comes first), so keyed as itself: not by the line
                under it, which a decision takes away from under a heading that stays. *@
-            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else">Everything else</li> }
+            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else" data-tide-exit>Everything else</li> }
             foreach (var g in lineGhosts.Where(g => elseHeading && !_ranWeRun.Contains(g.Key))) { @Ghost(g) }
             var selected = i == _selected;
             if (line.Row is null && line.Group is { } group)
