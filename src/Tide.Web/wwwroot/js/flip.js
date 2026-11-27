@@ -9,29 +9,36 @@
 // fade in, and leaving ones fade out.
 //
 // Each change is measured first and then played, so the page is laid out once for all the items, not once per item.
-// Where each item was is kept relative to its list (so scrolling the window changes nothing) and without any glide
-// playing on it: after each change, after a change inside an item (a row that grew), when the list changes size, and
-// when a lane inside it scrolls.
+// Where each item was is kept relative to its list (so scrolling the window changes nothing) and without any motion
+// playing on it (a glide, or an entrance like a toast's): after each change, after a change inside an item (a row that
+// grew), when the list changes size, when a lane inside it scrolls, and when an item's own motion ends. While a ghost
+// line closes up (a row that left, live) the list's size changes each frame: it's measured once that's done. A glide
+// takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
     const at = new WeakMap(), running = new WeakMap(), due = new Set();
     let frame = 0;
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
-        es.forEach(function (e) { if (e.target.isConnected) later(e.target); else sized.unobserve(e.target); });
+        es.forEach(function (e) { if (!e.target.isConnected) sized.unobserve(e.target); else if (!closing(e.target)) later(e.target); });
     }) : null;
+    function closing(root) { const g = root.querySelector('.tide-live-ghost'); return !!g && g.getAnimations().length > 0; }
 
     function items(root) { return Array.prototype.slice.call(root.querySelectorAll(root.dataset.tideFlip)); }
     function key(el) { return el.dataset.id || el; }
 
-    // Where it is in its list, less any glide playing on it (that's motion, not its place), the container it's in, and
-    // the glide's offset now; null while it isn't shown.
+    // Where it is in its list, less any motion playing on it (that's motion, not its place), its laid-out size (not one a
+    // tilt or scale enlarges), the container it's in, and the motion's offset now; null while it isn't shown.
     function measure(el, origin) {
         const r = el.getBoundingClientRect();
         if (!r.width && !r.height) return null;
         let dx = 0, dy = 0;
         const a = running.get(el);
-        if (a && a.playState === 'running') { const m = new DOMMatrixReadOnly(getComputedStyle(el).transform); dx = m.m41; dy = m.m42; }
-        return { x: r.left - dx - origin.left, y: r.top - dy - origin.top, w: r.width, h: r.height, dx: dx, dy: dy, parent: el.parentElement };
+        if ((a && a.playState === 'running') || el.getAnimations().length) {
+            const t = getComputedStyle(el).transform;
+            if (t && t !== 'none') { const m = new DOMMatrixReadOnly(t); dx = m.m41; dy = m.m42; }
+        }
+        const w = el.offsetWidth || r.width, h = el.offsetHeight || r.height;
+        return { x: r.left + (r.width - w) / 2 - dx - origin.left, y: r.top + (r.height - h) / 2 - dy - origin.top, w: w, h: h, dx: dx, dy: dy, parent: el.parentElement };
     }
 
     // Measures the list's items and keeps where each is, giving back where they were before (null the first time).
@@ -56,7 +63,7 @@ window.tideFlip = (function () {
     function play(root) {
         const ts = window.tideShortcuts, s = snapshot(root), quiet = ts.quiet(), o = s.origin;
         if (!s.was && sized) sized.observe(root);
-        const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];
+        const dur = ts.ms('--tide-dur-base'), ease = ts.token('--tide-ease-out'), fresh = [];   // dur: an entrance's
         let flights = 0;
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
@@ -70,10 +77,10 @@ window.tideFlip = (function () {
             // Drawn in another container (another lane): it flies, as a glide would be clipped by its lane. A few at most;
             // the rest of a whole board redrawn are just there.
             if (w.parent !== n.parent) {
-                if (flights++ < FLIGHTS) ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, ts.ms('--tide-dur-panel'), { left: o.left + n.x, top: o.top + n.y });
+                if (flights++ < FLIGHTS) ts.fly(el, { left: o.left + w.x, top: o.top + w.y, width: w.w, height: w.h }, { left: o.left + n.x, top: o.top + n.y });
                 return;
             }
-            running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: dur, easing: ease }));
+            running.set(el, el.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: ts.travel(Math.hypot(dx, dy)), easing: ease }));
         });
         // A list arriving whole (or a page of it) comes in in quick order; one or two new items have their own entrance.
         if ((!s.was || fresh.length > 2) && fresh.length && !document.hidden && document.body.animate) {
@@ -96,12 +103,18 @@ window.tideFlip = (function () {
 
     function elements(list) { return Array.prototype.filter.call(list, function (n) { return n.nodeType === 1 && !n.matches(COPY); }); }
 
-    // A tab's count that rolls (tide-roll) is told the number it replaced, which rolls up and out as the new one comes in.
-    // (Blazor swaps the count element, keyed by its number, inside the same tab.)
+    // A tab's count that rolls (tide-roll) is told the number it replaced, which rolls out as the new one comes in: up
+    // when the count grew, down when it fell (data-dir). (Blazor swaps the count element, keyed by its number, inside
+    // the same tab.)
     function odometer(tab, added, gone) {
         const was = gone.get(tab);
         if (!was) return;
-        added.forEach(function (n) { const roll = n.querySelector('.tide-roll'); if (roll) roll.dataset.was = was; });
+        added.forEach(function (n) {
+            const roll = n.querySelector('.tide-roll');
+            if (!roll) return;
+            roll.dataset.was = was;
+            if (parseFloat(roll.textContent) < parseFloat(was)) roll.dataset.dir = 'down';
+        });
     }
 
     function changed(records) {
@@ -135,11 +148,19 @@ window.tideFlip = (function () {
         const root = e.target !== document && e.target.closest ? e.target.closest(ROOTS) : null;
         if (root && root !== e.target) later(root);
     }
+    // An item's own motion ended (a toast's entrance), or a ghost line closed up: measured where it rests.
+    function ended(e) {
+        if (e.type === 'transitionend' && !/^(transform|translate|rotate|scale)$/.test(e.propertyName)) return;   // a hover's color
+        const t = e.target, root = t.closest ? t.closest(ROOTS) : null;
+        if (root && root !== t && (t.matches(root.dataset.tideFlip) || t.classList.contains('tide-live-ghost'))) later(root);
+    }
 
     function start() {
         if (!window.MutationObserver) return;
         new MutationObserver(changed).observe(document.body, { childList: true, subtree: true });
         document.addEventListener('scroll', scrolled, { capture: true, passive: true });
+        document.addEventListener('transitionend', ended, true);
+        document.addEventListener('animationend', ended, true);
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
     }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);

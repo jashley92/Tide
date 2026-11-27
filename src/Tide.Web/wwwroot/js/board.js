@@ -188,11 +188,22 @@ window.tideBoard = (function () {
     // Brackets locked onto a card for a moment: it has landed.
     function lockOn(card) { window.tideShortcuts.pulse(card, 'data-tide-locked'); }
 
-    // The slot goes and the ghost glides from where it was let go to where the card now is (where the slot was, once .NET
-    // has moved it there), and the card shows again as it arrives, its brackets locked on. Meanwhile the card waits
+    // The ghost glides from where it is to a rect, taking as long as the distance needs; it stays there (fill) until it's
+    // taken away. Its animation, or null without motion.
+    function glide(g, to) {
+        const ts = window.tideShortcuts;
+        if (ts.quiet()) return null;
+        const left = parseFloat(g.style.left), top = parseFloat(g.style.top), now = g.getBoundingClientRect();
+        const was = g.getAnimations().length ? 'translate(' + (now.left - left) + 'px, ' + (now.top - top) + 'px)' : (g.style.transform || 'none');
+        g.getAnimations().forEach(function (a) { a.cancel(); });
+        return g.animate([{ transform: was }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
+            { duration: ts.travel(Math.hypot(to.left - now.left, to.top - now.top)), easing: ts.token('--tide-ease-out'), fill: 'forwards' });
+    }
+
+    // The slot goes and the ghost glides on to where the card now is (where the slot was, once .NET has moved it there;
+    // or where it was, put back), and the card shows again as it arrives, its brackets locked on. Meanwhile the card waits
     // transparent (data-tide-landing), not hidden: focus goes to it once the drop is done.
     function settle(g, card) {
-        const ts = window.tideShortcuts;
         clearRoom(card);
         const done = function () {
             g.remove();
@@ -200,11 +211,10 @@ window.tideBoard = (function () {
             card.removeAttribute('data-tide-landing');
             lockOn(card);
         };
-        if (!card || ts.quiet()) { done(); return; }
-        const to = card.getBoundingClientRect(), left = parseFloat(g.style.left), top = parseFloat(g.style.top);
+        const a = card && glide(g, card.getBoundingClientRect());
+        if (!a) { done(); return; }
         card.setAttribute('data-tide-landing', '');
-        ts.drift(g, [{ transform: g.style.transform || 'none' }, { transform: 'translate(' + (to.left - left) + 'px, ' + (to.top - top) + 'px)' }],
-            { duration: ts.ms('--tide-dur-panel'), easing: ts.token('--tide-ease-out') }).finished.then(done, done);
+        a.finished.then(done, done);
     }
 
     function onPointerUp(e) {
@@ -217,16 +227,19 @@ window.tideBoard = (function () {
         ghost = null;
         end();
         if (!to || !ref) { settle(g, card); focusCard(card); return; }
-        // The ghost settles once .NET has moved the card (into the slot); if it's still asking after a moment (a drop on
-        // the closed strip opens a dialog first) it settles back where the card is, which travels on if .NET then moves it.
+        // Let go over a slot, the ghost goes straight into it, not waiting on .NET (which then draws the card there, and
+        // the ghost gives way to it). Over the closed strip there's no slot: the ghost waits a moment, and if .NET is
+        // still asking then (a drop on Cancelled opens a dialog first) it settles back where the card is, which travels on
+        // if .NET then moves it.
         const current = function () { return card.isConnected ? card : root && root.querySelector('.tide-kcard[data-id="' + id + '"]'); };
+        if (slot) glide(g, slot.getBoundingClientRect());
+        else setTimeout(function () { land(); }, ASKING);
         let landed = false;
         const land = function () {
             if (landed) return;
             landed = true;
             requestAnimationFrame(function () { const c = current(); settle(g, c); });
         };
-        setTimeout(land, ASKING);
         ref.invokeMethodAsync('OnCardDropped', id, from, to, at ? at.before : null).then(function () {
             land();
             requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
@@ -278,7 +291,7 @@ window.tideBoard = (function () {
     // After a move (its Move menu, or a drop): the card, if still on the board, locks on where it landed; focus goes there.
     function focusPlace(id, next, prev, heading) {
         const moved = card(id);
-        if (moved) lockOn(moved);
+        if (moved && !moved.hasAttribute('data-tide-landing')) lockOn(moved);   // landing: it locks on as it arrives
         if (focusCard(moved) || (next && focusCard(card(next))) || (prev && focusCard(card(prev)))) return;
         const h = heading && document.getElementById(heading);
         if (h) h.focus();

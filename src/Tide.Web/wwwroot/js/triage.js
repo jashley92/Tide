@@ -120,11 +120,12 @@ window.tideTriage = (function () {
         // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and
         // place, into the Promoted tab's count just above the list, which locks on. Each is a copy, moved and scaled by
         // transform (the browser composites it, no layout each frame), its text fading first so the stretch doesn't show;
-        // the row itself fades at once. .NET waits --tide-dur-wait (the promise) before it reloads the list, so the rows
-        // are on their way when the count rolls to its new number and the rows below close the gap (flip.js); the copies
-        // fly on by themselves. Without motion, or in a tab nobody is looking at, the rows fade and the count changes. The
-        // rows' faded state is a data attribute .NET never draws, taken off once the copies are done (or at once without
-        // them), so a row that stays on the page can't stay hidden. tabLabel: the Promoted tab's label, from .NET
+        // the row itself fades at once. Each takes as long as its way to the tab needs (tideShortcuts.travel). .NET waits
+        // for the first to land (the promise; never longer than --tide-dur-travel) before it reloads the list, so the
+        // count rolls to its new number because a row hit it, and the rows below close the gap (flip.js); any others fly
+        // on by themselves. Without motion, or in a tab nobody is looking at, the rows fade and the count changes at once.
+        // The rows' faded state is a data attribute .NET never draws, taken off once the copies are done (or at once
+        // without them), so a row that stays on the page can't stay hidden. tabLabel: the Promoted tab's label, from .NET
         // (Triage.Tabs).
         promoted: function (ids, tabLabel) {
             const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
@@ -138,15 +139,16 @@ window.tideTriage = (function () {
             });
             const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
             if (!dest || !rows.length) return Promise.resolve();
-            let landed = false;
-            const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } };
+            let landed = false, first = null;
+            const hit = new Promise(function (ok) { first = ok; });
+            const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } first(); };
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
             const shown = function () { rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); }); };
-            const waited = new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-wait')); });
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
-            if (!t.width || ts.quiet()) { land(); waited.then(shown, shown); return waited; }
-            const dur = ts.ms('--tide-dur-travel'), ease = ts.token('--tide-ease-out');
+            if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
+            const ease = ts.token('--tide-ease-out');
+            const waited = Promise.race([hit, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-travel')); })]);
             Promise.all(rows.map(function (row, i) {
                 const r = from[i];
                 if (!r.width || !r.height) return null;
@@ -156,7 +158,7 @@ window.tideTriage = (function () {
                 Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), fill: 'forwards' }); });
                 const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
                 return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
-                    { duration: dur, delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
+                    { duration: ts.travel(Math.hypot(t.left - r.left, t.top - r.top)), delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
             })).then(shown, shown);
             return waited;
         },

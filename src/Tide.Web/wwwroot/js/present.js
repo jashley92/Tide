@@ -213,7 +213,9 @@ window.tidePresent = (function () {
     // The slide changed (its body is new, keyed by .NET): the page turns. Going on, the old page lifts from its left edge
     // and turns away, fading as it goes, uncovering the new one. Going back, the new page turns in over the old the other
     // way. For the presenter and each follower alike. Only transform and opacity move, so the browser composites each
-    // frame rather than painting the slide again, and the turn is a modest one (60 degrees): an audience watches it. A
+    // frame rather than painting the slide again, and the turn is a modest one (60 degrees): an audience watches it. The
+    // page moves the moment the key is pressed (an easing that starts at once, the lift early), and a shade turns with it,
+    // deepest as the page lifts, so it reads as paper; the shade is its own layer, only its opacity changing. A
     // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. With reduced
     // motion, the old page fades out over the new, quickly. The old page is the copy settle() last took of the slide as it
     // was drawn (scrolled where it was last seen), since by the time the new body arrives .NET has emptied and taken away
@@ -234,18 +236,27 @@ window.tidePresent = (function () {
         page.classList.remove('tide-scrollfade');
         page.classList.add('tide-page-turning');
         slide.appendChild(page);
-        page.scrollTop = last.top;
-        const flat = { transform: 'perspective(1400px) rotateY(0deg)', opacity: 1 };
-        const lifting = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -24) + 'deg)', opacity: 1, offset: .4 };
-        const away = { transform: 'perspective(1400px) rotateY(' + (still ? 0 : -60) + 'deg)', opacity: 0 };
-        const done = function () { page.remove(); now.classList.remove('tide-page-over'); };
-        const play = function (el, frames, ease) { turning = el.animate(frames, { duration: dur, easing: ts.token(ease), fill: 'backwards' }); turning.finished.then(done, done); };
+        if (last.top) page.scrollTop = last.top;   // (setting it lays the page out at once: only when it's needed)
+        const at = function (deg) { return 'perspective(1400px) rotateY(' + (still ? 0 : deg) + 'deg)'; };
+        const lift = back ? .75 : .25;
+        const flat = { transform: at(0), opacity: 1 }, lifting = { transform: at(-24), opacity: 1, offset: lift }, away = { transform: at(-60), opacity: 0 };
+        const shade = still ? null : document.createElement('div');
+        const done = function () { page.remove(); if (shade) shade.remove(); now.classList.remove('tide-page-over'); };
+        const play = function (el, frames, ease) {
+            const opts = { duration: dur, easing: ts.token(ease), fill: 'backwards' };
+            turning = el.animate(frames, opts);
+            turning.finished.then(done, done);
+            if (!shade) return;
+            shade.className = 'tide-page-shade';
+            slide.appendChild(shade);
+            shade.animate(frames.map(function (f) { return Object.assign({}, f, { opacity: f === lifting ? .5 : 0 }); }), opts);
+        };
         if (back && !still) {
             now.classList.add('tide-page-over');
             play(now, [away, lifting, flat], '--tide-ease-out');
             return;
         }
-        play(page, [flat, lifting, away], '--tide-ease-in');
+        play(page, [flat, lifting, away], '--tide-ease-grab');
     }
 
     function settle() {

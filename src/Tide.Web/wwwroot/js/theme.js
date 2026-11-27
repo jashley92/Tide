@@ -148,26 +148,46 @@ window.tideShortcuts = (function () {
         a.finished.then(gone, gone);
         return a;
     }
-    // Flies a copy of el from a rect (where it was seen) to where el is now, el itself transparent meanwhile: still
-    // there to take focus, which may go to it before it lands. A promise of the landing.
-    function fly(el, from, duration, to) {
+    // How long something takes to travel so far (px): a short hop is quick, a long way has room, from --tide-dur-fast
+    // to --tide-dur-travel (growing with the square root of the distance, as the eye judges it).
+    function travel(px) { return Math.min(ms('--tide-dur-travel'), ms('--tide-dur-fast') + 10 * Math.sqrt(Math.max(0, px))); }
+    // Flies a copy of el from a rect (where it was seen) to where el is now (or to), el itself transparent meanwhile:
+    // still there to take focus, which may go to it before it lands, and its copy shows the focus ring meanwhile. A
+    // flight already under way for el is taken over from where its copy is, so a card moved again mid-flight turns
+    // towards its new place rather than jumping or showing twice. A promise of the landing.
+    var flights = new WeakMap();
+    function fly(el, from, to) {
         to = to || el.getBoundingClientRect();
-        var c = copy(el, from);
+        var prev = flights.get(el);
+        if (prev) {
+            var at = prev.copy.getBoundingClientRect();
+            from = { left: at.left, top: at.top, width: from.width, height: from.height };
+            prev.anim.cancel();
+        }
+        var c = copy(el, from), dx = to.left - from.left, dy = to.top - from.top;
         c.classList.add('tide-flying');
+        if (el.contains(document.activeElement)) c.setAttribute('data-tide-focused', '');
         el.setAttribute('data-tide-landing', '');
-        return drift(c, [{ transform: 'none' }, { transform: 'translate(' + (to.left - from.left) + 'px, ' + (to.top - from.top) + 'px)' }],
-            { duration: duration, easing: token('--tide-ease-out') }).finished.catch(function () { })
-            .then(function () { el.removeAttribute('data-tide-landing'); });
+        var a = drift(c, [{ transform: 'none' }, { transform: 'translate(' + dx + 'px, ' + dy + 'px)' }],
+            { duration: travel(Math.hypot(dx, dy)), easing: token('--tide-ease-out') });
+        flights.set(el, { copy: c, anim: a });
+        return a.finished.catch(function () { }).then(function () {
+            if (flights.get(el) && flights.get(el).anim !== a) return false;   // taken over by a later flight
+            flights.delete(el);
+            el.removeAttribute('data-tide-landing');
+            return true;
+        });
     }
-    // Sets a data attribute for a moment (--tide-dur-signature), played again from the start if it's already on: a
-    // card's or a tab's brackets locking on.
+    // Sets a data attribute for a moment (--tide-dur-signature): a card's or a tab's brackets locking on. On again
+    // before it went, it starts over (its own timer, not the last one's, takes it off).
+    var pulses = new WeakMap();
     function pulse(el, attr) {
-        el.removeAttribute(attr);
-        void el.offsetWidth;
+        if (el.hasAttribute(attr)) { el.removeAttribute(attr); void el.offsetWidth; }   // a reflow, only to play it again
         el.setAttribute(attr, '');
-        setTimeout(function () { el.removeAttribute(attr); }, ms('--tide-dur-signature'));
+        clearTimeout(pulses.get(el));
+        pulses.set(el, setTimeout(function () { el.removeAttribute(attr); }, ms('--tide-dur-signature')));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, copy: copy, drift: drift, fly: fly, pulse: pulse };
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, drift: drift, fly: fly, pulse: pulse };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the
@@ -223,6 +243,9 @@ window.tideRail = (function () {
     // so Tab stays in the rail. A docked rail leaves the page beside it as it is.
     // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
     // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
+    // Opening, the page is made inert a frame after the rail starts to slide in: marking the whole page inert means
+    // working out its style again, which in the same frame would hold the slide back. Focus is already in the rail.
+    // Closing, it's at once, so focus can go back to the button.
     function hold() {
         var r = rail(), on = !!r && over();
         // Open over the page, the rail is a modal dialog, named as before; docked or closed it's the aside's own
@@ -233,7 +256,9 @@ window.tideRail = (function () {
         }
         if (on === held) return;
         held = on;
-        document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
+        var under = function () { if (held === on) document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); }); };
+        if (on) requestAnimationFrame(function () { requestAnimationFrame(under); });
+        else under();
         if (on) watch.observe(document.body, { childList: true, subtree: true });
         else watch.disconnect();
     }
@@ -267,28 +292,39 @@ window.tideRail = (function () {
     }
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.
+    // Opened again while the last one is still sliding off, the sheet turns back from where it had got to (the copy goes,
+    // the rail itself takes over from there), rather than vanishing and coming in again from the edge.
     function setOver(open) {
-        if (leaving) leaving.finish();   // opened again before the last one was off: that one goes at once, one backdrop
+        var back = null;
+        if (leaving) {
+            if (open && !window.tideShortcuts.still()) back = getComputedStyle(leaving.effect.target).translate;
+            leaving.cancel();
+        }
         if (!open && over()) leave();
         if (open) root.setAttribute('data-rail-over', '');
         else root.removeAttribute('data-rail-over');
         sync();
-        var to = open ? rail() : toggleBtn();
+        var r = rail();
+        if (back && r) r.animate([{ translate: back }, { translate: '0 0' }], { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
+        var to = open ? r : toggleBtn();
         if (to) to.focus();
     }
-    // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does, as the rail
-    // itself is hidden at once (60-rail-and-pages.css). With reduced motion it fades where it is.
+    // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does (scrolled where
+    // the rail was), as the rail itself is hidden at once (60-rail-and-pages.css). The sheet stays opaque; only the
+    // backdrop fades. With reduced motion the whole copy fades where it is.
     var leaving = null;
     function leave() {
         var r = rail(), ts = window.tideShortcuts;
         if (!r || !document.body.animate || document.hidden) return;
-        var c = ts.copy(r);
+        var c = ts.copy(r), body = r.querySelector('.tide-rail-body');
         c.classList.add('tide-leaving');
         c.removeAttribute('role');
         c.removeAttribute('aria-modal');
         document.body.appendChild(c);
-        var a = leaving = ts.drift(c, [{ translate: '0 0', opacity: 1 }, { translate: (ts.still() ? '0' : '100%') + ' 0', opacity: 0 }],
-            { duration: ts.ms('--tide-dur-panel-exit'), easing: ts.token('--tide-ease-in') });
+        if (body && body.scrollTop) c.querySelector('.tide-rail-body').scrollTop = body.scrollTop;
+        var opts = { duration: ts.ms('--tide-dur-panel-exit'), easing: ts.token('--tide-ease-in') };
+        var a = leaving = ts.still() ? ts.drift(c, [{ opacity: 1 }, { opacity: 0 }], opts) : ts.drift(c, [{ translate: '0 0' }, { translate: '100% 0' }], opts);
+        if (!ts.still()) ['::before', '::after'].forEach(function (p) { c.animate([{ opacity: 1 }, { opacity: 0 }], Object.assign({ pseudoElement: p, fill: 'forwards' }, opts)); });
         var done = function () { if (leaving === a) leaving = null; };
         a.finished.then(done, done);
     }

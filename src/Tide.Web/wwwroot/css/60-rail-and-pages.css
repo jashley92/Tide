@@ -16,10 +16,12 @@
    top bar above it (none on a phone, where the rail takes the whole height). They're placed from the rail (its translate
    makes it their box): the left part a window wide, so as the sheet slides it still covers all the window beside it. */
 :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { content: ""; position: absolute; background: var(--tide-scrim); }
-/* It's laid on like a sheet: it slides in from the window's right edge as the backdrop fades in, and closing, a copy of
-   it slides back out (theme.js). It moves by translate, which the browser only has to composite, frame by frame. */
-html[data-rail-over] .tide-rail { transition: translate var(--tide-move-panel) var(--tide-ease-out), opacity var(--tide-dur-fast) var(--tide-ease-out);
-    @starting-style { translate: 100% 0; opacity: 0; } }
+/* It's laid on like a sheet: the sheet, opaque, slides in from the window's right edge as the backdrop fades in, and
+   closing, a copy of it slides back out (theme.js). It moves by translate, which the browser only has to composite. */
+html[data-rail-over] .tide-rail { transition: translate var(--tide-move-panel) var(--tide-ease-out); @starting-style { translate: 100% 0; } }
+html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { transition: opacity var(--tide-dur-base) var(--tide-ease-out); @starting-style { opacity: 0; } }
+/* More contrast asked for: the page under the overlay is dimmed further. */
+@media (prefers-contrast: more) { :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { background: color-mix(in srgb, var(--tide-scrim) 70%, black); } }
 .tide-rail.tide-leaving { pointer-events: none; }
 :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before { top: calc(-1 * var(--tide-height-top)); bottom: 0; right: 100%; width: 100vw; }
 :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { bottom: 100%; left: 0; right: 0; height: var(--tide-height-top); }
