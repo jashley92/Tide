@@ -22,7 +22,7 @@
         <div class="tide-card">
             <h2>Roster <span class="tide-count">(@_members.Count(m => m.IsActive))</span></h2>
             <table class="tide-table mb-2">
-                <tbody>
+                <tbody data-tide-flip=":scope > tr" data-tide-flip-carry>
                     @foreach (var (m, i) in _members.Select((m, i) => (m, i)))
                     {
                         <tr @key="m.UserId" class="@(m.IsActive ? null : "tide-inactive")">

@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
+    const places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     let frame = 0, page = location.pathname;
     const entered = new Set();   // the lists that came in on this page
     const sized = window.ResizeObserver ? new ResizeObserver(function (es) {
@@ -54,6 +54,7 @@ window.tideFlip = (function () {
         heights.set(root, box.height);
         list.forEach(function (el) { const p = measure(el, origin); if (p) now.set(key(el), p); });
         at.set(root, now);
+        places.set(root, { left: box.left + scrollX, top: box.top + scrollY, w: box.width, h: box.height });   // where the list was, on the page
         return { was: was, list: list, now: now, origin: origin };
     }
 
@@ -327,7 +328,11 @@ window.tideFlip = (function () {
     function leave(root, el) {
         const ts = window.tideShortcuts, kept = at.get(root), p = kept && kept.get(key(el));
         if (!p || !document.body.animate || document.hidden) return;
-        const o = pinned.get(root) ? { left: 0, top: 0 } : root.getBoundingClientRect(), g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
+        // Placed from where the list is; but a list that changed size as the item went (centred in its row, it moves too)
+        // is placed from where it was when its items were measured (on the page, so a scroll since doesn't matter).
+        const now = root.getBoundingClientRect(), was = places.get(root), moved = was && (Math.abs(was.w - now.width) > .5 || Math.abs(was.h - now.height) > .5);
+        const o = pinned.get(root) ? { left: 0, top: 0 } : moved ? { left: was.left - scrollX, top: was.top - scrollY } : now;
+        const g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
         Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
         // The copy keeps the look its list gave it (`.tide-checklist li`): it goes in a stand-in for the list, of no size

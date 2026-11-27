@@ -236,11 +236,14 @@ window.tidePresent = (function () {
         const tilt = live ? new DOMMatrixReadOnly(getComputedStyle(turned.el).transform).m11 : 1;   // cos of its angle now
         // On again the same way while a page is still turning (the key pressed quickly, or held): the page in the air
         // carries on and uncovers the latest slide, rather than each slide between showing bare for a few frames.
-        if (!live && turning && turning.playState === 'running' && turned && turned.el.isConnected && Math.abs(no - was) === 1
-            && (no > was) === (turned.to > turned.from)) {
+        const onward = !live && turning && turning.playState === 'running' && turned && Math.abs(no - was) === 1 && (no > was) === (turned.to > turned.from);
+        if (onward && turned.el.isConnected) {
             turned.to = no;
             return;
         }
+        // Back again while the page coming in is still turning (its body was drawn afresh, so that turn can't carry on):
+        // the next page comes in from the same point of its turn, not from edge on again.
+        const carry = onward && no < was ? turning.currentTime || 0 : 0;
         if (turning) turning.finish();
         if (document.hidden) return;
         const back = no < was, still = ts.still() || Math.abs(no - was) > 1, dur = ts.ms(ts.still() ? '--tide-dur-fast' : still ? '--tide-dur-base' : '--tide-dur-turn');
@@ -267,7 +270,8 @@ window.tidePresent = (function () {
             // Turning back, it starts at the angle the page had got to (found by halving: the two ways have different
             // easings, so the same share of the time isn't the same angle).
             let from = 0;
-            if (live && !still) {
+            if (carry && inward) turning.currentTime = from = carry;
+            else if (live && !still) {
                 let lo = 0, hi = dur;
                 for (let i = 0; i < 12; i++) {
                     const mid = (lo + hi) / 2;

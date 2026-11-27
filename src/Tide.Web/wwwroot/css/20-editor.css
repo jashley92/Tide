@@ -73,6 +73,7 @@
 .tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background var(--tide-dur-fast), border-color var(--tide-dur-fast); }
 .tide-drop-zone.tide-dropping { background: var(--tide-drop); border-color: var(--tide-accent); }
 .tide-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; margin-top: .75rem; }
+.tide-shots:empty { margin-top: 0; }   /* drawn with none, it takes no room */
 .tide-shot { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface-2); }
 .tide-shot img { display: block; width: 100%; height: 130px; object-fit: cover; cursor: zoom-in; background: var(--tide-surface-2); }
 .tide-shot-body { padding: .5rem; display: grid; gap: .35rem; background: var(--tide-surface); }

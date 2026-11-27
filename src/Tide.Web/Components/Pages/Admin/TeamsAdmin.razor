@@ -28,7 +28,8 @@
 </div>
 
 <div class="row g-3">
-    <div class="col-xl-7">
+    @* Moved up or down, a team glides to its place, carried over the others (flip.js). *@
+    <div class="col-xl-7" data-tide-flip=":scope > .tide-card" data-tide-flip-carry>
         @foreach (var (t, i) in _teams.Select((t, i) => (t, i)))
         {
             <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id" data-submit-scope>
@@ -264,7 +265,7 @@
             }
             <table class="tide-table mb-2" aria-label="Escalation steps, in order">
                 <thead><tr><th scope="col">When</th><th scope="col">What it does</th><th scope="col"><span class="visually-hidden">Order</span></th></tr></thead>
-                <tbody>
+                <tbody data-tide-flip=":scope > tr" data-tide-flip-carry>
                     @foreach (var (s, i) in _esc.Steps.Select((s, i) => (s, i)))
                     {
                         var n = i + 1;
