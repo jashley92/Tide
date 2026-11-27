@@ -47,8 +47,10 @@ window.tideRows = (function () {
         const r = row.getBoundingClientRect(), t = getComputedStyle(row).transform;
         const dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0, top = r.top - dy, bottom = r.bottom - dy;
         const head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
-        if (top < head) window.scrollBy({ top: top - head });
-        else if (bottom > innerHeight) window.scrollBy({ top: Math.min(bottom - innerHeight, top - head) });
+        const by = top < head ? top - head : bottom > innerHeight ? Math.min(bottom - innerHeight, top - head) : 0;
+        if (!by) return;
+        // The window eases there with the rows' glide (flip.js); without it, it steps.
+        if (window.tideFlip && window.tideFlip.bring) window.tideFlip.bring(by); else window.scrollBy({ top: by });
     }
 
     // After a move: focus goes to the newly selected row, which is then brought into view (reveal).

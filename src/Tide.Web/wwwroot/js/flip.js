@@ -139,8 +139,9 @@ window.tideFlip = (function () {
         if (idle) { clearTimeout(idle); idle = 0; }
         if (went) { if (rewind) rewind(); if (pin) hold(0); return; }
         if (!window.KeyframeEffect) return;
-        if (rewind || !(lastY > 0)) return;
+        if (!(lastY > 0)) return;
         if (pin < lastY + innerHeight) hold(lastY + innerHeight);
+        if (rewind) return;   // the ease under way looks again each frame
         if (!footFrame) { footMs = footWait = 0; footFrame = requestAnimationFrame(settle); }
     }
     // A change can come in parts (the next row drawn taller a render before the decided one goes): while the page hasn't
@@ -159,33 +160,50 @@ window.tideFlip = (function () {
             return;
         }
         if (!ts || ts.still() || document.hidden) { hold(0); lastY = scrollY; return; }
-        // One ease, in step with the lists' glide (its time and its wait for an exit), so the rows and the window make one
-        // move; restarted from where the window is if the page settles a good deal shorter meanwhile (the reading pane a
-        // moment after a group folds), so the rest isn't rushed at the ease's tail.
-        const ease = function (ms, delay) {
-            return new Animation(new KeyframeEffect(null, [], { duration: ms, delay: delay, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
+        glideWindow(from, foot, glide || ts.travel(from - foot), wait);
+    }
+    // The window easing to where it should be (the page's foot, or a row brought into view: aim), frame by frame, in
+    // one ease (in step with the lists' glide when given its time and wait). Each frame covers its share of what is left
+    // from wherever the window is. Restarted from there if the page settles a good deal shorter meanwhile (the reading
+    // pane a moment after a group folds), so the rest isn't rushed at the ease's tail; stopped where it is if the page
+    // grows back (a line added a render later), rather than chasing it back down.
+    let aim = null;
+    function glideWindow(from, to0, ms, delay) {
+        const ts = window.tideShortcuts;
+        const ease = function (t, d) {
+            return new Animation(new KeyframeEffect(null, [], { duration: t, delay: d, easing: ts.token('--tide-ease-out'), fill: 'both' }), document.timeline);
         };
-        let timing = ease(glide || ts.travel(from - foot), wait), goal = foot, prev = 0, frame = 0;
+        const target = function (at) { const foot = room(at); return aim === null ? foot : Math.min(aim, foot); };
+        let timing = ease(ms, delay), goal = to0, prev = 0, frame = 0;
         const done = function () {
-            cancelAnimationFrame(frame); timing.cancel(); rewind = null;
+            cancelAnimationFrame(frame); timing.cancel(); rewind = null; aim = null;
             HANDS.forEach(function (t) { removeEventListener(t, done, true); });
             room(lastY = scrollY);
         };
-        // Each frame covers its share of what is left from wherever the window is (a selected row brought into view
-        // moves it too).
         const step = function () {
-            const at = scrollY, to = room(at);
-            if (goal - to > 8) { timing.cancel(); timing = ease(ts.travel(at - to), 0); timing.play(); prev = 0; }
+            const at = scrollY, to = target(at);
+            if (to - goal > 8 && aim === null) { done(); return; }
+            if (goal - to > 8) { timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
             goal = to;
             const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev);
             prev = p;
-            room(Math.round(at + (to - at) * k));
+            room(lastY = Math.round(at + (to - at) * k));   // the window's own place, meanwhile
             if (timing.playState === 'finished') done(); else frame = requestAnimationFrame(step);
         };
         HANDS.forEach(function (t) { addEventListener(t, done, { capture: true, passive: true }); });
         rewind = done;
         timing.play();
         frame = requestAnimationFrame(step);
+    }
+    // A row brought into view (rows.js) eases the window there rather than stepping it, so the rows gliding to their
+    // places aren't jerked by the scroll (and an ease already under way takes it as its aim). With reduced motion it steps.
+    function bring(dy) {
+        const ts = window.tideShortcuts;
+        if (!dy) return;
+        if (!ts || ts.still() || !window.KeyframeEffect || document.hidden) { window.scrollBy({ top: dy, behavior: 'instant' }); lastY = scrollY; return; }
+        aim = Math.max(0, (aim === null ? scrollY : aim) + dy);
+        if (rewind) return;
+        glideWindow(scrollY, aim, ts.travel(Math.abs(dy)), 0);
     }
     // Where the window is, as the reader left it. A pull back because the page ended higher is not the reader's: the
     // window's place before it is kept. A hold still on follows the reader up (it is only a least height, so it never
@@ -442,4 +460,5 @@ window.tideFlip = (function () {
         document.querySelectorAll(ROOTS).forEach(function (root) { snapshot(root); if (sized) sized.observe(root); });
     }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+    return { bring: bring };
 })();
