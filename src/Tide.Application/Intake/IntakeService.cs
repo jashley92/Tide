@@ -580,7 +580,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             try
             {
                 using var ms = new MemoryStream(fetch.Content, writable: false);
-                var parsed = source.Kind == SourceKind.CisaKev ? FeedParser.KevItems(FeedParser.ParseKev(ms)) : FeedParser.ParseFeed(ms);
+                var parsed = source.Kind == SourceKind.CisaKev ? FeedParser.KevItems(FeedParser.ParseKev(ms)) : FeedParser.ParseFeed(ms, source.Url);
                 var kept = parsed;
                 var sponsored = new List<SponsoredSkip>();
                 if (source.Kind == SourceKind.Feed)
