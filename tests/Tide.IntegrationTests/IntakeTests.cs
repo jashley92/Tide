@@ -826,7 +826,7 @@ public class IntakeServiceTests : IDisposable
         await using (var ctx = _db.Context())
         {
             var old = DateTimeOffset.UtcNow.AddDays(-200);
-            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, FetchedAtUtc = old, Status = s };
+            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, PublishedAtUtc = old.AddHours(-1), FetchedAtUtc = old, Status = s };
             ctx.FeedItems.AddRange(Item("new", FeedItemStatus.New), Item("dismissed", FeedItemStatus.Dismissed), Item("kept", FeedItemStatus.Shortlisted));
             await ctx.SaveChangesAsync();
         }
@@ -852,6 +852,28 @@ public class IntakeServiceTests : IDisposable
         _db.Http.Set(url, """{"vulnerabilities":[{"cveID":"CVE-2026-0007","dateAdded":"2026-03-02"}]}""", etag: "\"changed\"");
         (await _db.Intake(time: new TestClock(later)).PollNowAsync(source)).New.Should().Be(0, "it's older than the retention period");
         (await _db.Intake().InboxAsync(new InboxFilter())).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<pubDate>Thu, 01 Jan 1970 00:00:00 GMT</pubDate>")]
+    [InlineData("<pubDate>Sat, 07 Nov 2099 10:00:00 GMT</pubDate>")]
+    public async Task Prune_ADismissedUndatedItemTheFeedStillLists_DoesntComeBackAsNew(string date)
+    {
+        var source = await Source();
+        var feed = $"<rss version=\"2.0\"><channel><item><title>Evergreen advisory page</title><link>https://news.example.com/advisory</link>{date}</item></channel></rss>";
+        _db.Http.Set(FeedUrl, feed, etag: "\"v1\"");
+        var added = new DateTimeOffset(2026, 3, 3, 12, 0, 0, TimeSpan.Zero);
+        var later = added.AddDays(100);   // past the 90-day retention
+
+        (await _db.Intake(time: new TestClock(added)).PollNowAsync(source)).New.Should().Be(1);
+        var item = (await _db.Intake(time: new TestClock(added)).InboxAsync(new InboxFilter())).Single().Item;
+        await _db.Intake().DismissAsync(item.Id, null);
+        (await _db.Intake(time: new TestClock(later)).PruneAsync()).Should().Be(0, "without a past date nothing else keeps it from being stored again");
+
+        _db.Http.Set(FeedUrl, feed, etag: "\"v2\"");
+        (await _db.Intake(time: new TestClock(later)).PollNowAsync(source)).New.Should().Be(0, "the analyst already dismissed it");
+        (await _db.Intake().InboxAsync(new InboxFilter { Status = FeedItemStatus.Dismissed })).Single().Item.Id.Should().Be(item.Id);
     }
 
     [Fact]
