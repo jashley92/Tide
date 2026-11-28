@@ -149,6 +149,8 @@ window.tideTriage = (function () {
                 if (!r.width || !r.height) return;
                 const g = ts.copy(row, r);
                 g.classList.add('tide-decided');
+                // On the page, not the window: if the window scrolls back as the list shortens, the copy goes with the rows.
+                Object.assign(g.style, { position: 'absolute', left: (r.left + scrollX) + 'px', top: (r.top + scrollY) + 'px' });
                 // Gone by half way, before the rows below close up into its place (they'd show through it).
                 // Linear, on the first stretch: over its few frames it fades evenly (an eased curve on the whole effect squeezed it
                 // into its first frame or two).
