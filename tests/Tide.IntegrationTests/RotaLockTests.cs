@@ -132,6 +132,30 @@ public class RotaLockTests : IDisposable
         (await r.SetWeekAsync(past, Robin)).Kept.Should().Equal((past, "Sam"));
     }
 
+    // A week nobody had: its day's brief is whoever opened it, and that's who presented a held day. Assigning the week,
+    // or filling empty weeks in roster order, keeps them on it, as giving a week from one analyst to another does.
+    [Fact]
+    public async Task AssigningOrFillingAnEmptyWeek_KeepsWhoPresentedItsPresentedDays()
+    {
+        var r = _db.Rotation();
+        await r.AddMemberAsync(Robin, "Robin");
+        var nextWeek = _week.AddDays(7);
+        foreach (var d in new[] { _week, nextWeek })
+        {
+            var id = (await _db.Briefs().GetOrStartAsync(d)).Id;
+            await using var ctx = _db.Context();
+            (await ctx.Briefs.SingleAsync(b => b.Id == id)).Status = BriefStatus.Presented;
+            await ctx.SaveChangesAsync();
+        }
+
+        await r.SetWeekAsync(_week, Robin);
+        await r.GenerateAsync(nextWeek, 1);
+
+        (await r.PresenterAsync(_week))!.Value.Name.Should().Be(_db.User.DisplayName, "assigning an empty week keeps who presented its held day");
+        (await r.PresenterAsync(nextWeek))!.Value.Name.Should().Be(_db.User.DisplayName, "filling an empty week keeps who presented its held day");
+        (await r.PresenterAsync(_week.AddDays(1)))!.Value.Name.Should().Be("Robin", "a day not held follows the rota");
+    }
+
     [Fact]
     public async Task ADayAnApprovedChangeMoved_StaysWithTheChange_EvenAsACorrection()
     {
