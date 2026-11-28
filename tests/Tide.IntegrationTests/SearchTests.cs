@@ -385,6 +385,40 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Lookup_Indicator_OnMoreArticlesThanItLists_CountsThemAll_AndListsTheNewest()
+    {
+        const string domain = "shared-c2.example.com";
+        var many = SearchService.MaxSightings + 50;
+        var start = DateTimeOffset.UtcNow.AddDays(-400);
+        List<Article> articles;
+        await using (var db = _db.PlainContext())   // plain: the audit stamp would give every article the same time
+        {
+            articles = Enumerable.Range(0, many).Select(i => new Article
+            {
+                Title = $"Campaign {i}", AuthorId = "x", AuthorName = "X", CreatedAtUtc = start.AddHours(i),
+            }).ToList();
+            db.Articles.AddRange(articles);
+            db.ArticleIndicators.AddRange(articles.Select(a => new ArticleIndicator { ArticleId = a.Id, Type = IndicatorType.Domain, Value = domain }));
+            // The oldest, beyond the newest the list shows, is the one that was briefed and swept for it.
+            db.Briefs.Add(new Brief { BriefDate = new DateOnly(2025, 3, 3), Status = BriefStatus.Presented, Items = { new BriefItem { ArticleId = articles[0].Id } } });
+            await db.SaveChangesAsync();
+        }
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = articles[0].Id });
+
+        var lookup = (await Search().SearchAsync(domain, Once)).Indicator!;
+
+        lookup.Summary.Articles.Should().Be(many, "every article carrying it, not only the rows read for the list");
+        lookup.Summary.LastBriefed.Should().Be(new DateOnly(2025, 3, 3));
+        lookup.Summary.Actions.Should().Be(1);
+        lookup.Sweeping.Should().ContainSingle();
+        lookup.Sightings.Items.Should().NotContain(s => s.Related, "its own rows on articles not listed aren't another on its host");
+        lookup.Sightings.Total.Should().Be(many);
+        lookup.Sightings.Items.Select(s => s.Article.Id).Should().BeEquivalentTo(
+            articles.OrderByDescending(a => a.CreatedAtUtc).Take(SearchService.MaxSightings).Select(a => a.Id), "the newest are listed");
+    }
+
+    [Fact]
     public async Task Lookup_Cve_ListsItsArticles_AndSaysWhoIsOnIt()
     {
         var a = await Article("Firewall bug", cves: ["CVE-2026-12345"]);

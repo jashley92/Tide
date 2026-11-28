@@ -328,8 +328,13 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         if (Lookups.IndicatorOf(term) is not { } looked) return null;
         var (type, value, family) = looked;
         var matching = Lookups.Carrying(db, looked);
-        var rows = await matching.OrderBy(i => i.Id).Take(MaxSightings + 1).ToListAsync(ct);
-        var exactTotal = rows.Count > MaxSightings ? await matching.CountAsync(ct) : rows.Count;
+        // Every article carrying it, as a CVE's are: the first line counts them all, and the actions and briefs are of
+        // them all. The list reads the rows of the newest MaxSightings only.
+        var own = await matching.Select(i => new { i.Id, i.ArticleId }).ToListAsync(ct);
+        var onIds = own.Select(i => i.ArticleId).Distinct().ToList();
+        var listedIds = onIds.Count <= MaxSightings ? onIds : await db.Articles.AsNoTracking().Where(a => onIds.Contains(a.Id))
+            .OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Select(a => a.Id).Take(MaxSightings).ToListAsync(ct);
+        var rows = await matching.Where(i => listedIds.Contains(i.ArticleId)).ToListAsync(ct);
 
         // The same host under another indicator: a subdomain, a URL or email address on the domain, the domain of a URL.
         var host = IndicatorKey.HostOf(type, value);
@@ -337,7 +342,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         if (host is not null)
         {
             var hostTypes = new[] { IndicatorType.Domain, IndicatorType.Url, IndicatorType.EmailAddress, IndicatorType.IpAddress };
-            var seen = rows.Select(r => r.Id).ToHashSet();
+            var seen = own.Select(i => i.Id).ToHashSet();
             related = (await Lookups.OnHost(db, host, hostTypes)
                     .OrderBy(i => i.Id).Take(MaxSightings * 3).ToListAsync(ct))
                 .Where(i => !seen.Contains(i.Id) && IndicatorKey.HostOf(i.Type, i.Value) is { } h && SearchText.SameOrUnder(h, host))
@@ -345,33 +350,37 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         }
 
         var all = rows.Select(r => (Row: r, Related: false)).Concat(related.Select(r => (Row: r, Related: true))).ToList();
-        var articleIds = all.Select(x => x.Row.ArticleId).Distinct().ToList();
-        var articles = (await LookupArticlesAsync(db, db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)), ct)).ToDictionary(a => a.Id);
+        var shownIds = all.Select(x => x.Row.ArticleId).Distinct().ToList();
+        var articles = (await LookupArticlesAsync(db, db.Articles.AsNoTracking().Where(a => shownIds.Contains(a.Id)), ct)).ToDictionary(a => a.Id);
         var sightings = all.Where(x => articles.ContainsKey(x.Row.ArticleId))
             .Select(x => (x, a: articles[x.Row.ArticleId]))
             .OrderBy(t => t.x.Related).ThenByDescending(t => t.a.CreatedAtUtc).ThenBy(t => t.x.Row.Value, StringComparer.OrdinalIgnoreCase)
             .Select(t => new Sighting(t.a, t.x.Row.Type, t.x.Row.Value, t.x.Row.Note, t.x.Related))
             .ToList();
-        // The articles carrying the indicator itself, newest first: what the first line counts and "Seen with" reads.
+        // The listed articles carrying the indicator itself, newest first: what "Seen with" reads.
         var on = sightings.Where(s => !s.Related).Select(s => s.Article).DistinctBy(a => a.Id).ToList();
 
         // An action can carry indicators of its own (one raised with no article): it's on this one too.
         var carrying = await Lookups.ActionsCarrying(db, looked)
             .Select(i => i.ActionId).Distinct().OrderBy(id => id).Take(MaxHits).ToListAsync(ct);
+        var articleIds = onIds.Union(related.Select(r => r.ArticleId)).ToList();
         var actions = await Lookups.ActionsOnAsync(db, articleIds, carrying, MaxHits, ct);
+        var onSet = onIds.ToHashSet();
         var sweeping = actions.Items
-            .Where(a => a.IsOpen && a.Hunts && (carrying.Contains(a.Id) || on.Any(x => x.Id == a.ArticleId)))
+            .Where(a => a.IsOpen && a.Hunts && (carrying.Contains(a.Id) || a.ArticleId is { } id && onSet.Contains(id)))
             .ToList();
         // The first line counts what was done about the indicator itself, as Sweeping does: a sweep raised from an article
         // on a related host searched for that host, not this one. The list below it still names them all.
-        var onIds = on.Select(a => a.Id).ToList();
         var itself = onIds.Count == articleIds.Count ? actions : await Lookups.ActionsOnAsync(db, onIds, carrying, MaxHits, ct);
+        IReadOnlyCollection<LookupBrief> briefs = onIds.Count > on.Count
+            ? [.. (await Lookups.BriefsAsync(db, onIds, ct)).Values.SelectMany(b => b)]
+            : [.. on.SelectMany(a => a.Briefs)];
         var seenWith = await SeenWithAsync(db, on, i => family.Contains(i.Type) && string.Equals(i.Value, value, StringComparison.OrdinalIgnoreCase), null, ct);
         return new IndicatorLookup(type, value, host,
-            new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + exactTotal - rows.Count),
+            new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + own.Count - rows.Count),
             // Triage keeps no indicators of an item's own (it reads CVEs from a title and summary, not indicators), so for
             // someone who triages there are none there to count.
-            actions, sweeping, seenWith, LookupSummary.Of(on, itself, hunted: true, triages ? 0 : null));
+            actions, sweeping, seenWith, LookupSummary.Of(onIds.Count, briefs, itself, hunted: true, triages ? 0 : null));
     }
 
     private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, bool triages, CancellationToken ct)
