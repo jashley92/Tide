@@ -417,7 +417,8 @@ What `MarkPresentedAsync` does, in one save:
 
 1. Does nothing for a Sent brief.
 2. Works out the carry: the articles not ticked discussed whose carry tick is on.
-3. Refuses if the next working day's brief is already Sent: "nothing can be carried to it".
+3. Refuses if the next working day's brief is already Sent or Presented (its meeting is over, so nobody would present
+   what was carried): "nothing can be carried to it".
 4. Sets `Status = Presented`. Keeps two times, each only if not already set: `MeetingHeldAtUtc` (now, or for a past
    day's brief that day's meeting time unless the presenter picks another; a meeting opened on its own day and run
    past midnight is still now, as present mode passes it) and `PresentedAtUtc` (the clock). The meeting

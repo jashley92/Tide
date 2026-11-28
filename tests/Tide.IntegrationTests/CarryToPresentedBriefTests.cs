@@ -31,12 +31,13 @@ public class CarryToPresentedBriefTests : IDisposable
         var monday = await briefs.GetOrStartAsync(Monday);
         await briefs.AddArticleAsync(monday.Id, undiscussed);
 
-        DateOnly? to = null;
-        try { to = await briefs.MarkPresentedAsync(monday.Id, carry: [undiscussed]); }
-        catch (InvalidOperationException) { /* refusing the carry, as for a sent brief, is fine */ }
+        var end = () => briefs.MarkPresentedAsync(monday.Id, carry: [undiscussed]);
 
-        to.Should().NotBe(Tuesday, "Tuesday's meeting is over, so nobody would present the article there");
+        (await end.Should().ThrowAsync<InvalidOperationException>("Tuesday's meeting is over, so nobody would present the article there"))
+            .WithMessage("*has been presented, so nothing can be carried to it*");
         (await briefs.GetAsync(Tuesday))!.Items.Select(i => i.ArticleId).Should().NotContain(undiscussed,
             "an article carried onto a running order that has already been presented is never discussed");
+        (await briefs.GetAsync(Monday))!.Status.Should().NotBe(BriefStatus.Presented, "the refused end is one save, so Monday's meeting is still open");
+        (await briefs.MarkPresentedAsync(monday.Id)).Should().BeNull("ending it without the carry still works");
     }
 }
