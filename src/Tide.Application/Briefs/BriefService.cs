@@ -401,8 +401,9 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var carried = brief.Items.Where(i => !i.Discussed && carry?.Contains(i.ArticleId) == true).OrderBy(i => i.SortOrder).Select(i => i.ArticleId).ToList();
         var next = clock.Days.Next(brief.BriefDate);
         var later = carried.Count == 0 ? null : await db.Briefs.Include(b => b.Items).FirstOrDefaultAsync(b => b.BriefDate == next, ct);
-        if (later?.Status == BriefStatus.Sent)
-            throw new InvalidOperationException($"The brief for {next:ddd MMM d} has been sent, so nothing can be carried to it.");
+        // A next brief whose meeting has been held won't present what's carried to it, so it's refused as a sent one is.
+        if (later?.Status is BriefStatus.Sent or BriefStatus.Presented)
+            throw new InvalidOperationException($"The brief for {next:ddd MMM d} has been {(later.Status == BriefStatus.Sent ? "sent" : "presented")}, so nothing can be carried to it.");
 
         brief.Status = BriefStatus.Presented;
         var now = clock.Now.ToUniversalTime();
