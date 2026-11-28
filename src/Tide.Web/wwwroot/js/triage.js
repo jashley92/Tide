@@ -143,7 +143,14 @@ window.tideTriage = (function () {
             const ts = window.tideShortcuts, tab = tabFor(tabLabel), still = ts.still();
             if (tab) ts.pulse(tab, 'data-tide-landed');
             if (ts.quiet() && !still) return;   // a tab nobody is looking at
-            const rows = rowsFor(ids, 8), at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
+            const rows = rowsFor(ids, 8);
+            // Without motion the rows fade where they are (as a promote's do), and .NET waits out the fade before it reloads,
+            // so the gap closes in one step after: nothing slides under a fading copy.
+            if (still) {
+                rows.forEach(function (row) { row.setAttribute('data-tide-promoting', ''); });
+                return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); });
+            }
+            const at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
             rows.forEach(function (row) { row.setAttribute('data-tide-gone', ''); });   // they leave here, not again in flip.js
             rows.forEach(function (row, i) {
                 const r = at[i];
@@ -155,7 +162,6 @@ window.tideTriage = (function () {
                 // Gone by half way, before the rows below close up into its place (they'd show through it).
                 // Linear, on the first stretch: over its few frames it fades evenly (an eased curve on the whole effect squeezed it
                 // into its first frame or two).
-                if (still) { ts.drift(g, [{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast') }); return; }
                 ts.drift(g, [{ opacity: 1, transform: 'none', easing: 'linear' }, { opacity: 0, transform: 'translateY(-4px)', offset: .5 }, { opacity: 0, transform: 'translateY(-6px)' }],
                     { duration: ts.ms('--tide-dur-exit') });   // out: it's fading from the first frame
             });

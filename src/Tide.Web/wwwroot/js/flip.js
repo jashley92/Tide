@@ -517,16 +517,19 @@ window.tideFlip = (function () {
         // is placed from where it was when its items were measured (on the page, so a scroll since doesn't matter).
         const now = root.getBoundingClientRect(), was = places.get(root), moved = was && (Math.abs(was.w - now.width) > .5 || Math.abs(was.h - now.height) > .5);
         const o = pinned.get(root) ? { left: 0, top: 0 } : moved ? { left: was.left - scrollX, top: was.top - scrollY } : now;
-        const g = ts.copy(el, { left: o.left + p.x, top: o.top + p.y, width: p.w, height: p.h });
+        // On the page (a list fixed to the window, on the window): if the window moves as the page shortens, the copy goes
+        // with what was around it rather than floating over what took its place.
+        const fixed = !!pinned.get(root), dx = fixed ? 0 : scrollX, dy = fixed ? 0 : scrollY;
+        const g = ts.copy(el, { left: o.left + p.x + dx, top: o.top + p.y + dy, width: p.w, height: p.h });
         g.classList.add('tide-leaving');
-        Object.assign(g.style, { position: 'fixed', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
+        Object.assign(g.style, { position: fixed ? 'fixed' : 'absolute', margin: '0', zIndex: 'var(--tide-z-drop)', pointerEvents: 'none', listStyle: 'none' });
         // The copy keeps the look its list gave it (`.tide-checklist li`): it goes in a stand-in for the list, of no size
         // and drawing nothing itself, and not as the last item, so a rule for the last one doesn't take its border.
         const holder = document.createElement(root.tagName), after = document.createElement(el.tagName);
         holder.className = root.className;
         holder.setAttribute('data-tide-copy', '');
         holder.setAttribute('aria-hidden', 'true');
-        Object.assign(holder.style, { position: 'fixed', left: '0', top: '0', width: '0', height: '0', margin: '0', padding: '0', border: '0',
+        Object.assign(holder.style, { position: fixed ? 'fixed' : 'absolute', left: '0', top: '0', width: '0', height: '0', margin: '0', padding: '0', border: '0',
             background: 'none', boxShadow: 'none', overflow: 'visible', display: 'block', pointerEvents: 'none', animation: 'none', transform: 'none' });
         after.style.display = 'none';
         holder.append(g, after);
