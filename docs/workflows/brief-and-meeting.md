@@ -114,7 +114,9 @@ with removal you can undo.
 
 Every change to the brief or its items moves `Brief.EditVersion` (`BriefService.Touch`), which is how a send confirmed
 before the change is refused. Once the brief is Sent, its running order, presenter and title slide line are fixed
-(`BriefService.Editable`, `SetDetailsAsync`). Its articles stay editable; a mistake after a send is put right by a
+(`BriefService.Editable`, `SetDetailsAsync`). The running order is also held while a real send is with the relay or
+its outcome is unknown (`BriefService.SendPendingAsync`): that send finishes the brief with the articles on it when it
+lands or is settled as gone, so they stay as the email froze them, and nothing can be carried onto it. Its articles stay editable; a mistake after a send is put right by a
 [correction](distribution.md#corrections-after-a-send).
 
 The running order shows each article's readiness gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with
