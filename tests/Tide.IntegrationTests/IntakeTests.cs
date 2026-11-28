@@ -826,7 +826,7 @@ public class IntakeServiceTests : IDisposable
         await using (var ctx = _db.Context())
         {
             var old = DateTimeOffset.UtcNow.AddDays(-200);
-            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, FetchedAtUtc = old, Status = s };
+            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, PublishedAtUtc = old.AddHours(-1), FetchedAtUtc = old, Status = s };
             ctx.FeedItems.AddRange(Item("new", FeedItemStatus.New), Item("dismissed", FeedItemStatus.Dismissed), Item("kept", FeedItemStatus.Shortlisted));
             await ctx.SaveChangesAsync();
         }
@@ -869,10 +869,11 @@ public class IntakeServiceTests : IDisposable
         (await _db.Intake(time: new TestClock(added)).PollNowAsync(source)).New.Should().Be(1);
         var item = (await _db.Intake(time: new TestClock(added)).InboxAsync(new InboxFilter())).Single().Item;
         await _db.Intake().DismissAsync(item.Id, null);
-        (await _db.Intake(time: new TestClock(later)).PruneAsync()).Should().Be(1);
+        (await _db.Intake(time: new TestClock(later)).PruneAsync()).Should().Be(0, "without a past date nothing else keeps it from being stored again");
 
         _db.Http.Set(FeedUrl, feed, etag: "\"v2\"");
         (await _db.Intake(time: new TestClock(later)).PollNowAsync(source)).New.Should().Be(0, "the analyst already dismissed it");
+        (await _db.Intake().InboxAsync(new InboxFilter { Status = FeedItemStatus.Dismissed })).Single().Item.Id.Should().Be(item.Id);
     }
 
     [Fact]

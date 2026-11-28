@@ -1769,7 +1769,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     // --- retention ------------------------------------------------------------------------------------------------
 
-    /// <summary>Deletes items older than <c>Intake:RetentionDays</c> that nobody shortlisted or promoted.</summary>
+    /// <summary>Deletes items older than <c>Intake:RetentionDays</c> that nobody shortlisted or promoted (or dismissed
+    /// without a date to keep them out, see <see cref="Prunable"/>).</summary>
     public async Task<int> PruneAsync(CancellationToken ct = default)
     {
         var cutoff = RetentionCutoff(time.GetUtcNow());
@@ -1792,8 +1793,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return await Prunable(db.FeedItems.Where(i => old.Contains(i.Id)), cutoff).ExecuteDeleteAsync(ct);
     }
 
+    // A dismissal or duplicate mark on an item the feed gave no usable date for (none, or one after the fetch, which
+    // StoreAsync dates when it was fetched) is kept: only a past date keeps a pruned item from being stored again, so a
+    // feed still listing it would bring it back as New, the decision lost, every retention period.
     private static IQueryable<FeedItem> Prunable(IQueryable<FeedItem> items, DateTimeOffset cutoff) => items
-        .Where(i => i.FetchedAtUtc < cutoff && (i.Status == FeedItemStatus.New || i.Status == FeedItemStatus.Dismissed || i.Status == FeedItemStatus.Duplicate));
+        .Where(i => i.FetchedAtUtc < cutoff && (i.Status == FeedItemStatus.New
+            || ((i.Status == FeedItemStatus.Dismissed || i.Status == FeedItemStatus.Duplicate) && i.PublishedAtUtc < i.FetchedAtUtc)));
 
     private DateTimeOffset RetentionCutoff(DateTimeOffset now) => now.AddDays(-Math.Max(7, options.CurrentValue.RetentionDays));
 
