@@ -60,6 +60,42 @@ public sealed class ActionForm
         TeamId = a.TeamId, FromTeamId = a.TeamId, AssigneeId = a.AssigneeId, AssigneeName = a.AssigneeName, DueDate = a.DueDate, TicketRef = a.TicketRef,
         TicketUrl = a.TicketUrl, ArticleId = a.ArticleId, ParentId = a.ParentId,
     };
+
+    /// <summary>Carries an open edit onto the action as it is now, after the editor's own step on it (a status move, Take
+    /// it) moved its version: each field they haven't changed since <paramref name="opened"/> takes its value now, the ones
+    /// they changed stay theirs, and the version is the current one. False, with nothing changed, when a field they changed
+    /// was also changed to something else: that's a clash a save has to refuse.</summary>
+    public bool CarryOnto(ActionForm opened, ActionItem now)
+    {
+        var (clash, apply) = (false, false);
+        T Mine<T>(T mine, T was, T theirs)
+        {
+            var eq = EqualityComparer<T>.Default;
+            if (eq.Equals(mine, was)) return apply ? theirs : mine;
+            clash |= !eq.Equals(theirs, was) && !eq.Equals(theirs, mine);
+            return mine;
+        }
+        void Fields()
+        {
+            Title = Mine(Title, opened.Title, now.Title);
+            Description = Mine(Description, opened.Description, now.Description);
+            Kind = Mine(Kind, opened.Kind, now.Kind);
+            Priority = Mine(Priority, opened.Priority, now.Priority);
+            TeamId = Mine(TeamId, opened.TeamId, now.TeamId);
+            if (Mine(AssigneeId, opened.AssigneeId, now.AssigneeId) != AssigneeId) (AssigneeId, AssigneeName) = (now.AssigneeId, now.AssigneeName);
+            DueDate = Mine(DueDate, opened.DueDate, now.DueDate);
+            TicketRef = Mine(TicketRef, opened.TicketRef, now.TicketRef);
+            TicketUrl = Mine(TicketUrl, opened.TicketUrl, now.TicketUrl);
+            ArticleId = Mine(ArticleId, opened.ArticleId, now.ArticleId);
+            ParentId = Mine(ParentId, opened.ParentId, now.ParentId);
+        }
+        Fields();
+        if (clash) return false;
+        apply = true;
+        Fields();
+        (FromTeamId, EditVersion) = (now.TeamId, now.EditVersion);
+        return true;
+    }
 }
 
 /// <summary>A row on an action list.</summary>

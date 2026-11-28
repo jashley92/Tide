@@ -868,7 +868,7 @@ else
         var who = LiveChanges.Who(changes);
         var status = _detail.Action.Status;
         var editing = _editingComment;
-        await Reload();
+        await Read(own: false);
         var edited = _detail?.Action.Comments.FirstOrDefault(c => c.Id == _editingComment);
         if (_detail is not null && ((_editing is not null && _detail.Action.EditVersion != _editing.EditVersion) || (_prompting && _detail.Action.Status != status)))
             _changedBy = who;
@@ -899,13 +899,25 @@ else
         _verbs?.Dispose();
     }
 
-    private async Task Reload()
+    // Re-reads the action after this page's own step on it.
+    private Task Reload() => Read(own: true);
+
+    private async Task Read(bool own)
     {
+        var shown = _detail?.Action.EditVersion;
         _changedBy = null;
         _detail = await ActionSvc.GetAsync(Number!.Value);
         _topic = _detail is null ? "" : ChangeFeed.Action(_detail.Action.Id);
         Derive();
         CloseEditOfGoneComment();
+        // The person's own step (a status move, Take it, a hunt result) moved the version under their open edit, which was
+        // up to date with what they saw: it isn't someone else's change, so the edit carries onto it and still saves.
+        // A field they changed that moved to something else too is a clash, said as a colleague's change is.
+        if (own && _editing is not null && _editBase is not null && _detail is { Action: var now } && _editing.EditVersion == shown && now.EditVersion != shown)
+        {
+            if (_editing.CarryOnto(_editBase, now)) _editBase = ActionForm.From(now);
+            else _changedBy = "Someone else";
+        }
     }
 
     private void OnPrompting(bool open) => _prompting = open;
@@ -913,7 +925,10 @@ else
     // The outcome prompt's move was refused: the action moved since it opened. The prompt stays, as an edit form does.
     private void OnStatusStale() => _changedBy ??= "Someone else";
 
-    internal void StartEdit() => _editing = ActionForm.From(_detail!.Action);
+    internal void StartEdit() => (_editing, _editBase) = (ActionForm.From(_detail!.Action), ActionForm.From(_detail.Action));
+
+    // The action as the open edit started from (moved on by the person's own steps), so a carry knows what they changed.
+    private ActionForm? _editBase;
 
     // Set once the action exists: a second click (a double-click) can still arrive before the page moves on.
     private bool _created;
@@ -1015,7 +1030,7 @@ else
         catch (StaleEditException ex)
         {
             // Someone changed it since: theirs is shown, and what was typed stays in the box to redo on top of it.
-            await Reload();
+            await Read(own: false);
             if (_editingComment == c.Id && _detail?.Action.Comments.FirstOrDefault(x => x.Id == c.Id) is { } now) ShowTheirs(now);
             Toasts.Error(ex.Message);
             return;
