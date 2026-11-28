@@ -124,7 +124,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         if (ctx is null) return;
         var topics = ctx.ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            .SelectMany(e => TopicsOf(e.Entity).Concat(StoryLeft(e)))
+            .SelectMany(e => TopicsOf(e.Entity).Concat(StoryLeft(e)).Concat(BackInTriage(e)))
             .ToHashSet(StringComparer.Ordinal);
         if (topics.Count > 0) _pending.AddOrUpdate(ctx, topics);
         else _pending.Remove(ctx);
@@ -135,6 +135,13 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         e.Entity is Article && e.State is EntityState.Modified or EntityState.Deleted
             && e.Property(nameof(Article.StoryId)).OriginalValue is Guid left && !Equals(left, e.Property(nameof(Article.StoryId)).CurrentValue)
             ? [ChangeFeed.Story(left)] : [];
+
+    // A report let go by its article (the draft promoted from it was deleted) is back in New: open inboxes and the
+    // sidebar's count must hear it, and no Triage page is there to announce it.
+    private static IEnumerable<string> BackInTriage(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry e) =>
+        e.Entity is FeedItem { ArticleId: null } && e.State is EntityState.Modified
+            && e.Property(nameof(FeedItem.ArticleId)).OriginalValue is Guid
+            ? [ChangeFeed.Triage] : [];
 
     private void Publish(DbContext? ctx)
     {
