@@ -173,7 +173,7 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
             (p.HandTo, p.HandWhy) = (mine, "Mine to fix");
             (await p.HandOff()).Should().BeFalse("someone else handed it on since the dialog was opened");
         });
-        page.Component.HandError.Should().NotBeNullOrEmpty();
+        page.Component.HandError.Should().Contain("EP86 stale colleague's team", "it says where it went instead");
         var d = await Detail(number);
         d.Action.TeamId.Should().Be(theirs, "the colleague's hand-off stands");
         d.Action.HandoffReason.Should().Be("Colleague's reason");

@@ -39,14 +39,20 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// history and shown on it. Its assignee stays only if they're on the receiving team. When its reminders are off
     /// ("Don't remind"), they stay off for the new team unless <paramref name="turnRemindersOn"/> (the hand-off's history
     /// line then says so); while they're on it changes nothing. Returns how many emails told the team (none for an
-    /// external team, or when email is off).
+    /// external team, or when email is off). From a page that showed it with a team (<paramref name="seenTeamId"/>), it's
+    /// refused as stale when someone has handed it on since, so their hand-off and reason stand.
     /// </summary>
     public async Task<int> HandOffAsync(Guid actionId, Guid toTeamId, string reason, string? overLimitReason = null, bool turnRemindersOn = false,
-        CancellationToken ct = default)
+        Guid? seenTeamId = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.FindAsync(db, actionId, ct);
         await ActionService.RequireWork(db, user, a, ct, "Only analysts and members of the owning team can hand this action off.");
+        if (seenTeamId is { } seen && seen != a.TeamId)
+        {
+            var now = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? "another team";
+            throw new StaleEditException($"Someone else handed A-{a.Number} to {now} in the meantime. Reload to see why, then try again.");
+        }
         if (toTeamId == a.TeamId) throw new ArgumentException("It's that team's already: choose another.");
         var handover = await HandOverAsync(db, user, a, await ReceivingTeamAsync(db, toTeamId, ct), reason, overLimitReason, turnRemindersOn, ct);
         await ActionService.SaveEditAsync(db, ct);

@@ -710,6 +710,8 @@ it until it's done. Some of those teams work outside TIDE ([external teams](#ext
 shows "handed from {team} by {name}: {reason}" on the line under the action's badges. Its assignee stays only if they're on the
 receiving team. The receiving team is emailed (the *Action handed to a team* template): its mailbox, or its members who
 haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
+If someone else hands it on while the dialog is open, the hand-off is refused as stale (it names the team it went to),
+so their hand-off and reason stand.
 When the action's reminders are off (*Don't remind*), the dialog asks *Keep reminders off*, ticked: that was chosen for
 the team it's leaving, so it isn't carried over unseen. Unticked, the hand-off turns them back on and its history line
 ends "Its reminders are back on." The service keeps them as they are unless told to turn them on (`turnRemindersOn`,
