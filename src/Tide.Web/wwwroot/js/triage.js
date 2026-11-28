@@ -199,8 +199,9 @@ window.tideTriage = (function () {
             const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } first(); };
             const t = dest.getBoundingClientRect();
             const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
+            const heads = emptied(rows);   // the section headings going with them (they fade, they don't fly)
             const shown = function () {
-                rows.forEach(function (r) { r.removeAttribute('data-tide-promoting'); });
+                rows.concat(heads).forEach(function (r) { r.removeAttribute('data-tide-promoting'); });
                 if (bar && bar.isConnected) { bar.removeAttribute('data-tide-gone'); bar.getAnimations().forEach(function (a) { a.cancel(); }); }   // they stayed
             };
             // Shown again only if still on the page once the reload has had its moment (a second at most): taken away by
@@ -213,13 +214,15 @@ window.tideTriage = (function () {
                 })();
             };
             rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
+            // A section heading all of whose rows are going fades with them, as they lift (not once they've landed).
+            heads.forEach(function (h) { h.setAttribute('data-tide-promoting', ''); });
             // The bar for the chosen items goes with them: it fades as they lift, not after the reload (and leaves no copy).
             const bar = document.querySelector('.tide-triage-selbar');
             if (bar && !ts.quiet()) { bar.setAttribute('data-tide-gone', ''); bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' }); }
             if (!t.width || document.hidden || !document.body.animate) { land(); shown(); return Promise.resolve(); }
             // Without motion (or with the tab out of sight, below), there's no morph: the rows fade (data-tide-promoting) and
             // .NET waits out the fade before it reloads.
-            if (ts.still()) { emptied(rows).forEach(function (h) { h.setAttribute('data-tide-promoting', ''); rows.push(h); }); land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
+            if (ts.still()) { land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
             // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
             if (t.bottom < 0 || t.top > innerHeight) {
                 land(); release();

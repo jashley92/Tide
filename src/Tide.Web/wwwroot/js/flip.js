@@ -116,7 +116,7 @@ window.tideFlip = (function () {
     // reader scrolling meanwhile takes over from where the window is, the hold following them up. Not on going to
     // another page (it opens at its top), nor with reduced motion.
     let lastY = 0, pin = 0, rewind = null, footFrame = 0, footPath = location.pathname;
-    let footMs = 0, footWait = 0;   // the glide this change started (play), which the window keeps time with
+    let footMs = 0, footWait = 0, glidesFrom = 0;   // glidesFrom: when the latest glide held for an exit sets off   // the glide this change started (play), which the window keeps time with
     let idle = 0;   // a look once the changes have gone quiet
     const HANDS = ['wheel', 'touchstart', 'mousedown', 'keydown'];   // the reader taking the scroll
     // Keys that scroll the page take it (Space only outside a field or a row, where it types or picks); the list's own
@@ -187,7 +187,8 @@ window.tideFlip = (function () {
             return;
         }
         if (!ts || ts.still() || document.hidden) { hold(0); lastY = scrollY; return; }
-        glideWindow(from, foot, glide || ts.travel(from - foot), wait);
+        // Not before rows held for an exit (a heading fading, a decided row lifting out) set off, whichever change held them.
+        glideWindow(from, foot, glide || ts.travel(from - foot), Math.max(wait, glidesFrom - performance.now()));
     }
     // The window easing to where it should be (the page's foot, or a row brought into view: aim), frame by frame, in
     // one ease (in step with the lists' glide when given its time and wait). Each frame covers its share of what is left
@@ -207,9 +208,14 @@ window.tideFlip = (function () {
             HANDS.forEach(function (t) { removeEventListener(t, hand, true); });
             room(lastY = scrollY);
         }, hand = handed(done);
+        let held = false;
         const step = function () {
             const at = scrollY, to = target(at);
             if (to - goal > 8 && aim === null) { done(); return; }
+            // Rows held for an exit since it set off (a heading fading, a decided row lifting out): the window waits where
+            // it is, and sets off again with them, so it doesn't carry them away before they move.
+            if (glidesFrom > performance.now()) { held = true; frame = requestAnimationFrame(step); return; }
+            if (held) { held = false; timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
             if (goal - to > 8) { timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
             goal = to;
             const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev);
@@ -230,7 +236,7 @@ window.tideFlip = (function () {
         if (!ts || ts.still() || !window.KeyframeEffect || document.hidden) { window.scrollBy({ top: dy, behavior: 'instant' }); lastY = scrollY; return; }
         aim = Math.max(0, scrollY + dy);   // measured from where the window is now (asked twice, it's the same place)
         if (rewind) return;
-        glideWindow(scrollY, aim, ts.travel(Math.abs(dy)), 0);
+        glideWindow(scrollY, aim, ts.travel(Math.abs(dy)), Math.max(0, glidesFrom - performance.now()));   // with the rows, if they're held
     }
     // Where the window is, as the reader left it. A pull back because the page ended higher is not the reader's: the
     // window's place before it is kept. A hold still on follows the reader up (it is only a least height, so it never
@@ -401,11 +407,13 @@ window.tideFlip = (function () {
         // Rows this person decided lift out over the first half of the exit: the rest close up once they've faded (the
         // handover: one arriving where one leaves waits this long).
         const wait = afterExit && !quiet ? ts.ms('--tide-dur-exit') : gone && gone.size && !quiet ? ts.ms('--tide-dur-handover') : 0, behind = ts.ms('--tide-dur-fast');
+        if (wait) glidesFrom = Math.max(glidesFrom, performance.now() + wait);
         // A list pinned to the window's foot grows from its foot: held taller, it would push its items up.
         if (!still && s.was && !pinned.get(root)) {
             resized(tall, o.height, root, together, wait);
             // The window keeps time with a list that changed height (what shortens the page), not with one that only moved.
-            if (far && Math.abs(tall - o.height) > 1) { footMs = Math.max(footMs, together); footWait = Math.max(footWait, wait); }
+            // (Its wait for an exit counts even when nothing in it moved yet: the rows close up in a later change.)
+            if (Math.abs(tall - o.height) > 1) { if (far) footMs = Math.max(footMs, together); footWait = Math.max(footWait, wait); }
         }
         s.list.forEach(function (el) {
             const n = s.now.get(key(el)), w = s.was && s.was.get(key(el));
