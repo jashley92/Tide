@@ -216,7 +216,9 @@ window.tideFlip = (function () {
             // it is, and sets off again with them, so it doesn't carry them away before they move.
             if (glidesFrom > performance.now()) { held = true; frame = requestAnimationFrame(step); return; }
             if (held) { held = false; timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
-            if (goal - to > 8) { timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
+            // The goal moved (the page settled shorter, or another row brought into view): a new ease from where the window is,
+            // as long as its new way needs, not the rest of the old one (near its end, it would cover the new way in a frame).
+            if (Math.abs(goal - to) > 8) { timing.cancel(); timing = ease(ts.travel(Math.abs(at - to)), 0); timing.play(); prev = 0; }
             goal = to;
             const p = timing.effect.getComputedTiming().progress || 0, k = p >= 1 ? 1 : (p - prev) / (1 - prev);
             prev = p;

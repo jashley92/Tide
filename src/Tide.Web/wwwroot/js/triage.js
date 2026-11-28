@@ -125,7 +125,8 @@ window.tideTriage = (function () {
             return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
         }).slice(0, most);
     }
-    // The section headings ("Matches what we run", "Everything else") whose every row is among these: they go with them.
+    // The section headings ("Matches what we run", "Everything else") that go with these rows: one whose every row is among
+    // them, and then the other too.
     function emptied(rows) {
         const list = rows[0] && rows[0].parentElement, out = [];
         if (!list) return out;
@@ -136,7 +137,8 @@ window.tideTriage = (function () {
             else if (c.classList.contains('tide-triage-row') && rows.indexOf(c) < 0) all = false;
         });
         close();
-        return out;
+        // Sections show only while both have rows: one emptied, the other heading goes too.
+        return out.length ? Array.prototype.filter.call(list.children, function (c) { return c.classList.contains('tide-triage-section'); }) : out;
     }
     // The tab with this label (Triage.Tabs).
     function tabFor(label) {
