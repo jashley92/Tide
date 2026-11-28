@@ -873,7 +873,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var since = now.AddDays(-days);
         var quiet = now.AddDays(-PauseAfterDays);
         var sources = await ByName(db.Sources.AsNoTracking().Where(s => !s.IsRetired)).ToListAsync(ct);
-        var items = await db.FeedItems.AsNoTracking().Where(i => i.FetchedAtUtc >= since)
+        // The pause check looks back PauseAfterDays even when the learning window is shorter (RetentionDays < 60).
+        var from = since < quiet ? since : quiet;
+        var items = await db.FeedItems.AsNoTracking().Where(i => i.FetchedAtUtc >= from)
             .Select(i => new { i.SourceId, i.Status, i.FetchedAtUtc, i.StatusAtUtc }).ToListAsync(ct);
         var lastPromoted = (await db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.Promoted)
                 .Select(i => new { i.SourceId, At = i.StatusAtUtc ?? i.FetchedAtUtc }).ToListAsync(ct))
@@ -881,11 +883,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var bySource = items.ToLookup(i => i.SourceId);
         return sources.Select(s =>
         {
-            var mine = bySource[s.Id].ToList();
+            var all = bySource[s.Id].ToList();
+            var mine = all.Where(i => i.FetchedAtUtc >= since).ToList();
             var decided = mine.Where(i => i.Status is FeedItemStatus.Promoted or FeedItemStatus.Dismissed or FeedItemStatus.Duplicate).ToList();
             var waits = decided.Where(i => i.StatusAtUtc >= i.FetchedAtUtc).Select(i => i.StatusAtUtc!.Value - i.FetchedAtUtc).Order().ToList();
             var weeks = Math.Max(1d, Math.Min(days, (now - s.CreatedAtUtc).TotalDays)) / 7d;
-            var recent = mine.Where(i => i.FetchedAtUtc >= quiet).ToList();
+            var recent = all.Where(i => i.FetchedAtUtc >= quiet).ToList();
             var pause = s.Enabled && s.CreatedAtUtc <= quiet && recent.Count >= PauseMinItems
                         && !recent.Any(i => i.Status is FeedItemStatus.Promoted or FeedItemStatus.Shortlisted);
             return new SourceRecord(s, mine.Count / weeks, decided.Count, decided.Count(i => i.Status == FeedItemStatus.Promoted),
