@@ -99,6 +99,15 @@ public static class QueryDialects
     /// <summary>A language's short name, as a control or a list's row says it ("XQL", "KQL", "Falcon").</summary>
     public static string ShortName(string key) => key == "fql" ? "Falcon" : key.ToUpperInvariant();
 
+    /// <summary>A template as it is stored: "\n" line endings, trimmed. An empty one turns its kind off.</summary>
+    public static string NormalizeTemplate(string? template) => (template ?? "").Replace("\r\n", "\n").Trim();
+
+    /// <summary>Why a normalized template can't be saved, or null: one that isn't empty must say where the values go.</summary>
+    public static string? TemplateProblem(string text) =>
+        text.Length > 0 && !text.Contains(Placeholder, StringComparison.Ordinal) ? $"A template must contain {Placeholder} where the values go."
+        : text.Length > 4000 ? "A template can be at most 4,000 characters."
+        : null;
+
     public static IQueryDialect? Find(string? key) => All.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A value as a double-quoted string literal: backslashes and quotes escaped, line breaks removed.</summary>
@@ -475,10 +484,8 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
         RequireAdmin();
         var d = QueryDialects.Find(dialect) ?? throw new ArgumentException("That isn't a query language TIDE knows.");
         if (!Enum.IsDefined(kind)) throw new ArgumentException("That isn't a kind of indicator TIDE knows.");
-        var text = (template ?? "").Replace("\r\n", "\n").Trim();
-        if (text.Length > 0 && !text.Contains(QueryDialects.Placeholder, StringComparison.Ordinal))
-            throw new ArgumentException($"A template must contain {QueryDialects.Placeholder} where the values go.");
-        if (text.Length > 4000) throw new ArgumentException("A template can be at most 4,000 characters.");
+        var text = QueryDialects.NormalizeTemplate(template);
+        if (QueryDialects.TemplateProblem(text) is { } problem) throw new ArgumentException(problem);
         await using var db = await dbs.CreateAsync(ct);
         var row = await db.QueryTemplates.FirstOrDefaultAsync(t => t.Dialect == d.Key && t.Kind == kind, ct);
         if (row is null) db.QueryTemplates.Add(row = new QueryTemplate { Dialect = d.Key, Kind = kind });
