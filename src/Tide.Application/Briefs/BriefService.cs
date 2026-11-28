@@ -423,6 +423,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         // A next brief whose meeting has been held won't present what's carried to it, so it's refused as a sent one is.
         if (later?.Status is BriefStatus.Sent or BriefStatus.Presented)
             throw new InvalidOperationException($"The brief for {next:ddd MMM d} has been {(later.Status == BriefStatus.Sent ? "sent" : "presented")}, so nothing can be carried to it.");
+        if (later is not null && await SendPendingAsync(db, later.Id, ct))
+            throw new InvalidOperationException($"An edition of the brief for {next:ddd MMM d} is being sent, or whether it went isn't known yet, so nothing can be carried to it.");
 
         brief.Status = BriefStatus.Presented;
         var now = clock.Now.ToUniversalTime();
@@ -626,8 +628,13 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var brief = await db.Briefs.Include(b => b.Items).FirstOrDefaultAsync(b => b.Id == briefId, ct)
                     ?? throw new KeyNotFoundException("That brief no longer exists.");
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its articles are fixed.");
+        // The send's outcome finishes the brief with the running order as it is then, so it stays as the email froze it.
+        if (await SendPendingAsync(db, briefId, ct)) throw new InvalidOperationException(ArticlesHeldForSend);
         return brief;
     }
+
+    internal const string ArticlesHeldForSend =
+        "An edition of this brief is being sent, or whether it went isn't known yet, so its articles can't change. Check the send log first.";
 
     // The running order as given, numbered from 0.
     private static void Number(IEnumerable<BriefItem> ordered)

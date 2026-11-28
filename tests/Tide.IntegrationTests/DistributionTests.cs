@@ -191,14 +191,13 @@ public class DistributionTests : IDisposable
         var sending = svc.SendAsync(await svc.PlanAsync(Day, Edition.Team));
         await relay.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var articles = _db.Articles();
-        var late = await articles.CreateAsync("Late article", "Vendor", null, TlpLevel.Clear);
-        var form = ArticleForm.From((await articles.GetAsync(late))!);
-        form.Bluf = "Added while the email was out.";
-        await articles.SaveAsync(form);
-        var brief = await _db.Briefs().GetOrStartAsync(Day);
-        try { await _db.Briefs().AddArticleAsync(brief.Id, late); }
-        catch (InvalidOperationException) { /* refusing the edit while the send is out is a fix too */ }
+        var late = await LateArticleAsync();
+        var briefs = _db.Briefs();
+        var brief = (await briefs.GetAsync(Day))!;
+        var first = brief.Items.OrderBy(i => i.SortOrder).First();
+        await FluentActions.Invoking(() => briefs.AddArticleAsync(brief.Id, late)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*being sent*");
+        await FluentActions.Invoking(() => briefs.RemoveItemAsync(brief.Id, first.Id)).Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Invoking(() => briefs.MoveItemAsync(brief.Id, first.Id, 1)).Should().ThrowAsync<InvalidOperationException>();
         relay.Release.SetResult();
         (await sending).Status.Should().Be(SendStatus.Sent);
 
@@ -206,6 +205,37 @@ public class DistributionTests : IDisposable
         (await ctx.BriefSends.SingleAsync()).EmailHtml.Should().NotContain("Late article", "it was frozen before the article was added");
         (await ctx.Articles.SingleAsync(a => a.Id == late)).Status.Should().NotBe(ArticleStatus.Presented,
             "the email never carried it, so it isn't finished with the sent brief");
+        (await ctx.BriefItems.CountAsync()).Should().Be(2, "the brief went as the email froze it");
+    }
+
+    [Fact]
+    public async Task Send_WhoseOutcomeIsUnknown_HoldsTheArticles_UntilItIsSettled()
+    {
+        await Brief();
+        var send = await _db.Distribution(new ThrowingEmailSender()).SendAsync(await _db.Distribution().PlanAsync(Day, Edition.Team));
+        send.Status.Should().Be(SendStatus.Unknown);
+        var late = await LateArticleAsync();
+        var brief = (await _db.Briefs().GetAsync(Day))!;
+
+        await FluentActions.Invoking(() => _db.Briefs().AddArticleAsync(brief.Id, late)).Should().ThrowAsync<InvalidOperationException>();
+        await using (var ctx = _db.Context())
+        {
+            (await ctx.BriefSends.SingleAsync()).SentAtUtc = DateTimeOffset.UtcNow.AddHours(-1);
+            await ctx.SaveChangesAsync();
+        }
+        await _db.Distribution().SettleAsync(send.Id, went: false);
+        await _db.Briefs().AddArticleAsync(brief.Id, late);   // it didn't go: the brief is open again
+        (await _db.Briefs().GetAsync(Day))!.Items.Should().Contain(i => i.ArticleId == late);
+    }
+
+    private async Task<Guid> LateArticleAsync()
+    {
+        var articles = _db.Articles();
+        var late = await articles.CreateAsync("Late article", "Vendor", null, TlpLevel.Clear);
+        var form = ArticleForm.From((await articles.GetAsync(late))!);
+        form.Bluf = "Added while the email was out.";
+        await articles.SaveAsync(form);
+        return late;
     }
 
     [Fact]
