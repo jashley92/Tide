@@ -82,6 +82,20 @@ public class ActionsRound1BugTests : IDisposable
     }
 
     [Fact]
+    public async Task RetiringATeamThatOwnsNoAction_ButAStackProductNames_RetiresIt_AndTheProductKeepsItsTeam()
+    {
+        var teams = _db.Teams();
+        var team = await teams.AddAsync("Platform", null, null);
+        var product = await _db.Stack().SaveAsync(new Tide.Application.Stack.StackForm { Name = "GitLab", TeamId = team });
+
+        await teams.SetRetiredAsync(team, true);
+
+        (await teams.ListAsync(includeRetired: true)).Should().ContainSingle(t => t.Id == team)
+            .Which.IsRetired.Should().BeTrue("a stack product still names it");
+        (await _db.Stack().GetAsync(product))!.Product.TeamId.Should().Be(team, "retiring a team doesn't change the products it owns");
+    }
+
+    [Fact]
     public async Task AHuntsResult_IsRecordedOnce()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
