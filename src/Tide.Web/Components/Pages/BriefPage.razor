@@ -816,12 +816,14 @@ else
         var at = Ordered().ToList().FindIndex(i => i.Id == item.Id);
         var title = item.Article?.Title ?? "The article";
         var briefId = _brief!.Id;
-        return Run(() => BriefSvc.RemoveItemAsync(briefId, item.Id), null,
+        BriefItem? removed = null;
+        return Run(async () => removed = await BriefSvc.RemoveItemAsync(briefId, item.Id), null,
             () => Toasts.Show($"Took “{title}” off the brief (the article is kept).",
                 async () =>
                 {
-                    // From the toast: this page re-renders itself, as the click wasn't on it.
-                    await Run(() => BriefSvc.AddArticleAsync(briefId, item.ArticleId, at), $"Put “{title}” back at {at + 1}.");
+                    // From the toast: this page re-renders itself, as the click wasn't on it. It comes back as it went,
+                    // with its discussed tick and what the meeting marked it.
+                    await Run(() => BriefSvc.PutBackAsync(briefId, removed ?? item, at), $"Put “{title}” back at {at + 1}.");
                     StateHasChanged();
                 }));
     }

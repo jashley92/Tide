@@ -154,6 +154,32 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task AHandoff_FromTheActionsPage_IsRefused_WhenAColleagueHandedItOnInTheMeantime()
+    {
+        var from = await Team("EP86 stale handing team");
+        var theirs = await Team("EP86 stale colleague's team");
+        var mine = await Team("EP86 stale my team");
+        var number = await Raise(from, "EP86 handed twice");
+        await using var page = await Open(number);
+        await page.Press(p => p.StartHandoff());
+        (await page.HtmlOnce("Hand it to")).Should().Contain("EP86 stale my team");
+
+        // While the dialog is open, a colleague hands it to another team.
+        var id = (await Detail(number)).Action.Id;
+        await As(sp => sp.GetRequiredService<HandoffService>().HandOffAsync(id, theirs, "Colleague's reason"), new SignIn("dev:ep86-colleague", "Colleague", "Analyst"));
+
+        await page.Click(async p =>
+        {
+            (p.HandTo, p.HandWhy) = (mine, "Mine to fix");
+            (await p.HandOff()).Should().BeFalse("someone else handed it on since the dialog was opened");
+        });
+        page.Component.HandError.Should().Contain("EP86 stale colleague's team", "it says where it went instead");
+        var d = await Detail(number);
+        d.Action.TeamId.Should().Be(theirs, "the colleague's hand-off stands");
+        d.Action.HandoffReason.Should().Be("Colleague's reason");
+    }
+
+    [Fact]
     public async Task HandingToAnExternalTeamThatWontBeEmailed_SaysSo_AndExternalTeamsMarksIt()
     {
         var from = await Team("EP86 hands to quiet");

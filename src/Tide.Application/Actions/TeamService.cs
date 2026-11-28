@@ -227,9 +227,10 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     internal static (string? Name, string? Email) EscalationContact(string? name, string? email) =>
         (Articles.ArticleService.CleanOrNull(name, Team.MaxContactName), Email(email));
 
-    /// <summary>Retires (or brings back) a team. One that never owned an action, and that no card rule names, is deleted
-    /// instead (a rule's team can't be deleted from under it). Moves the edit version: a form opened before can't save
-    /// over the retirement, and one opened on a retired team can't save once it's back.</summary>
+    /// <summary>Retires (or brings back) a team. One that never owned an action, and that no card rule or stack product
+    /// names, is deleted instead (a rule's team can't be deleted from under it, and a product would quietly lose its
+    /// owner). Moves the edit version: a form opened before can't save over the retirement, and one opened on a retired
+    /// team can't save once it's back.</summary>
     public async Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
@@ -238,7 +239,8 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         if (team.IsExternal) RequireExternal();
         else RequireAdmin();
         // A deleted action counts: it's kept (an administrator may restore it), and its foreign key holds the team.
-        if (retired && !await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct) && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct))
+        if (retired && !await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct)
+            && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct) && !await db.StackProducts.AnyAsync(p => p.TeamId == id, ct))
             db.Teams.Remove(team);
         else team.IsRetired = retired;
         await SaveMovedAsync(db, team, ct);

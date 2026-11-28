@@ -192,6 +192,61 @@ public partial class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         Triage.Suggestion(null, null, 2, today).Should().Be("Nothing TIDE has covers them yet, so the suggested step is to promote the 2 as one article.");
     }
 
+    [Fact]
+    public async Task APromoteClaimThatNeverFinished_CanBePromotedAgainFromTriage_OnceItsClaimHasTimedOut()
+    {
+        // The state a promote leaves when the server stops between its claim and its save: Promoted, no article.
+        var source = await Item("Shearwater claim left half done", null);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var item = db.FeedItems.Single(i => i.SourceId == source);
+            item.Status = FeedItemStatus.Promoted;
+            item.StatusByName = "Sam";
+            item.StatusAtUtc = DateTimeOffset.UtcNow.AddHours(-10);
+            item.ArticleId = null;
+            await db.SaveChangesAsync();
+        }
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=promoted&source={source}", @as: Someone());
+        var bar = Bar(await r.HtmlOnce("Shearwater claim left half done"));
+
+        Why(bar).Should().NotContain("its article opens from the row", "there is no article to open");
+        bar.Should().Contain("tide-triage-promote", "the service lets a timed-out claim be taken over, so Triage offers to promote it again");
+        Why(bar).Should().Contain("never finished");
+
+        // R puts it back in New, as for any other decided report.
+        await r.Click(t => t.OnTriageKey("restore"));
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.FeedItems.Single(i => i.SourceId == source).Status.Should().Be(FeedItemStatus.New);
+        }
+    }
+
+    [Fact]
+    public async Task APromoteClaimStillWithinItsTimeout_StaysPromoted_AndCantBePutBack()
+    {
+        // A colleague's promote that's still making its article: Triage leaves it alone.
+        var source = await Item("Shearwater claim being made", null);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var item = db.FeedItems.Single(i => i.SourceId == source);
+            (item.Status, item.StatusByName, item.StatusAtUtc, item.ArticleId) = (FeedItemStatus.Promoted, "Sam", DateTimeOffset.UtcNow, null);
+            await db.SaveChangesAsync();
+        }
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=promoted&source={source}", @as: Someone());
+        var bar = Bar(await r.HtmlOnce("Shearwater claim being made"));
+        bar.Should().NotContain("tide-triage-promote");
+
+        await r.Click(t => t.OnTriageKey("restore"));
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.FeedItems.Single(i => i.SourceId == source).Status.Should().Be(FeedItemStatus.Promoted);
+        }
+    }
+
     private static Tide.Application.Intake.Coverage Covered(bool attachable, DateOnly? brief) =>
         new("CVE-2026-0001", Guid.NewGuid(), "Flaw", brief) { Attachable = attachable };
 

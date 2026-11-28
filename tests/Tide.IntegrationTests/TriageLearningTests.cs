@@ -113,6 +113,21 @@ public class TriageLearningTests : IDisposable
         (await Reason())!.Decided.Should().Be(5, "a decision made here is counted at once");
     }
 
+    [Fact]
+    public async Task SourceHealth_DoesNotSuggestPausing_ASourcePromotedFromWithinPauseDays_WhenRetentionIsShorter()
+    {
+        var source = await Source("Useful");
+        await using (var ctx = _db.Context())
+            await ctx.Sources.ExecuteUpdateAsync(u => u.SetProperty(s => s.CreatedAtUtc, DateTimeOffset.UtcNow.AddDays(-120)));
+        for (var i = 0; i < 12; i++) await Item(source, $"Noise {i}", FeedItemStatus.Dismissed, daysAgo: 1 + i * 2);
+        await Item(source, "Used in a brief", FeedItemStatus.Promoted, daysAgo: 40);
+
+        var row = (await _db.Intake(new IntakeOptions { RetentionDays = 30 }).SourceHealthAsync()).Single(h => h.Source.Id == source);
+
+        row.LastPromotedAtUtc.Should().BeAfter(DateTimeOffset.UtcNow.AddDays(-IntakeService.PauseAfterDays));
+        row.SuggestPause.Should().BeFalse($"an item was promoted within {IntakeService.PauseAfterDays} days");
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task SourceHealth_CountsEachSource_AndSuggestsPausingOneNobodyUses(string provider)

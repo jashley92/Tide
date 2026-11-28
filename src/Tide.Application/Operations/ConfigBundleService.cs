@@ -271,6 +271,9 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) && days <= ActionSla.MaxDays
                 ? null : $"not a number of business days (0 to {ActionSla.MaxDays})";
         if (s.Key == SettingsCatalog.UpdateCheckKey) return bool.TryParse(value, out _) ? null : "not true or false";
+        // By name, as the access page saves it: a number would parse as one, but isn't what the page writes.
+        if (s.Key == Reviews.ReviewService.RuleKey)
+            return EnumNames.TryParseExact<Reviews.ReviewRule>(value, out _) ? null : $"not a review rule ({string.Join(", ", Enum.GetNames<Reviews.ReviewRule>())})";
         if (OperationalSettings.IsOperational(s.Key)) return OperationalSettings.Problem(s.Key, value);
         // The rest are address lists, held to what the settings page accepts.
         var addresses = value.Split([';', ',', ' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries);
@@ -489,9 +492,16 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         {
             var item = $"{q.Dialect} · {q.Kind}";
             if (QueryDialects.Find(q.Dialect) is not { } d || !Enum.TryParse<HuntValueKind>(q.Kind, true, out var kind)
-                || !Enum.IsDefined(kind) || string.IsNullOrWhiteSpace(q.Template) || q.Template.Length > 4000)
+                || !Enum.IsDefined(kind) || q.Template is null)
             {
-                changes.Add(new(QueriesArea, item, BundleChangeKind.Skipped, "not a dialect, a kind of value and a template of up to 4,000 characters"));
+                changes.Add(new(QueriesArea, item, BundleChangeKind.Skipped, "not a dialect, a kind of value and a template"));
+                continue;
+            }
+            // Held to what Query templates saves; an empty template is a kind the source turned off and arrives as that.
+            var template = QueryDialects.NormalizeTemplate(q.Template);
+            if (QueryDialects.TemplateProblem(template) is { } problem)
+            {
+                changes.Add(new(QueriesArea, item, BundleChangeKind.Skipped, problem));
                 continue;
             }
             // The dialect as the app keys it ("kql"): a hand-edited "KQL" was found ignoring case but stored as typed, a
@@ -499,7 +509,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             if (!seen.Add((d.Key, kind))) continue;
             item = $"{d.Key} · {kind}";
             var row = rows.FirstOrDefault(r => r.Dialect == d.Key && r.Kind == kind);
-            if (row?.Template == q.Template)
+            if (row?.Template == template)
             {
                 changes.Add(new(QueriesArea, item, BundleChangeKind.Unchanged));
                 continue;
@@ -511,7 +521,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 db.QueryTemplates.Add(row = new QueryTemplate { Dialect = d.Key, Kind = kind });
                 rows.Add(row);
             }
-            row.Template = q.Template;
+            row.Template = template;
             row.UpdatedAtUtc = time.GetUtcNow();
             row.UpdatedBy = user.UserId;
         }

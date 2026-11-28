@@ -108,13 +108,15 @@ with removal you can undo.
 | Action | Code | Rule |
 |---|---|---|
 | Add article (N ready, M drafts) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
-| Remove | `RemoveItemAsync` | Undo re-adds it at its old position (`AddArticleAsync(…, at)`), on the brief it came off even if the page has since moved to another day. |
+| Remove | `RemoveItemAsync` | Undo puts it back at its old position as it came off (`PutBackAsync(…, removed, at)`: its discussed tick, where it was carried from, and its status before the meeting), on the brief it came off even if the page has since moved to another day. |
 | Move, reorder | `MoveItemAsync`, `ReorderAsync` | Positions are renumbered from 0. |
 | Add to today's brief from the editor | `ArticleEditorPanel.AddToTodaysBrief` | Saves the article first if it has unsaved edits, then `GetOrStartAsync` and `AddArticleAsync`. |
 
 Every change to the brief or its items moves `Brief.EditVersion` (`BriefService.Touch`), which is how a send confirmed
 before the change is refused. Once the brief is Sent, its running order, presenter and title slide line are fixed
-(`BriefService.Editable`, `SetDetailsAsync`). Its articles stay editable; a mistake after a send is put right by a
+(`BriefService.Editable`, `SetDetailsAsync`). The running order is also held while a real send is with the relay or
+its outcome is unknown (`BriefService.SendPendingAsync`): that send finishes the brief with the articles on it when it
+lands or is settled as gone, so they stay as the email froze them, and nothing can be carried onto it. Its articles stay editable; a mistake after a send is put right by a
 [correction](distribution.md#corrections-after-a-send).
 
 The running order shows each article's readiness gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with
@@ -417,7 +419,8 @@ What `MarkPresentedAsync` does, in one save:
 
 1. Does nothing for a Sent brief.
 2. Works out the carry: the articles not ticked discussed whose carry tick is on.
-3. Refuses if the next working day's brief is already Sent: "nothing can be carried to it".
+3. Refuses if the next working day's brief is already Sent or Presented (its meeting is over, so nobody would present
+   what was carried): "nothing can be carried to it".
 4. Sets `Status = Presented`. Keeps two times, each only if not already set: `MeetingHeldAtUtc` (now, or for a past
    day's brief that day's meeting time unless the presenter picks another; a meeting opened on its own day and run
    past midnight is still now, as present mode passes it) and `PresentedAtUtc` (the clock). The meeting

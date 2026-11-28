@@ -261,6 +261,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             source.ETag = null;
             source.LastModified = null;
         }
+        // The backoff was earned by the old address, or while it sat paused: a corrected address, or a source turned
+        // back on, keeps its own schedule instead of waiting up to 16 intervals for its next poll.
+        if (source.Url != url || (form.Enabled && !source.Enabled)) source.ConsecutiveFailures = 0;
         (source.OnlyCategories, source.SkipCategories, source.OnlyTitleWords, source.SkipTitleWords) = (only, skip, onlyWords, skipWords);
         source.Name = name;
         source.Kind = form.Kind;
@@ -292,6 +295,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var source = await SourceAsync(db, id, ct);
         if (source.Enabled == enabled) return;
         source.Enabled = enabled;
+        if (enabled) source.ConsecutiveFailures = 0;   // turned back on, it polls at its own interval, not the backoff's
         source.EditVersion = Guid.NewGuid();   // the form carries "Poll it": a form opened before can't turn it back on
         await db.SaveChangesAsync(ct);
     }
@@ -869,7 +873,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var since = now.AddDays(-days);
         var quiet = now.AddDays(-PauseAfterDays);
         var sources = await ByName(db.Sources.AsNoTracking().Where(s => !s.IsRetired)).ToListAsync(ct);
-        var items = await db.FeedItems.AsNoTracking().Where(i => i.FetchedAtUtc >= since)
+        // The pause check looks back PauseAfterDays even when the learning window is shorter (RetentionDays < 60).
+        var from = since < quiet ? since : quiet;
+        var items = await db.FeedItems.AsNoTracking().Where(i => i.FetchedAtUtc >= from)
             .Select(i => new { i.SourceId, i.Status, i.FetchedAtUtc, i.StatusAtUtc }).ToListAsync(ct);
         var lastPromoted = (await db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.Promoted)
                 .Select(i => new { i.SourceId, At = i.StatusAtUtc ?? i.FetchedAtUtc }).ToListAsync(ct))
@@ -877,11 +883,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var bySource = items.ToLookup(i => i.SourceId);
         return sources.Select(s =>
         {
-            var mine = bySource[s.Id].ToList();
+            var all = bySource[s.Id].ToList();
+            var mine = all.Where(i => i.FetchedAtUtc >= since).ToList();
             var decided = mine.Where(i => i.Status is FeedItemStatus.Promoted or FeedItemStatus.Dismissed or FeedItemStatus.Duplicate).ToList();
             var waits = decided.Where(i => i.StatusAtUtc >= i.FetchedAtUtc).Select(i => i.StatusAtUtc!.Value - i.FetchedAtUtc).Order().ToList();
             var weeks = Math.Max(1d, Math.Min(days, (now - s.CreatedAtUtc).TotalDays)) / 7d;
-            var recent = mine.Where(i => i.FetchedAtUtc >= quiet).ToList();
+            var recent = all.Where(i => i.FetchedAtUtc >= quiet).ToList();
             var pause = s.Enabled && s.CreatedAtUtc <= quiet && recent.Count >= PauseMinItems
                         && !recent.Any(i => i.Status is FeedItemStatus.Promoted or FeedItemStatus.Shortlisted);
             return new SourceRecord(s, mine.Count / weeks, decided.Count, decided.Count(i => i.Status == FeedItemStatus.Promoted),
@@ -1138,7 +1145,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var at = time.GetUtcNow();
         if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == FeedItemStatus.New), status, reason, null, ct, at) > 0)
             return new(at, FromNew: true);
-        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, null, ct, at) > 0)
+        var stale = at - ClaimTimeout;
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && (i.Status != FeedItemStatus.Promoted || (i.ArticleId == null && i.StatusAtUtc < stale))),
+                status, reason, null, ct, at) > 0)
             return new(at, FromNew: false);
         if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
         throw new KeyNotFoundException("That item is gone.");
@@ -1272,7 +1281,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, duplicateOf, ct) > 0) return;
+        // A promote that never finished (no article, its claim timed out) can be decided again, as a promote can take it over.
+        var stale = time.GetUtcNow() - ClaimTimeout;
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && (i.Status != FeedItemStatus.Promoted || (i.ArticleId == null && i.StatusAtUtc < stale))),
+                status, reason, duplicateOf, ct) > 0) return;
         if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
         throw new KeyNotFoundException("That item is gone.");
     }
@@ -1471,6 +1483,11 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>How long a promotion may hold an item before another analyst can take it over (it never finished).</summary>
     internal static readonly TimeSpan ClaimTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>Whether an item is held by a promotion that never finished: promoted, with no article, its claim timed out.
+    /// It can be promoted again (the claim is taken over), or shortlisted, dismissed or put back.</summary>
+    public static bool Unfinished(FeedItem item, DateTimeOffset now) =>
+        item.Status == FeedItemStatus.Promoted && item.ArticleId is null && item.StatusAtUtc < now - ClaimTimeout;
 
     // The foreign keys Undo checks by name rather than by count: the reports (each must be one this promote claimed) and
     // the article's brief items (only on the brief this step put it on); and a brief's own items, when it's removed.
@@ -1769,7 +1786,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     // --- retention ------------------------------------------------------------------------------------------------
 
-    /// <summary>Deletes items older than <c>Intake:RetentionDays</c> that nobody shortlisted or promoted.</summary>
+    /// <summary>Deletes items older than <c>Intake:RetentionDays</c> that nobody shortlisted or promoted (or dismissed
+    /// without a date to keep them out, see <see cref="Prunable"/>).</summary>
     public async Task<int> PruneAsync(CancellationToken ct = default)
     {
         var cutoff = RetentionCutoff(time.GetUtcNow());
@@ -1792,8 +1810,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return await Prunable(db.FeedItems.Where(i => old.Contains(i.Id)), cutoff).ExecuteDeleteAsync(ct);
     }
 
+    // A dismissal or duplicate mark on an item the feed gave no usable date for (none, or one after the fetch, which
+    // StoreAsync dates when it was fetched) is kept: only a past date keeps a pruned item from being stored again, so a
+    // feed still listing it would bring it back as New, the decision lost, every retention period.
     private static IQueryable<FeedItem> Prunable(IQueryable<FeedItem> items, DateTimeOffset cutoff) => items
-        .Where(i => i.FetchedAtUtc < cutoff && (i.Status == FeedItemStatus.New || i.Status == FeedItemStatus.Dismissed || i.Status == FeedItemStatus.Duplicate));
+        .Where(i => i.FetchedAtUtc < cutoff && (i.Status == FeedItemStatus.New
+            || ((i.Status == FeedItemStatus.Dismissed || i.Status == FeedItemStatus.Duplicate) && i.PublishedAtUtc < i.FetchedAtUtc)));
 
     private DateTimeOffset RetentionCutoff(DateTimeOffset now) => now.AddDays(-Math.Max(7, options.CurrentValue.RetentionDays));
 

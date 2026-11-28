@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
@@ -137,6 +138,23 @@ public class BackendAuditTests : IDisposable
         (await _db.Intake().InboxAsync(new InboxFilter())).Should().ContainSingle(r => r.Item.Id == item.Id);
         var again = await _db.Intake().PromoteAsync(item.Id);
         again.Should().NotBe(article, "it can be promoted afresh at once, not after a claim timeout");
+    }
+
+    [Fact]
+    public async Task DeleteArticle_PromotedFromTriage_IsHeardOnTheTriageFeed()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, Rss(("Vendor fixes exploited bug", "https://example.com/fix", "Fixes CVE-2026-0002.")));
+        await _db.Intake().PollNowAsync(source);
+        var item = (await _db.Intake().InboxAsync(new InboxFilter())).Single().Item;
+        var article = await _db.Intake().PromoteAsync(item.Id);
+        var heard = new List<string>();
+        _db.Feed.Changed += c => { lock (heard) heard.Add(c.Topic); };
+
+        await _db.Articles().DeleteAsync(article);
+
+        heard.Should().Contain(ChangeFeed.Triage,
+            "the item is back in New, so open inboxes and the sidebar's count must reload to show it");
     }
 
     // --- A2-5: an article save or status change took any integer as a classification, priority or status ---------------

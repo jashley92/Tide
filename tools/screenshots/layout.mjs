@@ -2160,6 +2160,17 @@ const clipboard = { permissions: ['clipboard-read', 'clipboard-write'] };
 /** A rule run in the page: `fn(arg)` returns what's wrong (nothing, when it holds). */
 const holds = (name, fn, arg) => ({ name, check: page => page.evaluate(fn, arg) });
 
+/** The page is still dark a moment after it opened dark: an address the page puts right as its circuit starts doesn't
+ * reload the document and lose the theme the person chose. */
+const staysDark = {
+  name: 'the page stays in the dark theme it opened in',
+  check: async page => {
+    await page.waitForTimeout(2000);
+    const theme = await page.evaluate(() => document.documentElement.getAttribute('data-bs-theme'));
+    return theme === 'dark' ? [] : [`the theme is ${theme} after the address was put right (${new URL(page.url()).search})`];
+  },
+};
+
 /** Each shown match of `selector` lies wholly within the window: nothing to scroll to, nothing cut off at its edge. */
 const inWindow = selector => holds(`wholly in the window: ${selector}`, selector =>
   [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0).flatMap((e, i) => {
@@ -4339,6 +4350,10 @@ const pages = [
   // The page reads the tab from ?view= (each tab with its count). The tabs are one row at every width: when wider fonts
   // don't leave room, the row scrolls sideways inside itself, so there's no fits() on it; noSidewaysScroll checks that the
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
+  // An address the page puts right (another name for a view, Mine held to My teams, a page past the end) keeps the theme.
+  { name: 'actions-renamed-view-dark', route: '/actions?view=all', context: { theme: 'dark' }, widths: [1440], rules: [staysDark] },
+  { name: 'actions-held-to-mine-dark', route: '/actions?view=mine&assignee=none&layout=list', context: { theme: 'dark' }, widths: [1440], rules: [staysDark] },
+  { name: 'actions-page-past-end-dark', route: '/actions?view=open&layout=list&page=99', context: { theme: 'dark' }, widths: [1440], rules: [staysDark] },
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
       visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),

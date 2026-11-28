@@ -207,6 +207,38 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PollDue_ANewAddressStartsTheScheduleFresh_NotBackedOffForTheOldOnesFailures()
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "Moved", Url = "https://old.example.com/feed", PollMinutes = 60 });
+        var intake = _db.Intake();
+        for (var i = 0; i < 4; i++) (await intake.PollNowAsync(source)).Error.Should().NotBeNull("the old address answers nothing");
+
+        var form = SourceForm.From((await intake.SourcesAsync()).Single());
+        form.Url = "https://new.example.com/feed";
+        await intake.SaveSourceAsync(form);
+        _db.Http.Set("https://new.example.com/feed", Rss(("One", "https://example.com/1", null)));
+
+        await using var ctx = _db.Context();
+        var s = await ctx.Sources.SingleAsync();
+        intake.Interval(s).Should().Be(TimeSpan.FromMinutes(60), "the failures were the old address's, not the corrected one's");
+        var clock = new TestClock(s.LastPolledAtUtc!.Value + TimeSpan.FromHours(2));
+        (await _db.Intake(time: clock).PollDueAsync()).Should().Be(1, "the corrected feed is due at its normal interval");
+    }
+
+    [Fact]
+    public async Task PollDue_ASourceTurnedBackOn_PollsAtItsOwnInterval_NotTheBackoff()
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "Flaky", Url = "https://flaky.example.com/feed", PollMinutes = 60 });
+        var intake = _db.Intake();
+        for (var i = 0; i < 4; i++) await intake.PollNowAsync(source);
+        await intake.SetSourceEnabledAsync(source, false);
+        await intake.SetSourceEnabledAsync(source, true);
+
+        await using var ctx = _db.Context();
+        intake.Interval(await ctx.Sources.SingleAsync()).Should().Be(TimeSpan.FromMinutes(60), "turning it back on starts its schedule fresh");
+    }
+
+    [Fact]
     public async Task PollDue_ASourceThatBreaksThePoll_IsRecorded_AndTheOthersStillRun()
     {
         // A fault nothing on the way turned into a result.
@@ -826,7 +858,7 @@ public class IntakeServiceTests : IDisposable
         await using (var ctx = _db.Context())
         {
             var old = DateTimeOffset.UtcNow.AddDays(-200);
-            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, FetchedAtUtc = old, Status = s };
+            FeedItem Item(string t, FeedItemStatus s) => new() { SourceId = source, Title = t, Url = "https://x.example/" + t, UrlHash = t, PublishedAtUtc = old.AddHours(-1), FetchedAtUtc = old, Status = s };
             ctx.FeedItems.AddRange(Item("new", FeedItemStatus.New), Item("dismissed", FeedItemStatus.Dismissed), Item("kept", FeedItemStatus.Shortlisted));
             await ctx.SaveChangesAsync();
         }
@@ -852,6 +884,28 @@ public class IntakeServiceTests : IDisposable
         _db.Http.Set(url, """{"vulnerabilities":[{"cveID":"CVE-2026-0007","dateAdded":"2026-03-02"}]}""", etag: "\"changed\"");
         (await _db.Intake(time: new TestClock(later)).PollNowAsync(source)).New.Should().Be(0, "it's older than the retention period");
         (await _db.Intake().InboxAsync(new InboxFilter())).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<pubDate>Thu, 01 Jan 1970 00:00:00 GMT</pubDate>")]
+    [InlineData("<pubDate>Sat, 07 Nov 2099 10:00:00 GMT</pubDate>")]
+    public async Task Prune_ADismissedUndatedItemTheFeedStillLists_DoesntComeBackAsNew(string date)
+    {
+        var source = await Source();
+        var feed = $"<rss version=\"2.0\"><channel><item><title>Evergreen advisory page</title><link>https://news.example.com/advisory</link>{date}</item></channel></rss>";
+        _db.Http.Set(FeedUrl, feed, etag: "\"v1\"");
+        var added = new DateTimeOffset(2026, 3, 3, 12, 0, 0, TimeSpan.Zero);
+        var later = added.AddDays(100);   // past the 90-day retention
+
+        (await _db.Intake(time: new TestClock(added)).PollNowAsync(source)).New.Should().Be(1);
+        var item = (await _db.Intake(time: new TestClock(added)).InboxAsync(new InboxFilter())).Single().Item;
+        await _db.Intake().DismissAsync(item.Id, null);
+        (await _db.Intake(time: new TestClock(later)).PruneAsync()).Should().Be(0, "without a past date nothing else keeps it from being stored again");
+
+        _db.Http.Set(FeedUrl, feed, etag: "\"v2\"");
+        (await _db.Intake(time: new TestClock(later)).PollNowAsync(source)).New.Should().Be(0, "the analyst already dismissed it");
+        (await _db.Intake().InboxAsync(new InboxFilter { Status = FeedItemStatus.Dismissed })).Single().Item.Id.Should().Be(item.Id);
     }
 
     [Fact]
