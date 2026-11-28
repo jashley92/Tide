@@ -214,6 +214,31 @@ public class TriagePromoteUndoTests(StayApp app) : IClassFixture<StayApp>
         (await Item(ids[0])).Status.Should().Be(FeedItemStatus.New);
     }
 
+    [Fact]
+    public async Task ADismissalsUndoPressedWhileAnotherStepSaves_WaitsForIt_RatherThanBeingDropped()
+    {
+        var ids = await Seed("dbusy", 2);
+        await using var r = await RenderAsync<Triage>(app, "/triage?q=undo-dbusy");
+        await r.HtmlOnce("undo-dbusy report 1");
+        await r.Click(t => t.OnTriageKey("dismiss"));
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<ToastService>();
+        var toast = toasts.Toasts.Last(t => t.Message.StartsWith("Dismissed", StringComparison.Ordinal));
+        var dismissed = (await Item(ids[0])).Status == FeedItemStatus.Dismissed ? ids[0] : ids[1];
+        (await Item(dismissed)).Status.Should().Be(FeedItemStatus.Dismissed);
+
+        // Another step (a second X, say) is being saved as Undo is pressed.
+        var busy = typeof(Triage).GetField("_busy", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        await r.Renderer.Dispatcher.InvokeAsync(() => busy.SetValue(r.Component, true));
+        await r.Press(_ => toasts.UndoAsync(toast.Id));
+        await Task.Delay(400);
+        await r.Renderer.Dispatcher.InvokeAsync(() => busy.SetValue(r.Component, false));
+
+        (await r.Until(_ => toasts.Toasts.Any(t => t.Message.StartsWith("Put back in New", StringComparison.Ordinal)
+            || t.Message.Contains("wasn't undone", StringComparison.Ordinal))))
+            .Should().BeTrue($"the Undo was pressed, so it runs or says it didn't; toasts now: [{string.Join(" | ", toasts.Toasts.Select(t => t.Message))}]");
+        (await Item(dismissed)).Status.Should().Be(FeedItemStatus.New);
+    }
+
     [Theory]
     [InlineData("/articles/1", true)]
     [InlineData("/triage?tab=new", true)]
