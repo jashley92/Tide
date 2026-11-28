@@ -99,6 +99,7 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
         if (row is null) db.Settings.Add(row = new AppSetting { Key = RuleKey });
         row.Value = rule.ToString();
         row.UpdatedAtUtc = time.GetUtcNow();
+        row.UpdatedBy = user.UserId;
         await db.SaveChangesAsync(ct);
     }
 
