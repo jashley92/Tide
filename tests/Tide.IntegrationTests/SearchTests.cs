@@ -385,6 +385,32 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Lookup_Indicator_OnMoreArticlesThanItLists_CountsThemAll_AndListsTheNewest()
+    {
+        const string domain = "shared-c2.example.com";
+        var many = SearchService.MaxSightings + 50;
+        var start = DateTimeOffset.UtcNow.AddDays(-400);
+        List<Article> articles;
+        await using (var db = _db.Context())
+        {
+            articles = Enumerable.Range(0, many).Select(i => new Article
+            {
+                Title = $"Campaign {i}", AuthorId = "x", AuthorName = "X", CreatedAtUtc = start.AddHours(i),
+            }).ToList();
+            db.Articles.AddRange(articles);
+            db.ArticleIndicators.AddRange(articles.Select(a => new ArticleIndicator { ArticleId = a.Id, Type = IndicatorType.Domain, Value = domain }));
+            await db.SaveChangesAsync();
+        }
+
+        var lookup = (await Search().SearchAsync(domain, Once)).Indicator!;
+
+        lookup.Summary.Articles.Should().Be(many, "every article carrying it, not only the rows read for the list");
+        lookup.Sightings.Total.Should().Be(many);
+        lookup.Sightings.Items.Select(s => s.Article.Id).Should().BeEquivalentTo(
+            articles.OrderByDescending(a => a.CreatedAtUtc).Take(SearchService.MaxSightings).Select(a => a.Id), "the newest are listed");
+    }
+
+    [Fact]
     public async Task Lookup_Cve_ListsItsArticles_AndSaysWhoIsOnIt()
     {
         var a = await Article("Firewall bug", cves: ["CVE-2026-12345"]);
