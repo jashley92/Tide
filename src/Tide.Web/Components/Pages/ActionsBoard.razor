@@ -299,6 +299,11 @@ else
     // The address didn't say which layout: once drawn, it's made to say the one shown.
     private bool _sayLayout;
 
+    // The address is put right once drawn (another name for the view, Mine held to My teams, a page past the end), not
+    // while the circuit's first draw is under way: the router doesn't yet keep address changes in the page then, and the
+    // browser would fetch the whole document again, losing the theme and sidebar state set on it.
+    private bool _sayAddress, _sayPage;
+
     private static readonly (ActionView, string)[] Views =
     [
         (ActionView.Mine, "Mine"), (ActionView.MyTeams, "My teams"), (ActionView.Open, "All open"), (ActionView.Overdue, "Overdue"), (ActionView.Closed, "Recently closed"),
@@ -485,7 +490,7 @@ else
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || heldToMine || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         // The address then says what's shown, in place (a prerender shows it, and the circuit that follows writes it).
-        if ((heldToMine || misnamed) && RendererInfo.IsInteractive) Remember();
+        if (heldToMine || misnamed) _sayAddress = RendererInfo.IsInteractive;
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
@@ -735,6 +740,17 @@ else
             if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
         }
         if (_asBoard && !_loading && RendererInfo.IsInteractive) await SayCard();
+        // One address written, not one change after another: Remember writes the page and the layout too.
+        if (_sayAddress || (_sayPage && _sayLayout))
+        {
+            (_sayAddress, _sayPage, _sayLayout) = (false, false, false);
+            Remember();
+        }
+        else if (_sayPage)
+        {
+            _sayPage = false;
+            TableView.SayPage(Nav, RendererInfo, _page);
+        }
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -1278,7 +1294,7 @@ else
         if (_page != asked && _applied is { } applied)
         {
             _applied = applied with { Page = _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
-            TableView.SayPage(Nav, RendererInfo, _page);
+            _sayPage = true;
         }
         _ruleCounts = _rules.Any(r => r.ShowAsFilter) ? await ActionSvc.RuleCountsAsync(filter, _rules.Where(r => r.ShowAsFilter)) : new Dictionary<Guid, int>();
     }
