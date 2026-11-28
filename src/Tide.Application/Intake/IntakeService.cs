@@ -1138,7 +1138,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var at = time.GetUtcNow();
         if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status == FeedItemStatus.New), status, reason, null, ct, at) > 0)
             return new(at, FromNew: true);
-        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, null, ct, at) > 0)
+        var stale = at - ClaimTimeout;
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && (i.Status != FeedItemStatus.Promoted || (i.ArticleId == null && i.StatusAtUtc < stale))),
+                status, reason, null, ct, at) > 0)
             return new(at, FromNew: false);
         if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
         throw new KeyNotFoundException("That item is gone.");
@@ -1272,7 +1274,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && i.Status != FeedItemStatus.Promoted), status, reason, duplicateOf, ct) > 0) return;
+        // A promote that never finished (no article, its claim timed out) can be decided again, as a promote can take it over.
+        var stale = time.GetUtcNow() - ClaimTimeout;
+        if (await StampAsync(db.FeedItems.Where(i => i.Id == id && (i.Status != FeedItemStatus.Promoted || (i.ArticleId == null && i.StatusAtUtc < stale))),
+                status, reason, duplicateOf, ct) > 0) return;
         if (await db.FeedItems.AnyAsync(i => i.Id == id, ct)) throw new InvalidOperationException("That item is already an article.");
         throw new KeyNotFoundException("That item is gone.");
     }
@@ -1471,6 +1476,11 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>How long a promotion may hold an item before another analyst can take it over (it never finished).</summary>
     internal static readonly TimeSpan ClaimTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>Whether an item is held by a promotion that never finished: promoted, with no article, its claim timed out.
+    /// It can be promoted again (the claim is taken over), or shortlisted, dismissed or put back.</summary>
+    public static bool Unfinished(FeedItem item, DateTimeOffset now) =>
+        item.Status == FeedItemStatus.Promoted && item.ArticleId is null && item.StatusAtUtc < now - ClaimTimeout;
 
     // The foreign keys Undo checks by name rather than by count: the reports (each must be one this promote claimed) and
     // the article's brief items (only on the brief this step put it on); and a brief's own items, when it's removed.

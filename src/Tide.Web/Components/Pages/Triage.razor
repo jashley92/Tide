@@ -219,7 +219,7 @@ else
                            The source opens from its own icon (or O), in a new tab. *@
                         <div class="tide-triage-head">
                             @PickBox(line, i, picked, $"Choose “{item.Title}”")
-                            @if (Promotable(item.Status))
+                            @if (Promotable(item))
                             {
                                 <button type="button" class="tide-triage-title tide-triage-title-btn" title="Promote to an article" disabled="@_busy"
                                         @onclick:stopPropagation="true" @onclick="() => PromoteFromTitle(i)">@item.Title</button>
@@ -604,12 +604,13 @@ else
             return;
         }
         var item = row.Item;
-        if (item.Status == FeedItemStatus.Promoted)
+        if (Settled(item))
         {
             <p class="tide-triage-why">Promoted already: its article opens from the row.</p>
             return;
         }
-        <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1, Clock.Today)</p>
+        @* A promote that stopped part way made no article: it can be promoted again, or decided as any other report. *@
+        <p class="tide-triage-why">@(item.Status == FeedItemStatus.Promoted ?"Its promote never finished, so no article was made. Promote it again, or put it back." : Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1, Clock.Today))</p>
         if (_promoting == item.Id && _promotingGroup is null && Many is null)
         {
             @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write", "Promote and keep triaging")
@@ -1471,7 +1472,7 @@ else
             BuildLines();
         }
         SelectItem(at);
-        if (FilterValues.Flag(PromoteParam) && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item.Status)) OpenPromote(row);
+        if (FilterValues.Flag(PromoteParam) && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item)) OpenPromote(row);
         else _focus = "tideRows.focusSelected";
     }
 
@@ -1526,10 +1527,16 @@ else
     /// <summary>Whether an item's title opens its promote form: in the inboxes still to decide (New, Shortlisted).</summary>
     internal static bool Promotable(FeedItemStatus status) => status is FeedItemStatus.New or FeedItemStatus.Shortlisted;
 
+    // An item's own: also one a promote left unfinished, which a new promote takes over.
+    private bool Promotable(FeedItem item) => Promotable(item.Status) || IntakeService.Unfinished(item, Time.GetUtcNow());
+
+    // Promoted for good: its article made, or a promote still making it. Not one whose promote stopped part way.
+    private bool Settled(FeedItem item) => item.Status == FeedItemStatus.Promoted && !IntakeService.Unfinished(item, Time.GetUtcNow());
+
     // A click on a title: selects its row and opens the row's promote form, or puts focus back in a form already open.
     internal void PromoteFromTitle(int i)
     {
-        if (i >= _lines.Count || _busy || _lines[i].Row is not { } row || !Promotable(row.Item.Status)) return;
+        if (i >= _lines.Count || _busy || _lines[i].Row is not { } row || !Promotable(row.Item)) return;
         Select(i);
         if (_promoting == row.Item.Id && _promotingGroup is null && Many is null) _focus = "tideTriage.focusPromote";
         else OpenPromote(row);
@@ -1767,7 +1774,7 @@ else
             _promoting = now.Newest;
             return true;
         }
-        return Current?.Row is { } row && row.Item.Id == id && row.Item.Status != FeedItemStatus.Promoted;
+        return Current?.Row is { } row && row.Item.Id == id && !Settled(row.Item);
     }
 
     [JSInvokable]
@@ -2031,7 +2038,7 @@ else
     internal IEnumerable<PaletteCommand> Verbs()
     {
         if (_sourcesTab || _busy || _promoting is not null || Current is not { } line) yield break;
-        if (line.Row is { } row ? Promotable(row.Item.Status) : line.Group is not null && Promotable(_status))
+        if (line.Row is { } row ? Promotable(row.Item) : line.Group is not null && Promotable(_status))
             yield return new("Promote the selected item", "article write triage", Permission.WriteArticles, "Triage",
                 () => Act(TriageStep.Promote), "bi-file-earmark-plus");
     }
@@ -2047,7 +2054,7 @@ else
             else if (what is TriageStep.Shortlist or TriageStep.Dismiss && _status == FeedItemStatus.New) await ActOnGroup(line, what);
             return;
         }
-        if (row.Item.Status == FeedItemStatus.Promoted) return;
+        if (Settled(row.Item)) return;
         if (what == TriageStep.Duplicate && row.Similar is null) return;
         if (what == TriageStep.Promote)
         {
