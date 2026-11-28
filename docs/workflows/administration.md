@@ -269,7 +269,7 @@ System › Configuration bundle has two parts:
 
 | The bundle carries | It doesn't carry |
 |---|---|
-| in-app settings (`SettingsCatalog.InApp`: edition ceilings and recipients, SLA targets, the rotation's manager addresses, the update check, and the operational settings) and saved email template parts | secrets of any kind (a source address with a key is masked) |
+| in-app settings (`SettingsCatalog.InApp`: edition ceilings and recipients, the review rule, SLA targets, the rotation's manager addresses, the update check, and the operational settings) and saved email template parts | secrets of any kind (a source address with a key is masked) |
 | AD group to role mappings | teams and members, the rotation's roster and rota |
 | sources (with their filters and fetch settings) | playbooks, card rules, saved queries, outreach templates |
 | scorecard categories and tags | metric definitions and values |

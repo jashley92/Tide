@@ -53,11 +53,30 @@ public sealed class ConfigBundleWarningTests : IDisposable
     {
         // Access & distribution saves it like the edition ceilings beside it; another TIDE set up from this bundle
         // must require the same review before send.
-        await new ReviewService(_db, _db.User, _db.Rotation(), _db.Clock, TimeProvider.System).SaveRuleAsync(ReviewRule.Threats);
+        var reviews = new ReviewService(_db, _db.User, _db.Rotation(), _db.Clock, TimeProvider.System);
+        await reviews.SaveRuleAsync(ReviewRule.Threats);
+        SettingsCatalog.IsInApp(ReviewService.RuleKey).Should().BeTrue();
+        await using (var ctx = _db.Context())
+            ctx.Settings.Single(s => s.Key == ReviewService.RuleKey).UpdatedBy.Should().Be(_db.User.UserId, "Setting sources says who changed it");
 
         var bundle = await Service().ExportAsync();
         bundle.Settings.Should().ContainSingle(s => s.Key == ReviewService.RuleKey).Which.Value.Should().Be(nameof(ReviewRule.Threats));
-        SettingsCatalog.IsInApp(ReviewService.RuleKey).Should().BeTrue();
+
+        // Imported where review is off, it's required there too.
+        await reviews.SaveRuleAsync(ReviewRule.Off);
+        await Service().PreviewAndImportAsync(bundle);
+        (await reviews.RuleAsync()).Should().Be(ReviewRule.Threats);
+    }
+
+    [Theory]
+    [InlineData("2")]
+    [InlineData("threats")]
+    [InlineData("Sometimes")]
+    public async Task AReviewRuleThatIsNotOneByName_IsSkipped(string value)
+    {
+        var change = await Preview(new(ReviewService.RuleKey, value));
+        change.Kind.Should().Be(BundleChangeKind.Skipped);
+        change.Detail.Should().StartWith("not a review rule");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Tide.Application.Actions;
+using Tide.Application.Reviews;
 using Tide.Application.Settings;
 using Tide.Domain.Enums;
 
@@ -94,6 +95,7 @@ public static class SettingsCatalog
         new("Distribution", "Company-wide edition recipients", "Distribution:PublicRecipients", EditedIn: "admin/access"),
         new("Distribution", "SharePoint posting required", OperationalSettings.RequireSharePoint, EditedIn: "admin/access"),
         new("Distribution", "Organization's email domains", OperationalSettings.OrganizationDomains, EditedIn: "admin/access"),
+        new("Distribution", "Review required before send", ReviewService.RuleKey, EditedIn: "admin/access"),
         .. Enum.GetValues<Priority>().Select(p =>
             new SettingInfo("Action SLA", $"{p} target (business days)", "Actions:Sla:Priority:" + p, EditedIn: "admin/teams")),
         .. Enum.GetValues<ActionKind>().Select(k =>
