@@ -183,6 +183,32 @@ public class DistributionTests : IDisposable
     }
 
     [Fact]
+    public async Task Send_AnArticleAddedWhileTheSendIsWithTheRelay_IsNotFinishedWithTheBrief()
+    {
+        await Brief();
+        var relay = new HeldEmailSender();
+        var svc = _db.Distribution(relay);
+        var sending = svc.SendAsync(await svc.PlanAsync(Day, Edition.Team));
+        await relay.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var articles = _db.Articles();
+        var late = await articles.CreateAsync("Late article", "Vendor", null, TlpLevel.Clear);
+        var form = ArticleForm.From((await articles.GetAsync(late))!);
+        form.Bluf = "Added while the email was out.";
+        await articles.SaveAsync(form);
+        var brief = await _db.Briefs().GetOrStartAsync(Day);
+        try { await _db.Briefs().AddArticleAsync(brief.Id, late); }
+        catch (InvalidOperationException) { /* refusing the edit while the send is out is a fix too */ }
+        relay.Release.SetResult();
+        (await sending).Status.Should().Be(SendStatus.Sent);
+
+        await using var ctx = _db.Context();
+        (await ctx.BriefSends.SingleAsync()).EmailHtml.Should().NotContain("Late article", "it was frozen before the article was added");
+        (await ctx.Articles.SingleAsync(a => a.Id == late)).Status.Should().NotBe(ArticleStatus.Presented,
+            "the email never carried it, so it isn't finished with the sent brief");
+    }
+
+    [Fact]
     public async Task Send_WhenTheOtherEditionFreezesAtTheSameMoment_StillGoes()
     {
         await Brief();
