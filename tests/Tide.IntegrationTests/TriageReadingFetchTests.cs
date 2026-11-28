@@ -120,7 +120,7 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
 
     // Three new items of a feed of their own, newest first (A, B, C), none read yet; A's page is slow until the hold is
     // released, A's and B's answer with their text.
-    private async Task<(Guid Source, Guid A, string Prefix, TaskCompletionSource Slow)> SlowFeed(string name)
+    private async Task<(Guid Source, Guid A, string Prefix, TaskCompletionSource Slow)> SlowFeed(string name, Guid? cId = null)
     {
         var key = Guid.NewGuid().ToString("N");
         var prefix = $"https://{name}.example/{key}/";
@@ -135,6 +135,7 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
                 Source = feed, Title = $"{name} item {"ABC"[n]} {key[..6]}", Url = $"{prefix}{"abc"[n]}", UrlHash = $"{name}-{key}-{n}",
                 PublishedAtUtc = now.AddMinutes(-n), FetchedAtUtc = now.AddMinutes(-n),
             }).ToList();
+            if (cId is { } fixedC) items[2].Id = fixedC;
             db.Add(feed);
             db.AddRange(items);
             await db.SaveChangesAsync();
@@ -234,8 +235,16 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
 
     [Fact]
     public async Task AFetchThatFailsAfterTheAnalystMovedOn_SaysWhyWhenTheyComeBack_WithoutAskingAgain()
+        => await LateFailure(null);
+
+    // A row id that happens to hold the failure's status digits (random ids sometimes do) says nothing about B's pane.
+    [Fact]
+    public async Task AFetchThatFailsAfterTheAnalystMovedOn_BsPaneCheck_IgnoresIdsThatHappenToHoldTheStatus()
+        => await LateFailure(Guid.Parse("d39fea1a-1f4b-4045-ba65-38912b1270cd"));
+
+    private async Task LateFailure(Guid? cId)
     {
-        var (source, _, prefix, slow) = await SlowFeed("lateread");
+        var (source, _, prefix, slow) = await SlowFeed("lateread", cId);
         app.Http.Responses[prefix + "a"] = new HttpFetch(FetchStatus.Failed, Error: "The server answered 404 Not Found.");
         var who = new ComponentHarness.SignIn("lateread:" + prefix, "Late tester", "Analyst");
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
