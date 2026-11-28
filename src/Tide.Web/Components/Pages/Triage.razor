@@ -364,6 +364,8 @@ else
 
     // Whether the item the pane shows is the one being fetched.
     private bool ReadingBusy => _readRow is { } r && _fetching.Contains(r.Item.Id);
+    // Whether any item's fetch is still out, the pane's or one the analyst moved on from.
+    internal bool AnyFetching => _fetching.Count > 0;
 
     private InboxRow? ReadableRow => Current is { } line ? line.Row ?? line.Members.FirstOrDefault() : null;
 
