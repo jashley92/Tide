@@ -520,17 +520,29 @@ else
     {
         var mine = _pause.Now();
         var id = Id!.Value;
-        var found = await StoryArticles.CandidatesAsync(id, _find);
-        if (_pause.IsLatest(mine) && Id == id) Candidates = found;
+        var text = _find;
+        var found = await StoryArticles.CandidatesAsync(id, text);
+        if (_pause.IsLatest(mine) && Id == id) (Candidates, _candidatesFor) = (found, text);
     }
+
+    // What Candidates were found for: until the search for what's typed now has run (it waits out the typing pause), the
+    // list still answers the words typed before.
+    private string? _candidatesFor;
 
     private string CandidateMeta(StoryCandidate c) =>
         $"{Tlp.Label(c.Tlp)} · {c.Status} · by {c.AuthorName} · {Ui.When(Clock, c.CreatedAtUtc)}" + (c.OnStory is { } other ? $" · on {other}, moves here" : "");
 
     // Adds the article picked, saying the story it left if it was on one as it was added (whatever the list showed); the
-    // search stays open for another.
+    // search stays open for another. Enter (or a click) before the search for what's typed has run: it runs now, and the
+    // pick stands only if it's still listed, so Enter right after typing never adds the first article the earlier words
+    // found (nor moves it off the story it's on).
     internal Task Attach(StoryCandidate c) => Run(async () =>
     {
+        if (_find != _candidatesFor)
+        {
+            await Find();
+            if (_find != _candidatesFor || Candidates.All(f => f.Id != c.Id)) return;
+        }
         var left = await StorySvc.LinkAsync(c.Id, Id!.Value);
         await LoadStory();
         await Find();
