@@ -61,6 +61,8 @@ else if (Shown.Count == 0)
     <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No saved query matches these filters." />
     </div>
+    @* The rail stays (empty), so the top bar's Context button doesn't come and go as a search finds nothing and then something. *@
+    <ContextRail Title="About this query"><section class="tide-card"><SectionEmpty Icon="@Icons.Named">Nothing is selected: no query matches.</SectionEmpty></section></ContextRail>
 }
 else
 {

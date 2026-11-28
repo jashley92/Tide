@@ -23,6 +23,8 @@ window.tideBoard = (function () {
     let ref = null, root = null, dragging = null, over = null, marked = null, press = null, ghost = null, slot = null;
     let drop = null, home = null, lastInside = null;   // where a drop would put the card ({ status, before }), the card it was above at first, the lane last under it
     let mids = null;   // the lane under the pointer's cards and where each one's middle is laid out, until a slot moves or a lane scrolls
+    // The ids of cards a ghost is bringing in: flip.js leaves them be even when .NET draws them afresh (not yet marked).
+    const landing = window.tideLanding = new Set();
     const SLOP = 6, HOLD = 280, ASKING = 400;   // px before a press is a drag; ms a finger holds first; ms before .NET counts as asking
 
     function tell(method) {
@@ -214,15 +216,31 @@ window.tideBoard = (function () {
     function settle(g, card) {
         clearRoom(card);
         const done = function () {
-            g.remove();
-            if (!card) return;
+            if (!card) { g.remove(); return; }
+            landing.delete(card.dataset.id);
             card.removeAttribute('data-tide-landing');
             lockOn(card);
+            // The ghost gives way once the card's brackets are on (two frames), so they never blink out between the two.
+            requestAnimationFrame(function () { requestAnimationFrame(function () { g.remove(); }); });
         };
-        const a = card && glide(g, card.getBoundingClientRect());
+        let aim = card && card.getBoundingClientRect(), a = card && glide(g, aim);
         if (!a) { done(); return; }
         card.setAttribute('data-tide-landing', '');
-        a.finished.then(done, done);
+        card.getAnimations().forEach(function (an) { an.cancel(); });   // its own (a fade drawn in): the ghost is the card
+        // The card may still be on its way (its lane scrolling it into view): the ghost keeps aiming at where it is, and
+        // lands when it gets there, so there's never a ghost in one place and the card in another.
+        // As it lands, the ghost shows only what the card's lane will show (a card taller than a short lane), so nothing of
+        // it disappears in a frame as the card takes over.
+        const lane = card.closest('.tide-kcol-cards');
+        (function follow() {
+            const r = card.isConnected ? card.getBoundingClientRect() : aim;
+            if (Math.abs(r.left - aim.left) > 1 || Math.abs(r.top - aim.top) > 1) { aim = r; a = glide(g, r) || a; }
+            if (lane && lane.isConnected) {
+                const l = lane.getBoundingClientRect(), gr = g.getBoundingClientRect();
+                g.style.clipPath = 'inset(' + Math.max(0, l.top - gr.top) + 'px 0 ' + Math.max(0, gr.bottom - l.bottom) + 'px 0)';
+            }
+            if (a.playState === 'finished' || !card.isConnected) done(); else requestAnimationFrame(follow);
+        })();
     }
 
     function onPointerUp(e) {
@@ -235,6 +253,11 @@ window.tideBoard = (function () {
         ghost = null;
         end();
         if (!to || !ref) { settle(g, card); focusCard(card); return; }
+        landing.add(id);
+        setTimeout(function () { landing.delete(id); }, 3000);   // however it ends (closed into a chip, refused)
+        // The ghost is the card until it lands: the card .NET draws in its new place waits unseen, and doesn't fly there too
+        // (flip.js leaves a landing card be).
+        card.setAttribute('data-tide-landing', '');
         // The chip counts the card when it arrives, not while .NET draws the new count under the dialog: its roll waits
         // (data-tide-hold pauses it on the old number) until the card lands, or is let go if the card goes home.
         if (chip) chip.setAttribute('data-tide-hold', '');
@@ -326,8 +349,33 @@ window.tideBoard = (function () {
         const el = c && (c.querySelector('.tide-kcard-move') || c.querySelector('.tide-action-ref'));
         if (!el) return false;
         el.focus({ preventScroll: true });
-        el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: window.tideShortcuts.still() ? 'instant' : 'smooth' });
+        show(c);
         return true;
+    }
+
+    // Where a card is laid out, not where a glide has it this frame (flip.js).
+    function laid(c) {
+        const r = c.getBoundingClientRect(), t = getComputedStyle(c).transform;
+        const dy = t && t !== 'none' ? new DOMMatrixReadOnly(t).m42 : 0;
+        return { top: r.top - dy, bottom: r.bottom - dy, height: r.height };
+    }
+
+    // The card brought into view in its lane, then the lane in the window: from its top, its title and priority first.
+    // A card taller than a short lane (a narrow window) keeps its top in view, not its foot where the focused button is.
+    function show(c) {
+        const how = window.tideShortcuts.still() ? 'instant' : 'smooth', lane = c.closest('.tide-kcol-cards');
+        if (lane && lane.scrollHeight > lane.clientHeight + 1 && !lane.hasAttribute('data-tide-scrolling')) {   // (a flight scrolling it: flip.js)
+            const l = lane.getBoundingClientRect(), r = laid(c), pad = parseFloat(getComputedStyle(lane).paddingTop) || 0;
+            const top = r.top - l.top - pad, foot = r.bottom - l.bottom + pad;
+            // Above the lane's view: its top comes in. Below: a card that fits shows whole; a taller one shows from its top,
+            // left where it is if its top is already near the lane's top.
+            const fits = r.height <= l.height - 2 * pad;
+            const by = top < 0 ? top : foot > 0 ? (fits ? foot : top > l.height / 4 ? top : 0) : 0;
+            if (Math.abs(by) > 1) lane.scrollBy({ top: by, behavior: how });
+        }
+        const r = laid(c), head = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+        const wy = r.top < head ? r.top - head : r.bottom > innerHeight ? Math.min(r.bottom - innerHeight, r.top - head) : 0;
+        if (Math.abs(wy) > 1) window.scrollBy({ top: wy, behavior: how });
     }
 
     // After a move (its Move menu, or a drop): the card, if still on the board, locks on where it landed; focus goes there.

@@ -503,7 +503,7 @@
 
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
-.tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+.tide-triage-section[data-tide-promoting], .tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
 /* A row this person decided (shortlisted, dismissed...) lifts out where it was, a copy over the page (triage.js). */
 .tide-triage-row.tide-decided { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; background: var(--tide-surface); }
 .tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;
@@ -582,4 +582,8 @@
 .tide-secret-input { flex: 1 1 16rem; max-width: 28rem; }
 .tide-system-cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tide-release-notes { max-height: 22rem; overflow: auto; border-top: 1px solid var(--tide-border); padding-top: .6rem; }
-
+/* Triage's bar for the chosen items takes over from the decision row: it fades in (and out, flip.js), not in a frame. */
+.tide-triage-selbar { animation: tide-triage-selbar-in var(--tide-dur-fast) var(--tide-ease-out); }
+/* What's inside a copy (a row lifting out, a card flying) is as it was seen: its own entrances don't play again. */
+[data-tide-copy] * { animation: none !important; }
+@keyframes tide-triage-selbar-in { from { opacity: 0; } }

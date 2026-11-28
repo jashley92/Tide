@@ -20,6 +20,8 @@
    closing, a copy of it slides back out (theme.js). It moves by translate, which the browser only has to composite. */
 html[data-rail-over] .tide-rail { transition: translate var(--tide-move-panel) var(--tide-ease-out); @starting-style { translate: 100% 0; } }
 html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { transition: opacity var(--tide-dur-base) var(--tide-ease-out); @starting-style { opacity: 0; } }
+/* Without motion the sheet doesn't slide in: it fades in, as it fades out. */
+@media (prefers-reduced-motion: reduce) { html[data-rail-over] .tide-rail { transition: opacity var(--tide-dur-panel) var(--tide-ease-out); @starting-style { opacity: 0; } } }
 /* More contrast asked for: the page under the overlay is dimmed further. */
 @media (prefers-contrast: more) { :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { background: color-mix(in srgb, var(--tide-scrim) 70%, black); } }
 .tide-rail.tide-leaving { pointer-events: none; }
