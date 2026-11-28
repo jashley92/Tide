@@ -207,6 +207,38 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PollDue_ANewAddressStartsTheScheduleFresh_NotBackedOffForTheOldOnesFailures()
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "Moved", Url = "https://old.example.com/feed", PollMinutes = 60 });
+        var intake = _db.Intake();
+        for (var i = 0; i < 4; i++) (await intake.PollNowAsync(source)).Error.Should().NotBeNull("the old address answers nothing");
+
+        var form = SourceForm.From((await intake.SourcesAsync()).Single());
+        form.Url = "https://new.example.com/feed";
+        await intake.SaveSourceAsync(form);
+        _db.Http.Set("https://new.example.com/feed", Rss(("One", "https://example.com/1", null)));
+
+        await using var ctx = _db.Context();
+        var s = await ctx.Sources.SingleAsync();
+        intake.Interval(s).Should().Be(TimeSpan.FromMinutes(60), "the failures were the old address's, not the corrected one's");
+        var clock = new TestClock(s.LastPolledAtUtc!.Value + TimeSpan.FromHours(2));
+        (await _db.Intake(time: clock).PollDueAsync()).Should().Be(1, "the corrected feed is due at its normal interval");
+    }
+
+    [Fact]
+    public async Task PollDue_ASourceTurnedBackOn_PollsAtItsOwnInterval_NotTheBackoff()
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "Flaky", Url = "https://flaky.example.com/feed", PollMinutes = 60 });
+        var intake = _db.Intake();
+        for (var i = 0; i < 4; i++) await intake.PollNowAsync(source);
+        await intake.SetSourceEnabledAsync(source, false);
+        await intake.SetSourceEnabledAsync(source, true);
+
+        await using var ctx = _db.Context();
+        intake.Interval(await ctx.Sources.SingleAsync()).Should().Be(TimeSpan.FromMinutes(60), "turning it back on starts its schedule fresh");
+    }
+
+    [Fact]
     public async Task PollDue_ASourceThatBreaksThePoll_IsRecorded_AndTheOthersStillRun()
     {
         // A fault nothing on the way turned into a result.
