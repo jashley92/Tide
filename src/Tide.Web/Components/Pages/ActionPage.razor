@@ -593,7 +593,7 @@ else
     private OverLimitDialog _overLimit = default!;
     private ConfirmDialog _handoffDialog = default!;
     private SplitDialog? _split;
-    private Guid _handTo;
+    private Guid _handTo, _handFrom;
     private string? _handWhy, _handError;
     private bool _turnRemindersOn;
 
@@ -607,7 +607,8 @@ else
 
     internal async Task StartHandoff()
     {
-        (_handTo, _handWhy, _handError, _turnRemindersOn) = (Guid.Empty, null, null, false);
+        // The team it's shown with as the dialog opens: a colleague's hand-off since then refuses this one, so theirs stands.
+        (_handTo, _handFrom, _handWhy, _handError, _turnRemindersOn) = (Guid.Empty, _detail!.Action.TeamId, null, null, false);
         await _handoffDialog.Ask($"Hand {Ui.ActionLabel(_detail!.Action.Number)} off", null, "Hand off", danger: false);
     }
 
@@ -619,7 +620,7 @@ else
         {
             var told = 0;
             var to = _teams.First(t => t.Id == _handTo);
-            if (!await _overLimit.RunAsync(async reason => told = await HandoffSvc.HandOffAsync(_detail!.Action.Id, _handTo, _handWhy ?? "", reason, _turnRemindersOn))) return false;
+            if (!await _overLimit.RunAsync(async reason => told = await HandoffSvc.HandOffAsync(_detail!.Action.Id, _handTo, _handWhy ?? "", reason, _turnRemindersOn, _handFrom))) return false;
             await Reload();
             Toasts.Show($"Handed to {to.Name}." + (to.IsExternal ? "" : told > 0 ? " They've been emailed." : ""));
             return true;
