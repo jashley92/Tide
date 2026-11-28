@@ -503,7 +503,7 @@
 
 /* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
    into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
-.tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+.tide-triage-section[data-tide-promoting], .tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
 /* A row this person decided (shortlisted, dismissed...) lifts out where it was, a copy over the page (triage.js). */
 .tide-triage-row.tide-decided { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; background: var(--tide-surface); }
 .tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;

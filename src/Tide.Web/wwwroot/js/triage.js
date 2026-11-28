@@ -125,6 +125,19 @@ window.tideTriage = (function () {
             return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
         }).slice(0, most);
     }
+    // The section headings ("Matches what we run", "Everything else") whose every row is among these: they go with them.
+    function emptied(rows) {
+        const list = rows[0] && rows[0].parentElement, out = [];
+        if (!list) return out;
+        let head = null, all = true;
+        const close = function () { if (head && all) out.push(head); };
+        Array.prototype.forEach.call(list.children, function (c) {
+            if (c.classList.contains('tide-triage-section')) { close(); head = c; all = true; }
+            else if (c.classList.contains('tide-triage-row') && rows.indexOf(c) < 0) all = false;
+        });
+        close();
+        return out;
+    }
     // The tab with this label (Triage.Tabs).
     function tabFor(label) {
         return Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
@@ -147,7 +160,7 @@ window.tideTriage = (function () {
             // Without motion the rows fade where they are (as a promote's do), and .NET waits out the fade before it reloads,
             // so the gap closes in one step after: nothing slides under a fading copy.
             if (still) {
-                rows.forEach(function (row) { row.setAttribute('data-tide-promoting', ''); });
+                rows.concat(emptied(rows)).forEach(function (row) { row.setAttribute('data-tide-promoting', ''); });
                 return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); });
             }
             const at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
@@ -206,7 +219,7 @@ window.tideTriage = (function () {
             if (!t.width || document.hidden || !document.body.animate) { land(); shown(); return Promise.resolve(); }
             // Without motion (or with the tab out of sight, below), there's no morph: the rows fade (data-tide-promoting) and
             // .NET waits out the fade before it reloads.
-            if (ts.still()) { land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
+            if (ts.still()) { emptied(rows).forEach(function (h) { h.setAttribute('data-tide-promoting', ''); rows.push(h); }); land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
             // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
             if (t.bottom < 0 || t.top > innerHeight) {
                 land(); release();

@@ -18,7 +18,7 @@
 // takes as long as its distance needs (tideShortcuts.travel).
 window.tideFlip = (function () {
     const ROOTS = '[data-tide-flip]', MOVED = .5, STAGGERED = 8, FLIGHTS = 8, COPY = '[data-tide-copy]';
-    const goneFrom = new WeakMap(), flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
+    const goneFrom = new WeakMap(), leftFrom = new WeakMap(), flipKeys = new WeakMap(), places = new WeakMap(), at = new WeakMap(), running = new WeakMap(), due = new Map(), heights = new WeakMap(), pinned = new WeakMap();
     // The part of the app a page is in (/library, /briefs): lists come in afresh on going to another part, not on a tab
     // or a day within one (/library/outreach to /library/playbooks).
     function part() { return '/' + location.pathname.split('/')[1]; }
@@ -376,10 +376,11 @@ window.tideFlip = (function () {
         if (fk !== null) flipKeys.set(root, fk);
         // Items that already left on their own (data-tide-gone: rows this person decided, lifting out) don't make the list a
         // different one: the rest still glide to close the gap.
-        const gone = goneFrom.get(root);
+        const gone = goneFrom.get(root), leaving = leftFrom.get(root);
         goneFrom.delete(root);
+        leftFrom.delete(root);
         let had = s.was ? s.was.size : 0;
-        if (gone && s.was) s.was.forEach(function (v, k) { if (gone.has(k)) had--; });
+        if ((gone || leaving) && s.was) s.was.forEach(function (v, k) { if ((gone && gone.has(k)) || (leaving && leaving.has(k))) had--; });
         const renewed = rekeyed || (!!s.was && ((had > 1 && kept * 2 < had) || born * 2 > s.now.size && (born > 1 || had > 0))), still = quiet || renewed;
         // One duration for every glide and unfold in this change, as long as its longest distance needs: items that move
         // together stay in step (each timed by its own distance, a row gliding up could cross one still unfolding). Less
@@ -635,9 +636,12 @@ window.tideFlip = (function () {
             removed.forEach(function (n) {
                 const its = n.matches(root.dataset.tideFlip) ? [n] : exits ? Array.prototype.slice.call(n.querySelectorAll(root.dataset.tideFlip)) : [];   // (in a keyed slot)
                 its.forEach(function (i) {
-                    if (i.hasAttribute('data-tide-gone')) { (goneFrom.get(root) || goneFrom.set(root, new Set()).get(root)).add(key(i)); return; }
+                    // Gone already (lifted out, or faded where it was: data-tide-promoting): no copy, and not counted as the
+                    // list having been replaced.
+                    if (i.hasAttribute('data-tide-gone') || i.hasAttribute('data-tide-promoting')) { (goneFrom.get(root) || goneFrom.set(root, new Set()).get(root)).add(key(i)); return; }
                     if (!exits && !i.hasAttribute('data-tide-exit')) return;
                     if (i.isConnected) return;   // taken out and put back in the same change (moved up or down): it glides, at once
+                    (leftFrom.get(root) || leftFrom.set(root, new Set()).get(root)).add(key(i));   // leaving (a heading): not a sign of a new list
                     exited.add(root);
                     leave(root, i);
                 });
