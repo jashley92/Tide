@@ -800,6 +800,7 @@ public sealed class ServiceWorld : IDisposable
             ("Briefs.GetOrStart", () => db.Briefs().GetOrStartAsync(db.SendDay.AddDays(1))),
             ("Briefs.AddArticle", () => db.Briefs().AddArticleAsync(BriefId, Article)),
             ("Briefs.RemoveItem", () => db.Briefs().RemoveItemAsync(BriefId, Guid.NewGuid())),
+            ("Briefs.PutBack", () => db.Briefs().PutBackAsync(BriefId, new BriefItem { ArticleId = Article }, 0)),
             ("Briefs.MoveItem", () => db.Briefs().MoveItemAsync(BriefId, Guid.NewGuid(), 1)),
             ("Briefs.Reorder", () => db.Briefs().ReorderAsync(BriefId, [])),
             ("Briefs.SetDetails", () => db.Briefs().SetDetailsAsync(BriefId, Me, "Me", "intro")),

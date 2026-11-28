@@ -194,16 +194,32 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     }
 
     /// <summary>Adds an article to the end of the running order, or at position <paramref name="at"/> (from 0) when
-    /// given: where it was, when a removal is undone.</summary>
-    public async Task AddArticleAsync(Guid briefId, Guid articleId, int? at = null, CancellationToken ct = default)
+    /// given.</summary>
+    public Task AddArticleAsync(Guid briefId, Guid articleId, int? at = null, CancellationToken ct = default) =>
+        InsertAsync(briefId, new BriefItem { ArticleId = articleId }, at, ct);
+
+    /// <summary>Undoes <see cref="RemoveItemAsync"/>: puts the article back at <paramref name="at"/> as it came off, with
+    /// its discussed tick, the brief it was carried from and, while the meeting is still ended, what it was before the
+    /// meeting marked it presented, so reopening the meeting still puts it back.</summary>
+    public Task PutBackAsync(Guid briefId, BriefItem removed, int at, CancellationToken ct = default) =>
+        InsertAsync(briefId, new BriefItem
+        {
+            ArticleId = removed.ArticleId, Discussed = removed.Discussed,
+            CarriedFromBriefId = removed.CarriedFromBriefId, StatusBeforeMeeting = removed.StatusBeforeMeeting,
+        }, at, ct);
+
+    private async Task InsertAsync(Guid briefId, BriefItem item, int? at, CancellationToken ct)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await Editable(db, briefId, ct);
+        var articleId = item.ArticleId;
         if (brief.Items.Any(i => i.ArticleId == articleId)) return;
         if (!await db.Articles.AnyAsync(a => a.Id == articleId, ct)) throw new KeyNotFoundException("That article no longer exists.");
         var ordered = brief.Items.OrderBy(i => i.SortOrder).ToList();
-        var item = new BriefItem { BriefId = brief.Id, ArticleId = articleId };
+        item.BriefId = brief.Id;
+        // Reopened since it came off: that meeting's marking is undone, so there's nothing for a later reopen to put back.
+        if (brief.PresentedAtUtc is null) item.StatusBeforeMeeting = null;
         ordered.Insert(Math.Clamp(at ?? ordered.Count, 0, ordered.Count), item);
         Number(ordered);
         db.BriefItems.Add(item);
@@ -220,17 +236,20 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         }
     }
 
-    public async Task RemoveItemAsync(Guid briefId, Guid itemId, CancellationToken ct = default)
+    /// <summary>Takes an item off the brief (the article is kept), returning it as it was for <see cref="PutBackAsync"/>,
+    /// or null when it was gone already.</summary>
+    public async Task<BriefItem?> RemoveItemAsync(Guid briefId, Guid itemId, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await Editable(db, briefId, ct);
-        if (brief.Items.FirstOrDefault(i => i.Id == itemId) is not { } item) return;
+        if (brief.Items.FirstOrDefault(i => i.Id == itemId) is not { } item) return null;
         db.BriefItems.Remove(item);
         brief.Items.Remove(item);
         Number(brief.Items.OrderBy(i => i.SortOrder));
         Touch(brief);
         await db.SaveChangesAsync(ct);
+        return item;
     }
 
     /// <summary>Moves an article up (negative) or down (positive) the running order.</summary>
