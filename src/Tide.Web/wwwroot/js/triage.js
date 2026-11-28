@@ -137,11 +137,12 @@ window.tideTriage = (function () {
         // Shortlisted, dismissed, marked a duplicate or put back, by this person: the rows lift up and out from where they
         // were, towards the tabs, and the brackets lock onto the tab they went to; .NET then reloads, so the rows below
         // close the gap (flip.js) and both tabs' counts roll. As a colleague's change shows, but quicker: they did it.
-        // Without motion only the tab locks on (its counts still roll, without moving).
+        // Without motion the rows fade where they are, quickly, without lifting, and the tab locks on (its counts still roll,
+        // without moving).
         decided: function (ids, tabLabel) {
-            const ts = window.tideShortcuts, tab = tabFor(tabLabel);
+            const ts = window.tideShortcuts, tab = tabFor(tabLabel), still = ts.still();
             if (tab) ts.pulse(tab, 'data-tide-landed');
-            if (ts.quiet()) return;
+            if (ts.quiet() && !still) return;   // a tab nobody is looking at
             const rows = rowsFor(ids, 8), at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
             rows.forEach(function (row) { row.setAttribute('data-tide-gone', ''); });   // they leave here, not again in flip.js
             rows.forEach(function (row, i) {
@@ -154,6 +155,7 @@ window.tideTriage = (function () {
                 // Gone by half way, before the rows below close up into its place (they'd show through it).
                 // Linear, on the first stretch: over its few frames it fades evenly (an eased curve on the whole effect squeezed it
                 // into its first frame or two).
+                if (still) { ts.drift(g, [{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast') }); return; }
                 ts.drift(g, [{ opacity: 1, transform: 'none', easing: 'linear' }, { opacity: 0, transform: 'translateY(-4px)', offset: .5 }, { opacity: 0, transform: 'translateY(-6px)' }],
                     { duration: ts.ms('--tide-dur-exit') });   // out: it's fading from the first frame
             });
@@ -195,7 +197,10 @@ window.tideTriage = (function () {
             // The bar for the chosen items goes with them: it fades as they lift, not after the reload (and leaves no copy).
             const bar = document.querySelector('.tide-triage-selbar');
             if (bar && !ts.quiet()) { bar.setAttribute('data-tide-gone', ''); bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' }); }
-            if (!t.width || ts.quiet()) { land(); shown(); return Promise.resolve(); }
+            if (!t.width || document.hidden || !document.body.animate) { land(); shown(); return Promise.resolve(); }
+            // Without motion (or with the tab out of sight, below), there's no morph: the rows fade (data-tide-promoting) and
+            // .NET waits out the fade before it reloads.
+            if (ts.still()) { land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
             // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
             if (t.bottom < 0 || t.top > innerHeight) {
                 land(); release();
