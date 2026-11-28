@@ -67,35 +67,34 @@ public sealed class ActionForm
     /// was also changed to something else: that's a clash a save has to refuse.</summary>
     public bool CarryOnto(ActionForm opened, ActionItem now)
     {
-        var (clash, apply) = (false, false);
-        T Mine<T>(T mine, T was, T theirs)
-        {
-            var eq = EqualityComparer<T>.Default;
-            if (eq.Equals(mine, was)) return apply ? theirs : mine;
-            clash |= !eq.Equals(theirs, was) && !eq.Equals(theirs, mine);
-            return mine;
-        }
-        void Fields()
-        {
-            Title = Mine(Title, opened.Title, now.Title);
-            Description = Mine(Description, opened.Description, now.Description);
-            Kind = Mine(Kind, opened.Kind, now.Kind);
-            Priority = Mine(Priority, opened.Priority, now.Priority);
-            TeamId = Mine(TeamId, opened.TeamId, now.TeamId);
-            if (Mine(AssigneeId, opened.AssigneeId, now.AssigneeId) != AssigneeId) (AssigneeId, AssigneeName) = (now.AssigneeId, now.AssigneeName);
-            DueDate = Mine(DueDate, opened.DueDate, now.DueDate);
-            TicketRef = Mine(TicketRef, opened.TicketRef, now.TicketRef);
-            TicketUrl = Mine(TicketUrl, opened.TicketUrl, now.TicketUrl);
-            ArticleId = Mine(ArticleId, opened.ArticleId, now.ArticleId);
-            ParentId = Mine(ParentId, opened.ParentId, now.ParentId);
-        }
-        Fields();
-        if (clash) return false;
-        apply = true;
-        Fields();
+        if (Clashes(Title, opened.Title, now.Title) || Clashes(Description, opened.Description, now.Description)
+            || Clashes(Kind, opened.Kind, now.Kind) || Clashes(Priority, opened.Priority, now.Priority) || Clashes(TeamId, opened.TeamId, now.TeamId)
+            || Clashes(AssigneeId, opened.AssigneeId, now.AssigneeId) || Clashes(DueDate, opened.DueDate, now.DueDate)
+            || Clashes(TicketRef, opened.TicketRef, now.TicketRef) || Clashes(TicketUrl, opened.TicketUrl, now.TicketUrl)
+            || Clashes(ArticleId, opened.ArticleId, now.ArticleId) || Clashes(ParentId, opened.ParentId, now.ParentId))
+            return false;
+        Title = Carried(Title, opened.Title, now.Title);
+        Description = Carried(Description, opened.Description, now.Description);
+        Kind = Carried(Kind, opened.Kind, now.Kind);
+        Priority = Carried(Priority, opened.Priority, now.Priority);
+        TeamId = Carried(TeamId, opened.TeamId, now.TeamId);
+        if (AssigneeId == opened.AssigneeId) (AssigneeId, AssigneeName) = (now.AssigneeId, now.AssigneeName);
+        DueDate = Carried(DueDate, opened.DueDate, now.DueDate);
+        TicketRef = Carried(TicketRef, opened.TicketRef, now.TicketRef);
+        TicketUrl = Carried(TicketUrl, opened.TicketUrl, now.TicketUrl);
+        ArticleId = Carried(ArticleId, opened.ArticleId, now.ArticleId);
+        ParentId = Carried(ParentId, opened.ParentId, now.ParentId);
         (FromTeamId, EditVersion) = (now.TeamId, now.EditVersion);
         return true;
     }
+
+    private static bool Same<T>(T a, T b) => EqualityComparer<T>.Default.Equals(a, b);
+
+    // Changed by the editor, and to something else meanwhile too.
+    private static bool Clashes<T>(T mine, T was, T theirs) => !Same(mine, was) && !Same(theirs, was) && !Same(theirs, mine);
+
+    // Left alone by the editor: its value now; changed by them: theirs.
+    private static T Carried<T>(T mine, T was, T theirs) => Same(mine, was) ? theirs : mine;
 }
 
 /// <summary>A row on an action list.</summary>
