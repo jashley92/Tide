@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Tide.Application.Actions;
 using Tide.Application.Distribution;
 using Tide.Application.Operations;
+using Tide.Application.Reviews;
 using Tide.Application.Settings;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -45,6 +46,18 @@ public sealed class ConfigBundleWarningTests : IDisposable
         await using var ctx = _db.Context();
         ctx.Settings.Add(new AppSetting { Key = key, Value = value, UpdatedBy = "x" });
         await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task TheReviewRule_SavedOnAccessAndDistribution_TravelsInTheBundle()
+    {
+        // Access & distribution saves it like the edition ceilings beside it; another TIDE set up from this bundle
+        // must require the same review before send.
+        await new ReviewService(_db, _db.User, _db.Rotation(), _db.Clock, TimeProvider.System).SaveRuleAsync(ReviewRule.Threats);
+
+        var bundle = await Service().ExportAsync();
+        bundle.Settings.Should().ContainSingle(s => s.Key == ReviewService.RuleKey).Which.Value.Should().Be(nameof(ReviewRule.Threats));
+        SettingsCatalog.IsInApp(ReviewService.RuleKey).Should().BeTrue();
     }
 
     [Fact]
