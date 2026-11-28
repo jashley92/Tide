@@ -120,9 +120,10 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
 
     // Three new items of a feed of their own, newest first (A, B, C), none read yet; A's page is slow until the hold is
     // released, A's and B's answer with their text.
-    private async Task<(Guid Source, Guid A, string Prefix, TaskCompletionSource Slow)> SlowFeed(string name, Guid? cId = null)
+    private async Task<(Guid Source, Guid A, string Prefix, TaskCompletionSource Slow)> SlowFeed(string name, Guid? cId = null, string? keyStart = null)
     {
         var key = Guid.NewGuid().ToString("N");
+        if (keyStart is not null) key = keyStart + key[keyStart.Length..];
         var prefix = $"https://{name}.example/{key}/";
         Guid source, a;
         await using (var scope = app.Services.CreateAsyncScope())
@@ -242,9 +243,14 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
     public async Task AFetchThatFailsAfterTheAnalystMovedOn_BsPaneCheck_IgnoresIdsThatHappenToHoldTheStatus()
         => await LateFailure(Guid.Parse("d39fea1a-1f4b-4045-ba65-38912b1270cd"));
 
-    private async Task LateFailure(Guid? cId)
+    // B's own link is in its pane, and its random key sometimes holds the status's digits too (CI, 2026-11-28).
+    [Fact]
+    public async Task AFetchThatFailsAfterTheAnalystMovedOn_BsPaneCheck_IgnoresALinkThatHappensToHoldTheStatus()
+        => await LateFailure(null, keyStart: "404");
+
+    private async Task LateFailure(Guid? cId, string? keyStart = null)
     {
-        var (source, _, prefix, slow) = await SlowFeed("lateread", cId);
+        var (source, _, prefix, slow) = await SlowFeed("lateread", cId, keyStart);
         app.Http.Responses[prefix + "a"] = new HttpFetch(FetchStatus.Failed, Error: "The server answered 404 Not Found.");
         var who = new ComponentHarness.SignIn("lateread:" + prefix, "Late tester", "Analyst");
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
@@ -258,8 +264,8 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
         slow.SetResult();
         (await r.Until(t => !t.AnyFetching)).Should().BeTrue("A's failed fetch lands");
         await r.Drawn();
-        // Only the pane: the rest of the page holds random ids, which can contain the status's digits.
-        Pane(await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item B").And.Contain("Not read yet.").And.NotContain("404");
+        // Only the pane, and only A's message: ids and links hold random hex, which can contain the status's digits.
+        Pane(await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item B").And.Contain("Not read yet.").And.NotContain("The server answered");
 
         // Back on A, why it failed shows, as it would have at the time, and the site isn't asked again.
         await r.Click(t => t.OnTriageKey("prev"));
