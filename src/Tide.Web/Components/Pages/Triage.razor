@@ -1041,7 +1041,7 @@ else
 
     private async Task UndoKeepDismissed(IReadOnlyCollection<Guid> ids, DateTimeOffset at)
     {
-        if (_busy) return;
+        if (!await UndoTurn("Those weren't put back: another change was still being saved. Find them in the Dismissed tab.")) return;
         _busy = true;
         try
         {
@@ -1299,7 +1299,7 @@ else
     // Undo of a split, from its toast or its note: the reports may group again, for everyone.
     internal async Task UndoSplit(Guid batch)
     {
-        if (_busy) return;
+        if (!await UndoTurn("The split wasn't undone: another change was still being saved. Try its Undo again.")) return;
         _busy = true;
         try
         {
@@ -2112,7 +2112,7 @@ else
     // only text already kept).
     internal async Task UndoDecision(FeedItem item, FeedItemStatus decided, DateTimeOffset at)
     {
-        if (_busy) return;
+        if (!await UndoTurn($"It wasn't put back in New: another change was still being saved. Find it in the {decided} tab: {Short(item.Title)}")) return;
         _busy = true;
         try
         {
@@ -2259,6 +2259,16 @@ else
         Toasts.Show(said, link, undo, warning: done.NotOnBrief is not null);
     }
 
+    // An undo from a toast (or Alt+Z) is never dropped without a word, as the toast went when its Undo was pressed: it
+    // waits for a step still being saved (another dismissal, a promote) to finish, then runs; if that takes too long,
+    // it says what wasn't done and returns false.
+    private async Task<bool> UndoTurn(string notDone)
+    {
+        if (!_busy || await Idle()) return true;
+        Toasts.Error(notDone);
+        return false;
+    }
+
     // Waits, on the page's own thread, for the step being saved to finish: true once nothing is, false after UndoWait.
     private async Task<bool> Idle()
     {
@@ -2277,13 +2287,7 @@ else
     // again where it's shown; an open reading pane follows with text already kept, never fetching.
     internal async Task UndoPromote(PromoteUndo undo)
     {
-        // The toast has gone as its Undo was pressed, so it's never dropped without a word: it waits for a step still
-        // being saved (another promote, a dismissal) to finish, then runs; if that takes too long, it says so.
-        if (_busy && !await Idle())
-        {
-            Toasts.Error("The promote wasn't undone: another change was still being saved. Delete the draft from the editor (Write it, then Delete draft) if it isn't wanted.");
-            return;
-        }
+        if (!await UndoTurn("The promote wasn't undone: another change was still being saved. Delete the draft from the editor (Write it, then Delete draft) if it isn't wanted.")) return;
         _busy = true;
         try
         {
