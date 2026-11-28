@@ -196,7 +196,8 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
 
     /// <summary>
     /// Fills the next <paramref name="weeks"/> weeks from <paramref name="from"/> that have nobody, in roster order,
-    /// carrying on after whoever had the last assigned week before them. Returns how many weeks were filled.
+    /// carrying on after whoever had the last assigned week before them. A filled week's days whose meeting was held keep
+    /// whoever presented them, as <see cref="SetWeekAsync"/> keeps them. Returns how many weeks were filled.
     /// </summary>
     public async Task<int> GenerateAsync(DateOnly from, int weeks, CancellationToken ct = default)
     {
@@ -209,7 +210,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var existing = await db.RotationWeeks.Where(w => w.WeekStart >= start.AddDays(-7 * 52)).ToDictionaryAsync(w => w.WeekStart, ct);
         var last = existing.Values.Where(w => w.WeekStart < start).OrderByDescending(w => w.WeekStart).FirstOrDefault();
         var next = last is null ? 0 : (roster.FindIndex(m => m.UserId == last.AnalystId) + 1) % roster.Count;
-        var filled = 0;
+        var filled = new Dictionary<DateOnly, string>();
         for (var i = 0; i < weeks; i++)
         {
             var week = start.AddDays(7 * i);
@@ -221,11 +222,24 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             }
             var m = roster[next];
             db.RotationWeeks.Add(new RotationWeek { WeekStart = week, AnalystId = m.UserId, AnalystName = m.DisplayName, UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = user.UserId });
+            filled[week] = m.UserId;
             next = (next + 1) % roster.Count;
-            filled++;
+        }
+        if (filled.Count > 0)
+        {
+            // A filled week's days whose meeting was held (a past week can be filled) stay with whoever the brief names,
+            // as SetWeekAsync keeps them: kept for them unless a day already says who has it.
+            var end = start.AddDays(7 * weeks - 1);
+            var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= start && b.BriefDate <= end).ToListAsync(ct);
+            briefs = briefs.Where(b => filled.ContainsKey(WeekStart(b.BriefDate)) && clock.Days.IsWorkingDay(b.BriefDate)).ToList();
+            var held = await HeldAsync(db, briefs, ct);
+            var dated = (await db.RotationOverrides.Where(o => o.Date >= start && o.Date <= end).Select(o => o.Date).ToListAsync(ct)).ToHashSet();
+            foreach (var b in briefs.Where(b => held.Contains(b.Id) && !dated.Contains(b.BriefDate)))
+                if (PresentedBy(b) is ({ } id, var name) && id != filled[WeekStart(b.BriefDate)])
+                    db.RotationOverrides.Add(new RotationOverride { Date = b.BriefDate, AnalystId = id, AnalystName = name, ChangeId = null });
         }
         await db.SaveChangesAsync(ct);
-        return filled;
+        return filled.Count;
     }
 
     /// <summary>
@@ -253,14 +267,18 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var days = BusinessDays(start, end, clock.Days).ToList();
         var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= start && b.BriefDate <= end).ToListAsync(ct);
         var held = await HeldAsync(db, briefs, ct);
-        var heldDays = briefs.Where(b => held.Contains(b.Id)).Select(b => b.BriefDate).ToHashSet();
+        var heldBriefs = briefs.Where(b => held.Contains(b.Id)).ToDictionary(b => b.BriefDate);
+        var heldDays = heldBriefs.Keys.ToHashSet();
         var kept = new List<(DateOnly, string)>();
         var corrected = new List<DateOnly>();
         foreach (var d in days.Where(heldDays.Contains))
         {
             var o = overrides.FirstOrDefault(x => x.Date == d);
             if (o?.ChangeId is not null) continue;   // an approved change moved it: not the week's to give
-            var presenter = o?.AnalystId ?? was;
+            // Whoever presented it: kept for them already, the week's analyst, or, in a week nobody had, whoever the brief names.
+            (string? presenter, string? presenterName) = o is not null ? (o.AnalystId, o.AnalystName)
+                : was is not null ? (was, wasName!)
+                : PresentedBy(heldBriefs[d]);
             if (correctPastDays)
             {
                 // The day follows the week again, kept or not before.
@@ -275,8 +293,8 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             else if (presenter is not null)
             {
                 // Kept for whoever presented it.
-                if (o is null) db.RotationOverrides.Add(new RotationOverride { Date = d, AnalystId = presenter, AnalystName = wasName!, ChangeId = null });
-                kept.Add((d, o?.AnalystName ?? wasName!));
+                if (o is null) db.RotationOverrides.Add(new RotationOverride { Date = d, AnalystId = presenter, AnalystName = presenterName!, ChangeId = null });
+                kept.Add((d, presenterName!));
             }
         }
 
@@ -669,6 +687,9 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             .Select(e => e.EntityKey).Distinct().ToListAsync(ct)).Select(k => keys[k]));
         return held;
     }
+
+    // Who presented a held brief on a day nobody had on the rota: whoever the brief names (who opened it, or was set on it).
+    private static (string? Id, string Name) PresentedBy(Brief b) => (string.IsNullOrWhiteSpace(b.AnalystId) ? null : b.AnalystId, b.AnalystName);
 
     // Who an approved change puts on a day, or null when it doesn't touch it.
     private static (string Id, string Name)? Assigns(RotationChange c, DateOnly day) =>
