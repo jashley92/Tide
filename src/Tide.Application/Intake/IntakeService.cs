@@ -261,6 +261,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             source.ETag = null;
             source.LastModified = null;
         }
+        // The backoff was earned by the old address, or while it sat paused: a corrected address, or a source turned
+        // back on, keeps its own schedule instead of waiting up to 16 intervals for its next poll.
+        if (source.Url != url || (form.Enabled && !source.Enabled)) source.ConsecutiveFailures = 0;
         (source.OnlyCategories, source.SkipCategories, source.OnlyTitleWords, source.SkipTitleWords) = (only, skip, onlyWords, skipWords);
         source.Name = name;
         source.Kind = form.Kind;
@@ -292,6 +295,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var source = await SourceAsync(db, id, ct);
         if (source.Enabled == enabled) return;
         source.Enabled = enabled;
+        if (enabled) source.ConsecutiveFailures = 0;   // turned back on, it polls at its own interval, not the backoff's
         source.EditVersion = Guid.NewGuid();   // the form carries "Poll it": a form opened before can't turn it back on
         await db.SaveChangesAsync(ct);
     }

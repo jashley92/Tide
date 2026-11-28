@@ -226,6 +226,19 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PollDue_ASourceTurnedBackOn_PollsAtItsOwnInterval_NotTheBackoff()
+    {
+        var source = await _db.Intake().SaveSourceAsync(new SourceForm { Name = "Flaky", Url = "https://flaky.example.com/feed", PollMinutes = 60 });
+        var intake = _db.Intake();
+        for (var i = 0; i < 4; i++) await intake.PollNowAsync(source);
+        await intake.SetSourceEnabledAsync(source, false);
+        await intake.SetSourceEnabledAsync(source, true);
+
+        await using var ctx = _db.Context();
+        intake.Interval(await ctx.Sources.SingleAsync()).Should().Be(TimeSpan.FromMinutes(60), "turning it back on starts its schedule fresh");
+    }
+
+    [Fact]
     public async Task PollDue_ASourceThatBreaksThePoll_IsRecorded_AndTheOthersStillRun()
     {
         // A fault nothing on the way turned into a result.
