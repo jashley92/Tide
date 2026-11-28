@@ -20,4 +20,8 @@ internal static class Stylesheets
         string[] files = [.. File.Exists(single) ? [single] : Array.Empty<string>(), .. Parts(), Path.Combine(Web, "palette.css")];
         return string.Concat(files.Select(f => File.ReadAllText(f).ReplaceLineEndings("\n")));
     }
+
+    /// <summary>The app's own scripts under wwwroot/js, line endings as LF.</summary>
+    internal static string Scripts() =>
+        string.Join("\n", Directory.GetFiles(Path.Combine(Web, "js"), "*.js").Order(StringComparer.Ordinal).Select(f => File.ReadAllText(f).ReplaceLineEndings("\n")));
 }

@@ -333,6 +333,7 @@ erDiagram
         int Kind "ActionKind"
         int Priority
         int Status "ActionStatus"
+        int LaneRank "board order"
         uuid TeamId FK
         string AssigneeId
         date DueDate
@@ -1072,6 +1073,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `DueDateMoves` | int | no | How many times its due date has changed since it was first set (later, earlier or cleared). 0 for rows from before the migration. |
 | `RaisedOn` | date | yes | The business day the action belongs to, when it was raised after the fact. Null means the day it was created. |
 | `Status` | int | no | `ActionStatus`. |
+| `LaneRank` | int | no | Its place in its board lane's shared manual order, lower nearer the top; 0 when nobody has placed it by hand since it came into the lane. Places are spaced 1024 apart: `ActionService.PlaceAsync` (and a move dropped at a place) gives the card the place halfway between its neighbors, writing only its row, and numbers the whole lane again only when there's no room or the cards above it were never placed. It adds no history line, no new `EditVersion`, no audit entry and no `ModifiedAtUtc` (`AuditInterceptor`). Any change of `Status` sets it back to 0 (`ActionItem.Status`'s setter), so a card moved with its Move menu goes after its new lane's placed cards. The board's Manual sort is placed cards first by `LaneRank`, then the rest by due date. The migration (`ActionLaneRank`) gave existing rows 0. |
 | `Outcome` | int | no | `ActionOutcome`. |
 | `OutcomeNote` | nvarchar(2000) | yes | |
 | `ClosedAtUtc`, `ClosedDate` | datetimeoffset, date | yes | When it was closed (Done, Cancelled or Not applicable), and that day in org time. `ClosedAtUtc` is indexed, closed ones only, for the daily prune of reminder marks. |

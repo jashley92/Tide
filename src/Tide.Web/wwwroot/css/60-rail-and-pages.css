@@ -7,15 +7,26 @@
      theme.js makes the page under it inert, and a backdrop over the rest of the window, which closes it on a click,
      says so.
    theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
-.tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
+.tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: var(--tide-z-rail); width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving) { display: flex; z-index: var(--tide-z-rail-over); background: var(--tide-surface-raised); --tide-surface-2: var(--tide-surface-raised-2);
+    translate: 0 0; }
 /* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
    parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
-   top bar above it (none on a phone, where the rail takes the whole height). */
-html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { content: ""; position: fixed; background: var(--tide-scrim); }
-html[data-rail-over] .tide-rail::before { inset: 0 min(var(--tide-width-rail), 100%) 0 0; }
-html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide-width-rail), 100%); height: var(--tide-height-top); }
+   top bar above it (none on a phone, where the rail takes the whole height). They're placed from the rail (its translate
+   makes it their box): the left part a window wide, so as the sheet slides it still covers all the window beside it. */
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { content: ""; position: absolute; background: var(--tide-scrim); }
+/* It's laid on like a sheet: the sheet, opaque, slides in from the window's right edge as the backdrop fades in, and
+   closing, a copy of it slides back out (theme.js). It moves by translate, which the browser only has to composite. */
+html[data-rail-over] .tide-rail { transition: translate var(--tide-move-panel) var(--tide-ease-out); @starting-style { translate: 100% 0; } }
+html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { transition: opacity var(--tide-dur-base) var(--tide-ease-out); @starting-style { opacity: 0; } }
+/* Without motion the sheet doesn't slide in: it fades in, as it fades out. */
+@media (prefers-reduced-motion: reduce) { html[data-rail-over] .tide-rail { transition: opacity var(--tide-dur-panel) var(--tide-ease-out); @starting-style { opacity: 0; } } }
+/* More contrast asked for: the page under the overlay is dimmed further. */
+@media (prefers-contrast: more) { :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before, :is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { background: color-mix(in srgb, var(--tide-scrim) 70%, black); } }
+.tide-rail.tide-leaving { pointer-events: none; }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::before { top: calc(-1 * var(--tide-height-top)); bottom: 0; right: 100%; width: 100vw; }
+:is(html[data-rail-over] .tide-rail, .tide-rail.tide-leaving)::after { bottom: 100%; left: 0; right: 0; height: var(--tide-height-top); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
@@ -35,7 +46,7 @@ html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
 @media (max-width: 640.98px) {
-    .tide-rail { top: 0; z-index: 1030; }
+    .tide-rail { top: 0; z-index: var(--tide-z-panel); }
     html[data-rail-over] .tide-rail::after { content: none; }
 }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }

@@ -18,6 +18,8 @@
     </div>
 </div>
 
+@* Moved up or down, a category glides to its place, carried over the others (flip.js). *@
+<div data-tide-flip=":scope > .tide-card" data-tide-flip-carry>
 @foreach (var (cat, ci) in _cats.Select((c, i) => (c, i)))
 {
     <div class="tide-card @(cat.IsRetired ? "tide-retired" : "")" @key="cat.Id">
@@ -42,7 +44,7 @@
             }
         </div>
         <table class="tide-table">
-            <tbody>
+            <tbody data-tide-flip=":scope > tr" data-tide-flip-carry>
                 @foreach (var (tag, ti) in cat.Tags.Select((t, i) => (t, i)))
                 {
                     <tr @key="tag.Id" class="@(tag.IsRetired ? "tide-retired" : "")">
@@ -81,6 +83,7 @@
         }
     </div>
 }
+</div>
 
 <div class="tide-card">
     <h2>New category</h2>

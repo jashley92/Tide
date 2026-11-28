@@ -566,7 +566,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         r.Component.Selected.Should().Be(1);
         r.Component.PickedIds.Should().BeEquivalentTo(r.Component.Rows.Take(2).Select(x => x.Id));
         html = WebUtility.HtmlDecode(await r.HtmlOnce("tide-selbar"));
-        html.Should().Contain("2 selected").And.Contain("on this page").And.Contain("Only this page's actions are chosen")
+        html.Should().Contain("<span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>2</span></span> selected").And.Contain("on this page").And.Contain("Only this page's actions are chosen")
             .And.Contain(">Take</button>").And.Contain("Assign to…").And.Contain("Move to").And.Contain("Set due date").And.Contain("Hand off to team…")
             .And.Contain("Record no hits and close", "those chosen are sweeps");
         Row(html, $"{token} 2").Should().NotContain("Take it", "the bar takes the place of each row's own buttons").And.NotContain("tide-status-menu");
@@ -581,7 +581,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
 
         // The bar's Take takes those chosen, each as Take it would, and lets them go.
         await Key(r, "extend-next");
-        await r.HtmlOnce("2 selected");
+        await r.HtmlOnce("<span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>2</span></span> selected");
         await r.Click(p => p.Bar!.Take());
         (await Detail(numbers[1])).Action.AssigneeId.Should().Be(owner.UserId);
         (await Detail(numbers[2])).Action.AssigneeId.Should().Be(owner.UserId);

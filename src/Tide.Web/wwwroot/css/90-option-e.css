@@ -126,7 +126,8 @@
 .content > .tide-board { flex: 1 1 0; min-height: 20rem; display: flex; flex-direction: column; gap: var(--tide-space-3); }
 .tide-board > .tide-kanban { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 .tide-board .tide-kcol { display: flex; flex-direction: column; min-height: 0; }
-.tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; }
+/* Room round the cards for their brackets, which sit 5px outside them, inside the lane's scroll. */
+.tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px; margin: -6px; }
 /* A narrow window (700px and less), where the head above takes much of the height: each row of lanes keeps room to read
    a card (12.5rem, about 9rem of cards under its head), and the board grows past the first screen, the page scrolling,
    rather than squeezing them. */
@@ -140,7 +141,7 @@
 .tide-kstrip-head { margin: 0; font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); }
 .tide-kchip { display: inline-flex; align-items: center; gap: var(--tide-space-2); min-height: 2.25rem; padding: var(--tide-space-1) var(--tide-space-3);
     background: var(--tide-surface-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); white-space: nowrap; }
-.tide-kchip.over { border-style: solid; border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
+.tide-kchip[data-tide-over] { border-style: solid; border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 /* A chip is a link to the actions it counts as well as a drop target: the badge and count stay as they were. */
 .tide-kchip-link { display: inline-flex; align-items: center; gap: var(--tide-space-2); color: inherit; text-decoration: none; border-radius: var(--tide-radius-sm); }
 .tide-kchip-link:hover .tide-count { color: var(--tide-accent-text); text-decoration: underline; }
@@ -238,7 +239,7 @@
 .tide-files-head > h2 { margin: 0; min-width: 0; }
 .tide-files-head > .btn { flex: none; white-space: nowrap; }
 /* While files are dragged over the page (paste-drop.js sets html[data-file-drag]): where they go, over the whole window. */
-.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: 1040; pointer-events: none; align-items: center; justify-content: center;
+.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: var(--tide-z-drop); pointer-events: none; align-items: center; justify-content: center;
     gap: var(--tide-space-2); border: 2px dashed var(--tide-accent); border-radius: var(--tide-radius-xl); background: color-mix(in srgb, var(--tide-accent-soft) 85%, transparent);
     color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
 html[data-file-drag] .tide-page-drop { display: flex; }

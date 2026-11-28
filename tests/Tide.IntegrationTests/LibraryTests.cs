@@ -151,7 +151,7 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
         r.Component.Selected!.Template.Id.Should().Be(ids[0], "the entry isn't on this page, so the first is selected");
 
         var html = WebUtility.HtmlDecode(await r.Html());
-        html.Should().Contain("<ul class=\"tide-library-list\" aria-label=\"Outreach templates\">");
+        html.Should().Contain("<ul class=\"tide-library-list\" aria-label=\"Outreach templates\"");
         html.Should().Contain("<li class=\"tide-library-row", Exactly.Times(20), "the list is the page's entries");
         html.Should().Contain("aria-current=\"true\"", Exactly.Once());
         html.Should().MatchRegex($"<li class=\"tide-library-row selected\" aria-current=\"true\" tabindex=\"0\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 00</span>")

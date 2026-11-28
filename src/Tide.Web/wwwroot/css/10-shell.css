@@ -1,11 +1,15 @@
 /* ---- Shell ---- */
-.tide-skip-link { position: absolute; left: -999px; top: .5rem; z-index: 2000; background: var(--tide-surface); padding: .4rem .8rem; }
+.tide-skip-link { position: absolute; left: -999px; top: .5rem; z-index: var(--tide-z-toast); background: var(--tide-surface); padding: .4rem .8rem; }
 .tide-skip-link:focus { left: .5rem; }
 .page { display: flex; min-height: 100vh; }
-.sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: var(--tide-width-side); flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; transition: width .15s ease; }
+/* Folding the sidebar is at once, not a slide: its width is the page's, and animating it would lay the whole page out
+   again on every frame. Its words fade in as it opens (below). */
+.sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: var(--tide-width-side); flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; }
 html[data-nav="collapsed"] .sidebar { width: var(--tide-width-side-collapsed); }
 .tide-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
+/* What's brought into view (a row by J or K, a field, an anchor) stops below the sticky top bar, not under it. */
+html { scroll-padding-top: var(--tide-height-top); }
+.top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: var(--tide-z-top); }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
 /* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,
    so it scrolls sideways only when it's wider than that. */
@@ -19,6 +23,7 @@ html[data-nav="collapsed"] .sidebar { width: var(--tide-width-side-collapsed); }
 .tide-brand-name { font-weight: var(--tide-weight-semibold); letter-spacing: .08em; }
 .tide-brand-sub { display: block; font-size: .7rem; color: var(--tide-side-text); letter-spacing: 0; font-weight: var(--tide-weight-regular); }
 html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-nav-label { display: none; }
+.tide-brand-text, .tide-nav-label { transition: opacity var(--tide-dur-base) var(--tide-ease-out); @starting-style { opacity: 0; } }
 /* The brand's name while its words are hidden (collapsed to icons, not on a phone): unseen, for the link's name. */
 .tide-brand-said { display: none; }
 /* The nav takes the sidebar's spare height and scrolls inside it, so on a very short screen the last links stay
@@ -51,10 +56,10 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 /* Collapse to icons: a small button at the right of the brand. Its chevron turns round when collapsed. */
 .tide-side-collapse { margin-left: auto; margin-right: var(--tide-space-3); display: inline-flex; align-items: center; justify-content: center;
     width: 1.75rem; height: 1.75rem; flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--tide-radius-md); background: none;
-    color: var(--tide-side-text); transition: background-color .12s ease, color .12s ease; }
+    color: var(--tide-side-text); transition: background-color var(--tide-dur-fast) var(--tide-ease-out), color var(--tide-dur-fast) var(--tide-ease-out); }
 .tide-side-collapse:hover { background: var(--tide-side-active-bg); color: var(--tide-side-strong); }
 .tide-side-collapse:focus-visible { outline: 2px solid var(--tide-side-accent); outline-offset: 0; }
-.tide-side-collapse .bi { font-size: var(--tide-text-sm); line-height: 1; transition: transform .15s ease; }
+.tide-side-collapse .bi { font-size: var(--tide-text-sm); line-height: 1; transition: transform var(--tide-move-fast) var(--tide-ease-out); }
 
 /* Collapsed to icons (not on a phone, where the sidebar is a menu): the brand's mark with the expand chevron under it,
    each group label a thin line, and a count on its icon. */
@@ -80,7 +85,7 @@ html[data-nav="collapsed"] .tide-brand-text, html[data-nav="collapsed"] .tide-na
 mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); padding: 0 .1em; border-radius: var(--tide-radius-xs); }
 @media (max-width: 640.98px) { .tide-top-search { display: none; } }
 .tide-export { position: relative; }
-.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: 1030; width: 290px; padding: .9rem; background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); box-shadow: 0 8px 24px var(--tide-shadow); }
+.tide-export-panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: var(--tide-z-panel); width: 290px; padding: .9rem; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); }
 .tide-avatar { width: 30px; height: 30px; border-radius: var(--tide-radius-round); background: var(--tide-accent-soft); color: var(--tide-accent-text); display: grid; place-items: center; font-weight: var(--tide-weight-semibold); font-size: .78rem; }
 
 /* ---- Page parts ---- */
@@ -88,6 +93,7 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 /* A heading names what the page shows, sometimes a name someone typed: one long unbroken word wraps rather than
    widening the page. */
 .tide-page-head h1 { font-size: 1.6rem; font-weight: var(--tide-weight-bold); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
+.tide-brief-head h1 { font-family: var(--tide-font-doc); }   /* the brief is a document: its title is set like one */
 /* Header actions are small buttons (Bootstrap's btn-sm values). */
 .tide-page-head .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .875rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
 /* Breadcrumbs: "Actions › A-12". A crumb can be a name someone typed: one long unbroken word wraps inside the page. */
@@ -209,7 +215,7 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
    pencil badge marks someone with unsaved changes. */
 .tide-presence { display: inline-flex; align-items: center; padding-left: .4rem; }
 .tide-presence:empty { display: none; }
-.tide-presence-dot { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; margin-left: -.4rem; border-radius: var(--tide-radius-pill); background: var(--presence-bg, var(--tide-avatar-6)); color: var(--tide-on-avatar); font-size: .7rem; font-weight: var(--tide-weight-bold); letter-spacing: .02em; border: 2px solid var(--tide-surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; animation: tide-presence-pulse 1.5s ease-out 2; }
+.tide-presence-dot { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; margin-left: -.4rem; border-radius: var(--tide-radius-pill); background: var(--presence-bg, var(--tide-avatar-6)); color: var(--tide-on-avatar); font-size: .7rem; font-weight: var(--tide-weight-bold); letter-spacing: .02em; border: 2px solid var(--tide-surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; animation: tide-presence-pulse var(--tide-dur-attention) var(--tide-ease-fade) 2; }
 .tide-presence-dot:first-child { margin-left: 0; }
 .tide-avatar-1 { --presence-bg: var(--tide-avatar-1); }
 .tide-avatar-2 { --presence-bg: var(--tide-avatar-2); }
@@ -242,3 +248,11 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-chip-pick.selected { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 .tide-ioc { font-family: var(--tide-font-data); font-size: .86rem; word-break: break-all; }
 
+/* A page slow to come (tideNavCue, theme.js): a thin bar scans along the top bar's foot until it has rendered. It is a
+   .tide-loading block (41-intake.css), so it scans as a loading list does and breathes in place with less motion. */
+.top-row > .tide-nav-cue { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; display: none; pointer-events: none; }
+[data-tide-waiting] .top-row > .tide-nav-cue { display: block; animation: none; }   /* tideNavCue has waited already: no second delay */
+
+/* The theme chosen from the account menu crossfades in (tideTheme.apply, a view transition of the whole page). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--tide-dur-base); }
+@media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }

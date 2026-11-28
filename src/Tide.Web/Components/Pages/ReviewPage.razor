@@ -72,7 +72,7 @@ else
             {
                 <section class="tide-card" aria-labelledby="rv-c-h">
                     <h2 id="rv-c-h" class="h6">Comments</h2>
-                    @if (r.Comments.Count == 0) { <p class="small tide-muted">None yet.</p> }
+                    @if (r.Comments.Count == 0) { <SectionEmpty Icon="@Icons.Comment" Class="mb-3">None yet.</SectionEmpty> }
                     <ul class="tide-review-comments">
                         @foreach (var c in r.Comments)
                         {

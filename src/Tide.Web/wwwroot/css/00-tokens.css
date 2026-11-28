@@ -3,6 +3,7 @@
 :root {
     --tide-font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
     --tide-font-data: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    --tide-font-doc: "Iowan Old Style", "Charter", "Sitka Text", Cambria, Georgia, serif;  /* the brief's and slides' titles */
 
     /* Scales. Spacing in 4px steps; corner radii from badges (xs) to cards (xl); a type scale; the four weights. */
     --tide-space-1: .25rem;
@@ -42,6 +43,58 @@
     --tide-width-side: 232px;    /* the sidebar */
     --tide-width-side-collapsed: 64px; /* the sidebar folded to its icons */
     --tide-height-top: 3.25rem;  /* the top bar, and where what sticks or sits under it starts */
+
+    /* Motion. Every transition and animation takes its timing from these (StyleTokenTests fails a literal duration), so
+       the app keeps one rhythm. --tide-motion is the reduced-motion switch: 1 normally, 0 when the system asks for less
+       motion (below). A transition that moves something (a transform, a width, a margin) uses a --tide-move-* duration,
+       which the switch zeroes; a fade or color change uses --tide-dur-* alone, so the change still shows. A keyframe
+       animation that moves scales its distance by --tide-motion, or carries its own prefers-reduced-motion rule. */
+    --tide-motion: 1;
+    --tide-dur-press: 90ms;        /* a button pressed in */
+    --tide-dur-fast: 120ms;        /* hover, color, a chevron turning */
+    --tide-dur-base: 190ms;        /* menus, popovers, toasts, the sidebar folding */
+    --tide-stagger: 25ms;          /* between the items of a list arriving whole, the first 8 (flip.js) */
+    --tide-dur-panel: 280ms;       /* the rail, dialogs, a row arriving */
+    --tide-dur-patience: 300ms;    /* how long a wait goes unshown: a busy action (data-busy) or a loading block; a quicker one shows nothing */
+    --tide-dur-exit: 133ms;        /* something small leaving (a toast, a row): quicker than it came, as it's done */
+    --tide-dur-handover: 90ms;     /* one arriving where one leaves waits this long (two thirds of the exit): never two in one box */
+    --tide-dur-panel-exit: 196ms;  /* a panel leaving: the rail */
+    --tide-dur-turn: 420ms;        /* a Present slide turning */
+    --tide-dur-travel: 420ms;      /* the longest something carried across the page takes (tideShortcuts.travel), and .NET waits on it */
+    --tide-dur-signature: 600ms;   /* a moment worth noticing: a count ticking over */
+    --tide-dur-blip: 1.5s;         /* how long a lost connection is only a line across the top, before the dialog says so */
+    --tide-dur-linger: 1.3s;       /* how long something that left stays in view before it goes */
+    --tide-dur-attention: 2s;      /* a wash, glow or pulse that fades by itself */
+    --tide-dur-loop: 1.3s;         /* one cycle of a repeating animation: the loading shimmer, the tip's ring */
+    --tide-move-press: calc(var(--tide-dur-press) * var(--tide-motion));
+    --tide-move-fast: calc(var(--tide-dur-fast) * var(--tide-motion));
+    --tide-move-base: calc(var(--tide-dur-base) * var(--tide-motion));
+    --tide-move-panel: calc(var(--tide-dur-panel) * var(--tide-motion));
+    --tide-move-signature: calc(var(--tide-dur-signature) * var(--tide-motion));
+    --tide-ease-out: cubic-bezier(.16, 1, .3, 1);      /* entering: quick, then lands (expo-out) */
+    --tide-ease-in: cubic-bezier(.5, 0, .75, 0);       /* leaving */
+    --tide-ease-grab: cubic-bezier(.3, 0, .2, 1);      /* taken by the hand: moves at once, then eases (a page turned) */
+    --tide-ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* loops, back and forth */
+    --tide-ease-fade: cubic-bezier(0, 0, .58, 1);      /* a long fade dying away (CSS ease-out) */
+    --tide-ease-settle: linear(0, .5 12%, .92 26%, 1.03 38%, 1 55%, 1);   /* paper settling: a 3% overshoot (menus unfolding, over --tide-move-panel so it shows) */
+
+    /* Stacking: the layers over the page, lowest first. Stacking inside one component (1 to 20) stays literal. */
+    --tide-z-error: 1000;      /* Blazor's error bar */
+    --tide-z-rail: 1010;       /* the context rail docked beside the page */
+    --tide-z-top: 1020;        /* the top bar */
+    --tide-z-rail-over: 1025;  /* the rail over the page */
+    --tide-z-panel: 1030;      /* the export panel; the rail on a phone */
+    --tide-z-drop: 1040;       /* a file dragged over the page */
+    --tide-z-popover: 1090;    /* a popover's backdrop (the popover is one above) */
+    --tide-z-toast: 2000;      /* toasts, the skip link */
+    --tide-z-picker: 2500;     /* the ATT&CK picker's backdrop (its panel is one above) */
+    --tide-z-tip: 3000;        /* tips and the reconnect notice */
+    --tide-z-tour: 3390;       /* the tour's scrim */
+    --tide-z-tour-ring: 3395;  /* the ring around what a tour step points at */
+    --tide-z-tour-card: 3400;  /* the tour step's card */
+    --tide-z-tour-arrow: 3401; /* the arrow from the card to its target */
+    --tide-z-modal: 3500;      /* modal dialogs */
+    --tide-z-lightbox: 4000;   /* an image opened full screen */
 
     --tide-bg: #f5f7f9;
     --tide-surface: #ffffff;
@@ -134,6 +187,13 @@
     --tide-shadow-strong: rgba(0, 0, 0, .5);
     --tide-overlay: rgba(0, 0, 0, .45);
     --tide-overlay-strong: rgba(0, 0, 0, .85);
+    /* What floats over the page (popovers, toasts, dialogs, tips): a raised background and two elevations, menus and
+       toasts at 2, dialogs at 3. In light the raised surface is the surface; in dark it's a step lighter with a faint
+       top edge, since a shadow barely shows on a dark page. */
+    --tide-surface-raised: var(--tide-surface);
+    --tide-surface-raised-2: #eef2f5;   /* hover inside a raised surface (light: --tide-surface-2) */
+    --tide-elev-2: 0 8px 24px var(--tide-shadow);
+    --tide-elev-3: 0 12px 32px var(--tide-shadow-strong);
     --bs-code-color: #3a4a5e;
 
     /* Chart series, in order: distinct in hue and lightness, each at least 3:1 on the surface (4.4:1 or better). From
@@ -196,6 +256,10 @@
     --tide-drop: rgba(79, 195, 209, .1);
     --tide-on-threat: #1a0a0b;   /* white on the dark theme's lighter red would be about 2.6:1 */
     --tide-shadow: rgba(0, 0, 0, .4);
+    --tide-surface-raised: #263844;   /* a clear step above --tide-surface-2 and the chips' fill */
+    --tide-surface-raised-2: #2b3e4d; /* hover and fills inside it: lighter, where --tide-surface-2 would be a dip; muted text on it 4.7:1 */
+    --tide-elev-2: 0 8px 24px var(--tide-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, .06);
+    --tide-elev-3: 0 12px 32px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
     --bs-code-color: #c3cfdd;
     --bs-body-bg: var(--tide-bg);
     --tide-chart-1: #4fc3d1;
@@ -212,11 +276,65 @@
     --tide-chart-12: #3fb37a;
 }
 
+/* The reduced-motion switch: every --tide-move-* duration drops to 0 (see the motion tokens). */
+/* Without motion nothing moves, and what fades is quick: no fade longer than 140ms. */
+@media (prefers-reduced-motion: reduce) { :root { --tide-motion: 0; --tide-dur-base: 140ms; --tide-dur-panel: 140ms; --tide-dur-panel-exit: 140ms; } }
+
 html, body { font-family: var(--tide-font-ui); background: var(--tide-bg); color: var(--tide-text); }
+/* A new page opens at its top at once (Bootstrap would smooth-scroll the window there); an in-page jump that should
+   glide asks for it (behavior: 'smooth'). */
 html { scrollbar-gutter: stable; }
+:root { scroll-behavior: auto; }   /* :root, as Bootstrap's own rule is */
+/* The browser doesn't move the window to keep what's in view in place when something above changes: flip.js glides
+   what moved from where it was painted, and the window adjusting too would add a jump of its own. */
+:root, body { overflow-anchor: none; }   /* both: Chrome reads the body's for the page */
 h1:focus { outline: none; }
 a, .btn-link { color: var(--tide-accent-text); }
 .tide-data { font-family: var(--tide-font-data); font-size: .92em; }
+/* Counts read as data: the nav's, the tab bar's, a table's, Present's live count. */
+.tide-nav-count, .tide-dt-count, .tide-tabbar-count, .tide-live-count { font-family: var(--tide-font-data); }
+
+/* What floats over the page. A new popover, menu, panel or dialog joins one of these lists. Inside, hover takes
+   --tide-surface-2 as usual: it's re-pointed here at the raised surface's own step. */
+.tide-popover, .tide-combo-pop, .tide-attach-panel, .tide-export-panel, .tide-toast, .tide-chart-tip, .tide-oi-suggest {
+    background: var(--tide-surface-raised); box-shadow: var(--tide-elev-2); --tide-surface-2: var(--tide-surface-raised-2); }
+.tide-modal, .tide-tip, .tide-atkm-panel {
+    background: var(--tide-surface-raised); box-shadow: var(--tide-elev-3); --tide-surface-2: var(--tide-surface-raised-2); }
+
+/* How they arrive. Leaving, flip.js fades a still copy out where it was (Blazor takes them out of the page). Under
+   reduced motion only the fades are left.
+   Dialogs, tips and the dropdowns no script places unfold from their top edge like a folded note opened. What popout.js
+   places (menus, popovers, the attach and export panels) fades in while what's on it unfolds: popout.js measures the
+   panel as it opens, and a transform on the panel itself would throw that off. Toasts drop in like a paper slip, and
+   scrims and the chart's tip fade. A new floating surface joins one of these lists as well as the ones above. */
+.tide-modal, .tide-tip, .tide-atkm-panel {
+    transform-origin: top center;
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: perspective(50rem) rotateX(-40deg); } }
+.tide-combo-pop, .tide-oi-suggest, .tide-hands-pop {
+    transform-origin: top center;
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-settle);
+    @starting-style { opacity: 0; transform: perspective(600px) rotateX(-70deg); } }
+.tide-popover, .tide-attach-panel, .tide-export-panel {
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { opacity: 0; } }
+:is(.tide-popover, .tide-attach-panel, .tide-export-panel) > * {
+    transform-origin: top center;
+    transition: transform var(--tide-move-panel) var(--tide-ease-settle);
+    @starting-style { transform: perspective(600px) rotateX(-70deg); } }
+.tide-toast {
+    transform-origin: bottom left;
+    transition: opacity var(--tide-dur-panel) var(--tide-ease-out), transform var(--tide-move-panel) var(--tide-ease-out);
+    @starting-style { opacity: 0; transform: translateY(16px) rotate(-2deg); } }
+/* A button pressed in. */
+.btn { transition: color var(--tide-dur-fast) var(--tide-ease-out), background-color var(--tide-dur-fast) var(--tide-ease-out),
+    border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out), transform var(--tide-move-press) var(--tide-ease-out); }
+.btn:active:not(:disabled) { transform: scale(calc(1 - .03 * var(--tide-motion))); }
+/* A toast that left (flip.js): a copy where it was, fading out as the others close up. */
+.tide-toast.tide-leaving { position: fixed; z-index: var(--tide-z-toast); margin: 0; pointer-events: none; }
+.tide-modal-scrim, .tide-tour-scrim, .tide-atkm-backdrop, .tide-chart-tip {
+    transition: opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { opacity: 0; } }
 .form-text { color: var(--tide-text-muted) !important; }
 
 .btn-primary {
@@ -233,6 +351,7 @@ a, .btn-link { color: var(--tide-accent-text); }
 }
 .btn-check:checked + .btn-outline-secondary { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 .btn:focus-visible, .form-control:focus, .form-select:focus, .form-check-input:focus { box-shadow: 0 0 0 2px var(--tide-focus-ring); border-color: var(--tide-accent); }
-.form-control, .form-select { background-color: var(--tide-surface); border-color: var(--tide-border-strong); color: var(--tide-text); }
+.form-control, .form-select { background-color: var(--tide-surface); border-color: var(--tide-border-strong); color: var(--tide-text);
+    transition: border-color var(--tide-dur-fast) var(--tide-ease-out), box-shadow var(--tide-dur-fast) var(--tide-ease-out); }   /* not Bootstrap's 150ms */
 .form-check-input:checked { background-color: var(--tide-accent); border-color: var(--tide-accent); }
 

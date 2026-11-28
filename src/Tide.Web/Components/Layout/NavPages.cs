@@ -1,3 +1,4 @@
+using Tide.Web.Components.Shared;
 using Microsoft.AspNetCore.Components.Routing;
 using Tide.Application.Abstractions;
 using Tide.Domain.Enums;
@@ -39,8 +40,8 @@ public static class NavPages
     [
         new("today", "Today", "bi-sunrise", "", Daily, [Permission.ReadTeamEdition], NavLinkMatch.All, "home dashboard brief running order"),
         new(Triage, "Triage", "bi-inbox", "triage", Daily, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "inbox feeds intake"),
-        new("articles", "Articles", "bi-newspaper", "articles", Daily, [Permission.ReadTeamEdition]),
-        new(Actions, "Actions", "bi-list-check", "actions", Daily, [Permission.ReadActions], Keywords: "board tasks"),
+        new("articles", "Articles", Icons.Article, "articles", Daily, [Permission.ReadTeamEdition]),
+        new(Actions, "Actions", Icons.Action, "actions", Daily, [Permission.ReadActions], Keywords: "board tasks"),
         new("search", "Search", "bi-search", "search", Daily, [Permission.ReadTeamEdition], Keywords: "indicator lookup cve ioc"),
         new("stories", "Stories", "bi-bezier2", "stories", Intelligence, [Permission.ReadTeamEdition]),
         new("archive", "Brief archive", "bi-archive", "briefs", Intelligence, [Permission.ReadTeamEdition], NavLinkMatch.All, "past briefs"),

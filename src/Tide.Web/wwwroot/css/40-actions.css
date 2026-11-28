@@ -64,21 +64,51 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 /* A narrower window has the lanes two by two, so none is squeezed and nothing scrolls sideways. */
 @media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
-.tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
+.tide-kcol[data-tide-over] { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-kcol-head { font-size: .9rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
 .tide-kcol-cards { display: flex; flex-direction: column; gap: .5rem; }
 /* A column's "Show N more" and Done's "Show older", under its cards. */
 .tide-kcol-more { align-self: center; }
 .tide-kcard { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .55rem .65rem; display: flex; flex-direction: column; gap: .3rem; }
-.tide-kcard[draggable="true"] { cursor: grab; }
-.tide-kcard.dragging { opacity: .5; }
+.tide-kcard[draggable="true"] { cursor: grab; -webkit-user-select: none; user-select: none; }
+/* Dragging (board.js): the card held is a copy, the ghost, lifted over the page with its brackets locked on. Over its own
+   lane the card itself is the dashed gap it left; over another it leaves (away) and a dashed slot opens there where it
+   would land, the cards around sliding aside (flip.js). It is bracketed for a moment when it lands. A finger's long
+   press brackets the card to say it's held. The drag's state is in data-tide-* attributes, which .NET never draws, so
+   the card drawn again mid-drag (someone else's change) keeps it. */
+.tide-kcard[data-tide-drag], .tide-kslot { border: 1px dashed var(--tide-accent); border-radius: var(--tide-radius-lg); background: transparent; box-shadow: none; }
+.tide-kcard[data-tide-drag] > * { visibility: hidden; }
+.tide-kcard[data-tide-away] { display: none; }
+.tide-kslot { flex: none; }
+/* The ghost stays square (no lift or tilt: an instrument), outlined in the accent with its brackets locked on. */
+.tide-kcard-ghost { position: fixed; z-index: var(--tide-z-drop); margin: 0; pointer-events: none; cursor: grabbing;
+    border-color: var(--tide-accent); box-shadow: var(--tide-elev-2); }
+/* .tide-kcard first: outranks the brackets at rest (41-intake, a later file), whatever the order. */
+.tide-kcard:is(.tide-kcard-ghost, .tide-kcard-held, [data-tide-pressed], [data-tide-locked])::before { opacity: 1; transform: none; }
+/* Picked up: the ghost's shadow comes up as it lifts (its brackets snap on: 41-intake). */
+.tide-kcard-ghost { animation: tide-lift var(--tide-dur-fast) var(--tide-ease-out);
+    transition: scale var(--tide-move-fast) var(--tide-ease-out), transform var(--tide-move-fast) var(--tide-ease-out); }
+/* Over a closed chip, small and lifted until its foot clears the pointer, so the chip shows (board.js moves the ghost by
+   translate, and sets the lift for where it was held; the lift is in transform, inside the scale). */
+.tide-kcard-ghost { --tide-ghost-lift: 106.67px; }   /* 48px at .45; board.js sets it for where the card was held */
+.tide-kcard-ghost[data-tide-small] { scale: .45; transform: translateY(calc(-1 * var(--tide-ghost-lift))); }
+/* A card closed into a chip: the chip locks on as it takes it. */
+.tide-kchip[data-tide-landed] { animation: tide-chip-land var(--tide-dur-signature) var(--tide-ease-out); }
+@keyframes tide-chip-land { from { box-shadow: 0 0 0 3px var(--tide-accent); } }
+@keyframes tide-lift { from { box-shadow: none; } }
+/* A card .NET drew in another lane flies there over the page (flip.js), lifted like the ghost; the card itself waits
+   transparent where it lands (still focusable, and the copy shows the focus ring meanwhile). */
+.tide-kcard.tide-flying[data-tide-focused] { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-kcard[data-tide-landing] { opacity: 0; }
+.tide-kcard.tide-flying { position: fixed; z-index: var(--tide-z-drop); margin: 0; pointer-events: none; border-color: var(--tide-accent);
+    box-shadow: var(--tide-elev-2); will-change: transform; }
 /* Someone else's drag (BoardDrags): the card they hold, the column it's over with their name, and a card they moved,
    glowing a moment as it slides in. */
 .tide-kcol-incoming { border-style: dashed; border-color: var(--tide-info); box-shadow: inset 0 0 0 1px var(--tide-info); }
 .tide-kcol-incoming-by { font-size: .72rem; font-weight: var(--tide-weight-semibold); color: var(--tide-info); background: var(--tide-info-soft); border-radius: var(--tide-radius-pill); padding: .05rem .45rem; white-space: nowrap; }
 .tide-kcard-held { outline: 2px dashed var(--tide-info); outline-offset: 1px; opacity: .75; }
 .tide-kcard-note { display: flex; align-items: center; gap: .3rem; font-size: .76rem; font-weight: var(--tide-weight-semibold); color: var(--tide-info); }
-.tide-kcard-arrived { animation: tide-kcard-glow 2.4s ease-out 1; }
+.tide-kcard-arrived { animation: tide-kcard-glow var(--tide-dur-attention) var(--tide-ease-fade) 1; }
 @keyframes tide-kcard-glow { from { box-shadow: 0 0 0 3px var(--tide-info); } to { box-shadow: 0 0 0 3px transparent; } }
 @media (prefers-reduced-motion: reduce) { .tide-kcard-arrived { animation: none; box-shadow: 0 0 0 2px var(--tide-info); } }
 .tide-kcard-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
@@ -98,19 +128,23 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-progress:hover { color: var(--tide-text); }
 .tide-kcard-bar { flex: 1 1 auto; height: 4px; border-radius: var(--tide-radius-xs); background: var(--tide-surface-2); overflow: hidden; }
 .tide-kcard-bar > span { display: block; height: 100%; background: var(--tide-ok); }
-.tide-checklist { list-style: none; padding: 0; margin: 0; }
+/* flow-root: an empty list doesn't let the margins around it collapse through it, so the first item or the last one
+   moves what follows by just its own height (what flip.js slides it by). */
+.tide-checklist { display: flow-root; list-style: none; padding: 0; margin: 0; }
 .tide-checklist li { display: flex; align-items: flex-start; gap: .5rem; padding: .3rem 0; border-bottom: 1px solid var(--tide-border); font-size: .9rem; }
 .tide-checklist li:last-child { border-bottom: 0; }
 .tide-checklist li .form-check-input { margin-top: .2rem; flex: 0 0 auto; }
-.tide-checklist li label { flex: 1 1 auto; }
-.tide-checklist li.done label { color: var(--tide-text-muted); text-decoration: line-through; }
+/* Ticked, an item's text dims and is struck through as it goes (the line is always there, only coloured in when done). */
+.tide-checklist li label { flex: 1 1 auto; text-decoration: line-through; text-decoration-color: transparent;
+    transition: color var(--tide-dur-base) var(--tide-ease-out), text-decoration-color var(--tide-dur-base) var(--tide-ease-out); }
+.tide-checklist li.done label { color: var(--tide-text-muted); text-decoration-color: currentColor; }
 .tide-checklist-compact li { font-size: .8rem; padding: .15rem 0; border-bottom: 0; }
 .tide-playbook-preview { margin: .35rem 0 0; padding-left: 1.2rem; color: var(--tide-text-muted); }
 .tide-comment-shots { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
 .tide-comment-shots .tide-zoom, .tide-zoom-inline { width: auto; display: inline-block; }
 .tide-comment-shots img { max-width: 220px; max-height: 140px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
 .tide-comment-files { list-style: none; padding: 0; margin: .35rem 0 0; font-size: .86rem; display: flex; flex-direction: column; gap: .2rem; }
-.tide-comment-compose { border-radius: var(--tide-radius-lg); transition: background .1s; }
+.tide-comment-compose { border-radius: var(--tide-radius-lg); transition: background var(--tide-dur-fast); }
 .tide-comment-compose.tide-dropping { background: var(--tide-drop); outline: 2px dashed var(--tide-accent); outline-offset: 4px; }
 /* An action's Files: the add box, the list (newest first), each file's notes, hash and downloads, and the removed ones. */
 .tide-file-pick { padding: .5rem; border: 1px dashed var(--tide-border-strong); }
@@ -284,13 +318,13 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* The list typing {{ opens: placed at the caret by js/placeholder-editor.js (these are where it starts). */
 .tide-oi-suggest { position: absolute; z-index: 20; left: calc(var(--bs-gutter-x, 0) * .5); width: min(36rem, calc(100% - var(--bs-gutter-x, 0))); max-height: 14rem; overflow-y: auto;
     margin: 0; padding: .2rem; list-style: none; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md);
-    background: var(--tide-surface); box-shadow: 0 4px 12px var(--tide-shadow); }
+    }
 .tide-oi-suggest [role="option"] { cursor: pointer; }
 /* What the Insert menu just put in: a see-through mark over it that fades (js/placeholder-editor.js); with reduced
    motion it goes at once instead. */
 .tide-oi-flash { position: absolute; z-index: 5; pointer-events: none; border-radius: var(--tide-radius-sm);
     background: color-mix(in srgb, var(--tide-accent) 22%, transparent); box-shadow: 0 0 0 2px var(--tide-focus-ring);
-    animation: tide-oi-flash 2s ease-out forwards; }
+    animation: tide-oi-flash var(--tide-dur-attention) var(--tide-ease-fade) forwards; }
 @keyframes tide-oi-flash { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .tide-oi-flash { animation-timing-function: steps(1, end); } }
 .tide-oi-check { min-height: 1.3rem; margin-top: .25rem; }
@@ -448,7 +482,15 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
    change under it while some it refused stay chosen. */
 .tide-row-pick { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--tide-space-2); align-items: start; }
 .tide-row-pick > .form-check-input { margin: .2em 0 0; }
-.tide-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3);
-    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md); background: var(--tide-accent-soft); }
+/* It floats at the foot of the window rather than taking room above the table: choosing a row moved the whole table
+   down under the pointer. It rises into view, and fades out as the choice is cleared (flip.js); the card keeps room at
+   its foot so the last rows can be scrolled clear of it. */
+.tide-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3);
+    position: fixed; z-index: var(--tide-z-panel); bottom: var(--tide-space-4); left: 50%; translate: -50% 0; width: min(60rem, calc(100vw - 2rem));
+    padding: var(--tide-space-2) var(--tide-space-3); border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-md);
+    background: color-mix(in srgb, var(--tide-accent) 12%, var(--tide-surface-raised)); box-shadow: var(--tide-elev-2);
+    transition: translate var(--tide-move-panel) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out);
+    @starting-style { translate: -50% 12px; opacity: 0; } }
+.tide-card:has(> .tide-selbar) { padding-bottom: 7rem; }
 .tide-selbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); }
 .tide-selbar-note, .tide-selbar-result { flex: 1 0 100%; }

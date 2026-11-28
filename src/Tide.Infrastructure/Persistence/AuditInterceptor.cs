@@ -31,9 +31,17 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
          typeof(JobLease), typeof(JobProcess), typeof(JobRun), typeof(ArticleSearchRow), typeof(SystemStat), typeof(BackupRun)];
 
     // Changing on every save, so recording them is noise; and an address's hash, which is the address recorded beside it.
+    // An action's place in its board lane (LaneRank) is the team's arrangement of the board, not a change to the action:
+    // it isn't recorded, and a save that changes only that doesn't count as the action being modified.
     private static readonly HashSet<string> SkippedProperties =
         [nameof(AuditableEntity.ModifiedAtUtc), nameof(AuditableEntity.ModifiedBy), nameof(Article.EditVersion), nameof(Article.SourceUrlHash),
-         nameof(ArticleLink.UrlHash), nameof(ArticleIndicator.ValueKey), nameof(ArticleIndicator.HostRev)];
+         nameof(ArticleLink.UrlHash), nameof(ArticleIndicator.ValueKey), nameof(ArticleIndicator.HostRev), nameof(ActionItem.LaneRank)];
+
+    private static bool OnlyPlaced(EntityEntry entry)
+    {
+        var modified = entry.Properties.Where(p => p.IsModified).ToList();
+        return modified.Count > 0 && modified.All(p => p.Metadata.Name == nameof(ActionItem.LaneRank));
+    }
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
@@ -62,7 +70,7 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
                 entry.Entity.CreatedAtUtc = now;
                 entry.Entity.CreatedBy = who;
             }
-            else if (entry.State == EntityState.Modified)
+            else if (entry.State == EntityState.Modified && !OnlyPlaced(entry))
             {
                 entry.Entity.ModifiedAtUtc = now;
                 entry.Entity.ModifiedBy = who;

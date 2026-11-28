@@ -486,6 +486,35 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
             .Should().Be("triage?tab=new&cve=kev&named=true&older=true&page=3");
     }
 
+    [Fact]
+    public async Task Triage_ATabNotInWhatWeRunOrder_DrawsNoSectionHeadings_AndDoesntTakeThePageDown()
+    {
+        // Dismissed is in time order, not what we run first: lines we run and others alternate, so "Matches what we run"
+        // and "Everything else" would each label rows that aren't theirs. The sections are drawn only where what we run
+        // comes first (and a tab that once drew two "Everything else" with one key took the page down).
+        await using (var setup = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await setup.ServiceProvider.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Quuxtron" });
+        string[] titles = ["Quuxtron flaw e", "Other story e", "Quuxtron patch e", "Another story e"];
+        var (source, _) = await Seed("e", 4, _ => null, n => titles[n]);
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=dismissed&source={source}");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce("items"));
+        html.Should().Contain("Other story e").And.Contain("Another story e");
+        html.Should().NotContain(">Everything else<").And.NotContain(">Matches what we run<");
+    }
+
+    [Fact]
+    public async Task Triage_DismissedRowsThatHappenToRunWhatWeRunFirst_StillDrawNoSectionHeadings()
+    {
+        // Time order can put what we run first by chance; the headings would then come and go with each decision.
+        await using (var setup = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await setup.ServiceProvider.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "Zorbatron" });
+        string[] titles = ["Zorbatron flaw f", "Zorbatron patch f", "Zorbatron advisory f"];
+        var (source, _) = await Seed("f", 3, _ => null, n => titles[n]);
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?tab=dismissed&source={source}");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce("items"));
+        html.Should().Contain("Zorbatron flaw f").And.NotContain(">Matches what we run<").And.NotContain(">Everything else<");
+    }
+
     // A board of 45 open cards and 25 in progress, none of them this person's to move.
     private static ActionBoard Board()
     {
@@ -517,7 +546,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         var html = WebUtility.HtmlDecode(await r.Html());
         var open = Column(html, ActionStatus.Open);
         Cards(open).Should().Be(20);
-        open.Should().Contain("<span class=\"tide-count tide-muted fw-normal\">45</span>", "the heading counts the whole column");
+        open.Should().Contain("<span class=\"tide-count tide-muted fw-normal\"><span class=\"tide-odo\"><span class=\"tide-roll\" data-tide-tick>45</span></span></span>", "the heading counts the whole column");
         open.Should().Contain("aria-label=\"Show 20 more in Open\">Show 20 more</button>");
         Column(html, ActionStatus.InProgress).Should().Contain("Show 5 more");
 

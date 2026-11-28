@@ -74,7 +74,7 @@ else
             @if (_canWrite)
             {
                 <h1 class="visually-hidden">Edit article: @_form.Title</h1>
-                <input class="form-control form-control-lg fw-semibold" aria-label="Title" maxlength="300" @bind="_form.Title" @bind:event="oninput" @bind:after="Touch" />
+                <input id="f-title" class="form-control form-control-lg fw-semibold" aria-label="Title" maxlength="300" @bind="_form.Title" @bind:event="oninput" @bind:after="Touch" />
             }
             else
             {
@@ -112,7 +112,8 @@ else
     @* Someone who can't write (an action owner) reads the article as an edition carries it, with its actions, rather
        than a form of greyed-out fields: the fields are hidden and the preview takes the page (app.css). *@
     <div class="tide-editor" data-pane="@(!_canWrite && Aside is not null ? PreviewPane : _pane)" data-readonly="@(!_canWrite && Aside is not null ? "true" : null)">
-        <div class="tide-editor-main">
+        @* Its sections glide when one above grows or shrinks (a bullet added or taken away), flip.js. *@
+        <div class="tide-editor-main" data-tide-flip=".tide-section">
             <EditorSectionIndex Items="IndexItems(checks, why)" OnJump="FocusAsync" />
 
             @* One column, in the order the sent brief reads (BriefRenderer): what it is, the bottom line (with the draft from the
@@ -244,6 +245,8 @@ else
 
             <section class="tide-card tide-section" aria-labelledby="sec-bullets">
                 <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
+                @* The rows alone are the list, so the controls after them glide with what it gained or lost. *@
+                <div class="tide-bullet-rows" data-tide-flip=".tide-bullet-row" data-tide-flip-carry data-tide-flip-exit>
                 @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
                 {
                     <div class="tide-bullet-row" @key="b">
@@ -260,6 +263,7 @@ else
                         }
                     </div>
                 }
+                </div>
                 @if (_canWrite)
                 {
                     <div class="d-flex gap-2 mt-2 flex-wrap">
@@ -333,12 +337,12 @@ else
                         <InputFile id="shot-input" class="d-none" multiple accept="image/png,image/jpeg,image/gif,image/webp" OnChange="OnFiles" />
                     </div>
                 }
-                @if (_form.Screenshots.Count > 0)
-                {
-                    <div class="tide-shots">
+                @* Screenshots glide when one is moved (it carried over the other) and fade out when taken off (flip.js). Drawn even
+                   with none (it takes no room then: 20-editor.css), so the last one taken off fades and what's below glides up. *@
+                <div class="tide-shots" data-tide-flip=".tide-shot" data-tide-flip-carry data-tide-flip-exit>
                         @foreach (var (s, i) in _form.Screenshots.Select((s, i) => (s, i)).ToList())
                         {
-                            <div class="tide-shot" @key="s.Id">
+                            <div class="tide-shot" @key="s.Id" data-id="@s.Id">
                                 <button type="button" class="tide-zoom" aria-label="Open screenshot @(i + 1)" @onclick="() => OpenShot(s)"><img src="@Ui.ImageUrl(s.FileId)" alt="@(s.Caption ?? "Screenshot " + (i + 1))" /></button>
                                 <div class="tide-shot-body">
                                     <input id="f-caption-@i" class="form-control form-control-sm" placeholder="Caption" maxlength="500" aria-label="Caption for screenshot @(i + 1)"
@@ -354,8 +358,7 @@ else
                                 </div>
                             </div>
                         }
-                    </div>
-                }
+                </div>
             </section>
 
             <section class="tide-card tide-section" aria-labelledby="sec-ind">
@@ -433,7 +436,7 @@ else
                         }
                     </span>
                 }
-                @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
+                @if (_form.TechniqueIds.Count == 0) { <SectionEmpty Icon="@Icons.Technique" Class="mb-2">None tagged.</SectionEmpty> }
                 @if (_canWrite)
                 {
                     <div>
@@ -899,6 +902,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_jumpTo is not null) await JumpAsync();
+        if (_invalidField is { } field)
+        {
+            _invalidField = null;
+            await JS.BestEffortAsync("tideInvalid.show", "#" + field);
+        }
         if (_revealHistory)
         {
             _revealHistory = false;
@@ -1387,9 +1395,32 @@ else
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
+            if (ex is ArgumentException) PointAt(RefusedField());
             return false;
         }
         finally { _busy = false; }
+    }
+
+    // The field a refused save is about, read off the form as the service checks it: the title left empty, or a source
+    // link that isn't a web address. Null for anything else (the toast alone says it).
+    private string? RefusedField()
+    {
+        if (string.IsNullOrWhiteSpace(_form!.Title)) return "f-title";
+        var url = _form.SourceUrl?.Trim() ?? "";
+        return url.Length > 0 && (url.Length > 2000 || !Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https"))
+            ? "url" : null;
+    }
+
+    private string? _invalidField;
+
+    // After the toast that says why, the field is scrolled to, focused and bracketed (tideInvalid, theme.js), once the
+    // editor is drawn: on a narrow screen showing the preview, the fields are shown first.
+    private void PointAt(string? field)
+    {
+        if (field is null) return;
+        _pane = EditPane;
+        _invalidField = field;
+        StateHasChanged();
     }
 
     private readonly string _notReadyId = Ui.NewId("not-ready");
@@ -1413,9 +1444,11 @@ else
     private async Task<bool> MarkReadyAsync(string done)
     {
         // Checked on what's on screen before saving, so a refusal isn't "Saved." followed by "It isn't ready yet".
-        if (ArticleChecks.NotReady(Checks().Checks) is { } notReady)
+        var checks = Checks().Checks;
+        if (ArticleChecks.NotReady(checks) is { } notReady)
         {
             Toasts.Error(notReady);
+            PointAt(FieldId(checks.First(c => c.Blocking).Part));
             return false;
         }
         if (_dirty && !await Save()) return false;

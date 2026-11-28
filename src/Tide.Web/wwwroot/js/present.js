@@ -179,6 +179,7 @@ window.tidePresent = (function () {
         const page = root || document.querySelector('.tide-present');
         const slide = root && root.querySelector(':scope > .tide-slide');
         const targets = [page && page.parentElement, root, slide].filter(Boolean);
+        if (slide && !turnedFrom) turnedFrom = slideNo(slide);
         if (children && !same(targets, watched)) {
             children.disconnect();
             for (const t of targets) children.observe(t, { childList: true });
@@ -209,6 +210,106 @@ window.tidePresent = (function () {
         cards = now;
     }
 
+    // The slide changed (its body is new, keyed by .NET): the page turns. Going on, the old page lifts from its left edge
+    // and turns away, fading as it goes, uncovering the new one. Going back, the new page turns in over the old the other
+    // way. For the presenter and each follower alike. Only transform and opacity move, so the browser composites each
+    // frame rather than painting the slide again, and the page stays solid as it turns (see below): an audience watches it. The
+    // page moves the moment the key is pressed (an easing that starts at once, the lift early), and a shade turns with it,
+    // deepest as the page lifts, so it reads as paper; the shade is its own layer, only its opacity changing. A
+    // turn still playing when the next comes is finished at once, so pressing on quickly never stacks pages. A jump of
+    // more than one slide (End, Home, the meeting ending) isn't one page turning: the old fades out over the new. With reduced
+    // motion, the old page fades out over the new, quickly. The old page is the copy settle() last took of the slide as it
+    // was drawn (scrolled where it was last seen), since by the time the new body arrives .NET has emptied and taken away
+    // the old one.
+    let turnedFrom = 0, lastPage = null, turning = null, turned = null;   // turned: the turn playing, from and to
+    function slideNo(s) { const m = /Slide (\d+)/.exec(s.getAttribute('aria-label') || ''); return m ? +m[1] : 0; }
+    function turn() {
+        const slide = document.querySelector('#present-root > .tide-slide'), ts = window.tideShortcuts;
+        if (!slide) return;
+        const no = slideNo(slide), was = turnedFrom, last = lastPage, now = slideBody();
+        if (!was || no === was || !last || !now || !now.animate) return;
+        turnedFrom = no;
+        lastPage = null;
+        // Back to the page a turn still under way came from (the other key, pressed mid-turn): the page turns back from
+        // where it has got to, rather than finishing (a frame of the next slide bare) and starting over from edge on.
+        const live = turning && turning.playState === 'running' && turned && turned.from === no && turned.to === was;
+        const tilt = live ? new DOMMatrixReadOnly(getComputedStyle(turned.el).transform).m11 : 1;   // cos of its angle now
+        // On again the same way while a page is still turning (the key pressed quickly, or held): the page in the air
+        // carries on and uncovers the latest slide, rather than each slide between showing bare for a few frames.
+        const onward = !live && turning && turning.playState === 'running' && turned && Math.abs(no - was) === 1 && (no > was) === (turned.to > turned.from);
+        if (onward && turned.el.isConnected) {
+            turned.to = no;
+            return;
+        }
+        // Back again while the page coming in is still turning (its body was drawn afresh, so that turn can't carry on):
+        // the next page comes in from the same point of its turn, not from edge on again.
+        const carry = onward && no < was ? turning.currentTime || 0 : 0;
+        // Any other turn still in the air (keys mixed quickly) fades where it is, quickly, rather than vanishing in a frame.
+        if (!live && !onward && turning && turning.playState === 'running' && turned && turned.el.isConnected && !ts.still()) {
+            const el = turned.el, cs = getComputedStyle(el), ghost = el.cloneNode(true);
+            ghost.setAttribute('aria-hidden', 'true');
+            ghost.setAttribute('data-tide-copy', '');
+            ghost.inert = true;
+            ghost.classList.remove('tide-page-over', 'tide-scrollfade');
+            ghost.classList.add('tide-page-turning');
+            ghost.style.transform = cs.transform;
+            el.parentElement.appendChild(ghost);
+            const gone = function () { ghost.remove(); };
+            ghost.animate([{ opacity: +cs.opacity }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' })
+                .finished.then(gone, gone);
+        }
+        if (turning) turning.finish();
+        if (document.hidden) return;
+        const back = no < was, still = ts.still() || Math.abs(no - was) > 1, dur = ts.ms(ts.still() ? '--tide-dur-fast' : still ? '--tide-dur-base' : '--tide-dur-turn');
+        const page = ts.copy(last.page);
+        page.classList.remove('tide-scrollfade', 'tide-page-over');   // a copy taken mid-turn would sit over the page turning in
+        page.classList.add('tide-page-turning');
+        slide.appendChild(page);
+        if (last.top) page.scrollTop = last.top;   // (setting it lays the page out at once: only when it's needed)
+        const at = function (deg) { return 'perspective(4000px) rotateY(' + (still ? 0 : deg) + 'deg)'; };
+        // The page is solid paper while it turns, uncovering the next one by turning over until it's nearly edge on, and
+        // only fades in its last tenth: any earlier, the two slides show through each other, which reads as a dissolve.
+        // Seen from far enough off that the edge lifting towards the room grows by about half at most.
+        // The new page turning in over the old (back) plays these the other way round, so its offsets are mirrored; a
+        // back jump that fades (reduced motion, or more than one slide) plays them forwards like any fade.
+        const inward = back && !still, lift = inward ? .75 : .25, gone = inward ? .1 : .9;
+        const flat = { transform: at(0), opacity: 1 }, lifting = { transform: at(-20), opacity: 1, offset: lift };
+        const turnedOver = { transform: at(-78), opacity: 1, offset: gone }, away = { transform: at(-90), opacity: 0 };
+        const shade = still ? null : document.createElement('div');
+        const done = function () { page.remove(); if (shade) shade.remove(); now.classList.remove('tide-page-over'); };
+        const play = function (el, frames, ease) {
+            const opts = { duration: dur, easing: ts.token(ease), fill: 'backwards' };
+            turning = el.animate(frames, opts);
+            turned = { from: was, to: no, el: el };
+            // Turning back, it starts at the angle the page had got to (found by halving: the two ways have different
+            // easings, so the same share of the time isn't the same angle).
+            let from = 0;
+            if (carry && inward) turning.currentTime = from = carry;
+            else if (live && !still) {
+                let lo = 0, hi = dur;
+                for (let i = 0; i < 12; i++) {
+                    const mid = (lo + hi) / 2;
+                    turning.currentTime = mid;
+                    const cos = new DOMMatrixReadOnly(getComputedStyle(el).transform).m11;
+                    if ((cos < tilt) === inward) lo = mid; else hi = mid;
+                }
+                turning.currentTime = from = (lo + hi) / 2;
+            }
+            turning.finished.then(done, done);
+            if (!shade) return;
+            shade.className = 'tide-page-shade';
+            slide.appendChild(shade);
+            const s = shade.animate(frames.map(function (f) { return Object.assign({}, f, { opacity: f === lifting ? .45 : f === turnedOver ? .6 : 0 }); }), opts);
+            if (from) s.currentTime = from;
+        };
+        if (inward) {
+            now.classList.add('tide-page-over');
+            play(now, [away, turnedOver, lifting, flat], '--tide-ease-out');
+            return;
+        }
+        play(page, [flat, lifting, turnedOver, away], '--tide-ease-grab');
+    }
+
     function settle() {
         frame = 0;
         watch();
@@ -216,6 +317,7 @@ window.tidePresent = (function () {
         if (!el || sizeOf(el) === fittedFor) return;
         fit(el);
         fittedFor = sizeOf(el);
+        lastPage = { page: el.cloneNode(true), top: el.scrollTop };
     }
 
     function onCardSizes(entries) {
@@ -241,6 +343,7 @@ window.tidePresent = (function () {
         const el = e.target;
         if (!(el instanceof Element) || !el.classList.contains('tide-scrollfade')) return;
         edges(el);
+        if (el === shown && lastPage) lastPage.top = el.scrollTop;   // where the page turns from, when it turns
         if (el.classList.contains('tide-slide-body') && performance.now() - intentAt < INTENT) report(el);
     }
 
@@ -412,7 +515,7 @@ window.tidePresent = (function () {
                 sizes = new ResizeObserver(schedule);
                 cardSizes = new ResizeObserver(onCardSizes);
             }
-            children = new MutationObserver(schedule);
+            children = new MutationObserver(function () { turn(); schedule(); });
             if (document.fonts) document.fonts.ready.then(schedule, function () { /* fonts never settled: the next resize re-fits */ });
             schedule();
         },

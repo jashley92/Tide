@@ -55,6 +55,12 @@ async function run(page) {
   // Passed as a string, which Playwright runs through the browser's debugging protocol, outside the page's policy; an
   // eval() in the page would be refused like a script tag.
   if (!(await page.evaluate(() => !!window.axe))) await page.evaluate(source);
+  // The page as it settles, not mid-motion: a row still fading in (a list that just arrived) reads as low contrast.
+  // Endless animations (a live dot, a scan bar) are left running; the wait is bounded.
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().endTime !== Infinity).map(a => a.finished.catch(() => {}))),
+    new Promise(ok => setTimeout(ok, 2000)),
+  ]));
   return page.evaluate(async tags => {
     const r = await window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] });
     return r.violations.map(v => ({

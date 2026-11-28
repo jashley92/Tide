@@ -23,7 +23,8 @@
 @inject ICurrentUser CurrentUser
 
 @{ var (generate, addersOnTop, addersOnHunt) = (Adding && _preview is null && (_sources.Indicators > 0 || StoryOffersMore), AddersOnTop, AddersOnHunt); }
-<div class="tide-card">
+@* Its queries glide when one arrives above them (another language's preview), which fades in once they've moved (flip.js). *@
+<div class="tide-card" data-tide-flip=".tide-hunt">
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
     @if (CanWork)
     {
@@ -79,7 +80,7 @@
         @if (addersOnTop) { @AdderPanels }
         @if (_preview is { } preview)
         {
-            <div class="tide-hunt tide-hunt-preview">
+            <div class="tide-hunt tide-hunt-preview" data-id="hunt-preview">
                 <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
                     <strong>@HuntQueryBuilder.DialectName(_dialect)</strong>
                     <Badge>Preview</Badge>
@@ -112,7 +113,7 @@
     {
         var id = "hunt-" + h.Id.ToString("N");
         var working = CanWork && _editingHunt != h.Id;
-        <div class="tide-hunt" @key="h.Id">
+        <div class="tide-hunt" @key="h.Id" data-id="@h.Id">
             <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
                 <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
                 @if (h.SavedQueryName is { } savedName) { <Badge Icon="bi-bookmark">saved query: @savedName</Badge> }

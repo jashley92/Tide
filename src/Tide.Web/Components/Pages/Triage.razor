@@ -142,18 +142,27 @@ else
         }
     }
     @{ var ghosts = GhostsByLine(); }
-    <ol class="tide-triage">
+    @* The rows and the section headings glide together (flip.js): a heading keeps its place among the rows moving. *@
+    <ol class="tide-triage" data-tide-flip=".tide-triage-row, .tide-triage-section">
         @if (_older)
         {
             <li class="tide-triage-section">Older: new items untouched for @AgeText. KEV-listed ones, those with a high EPSS score and those naming a product on Our stack stay in New.
                 <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => ShowOlder(false)">Back to New</button></li>
         }
+        @{ var sections = AnyWeRun && WeRunFirst(); }
         @foreach (var (line, i) in _lines.Select((l, i) => (l, i)))
         {
-            foreach (var g in ghosts.GetValueOrDefault(i) ?? []) { @Ghost(g) }
-            @* What names a product on Our stack comes first, under its own heading. *@
-            @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true">Matches what we run</li> }
-            @if (AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null) { <li class="tide-triage-section" aria-hidden="true">Everything else</li> }
+            @* What names a product on Our stack comes first, under its own heading. A ghost line (a row a colleague took
+               away) stands in the section its row was in: at the boundary, one that named a product on Our stack above
+               "Everything else", any other below it. *@
+            var lineGhosts = ghosts.GetValueOrDefault(i) ?? [];
+            var elseHeading = sections && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null;
+            @if (sections && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-werun")" data-id="sec-werun" data-tide-exit>Matches what we run</li> }
+            foreach (var g in lineGhosts.Where(g => !elseHeading || _ranWeRun.Contains(g.Key))) { @Ghost(g) }
+            @* One at most (sections are drawn only where what we run comes first), so keyed as itself: not by the line
+               under it, which a decision takes away from under a heading that stays. *@
+            @if (elseHeading) { <li class="tide-triage-section" aria-hidden="true" @key="@("sec-else")" data-id="sec-else" data-tide-exit>Everything else</li> }
+            foreach (var g in lineGhosts.Where(g => elseHeading && !_ranWeRun.Contains(g.Key))) { @Ghost(g) }
             var selected = i == _selected;
             if (line.Row is null && line.Group is { } group)
             {
@@ -166,7 +175,7 @@ else
                 var attachAll = AttachTo(line);
                 var groupPicked = IsPicked(line);
                 <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line) @(groupPicked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)"
-                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : "") + (groupPicked ? PickedNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
+                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : "") + (groupPicked ? PickedNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)" data-items="@string.Join(" ", group.Ids)"
                     @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                     <div class="tide-triage-head">
                         @PickBox(line, i, groupPicked, $"Choose the {line.Members.Count} reports")
@@ -200,8 +209,9 @@ else
                by Tab or a click, selects it. A report in an open group is indented under it, its excerpt always shown. *@
             var unseen = _marks.IsUnseen(item.Id);
             var picked = IsPicked(line);
+            @* A group's report fades out where it was as the group folds away (data-tide-exit, flip.js). *@
             <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id) @(picked ? "tide-triage-picked" : "")" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : "") + (picked ? PickedNote : ""))"
-                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" data-items="@item.Id" data-tide-exit="@(line.Group is not null)" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
                     <div class="flex-grow-1 tide-triage-body">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
@@ -736,6 +746,10 @@ else
 
     internal enum TriageStep { Shortlist, Dismiss, Duplicate, Promote, Restore }
 
+    // The tabs whose counts changed since countsWere roll to their new ones.
+    private void MarkChangedTabs(IReadOnlyDictionary<FeedItemStatus, int> countsWere) =>
+        _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+
     private static readonly (FeedItemStatus, string)[] Tabs =
     [
         (FeedItemStatus.New, "New"), (FeedItemStatus.Shortlisted, "Shortlisted"), (FeedItemStatus.Promoted, "Promoted"),
@@ -945,7 +959,21 @@ else
 
     // The product from Our stack that a line names: its own, or (a group's line) any of its reports'.
     private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
-    private bool AnyWeRun => !_older && _rows.Any(r => r.WeRun is not null);
+    private bool AnyWeRun => !_older && _status == FeedItemStatus.New && _rows.Any(r => r.WeRun is not null);
+
+    /// <summary>Whether the lines run what we run first: only then do "Matches what we run" and "Everything else" head true
+    /// sections. Only New is in that order; a tab in time order (Dismissed) gets no sections even when its rows happen to
+    /// fall that way, or the headings would come and go with each decision.</summary>
+    private bool WeRunFirst()
+    {
+        var other = false;
+        foreach (var l in _lines)
+        {
+            if (WeRunOf(l) is null) other = true;
+            else if (other) return false;
+        }
+        return true;
+    }
 
     // "Add to what we run…" in the rail: the product's name, added to Our stack (or found there), and the list read again.
     // True when it was added.
@@ -1662,7 +1690,8 @@ else
         DateTimeOffset readWas, Guid? lostId)
     {
         var diff = LiveDiff.Of(was, _rows, r => r.Item.Id, TriageNews.Signature);
-        _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+        foreach (var r in was) if (r.WeRun is not null) _ranWeRun.Add(r.Item.Id);
+        MarkChangedTabs(countsWere);
         if (diff.IsEmpty) return;
         var colleagues = LiveChanges.Who(heard.Where(c => c.ActorId != "system"));
         var now = diff.Left.Count == 0 ? new Dictionary<Guid, FeedItem>() : (await Intake.ItemsAsync(diff.Left)).ToDictionary(i => i.Id);
@@ -1695,6 +1724,9 @@ else
     private static string Items(int n) => Ui.Plural(n, "item");
 
     // The ghosts of rows that left, by the line they stand before (the list's length: at the end).
+    // The items seen naming a product on Our stack, so a ghost line left by one stands in that section (above "Everything else").
+    private readonly HashSet<Guid> _ranWeRun = [];
+
     private Dictionary<int, List<LiveGhost<Guid>>> GhostsByLine()
     {
         var at = new Dictionary<int, List<LiveGhost<Guid>>>();
@@ -1898,7 +1930,7 @@ else
             }
             else
             {
-            <p class="tide-triage-why"><strong>@n selected</strong> on this page. Only this page's items are chosen: turning the page or changing the tab or filters clears the choice.</p>
+            <p class="tide-triage-why"><strong><Odometer Value="@n.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> selected</strong> on this page. Only this page's items are chosen: turning the page or changing the tab or filters clears the choice.</p>
             <div class="tide-triage-acts">
                 <span class="tide-triage-main">
                     <button type="button" class="btn btn-primary btn-sm tide-triage-promote" disabled="@(_busy || n is < 2 or > TriageGroups.MaxSize)" aria-keyshortcuts="P"
@@ -1975,7 +2007,10 @@ else
             Announce();
             Toasts.Show(done == 0 ? $"Nothing changed: a colleague got to those {noun}s first."
                 : $"{(dismiss ? "Dismissed" : "Shortlisted")} {Ui.Plural(done, noun)}.");
+            var countsWere = _counts;
+            if (done > 0) await ShowDecided(ids, dismiss ? TriageStep.Dismiss : TriageStep.Shortlist);
             await Load();
+            MarkChangedTabs(countsWere);
             _focus = "tideTriage.focusRow";
             return true;
         }
@@ -2030,7 +2065,10 @@ else
                 case TriageStep.Restore: await Intake.RestoreAsync(item.Id); break;
             }
             Announce();
+            var countsWere = _counts;
+            await ShowDecided([item.Id], what);
             await Load();
+            MarkChangedTabs(countsWere);
             // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
             // now belongs to the next item) or the page.
             _focus = "tideTriage.focusRow";
@@ -2050,6 +2088,23 @@ else
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
+    }
+
+    // A decision this person made shows where it went: the rows lift out towards the tabs and the tab they went to locks
+    // on (triage.js), before the list reloads and both tabs' counts roll (MarkChangedTabs). Only when they leave the list
+    // shown.
+    private async Task ShowDecided(IReadOnlyList<Guid> ids, TriageStep what)
+    {
+        FeedItemStatus? to = what switch
+        {
+            TriageStep.Shortlist => FeedItemStatus.Shortlisted,
+            TriageStep.Dismiss => FeedItemStatus.Dismissed,
+            TriageStep.Duplicate => FeedItemStatus.Duplicate,
+            TriageStep.Restore => FeedItemStatus.New,
+            _ => null,
+        };
+        if (to is not { } status || status == _status) return;
+        await JS.BestEffortAsync("tideTriage.decided", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == status).Item2);
     }
 
     // Undo of a single shortlist or dismissal, from its toast: back in New, unless a colleague has decided it since. The
@@ -2141,8 +2196,27 @@ else
             Announce();
             if (stay)
             {
+                // The form closes, and the rows promoted reshape into the Promoted tab's count (when a draft was made);
+                // then the list reloads, its rows closing the gap, and the tabs whose counts changed roll to the new ones.
                 (_promoting, _promotingGroup, _promotingMany) = (null, null, null);
+                if (outcome.Made)
+                {
+                    // The chosen items are on their way: the form closes to nothing, not back to the bar offering them.
+                    _picked.Clear();
+                    StateHasChanged();
+                    await JS.BestEffortAsync("tideTriage.promoted", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
+                }
+                // Already promoted by a colleague: the rows lift out towards the Promoted tab, where they went, as a decision's do
+                // (the choice going with them, so the form closes to nothing, not back to the bar offering them).
+                else
+                {
+                    _picked.ExceptWith(ids);
+                    StateHasChanged();
+                    await JS.BestEffortAsync("tideTriage.decided", ids.Select(x => x.ToString()).ToArray(), Tabs.First(t => t.Item1 == FeedItemStatus.Promoted).Item2);
+                }
+                var countsWere = _counts;
                 await Load();
+                MarkChangedTabs(countsWere);
                 _focus = "tideTriage.focusRow";
                 ToldStayed(done, n, title);
                 return;

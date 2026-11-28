@@ -57,7 +57,8 @@
     else
     {
         <div class="tide-dt-scroll" tabindex="0" role="region" aria-labelledby="@(_id)-cap">
-            <table class="tide-table" role="@Role("table")">
+            @* Rows glide to their new places when the table is sorted or filtered (flip.js), so the eye can follow them. *@
+            <table class="tide-table" role="@Role("table")" data-tide-flip="tbody > tr">
                 <caption id="@(_id)-cap" class="visually-hidden">@Caption@SortedText</caption>
                 <thead role="@Role("rowgroup")">
                     <tr role="@Role("row")">
@@ -89,8 +90,9 @@
                 {
                     @foreach (var g in GroupTotals is { } totals ? TableView.Group(_view, totals, GroupBy, GroupOrder) : TableView.Group(_view, _rows, GroupBy, GroupOrder))
                     {
-                        <tbody role="@Role("rowgroup")">
-                            <tr class="tide-dt-group" role="@Role("row")">
+                        @* Keyed by its group, and its heading named for it, so a heading glides only with its own group. *@
+                        <tbody @key="g.Name" role="@Role("rowgroup")">
+                            <tr class="tide-dt-group" data-id="@("group:" + g.Name)" role="@Role("row")">
                                 <th colspan="@Columns.Count" scope="rowgroup" role="@Role("rowheader")">
                                     @g.Name <span class="tide-count">@g.Total</span>
                                     @if (GroupNote?.Invoke(g.Name) is { } note)

@@ -304,6 +304,19 @@ public enum ActionSort
     Closed = 6,
 }
 
+/// <summary>The order of the cards in each board lane. <see cref="Manual"/> is the shared order people set by dragging
+/// (<see cref="ActionService.PlaceAsync"/>): placed cards first, then the rest by due date.</summary>
+public enum ActionBoardSort
+{
+    Manual = 0,
+    Due = 1,
+    Priority = 2,
+}
+
+/// <summary>Where a card goes in its lane's shared order (<see cref="ActionBoardSort.Manual"/>): just before
+/// <paramref name="Before"/>, or at the end when that's null (or no longer in the lane).</summary>
+public sealed record LanePlace(Guid? Before);
+
 /// <summary>What the actions list is grouped under, so each group's rows come together across its pages.</summary>
 public enum ActionGrouping
 {
@@ -705,11 +718,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // the order is stable and an action is on one page only. Blanks (no due date) go last either way, as the table's own
     // sort puts them.
     private static IQueryable<ActionItem> Ordered(IQueryable<ActionItem> q, ActionSort sort, bool descending = false,
-        ActionGrouping group = ActionGrouping.None, Expression<Func<ActionItem, int>>? urgency = null)
+        ActionGrouping group = ActionGrouping.None, Expression<Func<ActionItem, int>>? urgency = null, Expression<Func<ActionItem, int>>? lead = null)
     {
         IOrderedQueryable<ActionItem>? o = null;
         void By<TKey>(Expression<Func<ActionItem, TKey>> key, bool desc = false) =>
             o = o is null ? (desc ? q.OrderByDescending(key) : q.OrderBy(key)) : (desc ? o.ThenByDescending(key) : o.ThenBy(key));
+        if (lead is not null) By(lead);
         if (group == ActionGrouping.Kind) By(a => a.Kind);
         else if (group == ActionGrouping.Urgency) By(urgency ?? throw new ArgumentNullException(nameof(urgency)));
         switch (sort)
@@ -769,17 +783,69 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// ones are counted under it, <see cref="ViewCountsAsync"/>). Its views are whose actions (mine, my teams', all);
     /// Overdue and Closed are list views, and show all.
     /// </summary>
-    public async Task<ActionBoard> BoardAsync(ActionFilter filter, CancellationToken ct = default)
+    public async Task<ActionBoard> BoardAsync(ActionFilter filter, ActionBoardSort sort = ActionBoardSort.Manual, CancellationToken ct = default)
     {
         RequireRead(user);
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         await using var db = await dbs.CreateAsync(ct);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpen();
-        // By due date then priority, in the database. The board shows every open card (its lanes and their counts), so it
+        // In the lane order chosen, in the database. The board shows every open card (its lanes and their counts), so it
         // reads them all; the KEV read takes the unordered query, as SQL Server allows no ORDER BY in a subquery.
-        var cards = await WithKevAsync(db, Readable(await RowsAsync(db, Ordered(q, ActionSort.Due), ct)), q, ct);
+        var cards = await WithKevAsync(db, Readable(await RowsAsync(db, BoardOrdered(q, sort), ct)), q, ct);
         var workers = await WorkersAsync(db, ct);
         return new ActionBoard(cards, workers.All, workers.Teams);
+    }
+
+    // The board's order within a lane, ahead of the Due order (due date, no date last, then priority and number). Manual:
+    // the cards placed by hand first, by their place; the rest follow in the Due order. Priority: priority first.
+    private static readonly Expression<Func<ActionItem, int>> ByPlace = a => a.LaneRank == 0 ? int.MaxValue : a.LaneRank;
+
+    private static IQueryable<ActionItem> BoardOrdered(IQueryable<ActionItem> q, ActionBoardSort sort) => sort switch
+    {
+        ActionBoardSort.Due => Ordered(q, ActionSort.Due),
+        ActionBoardSort.Priority => Ordered(q, ActionSort.Due, lead: a => (int)a.Priority),
+        _ => Ordered(q, ActionSort.Due, lead: ByPlace),
+    };
+
+    /// <summary>
+    /// Puts an action at a place in its board lane's shared manual order (<paramref name="place"/>), across every open
+    /// action in the lane, not only the caller's view. It's refused, as a move is, when the caller may not work the action
+    /// or it's no longer at <paramref name="status"/>. A place isn't a change to the action: it adds no history line and
+    /// isn't audited (AuditInterceptor).
+    /// </summary>
+    public async Task PlaceAsync(Guid id, ActionStatus status, LanePlace place, CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(status) || ActionItem.IsClosedStatus(status))
+            throw new ArgumentException("Only a card in an open lane has a place in it: choose an open status.");
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await WorkableAsync(db, id, ct);
+        RequireAt(a, status);
+        await PlaceOnAsync(db, a, place, ct);
+        await SaveEditAsync(db, ct);
+    }
+
+    // Places are spaced (LaneGap apart), so a card put between two others takes the place halfway between them and no
+    // other row is written. When there's no room (two neighbors a place apart), or the cards above it were never placed
+    // by hand (they'd still sort after it), the lane is numbered again, LaneGap apart.
+    private const int LaneGap = 1024;
+
+    private static async Task PlaceOnAsync(IAppDbContext db, ActionItem a, LanePlace place, CancellationToken ct)
+    {
+        var others = db.Actions.Where(x => x.Status == a.Status && x.Id != a.Id);
+        var lane = await Ordered(others, ActionSort.Due, lead: ByPlace).Select(x => new { x.Id, x.LaneRank }).ToListAsync(ct);
+        var at = place.Before is { } b ? lane.FindIndex(x => x.Id == b) : -1;
+        if (at < 0) at = lane.Count;
+        var above = at > 0 ? lane[at - 1].LaneRank : 0;
+        var below = at < lane.Count ? lane[at].LaneRank : 0;
+        if (at == 0 || above > 0)
+        {
+            if (below == 0) { a.LaneRank = above + LaneGap; return; }
+            if (below - above > 1) { a.LaneRank = above + (below - above) / 2; return; }
+        }
+        var order = lane.Select(x => x.Id).ToList();
+        order.Insert(at, a.Id);
+        var tracked = await others.ToDictionaryAsync(x => x.Id, ct);
+        for (var i = 0; i < order.Count; i++) (order[i] == a.Id ? a : tracked[order[i]]).LaneRank = (i + 1) * LaneGap;
     }
 
     // How far back the board's closed strip counts: the last closedDays days, a day to BoardOlderDays.
@@ -1767,12 +1833,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// permission, and an outcome to close it Done (see <see cref="OutcomesFor"/>). A move to the column it's in does nothing.
     /// </summary>
     public async Task MoveAsync(Guid id, ActionStatus from, ActionStatus to, ActionOutcome outcome = ActionOutcome.None, string? note = null,
-        string? overLimitReason = null, CancellationToken ct = default)
+        string? overLimitReason = null, LanePlace? place = null, CancellationToken ct = default)
     {
         if (!Enum.IsDefined(from) || !Enum.IsDefined(to) || !Enum.IsDefined(outcome)) throw new ArgumentException("Choose a status and an outcome.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
-        if (await MoveOnAsync(db, a, from, to, outcome, note, overLimitReason, null, ct)) await SaveEditAsync(db, ct);
+        if (!await MoveOnAsync(db, a, from, to, outcome, note, overLimitReason, null, ct)) return;
+        // Dropped at a place in the new lane's shared order: put there in the same save.
+        if (place is not null && !ActionItem.IsClosedStatus(to)) await PlaceOnAsync(db, a, place, ct);
+        await SaveEditAsync(db, ct);
     }
 
     // The move itself, on a tracked action the caller may work, before the save (MoveAsync, and each of ManyAsync's);

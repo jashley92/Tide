@@ -15,41 +15,64 @@
 .tide-triage-row:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-triage-row.selected { background: var(--tide-accent-soft); border-left-color: var(--tide-accent); cursor: default; }
 /* Live changes (LiveMarks): what a colleague's work did to a list, shown for a moment without moving focus or the
-   scroll. A row that arrived slides in under a soft accent wash that fades; one that changed gets the wash alone; one
-   that left is a ghost line saying who sent it where, which fades and collapses; a count that changed ticks. Each wash
-   fades to the row's own background, so a selected row stays selected. With reduced motion nothing moves or collapses:
-   the wash only fades its colour, and a ghost goes at once. */
-.tide-live-arrived { animation: tide-live-in .28s ease-out, tide-live-wash 2s ease-out; }
-.tide-live-changed { animation: tide-live-wash 2s ease-out; }
-@keyframes tide-live-in { from { opacity: 0; transform: translateY(-.35rem); } }
+   scroll. A row that arrived fades in under one scan pass; one that changed gets the scan pass alone; one that left is a
+   ghost line saying who sent it where, which fades and collapses; a count that changed flashes, and a tab's count rolls.
+   With reduced motion nothing moves or collapses: a row gets a soft wash that fades, and a ghost goes at once. */
+/* The scan pass: a thin accent line, with a faint trail, crosses the row once left to right, like an instrument
+   registering it. It's the row's ::after (the ::before is the brackets'), as wide as the row with the line on its right
+   edge and a 3rem trail, moved by transform from the row's left end to just past its right, so the browser only
+   composites it (a background moving would paint the whole row each frame). The row clips it meanwhile. */
+.tide-live-arrived, .tide-live-changed { overflow: clip; }
+:is(.tide-live-arrived, .tide-live-changed)::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: linear-gradient(90deg, transparent calc(100% - 3rem), color-mix(in srgb, var(--tide-accent) 18%, transparent) calc(100% - 2px), var(--tide-accent) calc(100% - 2px));
+    animation: tide-live-scan var(--tide-move-signature) var(--tide-ease-out); }
+.tide-live-arrived { animation: tide-live-in var(--tide-dur-base) var(--tide-ease-out); }
+@keyframes tide-live-in { from { opacity: 0; } }
+@keyframes tide-live-scan { from { opacity: 1; transform: translateX(-100%); } to { opacity: 1; transform: translateX(3rem); } }
 @keyframes tide-live-wash { from { background-color: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); } }
 .tide-live-ghost { display: flex; align-items: center; gap: var(--tide-space-2); max-height: 4rem; overflow: hidden; padding: var(--tide-space-2) .6rem;
     border-bottom: 1px solid var(--tide-border); color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-style: italic;
-    animation: tide-live-out .25s ease-in 1.3s forwards; }
+    animation: tide-live-out var(--tide-dur-base) var(--tide-ease-in) var(--tide-dur-linger) forwards; }
 @keyframes tide-live-out { to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0; } }
 /* An arrival not yet looked at; it goes when the row is first selected. */
 .tide-live-new { flex: none; align-self: center; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .4rem;
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); box-shadow: inset 0 0 0 1px var(--tide-accent); }
-.tide-live-tick { animation: tide-live-tick .6s ease-out; }
-.tide-tabbar-count.tide-live-tick { display: inline-block; animation-name: tide-live-tick-count; }
-@keyframes tide-live-tick { 30% { transform: scale(1.15); color: var(--tide-accent-text); } }
-@keyframes tide-live-tick-count { 30% { transform: scale(1.2); background-color: var(--tide-accent); color: var(--tide-surface); } }
+.tide-live-tick { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
+@keyframes tide-live-tick { 30% { color: var(--tide-accent-text); } }
+/* A tab's count that changed flashes and rolls like an odometer: the old number goes up and out (flip.js gives it,
+   data-was) as the new one comes up from below. TabBar wraps it in tide-roll only while it ticks, so the count at rest is
+   just the number. */
+.tide-tabbar-count.tide-live-tick { display: inline-block; overflow: hidden; vertical-align: middle; animation-name: tide-live-tick-count; }
+@keyframes tide-live-tick-count { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
+.tide-roll { display: inline-block; position: relative; animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out); }
+.tide-roll[data-was]::before { content: attr(data-was); position: absolute; left: 0; right: 0; bottom: 110%; text-align: center; }
+@keyframes tide-roll-in { from { transform: translateY(calc(110% * var(--tide-motion))); } }
+/* A count drawn by the Odometer component (nav, lane and closed counts): in a window that clips it, rolling only when it
+   changed (flip.js gives the new one data-was), and flashing as a tab's does; at rest it's just the number. A short text
+   marked data-tide-tick (a step's detail) just flashes. */
+.tide-odo { display: inline-block; overflow: clip; vertical-align: top; }
+.tide-odo > .tide-roll { animation: none; }
+.tide-odo > .tide-roll[data-was] { animation: tide-roll-in var(--tide-dur-panel) var(--tide-ease-out), tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
+.tide-odo > .tide-roll[data-was][data-dir="down"] { animation-name: tide-roll-down, tide-live-tick; }
+[data-tide-tick]:not(.tide-roll)[data-was] { animation: tide-live-tick var(--tide-dur-signature) var(--tide-ease-out); }
+/* A count that fell rolls the other way: the old number goes down and out, the new one comes from above. */
+.tide-roll[data-dir="down"] { animation-name: tide-roll-down; }
+.tide-roll[data-dir="down"][data-was]::before { bottom: auto; top: 110%; }
+/* Held (a board chip while the card closing into it is on its way): the roll waits on the old number until let go. */
+[data-tide-hold] .tide-roll, [data-tide-hold] .tide-odo > .tide-roll[data-was] { animation-play-state: paused; }
+@keyframes tide-roll-down { from { transform: translateY(calc(-110% * var(--tide-motion))); } }
 /* Changes held back while a form is open on the list: choosing it shows them. */
 .tide-live-pill { display: inline-flex; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) var(--tide-space-3); border: 1px solid var(--tide-accent);
     border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); font-size: var(--tide-text-sm);
-    font-weight: var(--tide-weight-semibold); animation: tide-live-in .28s ease-out; }
+    font-weight: var(--tide-weight-semibold); animation: tide-live-in var(--tide-dur-panel) var(--tide-ease-out); }
 .tide-live-pill:hover { background: var(--tide-surface); }
 .tide-live-pill:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-live-pill-dot { width: .5rem; height: .5rem; border-radius: var(--tide-radius-round); background: var(--tide-accent); }
 @keyframes tide-live-gone { to { opacity: 0; } }
-@keyframes tide-live-tick-colour { 30% { color: var(--tide-accent-text); } }
-@keyframes tide-live-tick-count-colour { 30% { background-color: var(--tide-accent); color: var(--tide-surface); } }
 @media (prefers-reduced-motion: reduce) {
-    .tide-live-arrived, .tide-live-changed { animation: tide-live-wash 2s ease-out; }
-    .tide-live-ghost { animation: tide-live-gone 0s 1.3s forwards; }
-    .tide-live-tick { animation: tide-live-tick-colour .6s ease-out; }
-    .tide-tabbar-count.tide-live-tick { animation-name: tide-live-tick-count-colour; }
-    .tide-live-pill { animation: none; }
+    .tide-live-arrived, .tide-live-changed { animation: tide-live-wash var(--tide-dur-attention) var(--tide-ease-fade); }
+    :is(.tide-live-arrived, .tide-live-changed)::after { content: none; }
+    .tide-live-ghost { animation: tide-live-gone 0s var(--tide-dur-linger) forwards; }
 }
 .tide-triage-title { font-weight: var(--tide-weight-semibold); color: var(--tide-text); min-width: 0; overflow-wrap: anywhere; }
 /* The title and, beside it, the icon that opens the source in a new tab. In New and Shortlisted the title is a button
@@ -181,10 +204,10 @@
 .tide-avatar-lg { width: 2.6rem; height: 2.6rem; font-size: .95rem; flex: 0 0 auto; }
 /* A popover panel under its button, over a backdrop that closes it on a click: the account menu and the filter bar's
    + Filter. The placement says which edge it lines up with. */
-.tide-popover-backdrop { position: fixed; inset: 0; z-index: 1090; }
-.tide-popover { position: absolute; top: calc(100% + .5rem); z-index: 1091; width: min(19rem, calc(100vw - 1.5rem));
-    background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
-    box-shadow: 0 8px 24px var(--tide-shadow); padding: .4rem; }
+.tide-popover-backdrop { position: fixed; inset: 0; z-index: var(--tide-z-popover); }
+.tide-popover { position: absolute; top: calc(100% + .5rem); z-index: calc(var(--tide-z-popover) + 1); width: min(19rem, calc(100vw - 1.5rem));
+    color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
+    padding: .4rem; }
 .tide-popover-end { right: 0; }
 .tide-popover-start { left: 0; }
 .tide-profile-id { display: flex; align-items: center; gap: .7rem; padding: .5rem .55rem .6rem; }
@@ -210,7 +233,12 @@
 .tide-seg-opt { border: 0; background: transparent; color: var(--tide-text-muted); font: inherit; font-size: .75rem; line-height: 1.2; padding: .22rem .7rem; cursor: pointer; }
 .tide-seg-opt + .tide-seg-opt { border-left: 1px solid var(--tide-border); }
 .tide-seg-opt:hover { background: var(--tide-surface-2); }
-.tide-seg-opt.on { background: var(--tide-accent-soft); color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); }
+.tide-seg-opt.on { background: var(--tide-accent-soft); color: var(--tide-accent-text); -webkit-text-stroke: .03em currentColor; }
+.tide-seg-opt { transition: background-color var(--tide-dur-fast) var(--tide-ease-out), color var(--tide-dur-fast) var(--tide-ease-out); }
+/* The current tab's mark sliding to the one chosen (tabs.js): a line under a page tab, an outline on a switch's option. */
+.tide-tab-slider { position: fixed; z-index: var(--tide-z-drop); pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.tide-tab-slider.is-line { background: var(--tide-accent); }
+.tide-tab-slider.is-box { box-shadow: inset 0 0 0 1px var(--tide-accent); border-radius: var(--tide-radius-md); }
 .tide-seg-opt:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: -2px; }
 .tide-seg-opt:disabled { cursor: default; opacity: .6; }
 /* In a toolbar beside small buttons (Triage's order): as tall as they are, as the design has it. */
@@ -224,8 +252,12 @@
 .tide-tabbar-item:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
 .tide-tabbar-page { border-bottom: 1px solid var(--tide-border); }
 .tide-tabbar-page .tide-tabbar-item { padding: .5rem .8rem; font-size: .95rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.tide-tabbar-page .tide-tabbar-item.active { color: var(--tide-text); font-weight: var(--tide-weight-semibold); border-bottom-color: var(--tide-accent); }
-.tide-tabbar-count { font-size: .75rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .45rem; border-radius: var(--tide-radius-pill); background: var(--tide-surface-2); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
+/* The current tab reads heavier by a hairline stroke, not a bolder face: a bolder face is wider, and the tabs beside it
+   shifted a few pixels as the underline slid across (tabs.js). */
+.tide-tabbar-page .tide-tabbar-item.active { color: var(--tide-text); -webkit-text-stroke: .03em currentColor; border-bottom-color: var(--tide-accent); }
+/* While the mark slides to it (tabs.js), the tab's own line waits: after .active, which would otherwise draw it at once. */
+.tide-tabbar-page .tide-tabbar-item[data-tide-sliding] { border-bottom-color: transparent; }
+.tide-tabbar-count { font-size: .75rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .45rem; border-radius: var(--tide-radius-pill); background: var(--tide-surface-2); color: var(--tide-text-muted); }
 .tide-tabbar-item.active .tide-tabbar-count { background: var(--tide-accent-soft); color: var(--tide-accent-text); }
 .tide-tabbar-page { margin-bottom: 1rem; }
 .tide-tabbar-new { font-size: .68rem; font-weight: var(--tide-weight-semibold); line-height: 1; padding: .15rem .4rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent-soft); color: var(--tide-accent-text); text-transform: uppercase; letter-spacing: .04em; }
@@ -234,7 +266,7 @@
 .tide-tabbar-item.active .tide-tabbar-count.tide-tabbar-warn { display: inline-flex; align-items: center; gap: .2rem; background: var(--tide-warn-soft); color: var(--tide-warn); }
 .tide-tabbar-warn .bi { font-size: .68rem; }
 .tide-tabbar-sub > .tide-tabbar-item { padding: .25rem .6rem; font-size: .86rem; border-radius: var(--tide-radius-md); }
-.tide-tabbar-sub > .tide-tabbar-item.active { color: var(--tide-text); font-weight: var(--tide-weight-semibold); background: var(--tide-surface-2); box-shadow: inset 0 0 0 1px var(--tide-border-strong); }
+.tide-tabbar-sub > .tide-tabbar-item.active { color: var(--tide-text); -webkit-text-stroke: .03em currentColor; background: var(--tide-surface-2); box-shadow: inset 0 0 0 1px var(--tide-border-strong); }
 
 /* The Administration frame (AdminLayout): the heading, the groups as tabs, a group's pages as sub-tabs, the page. */
 .tide-admin-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
@@ -278,9 +310,9 @@
 
 /* A confirmation (ConfirmDialog): a scrim, a small card that says what will happen, Cancel and a button
    named for the action. */
-.tide-modal-scrim { position: fixed; inset: 0; z-index: 3500; background: var(--tide-overlay); display: grid; place-items: center; padding: 1rem; }
-.tide-modal { width: min(30rem, 100%); background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border);
-    border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong); padding: 1.1rem 1.2rem 1rem;
+.tide-modal-scrim { position: fixed; inset: 0; z-index: var(--tide-z-modal); background: var(--tide-overlay); display: grid; place-items: center; padding: 1rem; }
+.tide-modal { width: min(30rem, 100%); color: var(--tide-text); border: 1px solid var(--tide-border);
+    border-radius: var(--tide-radius-xl); padding: 1.1rem 1.2rem 1rem;
     max-height: calc(100vh - 2rem); overflow-y: auto; }
 .tide-modal-wide { width: min(46rem, 100%); }
 /* A dialog takes focus itself when its text is clicked (tabindex="-1"), so its keys (Escape) still reach it; no ring. */
@@ -307,7 +339,7 @@
 .tide-whatsnew .tide-md ul, .tide-help .tide-md ul { padding-left: 1.25rem; margin-bottom: var(--tide-space-2); }
 .tide-whatsnew .tide-md li, .tide-help .tide-md li { margin-bottom: var(--tide-space-1); }
 .tide-help { max-width: var(--tide-width-form); display: flex; flex-direction: column; gap: var(--tide-space-4); }
-.tide-help-release { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); scroll-margin-top: 4rem; }
+.tide-help-release { padding: var(--tide-space-3) 0; border-top: 1px solid var(--tide-border); scroll-margin-top: calc(4rem - var(--tide-height-top)); }
 .tide-help-release:first-of-type { border-top: 0; padding-top: 0; }
 .tide-help-release-title { display: flex; align-items: center; gap: var(--tide-space-2); font-size: var(--tide-text-md);
     font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
@@ -339,10 +371,10 @@
 .tide-rehearsal-controls { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
 /* A page's tip (OnboardingHost): a small card beside the control it's about, once tips.js places it (is-placed, with
    top and left set; the corner is only where it starts); that control is ringed. Not modal: no scrim, nothing under
-   it is inert. Under a dialog (3500), over the page and its rail. */
-.tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3000;
-    width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); background: var(--tide-surface); color: var(--tide-text);
-    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong);
+   it is inert. Under a dialog (--tide-z-modal), over the page and its rail. */
+.tide-tip { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tip);
+    width: min(22rem, calc(100vw - 2 * var(--tide-space-4))); color: var(--tide-text);
+    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-xl);
     padding: var(--tide-space-3) var(--tide-space-4); }
 .tide-tip.is-placed, .tide-tour.is-placed { right: auto; bottom: auto; }
 .tide-tip-head { display: flex; align-items: center; gap: var(--tide-space-2); color: var(--tide-accent); }
@@ -350,13 +382,13 @@
 .tide-tip-text, .tide-tour-text { font-size: var(--tide-text-sm); margin: var(--tide-space-2) 0 var(--tide-space-3); overflow-wrap: anywhere; }
 .tide-tip-actions { display: flex; justify-content: flex-end; }
 /* The control a tip or step is about: scrolled into view clear of the sticky top bar, with room under it for the card. */
-.tide-tip-target { scroll-margin: calc(var(--tide-height-top) + var(--tide-space-4)) var(--tide-space-4) 14rem; }
+.tide-tip-target { scroll-margin: var(--tide-space-4) var(--tide-space-4) 14rem; }   /* the top bar: html's scroll-padding-top */
 /* Its ring (tips.js): just outside the control, over the page and a step's scrim but under the card, never taking a
    click. It pulses twice, a soft glow spreading out, then settles to a steady ring; steady from the start under reduced
    motion. */
-.tide-tip-ring { position: fixed; z-index: 3395; pointer-events: none; border: 2px solid var(--tide-focus-ring);
+.tide-tip-ring { position: fixed; z-index: var(--tide-z-tour-ring); pointer-events: none; border: 2px solid var(--tide-focus-ring);
     border-radius: var(--tide-radius-lg); box-shadow: 0 0 0 3px var(--tide-accent-soft);
-    animation: tide-ring-pulse 1.1s ease-out 2; }
+    animation: tide-ring-pulse var(--tide-dur-loop) var(--tide-ease-out) 2; }
 @keyframes tide-ring-pulse {
     0% { box-shadow: 0 0 0 0 var(--tide-focus-ring); }
     70% { box-shadow: 0 0 0 10px transparent; }
@@ -366,20 +398,20 @@
 /* The card's arrow (tips.js): a square turned on its corner, centred on the card's edge facing its control
    (data-side: where the card is, from the control), in the card's own surface and border so it reads as part of it.
    Over a tip, or over a step (is-step). */
-.tide-tip-arrow { position: fixed; z-index: 3001; width: 14px; height: 14px; background: var(--tide-surface);
+.tide-tip-arrow { position: fixed; z-index: calc(var(--tide-z-tip) + 1); width: 14px; height: 14px; background: var(--tide-surface-raised);
     border: 1px solid var(--tide-accent); transform: rotate(45deg); pointer-events: none; }
-.tide-tip-arrow.is-step { z-index: 3401; }
+.tide-tip-arrow.is-step { z-index: var(--tide-z-tour-arrow); }
 .tide-tip-arrow[data-side="below"] { border-right: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="above"] { border-left: 0; border-top: 0; }
 .tide-tip-arrow[data-side="left"] { border-left: 0; border-bottom: 0; }
 .tide-tip-arrow[data-side="right"] { border-right: 0; border-top: 0; }
 /* A tour step (OnboardingHost): a dialog over a light scrim, so the control it's about shows; beside that control once
    tips.js places it (is-placed), as a tip is. */
-.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: 3400;
+.tide-tour { position: fixed; right: var(--tide-space-4); bottom: var(--tide-space-4); z-index: var(--tide-z-tour-card);
     width: min(24rem, calc(100vw - 2 * var(--tide-space-4))); border-color: var(--tide-accent); }
 /* Under a tour step: a light scrim that takes every click on the page, so the tour can't fall out of step with it.
    A click on it does nothing; Next, Back, Skip tour and Escape are the ways on. The ringed control shows through it. */
-.tide-tour-scrim { position: fixed; inset: 0; z-index: 3390; background: var(--tide-overlay); opacity: .4; }
+.tide-tour-scrim { position: fixed; inset: 0; z-index: var(--tide-z-tour); background: var(--tide-overlay); opacity: .4; }
 .tide-tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-3); }
 .tide-tour-head .tide-modal-title { display: flex; flex-direction: column; gap: var(--tide-space-1); margin: 0; }
 .tide-tour-count { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); }
@@ -438,14 +470,85 @@
 .tide-query-auto { min-height: 0; }
 .tide-evidence-thumb { max-width: 17.5rem; max-height: 10rem; }
 
+/* What you point at, press or move into with the keyboard is bracketed, like a reticle locking on: four thin corners
+   close in on it from just outside its edges. On a board card (5px out, in the gap between cards) and a triage row (on
+   its edges, as rows touch); and on the Promoted tab as a promoted row lands in it. */
+/* :where, so it gives way to any position a card sets itself: the drag ghost is fixed (40-actions, an earlier file). */
+:where(.tide-kcard, .tide-triage-row, .tide-tabbar-item[data-tide-landed]) { position: relative; }
+:is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock, [data-copied]::after {
+    /* An outline cut down to its four corners: an outline is drawn outside the box without making it any wider (so
+       nothing scrolls or overflows for it), and the mask (no-clip, so it reaches past the box) keeps only the corners. */
+    --tide-bracket-arm: 11px; --o: calc(-1 * var(--tide-bracket-out, 0px));
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    outline: 2px solid var(--tide-accent); outline-offset: calc(var(--tide-bracket-out, 0px) - 2px);
+    mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-size: var(--tide-bracket-arm) var(--tide-bracket-arm); mask-repeat: no-repeat; mask-clip: no-clip;
+    mask-position: left var(--o) top var(--o), right var(--o) top var(--o), left var(--o) bottom var(--o), right var(--o) bottom var(--o);
+    opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+:is(.tide-kcard, .tide-tabbar-item)::before { --tide-bracket-out: 5px; }
+/* Showing, they close in on it (a keyframe, so nothing is scaled at rest). */
+@media (hover: hover) { :is(.tide-kcard, .tide-triage-row):hover::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); } }
+:is(.tide-kcard, .tide-triage-row):is(:active, :focus-within)::before, .tide-tabbar-item[data-tide-landed]::before { opacity: 1; animation: tide-lock-on var(--tide-dur-base) var(--tide-ease-out); }
+@keyframes tide-lock-on { from { transform: scale(calc(1 + .06 * var(--tide-motion))); } }
+/* Landing (a card dropped or moved, a promoted row reaching its tab): they snap in from further out, its own keyframe so
+   it plays even when they're already showing (the card has focus). */
+@keyframes tide-lock-land { from { opacity: 0; transform: scale(calc(1 + .14 * var(--tide-motion))); } 60% { opacity: 1; } }
+/* After the hover and focus rule above, so it wins on a card that has focus as it lands. */
+.tide-tabbar-item[data-tide-landed]::before, .tide-kcard:is([data-tide-locked], .tide-kcard-ghost)::before { animation-name: tide-lock-land; }
+/* A field a save was refused for (tideInvalid, theme.js): the brackets in the threat color, laid over it (fixed, placed
+   and played by the script), 5px out as on a card. */
+.tide-invalid-lock { --tide-bracket-out: 5px; position: fixed; inset: auto; z-index: var(--tide-z-rail); outline-color: var(--tide-threat); }
+/* More contrast asked for: the brackets are thicker. */
+@media (prefers-contrast: more) { :is(.tide-kcard, .tide-triage-row)::before, .tide-tabbar-item[data-tide-landed]::before, .tide-invalid-lock, [data-copied]::after { outline-width: 3px; } }
+
+/* Promote and keep triaging (triage.js): the promoted row fades, and a copy of it reshapes itself, in size and place,
+   into the Promoted tab's count, which locks on as it lands. The copy moves and scales from its top left corner. */
+.tide-triage-section[data-tide-promoting], .tide-triage-row[data-tide-promoting] { opacity: 0; transition: opacity var(--tide-dur-fast) var(--tide-ease-out); }
+/* A row this person decided (shortlisted, dismissed...) lifts out where it was, a copy over the page (triage.js). */
+.tide-triage-row.tide-decided { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; background: var(--tide-surface); }
+.tide-triage-row.tide-morph { position: fixed; z-index: var(--tide-z-drop); margin: 0; list-style: none; pointer-events: none; overflow: hidden;
+    background: var(--tide-surface); box-shadow: var(--tide-elev-3); transform-origin: 0 0; will-change: transform; }
+
 /* Loading (LoadingBlock) and empty (EmptyState) states. */
 .tide-skel-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
 .tide-skel-row:last-child { border-bottom: 0; }
-.tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-md); background-color: var(--tide-surface-2);
-    background-image: linear-gradient(90deg, transparent 0%, var(--tide-border) 50%, transparent 100%);
-    background-size: 200% 100%; background-repeat: no-repeat; animation: tide-shimmer 1.3s ease-in-out infinite; }
-@keyframes tide-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .tide-skel { animation: none; } }
+/* Placeholder rows are outlines, and a thin bar scans across the top while it loads. They come in only after
+   --tide-dur-patience, so a quick load never flashes them. */
+.tide-loading { position: relative; overflow: hidden; animation: tide-live-in var(--tide-dur-fast) var(--tide-ease-out) var(--tide-dur-patience) backwards; }
+/* The scan bar, wherever something is on its way: a loading block, a busy action (below), a lost connection (25-feedback). */
+.tide-loading::before, [data-busy]::after, .reconnect-modal.components-reconnect-show::before {
+    content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--tide-accent); pointer-events: none;
+    animation: tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) infinite; }
+.reconnect-modal.components-reconnect-show::before { position: fixed; }
+/* From just off the left to just off the right: the bar is 30% wide, so 340% of itself is 102% of the block. */
+@keyframes tide-scan-bar { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.tide-skel { display: block; height: .8rem; flex: 1 1 0; border-radius: var(--tide-radius-sm); border: 1px dashed var(--tide-border-strong); }
+/* With reduced motion the bar stays where it is and breathes, so it still says something is on its way. */
+@media (prefers-reduced-motion: reduce) {
+    .tide-loading::before, .reconnect-modal.components-reconnect-show::before { width: 100%; animation: tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) infinite alternate; }
+}
+@keyframes tide-breathe { from { opacity: .25; } to { opacity: .8; } }
+/* Busy (data-busy): a slow server action under way, a fetch, a check or a pull. The button keeps its words and its size
+   and is disabled; only once the action has taken longer than --tide-dur-patience does the scan bar above run, along the
+   button's foot (or a card's top edge, for what the whole card waits on), so a quick action shows nothing. A
+   BusyStatus beside it says what's under way to a screen reader. */
+:where([data-busy]) { position: relative; }
+.btn[data-busy] { overflow: hidden; }
+.tide-card[data-busy] { overflow: clip; }
+[data-busy]::after { top: auto; bottom: 0; opacity: 0;
+    animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-scan-bar var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite; }
+.tide-card[data-busy]::after { top: 0; bottom: auto; }
+@keyframes tide-busy-shown { to { opacity: 1; } }
+/* A Copy button that copied (clipboard.js sets data-copied for --tide-dur-signature): its icon is a check, and brackets
+   close in around it once and fade, as a board card's lock on. With reduced motion, only the check. */
+[data-copied] .bi::before { content: "\f272"; }   /* bi-check2's glyph, as Bootstrap Icons draws it */
+:where([data-copied]) { position: relative; }
+[data-copied]::after { --tide-bracket-arm: 6px; --tide-bracket-out: 4px; animation: tide-copied var(--tide-dur-signature) var(--tide-ease-out); }   /* the brackets above */
+@keyframes tide-copied { from { opacity: 0; transform: scale(calc(1 + .18 * var(--tide-motion))); } 35% { opacity: 1; transform: none; } 70% { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-copied]::after { display: none; }
+    [data-busy]::after { width: 100%; animation: tide-busy-shown 0s var(--tide-dur-patience) forwards, tide-breathe var(--tide-dur-loop) var(--tide-ease-in-out) var(--tide-dur-patience) infinite alternate; }
+}
 /* Varied widths read as text of different lengths rather than a grid. */
 .tide-skel-w0 { max-width: 70%; } .tide-skel-w1 { max-width: 90%; } .tide-skel-w2 { max-width: 55%; }
 .tide-skel-w3 { max-width: 80%; } .tide-skel-w4 { max-width: 45%; } .tide-skel-w5 { max-width: 65%; }
@@ -457,6 +560,9 @@
 .tide-empty-state-compact { padding: var(--tide-space-4) var(--tide-space-2); gap: var(--tide-space-1); }
 .tide-empty-state-compact .tide-empty-state-icon { font-size: var(--tide-text-lg); margin-bottom: 0; }
 .tide-empty-state-compact .tide-empty-state-title { font-weight: var(--tide-weight-medium); }
+/* SectionEmpty: a section with nothing in it yet, a small muted icon before the line. */
+.tide-section-empty { display: flex; align-items: baseline; gap: var(--tide-space-2); margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-section-empty > .bi { flex: none; opacity: .75; }
 
 /* A feed's tags to filter by (Sources): toggles that read as tags. */
 .tide-tag-pick { border: 1px solid var(--tide-border); background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-pill);
@@ -476,4 +582,8 @@
 .tide-secret-input { flex: 1 1 16rem; max-width: 28rem; }
 .tide-system-cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tide-release-notes { max-height: 22rem; overflow: auto; border-top: 1px solid var(--tide-border); padding-top: .6rem; }
-
+/* Triage's bar for the chosen items takes over from the decision row: it fades in (and out, flip.js), not in a frame. */
+.tide-triage-selbar { animation: tide-triage-selbar-in var(--tide-dur-fast) var(--tide-ease-out); }
+/* What's inside a copy (a row lifting out, a card flying) is as it was seen: its own entrances don't play again. */
+[data-tide-copy] * { animation: none !important; }
+@keyframes tide-triage-selbar-in { from { opacity: 0; } }

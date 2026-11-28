@@ -70,9 +70,10 @@
 @supports (field-sizing: content) { .tide-autogrow { height: auto !important; } }
 .tide-bullet-row .tide-dot { padding-top: .45rem; color: var(--tide-text-muted); text-align: center; }
 .tide-bullet-row textarea { min-height: 2.4rem; }
-.tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background .1s, border-color .1s; }
+.tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background var(--tide-dur-fast), border-color var(--tide-dur-fast); }
 .tide-drop-zone.tide-dropping { background: var(--tide-drop); border-color: var(--tide-accent); }
 .tide-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; margin-top: .75rem; }
+.tide-shots:empty { margin-top: 0; }   /* drawn with none, it takes no room */
 .tide-shot { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface-2); }
 .tide-shot img { display: block; width: 100%; height: 130px; object-fit: cover; cursor: zoom-in; background: var(--tide-surface-2); }
 .tide-shot-body { padding: .5rem; display: grid; gap: .35rem; background: var(--tide-surface); }
@@ -90,10 +91,10 @@
 
 /* The ATT&CK matrix picker (AttackMatrixPicker): tactics as columns tinted by their colour (--tac),
    techniques beneath, sub-techniques folding under their parent; nearly full screen over the editor. */
-.tide-atkm-backdrop { position: fixed; inset: 0; background: var(--tide-overlay); z-index: 2500; }
-.tide-atkm-panel { position: fixed; inset: 3vh 2vw; z-index: 2501; display: flex; flex-direction: column;
-    background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
-    box-shadow: 0 1rem 3rem var(--tide-shadow-strong); overflow: hidden; }
+.tide-atkm-backdrop { position: fixed; inset: 0; background: var(--tide-overlay); z-index: var(--tide-z-picker); }
+.tide-atkm-panel { position: fixed; inset: 3vh 2vw; z-index: calc(var(--tide-z-picker) + 1); display: flex; flex-direction: column;
+    color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
+    overflow: hidden; }
 .tide-atkm-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--tide-border); }
 .tide-atkm-title { font-size: 1rem; font-weight: var(--tide-weight-semibold); margin: 0; }
 .tide-atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--tide-text-muted); flex: 0 1 22rem; min-width: 0; }
@@ -101,17 +102,18 @@
 .tide-atkm-filterline { padding: .35rem 1rem; border-bottom: 1px solid var(--tide-border); }
 /* Columns are spaced by margin, not gap, so a collapsed one takes no space at all. */
 .tide-atkm-grid { flex: 1 1 auto; display: flex; overflow: auto; padding: .75rem .25rem .75rem .75rem; align-items: flex-start; background: var(--tide-bg); scroll-behavior: smooth; }
-.tide-atkm-col { flex: 0 0 14rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface);
-    transition: flex-basis 180ms ease-out, margin-right 180ms ease-out, border-width 180ms ease-out, opacity 180ms ease-out; }
+.tide-atkm-col { flex: 0 0 14rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface-raised);
+    transition: flex-basis var(--tide-move-base) var(--tide-ease-out), margin-right var(--tide-move-base) var(--tide-ease-out),
+        border-width var(--tide-move-base) var(--tide-ease-out), opacity var(--tide-dur-base) var(--tide-ease-out); }
 /* A tactic with no match while filtering: fades and folds its width to nothing; its content keeps its own width meanwhile, clipped rather than squeezed. */
 .tide-atkm-col-hidden { flex-basis: 0; margin-right: 0; border-width: 0; opacity: 0; pointer-events: none; }
 .tide-atkm-col > .tide-atkm-colhead, .tide-atkm-col > .tide-atkm-cells { min-width: calc(14rem - 2px); }
 .tide-atkm-nomatch { flex: 1 0 100%; margin-right: .5rem; padding: 2rem 1rem; text-align: center; color: var(--tide-text-muted); }
-@media (prefers-reduced-motion: reduce) { .tide-atkm-col { transition: none; } .tide-atkm-grid { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .tide-atkm-grid { scroll-behavior: auto; } }
 .tide-atkm-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
     font-size: .78rem; font-weight: var(--tide-weight-semibold); background: color-mix(in srgb, var(--tac) 16%, var(--tide-surface)); border-bottom: 2px solid var(--tac); }
 .tide-atkm-colname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tide-atkm-colcount { margin-left: auto; font-size: .72rem; border: 1px solid var(--tac); background: var(--tide-surface); border-radius: var(--tide-radius-pill); padding: 0 .4rem; }
+.tide-atkm-colcount { margin-left: auto; font-size: .72rem; border: 1px solid var(--tac); background: var(--tide-surface-raised); border-radius: var(--tide-radius-pill); padding: 0 .4rem; }
 .tide-atkm-cells { display: flex; flex-direction: column; padding: .25rem; gap: .15rem; }
 .tide-atkm-cell { display: flex; align-items: center; gap: .3rem; padding: .2rem .3rem; border-radius: var(--tide-radius-md); cursor: pointer;
     font-size: .78rem; line-height: 1.25; border: 1px solid transparent; }
@@ -153,7 +155,7 @@ html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or
 /* Both disclosures underline their words, not the chevron and the space before them. */
 :is(.tide-history-link, .tide-review-toggle) { text-decoration: none; }
 :is(.tide-history-link, .tide-review-toggle) .tide-link-words { text-decoration: underline; }
-.tide-history-compact { margin-top: var(--tide-space-3); scroll-margin-top: 4.5rem; } /* opened, it scrolls up with the bar's row above it */
+.tide-history-compact { margin-top: var(--tide-space-3); scroll-margin-top: calc(4.5rem - var(--tide-height-top)); } /* opened, it scrolls up with the bar's row above it */
 .tide-head-byline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-3); }
 /* The review, one line at the end of the editor's byline row: "Review: <state>" and what to do next; its panel (asking,
    the comments) takes the row's whole width under it when opened. */
@@ -166,7 +168,8 @@ html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or
 .tide-review-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
 .tide-review-comments + .tide-review-ask { margin-top: var(--tide-space-2); }
 /* The editor's section index: it stays under the top bar as you scroll, and a section you jump to stops below them. */
-html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
+html { --tide-pills-h: 3.25rem; }   /* one row; editor.js sets their real height */
+html:has(.tide-section-pills) { scroll-padding-top: calc(var(--tide-height-top) + var(--tide-pills-h) + var(--tide-space-2)); }   /* as tall as they are, on one row or two (editor.js) */
 .tide-section-pills { position: sticky; top: var(--tide-height-top); z-index: 4; background: var(--tide-bg); padding: var(--tide-space-2) 0; margin-bottom: var(--tide-space-2); }
 .tide-section-pills ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1); }
 .tide-section-pills button { display: inline-flex; align-items: center; gap: var(--tide-space-2); white-space: nowrap; border: 1px solid var(--tide-border);
@@ -182,13 +185,12 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-disclosure { display: flex; align-items: center; flex-wrap: wrap; gap: var(--tide-space-2); width: 100%; border: 0; background: none; padding: 0;
     color: inherit; font: inherit; text-align: left; }
 .tide-disclosure:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
-.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform .15s ease; }
+.tide-disclosure-chev { font-size: var(--tide-text-xs); transition: transform var(--tide-move-fast) var(--tide-ease-out); }
 .tide-disclosure[aria-expanded="true"] .tide-disclosure-chev { transform: rotate(90deg); }
 .tide-disclosure-sum { color: var(--tide-text-muted); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-regular); }
 .tide-disclosure-body { margin-top: var(--tide-space-3); }
 .tide-subhead { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-2); }
 .tide-disclosure-body > .tide-subhead:first-child { margin-top: 0; }
-@media (prefers-reduced-motion: reduce) { .tide-disclosure-chev { transition: none; } }
 
 /* ---- Brief builder ---- */
 .tide-run-num { font-weight: var(--tide-weight-bold); color: var(--tide-text-muted); text-align: center; font-variant-numeric: tabular-nums; }

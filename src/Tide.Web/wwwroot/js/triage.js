@@ -17,7 +17,7 @@
 // selection bar stands where the decision bar was, and S, X and P act on all of them (.NET decides).
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0, room = null, tellRoom = null;
+    let started = 0, room = null, tellRoom = null, panes = null;
 
     // While the promote form is open, only Esc is the page's, and Shift+Enter is the form's second way out: Promote and
     // keep triaging, its button pressed (plain Enter submits the form, Promote and write, as it always has). Not on a
@@ -82,8 +82,10 @@ window.tideTriage = (function () {
     function showPane(actions) {
         if (!actions.some(function (a) { return a === 'read' || a === 'toggle-reading'; })) return;
         const pane = shownPane(), list = pane && pane.parentElement.querySelector(':scope > .tide-card:first-child');
-        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1)
+        if (list && pane.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 1) {
+            if (window.tideFlip && window.tideFlip.stop) window.tideFlip.stop();   // the row's own ease would carry on past it
             pane.scrollIntoView({ block: 'start', behavior: 'instant' });
+        }
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
@@ -116,7 +118,133 @@ window.tideTriage = (function () {
         to.focus();
     }
 
+    // The rows showing any of these item ids (a row, or a group's line), at most so many.
+    function rowsFor(ids, most) {
+        const want = new Set(ids || []);
+        return Array.prototype.filter.call(document.querySelectorAll('.tide-triage-row[data-items]'), function (r) {
+            return r.dataset.items.split(' ').some(function (id) { return want.has(id); });
+        }).slice(0, most);
+    }
+    // The section headings ("Matches what we run", "Everything else") that go with these rows: one whose every row is among
+    // them, and then the other too.
+    function emptied(rows) {
+        const list = rows[0] && rows[0].parentElement, out = [];
+        if (!list) return out;
+        let head = null, all = true;
+        const close = function () { if (head && all) out.push(head); };
+        Array.prototype.forEach.call(list.children, function (c) {
+            if (c.classList.contains('tide-triage-section')) { close(); head = c; all = true; }
+            else if (c.classList.contains('tide-triage-row') && rows.indexOf(c) < 0) all = false;
+        });
+        close();
+        // Sections show only while both have rows: one emptied, the other heading goes too.
+        return out.length ? Array.prototype.filter.call(list.children, function (c) { return c.classList.contains('tide-triage-section'); }) : out;
+    }
+    // The tab with this label (Triage.Tabs).
+    function tabFor(label) {
+        return Array.prototype.find.call(document.querySelectorAll('.tide-tabbar-item'), function (b) {
+            const l = b.querySelector('span:not(.bi)');
+            return l && l.textContent.trim() === label;
+        });
+    }
+
     return {
+        // Shortlisted, dismissed, marked a duplicate or put back, by this person: the rows lift up and out from where they
+        // were, towards the tabs, and the brackets lock onto the tab they went to; .NET then reloads, so the rows below
+        // close the gap (flip.js) and both tabs' counts roll. As a colleague's change shows, but quicker: they did it.
+        // Without motion the rows fade where they are, quickly, without lifting, and the tab locks on (its counts still roll,
+        // without moving).
+        decided: function (ids, tabLabel) {
+            const ts = window.tideShortcuts, tab = tabFor(tabLabel), still = ts.still();
+            if (tab) ts.pulse(tab, 'data-tide-landed');
+            if (ts.quiet() && !still) return;   // a tab nobody is looking at
+            const rows = rowsFor(ids, 8);
+            // Without motion the rows fade where they are (as a promote's do), and .NET waits out the fade before it reloads,
+            // so the gap closes in one step after: nothing slides under a fading copy.
+            if (still) {
+                rows.concat(emptied(rows)).forEach(function (row) { row.setAttribute('data-tide-promoting', ''); });
+                return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); });
+            }
+            const at = rows.map(function (row) { return row.getBoundingClientRect(); });   // every read first
+            rows.forEach(function (row) { row.setAttribute('data-tide-gone', ''); });   // they leave here, not again in flip.js
+            rows.forEach(function (row, i) {
+                const r = at[i];
+                if (!r.width || !r.height) return;
+                const g = ts.copy(row, r);
+                g.classList.add('tide-decided');
+                // On the page, not the window: if the window scrolls back as the list shortens, the copy goes with the rows.
+                Object.assign(g.style, { position: 'absolute', left: (r.left + scrollX) + 'px', top: (r.top + scrollY) + 'px' });
+                // Gone by half way, before the rows below close up into its place (they'd show through it).
+                // Linear, on the first stretch: over its few frames it fades evenly (an eased curve on the whole effect squeezed it
+                // into its first frame or two).
+                ts.drift(g, [{ opacity: 1, transform: 'none', easing: 'linear' }, { opacity: 0, transform: 'translateY(-4px)', offset: .5 }, { opacity: 0, transform: 'translateY(-6px)' }],
+                    { duration: ts.ms('--tide-dur-exit') });   // out: it's fading from the first frame
+            });
+        },
+        // Promote and keep triaging: the rows promoted (their item ids, from .NET) reshape themselves, in size and
+        // place, into the Promoted tab's count just above the list, which locks on. Each is a copy, moved and scaled by
+        // transform (the browser composites it, no layout each frame), its text fading first so the stretch doesn't show;
+        // the row itself fades at once. Each takes as long as its way to the tab needs (tideShortcuts.travel). .NET waits
+        // for the first to land (the promise; never longer than --tide-dur-travel) before it reloads the list, so the
+        // count rolls to its new number because a row hit it, and the rows below close the gap (flip.js); any others fly
+        // on by themselves. Without motion, or in a tab nobody is looking at, the rows fade and the count changes at once.
+        // The rows' faded state is a data attribute .NET never draws, taken off once the copies are done (or at once
+        // without them), so a row that stays on the page can't stay hidden. tabLabel: the Promoted tab's label, from .NET
+        // (Triage.Tabs).
+        promoted: function (ids, tabLabel) {
+            const MORPHS = 8, STAGGER = 40;   // at most so many rows reshape, each this many ms after the one before
+            const ts = window.tideShortcuts, rows = rowsFor(ids, MORPHS), tab = tabFor(tabLabel);
+            const dest = tab && (tab.querySelector('.tide-tabbar-count') || tab);
+            if (!dest || !rows.length) return Promise.resolve();
+            let landed = false, first = null;
+            const hit = new Promise(function (ok) { first = ok; });
+            const land = function () { if (!landed) { landed = true; ts.pulse(tab, 'data-tide-landed'); } first(); };
+            const t = dest.getBoundingClientRect();
+            const from = rows.map(function (r) { return r.getBoundingClientRect(); });   // every read before any change
+            const heads = emptied(rows);   // the section headings going with them (they fade, they don't fly)
+            const shown = function () {
+                rows.concat(heads).forEach(function (r) { r.removeAttribute('data-tide-promoting'); });
+                if (bar && bar.isConnected) { bar.removeAttribute('data-tide-gone'); bar.getAnimations().forEach(function (a) { a.cancel(); }); }   // they stayed
+            };
+            // Shown again only if still on the page once the reload has had its moment (a second at most): taken away by
+            // it, a row shown again first would flash back for a frame.
+            const release = function () {
+                const until = performance.now() + 1000;
+                (function look() {
+                    if (rows.every(function (r) { return !r.isConnected; })) return;
+                    if (performance.now() < until) requestAnimationFrame(look); else shown();
+                })();
+            };
+            rows.forEach(function (r) { r.setAttribute('data-tide-promoting', ''); });
+            // A section heading all of whose rows are going fades with them, as they lift (not once they've landed).
+            heads.forEach(function (h) { h.setAttribute('data-tide-promoting', ''); });
+            // The bar for the chosen items goes with them: it fades as they lift, not after the reload (and leaves no copy).
+            const bar = document.querySelector('.tide-triage-selbar');
+            if (bar && !ts.quiet()) { bar.setAttribute('data-tide-gone', ''); bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), easing: ts.token('--tide-ease-out'), fill: 'forwards' }); }
+            if (!t.width || document.hidden || !document.body.animate) { land(); shown(); return Promise.resolve(); }
+            // Without motion (or with the tab out of sight, below), there's no morph: the rows fade (data-tide-promoting) and
+            // .NET waits out the fade before it reloads.
+            if (ts.still()) { land(); release(); return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); }); }
+            // The tab out of sight (scrolled above a narrow window): there's no landing to see, so the rows just fade.
+            if (t.bottom < 0 || t.top > innerHeight) {
+                land(); release();
+                return new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-fast')); });   // their fade plays before the reload
+            }
+            const ease = ts.token('--tide-ease-out');
+            const waited = Promise.race([hit, new Promise(function (ok) { setTimeout(ok, ts.ms('--tide-dur-travel')); })]);
+            Promise.all(rows.map(function (row, i) {
+                const r = from[i];
+                if (!r.width || !r.height) return null;
+                const g = ts.copy(row, r);   // the row itself, lifted, as it was before it faded
+                g.removeAttribute('data-tide-promoting');
+                g.classList.add('tide-morph');
+                Array.prototype.forEach.call(g.children, function (c) { c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ts.ms('--tide-dur-fast'), fill: 'forwards' }); });
+                const to = 'translate(' + (t.left - r.left) + 'px, ' + (t.top - r.top) + 'px) scale(' + t.width / r.width + ', ' + t.height / r.height + ')';
+                return ts.drift(g, [{ transform: 'none', opacity: 1 }, { transform: to, opacity: .15 }],
+                    { duration: ts.travel(Math.hypot(t.left - r.left, t.top - r.top)), delay: i * STAGGER, easing: ease }).finished.then(land, function () { });
+            })).then(release, release);
+            return waited;
+        },
         // The promote form opened: its title takes focus, selected, ready to retype.
         focusPromote: function () {
             const title = document.getElementById('promote-title');
@@ -145,6 +273,17 @@ window.tideTriage = (function () {
             room.addEventListener('change', tellRoom);
             tellRoom();
             document.addEventListener('keydown', hop);
+            // The pane drawn (V, or Read it here) is brought into view on the frame it first shows, before .NET has
+            // answered the key: a moment showing only the pane's foot would explain nothing.
+            panes = new MutationObserver(function (records) {
+                const came = records.some(function (m) {
+                    return Array.prototype.some.call(m.addedNodes, function (n) {
+                        return n.nodeType === 1 && (n.matches('.tide-reading') || !!n.querySelector('.tide-reading'));
+                    });
+                });
+                if (came) showPane(['read']);   // before it's painted
+            });
+            panes.observe(document.body, { childList: true, subtree: true });
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read', ' ': 'select-toggle' },
@@ -157,6 +296,7 @@ window.tideTriage = (function () {
             if (room) room.removeEventListener('change', tellRoom);
             room = tellRoom = null;
             document.removeEventListener('keydown', hop);
+            if (panes) { panes.disconnect(); panes = null; }
             rows.stop(started);
         }
     };

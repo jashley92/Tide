@@ -37,6 +37,8 @@
     </div>
 }
 
+@* Moved up or down, a group glides to its place, carried over the others (flip.js). *@
+<div data-tide-flip=":scope > .tide-card" data-tide-flip-carry>
 @foreach (var (g, gi) in _groups.Select((g, i) => (g, i)))
 {
     <div class="tide-card @(g.IsRetired ? "tide-retired" : "")" @key="g.Id">
@@ -74,7 +76,7 @@
         }
         <table class="tide-table">
             <thead><tr><th>Metric</th><th>Format</th><th>Good when</th><th>Warn / critical</th><th>Flag missing</th><th class="position-relative"><span class="visually-hidden">Actions</span></th></tr></thead>
-            <tbody>
+            <tbody data-tide-flip=":scope > tr" data-tide-flip-carry>
                 @foreach (var (m, mi) in g.Metrics.Select((m, i) => (m, i)))
                 {
                     <tr @key="m.Id" class="@(m.IsRetired ? "tide-retired" : "")">
@@ -100,6 +102,7 @@
         }
     </div>
 }
+</div>
 
 <div class="tide-card">
     <h2>New group</h2>

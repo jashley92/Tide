@@ -5,7 +5,6 @@
 @inject ActionService Actions
 @inject IJSRuntime JS
 @inject ChangeFeed Feed
-@inject ChangeOrigin Origin
 @using Microsoft.Extensions.Logging
 @inject ILogger<NavMenu> Log
 
@@ -62,12 +61,12 @@
     protected override async Task OnInitializedAsync()
     {
         Nav.LocationChanged += OnLocationChanged;
-        // A poll or a pull (the system's changes to triage) brings new items, and this person's own triage on the page
-        // beside it (a dismissal, a promote that stays on the inbox, an undo) takes them away: either way the Triage
-        // count is read again, as Triage's New tab is. The menu listens under an origin of its own, as LiveChanges skips
-        // its origin's changes and these are its own circuit's.
+        // Any change to triage moves the count: a poll or a pull brings new items, and triage takes them away, this
+        // person's on the page beside it (a dismissal, a promote that stays on the inbox, an undo) or a colleague's.
+        // The Triage count is read again, live, as Triage's New tab is, and rolls to its new number (Odometer). The menu
+        // listens under an origin of its own, as LiveChanges skips its origin's changes and its own circuit's count too.
         if (CurrentUser.Has(Permission.WriteArticles))
-            _polled = new LiveChanges(Feed, new ChangeOrigin(), c => c.Topic == ChangeFeed.Triage && (c.ActorId == "system" || c.Origin == Origin.Id), InvokeAsync, async _ =>
+            _polled = new LiveChanges(Feed, new ChangeOrigin(), c => c.Topic == ChangeFeed.Triage, InvokeAsync, async _ =>
             {
                 await LoadCountsAsync();
                 StateHasChanged();
@@ -147,7 +146,7 @@
     }
 
     private static RenderFragment? Count(int count, bool alert) => count > 0
-        ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true">@(count > 99 ? "99+" : count)</span>
+        ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true"><Odometer Value="@(count > 99 ? "99+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture))" /></span>
         : null;
 
     public void Dispose()

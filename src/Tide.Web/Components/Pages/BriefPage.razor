@@ -68,7 +68,21 @@ else
             <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
                 @if (_brief is not null)
                 {
-                    <StatusBadge Status="@StatusLabel" />
+                    @* Keyed by the status, so it's drawn anew when it changes; just marked ready, it's stamped (tide-stamped). Until
+                       the stamp lands, the status it replaces stays where it was and the stamp comes down over it, so the line
+                       doesn't reflow before then (_statusHeld). *@
+                    <span class="tide-brief-slot">
+                        @if (_statusHeld is { } held && held != StatusLabel)
+                        {
+                            @* Back to draft: the status it had (the stamp, if it was stamped here) fades where it is first. *@
+                            <span class="@("tide-brief-status is-held" + (_heldStamped ? " tide-stamped" : "") + (_leaving ? " is-leaving" : ""))" @key="@("held-" + held)"><StatusBadge Status="@held" /></span>
+                        }
+                        @* While a status is held, the new one shows only as the stamp coming down over it. *@
+                        @if (_statusHeld is null || _justReady)
+                        {
+                            <span class="@("tide-brief-status" + (_justReady ? " tide-stamped" : "") + (_statusHeld is not null ? " is-over" : ""))" @key="StatusLabel"><StatusBadge Status="@StatusLabel" /></span>
+                        }
+                    </span>
                 }
                 @* One run of text, so a narrow page wraps it between words and a "·" never starts a line. *@
                 <span class="tide-sub-line">@string.Join(" · ", MeetingLine())</span>
@@ -95,7 +109,7 @@ else
                 <LiveMeetingJoin Day="_date">
                     @if (canPresent && _brief.Items.Count > 0)
                     {
-                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)" data-guide="brief-present"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
+                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)" data-guide="brief-present" @key="@(next == BriefNext.Present ? "present-primary" : "present-outline")"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
                     }
                 </LiveMeetingJoin>
                 @if (canPresent && _brief.Status == BriefStatus.Presented)
@@ -500,7 +514,7 @@ else
     {
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
-        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || FeedPolled(c),
+        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || TriageChanged(c),
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
@@ -554,9 +568,9 @@ else
         StateHasChanged();
     }
 
-    // A poll or a pull brought new items (the system's change to triage; this page's own Pull all among them): Today's
-    // Triage step counts them again, for those it counts them for.
-    private bool FeedPolled(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage && c.ActorId == "system";
+    // Triage changed: a poll or a pull brought new items (this page's own Pull all among them), or a colleague triaged
+    // some. Today's Triage step counts them again, live, for those it counts them for (its detail flashes as it changes).
+    private bool TriageChanged(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage;
 
     private async Task OnAroundChanged(IReadOnlyList<Change> changes)
     {
@@ -573,7 +587,7 @@ else
                 var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
                 if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Tell(news);
             }
-            if (changes.Any(FeedPolled))
+            if (changes.Any(TriageChanged))
             {
                 _newInFeed = await Intake.NewCountAsync();
                 _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
@@ -744,6 +758,7 @@ else
     {
         _loading = true;
         (_changedBy, _noteChangedBy) = (null, null);
+        _justReady = false;   // a stamp is for marking it ready here (MarkReady), not for any status a reload brings
         _brief = await BriefSvc.GetAsync(_date);
         _follow = Followed();
         _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
@@ -811,11 +826,15 @@ else
                 }));
     }
 
+    // A move is said, not toasted: the rows glide to their new places, and the status beside the running order tells a
+    // screen reader where it went.
+    private string? _moved;
+
     private Task Move(Guid itemId, int by) => Run(() => BriefSvc.MoveItemAsync(_brief!.Id, itemId, by), null,
-        () => Toasts.Show(MovedTo(_brief!, itemId)));
+        () => _moved = MovedTo(_brief!, itemId));
 
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
-        () => Toasts.Show(MovedTo(_brief!, drop.Moved)));
+        () => _moved = MovedTo(_brief!, drop.Moved));
 
     // A warning's one-click answer, from the running order: the article as this page showed it (its edit version), so a
     // colleague's save in between is refused, not written over. "Set to AMBER" raises the paragraph's marking; "Keep it"
@@ -846,8 +865,49 @@ else
     // changed by a correction.
     private bool CanFix => _canWrite && _brief is { Status: not BriefStatus.Sent };
 
-    private Task MarkReady(bool ready) =>
-        Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
+    // Set as the brief is marked ready here, so its status is stamped then, and only then: every load clears it, so a
+    // page that opens on a brief already ready, or a reload that changes its status (the meeting, a colleague), isn't.
+    private bool _justReady;
+
+    // The steps as they stood, shown until the stamp lands, so the strip moves on after it, not before.
+    private IReadOnlyList<BriefStep>? _stepsHeld;
+
+    /// <summary>When the stamp lands (milliseconds): it waits for the confirmation to go (--tide-dur-exit, 133ms) and
+    /// lands at 55% of --tide-dur-signature (600ms).</summary>
+    internal const int StampLands = 133 + 330;
+
+    // The status as it was, kept under the stamp until it lands.
+    private string? _statusHeld;
+
+    // The status held: whether it was stamped here (it keeps that look, still), and whether it's fading (back to draft).
+    private bool _heldStamped, _leaving;
+
+    /// <summary>How long the status takes to fade on going back to draft (--tide-dur-fast).</summary>
+    internal const int Unstamps = 120;
+
+    private async Task MarkReady(bool ready)
+    {
+        _stepsHeld = _brief is not null ? Steps : null;
+        _statusHeld = _brief is not null ? StatusLabel : null;
+        _heldStamped = _justReady;
+        await Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
+        _justReady = ready && _brief?.Status == BriefStatus.Ready;
+        if (_justReady && _stepsHeld is not null)
+        {
+            StateHasChanged();
+            await Task.Delay(StampLands);
+        }
+        else if (!ready && _statusHeld is not null && _brief?.Status == BriefStatus.Draft && _statusHeld != StatusLabel)
+        {
+            // The stamp fades where it is, then the draft pill and the strip change together: the line reflows once.
+            _leaving = true;
+            StateHasChanged();
+            await Task.Delay(Unstamps);
+        }
+        _stepsHeld = null;
+        _statusHeld = null;
+        _heldStamped = _leaving = false;
+    }
 
     // The checks that don't block Ready (a missing tag, no recommended actions) still deserve a second look first.
     private int Warnings => _readiness.Values.Sum(v => v.Count(c => !c.Blocking));
@@ -1047,7 +1107,7 @@ else
                    brief sees its running order and numbers, not work they can't do. *@
                 @if (_canWrite)
                 {
-                    <StepStrip Steps="Steps" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
+                    <StepStrip Steps="@(_stepsHeld ?? Steps)" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
                                CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
                                OnSend="AskSend" />
                     @if (AsToday) { <FeedsNudge @ref="Freshness" /> }
@@ -1059,6 +1119,8 @@ else
                                   PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                   CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
                                   OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
+                    @* Where a moved article went, for a screen reader: on screen the rows glide there (flip.js), so no toast. *@
+                    <div class="visually-hidden" role="status" aria-live="polite">@_moved</div>
                     <div class="tide-order-foot">
                         @if (_canWrite && _brief.Status != BriefStatus.Sent)
                         {
@@ -1139,6 +1201,9 @@ else
                     </span>
                 }
             </div>
+            @* One item, whatever it shows: opening the editor (or closing it) unfolds it in place and what's below glides
+               with it (flip.js), rather than jumping by the editor's height. *@
+            <div data-tide-flip=".tide-note-item"><div class="tide-note-item" data-id="note">
             @if (editing)
             {
                 <label class="visually-hidden" for="team-note">Opening note</label>
@@ -1152,12 +1217,13 @@ else
             }
             else if (string.IsNullOrWhiteSpace(_brief!.TeamNote))
             {
-                <p class="small tide-muted mb-0">No opening note for this brief.</p>
+                <SectionEmpty Icon="@Icons.Notes">No opening note for this brief.</SectionEmpty>
             }
             else
             {
                 <Md Text="@_brief!.TeamNote" />
             }
+            </div></div>
         </section>
     };
 

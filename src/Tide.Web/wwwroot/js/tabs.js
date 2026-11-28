@@ -62,3 +62,67 @@ window.tideTabs = (function () {
         next.click();
     });
 })();
+
+// The current tab's mark slides to the tab chosen, rather than jumping: a page tab row's underline, and a switch's
+// (tide-seg) outline, which locks onto the option chosen as its fill fades in. It goes the moment the tab is clicked (the
+// arrow keys click too), not when the server has answered: a line or an outline laid over the page from the current
+// tab, moved and stretched by transform to the one clicked, and held there (both tabs' own underlines hidden) until
+// .NET makes it the current tab. Should .NET choose another, it goes on there; should nothing change in a moment, it
+// goes and the old underline is back. Without motion it just changes.
+(function () {
+    const SLIDES = [
+        { bar: '.tide-tabbar-page', item: '.tide-tabbar-item', on: 'active', kind: 'is-line' },
+        { bar: '.tide-seg', item: '.tide-seg-opt', on: 'on', kind: 'is-box' },
+        { bar: '.tide-tabbar-sub', item: '.tide-tabbar-item', on: 'active', kind: 'is-box' },
+    ];
+
+    // The mark from one tab to another; it stays where it lands until done() takes it away. Null without motion. One mark
+    // per bar: a click while one is still moving takes it on from where it is, rather than leaving it parked on the tab
+    // it was making for. A tab's data-tide-sliding (which hides its own line while the mark comes) is cleared only by
+    // the slide that set it last.
+    const marks = new WeakMap();
+    let slides = 0;
+    function slide(s, from, to) {
+        const ts = window.tideShortcuts;
+        if (ts.quiet()) return null;
+        const bar = to.closest(s.bar) || to.parentElement, prev = marks.get(bar);
+        const b = to.getBoundingClientRect(), line = s.kind === 'is-line';
+        let a = from.getBoundingClientRect();
+        a = { left: a.left, top: line ? a.bottom - 2 : a.top, width: a.width, height: line ? 2 : a.height };
+        if (prev && prev.m.isConnected) { const r = prev.m.getBoundingClientRect(); if (r.width) a = { left: r.left, top: r.top, width: r.width, height: r.height }; }
+        if (prev) prev.done();
+        if (!a.width || !b.width) return null;
+        const id = String(++slides), m = ts.overlay('tide-tab-slider ' + s.kind, a);
+        from.setAttribute('data-tide-sliding', id);
+        to.setAttribute('data-tide-sliding', id);
+        const dx = b.left - a.left;
+        const a2 = m.animate([{ transform: 'none' }, { transform: 'translateX(' + dx + 'px) scaleX(' + b.width / a.width + ')' }],
+            { duration: ts.travel(Math.abs(dx)), easing: ts.token('--tide-ease-out'), fill: 'forwards' });
+        const mine = function (el) { if (el.getAttribute('data-tide-sliding') === id) el.removeAttribute('data-tide-sliding'); };
+        const done = function () { m.remove(); mine(from); mine(to); if (marks.get(bar) === mark) marks.delete(bar); };
+        const mark = { m: m, done: done };
+        marks.set(bar, mark);
+        // done() at once (taken back), or landed() once it has got there (the tab is current now).
+        return { done: done, landed: function () { a2.finished.then(done, done); } };
+    }
+
+    function onClick(e) {
+        if (!e.target || !e.target.closest || !window.MutationObserver) return;
+        SLIDES.forEach(function (s) {
+            const item = e.target.closest(s.item), bar = item && item.closest(s.bar);
+            const from = bar && bar.querySelector(s.item + '.' + s.on);
+            if (!from || from === item || item.disabled || item.getAttribute('aria-disabled') === 'true') return;
+            let mark = slide(s, from, item);
+            const watch = new MutationObserver(function () {
+                const to = bar.querySelector(s.item + '.' + s.on);
+                if (to === from) return;
+                stop(to === item);
+                if (to && to !== item && item.isConnected) { const on = slide(s, item, to); if (on) on.landed(); }
+            });
+            const stop = function (landed) { watch.disconnect(); clearTimeout(timer); if (mark) { if (landed) mark.landed(); else mark.done(); mark = null; } };
+            const timer = setTimeout(function () { stop(false); }, window.tideShortcuts.ms('--tide-dur-blip'));
+            watch.observe(bar, { subtree: true, attributes: true, attributeFilter: ['class'] });
+        });
+    }
+    document.addEventListener('click', onClick, true);
+})();

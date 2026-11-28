@@ -8,6 +8,7 @@
 @inject ICurrentUser CurrentUser
 @inject NavigationManager Nav
 @inject ToastService Toasts
+@inject IJSRuntime JS
 @inject OrgClock Clock
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
@@ -28,7 +29,7 @@
         <div class="tide-card-form tide-card">
             <h2>New story</h2>
             <div class="row g-2">
-                <div class="col-md-5"><input class="form-control form-control-sm" maxlength="200" placeholder="Name (e.g. Edge VPN exploitation, autumn 2026)" aria-label="Story name" @bind="_name" /></div>
+                <div class="col-md-5"><input id="st-new-name" class="form-control form-control-sm" maxlength="200" placeholder="Name (e.g. Edge VPN exploitation, autumn 2026)" aria-label="Story name" @bind="_name" /></div>
                 <div class="col-md-5"><input class="form-control form-control-sm" maxlength="4000" placeholder="One line on what it is (optional)" aria-label="Story summary" @bind="_summary" /></div>
                 <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="Create">Add story</button></div>
             </div>
@@ -377,7 +378,7 @@ else
         Toasts.Show("Reloaded. Your unsaved changes were dropped.");
     }
 
-    internal Task Create() => Run(async () =>
+    internal Task Create() => Run("#st-new-name", async () =>
     {
         var id = await StorySvc.CreateAsync(_name ?? "", _summary);
         _name = _summary = null;
@@ -385,7 +386,7 @@ else
         Nav.NavigateTo($"stories/{id}");
     });
 
-    internal Task Save() => Run(async () =>
+    internal Task Save() => Run("#st-name", async () =>
     {
         await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status, _editVersion);
         CloseEdit();
@@ -542,6 +543,22 @@ else
         if (_busy) return;
         _busy = true;
         try { await step(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // A save refused for the name left empty (the one thing a story needs): the name box is pointed at too, after the
+    // toast that says why: scrolled to, focused and bracketed (tideInvalid, theme.js).
+    private async Task Run(string nameBox, Func<Task> save)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await save(); }
+        catch (ArgumentException ex) when (string.IsNullOrWhiteSpace(_name))
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            await JS.BestEffortAsync("tideInvalid.show", nameBox);
+        }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
     }

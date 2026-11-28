@@ -87,7 +87,8 @@ else
                 }
                 else
                 {
-                    <ActionStatusBadge Status="a.Status" />
+                    @* Keyed by the status, so a change (someone else's) draws it afresh and it flashes as live data does. *@
+                    <span data-tide-tick @key="a.Status"><ActionStatusBadge Status="a.Status" /></span>
                 }
                 <PriorityBadge Priority="a.Priority" />
                 @* The marking of the article it was raised from, AMBER and above, so the header says so without the rail. *@
@@ -105,7 +106,7 @@ else
                 <GuideLink />
             </div>
             <div class="tide-sub tide-action-who">
-                <span>@a.Team?.Name</span> &middot; <span><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
+                <span>@a.Team?.Name</span> &middot; <span data-tide-tick @key="@HolderLabel.Of(a, "Unassigned")"><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
                 @if (_detail.HandedFrom is { } handedFrom)
                 {
                     <span class="tide-handoff">&middot; <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span>
@@ -207,7 +208,7 @@ else
             </div>
             @if (feed.Shown.Count == 0)
             {
-                <p class="small tide-muted mb-0">Nothing yet.</p>
+                <SectionEmpty Icon="@Icons.Activity">Nothing yet.</SectionEmpty>
             }
             <ol class="tide-feed-list">
                 @foreach (var entry in feed.Shown)
@@ -922,7 +923,7 @@ else
 
     internal List<FilePicker.PendingFile> NewFiles => _newFiles;
 
-    internal Task Create() => Run(async () =>
+    internal Task Create() => Run(_form, async () =>
     {
         if (_created) return;
         var uploads = _newFiles.Select(f => f.ToUpload()).ToList();
@@ -953,7 +954,7 @@ else
         Nav.NavigateTo(Ui.ActionUrl(number));
     });
 
-    private Task SaveEdit() => Run(async () =>
+    private Task SaveEdit() => Run(_editing!, async () =>
     {
         var editing = _editing!;
         if (!await _overLimit.RunAsync(reason =>
@@ -1184,6 +1185,23 @@ else
         if (_busy) return;   // a double-click: the button's disabled state arrives one render too late
         _busy = true;
         try { await action(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // A save of the action form (ActionEditor): refused for its title left empty or no team chosen, that field is pointed
+    // at too, after the toast that says why: scrolled to, focused and bracketed (tideInvalid, theme.js).
+    private async Task Run(ActionForm form, Func<Task> save)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await save(); }
+        catch (ArgumentException ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            var field = string.IsNullOrWhiteSpace(form.Title) ? "#a-title" : form.TeamId == Guid.Empty ? "#a-team" : null;
+            if (field is not null) await JS.BestEffortAsync("tideInvalid.show", field);
+        }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
     }

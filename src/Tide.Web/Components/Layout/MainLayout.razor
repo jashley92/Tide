@@ -36,6 +36,8 @@
                     </div>
                 </Authorized>
             </AuthorizeView>
+            @* A page slow to come: a bar scans along the top bar's foot until it has rendered (tideNavCue, theme.js). *@
+            <div class="tide-loading tide-nav-cue" aria-hidden="true"></div>
         </header>
 
         @* Where the skip link goes and FocusOnNavigate looks for the h1. *@
@@ -68,6 +70,19 @@
 
 @code {
     [Inject] private OrgClock Clock { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    // The address the last render was for. The router renders this layout again for every page it goes to, so a render
+    // for a new address is the new page on screen: the top bar's slow-page cue, if it showed, goes.
+    private string? _renderedFor;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_renderedFor == Nav.Uri) return;
+        _renderedFor = Nav.Uri;
+        if (!firstRender) await JS.BestEffortAsync("tideNavCue.done");
+    }
 
     public static string Initials(string? name)
     {

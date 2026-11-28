@@ -139,3 +139,23 @@ window.tideEditor = (function () {
         }
     };
 })();
+
+// The section index's height (one row of pills, or two on a narrower window) for the page's scroll-padding-top, so a
+// section jumped to stops below the pills whatever their height (20-editor.css).
+(function () {
+    if (!window.ResizeObserver || !window.MutationObserver) return;
+    let seen = null;
+    const sized = new ResizeObserver(function (es) {
+        const h = es[0] && es[0].target.isConnected ? es[0].target.getBoundingClientRect().height : 0;
+        document.documentElement.style.setProperty('--tide-pills-h', h + 'px');
+    });
+    const look = function () {
+        const pills = document.querySelector('.tide-section-pills');
+        if (pills === seen) return;
+        if (seen) sized.unobserve(seen);
+        seen = pills;
+        if (pills) sized.observe(pills); else document.documentElement.style.removeProperty('--tide-pills-h');
+    };
+    const start = function () { look(); new MutationObserver(look).observe(document.body, { childList: true, subtree: true }); };
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();

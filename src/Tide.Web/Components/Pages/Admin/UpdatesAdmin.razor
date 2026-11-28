@@ -21,13 +21,13 @@
     </div>
 </div>
 
-<section class="tide-card" aria-labelledby="upd-server">
+@* Check now reads the whole card again: while it runs, the card shows it's busy along its top edge. *@
+<section class="tide-card" aria-labelledby="upd-server" data-busy="@_checking" aria-busy="@Ui.Aria(_checking)">
     <h2 id="upd-server" class="d-flex justify-content-between align-items-center">
         <span><span class="bi bi-cloud-arrow-down" aria-hidden="true"></span> This server</span>
-        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CheckNow" disabled="@(_checking || !Updates.Enabled)">
-            @(_checking ? "Checking…" : "Check now")
-        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CheckNow" disabled="@(_checking || !Updates.Enabled)">Check now</button>
     </h2>
+    <BusyStatus Text="@(_checking ? "Checking for an update…" : null)" />
     <table class="tide-kv mb-3">
         <tbody>
             <tr><th scope="row">Running</th><td><span class="tide-data">@AppVersionInfo.Display</span></td></tr>

@@ -14,14 +14,18 @@ window.tideTheme = (function () {
         try { t = localStorage.getItem('tide-theme') || t; } catch (e) { /* private mode */ }
         return t === 'light' || t === 'dark' ? t : 'system';
     }
-    function show(t) {
-        document.documentElement.setAttribute('data-bs-theme', t === 'system' ? (systemDark() ? 'dark' : 'light') : t);
-    }
+    function resolve(t) { return t === 'system' ? (systemDark() ? 'dark' : 'light') : t; }
+    function show(t) { document.documentElement.setAttribute('data-bs-theme', resolve(t)); }
+    // Chosen from the account menu, the page crossfades into the new theme (a view transition, timed in 10-shell.css)
+    // rather than cutting to it; at once with less motion asked for, in a browser without view transitions, or when
+    // the theme in force doesn't change (System chosen while the system's is the one showing).
     function apply(t) {
         if (t !== 'light' && t !== 'dark') t = 'system';
         picked = t;
         try { localStorage.setItem('tide-theme', t); } catch (e) { /* private mode: in force until the page reloads */ }
-        show(t);
+        var ts = window.tideShortcuts;
+        if (document.startViewTransition && ts && !ts.quiet() && resolve(t) !== current()) document.startViewTransition(function () { show(t); });
+        else show(t);
     }
     function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
     if (media) {
@@ -111,7 +115,196 @@ window.tideShortcuts = (function () {
     // Read once; .matches follows a change to the system setting.
     var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     function still() { return !!(motion && motion.matches); }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still };
+    // Nothing should move: less motion asked for, a tab nobody is looking at, or a browser that can't animate.
+    function quiet() { return still() || document.hidden || !document.body.animate; }
+    // A motion token from the stylesheet (00-tokens.css): its text (an easing), or as ms (a duration, one in seconds too). Read once each
+    // (they're the same in both themes), so a loop asking for one doesn't make the browser work out the page's style; an
+    // easing that isn't there (the stylesheet didn't load) is the browser's own, so an animation using it still plays.
+    var tokens = {};
+    function token(name) {
+        if (!(name in tokens)) tokens[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return tokens[name] || (name.indexOf('--tide-ease') === 0 ? 'ease-out' : '');
+    }
+    function ms(name) { var t = token(name); return (parseFloat(t) || 0) * (/\ds$/.test(t) ? 1000 : 1); }
+    // A copy of something to fly across the page (a card held, a row promoted): no ids to clash with the original's,
+    // hidden from assistive tech, and taking no clicks or focus. Given a rect, it is laid over the page there (its class
+    // makes it fixed). Marked data-tide-copy, so flip.js never takes a list inside it for one of the page's.
+    function copy(el, rect) {
+        var c = el.cloneNode(true);
+        c.querySelectorAll('[id]').forEach(function (n) { n.removeAttribute('id'); });
+        c.removeAttribute('id');
+        c.setAttribute('aria-hidden', 'true');
+        c.setAttribute('data-tide-copy', '');
+        c.inert = true;
+        // A count in it is still, at the number it shows: a clone would roll its last change again as it goes.
+        c.querySelectorAll('[data-was], [data-dir]').forEach(function (n) { n.removeAttribute('data-was'); n.removeAttribute('data-dir'); });
+        c.querySelectorAll('.tide-roll').forEach(function (n) { n.style.animation = 'none'; });
+        // A clone keeps the markup's values, not what was chosen or typed since: those are carried over, so a dialog
+        // fading out still shows the answer just given.
+        var from = el.querySelectorAll('input, select, textarea'), to = c.querySelectorAll('input, select, textarea');
+        for (var i = 0; i < from.length; i++) {
+            to[i].removeAttribute('name');   // nor joins the original's radio group, taking its choice
+            if (from[i].tagName === 'SELECT') to[i].selectedIndex = from[i].selectedIndex;
+            else if (from[i].type === 'checkbox' || from[i].type === 'radio') to[i].checked = from[i].checked;
+            else if (from[i].type !== 'file') to[i].value = from[i].value;
+        }
+        if (rect) {
+            c.style.left = rect.left + 'px';
+            c.style.top = rect.top + 'px';
+            c.style.width = rect.width + 'px';
+            c.style.height = rect.height + 'px';
+            document.body.appendChild(c);
+        }
+        return c;
+    }
+    // An empty element laid over the page at a rect (fixed by its class), hidden from assistive tech and taking no
+    // clicks: a mark that moves (a tab's underline sliding, brackets locking on).
+    function overlay(className, rect) {
+        var o = document.createElement('div');
+        o.className = className;
+        o.setAttribute('aria-hidden', 'true');
+        o.setAttribute('data-tide-copy', '');
+        o.inert = true;
+        o.style.left = rect.left + 'px';
+        o.style.top = rect.top + 'px';
+        o.style.width = rect.width + 'px';
+        o.style.height = rect.height + 'px';
+        document.body.appendChild(o);
+        return o;
+    }
+    // Plays frames on a copy laid over the page, which goes when they're done (or cancelled). The animation is returned.
+    function drift(c, frames, opts) {
+        var a = c.animate(frames, Object.assign({ fill: 'forwards' }, opts));
+        var gone = function () { c.remove(); };
+        a.finished.then(gone, gone);
+        return a;
+    }
+    // How long something takes to travel so far (px): a short hop is quick, a long way has room, from --tide-dur-fast
+    // to --tide-dur-travel (growing with the square root of the distance, as the eye judges it).
+    function travel(px) { return Math.min(ms('--tide-dur-travel'), ms('--tide-dur-fast') + 10 * Math.sqrt(Math.max(0, px))); }
+    // Flies a copy of el from a rect (where it was seen) to where el is now (or to), el itself transparent meanwhile:
+    // still there to take focus, which may go to it before it lands, and its copy shows the focus ring meanwhile. A
+    // flight already under way for el is taken over from where its copy is, so a card moved again mid-flight turns
+    // towards its new place rather than jumping or showing twice. A promise of the landing.
+    var flights = new WeakMap();
+    // clip, clipTo (optional): how much of the copy was hidden where it set off and where it lands (top, bottom px: a card
+    // partly out of view in its lane), so it starts as it was seen and ends as it will be seen.
+    function fly(el, from, to, clip, clipTo) {
+        to = to || el.getBoundingClientRect();
+        var prev = flights.get(el);
+        if (prev) {
+            var at = prev.copy.getBoundingClientRect();
+            from = { left: at.left, top: at.top, width: from.width, height: from.height };
+            prev.anim.cancel();
+        }
+        var c = copy(el, from), dx = to.left - from.left, dy = to.top - from.top;
+        c.classList.add('tide-flying');
+        if (el.contains(document.activeElement)) c.setAttribute('data-tide-focused', '');
+        el.setAttribute('data-tide-landing', '');
+        var a = drift(c, [{ transform: 'none' }, { transform: 'translate(' + dx + 'px, ' + dy + 'px)' }],
+            { duration: travel(Math.hypot(dx, dy)), easing: token('--tide-ease-out') });
+        var inset = function (k) { return 'inset(' + (k ? k.top : 0) + 'px 0 ' + (k ? k.bottom : 0) + 'px 0)'; };
+        if (clip || clipTo)
+            c.animate([{ clipPath: inset(clip) }, { clipPath: inset(clipTo) }], { duration: travel(Math.hypot(dx, dy)), easing: token('--tide-ease-out'), fill: 'forwards' });
+        flights.set(el, { copy: c, anim: a });
+        return a.finished.catch(function () { }).then(function () {
+            if (flights.get(el) && flights.get(el).anim !== a) return false;   // taken over by a later flight
+            flights.delete(el);
+            el.removeAttribute('data-tide-landing');
+            return true;
+        });
+    }
+    // Sets a data attribute for a moment (--tide-dur-signature): a card's or a tab's brackets locking on. On again
+    // before it went, it starts over (its own timer, not the last one's, takes it off).
+    var pulses = new WeakMap();
+    function pulse(el, attr) {
+        if (el.hasAttribute(attr)) { el.removeAttribute(attr); void el.offsetWidth; }   // a reflow, only to play it again
+        el.setAttribute(attr, '');
+        clearTimeout(pulses.get(el));
+        pulses.set(el, setTimeout(function () { el.removeAttribute(attr); }, ms('--tide-dur-signature')));
+    }
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail, still: still, quiet: quiet, token: token, ms: ms, travel: travel, copy: copy, overlay: overlay, drift: drift, fly: fly, pulse: pulse };
+})();
+
+// A save refused for a field (a title left empty): .NET says which, after the toast that says why. The page jumps it to
+// the middle of the window and focuses it, and threat-colored brackets close in on it, hold, and fade over
+// --tide-dur-attention. The field is marked aria-invalid until it's next changed, unless it says so itself. With less
+// motion asked for, the brackets show where they end, then fade. Whether the field was found.
+window.tideInvalid = (function () {
+    var ts = window.tideShortcuts;
+    function lockOn(el) {
+        var r = el.getBoundingClientRect();
+        if (!document.body.animate || !r.width) return;
+        var b = ts.overlay('tide-invalid-lock', r);
+        // It's fixed over the field, so it follows if the page scrolls meanwhile (once a frame).
+        var queued = 0;
+        var place = function () {
+            if (queued) return;
+            queued = requestAnimationFrame(function () {
+                queued = 0;
+                var at = el.getBoundingClientRect();
+                b.style.left = at.left + 'px'; b.style.top = at.top + 'px';
+            });
+        };
+        document.addEventListener('scroll', place, true);
+        var shut = ts.ms('--tide-dur-base') / ts.ms('--tide-dur-attention');
+        var frames = ts.still()
+            ? [{ opacity: 1 }, { opacity: 1, offset: .6 }, { opacity: 0 }]
+            : [{ opacity: 0, transform: 'scale(1.06)' }, { opacity: 1, transform: 'none', offset: shut }, { opacity: 1, offset: .6 }, { opacity: 0 }];
+        var a = ts.drift(b, frames, { duration: ts.ms('--tide-dur-attention'), easing: ts.token('--tide-ease-out') });
+        var off = function () { document.removeEventListener('scroll', place, true); cancelAnimationFrame(queued); };
+        a.finished.then(off, off);
+    }
+    function show(target) {
+        var el = typeof target === 'string' ? document.querySelector(target) : target;
+        if (!el) return false;
+        if (!el.hasAttribute('aria-invalid')) {
+            el.setAttribute('aria-invalid', 'true');
+            var fixed = function () { el.removeAttribute('aria-invalid'); el.removeEventListener('input', fixed); el.removeEventListener('change', fixed); };
+            el.addEventListener('input', fixed);
+            el.addEventListener('change', fixed);
+        }
+        // The page goes straight to it (a smooth scroll down a long form took the browser most of a second, and the
+        // brackets came before the field), and the brackets close in on it on the next frame: it's there, and that's it.
+        el.scrollIntoView({ block: 'center', behavior: 'instant' });
+        el.focus({ preventScroll: true });
+        requestAnimationFrame(function () { lockOn(el); });
+        return true;
+    }
+    return { show: show };
+})();
+
+// A page that's slow to come (the server still rendering it): after --tide-dur-patience a thin bar scans under the top bar
+// (.tide-nav-cue, in MainLayout), until .NET says the new page has rendered (MainLayout, done()). Nothing shows for a
+// page that comes sooner. Navigation here is the interactive router's, so it starts when the address changes: a link
+// followed (history.pushState) or Back and Forward (popstate). The state is on <html>, which Blazor never re-renders.
+window.tideNavCue = (function () {
+    var timer = 0;
+    function done() {
+        clearTimeout(timer);
+        timer = 0;
+        document.documentElement.removeAttribute('data-tide-waiting');
+    }
+    function start() {
+        done();
+        timer = setTimeout(function () { document.documentElement.setAttribute('data-tide-waiting', ''); }, window.tideShortcuts.ms('--tide-dur-patience'));
+    }
+    // The same address again (its own link clicked), or one that differs only after # (a link within the page), renders
+    // nothing new, so there's nothing to wait for.
+    function page(href) { return href.split('#')[0]; }
+    var at = page(location.href);
+    function moved() {
+        var now = page(location.href);
+        if (now !== at) { at = now; start(); }
+    }
+    var push = history.pushState;
+    history.pushState = function () {
+        var r = push.apply(this, arguments);
+        moved();
+        return r;
+    };
+    window.addEventListener('popstate', moved);
+    return { done: done };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the
@@ -167,6 +360,9 @@ window.tideRail = (function () {
     // so Tab stays in the rail. A docked rail leaves the page beside it as it is.
     // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
     // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
+    // Opening, the page is made inert a frame after the rail starts to slide in: marking the whole page inert means
+    // working out its style again, which in the same frame would hold the slide back. Focus is already in the rail.
+    // Closing, it's at once, so focus can go back to the button.
     function hold() {
         var r = rail(), on = !!r && over();
         // Open over the page, the rail is a modal dialog, named as before; docked or closed it's the aside's own
@@ -177,7 +373,9 @@ window.tideRail = (function () {
         }
         if (on === held) return;
         held = on;
-        document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
+        var under = function () { if (held === on) document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); }); };
+        if (on) requestAnimationFrame(function () { requestAnimationFrame(under); });
+        else under();
         if (on) watch.observe(document.body, { childList: true, subtree: true });
         else watch.disconnect();
     }
@@ -211,12 +409,41 @@ window.tideRail = (function () {
     }
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.
+    // Opened again while the last one is still sliding off, the sheet turns back from where it had got to (the copy goes,
+    // the rail itself takes over from there), rather than vanishing and coming in again from the edge.
     function setOver(open) {
+        var back = null;
+        if (leaving) {
+            if (open && !window.tideShortcuts.still()) back = getComputedStyle(leaving.effect.target).translate;
+            leaving.cancel();
+        }
+        if (!open && over()) leave();
         if (open) root.setAttribute('data-rail-over', '');
         else root.removeAttribute('data-rail-over');
         sync();
-        var to = open ? rail() : toggleBtn();
+        var r = rail();
+        if (back && r) r.animate([{ translate: back }, { translate: '0 0' }], { duration: window.tideShortcuts.ms('--tide-dur-panel'), easing: window.tideShortcuts.token('--tide-ease-out') });
+        var to = open ? r : toggleBtn();
         if (to) to.focus();
+    }
+    // Closing, the sheet slides back off the window's right edge as the backdrop fades: a copy of it does (scrolled where
+    // the rail was), as the rail itself is hidden at once (60-rail-and-pages.css). The sheet stays opaque; only the
+    // backdrop fades. With reduced motion the whole copy fades where it is.
+    var leaving = null;
+    function leave() {
+        var r = rail(), ts = window.tideShortcuts;
+        if (!r || !document.body.animate || document.hidden) return;
+        var c = ts.copy(r), body = r.querySelector('.tide-rail-body');
+        c.classList.add('tide-leaving');
+        c.removeAttribute('role');
+        c.removeAttribute('aria-modal');
+        document.body.appendChild(c);
+        if (body && body.scrollTop) c.querySelector('.tide-rail-body').scrollTop = body.scrollTop;
+        var opts = { duration: ts.ms('--tide-dur-panel-exit'), easing: ts.token('--tide-ease-in') };
+        var a = leaving = ts.still() ? ts.drift(c, [{ opacity: 1 }, { opacity: 0 }], opts) : ts.drift(c, [{ translate: '0 0' }, { translate: '100% 0' }], opts);
+        if (!ts.still()) ['::before', '::after'].forEach(function (p) { c.animate([{ opacity: 1 }, { opacity: 0 }], Object.assign({ pseudoElement: p, fill: 'forwards' }, opts)); });
+        var done = function () { if (leaving === a) leaving = null; };
+        a.finished.then(done, done);
     }
     function toggle() {
         var r = rail();

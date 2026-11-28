@@ -465,6 +465,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("LaneRank")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
 

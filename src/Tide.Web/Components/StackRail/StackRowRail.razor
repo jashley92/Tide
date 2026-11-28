@@ -41,7 +41,7 @@
     <section class="tide-card" aria-labelledby="rail-triage-h">
         <h2 id="rail-triage-h">In triage now @Count(_triage?.Count)</h2>
         @if (_triage is null) { <p class="small tide-muted mb-0">Loading…</p> }
-        else if (_triage.Count == 0) { <p class="small tide-muted mb-0">Nothing new names it.</p> }
+        else if (_triage.Count == 0) { <SectionEmpty Icon="@Icons.Named">Nothing new names it.</SectionEmpty> }
         else
         {
             <ul class="tide-rail-list">
@@ -61,7 +61,7 @@
     @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (_detail.Articles.Count == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
+        @if (_detail.Articles.Count == 0) { <SectionEmpty Icon="@Icons.Article">No articles yet.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in _detail.Articles.Take(Shown))
             {
@@ -80,7 +80,7 @@
     @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        @if (open.Count == 0) { <SectionEmpty Icon="@Icons.Action">No open actions.</SectionEmpty> }
         <ul class="tide-rail-list">
             @foreach (var a in open.Take(Shown))
             {
@@ -93,7 +93,7 @@
 
 <section class="tide-card" aria-labelledby="rail-notes-h">
     <h2 id="rail-notes-h">Notes</h2>
-    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <p class="small tide-muted mb-0">No notes yet.</p> }
+    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <SectionEmpty Icon="@Icons.Notes">No notes yet.</SectionEmpty> }
 </section>
 
 @code {
