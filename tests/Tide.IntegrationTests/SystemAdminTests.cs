@@ -189,7 +189,7 @@ public class ConfigBundleServiceTests
         ctx.Settings.Add(new AppSetting { Key = "Cve:LastRun", Value = "2026-10-01T00:00:00Z", UpdatedBy = "system" });
         ctx.Sources.Add(new Source { Name = "Vendor blog", Url = "https://vendor.example.org/feed" });
         ctx.Sources.Add(new Source { Name = "Paid feed", Url = "https://intel.example.org/rss?apikey=SECRET123&topic=all", PollMinutes = 30 });
-        ctx.QueryTemplates.Add(new QueryTemplate { Dialect = "kql", Kind = HuntValueKind.Domain, Template = "DnsEvents | where Name == '{value}'", UpdatedBy = "x" });
+        ctx.QueryTemplates.Add(new QueryTemplate { Dialect = "kql", Kind = HuntValueKind.Domain, Template = "DnsEvents | where Name in ({{values}})", UpdatedBy = "x" });
         await ctx.SaveChangesAsync();
     }
 
@@ -286,7 +286,7 @@ public class ConfigBundleServiceTests
              new("Too often", "Feed", "https://x.example.org", "Clear", "A", null, 1, true, false, null, null, null, null)],
             [new BundleScorecardCategory("", "No key", null, 0, false, []),
              new BundleScorecardCategory("new-cat", "New category", null, 9, false, [new BundleScorecardTag("new-tag", "New tag", null, 0, false), new BundleScorecardTag("", "", null, 0, false)])],
-            [new("nosuchdialect", "Domain", "x"), new("kql", "Domain", "")]);
+            [new("nosuchdialect", "Domain", "x"), new("kql", "Domain", "DnsEvents | where Name == 'x'")]);
         var done = await service.PreviewAndImportAsync(bundle);
         done.Changes.Where(c => c.Kind == BundleChangeKind.Skipped).Should().HaveCount(11);
         done.Changes.Where(c => c.Kind == BundleChangeKind.Add).Select(c => c.Item).Should().BeEquivalentTo("Actions:Sla:Priority:P1", "New category", "New category › New tag");
