@@ -256,14 +256,23 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
 
         // A's site answers 404 while the analyst is on B: B's pane doesn't change.
         slow.SetResult();
-        await Task.Delay(300);
+        (await r.Until(t => !t.AnyFetching)).Should().BeTrue("A's failed fetch lands");
         await r.Drawn();
-        (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item B").And.Contain("Not read yet.").And.NotContain("404");
+        // Only the pane: the rest of the page holds random ids, which can contain the status's digits.
+        Pane(await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item B").And.Contain("Not read yet.").And.NotContain("404");
 
         // Back on A, why it failed shows, as it would have at the time, and the site isn't asked again.
         await r.Click(t => t.OnTriageKey("prev"));
         (await r.Html()).Should().Contain("<h2 class=\"tide-reading-title\">lateread item A")
             .And.Contain("The server answered 404 Not Found. Open the site instead.").And.NotContain("Not read yet.");
         Fetches(prefix).Should().Be(1, "coming back to an item never fetches it");
+    }
+
+    // The reading pane's markup alone.
+    private static string Pane(string html)
+    {
+        var start = html.IndexOf("<aside class=\"tide-card tide-reading\"", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, "the reading pane is shown");
+        return html[start..(html.IndexOf("</aside>", start, StringComparison.Ordinal) + "</aside>".Length)];
     }
 }
